@@ -24,8 +24,7 @@ import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
-import com.streamarr.server.services.pagination.OrderMediaBy;
-import com.streamarr.server.services.pagination.SortDirection;
+import com.streamarr.server.services.watchprogress.ContinueWatchingService;
 import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
@@ -77,70 +76,30 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
   void shouldRejectMalformedContinueWatchingTimestampAsInvalidCursor(String timestamp)
       throws Exception {
     identity = authTestSupport.createIdentity();
-    var options =
-        MediaPaginationOptions.builder()
-            .mediaFilter(
-                MediaFilter.builder()
-                    .profileId(identity.profile().getId())
-                    .sortBy(OrderMediaBy.LAST_WATCHED)
-                    .sortDirection(SortDirection.DESC)
-                    .build())
-            .build();
-    var cursor = cursors.encodeMediaCursor(options, UUID.randomUUID(), timestamp).getValue();
-    var body =
-        new ObjectMapper()
-            .writeValueAsString(
-                Map.of(
-                    "query",
-                    "query($after: String) { continueWatching(first: 1, after: $after) { edges { cursor } } }",
-                    "variables",
-                    Map.of("after", cursor)));
-    mockMvc
-        .perform(
-            post("/graphql")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body)
-                .with(bearer(authTestSupport.profileBearer(identity))))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
+    var filter = ContinueWatchingService.listOptions(identity.profile().getId()).getMediaFilter();
+
+    assertContinuingIsInvalid(cursorAt(filter, timestamp));
   }
 
-  @ParameterizedTest
-  @ValueSource(booleans = {false, true})
-  @DisplayName("Should reject a foreign list or Profile when continuing Continue Watching")
-  void shouldRejectForeignListOrProfileWhenContinuingContinueWatching(boolean otherProfile)
-      throws Exception {
+  @Test
+  @DisplayName("Should reject a cursor when it continues another list")
+  void shouldRejectACursorWhenItContinuesAnotherList() throws Exception {
     identity = authTestSupport.createIdentity();
     var filter =
-        MediaFilter.builder()
-            .profileId(otherProfile ? UUID.randomUUID() : identity.profile().getId())
-            .libraryId(otherProfile ? null : UUID.randomUUID())
-            .sortBy(OrderMediaBy.LAST_WATCHED)
-            .sortDirection(SortDirection.DESC)
+        ContinueWatchingService.listOptions(identity.profile().getId()).getMediaFilter().toBuilder()
+            .libraryId(UUID.randomUUID())
             .build();
-    var cursor =
-        cursors
-            .encodeMediaCursor(
-                MediaPaginationOptions.builder().mediaFilter(filter).build(),
-                UUID.randomUUID(),
-                "2026-10-19T15:07:00Z")
-            .getValue();
-    var body =
-        new ObjectMapper()
-            .writeValueAsString(
-                Map.of(
-                    "query",
-                    "query($after: String) { continueWatching(first: 1, after: $after) { edges { cursor } } }",
-                    "variables",
-                    Map.of("after", cursor)));
-    mockMvc
-        .perform(
-            post("/graphql")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body)
-                .with(bearer(authTestSupport.profileBearer(identity))))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
+
+    assertContinuingIsInvalid(cursorAt(filter, "2026-10-19T15:07:00Z"));
+  }
+
+  @Test
+  @DisplayName("Should reject a cursor when it continues another Profile's list")
+  void shouldRejectACursorWhenItContinuesAnotherProfilesList() throws Exception {
+    identity = authTestSupport.createIdentity();
+    var filter = ContinueWatchingService.listOptions(UUID.randomUUID()).getMediaFilter();
+
+    assertContinuingIsInvalid(cursorAt(filter, "2026-10-19T15:07:00Z"));
   }
 
   @Test
@@ -202,13 +161,16 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
     var earlier = createEpisodeWithProgress();
     var later = createEpisodeWithProgress();
     var tied = createEpisodeWithProgress();
-    for (var episode : List.of(earlier, later, tied)) {
-      var at = episode == earlier ? "2026-10-19T10:00:00.123100Z" : "2026-10-19T10:00:00.123900Z";
-      auditColumns.overwriteLastModifiedOn(
-          SESSION_PROGRESS,
-          SESSION_PROGRESS.MEDIA_FILE_ID.eq(episode.getFiles().iterator().next().getId()),
-          Instant.parse(at));
-    }
+    Map.of(
+            earlier, "2026-10-19T10:00:00.123100Z",
+            later, "2026-10-19T10:00:00.123900Z",
+            tied, "2026-10-19T10:00:00.123900Z")
+        .forEach(
+            (episode, at) ->
+                auditColumns.overwriteLastModifiedOn(
+                    SESSION_PROGRESS,
+                    SESSION_PROGRESS.MEDIA_FILE_ID.eq(episode.getFiles().iterator().next().getId()),
+                    Instant.parse(at)));
 
     var response =
         mockMvc
@@ -299,6 +261,34 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
       assertThat(edge.path("cursor").asString()).isNotEmpty();
       assertThat(edge.path("orderKey").asString()).isNotEmpty();
     }
+  }
+
+  private String cursorAt(MediaFilter filter, String timestamp) {
+    return cursors
+        .encodeMediaCursor(
+            MediaPaginationOptions.builder().mediaFilter(filter).build(),
+            UUID.randomUUID(),
+            timestamp)
+        .getValue();
+  }
+
+  private void assertContinuingIsInvalid(String cursor) throws Exception {
+    var body =
+        new ObjectMapper()
+            .writeValueAsString(
+                Map.of(
+                    "query",
+                    "query($after: String) { continueWatching(first: 1, after: $after) { edges { cursor } } }",
+                    "variables",
+                    Map.of("after", cursor)));
+    mockMvc
+        .perform(
+            post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body)
+                .with(bearer(authTestSupport.profileBearer(identity))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
   }
 
   private JsonNode execute(String query) throws Exception {

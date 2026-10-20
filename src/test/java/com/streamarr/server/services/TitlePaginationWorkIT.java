@@ -10,11 +10,8 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.PageItem;
-import java.util.LinkedHashSet;
+import com.streamarr.server.support.AnalyzedSelects;
 import org.jooq.DSLContext;
-import org.jooq.Select;
-import org.jooq.VisitListener;
-import org.jooq.impl.DSL;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -63,39 +60,26 @@ class TitlePaginationWorkIT extends AbstractIntegrationTest {
         library.getId());
     jdbc.execute("ANALYZE base_collectable, movie");
 
-    var statements = new LinkedHashSet<String>();
-    var caller = Thread.currentThread();
-    var previousListeners = dsl.configuration().visitListenerProviders();
-    dsl.configuration()
-        .set(
-            VisitListener.onVisitStart(
-                context -> {
-                  if (Thread.currentThread() != caller) {
-                    return;
-                  }
+    var plans =
+        AnalyzedSelects.builder()
+            .dsl(dsl)
+            .jdbc(jdbc)
+            .json(objectMapper)
+            .build()
+            .of(
+                () -> {
+                  var page =
+                      service.getMoviesWithFilter(
+                          buildForwardContinuation(
+                              50,
+                              MediaFilter.builder().libraryId(library.getId()).build(),
+                              new PageItem<>(anchor, anchor.getTitleSort())));
+                  assertThat(page.items()).hasSize(50);
+                  assertThat(page.hasNextPage()).isTrue();
+                });
 
-                  if (context.queryPartsLength() == 1 && context.queryPart() instanceof Select<?>) {
-                    statements.add(DSL.using(dsl.dialect()).renderInlined(context.queryPart()));
-                  }
-                }));
-    try {
-      var page =
-          service.getMoviesWithFilter(
-              buildForwardContinuation(
-                  50,
-                  MediaFilter.builder().libraryId(library.getId()).build(),
-                  new PageItem<>(anchor, anchor.getTitleSort())));
-      assertThat(page.items()).hasSize(50);
-      assertThat(page.hasNextPage()).isTrue();
-    } finally {
-      dsl.configuration().set(previousListeners);
-    }
-
-    assertThat(statements).isNotEmpty();
-    for (var statement : statements) {
-      var plan =
-          objectMapper.readTree(
-              jdbc.queryForObject("EXPLAIN (ANALYZE, FORMAT JSON) " + statement, String.class));
+    assertThat(plans).isNotEmpty();
+    for (var plan : plans) {
       assertThat(plan.findValues("Actual Rows"))
           .isNotEmpty()
           .allSatisfy(count -> assertThat(count.asLong()).isLessThanOrEqualTo(100));

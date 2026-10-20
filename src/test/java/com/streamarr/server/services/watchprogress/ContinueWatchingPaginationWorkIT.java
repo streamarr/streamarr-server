@@ -16,14 +16,11 @@ import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.SortDirection;
+import com.streamarr.server.support.AnalyzedSelects;
 import com.streamarr.server.support.AuthTestSupport;
-import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
 import org.jooq.DSLContext;
-import org.jooq.Select;
-import org.jooq.VisitListener;
-import org.jooq.impl.DSL;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -100,34 +97,24 @@ class ContinueWatchingPaginationWorkIT extends AbstractIntegrationTest {
             .sortDirection(SortDirection.DESC)
             .build();
     var first = service.getPage(profile, buildForwardOptions(12, filter));
-    var statements = new LinkedHashSet<String>();
-    var caller = Thread.currentThread();
-    var previous = dsl.configuration().visitListenerProviders();
-    dsl.configuration()
-        .set(
-            VisitListener.onVisitStart(
-                context -> {
-                  if (Thread.currentThread() != caller) return;
+    var plans =
+        AnalyzedSelects.builder()
+            .dsl(dsl)
+            .jdbc(jdbc)
+            .json(mapper)
+            .build()
+            .of(
+                () -> {
+                  var next =
+                      service.getPage(
+                          profile, buildForwardContinuation(12, filter, first.items().getLast()));
+                  assertThat(next.items()).hasSize(12).doesNotContainAnyElementsOf(first.items());
+                  assertThat(next.hasNextPage()).isTrue();
+                  assertThat(next.hasPreviousPage()).isTrue();
+                });
 
-                  if (context.queryPartsLength() == 1 && context.queryPart() instanceof Select<?>) {
-                    statements.add(DSL.using(dsl.dialect()).renderInlined(context.queryPart()));
-                  }
-                }));
-    try {
-      var next =
-          service.getPage(profile, buildForwardContinuation(12, filter, first.items().getLast()));
-      assertThat(next.items()).hasSize(12).doesNotContainAnyElementsOf(first.items());
-      assertThat(next.hasNextPage()).isTrue();
-      assertThat(next.hasPreviousPage()).isTrue();
-    } finally {
-      dsl.configuration().set(previous);
-    }
-
-    assertThat(statements).hasSize(1);
-    var plan =
-        mapper.readTree(
-            jdbc.queryForObject(
-                "EXPLAIN (ANALYZE, FORMAT JSON) " + statements.iterator().next(), String.class));
+    assertThat(plans).hasSize(1);
+    var plan = plans.getFirst();
     assertThat(plan.at("/0/Plan/Node Type").asString()).isEqualTo("Limit");
     assertThat(plan.at("/0/Plan/Actual Rows").asLong()).isEqualTo(14);
     assertThat(plan.findParents("Relation Name"))

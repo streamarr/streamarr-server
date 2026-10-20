@@ -243,7 +243,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
       try {
         var progress = saveProgress(ownerId, fileId);
         pinSessionProgressTimestamp(fileId, MOVIE_ACTIVITY_AT);
-        assertPlacement(ownerId, movie.getId(), true);
+        assertPlaced(ownerId, movie.getId());
         var completion =
             watchHistoryRepository.saveAndFlush(
                 WatchHistory.builder()
@@ -251,32 +251,33 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
                     .collectableId(movie.getId())
                     .watchedAt(MOVIE_ACTIVITY_AT)
                     .build());
-        assertPlacement(ownerId, movie.getId(), false);
+        assertNotPlaced(ownerId, movie.getId());
 
         pinSessionProgressTimestamp(fileId, MOVIE_ACTIVITY_AT.plusNanos(1000));
-        assertPlacement(ownerId, movie.getId(), true);
+        assertPlaced(ownerId, movie.getId());
         pinSessionProgressTimestamp(fileId, MOVIE_ACTIVITY_AT);
         completion.setDismissedAt(Instant.now());
         watchHistoryRepository.saveAndFlush(completion);
-        assertPlacement(ownerId, movie.getId(), true);
+        assertPlaced(ownerId, movie.getId());
 
         progress.setPositionSeconds(0);
         sessionProgressRepository.saveAndFlush(progress);
-        assertPlacement(ownerId, movie.getId(), false);
+        assertNotPlaced(ownerId, movie.getId());
       } finally {
         authTestSupport.deleteIdentity(owner);
       }
     }
 
-    private void assertPlacement(UUID owner, UUID itemId, boolean matches) {
-      assertThat(items(owner, 12))
-          .extracting(BaseCollectable::getId)
-          .containsExactlyElementsOf(matches ? List.of(itemId) : List.of());
+    private void assertPlaced(UUID owner, UUID itemId) {
+      assertThat(items(owner, 12)).extracting(BaseCollectable::getId).containsExactly(itemId);
       var matching = continueWatchingService.findMatchingItems(owner, Set.of(itemId));
-      assertThat(matching.containsKey(itemId)).isEqualTo(matches);
-      if (matches) {
-        assertThat(matching.get(itemId).sortValue()).isInstanceOf(Instant.class);
-      }
+      assertThat(matching).containsOnlyKeys(itemId);
+      assertThat(matching.get(itemId).sortValue()).isInstanceOf(Instant.class);
+    }
+
+    private void assertNotPlaced(UUID owner, UUID itemId) {
+      assertThat(items(owner, 12)).isEmpty();
+      assertThat(continueWatchingService.findMatchingItems(owner, Set.of(itemId))).isEmpty();
     }
 
     @Test
