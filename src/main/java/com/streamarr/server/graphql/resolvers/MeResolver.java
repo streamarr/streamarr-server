@@ -4,7 +4,6 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.streamarr.server.graphql.cursor.ConnectionArguments;
-import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.HouseholdSummary;
@@ -28,7 +27,6 @@ public class MeResolver {
   private final AuthorizationService authorizationService;
   private final IdentityQueryService identityQueryService;
   private final PaginationService paginationService;
-  private final CursorUtil cursorUtil;
   private final PositionCursorCodec positionCursors;
   private final RelayConnectionAdapter relayConnectionAdapter;
 
@@ -53,13 +51,12 @@ public class MeResolver {
   @DgsData(parentType = "Me", field = "usableHouseholds")
   public Connection<UsableHousehold> usableHouseholds(DataFetchingEnvironment dfe) {
     var identity = authorizationService.currentIdentity();
-    var options = ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
-    var page =
-        identityQueryService.usableHouseholds(identity, cursorUtil.decodeKeysetCursor(options));
-    return relayConnectionAdapter.toConnection(
-        page,
-        item -> toUsable(item.item()),
-        item -> cursorUtil.encodeKeysetCursor(item.item().household().id()));
+    var list = new ListIdentity("usable-households", identity.accountId());
+    var request =
+        positionCursors.pageRequest(
+            list, ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE));
+    var page = identityQueryService.usableHouseholds(identity, request);
+    return relayConnectionAdapter.toConnection(page, list, MeResolver::toUsable);
   }
 
   @DgsData(parentType = "Me", field = "selectableProfiles")

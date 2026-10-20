@@ -3,6 +3,7 @@ package com.streamarr.server.services.identity;
 import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
@@ -20,11 +21,6 @@ import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.authorization.Intent;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
-import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.PaginationOptions;
-import com.streamarr.server.services.pagination.PaginationService;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -40,7 +36,7 @@ class IdentityQueryServiceTest {
       new FakeProfileHouseholdShareRepository();
   private final FakeProfileRepository profiles = new FakeProfileRepository(shares);
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository(shares);
-  private final FakeHouseholdRepository households = new FakeHouseholdRepository();
+  private final FakeHouseholdRepository households = new FakeHouseholdRepository(accounts);
 
   private Household home;
   private Household visited;
@@ -76,8 +72,8 @@ class IdentityQueryServiceTest {
             households,
             profiles,
             authorization,
-            new PaginationService(),
-            new SelectableProfilesList(profiles));
+            new SelectableProfilesList(profiles),
+            new UsableHouseholdsList(households));
   }
 
   @Test
@@ -136,24 +132,13 @@ class IdentityQueryServiceTest {
   }
 
   @Test
-  @DisplayName("Should return the requested usable Households when the first page is requested")
-  void shouldReturnRequestedUsableHouseholdsWhenFirstPageIsRequested() {
-    var options =
-        new KeysetPaginationOptions(
-            null,
-            PaginationOptions.builder()
-                .paginationDirection(PaginationDirection.FORWARD)
-                .cursor(Optional.empty())
-                .limit(1)
-                .build());
+  @DisplayName("Should mark only the Account's own Household as membership when listing Households")
+  void shouldMarkOnlyTheAccountsOwnHouseholdAsMembershipWhenListingHouseholds() {
+    var page = service.usableHouseholds(identity(home.getId(), null), firstRows(10));
 
-    var page = service.usableHouseholds(identity(home.getId(), null), options);
-
-    assertThat(page.items())
-        .extracting(item -> item.item().household().name())
-        .containsExactly("Home");
-    assertThat(page.hasNextPage()).isTrue();
-    assertThat(page.hasPreviousPage()).isFalse();
+    assertThat(page.rows())
+        .extracting(row -> row.item().household().name(), row -> row.item().membership())
+        .containsExactly(tuple("Home", true), tuple("Grandma", false));
   }
 
   @Test

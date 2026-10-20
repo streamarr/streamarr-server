@@ -14,21 +14,14 @@ import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.ProfileSafetyRule;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import com.streamarr.server.services.pagination.ListPage;
-import com.streamarr.server.services.pagination.MediaPage;
-import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.Pager;
-import com.streamarr.server.services.pagination.PaginationService;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -45,8 +38,8 @@ public class IdentityQueryService {
   private final HouseholdRepository householdRepository;
   private final ProfileRepository profileRepository;
   private final AuthorizationService authorizationService;
-  private final PaginationService paginationService;
   private final SelectableProfilesList selectableProfilesList;
+  private final UsableHouseholdsList usableHouseholdsList;
 
   @Transactional(readOnly = true)
   public MeDetails meDetails(AuthenticatedIdentity identity) {
@@ -80,20 +73,19 @@ public class IdentityQueryService {
     return page.map(profile -> selectable(identity, account, profile, locked));
   }
 
+  /**
+   * A page of the Households the Account may use: its own Household first, then the Households its
+   * Personal Profile visits, by name, then ID.
+   */
   @Transactional(readOnly = true)
-  public MediaPage<UsableHouseholdDetails> usableHouseholds(
-      AuthenticatedIdentity identity, KeysetPaginationOptions options) {
+  public ListPage<UsableHouseholdDetails> usableHouseholds(
+      AuthenticatedIdentity identity, PageRequest request) {
     var account = requireAuthorizedAccount(identity);
-    var items =
-        usableHouseholds(account).values().stream()
-            .map(
-                household ->
-                    new UsableHouseholdDetails(
-                        summaryOf(household), household.getId().equals(account.getHouseholdId())))
-            .map(household -> new PageItem<>(household, household.membership() ? 0 : 1))
-            .toList();
-    return paginationService.buildKeysetPage(
-        items, options, household -> household.household().id());
+    return Pager.page(usableHouseholdsList, account.getId(), request)
+        .map(
+            household ->
+                new UsableHouseholdDetails(
+                    summaryOf(household), household.getId().equals(account.getHouseholdId())));
   }
 
   @Transactional(readOnly = true)
@@ -114,22 +106,6 @@ public class IdentityQueryService {
   }
 
   /** Membership Household first, then visited Households in stable id order. */
-  private Map<UUID, Household> usableHouseholds(UserAccount account) {
-    var ids = userAccountRepository.findUsableHouseholdIds(account.getId());
-    var byId =
-        householdRepository.findAllById(ids).stream()
-            .collect(Collectors.toMap(Household::getId, Function.identity()));
-    var ordered = new LinkedHashMap<UUID, Household>();
-    for (var id : ids) {
-      var household = byId.get(id);
-      if (household != null) {
-        ordered.put(id, household);
-      }
-    }
-
-    return ordered;
-  }
-
   private List<SelectableProfileDetails> selectableProfiles(
       AuthenticatedIdentity identity, UserAccount account) {
     var available = profileRepository.findAvailableInHousehold(identity.contextHouseholdId());

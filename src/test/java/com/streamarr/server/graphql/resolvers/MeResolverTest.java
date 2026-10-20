@@ -25,10 +25,8 @@ import com.streamarr.server.services.identity.IdentityQueryService;
 import com.streamarr.server.services.identity.IdentityQueryService.HouseholdSummaryDetails;
 import com.streamarr.server.services.identity.IdentityQueryService.SelectableProfileDetails;
 import com.streamarr.server.services.identity.IdentityQueryService.UsableHouseholdDetails;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.ListOrder;
-import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.Pager;
 import com.streamarr.server.services.pagination.PaginationService;
@@ -95,7 +93,6 @@ class MeResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
-  @Autowired private PaginationService paginationService;
   @Autowired private PositionCursorCodec positionCursors;
 
   @MockitoBean private IdentityQueryService identityQueryService;
@@ -270,6 +267,27 @@ class MeResolverTest {
   }
 
   @Test
+  @DisplayName("Should reject a Household cursor when it continues another Account's Households")
+  void shouldRejectAHouseholdCursorWhenItContinuesAnotherAccountsHouseholds() {
+    stubTwoSelectableProfiles();
+    var cursor =
+        positionCursors
+            .encode(
+                new ListIdentity("usable-households", UUID.randomUUID()),
+                new Position(new SortValue.OfText("home"), UUID.randomUUID()))
+            .getValue();
+
+    var result =
+        dgsQueryExecutor.execute(
+            "{ me { usableHouseholds(first: 1, after: \"%s\") { edges { node { membership } } } } }"
+                .formatted(cursor));
+
+    assertThat(result.getErrors()).hasSize(1);
+    assertThat(result.getErrors().getFirst().getExtensions())
+        .containsEntry("code", "INVALID_CURSOR");
+  }
+
+  @Test
   @DisplayName("Should return profile required code when the query service demands a profile")
   void shouldReturnProfileRequiredCodeWhenQueryServiceDemandsProfile() {
     authenticateAtAccountScope();
@@ -325,17 +343,23 @@ class MeResolverTest {
       List<UsableHouseholdDetails> households,
       List<SelectableProfileDetails> profiles,
       SelectableProfileDetails selected) {
-    when(identityQueryService.usableHouseholds(any(), any()))
-        .thenAnswer(
-            invocation -> {
-              KeysetPaginationOptions options = invocation.getArgument(1);
-              var items =
-                  households.stream()
-                      .map(household -> new PageItem<>(household, household.membership() ? 0 : 1))
-                      .toList();
-              return paginationService.buildKeysetPage(
-                  items, options, household -> household.household().id());
-            });
+    var householdList =
+        new InMemoryPagedList<UsableHouseholdDetails, Object>(
+            ListOrder.builder()
+                .valueKind(SortValueKind.NUMBER)
+                .direction(SortDirection.ASC)
+                .build(),
+            households.stream()
+                .map(
+                    household ->
+                        new Row<>(
+                            household,
+                            new Position(
+                                new SortValue.OfNumber(household.membership() ? 0 : 1),
+                                household.household().id())))
+                .toList());
+    when(identityQueryService.usableHouseholds(any(), any(PageRequest.class)))
+        .thenAnswer(invocation -> Pager.page(householdList, accountId, invocation.getArgument(1)));
     var profileList =
         new InMemoryPagedList<SelectableProfileDetails, Object>(
             ListOrder.builder().valueKind(SortValueKind.TEXT).direction(SortDirection.ASC).build(),
