@@ -32,7 +32,16 @@ class LibraryQueryAuthorizationTest {
     var identity = profileScopedBuilder().build();
     var authorization = new FakeAuthorizationService(identity).denyAll();
     var service =
-        new LibraryQueryService(new FakeLibraryRepository(), movieService(), null, authorization);
+        LibraryQueryService.builder()
+            .libraries(new FakeLibraryRepository())
+            .movies(
+                MovieService.builder()
+                    .movieRepository(new FakeMovieRepository())
+                    .paginationService(new PaginationService())
+                    .events(_ -> {})
+                    .build())
+            .authorization(authorization)
+            .build();
 
     assertThat(service.findAll(identity)).isEmpty();
     assertThat(service.findById(identity, UUID.randomUUID())).isEmpty();
@@ -44,8 +53,10 @@ class LibraryQueryAuthorizationTest {
   void shouldRefuseLibraryQueriesWhenTokenHasNoSelectedProfile() {
     var identity = accountScopedBuilder().build();
     var service =
-        new LibraryQueryService(
-            new FakeLibraryRepository(), null, null, new FakeAuthorizationService(identity));
+        LibraryQueryService.builder()
+            .libraries(new FakeLibraryRepository())
+            .authorization(new FakeAuthorizationService(identity))
+            .build();
 
     assertThatThrownBy(() -> service.findAll(identity))
         .isInstanceOf(ProfileRequiredException.class);
@@ -53,22 +64,5 @@ class LibraryQueryAuthorizationTest {
         .isInstanceOf(ProfileRequiredException.class);
     assertThatThrownBy(() -> service.getItems(identity, MediaType.MOVIE, FIRST_PAGE))
         .isInstanceOf(ProfileRequiredException.class);
-  }
-
-  private static MovieService movieService() {
-    return new MovieService(
-        new FakeMovieRepository(),
-        null,
-        new PaginationService(),
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        _ -> {});
   }
 }

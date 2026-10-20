@@ -77,9 +77,10 @@ clients do not reconstruct filters from a partially selected entity.
   a null flag, the normalized title with null coalesced to an empty string, and the ID.
   Comparing that whole tuple keeps nullable cursor seeks within the index range instead
   of scanning earlier titles. The database performs case normalization for keys too,
-  so client locale and Unicode casing cannot disagree with query ordering. Numeric/date
-  sorts keep nulls last in either direction; TITLE retains SQL's ascending-null-last and
-  descending-null-first ordering. Backward seeks reverse the physical null order too.
+  so client locale and Unicode casing cannot disagree with query ordering. RELEASE_DATE,
+  RUNTIME and LAST_WATCHED keep nulls last in either direction. TITLE and ADDED retain
+  SQL's ascending-null-last and descending-null-first ordering; the added time is never
+  null. Backward seeks reverse the physical null order too.
 - TITLE `startLetter` remains a seek anchor under ADR 0023. It is not a membership
   restriction for the landing page, event placement or cursor pages. Every landing page
   is one contiguous run of the ordering. Descending HASH lands on the titles that sort

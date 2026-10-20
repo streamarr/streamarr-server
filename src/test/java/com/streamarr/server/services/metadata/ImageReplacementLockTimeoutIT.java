@@ -100,7 +100,7 @@ class ImageReplacementLockTimeoutIT extends AbstractIntegrationTest {
       assertThat(holderReplacement.writtenFiles()).allSatisfy(path -> assertThat(path).exists());
       assertThat(original.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
     } finally {
-      movieService.deleteMovieById(entityId);
+      movieService.tryDeleteMovieById(entityId);
       imageService.deleteFiles(original.writtenFiles());
       imageService.deleteFiles(holderReplacement.writtenFiles());
       imageService.deleteFiles(contenderReplacement.writtenFiles());

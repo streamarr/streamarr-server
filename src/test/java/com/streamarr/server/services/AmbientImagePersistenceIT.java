@@ -48,7 +48,7 @@ class AmbientImagePersistenceIT extends AbstractIntegrationTest {
 
   @AfterEach
   void removeMovie() {
-    movieService.deleteMovieById(entityId);
+    movieService.tryDeleteMovieById(entityId);
   }
 
   @Test

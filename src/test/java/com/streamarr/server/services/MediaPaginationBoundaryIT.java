@@ -102,7 +102,7 @@ class MediaPaginationBoundaryIT extends AbstractIntegrationTest {
 
   private void remove(MediaType type, UUID id) {
     if (type == MediaType.MOVIE) {
-      movieService.deleteMovieById(id);
+      movieService.tryDeleteMovieById(id);
       return;
     }
 

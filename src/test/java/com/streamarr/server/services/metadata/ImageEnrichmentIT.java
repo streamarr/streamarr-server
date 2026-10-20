@@ -125,7 +125,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
                 assertThat(image.getContentSha256()).isEqualTo(expectedContentSha256);
               });
     } finally {
-      movieService.deleteMovieById(entityId);
+      movieService.tryDeleteMovieById(entityId);
       imageService.deleteFiles(processed.writtenFiles());
     }
   }
@@ -189,7 +189,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
       assertThatThrownBy(() -> imageService.readImageFile(originalSmall))
           .isInstanceOf(IOException.class);
     } finally {
-      movieService.deleteMovieById(entityId);
+      movieService.tryDeleteMovieById(entityId);
       imageService.deleteFiles(original.writtenFiles());
       imageService.deleteFiles(replacement.writtenFiles());
     }
@@ -230,7 +230,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
           .allSatisfy(image -> assertThat(imageService.readImageFile(image)).isNotEmpty());
       assertThat(replacement.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
     } finally {
-      movieService.deleteMovieById(entityId);
+      movieService.tryDeleteMovieById(entityId);
       imageService.deleteFiles(original.writtenFiles());
       imageService.deleteFiles(replacement.writtenFiles());
     }
@@ -356,7 +356,7 @@ class ImageEnrichmentIT extends AbstractWireMockIntegrationTest {
           .allSatisfy(path -> assertThat(path).doesNotExist());
       assertThat(original.writtenFiles()).allSatisfy(path -> assertThat(path).doesNotExist());
     } finally {
-      movieService.deleteMovieById(entityId);
+      movieService.tryDeleteMovieById(entityId);
       imageService.deleteFiles(original.writtenFiles());
       imageService.deleteFiles(cyanReplacement.writtenFiles());
       imageService.deleteFiles(magentaReplacement.writtenFiles());

@@ -11,6 +11,7 @@ import com.streamarr.server.domain.media.MediaType;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
 import org.springframework.stereotype.Repository;
@@ -20,7 +21,7 @@ import org.springframework.stereotype.Repository;
 public class LibraryItemScopeRepository {
   private final DSLContext context;
 
-  public record Item(UUID id, UUID libraryId, MediaType kind) {}
+  public record Item(@NonNull UUID id, @NonNull UUID libraryId, @NonNull MediaType kind) {}
 
   public List<Item> findItems(Collection<UUID> collectableIds) {
     if (collectableIds.isEmpty()) {
