@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.exceptions.InvalidPaginationCursorException;
 import com.streamarr.server.fakes.FakePagedList;
+import com.streamarr.server.fakes.InMemoryPagedList;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
@@ -181,6 +182,35 @@ class PagerTest {
 
     assertThatThrownBy(() -> Pager.page(list, SCOPE, request))
         .isInstanceOf(InvalidPaginationCursorException.class);
+  }
+
+  @Test
+  @DisplayName("Should continue after an absent value when the list places absent values last")
+  void shouldContinueAfterAnAbsentValueWhenTheListPlacesAbsentValuesLast() {
+    var order =
+        ListOrder.builder()
+            .valueKind(SortValueKind.NUMBER)
+            .direction(SortDirection.ASC)
+            .absentValues(AbsentValuePlacement.LAST)
+            .build();
+    var firstAbsent = new Row<>("first-absent", new Position(new SortValue.Absent(), id(3)));
+    var lastAbsent = new Row<>("last-absent", new Position(new SortValue.Absent(), id(4)));
+    var nullable =
+        new InMemoryPagedList<String, String>(
+            order,
+            List.of(
+                new Row<>("ten", new Position(new SortValue.OfNumber(10), id(1))),
+                new Row<>("twenty", new Position(new SortValue.OfNumber(20), id(2))),
+                firstAbsent,
+                lastAbsent));
+
+    var page = Pager.page(nullable, SCOPE, forward(Optional.of(firstAbsent.position()), 2));
+
+    assertPage(page, true, false, "last-absent");
+  }
+
+  private static UUID id(int ordinal) {
+    return UUID.fromString("00000000-0000-4000-8000-%012d".formatted(ordinal));
   }
 
   static Stream<SortValue> valuesOutsideTheListOrder() {

@@ -11,6 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
@@ -41,5 +42,21 @@ class ListOrderTest {
 
     assertThat(order.admits(value)).isEqualTo(admitted);
     assertThat(order.admits(new SortValue.Absent())).isFalse();
+  }
+
+  @ParameterizedTest(name = "{0}: {1}")
+  @CsvSource({"NOT_ALLOWED, false", "LAST, true", "AS_LARGEST, true"})
+  @DisplayName("Should admit an absent value only when the list places absent values")
+  void shouldAdmitAnAbsentValueOnlyWhenTheListPlacesAbsentValues(
+      AbsentValuePlacement placement, boolean admitted) {
+    var order =
+        ListOrder.builder()
+            .valueKind(SortValueKind.DATE)
+            .direction(SortDirection.ASC)
+            .absentValues(placement)
+            .build();
+
+    assertThat(order.admits(new SortValue.Absent())).isEqualTo(admitted);
+    assertThat(order.admits(new SortValue.OfDate(LocalDate.EPOCH))).isTrue();
   }
 }
