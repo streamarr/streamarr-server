@@ -2,10 +2,14 @@ package com.streamarr.server.graphql.cursor;
 
 import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.graphql.dto.OrderedEdge;
+import com.streamarr.server.services.pagination.ListIdentity;
+import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.MediaOrder;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PageItem;
+import com.streamarr.server.services.pagination.Position;
+import com.streamarr.server.services.pagination.Row;
 import graphql.relay.Connection;
 import graphql.relay.ConnectionCursor;
 import graphql.relay.DefaultConnection;
@@ -23,6 +27,20 @@ import org.springframework.stereotype.Component;
 public class RelayConnectionAdapter {
 
   private final CursorUtil cursorUtil;
+  private final PositionCursorCodec positionCursors;
+
+  /** Builds ordered edges whose cursors continue {@code list} from each row's position. */
+  public <T> Connection<T> toConnection(
+      ListPage<T> page, ListIdentity list, Function<Position, MediaOrder> orderOf) {
+    return toConnection(
+        page.rows(), page.hasPreviousPage(), page.hasNextPage(), row -> toEdge(row, list, orderOf));
+  }
+
+  public <T> OrderedEdge<T> toEdge(
+      Row<T> row, ListIdentity list, Function<Position, MediaOrder> orderOf) {
+    return new OrderedEdge<>(
+        row.item(), positionCursors.encode(list, row.position()), orderOf.apply(row.position()));
+  }
 
   public <T extends BaseAuditableEntity<?>> Connection<T> toConnection(
       MediaPage<T> page, MediaPaginationOptions options) {
@@ -57,19 +75,25 @@ public class RelayConnectionAdapter {
 
   private <S, T> Connection<T> toConnection(
       MediaPage<S> page, Function<PageItem<S>, Edge<T>> edgeOf) {
-    if (page.items().isEmpty()) {
+    return toConnection(page.items(), page.hasPreviousPage(), page.hasNextPage(), edgeOf);
+  }
+
+  private <S, T> Connection<T> toConnection(
+      List<S> items,
+      boolean hasPreviousPage,
+      boolean hasNextPage,
+      Function<S, ? extends Edge<T>> edgeOf) {
+    if (items.isEmpty()) {
       return new DefaultConnection<>(
-          Collections.emptyList(),
-          new DefaultPageInfo(null, null, page.hasPreviousPage(), page.hasNextPage()));
+          Collections.emptyList(), new DefaultPageInfo(null, null, hasPreviousPage, hasNextPage));
     }
 
-    List<Edge<T>> edges = page.items().stream().map(edgeOf).toList();
+    List<Edge<T>> edges = items.stream().<Edge<T>>map(edgeOf).toList();
 
     var first = edges.getFirst();
     var last = edges.getLast();
     var pageInfo =
-        new DefaultPageInfo(
-            first.getCursor(), last.getCursor(), page.hasPreviousPage(), page.hasNextPage());
+        new DefaultPageInfo(first.getCursor(), last.getCursor(), hasPreviousPage, hasNextPage);
 
     return new DefaultConnection<>(edges, pageInfo);
   }

@@ -1,5 +1,6 @@
 package com.streamarr.server.services.watchprogress;
 
+import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
 import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -16,9 +17,8 @@ import com.streamarr.server.repositories.streaming.ContinueWatchingRepository;
 import com.streamarr.server.repositories.streaming.ContinueWatchingRepositoryImpl;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.services.audit.SystemWork;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
-import com.streamarr.server.services.pagination.PageItem;
-import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
 import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
@@ -82,18 +82,12 @@ class ContinueWatchingPageConsistencyIT extends AbstractIntegrationTest {
     repository.commitAfterOrderedRead(
         () ->
             movies.deleteAllById(List.of(newestFirst.get(1).getId(), newestFirst.get(2).getId())));
-    var page = continueWatchingService.getPage(profileId, firstPage(profileId));
+    var page = continueWatchingService.getPage(profileId, firstRows(1));
 
-    assertThat(page.items())
-        .extracting(item -> item.item().getId())
+    assertThat(page.rows())
+        .extracting(row -> row.item().getId())
         .containsExactly(newestFirst.get(0).getId());
     assertThat(page.hasNextPage()).isTrue();
-  }
-
-  private static MediaPaginationOptions firstPage(UUID profileId) {
-    return ContinueWatchingService.listOptions(profileId).toBuilder()
-        .paginationOptions(new PaginationService().getPaginationOptions(1, null, 0, null))
-        .build();
   }
 
   private static Movie movieWithFile(Library library, String title) {
@@ -145,8 +139,8 @@ class ContinueWatchingPageConsistencyIT extends AbstractIntegrationTest {
     }
 
     @Override
-    public List<PageItem<UUID>> findItems(UUID profileId, MediaPaginationOptions options) {
-      var items = delegate.findItems(profileId, options);
+    public List<Row<UUID>> rowsBeyond(UUID profileId, Seek seek) {
+      var items = delegate.rowsBeyond(profileId, seek);
       var pending = change.getAndSet(null);
       if (pending == null) {
         return items;

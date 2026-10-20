@@ -1,6 +1,8 @@
 package com.streamarr.server.graphql.cursor;
 
 import com.streamarr.server.services.pagination.ListIdentity;
+import com.streamarr.server.services.pagination.PageRequest;
+import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.Position;
 import com.streamarr.server.services.pagination.SortValue;
 import graphql.relay.ConnectionCursor;
@@ -60,6 +62,19 @@ public class PositionCursorCodec {
     } catch (RuntimeException _) {
       throw new InvalidCursorException("Cursor position cannot be read.");
     }
+  }
+
+  /**
+   * The page a client asked for, continuing from the position its cursor names.
+   *
+   * @throws InvalidCursorException when the cursor cannot continue this list
+   */
+  public PageRequest pageRequest(ListIdentity list, PaginationOptions options) {
+    return PageRequest.builder()
+        .position(options.getCursor().map(cursor -> decode(list, cursor)))
+        .direction(options.getPaginationDirection())
+        .limit(options.getLimit())
+        .build();
   }
 
   private JsonNode readPayload(String cursor) {

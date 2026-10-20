@@ -23,7 +23,8 @@ import tools.jackson.databind.ObjectMapper;
 class RelayConnectionAdapterTest {
 
   private final CursorUtil cursorUtil = new CursorUtil(new ObjectMapper());
-  private final RelayConnectionAdapter adapter = new RelayConnectionAdapter(cursorUtil);
+  private final RelayConnectionAdapter adapter =
+      new RelayConnectionAdapter(cursorUtil, new PositionCursorCodec(new ObjectMapper()));
 
   @Nested
   @DisplayName("Non-Empty Pages")

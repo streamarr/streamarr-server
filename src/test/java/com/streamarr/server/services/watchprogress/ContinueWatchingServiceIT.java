@@ -1,6 +1,6 @@
 package com.streamarr.server.services.watchprogress;
 
-import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
+import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
 import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -23,9 +23,9 @@ import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
-import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.MediaPage;
-import com.streamarr.server.services.pagination.PageItem;
+import com.streamarr.server.services.pagination.ListPage;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.SortValue;
 import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
@@ -195,13 +195,12 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
     return episode;
   }
 
-  private MediaPage<BaseCollectable<?>> page(UUID owner, int limit) {
-    return continueWatchingService.getPage(
-        owner, buildForwardOptions(limit, MediaFilter.builder().build()));
+  private ListPage<BaseCollectable<?>> page(UUID owner, int limit) {
+    return continueWatchingService.getPage(owner, firstRows(limit));
   }
 
   private List<BaseCollectable<?>> items(UUID owner, int limit) {
-    return page(owner, limit).items().stream().map(PageItem::item).toList();
+    return page(owner, limit).rows().stream().map(Row::item).toList();
   }
 
   @Nested
@@ -226,9 +225,11 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
       assertThat(items).containsOnlyKeys(inProgressMovie.getId(), inProgressEpisode.getId());
       assertThat(items.get(inProgressMovie.getId()).item().getId())
           .isEqualTo(inProgressMovie.getId());
-      assertThat(items.get(inProgressMovie.getId()).sortValue()).isEqualTo(MOVIE_ACTIVITY_AT);
-      assertThat(items.get(inProgressEpisode.getId()).sortValue()).isEqualTo(EPISODE_ACTIVITY_AT);
-      assertThat(page.items()).containsExactly(items.get(inProgressEpisode.getId()));
+      assertThat(items.get(inProgressMovie.getId()).position().value())
+          .isEqualTo(new SortValue.OfInstant(MOVIE_ACTIVITY_AT));
+      assertThat(items.get(inProgressEpisode.getId()).position().value())
+          .isEqualTo(new SortValue.OfInstant(EPISODE_ACTIVITY_AT));
+      assertThat(page.rows()).containsExactly(items.get(inProgressEpisode.getId()));
       assertThat(page.hasNextPage()).isTrue();
       assertThat(continueWatchingService.findMatchingItems(profileId, Set.of())).isEmpty();
     }
@@ -272,7 +273,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
       assertThat(items(owner, 12)).extracting(BaseCollectable::getId).containsExactly(itemId);
       var matching = continueWatchingService.findMatchingItems(owner, Set.of(itemId));
       assertThat(matching).containsOnlyKeys(itemId);
-      assertThat(matching.get(itemId).sortValue()).isInstanceOf(Instant.class);
+      assertThat(matching.get(itemId).position().value()).isInstanceOf(SortValue.OfInstant.class);
     }
 
     private void assertNotPlaced(UUID owner, UUID itemId) {
@@ -412,7 +413,10 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
             continueWatchingService.findMatchingItems(tiedProfileId, Set.copyOf(movieIds));
         assertThat(positions).containsOnlyKeys(movieIds);
         assertThat(positions.values())
-            .allSatisfy(item -> assertThat(item.sortValue()).isEqualTo(MOVIE_ACTIVITY_AT));
+            .allSatisfy(
+                item ->
+                    assertThat(item.position().value())
+                        .isEqualTo(new SortValue.OfInstant(MOVIE_ACTIVITY_AT)));
       } finally {
         authTestSupport.deleteIdentity(tiedIdentity);
       }

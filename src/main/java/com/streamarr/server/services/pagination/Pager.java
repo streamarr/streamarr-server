@@ -2,6 +2,7 @@ package com.streamarr.server.services.pagination;
 
 import com.streamarr.server.exceptions.InvalidPaginationCursorException;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Reads one page of any {@link PagedList}. A page reads one row past its limit to learn whether
@@ -26,13 +27,18 @@ public final class Pager {
         list.rowsBeyond(
             scope,
             Seek.builder()
+                .order(order)
                 .position(request.position())
                 .direction(request.direction())
-                .limit(request.limit() + 1)
+                .limit(request.limit() + 2)
+                .includingPosition(true)
                 .build());
-    var hasMoreAhead = read.size() > request.limit();
-    var nearest = read.subList(0, Math.min(read.size(), request.limit()));
-    var hasRowsBehind = hasRowsBehind(list, scope, request);
+    var positionRowRead =
+        !read.isEmpty() && request.position().equals(Optional.of(read.getFirst().position()));
+    var beyond = positionRowRead ? read.subList(1, read.size()) : read;
+    var hasMoreAhead = beyond.size() > request.limit();
+    var nearest = beyond.subList(0, Math.min(beyond.size(), request.limit()));
+    var hasRowsBehind = positionRowRead || hasRowsBehind(list, scope, order, request);
     if (request.direction() == PaginationDirection.FORWARD) {
       return new ListPage<>(nearest, hasMoreAhead, hasRowsBehind);
     }
@@ -40,17 +46,18 @@ public final class Pager {
     return new ListPage<>(List.copyOf(nearest.reversed()), hasRowsBehind, hasMoreAhead);
   }
 
-  private static <T, S> boolean hasRowsBehind(PagedList<T, S> list, S scope, PageRequest request) {
+  private static <T, S> boolean hasRowsBehind(
+      PagedList<T, S> list, S scope, ListOrder order, PageRequest request) {
     if (request.position().isEmpty()) {
       return false;
     }
 
     var behind =
         Seek.builder()
+            .order(order)
             .position(request.position())
             .direction(opposite(request.direction()))
             .limit(1)
-            .includingPosition(true)
             .build();
     return !list.rowsBeyond(scope, behind).isEmpty();
   }
