@@ -5,7 +5,7 @@ import graphql.relay.ConnectionCursor;
 import graphql.relay.Edge;
 import lombok.NonNull;
 
-public record MediaEdge<T>(
+public record OrderedEdge<T>(
     @NonNull T node, @NonNull ConnectionCursor cursor, @NonNull MediaOrder order)
     implements Edge<T> {
   @Override

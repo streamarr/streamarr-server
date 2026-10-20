@@ -1,7 +1,7 @@
 package com.streamarr.server.graphql.cursor;
 
 import com.streamarr.server.domain.BaseAuditableEntity;
-import com.streamarr.server.graphql.dto.MediaEdge;
+import com.streamarr.server.graphql.dto.OrderedEdge;
 import com.streamarr.server.services.pagination.MediaOrder;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
@@ -34,14 +34,14 @@ public class RelayConnectionAdapter {
     return toConnection(page, pageItem -> toEdge(pageItem, options, nodeOf));
   }
 
-  public <T extends BaseAuditableEntity<?>> MediaEdge<T> toEdge(
+  public <T extends BaseAuditableEntity<?>> OrderedEdge<T> toEdge(
       PageItem<T> item, MediaPaginationOptions options) {
     return toEdge(item, options, Function.identity());
   }
 
-  private <S extends BaseAuditableEntity<?>, T> MediaEdge<T> toEdge(
+  private <S extends BaseAuditableEntity<?>, T> OrderedEdge<T> toEdge(
       PageItem<S> item, MediaPaginationOptions options, Function<S, T> nodeOf) {
-    return new MediaEdge<>(
+    return new OrderedEdge<>(
         nodeOf.apply(item.item()),
         cursorUtil.encodeMediaCursor(options, item.item().getId(), item.sortValue()),
         MediaOrder.from(options.getMediaFilter(), item.item().getId(), item.sortValue()));
