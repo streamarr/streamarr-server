@@ -2,16 +2,17 @@ package com.streamarr.server.graphql.cursor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.MediaPage;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
-import com.streamarr.server.services.pagination.PageItem;
-import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.PaginationOptions;
-import graphql.relay.DefaultConnectionCursor;
+import com.streamarr.server.graphql.dto.OrderedEdge;
+import com.streamarr.server.services.pagination.ListIdentity;
+import com.streamarr.server.services.pagination.ListPage;
+import com.streamarr.server.services.pagination.MediaOrder;
+import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.pagination.Position;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.SortDirection;
+import com.streamarr.server.services.pagination.SortValue;
 import java.util.List;
-import java.util.Optional;
+import java.util.Locale;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -23,120 +24,101 @@ import tools.jackson.databind.ObjectMapper;
 @DisplayName("Relay Connection Adapter Tests")
 class RelayConnectionAdapterTest {
 
-  private final CursorUtil cursorUtil = new CursorUtil(new ObjectMapper());
-  private final RelayConnectionAdapter adapter =
-      new RelayConnectionAdapter(cursorUtil, new PositionCursorCodec(new ObjectMapper()));
+  private static final ListIdentity LIST = new ListIdentity("named-items", "scope");
+
+  private final PositionCursorCodec positionCursors = new PositionCursorCodec(new ObjectMapper());
+  private final RelayConnectionAdapter adapter = new RelayConnectionAdapter(positionCursors);
+
+  private record SourceItem(UUID id, String name) {}
 
   @Nested
   @DisplayName("Non-Empty Pages")
   class NonEmptyPages {
 
     @Test
-    @DisplayName("Should adapt protocol-neutral page items into GraphQL nodes and cursors")
-    void shouldAdaptProtocolNeutralPageItemsIntoGraphqlNodesAndCursors() {
-      var id = UUID.randomUUID();
-      var page =
-          new MediaPage<>(
-              List.of(new PageItem<>(new SourceItem(id, "Andrew"), "Andrew")), false, false);
+    @DisplayName("Should adapt each row into a node whose cursor continues from its position")
+    void shouldAdaptEachRowIntoANodeWhoseCursorContinuesFromItsPosition() {
+      var row = row("Andrew");
 
       var connection =
-          adapter.toConnection(
-              page,
-              item -> new GraphqlNode(item.item().name()),
-              item -> new DefaultConnectionCursor(item.item().id().toString()));
+          adapter.toConnection(new ListPage<>(List.of(row), false, false), LIST, SourceItem::name);
 
       assertThat(connection.getEdges())
-          .extracting(edge -> edge.getNode().name())
+          .extracting(edge -> edge.getNode())
           .containsExactly("Andrew");
-      assertThat(connection.getEdges().getFirst().getCursor())
-          .isEqualTo(new DefaultConnectionCursor(id.toString()));
+      var cursor = connection.getEdges().getFirst().getCursor().getValue();
+      assertThat(positionCursors.decode(LIST, cursor)).isEqualTo(row.position());
     }
 
     @Test
-    @DisplayName(
-        "Should produce Connection with correct edges and PageInfo when given non-empty page")
-    void shouldProduceConnectionWithCorrectEdgesAndPageInfoWhenGivenNonEmptyPage() {
-      var id1 = UUID.randomUUID();
-      var id2 = UUID.randomUUID();
+    @DisplayName("Should name the first and last edges' cursors when the page has several rows")
+    void shouldNameTheFirstAndLastEdgesCursorsWhenThePageHasSeveralRows() {
+      var rows = List.of(row("Alpha"), row("Bravo"), row("Charlie"));
 
-      var page =
-          new MediaPage<>(
-              List.of(
-                  new PageItem<>(Movie.builder().id(id1).title("Alpha").build(), "Alpha"),
-                  new PageItem<>(Movie.builder().id(id2).title("Beta").build(), "Beta")),
-              true,
-              false);
+      var connection =
+          adapter.toConnection(new ListPage<>(rows, true, false), LIST, SourceItem::name);
 
-      var options = buildOptions();
-
-      var connection = adapter.toConnection(page, options);
-
-      assertThat(connection.getEdges()).hasSize(2);
-      assertThat(connection.getEdges().get(0).getNode().getTitle()).isEqualTo("Alpha");
-      assertThat(connection.getEdges().get(1).getNode().getTitle()).isEqualTo("Beta");
-      assertThat(connection.getEdges().get(0).getCursor()).isNotNull();
-      assertThat(connection.getEdges().get(1).getCursor()).isNotNull();
-      assertThat(connection.getPageInfo().isHasNextPage()).isTrue();
-      assertThat(connection.getPageInfo().isHasPreviousPage()).isFalse();
-      assertThat(connection.getPageInfo().getStartCursor())
-          .isEqualTo(connection.getEdges().getFirst().getCursor());
-      assertThat(connection.getPageInfo().getEndCursor())
-          .isEqualTo(connection.getEdges().getLast().getCursor());
+      assertThat(connection.getEdges())
+          .extracting(edge -> edge.getNode())
+          .containsExactly("Alpha", "Bravo", "Charlie");
+      var pageInfo = connection.getPageInfo();
+      assertThat(pageInfo.getStartCursor()).isEqualTo(connection.getEdges().getFirst().getCursor());
+      assertThat(pageInfo.getEndCursor()).isEqualTo(connection.getEdges().getLast().getCursor());
+      assertThat(pageInfo.isHasPreviousPage()).isFalse();
+      assertThat(pageInfo.isHasNextPage()).isTrue();
     }
 
     @Test
     @DisplayName("Should set startCursor equal to endCursor when page has single item")
     void shouldSetStartCursorEqualToEndCursorWhenPageHasSingleItem() {
-      var page =
-          new MediaPage<>(
-              List.of(
-                  new PageItem<>(
-                      Movie.builder().id(UUID.randomUUID()).title("Only").build(), "Only")),
-              false,
-              false);
+      var connection =
+          adapter.toConnection(
+              new ListPage<>(List.of(row("Alpha")), false, false), LIST, SourceItem::name);
 
-      var connection = adapter.toConnection(page, buildOptions());
-
-      assertThat(connection.getEdges()).hasSize(1);
       assertThat(connection.getPageInfo().getStartCursor())
           .isEqualTo(connection.getPageInfo().getEndCursor());
-      assertThat(connection.getPageInfo().getStartCursor())
-          .isEqualTo(connection.getEdges().getFirst().getCursor());
     }
 
     @Test
     @DisplayName("Should set both hasNext and hasPrevious when page is middle page")
     void shouldSetBothHasNextAndHasPreviousWhenPageIsMiddlePage() {
-      var page =
-          new MediaPage<>(
-              List.of(
-                  new PageItem<>(
-                      Movie.builder().id(UUID.randomUUID()).title("Mid").build(), "Mid")),
-              true,
-              true);
+      var connection =
+          adapter.toConnection(
+              new ListPage<>(List.of(row("Alpha")), true, true), LIST, SourceItem::name);
 
-      var connection = adapter.toConnection(page, buildOptions());
-
-      assertThat(connection.getPageInfo().isHasNextPage()).isTrue();
       assertThat(connection.getPageInfo().isHasPreviousPage()).isTrue();
+      assertThat(connection.getPageInfo().isHasNextPage()).isTrue();
     }
 
     @Test
     @DisplayName("Should produce distinct cursors for each edge")
     void shouldProduceDistinctCursorsForEachEdge() {
-      var page =
-          new MediaPage<>(
-              List.of(
-                  new PageItem<>(Movie.builder().id(UUID.randomUUID()).title("A").build(), "A"),
-                  new PageItem<>(Movie.builder().id(UUID.randomUUID()).title("B").build(), "B"),
-                  new PageItem<>(Movie.builder().id(UUID.randomUUID()).title("C").build(), "C")),
-              false,
-              false);
+      var connection =
+          adapter.toConnection(
+              new ListPage<>(List.of(row("Alpha"), row("Bravo")), false, false),
+              LIST,
+              SourceItem::name);
 
-      var connection = adapter.toConnection(page, buildOptions());
+      assertThat(connection.getEdges())
+          .extracting(edge -> edge.getCursor().getValue())
+          .doesNotHaveDuplicates();
+    }
 
-      var cursors = connection.getEdges().stream().map(e -> e.getCursor().getValue()).toList();
-      assertThat(cursors).doesNotHaveDuplicates();
+    @Test
+    @DisplayName("Should give each ordered edge the order of its row's position")
+    void shouldGiveEachOrderedEdgeTheOrderOfItsRowsPosition() {
+      var row = row("Alpha");
+      var expected = MediaOrder.at(OrderMediaBy.TITLE, SortDirection.ASC, row.position());
+
+      var connection =
+          adapter.toOrderedConnection(
+              new ListPage<>(List.of(row), false, false),
+              LIST,
+              position -> MediaOrder.at(OrderMediaBy.TITLE, SortDirection.ASC, position));
+
+      assertThat(connection.getEdges().getFirst())
+          .isInstanceOfSatisfying(
+              OrderedEdge.class, edge -> assertThat(edge.order()).isEqualTo(expected));
     }
   }
 
@@ -145,97 +127,32 @@ class RelayConnectionAdapterTest {
   class EmptyPages {
 
     @Test
-    @DisplayName("Should produce empty Connection when given empty page")
-    void shouldProduceEmptyConnectionWhenGivenEmptyPage() {
-      var page = new MediaPage<Movie>(List.of(), false, false);
-      var options = buildOptions();
-
-      var connection = adapter.toConnection(page, options);
+    @DisplayName("Should produce an empty connection without cursors when given an empty page")
+    void shouldProduceAnEmptyConnectionWithoutCursorsWhenGivenAnEmptyPage() {
+      var connection = adapter.toConnection(ListPage.<SourceItem>empty(), LIST, SourceItem::name);
 
       assertThat(connection.getEdges()).isEmpty();
+      assertThat(connection.getPageInfo().getStartCursor()).isNull();
+      assertThat(connection.getPageInfo().getEndCursor()).isNull();
+      assertThat(connection.getPageInfo().isHasPreviousPage()).isFalse();
       assertThat(connection.getPageInfo().isHasNextPage()).isFalse();
-      assertThat(connection.getPageInfo().isHasPreviousPage()).isFalse();
-      assertThat(connection.getPageInfo().getStartCursor()).isNull();
-      assertThat(connection.getPageInfo().getEndCursor()).isNull();
     }
 
     @Test
-    @DisplayName("Should preserve page flags when items list is empty with hasNext only")
-    void shouldPreservePageFlagsWhenItemsListIsEmptyWithHasNextOnly() {
-      var page = new MediaPage<Movie>(List.of(), true, false);
+    @DisplayName("Should preserve page flags when an empty page lies between other pages")
+    void shouldPreservePageFlagsWhenAnEmptyPageLiesBetweenOtherPages() {
+      var connection =
+          adapter.toConnection(
+              new ListPage<SourceItem>(List.of(), true, true), LIST, SourceItem::name);
 
-      var connection = adapter.toConnection(page, buildOptions());
-
-      assertThat(connection.getEdges()).isEmpty();
-      assertThat(connection.getPageInfo().isHasNextPage()).isTrue();
-      assertThat(connection.getPageInfo().isHasPreviousPage()).isFalse();
-      assertThat(connection.getPageInfo().getStartCursor()).isNull();
-      assertThat(connection.getPageInfo().getEndCursor()).isNull();
-    }
-
-    @Test
-    @DisplayName("Should preserve page flags when items list is empty")
-    void shouldPreservePageFlagsWhenItemsListIsEmpty() {
-      var page = new MediaPage<Movie>(List.of(), false, true);
-
-      var connection = adapter.toConnection(page, buildOptions());
-
-      assertThat(connection.getEdges()).isEmpty();
       assertThat(connection.getPageInfo().isHasPreviousPage()).isTrue();
-      assertThat(connection.getPageInfo().isHasNextPage()).isFalse();
-      assertThat(connection.getPageInfo().getStartCursor()).isNull();
-      assertThat(connection.getPageInfo().getEndCursor()).isNull();
+      assertThat(connection.getPageInfo().isHasNextPage()).isTrue();
     }
   }
 
-  @Nested
-  @DisplayName("Cursor Encoding")
-  class CursorEncoding {
-
-    @Test
-    @DisplayName("Should encode cursors that round-trip through CursorUtil")
-    void shouldEncodeCursorsThatRoundTripThroughCursorUtil() {
-      var id = UUID.randomUUID();
-
-      var page =
-          new MediaPage<>(
-              List.of(new PageItem<>(Movie.builder().id(id).title("Test").build(), "Test")),
-              false,
-              false);
-
-      var options = buildOptions();
-
-      var connection = adapter.toConnection(page, options);
-      var cursorValue = connection.getEdges().getFirst().getCursor().getValue();
-
-      var decoded =
-          cursorUtil.decodeMediaCursor(
-              PaginationOptions.builder()
-                  .cursor(Optional.of(cursorValue))
-                  .paginationDirection(PaginationDirection.FORWARD)
-                  .limit(10)
-                  .build());
-
-      assertThat(decoded.getCursorId()).contains(id);
-      assertThat(decoded.getMediaFilter().getPreviousSortFieldValue()).isEqualTo("Test");
-      assertThat(decoded.getMediaFilter().getSortBy())
-          .isEqualTo(options.getMediaFilter().getSortBy());
-    }
+  private static Row<SourceItem> row(String name) {
+    var id = UUID.randomUUID();
+    var value = new SortValue.OfText(name.toLowerCase(Locale.ROOT));
+    return new Row<>(new SourceItem(id, name), new Position(value, id));
   }
-
-  private MediaPaginationOptions buildOptions() {
-    return MediaPaginationOptions.builder()
-        .paginationOptions(
-            PaginationOptions.builder()
-                .cursor(Optional.empty())
-                .paginationDirection(PaginationDirection.FORWARD)
-                .limit(10)
-                .build())
-        .mediaFilter(MediaFilter.builder().build())
-        .build();
-  }
-
-  private record SourceItem(UUID id, String name) {}
-
-  private record GraphqlNode(String name) {}
 }

@@ -1,7 +1,7 @@
 package com.streamarr.server.services;
 
-import static com.streamarr.server.fixtures.PaginationFixture.buildCursorOptions;
-import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
+import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
+import static com.streamarr.server.fixtures.PaginationFixture.rowsFrom;
 import static com.streamarr.server.services.pagination.PaginationDirection.FORWARD;
 import static com.streamarr.server.services.pagination.PaginationDirection.REVERSE;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -16,9 +16,9 @@ import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.MediaPage;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import java.util.List;
 import java.util.UUID;
@@ -47,13 +47,13 @@ class MediaPaginationBoundaryIT extends AbstractIntegrationTest {
       MediaType type, BoundaryCase scenario) {
     var library = createLibrary(type);
     var filter = MediaFilter.builder().libraryId(library.getId()).build();
-    var initial = page(type, buildForwardOptions(3, filter));
-    var anchor = initial.items().get(scenario.anchorIndex());
+    var initial = page(type, filter, firstRows(3));
+    var anchor = initial.rows().get(scenario.anchorIndex());
     remove(type, anchor.item().getId());
 
-    var result = page(type, buildCursorOptions(3, scenario.direction(), anchor, filter));
+    var result = page(type, filter, rowsFrom(3, scenario.direction(), anchor));
 
-    assertThat(result.items())
+    assertThat(result.rows())
         .extracting(item -> item.item().getTitle())
         .containsExactlyElementsOf(scenario.expected().titles());
     assertThat(result.hasNextPage()).isEqualTo(scenario.expected().hasNext());
@@ -91,13 +91,13 @@ class MediaPaginationBoundaryIT extends AbstractIntegrationTest {
     return library;
   }
 
-  private MediaPage<? extends BaseCollectable<?>> page(
-      MediaType type, MediaPaginationOptions options) {
+  private ListPage<? extends BaseCollectable<?>> page(
+      MediaType type, MediaFilter filter, PageRequest request) {
     if (type == MediaType.MOVIE) {
-      return movieService.getMoviesWithFilter(options);
+      return movieService.getMoviesWithFilter(filter, request);
     }
 
-    return seriesService.getSeriesWithFilter(options);
+    return seriesService.getSeriesWithFilter(filter, request);
   }
 
   private void remove(MediaType type, UUID id) {

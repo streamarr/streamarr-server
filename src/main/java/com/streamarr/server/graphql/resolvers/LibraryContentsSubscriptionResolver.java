@@ -7,6 +7,7 @@ import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.exceptions.InvalidIdException;
+import com.streamarr.server.graphql.cursor.LibraryItemCursors;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.OrderedEdge;
 import com.streamarr.server.graphql.inputs.MediaFilterInput;
@@ -21,7 +22,6 @@ import com.streamarr.server.services.events.library.LibraryItemChangedEvent;
 import com.streamarr.server.services.events.library.LibraryItemRemovedEvent;
 import com.streamarr.server.services.events.library.LibraryItemUpdatedEvent;
 import com.streamarr.server.services.library.LibraryContentsService;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import graphql.schema.DataFetchingEnvironment;
 import java.util.Optional;
 import java.util.UUID;
@@ -64,10 +64,14 @@ public class LibraryContentsSubscriptionResolver {
                 .sort(sort)
                 .filter(filter)
                 .build());
-    var options = MediaPaginationOptions.builder().mediaFilter(effectiveFilter).build();
     return contents
-        .findMatchingItem(change, effectiveFilter)
-        .map(item -> connections.toEdge(item, options));
+        .findMatchingRow(change, effectiveFilter)
+        .map(
+            row ->
+                connections.toEdge(
+                    row,
+                    LibraryItemCursors.listOf(effectiveFilter),
+                    LibraryItemCursors.orderOf(effectiveFilter)));
   }
 
   @DgsSubscription

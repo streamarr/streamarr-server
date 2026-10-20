@@ -9,7 +9,6 @@ import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.domain.metadata.Rating;
 import com.streamarr.server.domain.metadata.Review;
-import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.repositories.CompanyRepository;
 import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.PersonRepository;
@@ -17,24 +16,18 @@ import com.streamarr.server.repositories.RatingRepository;
 import com.streamarr.server.repositories.ReviewRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
-import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.services.events.library.LibraryItemAddedEvent;
 import com.streamarr.server.services.events.library.LibraryItemRemovedEvent;
 import com.streamarr.server.services.events.library.LibraryItemUpdatedEvent;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
-import com.streamarr.server.services.pagination.LetterJumpResolver;
+import com.streamarr.server.services.pagination.LibraryItemPager;
+import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.MediaPage;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
-import com.streamarr.server.services.pagination.OrderMediaBy;
-import com.streamarr.server.services.pagination.PageItem;
-import com.streamarr.server.services.pagination.PaginationService;
-import java.time.Instant;
+import com.streamarr.server.services.pagination.PageRequest;
 import java.util.Collection;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -53,7 +46,7 @@ public class MovieService {
 
   private final MovieRepository movieRepository;
   private final CreditService creditService;
-  private final PaginationService paginationService;
+  private final LibraryMoviesList libraryMoviesList;
   private final ArtworkRequestService artworkRequestService;
   private final ImageService imageService;
   private final MediaFileRepository mediaFileRepository;
@@ -62,7 +55,6 @@ public class MovieService {
   private final CompanyRepository companyRepository;
   private final RatingRepository ratingRepository;
   private final ReviewRepository reviewRepository;
-  private final WatchHistoryRepository watchHistoryRepository;
   private final ApplicationEventPublisher events;
 
   /**
@@ -226,49 +218,8 @@ public class MovieService {
     return reviewRepository.findByMovie_Id(movieId);
   }
 
-  public MediaPage<Movie> getMoviesWithFilter(MediaPaginationOptions options) {
-    var resolvedOptions =
-        LetterJumpResolver.resolve(options, movieRepository::findLetterJumpPredecessor);
-
-    var movies =
-        resolvedOptions.getCursorId().isPresent()
-            ? movieRepository.seekWithFilter(resolvedOptions)
-            : movieRepository.findFirstWithFilter(resolvedOptions);
-
-    var lastWatchedByMovieId = lastWatchedFor(resolvedOptions.getMediaFilter(), movies);
-
-    var pageItems =
-        movies.stream()
-            .map(
-                movie ->
-                    new PageItem<>(
-                        movie,
-                        getOrderByValue(
-                            resolvedOptions.getMediaFilter(), movie, lastWatchedByMovieId)))
-            .toList();
-
-    return paginationService.buildMediaPage(
-        pageItems, resolvedOptions, movieRepository::seekWithFilter);
-  }
-
-  private Map<UUID, Instant> lastWatchedFor(MediaFilter filter, List<Movie> movies) {
-    if (filter.getSortBy() != OrderMediaBy.LAST_WATCHED || movies.isEmpty()) {
-      return Map.of();
-    }
-    return watchHistoryRepository.findLastWatchedByItemIds(
-        filter.getProfileId(),
-        CollectableScope.MOVIE_OR_EPISODE,
-        movies.stream().map(Movie::getId).toList());
-  }
-
-  private Object getOrderByValue(
-      MediaFilter filter, Movie movie, Map<UUID, Instant> lastWatchedByMovieId) {
-    return switch (filter.getSortBy()) {
-      case TITLE -> movie.getTitleSort();
-      case ADDED -> movie.getCreatedOn();
-      case RELEASE_DATE -> movie.getReleaseDate();
-      case RUNTIME -> movie.getRuntime();
-      case LAST_WATCHED -> lastWatchedByMovieId.get(movie.getId());
-    };
+  /** A page of a Library's movies, in the filter's sort order. */
+  public ListPage<Movie> getMoviesWithFilter(MediaFilter filter, PageRequest request) {
+    return LibraryItemPager.page(libraryMoviesList, filter, request);
   }
 }

@@ -52,7 +52,6 @@ class OrphanedMediaFileCleanupServiceTest {
           null,
           null,
           null,
-          null,
           _ -> {});
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
 

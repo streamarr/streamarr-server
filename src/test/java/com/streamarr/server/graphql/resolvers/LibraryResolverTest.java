@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.domain.AlphabetLetter;
+import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
@@ -24,8 +25,6 @@ import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.graphql.StreamarrDataFetcherExceptionHandler;
-import com.streamarr.server.graphql.cursor.CursorUtil;
-import com.streamarr.server.graphql.cursor.CursorValidator;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dataloaders.LibraryItemCountDataLoader;
@@ -48,18 +47,22 @@ import com.streamarr.server.services.library.LibraryOperationService;
 import com.streamarr.server.services.library.LibraryQueryService;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.pagination.MediaPage;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.ListPage;
+import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
-import com.streamarr.server.services.pagination.PageItem;
+import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.services.pagination.Position;
+import com.streamarr.server.services.pagination.Row;
 import com.streamarr.server.services.pagination.SortDirection;
+import com.streamarr.server.services.pagination.SortValue;
 import com.streamarr.server.support.security.WithAccountContext;
 import com.streamarr.server.support.security.WithProfileContext;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -92,8 +95,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       LibraryItemCountDataLoader.class,
       LibraryAdministrationService.class,
       PaginationService.class,
-      CursorUtil.class,
-      CursorValidator.class,
       RelayConnectionAdapter.class,
       PositionCursorCodec.class,
       JacksonAutoConfiguration.class,
@@ -712,10 +713,11 @@ class LibraryResolverTest {
       var movie = Movie.builder().title("Inception").titleSort("Inception").build();
       movie.setId(UUID.randomUUID());
 
-      var page = new MediaPage<>(List.of(new PageItem<>(movie, "Inception")), false, false);
+      var page = new ListPage<>(List.of(titleRow(movie)), false, false);
 
       when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
-      when(movieService.getMoviesWithFilter(any(MediaPaginationOptions.class))).thenReturn(page);
+      when(movieService.getMoviesWithFilter(any(MediaFilter.class), any(PageRequest.class)))
+          .thenReturn(page);
 
       String title =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -747,10 +749,11 @@ class LibraryResolverTest {
       var series = Series.builder().title("Breaking Bad").titleSort("Breaking Bad").build();
       series.setId(UUID.randomUUID());
 
-      var page = new MediaPage<>(List.of(new PageItem<>(series, "Breaking Bad")), false, false);
+      var page = new ListPage<>(List.of(titleRow(series)), false, false);
 
       when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
-      when(seriesService.getSeriesWithFilter(any(MediaPaginationOptions.class))).thenReturn(page);
+      when(seriesService.getSeriesWithFilter(any(MediaFilter.class), any(PageRequest.class)))
+          .thenReturn(page);
 
       String title =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -813,19 +816,27 @@ class LibraryResolverTest {
     }
 
     @Test
-    @DisplayName("Should return GraphQL error when start letter changes on non-TITLE cursor")
-    void shouldReturnGraphQLErrorWhenStartLetterChangesOnNonTitleCursor() {
+    @DisplayName("Should return invalid cursor when start letter changes on non-TITLE cursor")
+    void shouldReturnInvalidCursorWhenStartLetterChangesOnNonTitleCursor() {
       var libraryId = UUID.randomUUID();
       var library = buildMovieLibrary(libraryId);
 
       var movie = Movie.builder().title("Batman").titleSort("Batman").build();
       movie.setId(UUID.randomUUID());
       var page =
-          new MediaPage<>(
-              List.of(new PageItem<>(movie, Instant.parse("2026-08-04T12:00:00Z"))), false, true);
+          new ListPage<>(
+              List.of(
+                  new Row<>(
+                      movie,
+                      new Position(
+                          new SortValue.OfInstant(Instant.parse("2026-08-04T12:00:00Z")),
+                          movie.getId()))),
+              false,
+              true);
 
       when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
-      when(movieService.getMoviesWithFilter(any(MediaPaginationOptions.class))).thenReturn(page);
+      when(movieService.getMoviesWithFilter(any(MediaFilter.class), any(PageRequest.class)))
+          .thenReturn(page);
 
       String cursor =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -845,7 +856,8 @@ class LibraryResolverTest {
                   libraryId, cursor));
 
       assertThat(result.getErrors()).hasSize(1);
-      assertThat(result.getErrors().getFirst().getMessage()).contains("startLetter");
+      assertThat(result.getErrors().getFirst().getExtensions())
+          .containsEntry("code", "INVALID_CURSOR");
     }
 
     @Test
@@ -859,11 +871,11 @@ class LibraryResolverTest {
       var alpha = Movie.builder().title("Alpha").titleSort("Alpha").build();
       alpha.setId(UUID.randomUUID());
 
-      var landingPage = new MediaPage<>(List.of(new PageItem<>(batman, "Batman")), true, true);
-      var backwardPage = new MediaPage<>(List.of(new PageItem<>(alpha, "Alpha")), false, true);
+      var landingPage = new ListPage<>(List.of(titleRow(batman)), true, true);
+      var backwardPage = new ListPage<>(List.of(titleRow(alpha)), false, true);
 
       when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
-      when(movieService.getMoviesWithFilter(any(MediaPaginationOptions.class)))
+      when(movieService.getMoviesWithFilter(any(MediaFilter.class), any(PageRequest.class)))
           .thenReturn(landingPage, backwardPage);
 
       String cursor =
@@ -896,17 +908,16 @@ class LibraryResolverTest {
       var movie = Movie.builder().title("Inception").titleSort("Inception").build();
       movie.setId(UUID.randomUUID());
 
-      var page = new MediaPage<>(List.of(new PageItem<>(movie, "Inception")), false, false);
+      var page = new ListPage<>(List.of(titleRow(movie)), false, false);
 
       when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
 
       when(movieService.getMoviesWithFilter(
               argThat(
-                  (MediaPaginationOptions opts) -> {
-                    var f = opts.getMediaFilter();
-                    return f.getSortBy() == OrderMediaBy.ADDED
-                        && f.getSortDirection() == SortDirection.DESC;
-                  })))
+                  (MediaFilter f) ->
+                      f.getSortBy() == OrderMediaBy.ADDED
+                          && f.getSortDirection() == SortDirection.DESC),
+              any(PageRequest.class)))
           .thenReturn(page);
 
       String title =
@@ -930,21 +941,20 @@ class LibraryResolverTest {
       var movie = Movie.builder().title("Filtered Movie").titleSort("Filtered Movie").build();
       movie.setId(UUID.randomUUID());
 
-      var page = new MediaPage<>(List.of(new PageItem<>(movie, "Filtered Movie")), false, false);
+      var page = new ListPage<>(List.of(titleRow(movie)), false, false);
 
       when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
 
       when(movieService.getMoviesWithFilter(
               argThat(
-                  (MediaPaginationOptions opts) -> {
-                    var f = opts.getMediaFilter();
-                    return f.getStartLetter() == AlphabetLetter.A
-                        && f.getYears() != null
-                        && f.getYears().contains(2024)
-                        && f.getContentRatings() != null
-                        && f.getContentRatings().contains("PG-13")
-                        && Boolean.FALSE.equals(f.getUnmatched());
-                  })))
+                  (MediaFilter f) ->
+                      f.getStartLetter() == AlphabetLetter.A
+                          && f.getYears() != null
+                          && f.getYears().contains(2024)
+                          && f.getContentRatings() != null
+                          && f.getContentRatings().contains("PG-13")
+                          && Boolean.FALSE.equals(f.getUnmatched())),
+              any(PageRequest.class)))
           .thenReturn(page);
 
       String title =
@@ -970,14 +980,14 @@ class LibraryResolverTest {
       var movie = Movie.builder().title("In Progress Movie").titleSort("In Progress Movie").build();
       movie.setId(UUID.randomUUID());
 
-      var page = new MediaPage<>(List.of(new PageItem<>(movie, "In Progress Movie")), false, false);
-      var capturedOptions = new AtomicReference<MediaPaginationOptions>();
+      var page = new ListPage<>(List.of(titleRow(movie)), false, false);
+      var capturedFilter = new AtomicReference<MediaFilter>();
 
       when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
-      when(movieService.getMoviesWithFilter(any(MediaPaginationOptions.class)))
+      when(movieService.getMoviesWithFilter(any(MediaFilter.class), any(PageRequest.class)))
           .thenAnswer(
               invocation -> {
-                capturedOptions.set(invocation.getArgument(0));
+                capturedFilter.set(invocation.getArgument(0));
                 return page;
               });
 
@@ -991,14 +1001,10 @@ class LibraryResolverTest {
               "data.library.items.edges[0].node.title");
 
       assertThat(title).isEqualTo("In Progress Movie");
-      assertThat(capturedOptions.get())
-          .as(
-              "MovieService must receive the MediaPaginationOptions produced from the GraphQL input")
-          .isNotNull();
-      assertThat(capturedOptions.get().getMediaFilter().getWatchStatus())
+      assertThat(capturedFilter.get().getWatchStatus())
           .as("watchStatus must be forwarded from GraphQL filter to MediaFilter")
           .isEqualTo(WatchStatus.IN_PROGRESS);
-      assertThat(capturedOptions.get().getMediaFilter().getLibraryId())
+      assertThat(capturedFilter.get().getLibraryId())
           .as("libraryId must be forwarded from parent library to MediaFilter")
           .isEqualTo(libraryId);
     }
@@ -1006,7 +1012,7 @@ class LibraryResolverTest {
     @Test
     @DisplayName("Should throw with simple class name when unsupported media type in type resolver")
     void shouldThrowWithSimpleClassNameWhenUnsupportedMediaTypeInTypeResolver() {
-      var resolver = new LibraryResolver(null, null, null, null, null, null, null);
+      var resolver = new LibraryResolver(null, null, null, null, null, null);
 
       var unsupportedMedia = new Object();
 
@@ -1082,6 +1088,11 @@ class LibraryResolverTest {
 
       assertThat(alphabetIndex).isEmpty();
     }
+  }
+
+  private static <T extends BaseCollectable<?>> Row<T> titleRow(T item) {
+    var value = new SortValue.OfText(item.getTitleSort().toLowerCase(Locale.ROOT));
+    return new Row<>(item, new Position(value, item.getId()));
   }
 
   private static final class FakeLibraryManagementService extends LibraryManagementService {

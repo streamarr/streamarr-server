@@ -1,7 +1,7 @@
 package com.streamarr.server.services;
 
-import static com.streamarr.server.fixtures.PaginationFixture.buildForwardContinuation;
-import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
+import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
+import static com.streamarr.server.fixtures.PaginationFixture.rowsAfter;
 import static com.streamarr.server.jooq.generated.tables.BaseCollectable.BASE_COLLECTABLE;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -24,12 +24,12 @@ import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.services.events.library.LibraryItemAudience;
 import com.streamarr.server.services.events.library.LibraryItemUpdatedEvent;
 import com.streamarr.server.services.library.LibraryContentsService;
+import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaOrder;
 import com.streamarr.server.services.pagination.MediaOrderKeys;
-import com.streamarr.server.services.pagination.MediaPage;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.SortDirection;
 import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
@@ -124,21 +124,24 @@ class MediaOrderEquivalenceIT extends AbstractIntegrationTest {
   }
 
   private void assertOrdering(MediaType kind, MediaFilter filter) {
-    var page = page(kind, buildForwardOptions(100, filter));
-    var expectedIds = page.items().stream().map(item -> item.item().getId()).toList();
+    var page = page(kind, filter, firstRows(100));
+    var expectedIds = page.rows().stream().map(item -> item.item().getId()).toList();
     assertThat(expectedIds).hasSize(20);
     var orders =
-        page.items().stream()
-            .map(item -> MediaOrder.from(filter, item.item().getId(), item.sortValue()))
+        page.rows().stream()
+            .map(
+                item ->
+                    MediaOrder.at(filter.getSortBy(), filter.getSortDirection(), item.position()))
             .collect(Collectors.toSet());
     var queryKeys = keysById(orders);
     var positions =
-        page.items().stream()
+        page.rows().stream()
             .map(
                 item -> {
                   var change = changeFor(item.item());
-                  var value = contents.findMatchingItem(change, filter).orElseThrow().sortValue();
-                  return MediaOrder.from(filter, change.itemId(), value);
+                  var row = contents.findMatchingRow(change, filter).orElseThrow();
+                  return MediaOrder.at(
+                      filter.getSortBy(), filter.getSortDirection(), row.position());
                 })
             .collect(Collectors.toSet());
     assertThat(keysById(positions))
@@ -156,13 +159,13 @@ class MediaOrderEquivalenceIT extends AbstractIntegrationTest {
 
   private void assertTraversal(MediaType kind, MediaFilter filter, List<UUID> expected) {
     var actual = new ArrayList<UUID>();
-    var options = buildForwardOptions(3, filter);
+    var request = firstRows(3);
     for (int offset = 0; offset < expected.size(); offset += 3) {
-      var page = page(kind, options);
-      assertThat(page.items()).isNotEmpty();
-      actual.addAll(page.items().stream().map(item -> item.item().getId()).toList());
+      var page = page(kind, filter, request);
+      assertThat(page.rows()).isNotEmpty();
+      actual.addAll(page.rows().stream().map(item -> item.item().getId()).toList());
       assertThat(page.hasNextPage()).isEqualTo(actual.size() < expected.size());
-      options = buildForwardContinuation(3, filter, page.items().getLast());
+      request = rowsAfter(3, page.rows().getLast());
     }
 
     assertThat(actual)
@@ -173,12 +176,12 @@ class MediaOrderEquivalenceIT extends AbstractIntegrationTest {
   private void assertMembership(List<? extends BaseCollectable<?>> items, MediaFilter filter) {
     var kind = items.getFirst().getLibrary().getType();
     var selected =
-        page(kind, buildForwardOptions(100, filter)).items().stream()
+        page(kind, filter, firstRows(100)).rows().stream()
             .map(item -> item.item().getId())
             .collect(Collectors.toSet());
     assertThat(selected).isNotEmpty().hasSizeLessThan(items.size());
     for (var item : items) {
-      assertThat(contents.findMatchingItem(changeFor(item), filter).isPresent())
+      assertThat(contents.findMatchingRow(changeFor(item), filter).isPresent())
           .as("membership for %s under %s", item.getId(), filter.getSortBy())
           .isEqualTo(selected.contains(item.getId()));
     }
@@ -189,11 +192,11 @@ class MediaOrderEquivalenceIT extends AbstractIntegrationTest {
         .collect(Collectors.toMap(entry -> entry.getKey().itemId(), Map.Entry::getValue));
   }
 
-  private MediaPage<? extends BaseCollectable<?>> page(
-      MediaType kind, MediaPaginationOptions options) {
+  private ListPage<? extends BaseCollectable<?>> page(
+      MediaType kind, MediaFilter filter, PageRequest request) {
     return switch (kind) {
-      case MOVIE -> movieService.getMoviesWithFilter(options);
-      case SERIES -> seriesService.getSeriesWithFilter(options);
+      case MOVIE -> movieService.getMoviesWithFilter(filter, request);
+      case SERIES -> seriesService.getSeriesWithFilter(filter, request);
       default -> throw new IllegalArgumentException("Expected a Library item");
     };
   }

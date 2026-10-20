@@ -1,6 +1,5 @@
 package com.streamarr.server.services.watchprogress;
 
-import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
 import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
 import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -349,7 +348,7 @@ class WatchStateParityIT extends AbstractIntegrationTest {
             .profileId(profileId)
             .watchStatus(status)
             .build();
-    return movieService.getMoviesWithFilter(buildForwardOptions(20, filter)).items().stream()
+    return movieService.getMoviesWithFilter(filter, firstRows(20)).rows().stream()
         .map(item -> item.item().getId())
         .toList();
   }
@@ -361,7 +360,7 @@ class WatchStateParityIT extends AbstractIntegrationTest {
             .profileId(profileId)
             .watchStatus(status)
             .build();
-    return seriesService.getSeriesWithFilter(buildForwardOptions(20, filter)).items().stream()
+    return seriesService.getSeriesWithFilter(filter, firstRows(20)).rows().stream()
         .map(item -> item.item().getId())
         .toList();
   }

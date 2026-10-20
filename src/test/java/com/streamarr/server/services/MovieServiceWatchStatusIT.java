@@ -1,7 +1,7 @@
 package com.streamarr.server.services;
 
-import static com.streamarr.server.fixtures.PaginationFixture.buildForwardContinuation;
-import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
+import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
+import static com.streamarr.server.fixtures.PaginationFixture.rowsAfter;
 import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -119,9 +119,9 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
               .watchStatus(WatchStatus.WATCHED)
               .build();
 
-      var page = movieService.getMoviesWithFilter(buildForwardOptions(20, filter));
+      var page = movieService.getMoviesWithFilter(filter, firstRows(20));
 
-      assertThat(page.items())
+      assertThat(page.rows())
           .extracting(item -> item.item().getTitle())
           .containsExactly("Watched Movie");
     }
@@ -136,9 +136,9 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
               .watchStatus(WatchStatus.IN_PROGRESS)
               .build();
 
-      var page = movieService.getMoviesWithFilter(buildForwardOptions(20, filter));
+      var page = movieService.getMoviesWithFilter(filter, firstRows(20));
 
-      assertThat(page.items())
+      assertThat(page.rows())
           .extracting(item -> item.item().getTitle())
           .containsExactly("In Progress Movie");
     }
@@ -153,9 +153,9 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
               .watchStatus(WatchStatus.UNWATCHED)
               .build();
 
-      var page = movieService.getMoviesWithFilter(buildForwardOptions(20, filter));
+      var page = movieService.getMoviesWithFilter(filter, firstRows(20));
 
-      assertThat(page.items())
+      assertThat(page.rows())
           .extracting(item -> item.item().getTitle())
           .containsExactly("Unwatched Movie");
     }
@@ -165,9 +165,9 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
     void shouldReturnAllMoviesWhenNoWatchStatusFilterSpecified() {
       var filter = MediaFilter.builder().libraryId(library.getId()).build();
 
-      var page = movieService.getMoviesWithFilter(buildForwardOptions(20, filter));
+      var page = movieService.getMoviesWithFilter(filter, firstRows(20));
 
-      assertThat(page.items()).hasSize(3);
+      assertThat(page.rows()).hasSize(3);
     }
   }
 
@@ -186,11 +186,11 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
               .sortDirection(SortDirection.DESC)
               .build();
 
-      var page = movieService.getMoviesWithFilter(buildForwardOptions(20, filter));
+      var page = movieService.getMoviesWithFilter(filter, firstRows(20));
 
       // inProgressMovie's session progress is newer than watchedMovie's completion.
       // unwatchedMovie has no activity, so it sorts last under nullsLast.
-      assertThat(page.items())
+      assertThat(page.rows())
           .extracting(item -> item.item().getTitle())
           .containsExactly("In Progress Movie", "Watched Movie", "Unwatched Movie");
     }
@@ -217,28 +217,24 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
               .sortDirection(SortDirection.DESC)
               .build();
 
-      var page1 = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
-      assertThat(page1.items()).hasSize(1);
-      assertThat(page1.items().getFirst().item().getId()).isEqualTo(third.getId());
+      var page1 = movieService.getMoviesWithFilter(filter, firstRows(1));
+      assertThat(page1.rows()).hasSize(1);
+      assertThat(page1.rows().getFirst().item().getId()).isEqualTo(third.getId());
       assertThat(page1.hasNextPage()).isTrue();
 
-      var page2 =
-          movieService.getMoviesWithFilter(
-              buildForwardContinuation(1, filter, page1.items().getLast()));
-      assertThat(page2.items()).hasSize(1);
-      assertThat(page2.items().getFirst().item().getId()).isEqualTo(second.getId());
+      var page2 = movieService.getMoviesWithFilter(filter, rowsAfter(1, page1.rows().getLast()));
+      assertThat(page2.rows()).hasSize(1);
+      assertThat(page2.rows().getFirst().item().getId()).isEqualTo(second.getId());
       assertThat(page2.hasNextPage()).isTrue();
 
-      var page3 =
-          movieService.getMoviesWithFilter(
-              buildForwardContinuation(1, filter, page2.items().getLast()));
-      assertThat(page3.items()).hasSize(1);
-      assertThat(page3.items().getFirst().item().getId()).isEqualTo(first.getId());
+      var page3 = movieService.getMoviesWithFilter(filter, rowsAfter(1, page2.rows().getLast()));
+      assertThat(page3.rows()).hasSize(1);
+      assertThat(page3.rows().getFirst().item().getId()).isEqualTo(first.getId());
       assertThat(page3.hasNextPage()).isFalse();
 
       var allIds =
           Stream.of(page1, page2, page3)
-              .flatMap(p -> p.items().stream())
+              .flatMap(p -> p.rows().stream())
               .map(pi -> pi.item().getId())
               .toList();
       assertThat(allIds).doesNotHaveDuplicates();

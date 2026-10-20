@@ -1,7 +1,7 @@
 package com.streamarr.server.services;
 
-import static com.streamarr.server.fixtures.PaginationFixture.buildForwardContinuation;
-import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
+import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
+import static com.streamarr.server.fixtures.PaginationFixture.rowsAfter;
 import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -158,9 +158,9 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
               .watchStatus(WatchStatus.WATCHED)
               .build();
 
-      var page = seriesService.getSeriesWithFilter(buildForwardOptions(20, filter));
+      var page = seriesService.getSeriesWithFilter(filter, firstRows(20));
 
-      assertThat(page.items())
+      assertThat(page.rows())
           .extracting(item -> item.item().getTitle())
           .containsExactlyInAnyOrder("Watched Series", "Watched With Residual Progress");
     }
@@ -177,9 +177,9 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
               .watchStatus(WatchStatus.IN_PROGRESS)
               .build();
 
-      var page = seriesService.getSeriesWithFilter(buildForwardOptions(20, filter));
+      var page = seriesService.getSeriesWithFilter(filter, firstRows(20));
 
-      assertThat(page.items())
+      assertThat(page.rows())
           .extracting(item -> item.item().getTitle())
           .containsExactlyInAnyOrder("Session In Progress Series", "Partially Watched Series");
     }
@@ -194,9 +194,9 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
               .watchStatus(WatchStatus.UNWATCHED)
               .build();
 
-      var page = seriesService.getSeriesWithFilter(buildForwardOptions(20, filter));
+      var page = seriesService.getSeriesWithFilter(filter, firstRows(20));
 
-      assertThat(page.items())
+      assertThat(page.rows())
           .extracting(item -> item.item().getTitle())
           .containsExactly("Unwatched Series");
     }
@@ -206,9 +206,9 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
     void shouldReturnAllSeededSeriesWhenNoWatchStatusFilterIsApplied() {
       var filter = MediaFilter.builder().libraryId(library.getId()).build();
 
-      var page = seriesService.getSeriesWithFilter(buildForwardOptions(20, filter));
+      var page = seriesService.getSeriesWithFilter(filter, firstRows(20));
 
-      assertThat(page.items())
+      assertThat(page.rows())
           .extracting(item -> item.item().getTitle())
           .containsExactlyInAnyOrder(
               "Watched Series",
@@ -244,9 +244,9 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
               .sortDirection(SortDirection.DESC)
               .build();
 
-      var page = seriesService.getSeriesWithFilter(buildForwardOptions(20, filter));
+      var page = seriesService.getSeriesWithFilter(filter, firstRows(20));
 
-      assertThat(page.items())
+      assertThat(page.rows())
           .extracting(item -> item.item().getTitle())
           .containsExactly("Newer Series", "Older Series", "No Progress Series");
     }
@@ -273,28 +273,24 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
               .sortDirection(SortDirection.DESC)
               .build();
 
-      var page1 = seriesService.getSeriesWithFilter(buildForwardOptions(1, filter));
-      assertThat(page1.items()).hasSize(1);
-      assertThat(page1.items().getFirst().item().getId()).isEqualTo(third.seriesId());
+      var page1 = seriesService.getSeriesWithFilter(filter, firstRows(1));
+      assertThat(page1.rows()).hasSize(1);
+      assertThat(page1.rows().getFirst().item().getId()).isEqualTo(third.seriesId());
       assertThat(page1.hasNextPage()).isTrue();
 
-      var page2 =
-          seriesService.getSeriesWithFilter(
-              buildForwardContinuation(1, filter, page1.items().getLast()));
-      assertThat(page2.items()).hasSize(1);
-      assertThat(page2.items().getFirst().item().getId()).isEqualTo(second.seriesId());
+      var page2 = seriesService.getSeriesWithFilter(filter, rowsAfter(1, page1.rows().getLast()));
+      assertThat(page2.rows()).hasSize(1);
+      assertThat(page2.rows().getFirst().item().getId()).isEqualTo(second.seriesId());
       assertThat(page2.hasNextPage()).isTrue();
 
-      var page3 =
-          seriesService.getSeriesWithFilter(
-              buildForwardContinuation(1, filter, page2.items().getLast()));
-      assertThat(page3.items()).hasSize(1);
-      assertThat(page3.items().getFirst().item().getId()).isEqualTo(first.seriesId());
+      var page3 = seriesService.getSeriesWithFilter(filter, rowsAfter(1, page2.rows().getLast()));
+      assertThat(page3.rows()).hasSize(1);
+      assertThat(page3.rows().getFirst().item().getId()).isEqualTo(first.seriesId());
       assertThat(page3.hasNextPage()).isFalse();
 
       var allIds =
           Stream.of(page1, page2, page3)
-              .flatMap(p -> p.items().stream())
+              .flatMap(p -> p.rows().stream())
               .map(pi -> pi.item().getId())
               .toList();
       assertThat(allIds).doesNotHaveDuplicates();

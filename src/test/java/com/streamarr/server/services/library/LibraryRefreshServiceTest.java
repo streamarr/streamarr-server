@@ -54,6 +54,8 @@ import com.streamarr.server.fixtures.LibraryOperationFixture;
 import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.services.ArtworkSources;
 import com.streamarr.server.services.ImageService;
+import com.streamarr.server.services.LibraryMoviesList;
+import com.streamarr.server.services.LibrarySeriesList;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.AdaptiveAdmissions;
@@ -67,7 +69,6 @@ import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolve
 import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
 import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
-import com.streamarr.server.services.pagination.PaginationService;
 import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -154,12 +155,11 @@ class LibraryRefreshServiceTest {
         new SeriesService(
             seriesRepository,
             creditService,
-            new PaginationService(),
+            new LibrarySeriesList(seriesRepository),
             artworkRequestService,
             imageService,
             seasonRepository,
             episodeRepository,
-            null,
             null,
             null,
             null,
@@ -170,10 +170,9 @@ class LibraryRefreshServiceTest {
         new MovieService(
             movieRepository,
             creditService,
-            new PaginationService(),
+            new LibraryMoviesList(movieRepository),
             artworkRequestService,
             imageService,
-            null,
             null,
             null,
             null,

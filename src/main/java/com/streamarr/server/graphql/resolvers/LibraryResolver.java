@@ -13,8 +13,8 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
-import com.streamarr.server.graphql.cursor.CursorUtil;
-import com.streamarr.server.graphql.cursor.CursorValidator;
+import com.streamarr.server.graphql.cursor.LibraryItemCursors;
+import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.AlphabetIndexDto;
 import com.streamarr.server.graphql.inputs.AddLibraryInput;
@@ -36,7 +36,6 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.library.LibraryAdministrationService;
 import com.streamarr.server.services.library.LibraryCountsService.Counts;
 import com.streamarr.server.services.library.LibraryQueryService;
-import com.streamarr.server.services.pagination.MediaPaginationOptionsResolver;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
@@ -55,8 +54,7 @@ public class LibraryResolver {
   private final AuthorizationService authorizationService;
   private final LibraryAdministrationService libraryAdministrationService;
   private final PaginationService paginationService;
-  private final CursorUtil cursorUtil;
-  private final CursorValidator cursorValidator;
+  private final PositionCursorCodec positionCursors;
   private final RelayConnectionAdapter relayConnectionAdapter;
 
   @DgsMutation
@@ -157,18 +155,17 @@ public class LibraryResolver {
                 .sort(sort)
                 .filter(filter)
                 .build());
-    var paginationOptions = paginationService.getPaginationOptions(first, after, last, before);
-    var options =
-        MediaPaginationOptionsResolver.resolve(
-            paginationOptions,
-            effectiveFilter,
-            cursorUtil::decodeMediaCursor,
-            cursorValidator::validateCursorAgainstFilter);
+    var list = LibraryItemCursors.listOf(effectiveFilter);
+    var request =
+        positionCursors.pageRequest(
+            list, paginationService.getPaginationOptions(first, after, last, before));
 
     var page =
-        libraryQueries.getItems(authorizationService.currentIdentity(), library.getType(), options);
+        libraryQueries.getItems(
+            authorizationService.currentIdentity(), library.getType(), effectiveFilter, request);
 
-    return relayConnectionAdapter.toConnection(page, options);
+    return relayConnectionAdapter.toOrderedConnection(
+        page, list, LibraryItemCursors.orderOf(effectiveFilter));
   }
 
   @DgsData(parentType = "Library")

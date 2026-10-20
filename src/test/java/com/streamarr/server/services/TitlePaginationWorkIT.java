@@ -1,6 +1,6 @@
 package com.streamarr.server.services;
 
-import static com.streamarr.server.fixtures.PaginationFixture.buildForwardContinuation;
+import static com.streamarr.server.fixtures.PaginationFixture.rowsAfter;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -9,7 +9,9 @@ import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.PageItem;
+import com.streamarr.server.services.pagination.Position;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.SortValue;
 import com.streamarr.server.support.AnalyzedSelects;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
@@ -70,11 +72,15 @@ class TitlePaginationWorkIT extends AbstractIntegrationTest {
                 () -> {
                   var page =
                       service.getMoviesWithFilter(
-                          buildForwardContinuation(
+                          MediaFilter.builder().libraryId(library.getId()).build(),
+                          rowsAfter(
                               50,
-                              MediaFilter.builder().libraryId(library.getId()).build(),
-                              new PageItem<>(anchor, anchor.getTitleSort())));
-                  assertThat(page.items()).hasSize(50);
+                              new Row<>(
+                                  anchor,
+                                  new Position(
+                                      new SortValue.OfText(anchor.getTitleSort()),
+                                      anchor.getId()))));
+                  assertThat(page.rows()).hasSize(50);
                   assertThat(page.hasNextPage()).isTrue();
                 });
 
