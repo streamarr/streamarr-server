@@ -242,7 +242,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - **Reads**: jOOQ builds the SQL, but execute through `JooqQueryHelper.nativeQuery(…)` (JPA `EntityManager` native query) so results map to JPA entities — don't `context.fetch*()` for entity reads
 - **Writes**: execute jOOQ DSL directly (`context.update(…).returning()`, `INSERT … ON CONFLICT`) and map records to entities manually
 - **Stale managed entities after jOOQ writes**: Hibernate's persistence context is not invalidated by jOOQ DML. Within one transaction, a JPA read of a row you (or a concurrently-committed transaction) mutated via jOOQ returns the *stale managed copy* — Hibernate keeps the first-loaded field state and won't refresh it on re-query, even though the SQL fetched fresh values. `JooqQueryHelper.nativeQuery` does **not** escape this (native entity queries still return the already-managed instance). So don't JPA-load a row you're about to jOOQ-mutate and then JPA-re-read it in the same transaction expecting fresh state — read the discriminating value (id, status) with a jOOQ **scalar** fetch (see `RefreshTokenService.redeem` → `RefreshTokenRepositoryCustom.findSessionIdByDigest`, which avoids caching the token it then rotates via jOOQ), or `em.refresh()` it. Not statically enforceable (temporal data-flow, not structural); the safety net is concurrency integration tests (`RefreshRotationConcurrencyIT`, `RefreshRevocationRaceIT`). Single-thread happy paths hide it; it surfaces under concurrency.
-- **Pagination**: keyset/seek (`row(fields)` comparisons, NULLS LAST) fetching `limit + 2` to detect adjacent pages — no OFFSET pagination
+- **Pagination**: keyset/seek only — no OFFSET pagination. A new cursor list implements `services.pagination.PagedList` (its order, and its rows beyond a position) and pages through `Pager`, which owns limits, page flags and removed-item positions; its repository reads rows through `repositories.Keyset`, and its IT extends `PagedListContract`. Don't write per-list anchor lookups, over-fetching or reverse handling (ADR 0014). Lists not yet moved still use `MediaPage`/`PaginationService`
 - No optimistic locking (`@Version`); entity equality is id-based with `hashCode() = getClass().hashCode()` (Hibernate-proxy-safe)
 
 ### Flyway
@@ -255,7 +255,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - Schema-first: `.graphqls` files in `src/main/resources/schema/`; GraphiQL and introspection disabled
 - Association fields resolve via `@DgsData(parentType = …)` field resolvers
 - Batch list-valued association fields with a `@DgsDataLoader` (`MappedBatchLoader`, as done for images) — per-parent queries in field resolvers are an N+1
-- Relay connections are built via `RelayConnectionAdapter` over the protocol-agnostic `MediaPage`/`PageItem` types in `services.pagination`
+- Relay connections are built via `RelayConnectionAdapter` over the protocol-agnostic `ListPage`/`Row` types in `services.pagination`; resolvers decode and encode cursors only through `PositionCursorCodec`, scoped by a `ListIdentity`
 
 ## Testing
 
