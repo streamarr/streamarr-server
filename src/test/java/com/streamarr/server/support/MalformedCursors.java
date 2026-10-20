@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Random;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
@@ -44,13 +45,20 @@ public final class MalformedCursors {
 
   public static Stream<String> of(String genuineCursor) {
     var payload = Base64.getUrlDecoder().decode(genuineCursor);
-    var tree = JSON.readTree(payload);
-    return Stream.of(fieldMutations(tree), truncations(payload), otherDocuments(), randomBytes())
+    return Stream.of(fieldMutations(payload), truncations(payload), otherDocuments(), randomBytes())
         .flatMap(stream -> stream)
         .map(MalformedCursors::encode);
   }
 
-  private static Stream<byte[]> fieldMutations(JsonNode tree) {
+  // A cursor that is not JSON, such as a bare item ID, has no fields to alter.
+  private static Stream<byte[]> fieldMutations(byte[] payload) {
+    JsonNode tree;
+    try {
+      tree = JSON.readTree(payload);
+    } catch (JacksonException _) {
+      return Stream.empty();
+    }
+
     var mutations = new ArrayList<byte[]>();
     mutate(tree, tree, mutations);
     return mutations.stream();
