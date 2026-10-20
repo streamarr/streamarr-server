@@ -46,7 +46,7 @@ class LibraryCountsMigrationIT extends AbstractIntegrationTest {
           .defaultSchema(schema)
           .baselineVersion("98")
           .baselineOnMigrate(true)
-          .target("latest")
+          .target("99")
           .load()
           .migrate();
       statement.execute("ANALYZE base_collectable");
@@ -91,7 +91,7 @@ class LibraryCountsMigrationIT extends AbstractIntegrationTest {
           .defaultSchema(schema)
           .baselineVersion("97")
           .baselineOnMigrate(true)
-          .target("latest")
+          .target("98")
           .load()
           .migrate();
 
