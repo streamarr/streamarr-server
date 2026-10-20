@@ -11,6 +11,7 @@ import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
+import com.streamarr.server.fakes.InMemoryPagedList;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.graphql.StreamarrDataFetcherExceptionHandler;
 import com.streamarr.server.graphql.cursor.CursorUtil;
@@ -25,8 +26,17 @@ import com.streamarr.server.services.identity.IdentityQueryService.HouseholdSumm
 import com.streamarr.server.services.identity.IdentityQueryService.SelectableProfileDetails;
 import com.streamarr.server.services.identity.IdentityQueryService.UsableHouseholdDetails;
 import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import com.streamarr.server.services.pagination.ListIdentity;
+import com.streamarr.server.services.pagination.ListOrder;
 import com.streamarr.server.services.pagination.PageItem;
+import com.streamarr.server.services.pagination.PageRequest;
+import com.streamarr.server.services.pagination.Pager;
 import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.services.pagination.Position;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.SortDirection;
+import com.streamarr.server.services.pagination.SortValue;
+import com.streamarr.server.services.pagination.SortValueKind;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -86,6 +96,7 @@ class MeResolverTest {
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
   @Autowired private PaginationService paginationService;
+  @Autowired private PositionCursorCodec positionCursors;
 
   @MockitoBean private IdentityQueryService identityQueryService;
 
@@ -238,6 +249,27 @@ class MeResolverTest {
   }
 
   @Test
+  @DisplayName("Should reject a Profile cursor when it continues another Household's picker")
+  void shouldRejectAProfileCursorWhenItContinuesAnotherHouseholdsPicker() {
+    stubTwoSelectableProfiles();
+    var cursor =
+        positionCursors
+            .encode(
+                new ListIdentity("selectable-profiles", UUID.randomUUID()),
+                new Position(new SortValue.OfText("andrew"), UUID.randomUUID()))
+            .getValue();
+
+    var result =
+        dgsQueryExecutor.execute(
+            "{ me { selectableProfiles(first: 1, after: \"%s\") { edges { node { name } } } } }"
+                .formatted(cursor));
+
+    assertThat(result.getErrors()).hasSize(1);
+    assertThat(result.getErrors().getFirst().getExtensions())
+        .containsEntry("code", "INVALID_CURSOR");
+  }
+
+  @Test
   @DisplayName("Should return profile required code when the query service demands a profile")
   void shouldReturnProfileRequiredCodeWhenQueryServiceDemandsProfile() {
     authenticateAtAccountScope();
@@ -304,17 +336,18 @@ class MeResolverTest {
               return paginationService.buildKeysetPage(
                   items, options, household -> household.household().id());
             });
-    when(identityQueryService.selectableProfiles(any(), any()))
-        .thenAnswer(
-            invocation -> {
-              KeysetPaginationOptions options = invocation.getArgument(1);
-              var items =
-                  profiles.stream()
-                      .map(profile -> new PageItem<>(profile, profile.name()))
-                      .toList();
-              return paginationService.buildKeysetPage(
-                  items, options, SelectableProfileDetails::id);
-            });
+    var profileList =
+        new InMemoryPagedList<SelectableProfileDetails, Object>(
+            ListOrder.builder().valueKind(SortValueKind.TEXT).direction(SortDirection.ASC).build(),
+            profiles.stream()
+                .map(
+                    profile ->
+                        new Row<>(
+                            profile,
+                            new Position(new SortValue.OfText(profile.name()), profile.id())))
+                .toList());
+    when(identityQueryService.selectableProfiles(any(), any(PageRequest.class)))
+        .thenAnswer(invocation -> Pager.page(profileList, householdId, invocation.getArgument(1)));
     when(identityQueryService.selectedProfile(any())).thenReturn(Optional.ofNullable(selected));
   }
 

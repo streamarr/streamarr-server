@@ -1,13 +1,19 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfilePolicySnapshot;
 import com.streamarr.server.domain.auth.ProfilePolicyTarget;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.repositories.auth.ProfileRepository;
+import com.streamarr.server.services.pagination.Position;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
+import com.streamarr.server.services.pagination.SortValue;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -150,6 +156,28 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
     return database.values().stream()
         .filter(profile -> available.contains(profile.getId()))
         .sorted(Comparator.comparing(Profile::getName).thenComparing(Profile::getId))
+        .toList();
+  }
+
+  @Override
+  public List<Row<Profile>> rowsAvailableInHousehold(UUID householdId, Seek seek) {
+    return InMemoryKeyset.rowsBeyond(
+        findAvailableInHousehold(householdId).stream()
+            .map(
+                profile ->
+                    new Row<>(
+                        profile,
+                        new Position(
+                            new SortValue.OfText(profile.getName().toLowerCase(Locale.ROOT)),
+                            profile.getId())))
+            .toList(),
+        seek);
+  }
+
+  @Override
+  public List<Profile> findAvailableKidsInHousehold(UUID householdId) {
+    return findAvailableInHousehold(householdId).stream()
+        .filter(profile -> profile.getKind() == ProfileKind.KID)
         .toList();
   }
 

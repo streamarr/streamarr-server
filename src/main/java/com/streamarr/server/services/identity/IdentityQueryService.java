@@ -2,6 +2,7 @@ package com.streamarr.server.services.identity;
 
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
@@ -14,13 +15,17 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.ProfileSafetyRule;
 import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.PageItem;
+import com.streamarr.server.services.pagination.PageRequest;
+import com.streamarr.server.services.pagination.Pager;
 import com.streamarr.server.services.pagination.PaginationService;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -41,6 +46,7 @@ public class IdentityQueryService {
   private final ProfileRepository profileRepository;
   private final AuthorizationService authorizationService;
   private final PaginationService paginationService;
+  private final SelectableProfilesList selectableProfilesList;
 
   @Transactional(readOnly = true)
   public MeDetails meDetails(AuthenticatedIdentity identity) {
@@ -57,15 +63,21 @@ public class IdentityQueryService {
         .build();
   }
 
+  /** A page of the Profiles selectable in the context Household, by name, then ID. */
   @Transactional(readOnly = true)
-  public MediaPage<SelectableProfileDetails> selectableProfiles(
-      AuthenticatedIdentity identity, KeysetPaginationOptions options) {
+  public ListPage<SelectableProfileDetails> selectableProfiles(
+      AuthenticatedIdentity identity, PageRequest request) {
     var account = requireAuthorizedAccount(identity);
-    var items =
-        selectableProfiles(identity, account).stream()
-            .map(profile -> new PageItem<>(profile, profile.name()))
-            .toList();
-    return paginationService.buildKeysetPage(items, options, SelectableProfileDetails::id);
+    var householdId = identity.contextHouseholdId();
+    var page = Pager.page(selectableProfilesList, householdId, request);
+    var ruleInputs = new LinkedHashMap<UUID, Profile>();
+    profileRepository
+        .findAvailableKidsInHousehold(householdId)
+        .forEach(kid -> ruleInputs.put(kid.getId(), kid));
+    page.rows().forEach(row -> ruleInputs.put(row.item().getId(), row.item()));
+    // A Profile's lock depends only on itself and the Household's Kid Profiles.
+    var locked = ProfileSafetyRule.lockedProfiles(ruleInputs.values());
+    return page.map(profile -> selectable(identity, account, profile, locked));
   }
 
   @Transactional(readOnly = true)
@@ -123,19 +135,22 @@ public class IdentityQueryService {
     var available = profileRepository.findAvailableInHousehold(identity.contextHouseholdId());
     var locked = ProfileSafetyRule.lockedProfiles(available);
     return available.stream()
-        .map(
-            profile ->
-                SelectableProfileDetails.builder()
-                    .id(profile.getId())
-                    .name(profile.getName())
-                    .picture(Optional.ofNullable(profile.getPicture()))
-                    .kind(profile.getKind())
-                    .personal(profile.getId().equals(account.getPersonalProfileId()))
-                    .pinConfigured(profile.hasEffectivePin())
-                    .locked(locked.contains(profile.getId()))
-                    .selected(profile.getId().equals(identity.profileId()))
-                    .build())
+        .map(profile -> selectable(identity, account, profile, locked))
         .toList();
+  }
+
+  private static SelectableProfileDetails selectable(
+      AuthenticatedIdentity identity, UserAccount account, Profile profile, Set<UUID> locked) {
+    return SelectableProfileDetails.builder()
+        .id(profile.getId())
+        .name(profile.getName())
+        .picture(Optional.ofNullable(profile.getPicture()))
+        .kind(profile.getKind())
+        .personal(profile.getId().equals(account.getPersonalProfileId()))
+        .pinConfigured(profile.hasEffectivePin())
+        .locked(locked.contains(profile.getId()))
+        .selected(profile.getId().equals(identity.profileId()))
+        .build();
   }
 
   private HouseholdSummaryDetails summary(UUID householdId) {

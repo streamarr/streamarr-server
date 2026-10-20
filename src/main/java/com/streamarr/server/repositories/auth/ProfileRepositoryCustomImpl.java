@@ -1,10 +1,12 @@
 package com.streamarr.server.repositories.auth;
 
 import static com.streamarr.server.jooq.generated.enums.ProfileKind.ADULT;
+import static com.streamarr.server.jooq.generated.enums.ProfileKind.KID;
 import static com.streamarr.server.jooq.generated.tables.HouseholdGuard.HOUSEHOLD_GUARD;
 import static com.streamarr.server.jooq.generated.tables.Profile.PROFILE;
 import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
 import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
+import static org.jooq.impl.DSL.lower;
 
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileKind;
@@ -13,6 +15,9 @@ import com.streamarr.server.domain.auth.ProfilePolicyTarget;
 import com.streamarr.server.jooq.generated.enums.ProfileShareStatus;
 import com.streamarr.server.jooq.generated.tables.records.ProfileRecord;
 import com.streamarr.server.repositories.JooqQueryHelper;
+import com.streamarr.server.repositories.Keyset;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
 import jakarta.persistence.EntityManager;
 import java.util.HashSet;
 import java.util.List;
@@ -235,11 +240,43 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
             .from(PROFILE)
             .join(PROFILE_HOUSEHOLD_SHARE)
             .on(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(PROFILE.ID))
-            .where(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId))
-            // Inlined: a JPA native query would bind the enum as an ordinal smallint.
-            .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(DSL.inline(ProfileShareStatus.ACTIVE)))
+            .where(availableIn(householdId))
             .orderBy(PROFILE.NAME.asc(), PROFILE.ID.asc());
     return JooqQueryHelper.nativeQuery(entityManager, query, Profile.class);
+  }
+
+  @Override
+  public List<Row<Profile>> rowsAvailableInHousehold(UUID householdId, Seek seek) {
+    var keyset = Keyset.<String>builder().sortValue(lower(PROFILE.NAME)).itemId(PROFILE.ID).build();
+    var query =
+        keyset.rowsBeyond(
+            dsl.select(PROFILE.asterisk(), keyset.selectedSortValue())
+                .from(PROFILE)
+                .join(PROFILE_HOUSEHOLD_SHARE)
+                .on(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(PROFILE.ID)),
+            availableIn(householdId),
+            seek);
+    return JooqQueryHelper.nativeRows(entityManager, query, Profile.class, keyset);
+  }
+
+  @Override
+  public List<Profile> findAvailableKidsInHousehold(UUID householdId) {
+    var query =
+        dsl.select(PROFILE.fields())
+            .from(PROFILE)
+            .join(PROFILE_HOUSEHOLD_SHARE)
+            .on(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(PROFILE.ID))
+            .where(availableIn(householdId))
+            .and(PROFILE.KIND.eq(DSL.inline(KID)));
+    return JooqQueryHelper.nativeQuery(entityManager, query, Profile.class);
+  }
+
+  // Inlined: a JPA native query would bind the enum as an ordinal smallint.
+  private static Condition availableIn(UUID householdId) {
+    return PROFILE_HOUSEHOLD_SHARE
+        .HOUSEHOLD_ID
+        .eq(householdId)
+        .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(DSL.inline(ProfileShareStatus.ACTIVE)));
   }
 
   @Override

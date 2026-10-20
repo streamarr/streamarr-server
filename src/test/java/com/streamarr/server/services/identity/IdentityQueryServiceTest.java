@@ -1,5 +1,6 @@
 package com.streamarr.server.services.identity;
 
+import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -71,7 +72,12 @@ class IdentityQueryServiceTest {
     authorization = new FakeAuthorizationService(identity(home.getId(), null));
     service =
         new IdentityQueryService(
-            accounts, households, profiles, authorization, new PaginationService());
+            accounts,
+            households,
+            profiles,
+            authorization,
+            new PaginationService(),
+            new SelectableProfilesList(profiles));
   }
 
   @Test
@@ -97,26 +103,23 @@ class IdentityQueryServiceTest {
   }
 
   @Test
-  @DisplayName("Should return the requested selectable Profiles when the first page is requested")
-  void shouldReturnRequestedSelectableProfilesWhenFirstPageIsRequested() {
+  @DisplayName("Should lock an Adult Profile on a page when a Kid Profile is on another page")
+  void shouldLockAnAdultProfileOnAPageWhenAKidProfileIsOnAnotherPage() {
     var kid =
         profiles.save(
             ProfileFixture.kidProfileBuilder().householdId(home.getId()).name("Kai").build());
     shares.share(kid.getId(), home.getId(), false);
-    var options =
-        new KeysetPaginationOptions(
-            null,
-            PaginationOptions.builder()
-                .paginationDirection(PaginationDirection.FORWARD)
-                .cursor(Optional.empty())
-                .limit(1)
-                .build());
 
-    var page = service.selectableProfiles(identity(home.getId(), null), options);
+    var page = service.selectableProfiles(identity(home.getId(), null), firstRows(1));
 
-    assertThat(page.items()).extracting(item -> item.item().name()).containsExactly("Andrew");
+    assertThat(page.rows())
+        .singleElement()
+        .satisfies(
+            row -> {
+              assertThat(row.item().name()).isEqualTo("Andrew");
+              assertThat(row.item().locked()).isTrue();
+            });
     assertThat(page.hasNextPage()).isTrue();
-    assertThat(page.hasPreviousPage()).isFalse();
   }
 
   @Test
@@ -166,17 +169,10 @@ class IdentityQueryServiceTest {
   @DisplayName("Should fail closed when paged Profiles are not allowed")
   void shouldFailClosedWhenPagedProfilesAreNotAllowed() {
     authorization.denyAll();
-    var options =
-        new KeysetPaginationOptions(
-            null,
-            PaginationOptions.builder()
-                .paginationDirection(PaginationDirection.FORWARD)
-                .cursor(Optional.empty())
-                .limit(1)
-                .build());
     var identity = identity(home.getId(), null);
+    var request = firstRows(1);
 
-    assertThatThrownBy(() -> service.selectableProfiles(identity, options))
+    assertThatThrownBy(() -> service.selectableProfiles(identity, request))
         .isInstanceOf(AccessDeniedException.class);
   }
 
