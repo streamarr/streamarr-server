@@ -101,6 +101,7 @@ class PositionCursorCodecTest {
         "type=INSTANT,value=+294277-01-01T00:00:00Z",
         "type=DATE,value=+5874898-01-01",
         "type=DATE,value=1582-10-15",
+        "type=INSTANT,value=2026-10-20T11:59:59.999999999Z",
         "value=ninety",
         "type=TEXT,-value",
         "version=2"
@@ -114,6 +115,28 @@ class PositionCursorCodecTest {
     assertThat(codec.decode(CONTINUE_WATCHING, genuine)).isNotNull();
 
     var cursor = corrupt(genuine, corruption);
+
+    assertThatThrownBy(() -> codec.decode(CONTINUE_WATCHING, cursor))
+        .isInstanceOf(InvalidCursorException.class);
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "{\"version\":{}}",
+        "{\"version\":[1]}",
+        "{\"version\":true}",
+        "{\"version\":1.5}",
+        "{\"version\":99999999999999999999}",
+        "{\"version\":1,\"list\":{}}",
+        "{\"version\":1,\"list\":\"continue-watching\",\"scope\":[]}"
+      })
+  @DisplayName("Should reject a cursor when its envelope fields have the wrong shape")
+  void shouldRejectACursorWhenItsEnvelopeFieldsHaveTheWrongShape(String payload) {
+    var cursor =
+        Base64.getUrlEncoder()
+            .withoutPadding()
+            .encodeToString(payload.getBytes(StandardCharsets.UTF_8));
 
     assertThatThrownBy(() -> codec.decode(CONTINUE_WATCHING, cursor))
         .isInstanceOf(InvalidCursorException.class);

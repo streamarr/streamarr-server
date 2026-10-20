@@ -27,14 +27,20 @@ public sealed interface SortValue
   /**
    * Reads an instant a client sent back. Upper bounds are PostgreSQL's timestamptz limit. Entities
    * read dates through java.sql types, which use the Julian calendar before the 1582 Gregorian
-   * cutover, so earlier values cannot round-trip; no stored value is that early.
+   * cutover, so earlier values cannot round-trip; no stored value is that early. PostgreSQL stores
+   * microseconds and rounds finer values when binding them, which would move the position.
    *
-   * @throws IllegalArgumentException when the text is not an instant inside that range
+   * @throws IllegalArgumentException when the text is not a stored-precision instant inside that
+   *     range
    */
   static Instant readInstant(String text) {
     var instant = Instant.parse(text);
     if (instant.isBefore(Bounds.EARLIEST_INSTANT) || instant.isAfter(Bounds.LATEST_INSTANT)) {
       throw new IllegalArgumentException("A time sort value lies outside the stored range.");
+    }
+
+    if (instant.getNano() % NANOS_PER_MICROSECOND != 0) {
+      throw new IllegalArgumentException("A time sort value is finer than PostgreSQL stores.");
     }
 
     return instant;
@@ -69,6 +75,8 @@ public sealed interface SortValue
               "Unsupported sort value type: " + value.getClass().getName());
     };
   }
+
+  int NANOS_PER_MICROSECOND = 1_000;
 
   final class Bounds {
     private static final LocalDate EARLIEST_DATE = LocalDate.of(1583, 1, 1);

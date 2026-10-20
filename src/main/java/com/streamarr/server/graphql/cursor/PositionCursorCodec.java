@@ -91,9 +91,17 @@ public class PositionCursorCodec {
   }
 
   private boolean issuedFor(ListIdentity list, JsonNode payload) {
-    return payload.path("version").asInt() == VERSION
-        && list.list().equals(payload.path("list").asString())
-        && fingerprint(list).equals(payload.path("scope").asString());
+    var version = payload.path("version");
+    if (!version.isInt() || version.intValue() != VERSION) {
+      return false;
+    }
+
+    return isText(payload.path("list"), list.list())
+        && isText(payload.path("scope"), fingerprint(list));
+  }
+
+  private static boolean isText(JsonNode node, String expected) {
+    return node.isString() && expected.equals(node.stringValue());
   }
 
   private static SortValue valueOf(String type, JsonNode value) {
