@@ -1,5 +1,6 @@
 package com.streamarr.server.services.pagination;
 
+import com.streamarr.server.exceptions.InvalidPaginationCursorException;
 import java.util.List;
 
 /**
@@ -12,7 +13,15 @@ public final class Pager {
 
   private Pager() {}
 
+  /**
+   * @throws InvalidPaginationCursorException when the request's position cannot belong to the list
+   */
   public static <T, S> ListPage<T> page(PagedList<T, S> list, S scope, PageRequest request) {
+    var order = list.order(scope);
+    if (request.position().filter(position -> !order.admits(position.value())).isPresent()) {
+      throw new InvalidPaginationCursorException("Cursor does not belong to this list.");
+    }
+
     var read =
         list.rowsBeyond(
             scope,

@@ -1,11 +1,14 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.services.pagination.ListOrder;
 import com.streamarr.server.services.pagination.PagedList;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.Position;
 import com.streamarr.server.services.pagination.Row;
 import com.streamarr.server.services.pagination.Seek;
+import com.streamarr.server.services.pagination.SortDirection;
 import com.streamarr.server.services.pagination.SortValue;
+import com.streamarr.server.services.pagination.SortValueKind;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -30,6 +33,11 @@ public final class FakePagedList implements PagedList<String, String> {
 
   public void remove(Row<String> row) {
     rows.remove(row);
+  }
+
+  @Override
+  public ListOrder order(String scope) {
+    return ListOrder.builder().valueKind(SortValueKind.NUMBER).direction(SortDirection.ASC).build();
   }
 
   @Override

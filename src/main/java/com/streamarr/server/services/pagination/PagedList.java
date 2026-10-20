@@ -9,8 +9,9 @@ import java.util.List;
  * @param <T> the listed item
  * @param <S> the scope the list is read in, such as a Profile
  */
-@FunctionalInterface
 public interface PagedList<T, S> {
+
+  ListOrder order(S scope);
 
   /**
    * Up to {@code seek.limit()} rows beyond the seek's position in its direction, nearest first.

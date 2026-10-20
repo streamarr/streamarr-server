@@ -1,14 +1,22 @@
 package com.streamarr.server.services.pagination;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.exceptions.InvalidPaginationCursorException;
 import com.streamarr.server.fakes.FakePagedList;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Pager")
@@ -113,6 +121,24 @@ class PagerTest {
     var page = Pager.page(new FakePagedList(), SCOPE, forward(Optional.empty(), 2));
 
     assertPage(page, false, false);
+  }
+
+  @ParameterizedTest
+  @MethodSource("valuesOutsideTheListOrder")
+  @DisplayName("Should reject a position when its value does not fit the list's order")
+  void shouldRejectAPositionWhenItsValueDoesNotFitTheListsOrder(SortValue value) {
+    var request = forward(Optional.of(new Position(value, UUID.randomUUID())), 2);
+
+    assertThatThrownBy(() -> Pager.page(list, SCOPE, request))
+        .isInstanceOf(InvalidPaginationCursorException.class);
+  }
+
+  static Stream<SortValue> valuesOutsideTheListOrder() {
+    return Stream.of(
+        new SortValue.OfText("10"),
+        new SortValue.OfInstant(Instant.EPOCH),
+        new SortValue.OfDate(LocalDate.EPOCH),
+        new SortValue.Absent());
   }
 
   private Optional<Position> position(int item) {
