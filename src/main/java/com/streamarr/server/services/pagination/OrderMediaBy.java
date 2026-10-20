@@ -10,11 +10,12 @@ public enum OrderMediaBy {
   RUNTIME,
   LAST_WATCHED;
 
-  // Upper bounds are PostgreSQL's date and timestamptz limits. Years before 0001 are rejected:
-  // the JDBC binding does not carry BC values faithfully, and no stored value is BC.
-  private static final LocalDate EARLIEST_DATE = LocalDate.of(1, 1, 1);
+  // Upper bounds are PostgreSQL's date and timestamptz limits. Entities read dates through
+  // java.sql types, which use the Julian calendar before the 1582 Gregorian cutover, so earlier
+  // values cannot round-trip; no stored value is that early.
+  private static final LocalDate EARLIEST_DATE = LocalDate.of(1583, 1, 1);
   private static final LocalDate LATEST_DATE = LocalDate.of(5874897, 12, 31);
-  private static final Instant EARLIEST_INSTANT = Instant.parse("0001-01-01T00:00:00Z");
+  private static final Instant EARLIEST_INSTANT = Instant.parse("1583-01-01T00:00:00Z");
   private static final Instant LATEST_INSTANT = Instant.parse("+294276-12-31T23:59:59.999999Z");
 
   /**

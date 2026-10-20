@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static com.streamarr.server.jooq.generated.tables.BaseCollectable.BASE_COLLECTABLE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -7,10 +8,12 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.GraphQlHttpTestClient;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Base64;
 import java.util.function.Consumer;
@@ -36,6 +39,7 @@ class LibraryItemsCursorIT extends AbstractIntegrationTest {
   @Autowired private AuthTestSupport auth;
   @Autowired private LibraryRepository libraries;
   @Autowired private MovieRepository movies;
+  @Autowired private AuditColumnFixtures auditColumns;
 
   @ParameterizedTest(name = "{0} cursor with sort value {1}")
   @CsvSource({
@@ -43,10 +47,12 @@ class LibraryItemsCursorIT extends AbstractIntegrationTest {
     "LAST_WATCHED, +294277-01-01T00:00:00Z",
     "ADDED, yesterday",
     "ADDED, -0001-01-01T00:00:00Z",
+    "ADDED, 1582-12-31T23:59:59Z",
     "LAST_WATCHED, 0000-12-31T23:59:59Z",
     "RELEASE_DATE, someday",
     "RELEASE_DATE, +5874898-01-01",
     "RELEASE_DATE, 0000-12-31",
+    "RELEASE_DATE, 1582-10-15",
     "RUNTIME, ninety"
   })
   @DisplayName("Should reject a cursor as INVALID_CURSOR when its sort value cannot be read")
@@ -109,6 +115,51 @@ class LibraryItemsCursorIT extends AbstractIntegrationTest {
       assertThat(next.has("errors")).as(next.toPrettyString()).isFalse();
       assertThat(next.at("/data/library/items/edges/0/node/id").asString())
           .isEqualTo(later.getId().toString());
+    } finally {
+      auth.deleteIdentity(identity);
+    }
+  }
+
+  @ParameterizedTest(name = "added at {0} and {1}")
+  @CsvSource({
+    "1583-01-01T00:00:00Z, 1583-01-02T00:00:00Z",
+    "1969-12-31T23:59:59.250Z, 1969-12-31T23:59:59.750Z",
+    "+294276-12-30T00:00:00Z, +294276-12-31T23:59:59.999999Z"
+  })
+  @DisplayName(
+      "Should follow an ADDED cursor to the next item when items were added at any stored time")
+  void shouldFollowAnAddedCursorToTheNextItemWhenItemsWereAddedAtAnyStoredTime(
+      String earlier, String later) {
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var first = movies.saveAndFlush(Movie.builder().title("Alpha").library(library).build());
+    var next = movies.saveAndFlush(Movie.builder().title("Bravo").library(library).build());
+    auditColumns.overwriteCreatedOn(
+        BASE_COLLECTABLE, BASE_COLLECTABLE.ID.eq(first.getId()), Instant.parse(earlier));
+    auditColumns.overwriteCreatedOn(
+        BASE_COLLECTABLE, BASE_COLLECTABLE.ID.eq(next.getId()), Instant.parse(later));
+
+    var identity = auth.createIdentity();
+    var bearer = auth.profileBearer(identity);
+    try (var http =
+        new GraphQlHttpTestClient(URI.create("http://localhost:%d/graphql".formatted(port)))) {
+      var query =
+          """
+          { library(id: "%s") { items(%%s, sort: {by: ADDED, direction: ASC}) {
+            edges { cursor node { ... on Movie { id } } }
+          } } }
+          """
+              .formatted(library.getId());
+      var page = http.execute(bearer, query.formatted("first: 1"));
+      var cursor = page.at("/data/library/items/edges/0/cursor").asString();
+
+      var following =
+          http.execute(bearer, query.formatted("first: 1, after: \"%s\"".formatted(cursor)));
+
+      assertThat(page.at("/data/library/items/edges/0/node/id").asString())
+          .isEqualTo(first.getId().toString());
+      assertThat(following.at("/data/library/items/edges/0/node/id").asString())
+          .as(following.toPrettyString())
+          .isEqualTo(next.getId().toString());
     } finally {
       auth.deleteIdentity(identity);
     }

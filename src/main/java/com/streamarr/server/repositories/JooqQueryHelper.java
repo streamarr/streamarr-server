@@ -22,9 +22,11 @@ import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.SortDirection;
 import jakarta.persistence.EntityManager;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.temporal.Temporal;
+import java.time.ZoneOffset;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -285,7 +287,7 @@ public class JooqQueryHelper {
     var cursorId = seek.cursorId();
     var reversePage = seek.reversePage();
     var idField = BASE_COLLECTABLE.ID;
-    var sortValue = filter.getPreviousSortFieldValue();
+    var sortValue = seekValue(filter.getPreviousSortFieldValue());
     var isAsc = filter.getSortDirection() == SortDirection.ASC;
 
     if (filter.getSortBy() == OrderMediaBy.TITLE) {
@@ -311,6 +313,16 @@ public class JooqQueryHelper {
     var idSeek = isAsc ? idField.ge(cursorId) : idField.le(cursorId);
     var nullSeek = typedCol.isNull().and(idSeek);
     return reversePage ? nullSeek.or(typedCol.isNotNull()) : nullSeek;
+  }
+
+  // jOOQ converts an Instant through java.sql.Timestamp and local time, which shifts dates
+  // before the Gregorian cutover and instants in a repeated daylight-saving hour.
+  private static Object seekValue(Object value) {
+    if (value instanceof Instant instant) {
+      return instant.atOffset(ZoneOffset.UTC);
+    }
+
+    return value;
   }
 
   private Condition titleSeekCondition(MediaFilter filter, UUID cursorId) {

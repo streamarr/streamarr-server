@@ -323,8 +323,8 @@ class CursorUtilTest {
           Arguments.of(OrderMediaBy.ADDED, Instant.parse("2026-10-19T15:07:00Z")),
           Arguments.of(OrderMediaBy.RELEASE_DATE, LocalDate.of(2020, 1, 1)),
           Arguments.of(OrderMediaBy.RELEASE_DATE, LocalDate.of(5874897, 12, 31)),
-          Arguments.of(OrderMediaBy.RELEASE_DATE, LocalDate.of(1, 1, 1)),
-          Arguments.of(OrderMediaBy.LAST_WATCHED, Instant.parse("0001-01-01T00:00:00Z")),
+          Arguments.of(OrderMediaBy.RELEASE_DATE, LocalDate.of(1583, 1, 1)),
+          Arguments.of(OrderMediaBy.LAST_WATCHED, Instant.parse("1583-01-01T00:00:00Z")),
           Arguments.of(OrderMediaBy.ADDED, Instant.parse("+294276-12-31T23:59:59.999999Z")),
           Arguments.of(OrderMediaBy.RUNTIME, 90),
           Arguments.of(OrderMediaBy.LAST_WATCHED, Instant.parse("2026-10-19T15:07:12.345Z")));
