@@ -2,12 +2,10 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
-import com.streamarr.server.exceptions.InvalidPaginationCursorException;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
-import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -19,55 +17,27 @@ public class FakeProfileManagerInvitationRepository
     implements ProfileManagerInvitationRepository {
 
   @Override
-  public List<ProfileManagerInvitation> findPendingByProfileId(
-      UUID profileId, Instant now, KeysetPaginationOptions options) {
-    return findPage(invitation -> profileId.equals(invitation.getProfileId()), now, options);
+  public List<Row<ProfileManagerInvitation>> rowsPendingForProfile(
+      UUID profileId, Instant now, Seek seek) {
+    return rowsPending(invitation -> profileId.equals(invitation.getProfileId()), now, seek);
   }
 
   @Override
-  public List<ProfileManagerInvitation> findPendingByRecipientAccountId(
-      UUID recipientAccountId, Instant now, KeysetPaginationOptions options) {
-    return findPage(
-        invitation -> recipientAccountId.equals(invitation.getRecipientAccountId()), now, options);
+  public List<Row<ProfileManagerInvitation>> rowsPendingForRecipient(
+      UUID recipientAccountId, Instant now, Seek seek) {
+    return rowsPending(
+        invitation -> recipientAccountId.equals(invitation.getRecipientAccountId()), now, seek);
   }
 
-  private List<ProfileManagerInvitation> findPage(
-      Predicate<ProfileManagerInvitation> scope, Instant now, KeysetPaginationOptions options) {
-    var ordered =
+  private List<Row<ProfileManagerInvitation>> rowsPending(
+      Predicate<ProfileManagerInvitation> scope, Instant now, Seek seek) {
+    return InMemoryKeyset.byCreationTime(
         database.values().stream()
             .filter(scope)
             .filter(
                 invitation -> invitation.statusAt(now) == ProfileManagerInvitationStatus.PENDING)
-            .sorted(
-                Comparator.comparing(ProfileManagerInvitation::getCreatedOn)
-                    .reversed()
-                    .thenComparing(invitation -> invitation.getId().toString()))
-            .toList();
-    var cursorIndex =
-        options
-            .getCursorId()
-            .map(
-                cursorId ->
-                    ordered.stream()
-                        .map(ProfileManagerInvitation::getId)
-                        .toList()
-                        .indexOf(cursorId))
-            .orElse(-1);
-    if (options.getCursorId().isPresent() && cursorIndex < 0) {
-      throw new InvalidPaginationCursorException("Cursor no longer identifies an item.");
-    }
-
-    var pagination = options.getPaginationOptions();
-    if (pagination.getPaginationDirection() == PaginationDirection.REVERSE) {
-      var to = options.getCursorId().isPresent() ? cursorIndex + 1 : ordered.size();
-      var from = Math.max(0, to - pagination.getLimit() - 2);
-      return ordered.subList(from, to);
-    }
-
-    var from = options.getCursorId().isPresent() ? cursorIndex : 0;
-    var extraRows = options.getCursorId().isPresent() ? 2 : 1;
-    var to = Math.min(ordered.size(), from + pagination.getLimit() + extraRows);
-    return ordered.subList(from, to);
+            .toList(),
+        seek);
   }
 
   @Override

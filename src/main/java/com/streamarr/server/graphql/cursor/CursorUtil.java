@@ -1,6 +1,5 @@
 package com.streamarr.server.graphql.cursor;
 
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationOptions;
 import graphql.relay.DefaultConnectionCursor;
@@ -17,10 +16,6 @@ public class CursorUtil {
 
   private final ObjectMapper objectMapper;
 
-  public DefaultConnectionCursor encodeKeysetCursor(UUID cursorId) {
-    return encodeOpaqueCursor(cursorId.toString());
-  }
-
   public DefaultConnectionCursor encodeOpaqueCursor(String value) {
     return new DefaultConnectionCursor(
         Base64.getUrlEncoder()
@@ -34,22 +29,6 @@ public class CursorUtil {
     } catch (IllegalArgumentException _) {
       throw new InvalidCursorException("Cursor is not valid.");
     }
-  }
-
-  public KeysetPaginationOptions decodeKeysetCursor(PaginationOptions options) {
-    var cursorId =
-        options
-            .getCursor()
-            .map(
-                cursor -> {
-                  try {
-                    return UUID.fromString(decodeOpaqueCursor(cursor));
-                  } catch (IllegalArgumentException _) {
-                    throw new InvalidCursorException("Cursor is not valid.");
-                  }
-                })
-            .orElse(null);
-    return new KeysetPaginationOptions(cursorId, options);
   }
 
   public DefaultConnectionCursor encodeMediaCursor(

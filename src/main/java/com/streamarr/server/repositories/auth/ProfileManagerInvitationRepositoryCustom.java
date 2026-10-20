@@ -1,26 +1,20 @@
 package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
 public interface ProfileManagerInvitationRepositoryCustom {
 
-  /**
-   * The newest-first keyset window of the Profile's live PENDING invitations. A cursor window
-   * includes its cursor row so pagination can derive adjacent-page state before pruning it.
-   */
-  List<ProfileManagerInvitation> findPendingByProfileId(
-      UUID profileId, Instant now, KeysetPaginationOptions options);
+  /** The Profile's live PENDING invitations beyond the seek, by creation time, then ID. */
+  List<Row<ProfileManagerInvitation>> rowsPendingForProfile(UUID profileId, Instant now, Seek seek);
 
-  /**
-   * The newest-first keyset window of the recipient's live PENDING invitations. A cursor window
-   * includes its cursor row so pagination can derive adjacent-page state before pruning it.
-   */
-  List<ProfileManagerInvitation> findPendingByRecipientAccountId(
-      UUID recipientAccountId, Instant now, KeysetPaginationOptions options);
+  /** The recipient's live PENDING invitations beyond the seek, by creation time, then ID. */
+  List<Row<ProfileManagerInvitation>> rowsPendingForRecipient(
+      UUID recipientAccountId, Instant now, Seek seek);
 
   /** Cancels one live PENDING invitation exactly once. */
   boolean tryCancelPending(UUID invitationId, Instant now);

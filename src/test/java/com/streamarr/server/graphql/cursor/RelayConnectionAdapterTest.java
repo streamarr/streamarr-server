@@ -42,13 +42,13 @@ class RelayConnectionAdapterTest {
           adapter.toConnection(
               page,
               item -> new GraphqlNode(item.item().name()),
-              item -> cursorUtil.encodeKeysetCursor(item.item().id()));
+              item -> cursorUtil.encodeOpaqueCursor(item.item().id().toString()));
 
       assertThat(connection.getEdges())
           .extracting(edge -> edge.getNode().name())
           .containsExactly("Andrew");
       assertThat(connection.getEdges().getFirst().getCursor())
-          .isEqualTo(cursorUtil.encodeKeysetCursor(id));
+          .isEqualTo(cursorUtil.encodeOpaqueCursor(id.toString()));
     }
 
     @Test

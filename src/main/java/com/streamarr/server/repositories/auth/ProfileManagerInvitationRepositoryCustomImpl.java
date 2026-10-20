@@ -8,21 +8,19 @@ import static org.jooq.impl.DSL.inline;
 
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
-import com.streamarr.server.exceptions.InvalidPaginationCursorException;
 import com.streamarr.server.repositories.JooqQueryHelper;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
-import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.repositories.Keyset;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
-import org.jooq.impl.DSL;
 
 @RequiredArgsConstructor
 public class ProfileManagerInvitationRepositoryCustomImpl
@@ -32,92 +30,34 @@ public class ProfileManagerInvitationRepositoryCustomImpl
   private final EntityManager entityManager;
 
   @Override
-  public List<ProfileManagerInvitation> findPendingByProfileId(
-      UUID profileId, Instant now, KeysetPaginationOptions options) {
-    return findPage(
-        PROFILE_MANAGER_INVITATION
-            .PROFILE_ID
-            .eq(profileId)
-            .and(
-                PROFILE_MANAGER_INVITATION.STATUS.eq(
-                    inline(jooqStatus(ProfileManagerInvitationStatus.PENDING))))
-            .and(PROFILE_MANAGER_INVITATION.EXPIRES_AT.gt(now.atOffset(ZoneOffset.UTC))),
-        options);
+  public List<Row<ProfileManagerInvitation>> rowsPendingForProfile(
+      UUID profileId, Instant now, Seek seek) {
+    return rowsPendingBeyond(PROFILE_MANAGER_INVITATION.PROFILE_ID.eq(profileId), now, seek);
   }
 
   @Override
-  public List<ProfileManagerInvitation> findPendingByRecipientAccountId(
-      UUID recipientAccountId, Instant now, KeysetPaginationOptions options) {
-    return findPage(
-        PROFILE_MANAGER_INVITATION
-            .RECIPIENT_ACCOUNT_ID
-            .eq(recipientAccountId)
+  public List<Row<ProfileManagerInvitation>> rowsPendingForRecipient(
+      UUID recipientAccountId, Instant now, Seek seek) {
+    return rowsPendingBeyond(
+        PROFILE_MANAGER_INVITATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId), now, seek);
+  }
+
+  private List<Row<ProfileManagerInvitation>> rowsPendingBeyond(
+      Condition scope, Instant now, Seek seek) {
+    var keyset =
+        Keyset.<OffsetDateTime>builder()
+            .sortValue(PROFILE_MANAGER_INVITATION.CREATED_ON)
+            .itemId(PROFILE_MANAGER_INVITATION.ID)
+            .build();
+    var live =
+        scope
             .and(
                 PROFILE_MANAGER_INVITATION.STATUS.eq(
                     inline(jooqStatus(ProfileManagerInvitationStatus.PENDING))))
-            .and(PROFILE_MANAGER_INVITATION.EXPIRES_AT.gt(now.atOffset(ZoneOffset.UTC))),
-        options);
+            .and(PROFILE_MANAGER_INVITATION.EXPIRES_AT.gt(now.atOffset(ZoneOffset.UTC)));
+    var query = keyset.rowsBeyond(keyset.selectFrom(dsl, PROFILE_MANAGER_INVITATION), live, seek);
+    return JooqQueryHelper.nativeRows(entityManager, query, ProfileManagerInvitation.class, keyset);
   }
-
-  private List<ProfileManagerInvitation> findPage(
-      Condition scope, KeysetPaginationOptions options) {
-    var pagination = options.getPaginationOptions();
-    var reverse = pagination.getPaginationDirection() == PaginationDirection.REVERSE;
-    var cursorCondition = cursorCondition(scope, options, reverse);
-    var extraRows = options.getCursorId().isPresent() ? 2 : 1;
-    var query =
-        dsl.select()
-            .from(PROFILE_MANAGER_INVITATION)
-            .where(scope)
-            .and(cursorCondition)
-            .orderBy(
-                reverse
-                    ? PROFILE_MANAGER_INVITATION.CREATED_ON.asc()
-                    : PROFILE_MANAGER_INVITATION.CREATED_ON.desc(),
-                reverse
-                    ? PROFILE_MANAGER_INVITATION.ID.desc()
-                    : PROFILE_MANAGER_INVITATION.ID.asc())
-            .limit(pagination.getLimit() + extraRows);
-    var found = JooqQueryHelper.nativeQuery(entityManager, query, ProfileManagerInvitation.class);
-    if (reverse) {
-      Collections.reverse(found);
-    }
-
-    return found;
-  }
-
-  private Condition cursorCondition(
-      Condition scope, KeysetPaginationOptions options, boolean reverse) {
-    return options
-        .getCursorId()
-        .<Condition>map(cursorId -> cursorCondition(scope, cursorId, reverse))
-        .orElseGet(DSL::noCondition);
-  }
-
-  private Condition cursorCondition(Condition scope, UUID cursorId, boolean reverse) {
-    var cursor =
-        dsl.select(PROFILE_MANAGER_INVITATION.CREATED_ON, PROFILE_MANAGER_INVITATION.ID)
-            .from(PROFILE_MANAGER_INVITATION)
-            .where(scope)
-            .and(PROFILE_MANAGER_INVITATION.ID.eq(cursorId))
-            .fetchOptional(row -> new InvitationCursor(row.value1(), row.value2()))
-            .orElseThrow(
-                () -> new InvalidPaginationCursorException("Cursor no longer identifies an item."));
-    var sameCreatedOn = PROFILE_MANAGER_INVITATION.CREATED_ON.eq(cursor.createdOn());
-    if (reverse) {
-      return PROFILE_MANAGER_INVITATION
-          .CREATED_ON
-          .gt(cursor.createdOn())
-          .or(sameCreatedOn.and(PROFILE_MANAGER_INVITATION.ID.le(cursor.id())));
-    }
-
-    return PROFILE_MANAGER_INVITATION
-        .CREATED_ON
-        .lt(cursor.createdOn())
-        .or(sameCreatedOn.and(PROFILE_MANAGER_INVITATION.ID.ge(cursor.id())));
-  }
-
-  private record InvitationCursor(OffsetDateTime createdOn, UUID id) {}
 
   private boolean tryTransitionPending(
       UUID invitationId, ProfileManagerInvitationStatus target, Instant now) {

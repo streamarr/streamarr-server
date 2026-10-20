@@ -27,6 +27,7 @@ import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
+import com.streamarr.server.fixtures.PaginationFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.OpaqueOneTimeCodes;
@@ -36,15 +37,11 @@ import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
-import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.PaginationOptions;
-import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.services.pagination.PageRequest;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
@@ -90,7 +87,8 @@ class ProfileManagerAdministrationServiceTest {
               .build(),
           new MutationTransactions(
               new FakeTransactionManager(), new ConstraintViolationTranslator()),
-          new PaginationService(),
+          new ProfileManagerInvitationsList(invitations, clock),
+          new ReceivedManagerInvitationsList(invitations, clock),
           clock);
 
   private UserAccount inviter;
@@ -711,13 +709,13 @@ class ProfileManagerAdministrationServiceTest {
             service
                 .pendingManagerInvitationsForProfile(
                     identity(), orphan.getId(), paginationOptions())
-                .items())
+                .rows())
         .singleElement()
         .satisfies(
             item ->
                 assertThat(item.item().getStatus())
                     .isEqualTo(ProfileManagerInvitationStatus.PENDING));
-    assertThat(service.pendingManagerInvitations(recipientIdentity(), paginationOptions()).items())
+    assertThat(service.pendingManagerInvitations(recipientIdentity(), paginationOptions()).rows())
         .singleElement()
         .satisfies(
             item ->
@@ -729,7 +727,7 @@ class ProfileManagerAdministrationServiceTest {
             service
                 .pendingManagerInvitationsForProfile(
                     identity(), orphan.getId(), paginationOptions())
-                .items())
+                .rows())
         .isEmpty();
   }
 
@@ -758,14 +756,8 @@ class ProfileManagerAdministrationServiceTest {
     return account;
   }
 
-  private static KeysetPaginationOptions paginationOptions() {
-    return new KeysetPaginationOptions(
-        null,
-        PaginationOptions.builder()
-            .paginationDirection(PaginationDirection.FORWARD)
-            .cursor(Optional.empty())
-            .limit(100)
-            .build());
+  private static PageRequest paginationOptions() {
+    return PaginationFixture.firstRows(100);
   }
 
   private ProfileManagerInvitation pendingInvitation(
