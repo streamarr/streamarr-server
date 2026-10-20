@@ -61,17 +61,13 @@ public abstract class PagedListContract<T, S> extends AbstractIntegrationTest {
 
   /**
    * A position that sorts before every arranged item and after every other item of the list. A list
-   * whose scope holds only the arranged items, such as one Profile's list, pages from its start
-   * instead; a server-wide list names a position here so other rows cannot interleave.
+   * whose scope holds only the arranged items, such as one Profile's list, answers empty and pages
+   * from its start; a server-wide list names a position so other rows cannot interleave.
    */
-  protected Optional<Position> positionBeforeArrangedItems(S scope) {
-    return Optional.empty();
-  }
+  protected abstract Optional<Position> positionBeforeArrangedItems(S scope);
 
   /** A position that sorts after every arranged item; see {@link #positionBeforeArrangedItems}. */
-  protected Optional<Position> positionAfterArrangedItems(S scope) {
-    return Optional.empty();
-  }
+  protected abstract Optional<Position> positionAfterArrangedItems(S scope);
 
   @BeforeEach
   void createContractScope() {
