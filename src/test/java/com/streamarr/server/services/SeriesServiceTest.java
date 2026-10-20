@@ -298,7 +298,7 @@ class SeriesServiceTest {
     void shouldFetchRequiredArtworkForSavedSeriesWhenCreatingSeries() {
       var series =
           Series.builder()
-              .library(LibraryFixtureCreator.buildFakeLibrary())
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
               .title("Breaking Bad")
               .build();
       var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
@@ -317,7 +317,7 @@ class SeriesServiceTest {
     void shouldReportUnavailableArtworkWhenCreatingSeriesWithoutImageSources() {
       var series =
           Series.builder()
-              .library(LibraryFixtureCreator.buildFakeLibrary())
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
               .title("Breaking Bad")
               .build();
       var metadataResult = new MetadataResult<>(series, List.of(), Map.of(), Map.of());
@@ -335,7 +335,7 @@ class SeriesServiceTest {
       var series =
           seriesRepository.save(
               Series.builder()
-                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Breaking Bad")
                   .build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
@@ -367,7 +367,7 @@ class SeriesServiceTest {
       var series =
           seriesRepository.save(
               Series.builder()
-                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Breaking Bad")
                   .build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
@@ -410,7 +410,7 @@ class SeriesServiceTest {
       var series =
           seriesRepository.save(
               Series.builder()
-                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Breaking Bad")
                   .build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
@@ -442,7 +442,7 @@ class SeriesServiceTest {
       var series =
           seriesRepository.save(
               Series.builder()
-                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Breaking Bad")
                   .build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
@@ -501,7 +501,7 @@ class SeriesServiceTest {
       var series =
           seriesRepository.save(
               Series.builder()
-                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Breaking Bad")
                   .build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
@@ -530,7 +530,7 @@ class SeriesServiceTest {
       var series =
           seriesRepository.save(
               Series.builder()
-                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Breaking Bad")
                   .build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
@@ -578,7 +578,7 @@ class SeriesServiceTest {
       var existing =
           seriesRepository.save(
               Series.builder()
-                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Old Title")
                   .originalTitle("Old Original")
                   .titleSort("old title")
@@ -591,7 +591,7 @@ class SeriesServiceTest {
 
       var fresh =
           Series.builder()
-              .library(LibraryFixtureCreator.buildFakeLibrary())
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
               .title("New Title")
               .originalTitle("New Original")
               .titleSort("new title")
@@ -625,7 +625,7 @@ class SeriesServiceTest {
       var existing =
           seriesRepository.save(
               Series.builder()
-                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Breaking Bad")
                   .tagline("Old tagline")
                   .summary("Old summary")
@@ -634,7 +634,7 @@ class SeriesServiceTest {
 
       var fresh =
           Series.builder()
-              .library(LibraryFixtureCreator.buildFakeLibrary())
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
               .title("Breaking Bad")
               .titleSort("breaking bad")
               .build();
@@ -653,13 +653,13 @@ class SeriesServiceTest {
       var existing =
           seriesRepository.save(
               Series.builder()
-                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Breaking Bad")
                   .build());
 
       var fresh =
           Series.builder()
-              .library(LibraryFixtureCreator.buildFakeLibrary())
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
               .title("Breaking Bad")
               .cast(List.of(Person.builder().name("Bryan Cranston").sourceId("17419").build()))
               .directors(List.of(Person.builder().name("Vince Gilligan").sourceId("66633").build()))
@@ -684,13 +684,13 @@ class SeriesServiceTest {
       var existing =
           seriesRepository.save(
               Series.builder()
-                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Breaking Bad")
                   .build());
       var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
       var fresh =
           Series.builder()
-              .library(LibraryFixtureCreator.buildFakeLibrary())
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
               .title("Breaking Bad")
               .build();
       var metadataResult = new MetadataResult<>(fresh, imageSources, Map.of(), Map.of());
@@ -709,12 +709,12 @@ class SeriesServiceTest {
       var existing =
           seriesRepository.save(
               Series.builder()
-                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Breaking Bad")
                   .build());
       var fresh =
           Series.builder()
-              .library(LibraryFixtureCreator.buildFakeLibrary())
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
               .title("Breaking Bad")
               .build();
       var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
@@ -731,7 +731,7 @@ class SeriesServiceTest {
       var series =
           seriesRepository.save(
               Series.builder()
-                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Breaking Bad")
                   .build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
@@ -771,7 +771,7 @@ class SeriesServiceTest {
       var series =
           seriesRepository.save(
               Series.builder()
-                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Breaking Bad")
                   .build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
@@ -798,7 +798,7 @@ class SeriesServiceTest {
       var series =
           seriesRepository.save(
               Series.builder()
-                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Breaking Bad")
                   .build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
@@ -853,7 +853,7 @@ class SeriesServiceTest {
       var series =
           seriesRepository.save(
               Series.builder()
-                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Breaking Bad")
                   .build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
@@ -907,7 +907,7 @@ class SeriesServiceTest {
       var series =
           seriesRepository.save(
               Series.builder()
-                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Breaking Bad")
                   .build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();

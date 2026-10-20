@@ -18,7 +18,9 @@ import com.streamarr.server.repositories.ReviewRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
-import com.streamarr.server.services.events.library.LibraryItemChangedEvent;
+import com.streamarr.server.services.events.library.LibraryItemAddedEvent;
+import com.streamarr.server.services.events.library.LibraryItemRemovedEvent;
+import com.streamarr.server.services.events.library.LibraryItemUpdatedEvent;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
@@ -76,13 +78,7 @@ public class MovieService {
 
     movie.get().addFile(mediaFile);
     var saved = movieRepository.saveAndFlush(movie.get());
-    events.publishEvent(
-        LibraryItemChangedEvent.builder()
-            .change(LibraryItemChangedEvent.Change.UPDATED)
-            .libraryId(saved.getLibrary().getId())
-            .itemId(saved.getId())
-            .kind(MediaType.MOVIE)
-            .build());
+    events.publishEvent(LibraryItemUpdatedEvent.forEveryProfile(saved, MediaType.MOVIE));
     return Optional.of(saved);
   }
 
@@ -93,13 +89,7 @@ public class MovieService {
         .map(
             movie -> {
               deleteMovies(List.of(movie));
-              events.publishEvent(
-                  LibraryItemChangedEvent.builder()
-                      .change(LibraryItemChangedEvent.Change.REMOVED)
-                      .libraryId(movie.getLibrary().getId())
-                      .itemId(movie.getId())
-                      .kind(MediaType.MOVIE)
-                      .build());
+              events.publishEvent(LibraryItemRemovedEvent.of(movie, MediaType.MOVIE));
               return true;
             })
         .orElse(false);
@@ -141,13 +131,7 @@ public class MovieService {
 
     requestPrimaryArtwork(savedMovie.getId(), metadataResult.imageSources(), artworkRun);
 
-    events.publishEvent(
-        LibraryItemChangedEvent.builder()
-            .change(LibraryItemChangedEvent.Change.ADDED)
-            .libraryId(savedMovie.getLibrary().getId())
-            .itemId(savedMovie.getId())
-            .kind(MediaType.MOVIE)
-            .build());
+    events.publishEvent(LibraryItemAddedEvent.of(savedMovie, MediaType.MOVIE));
 
     return savedMovie;
   }
@@ -173,13 +157,7 @@ public class MovieService {
 
     var saved = movieRepository.saveAndFlush(existing);
     requestPrimaryArtwork(saved.getId(), metadataResult.imageSources(), artworkRun);
-    events.publishEvent(
-        LibraryItemChangedEvent.builder()
-            .change(LibraryItemChangedEvent.Change.UPDATED)
-            .libraryId(saved.getLibrary().getId())
-            .itemId(saved.getId())
-            .kind(MediaType.MOVIE)
-            .build());
+    events.publishEvent(LibraryItemUpdatedEvent.forEveryProfile(saved, MediaType.MOVIE));
     return saved;
   }
 

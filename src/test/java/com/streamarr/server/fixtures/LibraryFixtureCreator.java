@@ -22,6 +22,11 @@ public final class LibraryFixtureCreator {
         .build();
   }
 
+  /** A movie library as loaded from the database, for tests that never persist it. */
+  public static Library buildFakeLibraryWithId() {
+    return buildFakeLibrary().toBuilder().id(UUID.randomUUID()).build();
+  }
+
   public static Library buildFakeSeriesLibrary() {
     return Library.builder()
         .name("Test Series Library")

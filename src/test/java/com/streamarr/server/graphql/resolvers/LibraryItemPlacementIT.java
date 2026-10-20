@@ -24,7 +24,8 @@ import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.services.ArtworkRequestService;
 import com.streamarr.server.services.MovieService;
-import com.streamarr.server.services.events.library.LibraryItemChangedEvent;
+import com.streamarr.server.services.events.library.LibraryItemAudience;
+import com.streamarr.server.services.events.library.LibraryItemUpdatedEvent;
 import com.streamarr.server.services.library.LibraryContentsService;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.pagination.MediaFilter;
@@ -203,8 +204,8 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
       transactions.executeWithoutResult(
           _ ->
               events.publishEvent(
-                  LibraryItemChangedEvent.builder()
-                      .change(LibraryItemChangedEvent.Change.UPDATED)
+                  LibraryItemUpdatedEvent.builder()
+                      .audience(LibraryItemAudience.everyProfile())
                       .libraryId(library.getId())
                       .itemId(lettered.getId())
                       .kind(kind)
@@ -248,7 +249,7 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
     return edges.valueStream().map(edge -> edge.at("/node/id").asString()).toList();
   }
 
-  private LibraryItemChangedEvent timestampItem(MediaType kind, UUID profileId) {
+  private LibraryItemUpdatedEvent timestampItem(MediaType kind, UUID profileId) {
     var library =
         libraries.saveAndFlush(
             LibraryFixtureCreator.buildFakeLibrary().toBuilder().type(kind).build());
@@ -282,8 +283,8 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
             .build());
     auditColumns.overwriteCreatedOn(
         BASE_COLLECTABLE, BASE_COLLECTABLE.ID.eq(item.getId()), WHOLE_MINUTE);
-    return LibraryItemChangedEvent.builder()
-        .change(LibraryItemChangedEvent.Change.UPDATED)
+    return LibraryItemUpdatedEvent.builder()
+        .audience(LibraryItemAudience.everyProfile())
         .libraryId(library.getId())
         .itemId(item.getId())
         .kind(kind)

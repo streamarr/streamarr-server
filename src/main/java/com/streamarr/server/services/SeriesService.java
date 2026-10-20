@@ -18,7 +18,9 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
-import com.streamarr.server.services.events.library.LibraryItemChangedEvent;
+import com.streamarr.server.services.events.library.LibraryItemAddedEvent;
+import com.streamarr.server.services.events.library.LibraryItemRemovedEvent;
+import com.streamarr.server.services.events.library.LibraryItemUpdatedEvent;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.pagination.LetterJumpResolver;
@@ -97,7 +99,7 @@ public class SeriesService {
             .sources(metadataResult.imageSources())
             .build());
 
-    publishChange(savedSeries, LibraryItemChangedEvent.Change.ADDED);
+    events.publishEvent(LibraryItemAddedEvent.of(savedSeries, MediaType.SERIES));
     return savedSeries;
   }
 
@@ -143,7 +145,7 @@ public class SeriesService {
     var savedEpisodes = episodeRepository.saveAllAndFlush(episodes);
     requestEpisodeArtwork(savedEpisodes, request);
 
-    publishChange(series, LibraryItemChangedEvent.Change.UPDATED);
+    events.publishEvent(LibraryItemUpdatedEvent.forEveryProfile(series, MediaType.SERIES));
     return season;
   }
 
@@ -174,7 +176,7 @@ public class SeriesService {
             .targetType(ImageEntityType.SERIES)
             .sources(metadataResult.imageSources())
             .build());
-    publishChange(saved, LibraryItemChangedEvent.Change.UPDATED);
+    events.publishEvent(LibraryItemUpdatedEvent.forEveryProfile(saved, MediaType.SERIES));
     return saved;
   }
 
@@ -226,7 +228,7 @@ public class SeriesService {
     var savedEpisodes = episodeRepository.saveAllAndFlush(episodes);
     requestEpisodeArtwork(savedEpisodes, request);
 
-    publishChange(series, LibraryItemChangedEvent.Change.UPDATED);
+    events.publishEvent(LibraryItemUpdatedEvent.forEveryProfile(series, MediaType.SERIES));
     return savedSeason;
   }
 
@@ -268,7 +270,7 @@ public class SeriesService {
         .ifPresent(
             series -> {
               deleteSeries(List.of(series));
-              publishChange(series, LibraryItemChangedEvent.Change.REMOVED);
+              events.publishEvent(LibraryItemRemovedEvent.of(series, MediaType.SERIES));
             });
   }
 
@@ -279,16 +281,6 @@ public class SeriesService {
 
     imageService.prepareSeriesDeletion(seriesList.stream().map(Series::getId).toList());
     seriesRepository.deleteAll(seriesList);
-  }
-
-  private void publishChange(Series series, LibraryItemChangedEvent.Change change) {
-    events.publishEvent(
-        LibraryItemChangedEvent.builder()
-            .change(change)
-            .libraryId(series.getLibrary().getId())
-            .itemId(series.getId())
-            .kind(MediaType.SERIES)
-            .build());
   }
 
   @Transactional(readOnly = true)

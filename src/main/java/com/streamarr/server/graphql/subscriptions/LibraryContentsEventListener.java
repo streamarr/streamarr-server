@@ -1,7 +1,9 @@
 package com.streamarr.server.graphql.subscriptions;
 
 import com.streamarr.server.services.events.library.LibraryCountsChangedEvent;
-import com.streamarr.server.services.events.library.LibraryItemChangedEvent;
+import com.streamarr.server.services.events.library.LibraryItemAddedEvent;
+import com.streamarr.server.services.events.library.LibraryItemRemovedEvent;
+import com.streamarr.server.services.events.library.LibraryItemUpdatedEvent;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -15,12 +17,18 @@ public class LibraryContentsEventListener {
   private final LibraryContentsBroadcasters broadcasters;
 
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-  public void onItemChanged(LibraryItemChangedEvent event) {
-    switch (event.change()) {
-      case ADDED -> broadcasters.getAdditions().broadcast(event.libraryId(), event);
-      case UPDATED -> broadcasters.getUpdates().broadcast(event.libraryId(), event);
-      case REMOVED -> broadcasters.getRemovals().broadcast(event.libraryId(), event);
-    }
+  public void onItemAdded(LibraryItemAddedEvent event) {
+    broadcasters.getAdditions().broadcast(event.libraryId(), event);
+  }
+
+  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+  public void onItemUpdated(LibraryItemUpdatedEvent event) {
+    broadcasters.getUpdates().broadcast(event.libraryId(), event);
+  }
+
+  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+  public void onItemRemoved(LibraryItemRemovedEvent event) {
+    broadcasters.getRemovals().broadcast(event.libraryId(), event);
   }
 
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)

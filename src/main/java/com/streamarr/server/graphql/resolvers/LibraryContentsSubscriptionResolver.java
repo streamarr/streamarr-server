@@ -17,7 +17,10 @@ import com.streamarr.server.graphql.inputs.MediaSortInput;
 import com.streamarr.server.graphql.subscriptions.KeyedSubscriptionBroadcaster;
 import com.streamarr.server.graphql.subscriptions.LibraryContentsBroadcasters;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.events.library.LibraryItemAddedEvent;
 import com.streamarr.server.services.events.library.LibraryItemChangedEvent;
+import com.streamarr.server.services.events.library.LibraryItemRemovedEvent;
+import com.streamarr.server.services.events.library.LibraryItemUpdatedEvent;
 import com.streamarr.server.services.library.LibraryContentsService;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import graphql.schema.DataFetchingEnvironment;
@@ -36,7 +39,7 @@ public class LibraryContentsSubscriptionResolver {
   private final RelayConnectionAdapter connections;
 
   @DgsSubscription
-  public Publisher<LibraryItemChangedEvent> libraryItemAdded(@InputArgument String libraryId) {
+  public Publisher<LibraryItemAddedEvent> libraryItemAdded(@InputArgument String libraryId) {
     return register(libraryId, broadcasters.getAdditions());
   }
 
@@ -67,10 +70,10 @@ public class LibraryContentsSubscriptionResolver {
   }
 
   @DgsSubscription
-  public Publisher<LibraryItemChangedEvent> libraryItemUpdated(@InputArgument String libraryId) {
+  public Publisher<LibraryItemUpdatedEvent> libraryItemUpdated(@InputArgument String libraryId) {
     var profileId = authorization.currentIdentity().profileId();
     return register(libraryId, broadcasters.getUpdates())
-        .filter(change -> change.visibleTo(profileId));
+        .filter(change -> change.audience().includes(profileId));
   }
 
   private UUID parseId(String id) {
@@ -82,7 +85,7 @@ public class LibraryContentsSubscriptionResolver {
   }
 
   @DgsSubscription
-  public Publisher<LibraryItemChangedEvent> libraryItemRemoved(@InputArgument String libraryId) {
+  public Publisher<LibraryItemRemovedEvent> libraryItemRemoved(@InputArgument String libraryId) {
     return register(libraryId, broadcasters.getRemovals());
   }
 

@@ -862,7 +862,7 @@ class MovieServiceTest {
     void shouldFetchRequiredArtworkForSavedMovieWhenCreatingMovie() {
       var movie =
           Movie.builder()
-              .library(LibraryFixtureCreator.buildFakeLibrary())
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
               .title("Inception")
               .build();
       var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
@@ -882,7 +882,7 @@ class MovieServiceTest {
     void shouldReportUnavailableArtworkWhenCreatingMovieWithoutImageSources() {
       var movie =
           Movie.builder()
-              .library(LibraryFixtureCreator.buildFakeLibrary())
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
               .title("Inception")
               .build();
       var metadataResult = new MetadataResult<>(movie, List.of(), Map.of(), Map.of());
@@ -900,7 +900,7 @@ class MovieServiceTest {
       var existing =
           movieRepository.save(
               Movie.builder()
-                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Old Title")
                   .originalTitle("Old Original")
                   .titleSort("old title")
@@ -913,7 +913,7 @@ class MovieServiceTest {
 
       var fresh =
           Movie.builder()
-              .library(LibraryFixtureCreator.buildFakeLibrary())
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
               .title("New Title")
               .originalTitle("New Original")
               .titleSort("new title")
@@ -947,7 +947,7 @@ class MovieServiceTest {
       var existing =
           movieRepository.save(
               Movie.builder()
-                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Inception")
                   .tagline("Old tagline")
                   .summary("Old summary")
@@ -956,7 +956,7 @@ class MovieServiceTest {
 
       var fresh =
           Movie.builder()
-              .library(LibraryFixtureCreator.buildFakeLibrary())
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
               .title("Inception")
               .titleSort("inception")
               .build();
@@ -975,13 +975,13 @@ class MovieServiceTest {
       var existing =
           movieRepository.save(
               Movie.builder()
-                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Inception")
                   .build());
 
       var fresh =
           Movie.builder()
-              .library(LibraryFixtureCreator.buildFakeLibrary())
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
               .title("Inception")
               .cast(List.of(Person.builder().name("Leonardo DiCaprio").sourceId("6193").build()))
               .directors(
@@ -1007,13 +1007,13 @@ class MovieServiceTest {
       var existing =
           movieRepository.save(
               Movie.builder()
-                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Inception")
                   .build());
       var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
       var fresh =
           Movie.builder()
-              .library(LibraryFixtureCreator.buildFakeLibrary())
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
               .title("Inception")
               .build();
       var metadataResult = new MetadataResult<>(fresh, imageSources, Map.of(), Map.of());
@@ -1034,7 +1034,7 @@ class MovieServiceTest {
       var existing =
           movieRepository.save(
               Movie.builder()
-                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Inception")
                   .build());
       var stored = seedImage(existing.getId());
@@ -1042,7 +1042,7 @@ class MovieServiceTest {
       var metadataResult =
           new MetadataResult<>(
               Movie.builder()
-                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Inception")
                   .build(),
               imageSources,
@@ -1070,12 +1070,12 @@ class MovieServiceTest {
       var existing =
           movieRepository.save(
               Movie.builder()
-                  .library(LibraryFixtureCreator.buildFakeLibrary())
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Inception")
                   .build());
       var fresh =
           Movie.builder()
-              .library(LibraryFixtureCreator.buildFakeLibrary())
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
               .title("Inception")
               .build();
       var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
