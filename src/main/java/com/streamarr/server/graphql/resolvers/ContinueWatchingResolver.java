@@ -73,7 +73,7 @@ public class ContinueWatchingResolver {
 
   private static MediaOrder orderOf(Position position) {
     return MediaOrder.at(
-        OrderMediaBy.LAST_WATCHED, ContinueWatchingList.ORDER.direction(), position);
+        OrderMediaBy.LAST_WATCHED, ContinueWatchingList.LAST_WATCHED_FIRST.direction(), position);
   }
 
   @DgsTypeResolver(name = "ContinueWatchingMedia")

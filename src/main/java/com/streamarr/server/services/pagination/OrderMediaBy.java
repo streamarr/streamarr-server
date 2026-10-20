@@ -21,8 +21,8 @@ public enum OrderMediaBy {
 
     return switch (this) {
       case TITLE -> readTitle(value);
-      case ADDED, LAST_WATCHED -> SortValue.readInstant(value.toString());
-      case RELEASE_DATE -> SortValue.readDate(value.toString());
+      case ADDED, LAST_WATCHED -> CursorSortValues.readInstant(value.toString());
+      case RELEASE_DATE -> CursorSortValues.readDate(value.toString());
       case RUNTIME -> Integer.valueOf(value.toString());
     };
   }

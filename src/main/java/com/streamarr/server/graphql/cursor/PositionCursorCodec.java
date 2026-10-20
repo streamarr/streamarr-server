@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.cursor;
 
+import com.google.common.hash.Hashing;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.PaginationOptions;
@@ -7,8 +8,6 @@ import com.streamarr.server.services.pagination.Position;
 import graphql.relay.ConnectionCursor;
 import graphql.relay.DefaultConnectionCursor;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.Base64;
 import org.springframework.stereotype.Component;
@@ -95,15 +94,15 @@ public class PositionCursorCodec {
   }
 
   private String fingerprint(ListIdentity list) {
-    try {
-      var digest = MessageDigest.getInstance("SHA-256");
-      digest.update(list.list().getBytes(StandardCharsets.UTF_8));
-      digest.update(objectMapper.writeValueAsBytes(list.scope()));
-      return Base64.getUrlEncoder()
-          .withoutPadding()
-          .encodeToString(Arrays.copyOf(digest.digest(), SCOPE_FINGERPRINT_BYTES));
-    } catch (NoSuchAlgorithmException e) {
-      throw new IllegalStateException("SHA-256 is unavailable", e);
-    }
+    var digest =
+        Hashing.sha256()
+            .newHasher()
+            .putString(list.list(), StandardCharsets.UTF_8)
+            .putBytes(objectMapper.writeValueAsBytes(list.scope()))
+            .hash()
+            .asBytes();
+    return Base64.getUrlEncoder()
+        .withoutPadding()
+        .encodeToString(Arrays.copyOf(digest, SCOPE_FINGERPRINT_BYTES));
   }
 }

@@ -34,9 +34,9 @@ public record Keyset<V>(@NonNull Field<V> sortValue, @NonNull Field<UUID> itemId
         .limit(seek.limit());
   }
 
-  public Row<UUID> rowOf(Record record) {
-    var id = record.get(itemId);
-    return new Row<>(id, new Position(SortValue.of(record.get(sortValue)), id));
+  public Row<UUID> rowOf(Record fetched) {
+    var id = fetched.get(itemId);
+    return new Row<>(id, new Position(SortValue.of(fetched.get(sortValue)), id));
   }
 
   private Condition beyond(Seek seek, boolean ascending) {

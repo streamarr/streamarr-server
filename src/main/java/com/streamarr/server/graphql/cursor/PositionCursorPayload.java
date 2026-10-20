@@ -1,6 +1,7 @@
 package com.streamarr.server.graphql.cursor;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.streamarr.server.services.pagination.CursorSortValues;
 import com.streamarr.server.services.pagination.Position;
 import com.streamarr.server.services.pagination.SortValue;
 import java.util.UUID;
@@ -50,8 +51,8 @@ record PositionCursorPayload(
     var sortValue =
         switch (type) {
           case TEXT -> new SortValue.OfText(value);
-          case INSTANT -> new SortValue.OfInstant(SortValue.readInstant(value));
-          case DATE -> new SortValue.OfDate(SortValue.readDate(value));
+          case INSTANT -> new SortValue.OfInstant(CursorSortValues.readInstant(value));
+          case DATE -> new SortValue.OfDate(CursorSortValues.readDate(value));
           case NUMBER -> new SortValue.OfNumber(Long.parseLong(value));
           case ABSENT -> new SortValue.Absent();
         };

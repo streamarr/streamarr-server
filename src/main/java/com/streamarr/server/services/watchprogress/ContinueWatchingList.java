@@ -26,7 +26,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class ContinueWatchingList implements PagedList<BaseCollectable<?>, UUID> {
 
-  public static final ListOrder ORDER =
+  public static final ListOrder LAST_WATCHED_FIRST =
       ListOrder.builder().valueKind(SortValueKind.INSTANT).direction(SortDirection.DESC).build();
 
   private final ContinueWatchingRepository continueWatchingRepository;
@@ -35,7 +35,7 @@ public class ContinueWatchingList implements PagedList<BaseCollectable<?>, UUID>
 
   @Override
   public ListOrder order(UUID profileId) {
-    return ORDER;
+    return LAST_WATCHED_FIRST;
   }
 
   @Override
