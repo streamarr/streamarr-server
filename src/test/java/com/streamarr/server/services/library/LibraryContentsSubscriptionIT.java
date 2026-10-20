@@ -92,7 +92,8 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
   }
 
   @Test
-  void shouldDeliverANewlyScannedMovieToANonAdminProfile() throws Exception {
+  @DisplayName("Should deliver an addition to a non-admin Profile when a scan adds a movie")
+  void shouldDeliverAnAdditionToANonAdminProfileWhenAScanAddsAMovie() throws Exception {
     Files.createFile(directory.resolve("Arrival (2016).mkv"));
     var library =
         libraries.saveAndFlush(
@@ -131,7 +132,9 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
   }
 
   @Test
-  void shouldDeliverOnlyCommittedMetadataChangesFromTheSubscribedLibrary() {
+  @DisplayName(
+      "Should deliver only committed changes from the subscribed library when metadata changes")
+  void shouldDeliverOnlyCommittedChangesFromTheSubscribedLibraryWhenMetadataChanges() {
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     var movie =
         movies.saveAndFlush(
@@ -186,7 +189,8 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
 
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
-  void shouldDiscardRolledBackIndirectChangesBeforeTheNextCommittedItem(boolean watchStateChange)
+  @DisplayName("Should discard indirect changes when their transaction rolls back")
+  void shouldDiscardIndirectChangesWhenTheirTransactionRollsBack(boolean watchStateChange)
       throws Exception {
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     var keptFile = Files.createFile(directory.resolve("kept.mkv"));
@@ -245,7 +249,7 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
 
   @Test
   @DisplayName("Should send a removal without an update when orphan cleanup deletes a movie")
-  void shouldDeliverNoUpdateForAMovieRemovedByOrphanCleanup() {
+  void shouldSendARemovalWithoutAnUpdateWhenOrphanCleanupDeletesAMovie() {
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     var removed =
         movies.saveAndFlush(
@@ -310,6 +314,7 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should deliver a removal when a scan confirms the movie's only file is missing")
   void shouldDeliverARemovalWhenAScanConfirmsTheMoviesOnlyFileIsMissing() throws Exception {
     Files.createFile(directory.resolve("library.txt"));
     var library =
@@ -356,6 +361,7 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should deliver authoritative counts only when a recount commits")
   void shouldDeliverAuthoritativeCountsOnlyWhenARecountCommits() {
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     movies.saveAndFlush(Movie.builder().title("Alpha").titleSort("Alpha").library(library).build());
@@ -405,6 +411,8 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
   @EnumSource(
       value = MediaType.class,
       names = {"MOVIE", "SERIES"})
+  @DisplayName(
+      "Should complete every subscription and a late registration when its library is removed")
   void shouldCompleteEverySubscriptionWhenItsLibraryIsRemovedAndCompleteALateRegistration(
       MediaType type) {
     var library =
@@ -464,7 +472,9 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
   }
 
   @Test
-  void shouldDeliverSeriesCreationChildChangesAndRemoval() {
+  @DisplayName(
+      "Should deliver each series change when a series is created, changed through its children and removed")
+  void shouldDeliverEachSeriesChangeWhenASeriesIsCreatedChangedAndRemoved() {
     var library =
         libraries.saveAndFlush(
             LibraryFixtureCreator.buildFakeLibrary().toBuilder().type(MediaType.SERIES).build());
@@ -533,7 +543,8 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
   }
 
   @Test
-  void shouldDeliverNewArtworkAfterItsScanStepCommits() throws Exception {
+  @DisplayName("Should deliver new artwork when its scan step commits")
+  void shouldDeliverNewArtworkWhenItsScanStepCommits() throws Exception {
     Files.createFile(directory.resolve("Arrival (2016).mkv"));
     var library =
         libraries.saveAndFlush(
@@ -584,7 +595,9 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
   }
 
   @Test
-  void shouldDeliverWatchStateMembershipChangesOnlyToTheAffectedProfile() {
+  @DisplayName(
+      "Should deliver watch-state changes only to the affected Profile when a Profile watches")
+  void shouldDeliverWatchStateChangesOnlyToTheAffectedProfileWhenAProfileWatches() {
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     var movie =
         movies.saveAndFlush(
@@ -636,6 +649,7 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should update the series when scanning adds and removes an episode file")
   void shouldUpdateTheSeriesWhenScanningAddsAndRemovesAnEpisodeFile() throws Exception {
     var seasonDirectory = directory.resolve("Example/Season 01");
     Files.createDirectories(seasonDirectory);
@@ -706,7 +720,8 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
   }
 
   @Test
-  void shouldDeliverRefreshedSeriesAndEpisodeMetadata() {
+  @DisplayName("Should deliver the series when its or its episodes' metadata is refreshed")
+  void shouldDeliverTheSeriesWhenItsOrItsEpisodesMetadataIsRefreshed() {
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
     var series =
         seriesRepository.saveAndFlush(
@@ -798,7 +813,9 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
   }
 
   @Test
-  void shouldRequireTheSameSelectedProfileAsLibraryQueriesForEveryField() {
+  @DisplayName(
+      "Should refuse every field when the token has no selected Profile, as library queries do")
+  void shouldRefuseEveryFieldWhenTheTokenHasNoSelectedProfile() {
     var identity = auth.createIdentity();
     identities.add(identity);
     var socket = GraphQlTransportWsTestClient.connectWithBearer(port, auth.accountBearer(identity));

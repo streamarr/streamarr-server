@@ -6,6 +6,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.IntStream;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -14,7 +15,8 @@ import org.junit.jupiter.params.provider.CsvSource;
 @Tag("UnitTest")
 class MediaOrderKeyTest {
   @Test
-  void shouldOrderPrefixesUnicodeAndIdTiesInBothDirections() {
+  @DisplayName("Should order prefixes, Unicode and ID ties when sorting in either direction")
+  void shouldOrderPrefixesUnicodeAndIdTiesWhenSortingEitherDirection() {
     var titles = List.of("a", "a", "a ", "aé", "a😀", "ä");
     for (var direction : List.of(SortDirection.ASC, SortDirection.DESC)) {
       var orders =
@@ -45,8 +47,8 @@ class MediaOrderKeyTest {
     "RUNTIME,-1,0",
     "LAST_WATCHED,2026-01-01T00:00:00.000000001Z,2026-01-01T00:00:00.000000002Z"
   })
-  void shouldOrderScalarsAndKeepNullableSortsNullsLast(
-      OrderMediaBy by, String earlier, String later) {
+  @DisplayName("Should keep nulls last when ordering scalar sorts")
+  void shouldKeepNullsLastWhenOrderingScalarSorts(OrderMediaBy by, String earlier, String later) {
     var id = new UUID(0, 1);
     for (var direction : List.of(SortDirection.ASC, SortDirection.DESC)) {
       var first =

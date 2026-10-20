@@ -292,8 +292,9 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should share query edges while retaining an item excluded from another view")
-  void shouldSupplyTheSameOrderKeyAsAQueryAndACursorUsableForTheNextPage() {
+  @DisplayName(
+      "Should share query edges and retain an item excluded from another view when a title changes")
+  void shouldShareQueryEdgesAndRetainAnExcludedItemWhenATitleChanges() {
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     movies.saveAndFlush(Movie.builder().title("Alpha").titleSort("Alpha").library(library).build());
     var changed =
@@ -393,7 +394,9 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
     "LAST_WATCHED,ASC",
     "LAST_WATCHED,DESC"
   })
-  void shouldKeepOrderKeysAndCursorsConsistentForEverySort(
+  @DisplayName(
+      "Should keep order keys and cursors consistent when paging in either direction under any sort")
+  void shouldKeepOrderKeysAndCursorsConsistentWhenPagingInEitherDirection(
       OrderMediaBy by, SortDirection direction) {
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     var created = new ArrayList<Movie>();
@@ -488,7 +491,8 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
   }
 
   @Test
-  void shouldPlaceTheParentSeriesFromTheSelectedProfilesEpisodeWatchState() {
+  @DisplayName("Should place the parent series when the selected Profile watches an episode")
+  void shouldPlaceTheParentSeriesWhenTheSelectedProfileWatchesAnEpisode() {
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
     var series =
         seriesRepository.saveAndFlush(

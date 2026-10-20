@@ -11,6 +11,7 @@ import com.streamarr.server.services.library.LetterIndexRecalculator;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.GraphQlHttpTestClient;
 import java.net.URI;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,7 +29,9 @@ class LibraryCountsQueryIT extends AbstractIntegrationTest {
   @Autowired private LetterIndexRecalculator recalculator;
 
   @Test
-  void shouldExposeAuthoritativeTotalsInSingleAndMultipleLibraryQueriesForANonAdminProfile() {
+  @DisplayName(
+      "Should expose authoritative totals when a non-admin Profile queries one or many libraries")
+  void shouldExposeAuthoritativeTotalsWhenANonAdminProfileQueriesOneOrManyLibraries() {
     var identity = auth.createIdentity();
     try (var http =
         new GraphQlHttpTestClient(URI.create("http://localhost:%d/graphql".formatted(port)))) {

@@ -22,6 +22,7 @@ class CursorValidatorTest {
   private final CursorValidator cursorValidator = new CursorValidator();
 
   @Test
+  @DisplayName("Should accept an untitled items cursor when its filter matches")
   void shouldAcceptAnUntitledItemsCursorWhenItsFilterMatches() {
     var filter = MediaFilter.builder().sortBy(OrderMediaBy.TITLE).build();
     var decoded = MediaPaginationOptions.builder().mediaFilter(filter).build();
