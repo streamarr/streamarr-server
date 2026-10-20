@@ -41,6 +41,12 @@ class ProcfileTest {
   }
 
   @Test
+  @DisplayName("Should pin the JVM zone to UTC when the image starts the server")
+  void shouldPinJvmZoneToUtcWhenImageStartsServer() throws IOException {
+    assertThat(processes().get("web").split(" ")).contains("-Duser.timezone=UTC");
+  }
+
+  @Test
   @DisplayName("Should enable native access when the build starts any JVM")
   void shouldEnableNativeAccessWhenBuildStartsAnyJvm()
       throws IOException, ParserConfigurationException, SAXException, XPathExpressionException {

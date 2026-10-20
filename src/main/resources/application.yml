@@ -1,6 +1,14 @@
 spring:
   jpa:
     open-in-view: false
+    properties:
+      hibernate:
+        type:
+          # Bind java.time values through JDBC directly. The java.sql.Date and java.sql.Timestamp
+          # path converts through the JVM zone and the Julian calendar, which moves dates the zone
+          # skipped and instants before the Gregorian cutover.
+          java_time_use_direct_jdbc: true
+          preferred_instant_jdbc_type: TIMESTAMP_WITH_TIMEZONE
   flyway:
     table: schema_history
     enabled: true

@@ -5,15 +5,20 @@ import static com.tngtech.archunit.core.domain.JavaClass.Predicates.RECORDS;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.assignableTo;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.equivalentTo;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
+import static com.tngtech.archunit.core.domain.properties.CanBeAnnotated.Predicates.annotatedWith;
 import static com.tngtech.archunit.core.domain.properties.HasName.Predicates.name;
 import static com.tngtech.archunit.core.domain.properties.HasOwner.Predicates.With.owner;
 import static com.tngtech.archunit.core.domain.properties.HasParameterTypes.Predicates.rawParameterTypes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noFields;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.architecturefixture.ZonedDateTimeAttributeFixtures.ZonedDateTimeEmbeddable;
+import com.streamarr.architecturefixture.ZonedDateTimeAttributeFixtures.ZonedDateTimeEntity;
+import com.streamarr.architecturefixture.ZonedDateTimeAttributeFixtures.ZonedDateTimeMappedSuperclass;
 import com.streamarr.server.architecturefixture.WorkerBoundaryFixtures.BenignRuntimeInspection;
 import com.streamarr.server.architecturefixture.WorkerBoundaryFixtures.EngineDependency;
 import com.streamarr.server.architecturefixture.WorkerBoundaryFixtures.ProbeDependency;
@@ -86,7 +91,11 @@ import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.CompositeArchRule;
 import com.tngtech.archunit.library.dependencies.SliceAssignment;
 import com.tngtech.archunit.library.dependencies.SliceIdentifier;
+import jakarta.persistence.Embeddable;
+import jakarta.persistence.Entity;
+import jakarta.persistence.MappedSuperclass;
 import java.nio.file.Path;
+import java.time.ZonedDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
@@ -351,6 +360,12 @@ class ArchitectureTest {
   static final ArchRule repositoryMethodsMustNotUseQueryAnnotations =
       repositoryMethodsMustNotUseQueryAnnotations();
 
+  // Hibernate binds java.time values to PgJDBC directly (application.yml), and PgJDBC cannot read
+  // or write a ZonedDateTime. A persistent attribute holds an Instant instead.
+  @ArchTest
+  static final ArchRule entityAttributesMustNotBeZonedDateTime =
+      entityAttributesMustNotBeZonedDateTime();
+
   // A media title's people, genres and studios are saved together so that every save inserts
   // them in the order CreditService defines; a direct caller could insert them in another order.
   @ArchTest
@@ -587,6 +602,23 @@ class ArchitectureTest {
     assertThatThrownBy(() -> onlyCreditServiceMaySaveCredits().check(directGenreSave))
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining("GenreService");
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      classes = {
+        ZonedDateTimeEntity.class,
+        ZonedDateTimeMappedSuperclass.class,
+        ZonedDateTimeEmbeddable.class
+      })
+  @DisplayName("Should reject a ZonedDateTime attribute when a persistent type declares one")
+  void shouldRejectZonedDateTimeAttributeWhenPersistentTypeDeclaresOne(Class<?> fixture) {
+    var persistentType = new ClassFileImporter().importClasses(fixture);
+    var rule = entityAttributesMustNotBeZonedDateTime();
+
+    assertThatThrownBy(() -> rule.check(persistentType))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("ZonedDateTime");
   }
 
   @Test
@@ -829,6 +861,18 @@ class ArchitectureTest {
         .dependOnClassesThat()
         .areAssignableTo(PasswordEncoder.class)
         .as("GraphQL adapts input; services own password and PIN policy");
+  }
+
+  private static ArchRule entityAttributesMustNotBeZonedDateTime() {
+    return noFields()
+        .that()
+        .areDeclaredInClassesThat(
+            annotatedWith(Entity.class)
+                .or(annotatedWith(MappedSuperclass.class))
+                .or(annotatedWith(Embeddable.class)))
+        .should()
+        .haveRawType(ZonedDateTime.class)
+        .as("Entity attributes must not be ZonedDateTime");
   }
 
   private static ArchRule repositoryMethodsMustNotUseQueryAnnotations() {

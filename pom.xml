@@ -73,7 +73,7 @@
         <flyway.version>12.11.0</flyway.version>
         <surefire-failsafe-plugin.version>3.6.0</surefire-failsafe-plugin.version>
         <surefire.excludedGroups>SmokeTest</surefire.excludedGroups>
-        <failsafe.excludedGroups>SmokeTest</failsafe.excludedGroups>
+        <failsafe.excludedGroups>SmokeTest,SkippedMidnightZoneTest</failsafe.excludedGroups>
         <spotless.version>3.10.4</spotless.version>
         <checkstyle.version>14.3.0</checkstyle.version>
         <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
@@ -662,6 +662,23 @@
                             <goal>integration-test</goal>
                             <goal>verify</goal>
                         </goals>
+                    </execution>
+                    <!-- Date and time persistence must not depend on the JVM zone. Pacific/Apia
+                         skipped 2011-12-30, so a value converted through local midnight moves.
+                         This run merges its results into the default summary, which the default
+                         verify goal checks. To run it alone, clean first so no earlier summary
+                         remains, and pass -Dit.failIfNoSpecifiedTests=false with -Dit.test. -->
+                    <execution>
+                        <id>skipped-midnight-zone</id>
+                        <goals>
+                            <goal>integration-test</goal>
+                        </goals>
+                        <configuration>
+                            <argLine>${failsafe.jacoco.args} ${native.access.args} -Duser.timezone=Pacific/Apia</argLine>
+                            <groups>SkippedMidnightZoneTest</groups>
+                            <excludedGroups>SmokeTest</excludedGroups>
+                            <failIfNoSpecifiedTests>false</failIfNoSpecifiedTests>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
