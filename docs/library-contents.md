@@ -81,10 +81,11 @@ clients do not reconstruct filters from a partially selected entity.
   sorts keep nulls last in either direction; TITLE retains SQL's ascending-null-last and
   descending-null-first ordering. Backward seeks reverse the physical null order too.
 - TITLE `startLetter` remains a seek anchor under ADR 0023. It is not a membership
-  restriction for event placement or cursor pages. The descending HASH landing page
-  is the documented exception: its non-alphabetic titles occupy disjoint runs, so
-  the initial page keeps a HASH restriction and has no single predecessor anchor.
-  Under other sorts the letter remains a filter on every page.
+  restriction for the landing page, event placement or cursor pages. Every landing page
+  is one contiguous run of the ordering. Descending HASH lands on the titles that sort
+  below `a`, such as digits; titles that sort above `z` stay at the top of the
+  ordering and are reached by paging backward. Under other sorts the letter remains a
+  filter on every page.
 
 Normalize entity fields, then reconcile the selected connection by item ID. An in-range
 addition grows 48 items to 49. A matching item outside a partial window waits for ordinary

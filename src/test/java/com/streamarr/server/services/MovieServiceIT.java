@@ -796,8 +796,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("Should not report previous page when start letter is HASH and sort is DESC")
-    void shouldNotReportPreviousPageWhenStartLetterIsHashAndSortIsDesc() {
+    @DisplayName("Should report previous page when start letter is HASH and sort is DESC")
+    void shouldReportPreviousPageWhenStartLetterIsHashAndSortIsDesc() {
       var filter =
           MediaFilter.builder()
               .libraryId(savedLibraryD.getId())
@@ -808,7 +808,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
       var landing = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
       assertThat(landing.items().getFirst().item().getTitle()).isEqualTo("123 Movie");
-      assertThat(landing.hasPreviousPage()).isFalse();
+      assertThat(landing.hasPreviousPage()).isTrue();
     }
 
     @Test
@@ -978,8 +978,10 @@ class MovieServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("Should include title starting above z in HASH filter when sortBy is TITLE DESC")
-    void shouldIncludeTitleStartingAboveZInHashFilterWhenSortByIsTitleDesc() {
+    @DisplayName(
+        "Should land below the lettered titles and page backward to titles above z when start"
+            + " letter is HASH and sort is TITLE DESC")
+    void shouldLandBelowLetteredTitlesWhenStartLetterIsHashAndSortIsTitleDesc() {
 
       var filter =
           MediaFilter.builder()
@@ -989,11 +991,19 @@ class MovieServiceIT extends AbstractIntegrationTest {
               .startLetter(AlphabetLetter.HASH)
               .build();
 
-      var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
+      var landing = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
+      var above =
+          movieService.getMoviesWithFilter(
+              buildBackwardContinuation(10, filter, landing.items().getFirst()));
 
-      var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
-
-      assertThat(titles).containsExactlyInAnyOrder("123 Numbers", "~Tilde Movie");
+      assertThat(landing.items())
+          .extracting(pi -> pi.item().getTitle())
+          .containsExactly("123 Numbers");
+      assertThat(landing.hasPreviousPage()).isTrue();
+      assertThat(above.items())
+          .extracting(pi -> pi.item().getTitle())
+          .containsExactly("~Tilde Movie", "Alpha Movie");
+      assertThat(above.hasPreviousPage()).isFalse();
     }
   }
 
