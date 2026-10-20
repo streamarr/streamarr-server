@@ -56,7 +56,8 @@ class TitleSortUtilTest {
     "Ōkura Nights, Okura Nights",
     "Çelik Günler, Celik Gunler",
     "İnci Bay, Inci Bay",
-    "Naïve Crossing, Naive Crossing"
+    "Naïve Crossing, Naive Crossing",
+    "Écho Bay, Echo Bay"
   })
   @DisplayName("Should fold Latin diacritics when the title contains accented letters")
   void shouldFoldLatinDiacriticsWhenTitleContainsAccentedLetters(String title, String expected) {
@@ -104,7 +105,18 @@ class TitleSortUtilTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"Жёлтый Дом", "がっこう日記", "한강의 밤", "Ώρα Μηδέν", "東京の空"})
+  @ValueSource(
+      strings = {
+        "Жёлтый Дом",
+        "がっこう日記",
+        "한강의 밤",
+        "Ώρα Μηδέν",
+        "東京の空",
+        "น้ำตกสีทอง",
+        "ｶﾞｯｺｳ ﾆｯｷ",
+        "ﻻ نهاية",
+        "東京（下）"
+      })
   @DisplayName("Should leave the title unchanged when it is written in a non-Latin script")
   void shouldLeaveTitleUnchangedWhenItIsWrittenInNonLatinScript(String title) {
     assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(title);

@@ -1,5 +1,6 @@
 package com.streamarr.server.utils;
 
+import java.lang.Character.UnicodeScript;
 import java.text.Normalizer;
 import java.util.regex.Pattern;
 import lombok.experimental.UtilityClass;
@@ -9,8 +10,7 @@ public class TitleSortUtil {
 
   private static final String[] ARTICLES = {"The ", "An ", "A "};
 
-  // Only marks on a Latin base are removed; the rest recompose, so non-Latin titles keep theirs.
-  private static final Pattern LATIN_COMBINING_MARKS = Pattern.compile("(\\p{IsLatin})\\p{M}+");
+  private static final Pattern COMBINING_MARKS = Pattern.compile("\\p{M}+");
 
   private static final Pattern LEADING_ABOVE_Z = Pattern.compile("^[{|}~][{|}~\\s]*");
 
@@ -28,10 +28,31 @@ public class TitleSortUtil {
     return stripLeadingAboveZ(moveLeadingArticle(normalized));
   }
 
+  // Folds code point by code point: a compatibility mapping applied to the whole title would
+  // also rewrite non-Latin text, such as half-width kana and Thai vowel signs.
   private static String foldLatin(String title) {
-    var decomposed = Normalizer.normalize(title, Normalizer.Form.NFKD);
-    var folded = LATIN_COMBINING_MARKS.matcher(decomposed).replaceAll("$1");
-    return Normalizer.normalize(folded, Normalizer.Form.NFC);
+    var folded = new StringBuilder(title.length());
+    var baseScript = UnicodeScript.UNKNOWN;
+    for (var codePoint : title.codePoints().toArray()) {
+      var script = UnicodeScript.of(codePoint);
+      if (script != UnicodeScript.INHERITED) {
+        baseScript = script;
+      }
+
+      folded.append(foldCodePoint(codePoint, baseScript));
+    }
+
+    return folded.toString();
+  }
+
+  private static String foldCodePoint(int codePoint, UnicodeScript baseScript) {
+    var character = Character.toString(codePoint);
+    if (baseScript != UnicodeScript.LATIN) {
+      return character;
+    }
+
+    var decomposed = Normalizer.normalize(character, Normalizer.Form.NFKD);
+    return COMBINING_MARKS.matcher(decomposed).replaceAll("");
   }
 
   private static String stripLeadingAboveZ(String title) {
