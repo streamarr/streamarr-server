@@ -60,7 +60,7 @@ type ContinueWatchingConnection {
 }
 
 "Membership and ordering in Continue Watching, shared by queries and change payloads."
-type ContinueWatchingEdge {
+type ContinueWatchingEdge implements OrderedEdge {
     node: ContinueWatchingMedia
     cursor: String!
     "Compare as ascending ASCII strings; includes last-watched descending and the ID tie-breaker."

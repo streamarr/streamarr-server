@@ -276,6 +276,31 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
     assertThat(next.at("/data/continueWatching/pageInfo/hasPreviousPage").asBoolean()).isFalse();
   }
 
+  @Test
+  @DisplayName(
+      "Should select cursor and order key through one fragment when edges come from any list")
+  void shouldSelectCursorAndOrderKeyThroughOneFragmentWhenEdgesComeFromAnyList() throws Exception {
+    identity = authTestSupport.createIdentity();
+    var episode = createEpisodeWithProgress();
+
+    var result =
+        execute(
+            """
+            { continueWatching(first: 1) { edges { ...ordered } }
+              library(id: "%s") { items(first: 1) { edges { ...ordered } } } }
+            fragment ordered on OrderedEdge { cursor orderKey }
+            """
+                .formatted(episode.getLibrary().getId()));
+
+    for (var edge :
+        List.of(
+            result.at("/data/continueWatching/edges/0"),
+            result.at("/data/library/items/edges/0"))) {
+      assertThat(edge.path("cursor").asString()).isNotEmpty();
+      assertThat(edge.path("orderKey").asString()).isNotEmpty();
+    }
+  }
+
   private JsonNode execute(String query) throws Exception {
     var mapper = new ObjectMapper();
     var result =
