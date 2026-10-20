@@ -29,7 +29,6 @@ import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 @DgsComponent
 @Builder
@@ -94,7 +93,7 @@ public class LibraryContentsSubscriptionResolver {
   @DgsSubscription
   public Publisher<Library> libraryCountsChanged(@InputArgument String libraryId) {
     return register(libraryId, broadcasters.getCounts())
-        .flatMap(id -> Mono.justOrEmpty(contents.findLibrary(id)));
+        .<Library>handle((id, sink) -> contents.findLibrary(id).ifPresent(sink::next));
   }
 
   private <T> Flux<T> register(
