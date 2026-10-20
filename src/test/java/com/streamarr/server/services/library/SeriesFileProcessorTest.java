@@ -429,6 +429,7 @@ class SeriesFileProcessorTest {
   }
 
   @Test
+  @DisplayName("Should publish the created episode when associating its file fails")
   void shouldPublishTheCreatedEpisodeWhenAssociatingItsFileFails() {
     var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
     var series =

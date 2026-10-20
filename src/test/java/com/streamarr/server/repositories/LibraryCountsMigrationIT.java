@@ -8,6 +8,7 @@ import java.util.UUID;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 import org.jooq.DSLContext;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -23,7 +24,8 @@ class LibraryCountsMigrationIT extends AbstractIntegrationTest {
   @Autowired private ObjectMapper objectMapper;
 
   @Test
-  void shouldSeekALateTitlePageWithBoundedWorkAfterUpgrade() throws SQLException {
+  @DisplayName("Should seek a late title page with bounded work when the schema is upgraded")
+  void shouldSeekALateTitlePageWithBoundedWorkWhenTheSchemaIsUpgraded() throws SQLException {
     var schema = "title_page_" + UUID.randomUUID().toString().replace("-", "");
     dsl.createSchema(schema).execute();
     try (var connection = dataSource.getConnection();
@@ -75,7 +77,9 @@ class LibraryCountsMigrationIT extends AbstractIntegrationTest {
 
   @ParameterizedTest
   @ValueSource(strings = {"C", "tr-TR-x-icu"})
-  void shouldReplaceLegacyChildCountsAndRemoveStaleBucketsDuringUpgrade(String collation)
+  @DisplayName(
+      "Should replace legacy child counts and remove stale buckets when the schema is upgraded")
+  void shouldReplaceLegacyChildCountsAndRemoveStaleBucketsWhenTheSchemaIsUpgraded(String collation)
       throws SQLException {
     var schema = "library_counts_" + UUID.randomUUID().toString().replace("-", "");
     dsl.createSchema(schema).execute();

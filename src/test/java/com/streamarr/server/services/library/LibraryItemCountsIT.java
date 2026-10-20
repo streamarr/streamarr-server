@@ -60,6 +60,7 @@ class LibraryItemCountsIT extends AbstractIntegrationTest {
   @Autowired private LibraryCountsService counts;
 
   @Test
+  @DisplayName("Should count only series when a library contains seasons and episodes")
   void shouldCountOnlySeriesWhenALibraryContainsSeasonsAndEpisodes() {
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
     var show =
@@ -91,7 +92,8 @@ class LibraryItemCountsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  void shouldPublishTheRecountOnlyAfterCommitAndNeverAfterRollback() {
+  @DisplayName("Should publish the recount when it commits and never when it rolls back")
+  void shouldPublishTheRecountWhenItCommitsAndNeverWhenItRollsBack() {
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     var change = new LibraryCountsChangedEvent(library.getId());
 

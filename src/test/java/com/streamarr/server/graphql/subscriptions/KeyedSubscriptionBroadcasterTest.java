@@ -120,7 +120,8 @@ class KeyedSubscriptionBroadcasterTest {
   }
 
   @Test
-  void shouldCompleteOnlyTheRemovedScopeAfterDeliveringItsQueuedValues() throws Exception {
+  @DisplayName("Should complete only the removed scope when its queued values are delivered")
+  void shouldCompleteOnlyTheRemovedScopeWhenItsQueuedValuesAreDelivered() throws Exception {
     var ended = broadcaster.register("library-a").collectList().toFuture();
     var kept = new RecordingSubscriber(Long.MAX_VALUE);
     broadcaster.register("library-b").subscribe(kept);
@@ -136,6 +137,7 @@ class KeyedSubscriptionBroadcasterTest {
   }
 
   @Test
+  @DisplayName("Should complete when the scope was removed before or during registration")
   void shouldCompleteWhenTheScopeWasRemovedBeforeOrDuringRegistration() throws Exception {
     var missing = broadcaster.register("missing", () -> false).collectList().toFuture();
     var removedDuringCheck =
