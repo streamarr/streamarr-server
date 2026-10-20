@@ -85,8 +85,8 @@ clients do not reconstruct filters from a partially selected entity.
   restriction for the landing page, event placement or cursor pages. Every landing page
   is one contiguous run of the ordering. Descending HASH lands on the titles that sort
   below `a`, such as digits; titles that sort above `z` stay at the top of the
-  ordering and are reached by paging backward. Under other sorts the letter remains a
-  filter on every page.
+  ordering and are reached by paging backward. A view with no title below `a` lands
+  at the top instead. Under other sorts the letter remains a filter on every page.
 
 Normalize entity fields, then reconcile the selected connection by item ID. An in-range
 addition grows 48 items to 49. A matching item outside a partial window waits for ordinary
