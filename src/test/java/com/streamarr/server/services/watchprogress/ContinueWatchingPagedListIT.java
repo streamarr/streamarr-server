@@ -96,6 +96,11 @@ class ContinueWatchingPagedListIT
   }
 
   @Override
+  protected boolean sortValuesCanTie() {
+    return true;
+  }
+
+  @Override
   protected Optional<Position> positionBeforeArrangedItems(AuthTestSupport.TestIdentity identity) {
     return Optional.empty();
   }

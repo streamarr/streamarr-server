@@ -101,6 +101,11 @@ class ProfileActivityPagedListIT
   }
 
   @Override
+  protected boolean sortValuesCanTie() {
+    return true;
+  }
+
+  @Override
   protected Optional<Position> positionBeforeArrangedItems(Scope scope) {
     return Optional.empty();
   }

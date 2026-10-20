@@ -34,7 +34,9 @@ import org.junit.jupiter.api.Test;
 public abstract class PagedListContract<T, S> extends AbstractIntegrationTest {
 
   /** Equal ranks share one sort value, so their order falls to item ID. */
-  private static final List<Integer> RANKS = List.of(0, 1, 1, 1, 2, 3, 3);
+  private static final List<Integer> TIED_RANKS = List.of(0, 1, 1, 1, 2, 3, 3);
+
+  private static final List<Integer> DISTINCT_RANKS = List.of(0, 1, 2, 3, 4, 5, 6);
 
   private S scope;
 
@@ -58,6 +60,12 @@ public abstract class PagedListContract<T, S> extends AbstractIntegrationTest {
 
   /** The direction the list orders item IDs in when sort values tie. */
   protected abstract SortDirection tieDirection();
+
+  /**
+   * Whether two items of one scope can share a sort value. A list whose store keeps sort values
+   * unique, such as Profile names within a Household, is arranged with distinct ranks.
+   */
+  protected abstract boolean sortValuesCanTie();
 
   /**
    * A position that sorts before every arranged item and after every other item of the list. A list
@@ -198,10 +206,11 @@ public abstract class PagedListContract<T, S> extends AbstractIntegrationTest {
   }
 
   private List<UUID> arrange() {
+    var ranks = sortValuesCanTie() ? TIED_RANKS : DISTINCT_RANKS;
     var rankById =
-        IntStream.range(0, RANKS.size())
+        IntStream.range(0, ranks.size())
             .boxed()
-            .collect(Collectors.toMap(index -> add(scope, RANKS.get(index)), RANKS::get));
+            .collect(Collectors.toMap(index -> add(scope, ranks.get(index)), ranks::get));
     return rankById.keySet().stream().sorted(listOrder(rankById)).toList();
   }
 

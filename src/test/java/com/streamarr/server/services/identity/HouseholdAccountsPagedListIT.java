@@ -93,6 +93,11 @@ class HouseholdAccountsPagedListIT
   }
 
   @Override
+  protected boolean sortValuesCanTie() {
+    return true;
+  }
+
+  @Override
   protected Optional<Position> positionBeforeArrangedItems(Scope scope) {
     return Optional.of(new Position(new SortValue.OfText(scope.namePrefix()), LOWEST_ID));
   }
