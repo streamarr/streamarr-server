@@ -108,6 +108,29 @@ class PagerTest {
   }
 
   @Test
+  @DisplayName("Should report a next page when a reverse request continues from a removed row")
+  void shouldReportANextPageWhenAReverseRequestContinuesFromARemovedRow() {
+    var anchor = position(4);
+    list.remove(rows.get(3));
+
+    var page = Pager.page(list, SCOPE, reverse(anchor, 2));
+
+    assertPage(page, true, true, "item-2", "item-3");
+  }
+
+  @Test
+  @DisplayName(
+      "Should report no next page when a reverse request continues from the removed last row")
+  void shouldReportNoNextPageWhenAReverseRequestContinuesFromTheRemovedLastRow() {
+    var anchor = position(5);
+    list.remove(rows.get(4));
+
+    var page = Pager.page(list, SCOPE, reverse(anchor, 2));
+
+    assertPage(page, true, false, "item-3", "item-4");
+  }
+
+  @Test
   @DisplayName("Should report a next page without rows when the request asks for none")
   void shouldReportANextPageWithoutRowsWhenTheRequestAsksForNone() {
     var page = Pager.page(list, SCOPE, forward(Optional.empty(), 0));
