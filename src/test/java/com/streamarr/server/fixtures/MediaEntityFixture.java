@@ -1,11 +1,13 @@
 package com.streamarr.server.fixtures;
 
+import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
+import java.util.Set;
 import java.util.UUID;
 
 public final class MediaEntityFixture {
@@ -51,6 +53,23 @@ public final class MediaEntityFixture {
         .filepathUri("/media/" + UUID.randomUUID() + ".mkv")
         .size(1_000_000)
         .status(MediaFileStatus.MATCHED)
+        .build();
+  }
+
+  /** An unsaved Movie in the Library with one matched file, saved together through cascade. */
+  public static Movie movieWithFile(Library library) {
+    return Movie.builder()
+        .title("Paged")
+        .titleSort("Paged")
+        .library(library)
+        .files(
+            Set.of(
+                MediaFile.builder()
+                    .libraryId(library.getId())
+                    .status(MediaFileStatus.MATCHED)
+                    .filename(UUID.randomUUID() + ".mkv")
+                    .filepathUri("file:///media/" + UUID.randomUUID() + ".mkv")
+                    .build()))
         .build();
   }
 }

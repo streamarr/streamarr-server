@@ -4,10 +4,8 @@ import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION
 
 import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.Library;
-import com.streamarr.server.domain.media.MediaFile;
-import com.streamarr.server.domain.media.MediaFileStatus;
-import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.fixtures.MediaEntityFixture;
 import com.streamarr.server.fixtures.SessionProgressFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
@@ -23,7 +21,6 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -62,7 +59,8 @@ class ContinueWatchingPagedListIT
   @Override
   protected UUID add(AuthTestSupport.TestIdentity identity, int rank) {
     var profileId = identity.profile().getId();
-    var movie = movies.saveAndFlush(movieWithFile(libraryByProfile.get(profileId)));
+    var movie =
+        movies.saveAndFlush(MediaEntityFixture.movieWithFile(libraryByProfile.get(profileId)));
     var saved =
         progress.saveAndFlush(
             SessionProgressFixture.progressBuilder(
@@ -105,21 +103,5 @@ class ContinueWatchingPagedListIT
   @Override
   protected Optional<Position> positionAfterArrangedItems(AuthTestSupport.TestIdentity identity) {
     return Optional.empty();
-  }
-
-  private static Movie movieWithFile(Library library) {
-    return Movie.builder()
-        .title("Paged")
-        .titleSort("Paged")
-        .library(library)
-        .files(
-            Set.of(
-                MediaFile.builder()
-                    .libraryId(library.getId())
-                    .status(MediaFileStatus.MATCHED)
-                    .filename(UUID.randomUUID() + ".mkv")
-                    .filepathUri("file:///media/" + UUID.randomUUID() + ".mkv")
-                    .build()))
-        .build();
   }
 }
