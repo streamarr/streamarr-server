@@ -614,8 +614,9 @@ class ArchitectureTest {
   @DisplayName("Should reject a ZonedDateTime attribute when a persistent type declares one")
   void shouldRejectZonedDateTimeAttributeWhenPersistentTypeDeclaresOne(Class<?> fixture) {
     var persistentType = new ClassFileImporter().importClasses(fixture);
+    var rule = entityAttributesMustNotBeZonedDateTime();
 
-    assertThatThrownBy(() -> entityAttributesMustNotBeZonedDateTime().check(persistentType))
+    assertThatThrownBy(() -> rule.check(persistentType))
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining("ZonedDateTime");
   }
