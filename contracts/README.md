@@ -6,6 +6,8 @@ Continue Watching starts from the first 12 or 20 entries for the client's shelf 
 
 Library scenarios load `initialLoaded` entries from `initial`, in `pageSize` pages, apply `change`, recover against `recovered`, then apply `followUp`. The ordered arrays represent the server's results; cursors in the test adapters identify these fixture entries. `startLetter` is an initial seek anchor, and recovery must preserve the coverage already established by the window. The scenarios cover a move between pages and an insertion before an alphabet anchor when the window has already reached the true start.
 
+`LiveListContractIT` saves each Library scenario's titles and requires the server's TITLE order to match the listed order, so these orderings stay the server's real results.
+
 Update these fixtures deliberately when an accepted contract changes, then update both client pins and run both consumers. A fixture change does not itself authorize changing the contract.
 
 `edgeCases` are independent subscription scenarios, each starting with movies `a` and `b` in that order. `changes` is the delivered Continue Watching list; adapters add only selection fields (typename, cursor, card data), preserving null edges and null nodes. `errorPaths` are GraphQL response paths, including list indices and ancestor paths. Send a usable `movie-1` watch-state update alongside each scenario and a failed second entity when its error path names `items[1]`. Assert both that independent update and the literal expected shelf IDs before recovery completes. Both clients execute these cases through their public subscription path and real normalized cache.
