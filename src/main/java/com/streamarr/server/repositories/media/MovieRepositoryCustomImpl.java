@@ -15,6 +15,7 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.jooq.generated.enums.ExternalSourceType;
 import com.streamarr.server.repositories.JooqQueryHelper;
+import com.streamarr.server.repositories.Keyset;
 import com.streamarr.server.repositories.LastWatchedExpression;
 import com.streamarr.server.repositories.WatchStateConditions;
 import com.streamarr.server.services.pagination.MediaFilter;
@@ -41,12 +42,12 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
 
   @Override
   public List<Row<Movie>> rowsInLibrary(MediaFilter filter, Seek seek) {
-    return rows().beyond(sortField(filter), listCondition(filter), seek);
+    return rows().beyond(keysetOf(filter), listCondition(filter), seek);
   }
 
   @Override
   public Optional<Row<Movie>> rowInLibrary(UUID itemId, MediaFilter filter) {
-    return rows().of(itemId, sortField(filter), listCondition(filter));
+    return rows().of(itemId, keysetOf(filter), listCondition(filter));
   }
 
   private LibraryItemRows<Movie> rows() {
@@ -177,13 +178,13 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     return profileId;
   }
 
-  private Field<?> sortField(MediaFilter filter) {
+  private Keyset<?> keysetOf(MediaFilter filter) {
     return switch (filter.getSortBy()) {
-      case TITLE -> JooqQueryHelper.titleSortField();
-      case ADDED -> BASE_COLLECTABLE.CREATED_ON;
-      case RELEASE_DATE -> MOVIE.RELEASE_DATE;
-      case RUNTIME -> MOVIE.RUNTIME;
-      case LAST_WATCHED -> lastWatchedAt(filter);
+      case TITLE -> LibraryItemRows.keyset(JooqQueryHelper.titleSortField(), BASE_COLLECTABLE.ID);
+      case ADDED -> LibraryItemRows.keyset(BASE_COLLECTABLE.CREATED_ON, BASE_COLLECTABLE.ID);
+      case RELEASE_DATE -> LibraryItemRows.keyset(MOVIE.RELEASE_DATE, MOVIE.ID);
+      case RUNTIME -> LibraryItemRows.keyset(MOVIE.RUNTIME, MOVIE.ID);
+      case LAST_WATCHED -> LibraryItemRows.keyset(lastWatchedAt(filter), BASE_COLLECTABLE.ID);
     };
   }
 }

@@ -130,7 +130,7 @@ public record Keyset<V>(@NonNull Field<V> sortValue, @NonNull Field<UUID> itemId
     }
 
     return List.of(
-        sort(isAbsent(), isAbsentAscending(order, direction)),
+        sort(placement(order, direction), ascending),
         sort(sortValue, ascending),
         sort(itemId, ascending));
   }
@@ -165,29 +165,11 @@ public record Keyset<V>(@NonNull Field<V> sortValue, @NonNull Field<UUID> itemId
   }
 
   private Condition beyondAPresentValue(Position position, Seek seek) {
-    var ascending = isAscending(seek.order(), seek.direction());
-    var absentAscending = isAbsentAscending(seek.order(), seek.direction());
-    // One row comparison over (absent, value, id) matches an index on those three expressions.
-    if (absentAscending == ascending) {
-      return row(List.of(isAbsent(), sortValue, itemId))
-          .compare(
-              beyondComparator(seek),
-              row(List.of(inline(false), boundValue(position), boundId(position))));
-    }
-
-    var amongPresent =
-        sortValue
-            .isNotNull()
-            .and(
-                row(List.of(sortValue, itemId))
-                    .compare(
-                        beyondComparator(seek),
-                        row(List.of(boundValue(position), boundId(position)))));
-    if (absentAscending) {
-      return sortValue.isNull().or(amongPresent);
-    }
-
-    return amongPresent;
+    var presentPlacement = inline(!isFlaggingAbsence(seek.order(), seek.direction()));
+    return row(List.of(placement(seek.order(), seek.direction()), sortValue, itemId))
+        .compare(
+            beyondComparator(seek),
+            row(List.of(presentPlacement, boundValue(position), boundId(position))));
   }
 
   // A number binds as bigint whatever the column's width: coerced to an integer column it would
@@ -205,8 +187,19 @@ public record Keyset<V>(@NonNull Field<V> sortValue, @NonNull Field<UUID> itemId
     return val(position.itemId(), itemId);
   }
 
-  private Field<Boolean> isAbsent() {
-    return field(sortValue.isNull());
+  // Absent values sit together at one end of the list. The flag placing them sorts in the value's
+  // direction, so rows beyond a present value are one comparison over (flag, value, id), which an
+  // index on those three expressions serves.
+  private Field<Boolean> placement(ListOrder order, PaginationDirection direction) {
+    if (isFlaggingAbsence(order, direction)) {
+      return field(sortValue.isNull());
+    }
+
+    return field(sortValue.isNotNull());
+  }
+
+  private static boolean isFlaggingAbsence(ListOrder order, PaginationDirection direction) {
+    return isAbsentAscending(order, direction) == isAscending(order, direction);
   }
 
   // Rows beyond a position compare greater in ascending reading order and less in descending.

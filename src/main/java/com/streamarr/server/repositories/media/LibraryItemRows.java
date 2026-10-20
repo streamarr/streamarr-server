@@ -32,16 +32,14 @@ record LibraryItemRows<E extends BaseCollectable<E>>(
     @NonNull Field<UUID> kindId,
     @NonNull Class<E> type) {
 
-  /** The items {@code scope} admits beyond the seek, ordered by {@code sortValue}, then ID. */
-  List<Row<E>> beyond(Field<?> sortValue, Condition scope, Seek seek) {
-    var keyset = keysetOf(sortValue);
+  /** The items {@code scope} admits beyond the seek, in the keyset's order. */
+  List<Row<E>> beyond(Keyset<?> keyset, Condition scope, Seek seek) {
     var query = keyset.rowsBeyond(select(keyset), scope, seek);
     return JooqQueryHelper.nativeRows(entityManager, query, type, keyset);
   }
 
   /** The item's row, when {@code scope} admits it. */
-  Optional<Row<E>> of(UUID itemId, Field<?> sortValue, Condition scope) {
-    var keyset = keysetOf(sortValue);
+  Optional<Row<E>> of(UUID itemId, Keyset<?> keyset, Condition scope) {
     var query = select(keyset).where(scope).and(BASE_COLLECTABLE.ID.eq(itemId));
     return JooqQueryHelper.nativeRows(entityManager, query, type, keyset).stream().findFirst();
   }
@@ -59,7 +57,11 @@ record LibraryItemRows<E extends BaseCollectable<E>>(
         .on(kindId.eq(BASE_COLLECTABLE.ID));
   }
 
-  private static <V> Keyset<V> keysetOf(Field<V> sortValue) {
-    return Keyset.<V>builder().sortValue(sortValue).itemId(BASE_COLLECTABLE.ID).build();
+  /**
+   * A keyset over {@code sortValue} and {@code itemId}. Taking both from one table lets an index on
+   * that table serve the seek.
+   */
+  static <V> Keyset<V> keyset(Field<V> sortValue, Field<UUID> itemId) {
+    return Keyset.<V>builder().sortValue(sortValue).itemId(itemId).build();
   }
 }
