@@ -18,6 +18,7 @@ import com.streamarr.server.services.pagination.OrderMediaBy;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.Temporal;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
@@ -25,6 +26,10 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.NonNull;
 import lombok.experimental.UtilityClass;
+import org.hibernate.engine.spi.SessionFactoryImplementor;
+import org.hibernate.query.NativeQuery;
+import org.hibernate.type.BasicType;
+import org.hibernate.type.spi.TypeConfiguration;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.Query;
@@ -39,14 +44,34 @@ public class JooqQueryHelper {
 
   @SuppressWarnings("unchecked")
   public <E> List<E> nativeQuery(EntityManager em, Query query, Class<E> type) {
-    var result = em.createNativeQuery(query.getSQL(), type);
+    var result = em.createNativeQuery(query.getSQL(), type).unwrap(NativeQuery.class);
+    var types =
+        em.getEntityManagerFactory().unwrap(SessionFactoryImplementor.class).getTypeConfiguration();
 
     List<Object> values = query.getBindValues();
     for (int i = 0; i < values.size(); i++) {
-      result.setParameter(i + 1, values.get(i));
+      var value = values.get(i);
+      if (value instanceof Temporal temporal) {
+        result.setParameter(i + 1, temporal, directBindingType(temporal, types));
+        continue;
+      }
+
+      result.setParameter(i + 1, value);
     }
 
     return result.getResultList();
+  }
+
+  // Hibernate types an untyped parameter by the basic type registered for its Java class, which
+  // binds java.time values through java.sql.Date and java.sql.Timestamp regardless of
+  // hibernate.type.java_time_use_direct_jdbc. A java.time value binds with the JDBC type an entity
+  // attribute of the same class uses.
+  private <T extends Temporal> BasicType<T> directBindingType(T value, TypeConfiguration types) {
+    @SuppressWarnings("unchecked")
+    var valueClass = (Class<T>) value.getClass();
+    var javaType = types.getJavaTypeRegistry().resolveDescriptor(valueClass);
+    var jdbcType = javaType.getRecommendedJdbcType(types.getCurrentBaseSqlTypeIndicators());
+    return types.getBasicTypeRegistry().resolve(javaType, jdbcType);
   }
 
   public Condition startLetterCondition(

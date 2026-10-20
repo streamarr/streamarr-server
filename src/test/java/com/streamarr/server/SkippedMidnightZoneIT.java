@@ -1,21 +1,32 @@
 package com.streamarr.server;
 
+import static com.streamarr.server.fixtures.PaginationFixture.buildBackwardContinuation;
+import static com.streamarr.server.fixtures.PaginationFixture.buildForwardContinuation;
 import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
+import static com.streamarr.server.jooq.generated.tables.Library.LIBRARY;
+import static com.streamarr.server.jooq.generated.tables.Movie.MOVIE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.repositories.JooqQueryHelper;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
+import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.util.Locale;
+import java.util.UUID;
+import java.util.stream.Stream;
 import org.jooq.SortOrder;
+import org.jooq.impl.DSL;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -43,6 +54,7 @@ class SkippedMidnightZoneIT extends AbstractIntegrationTest {
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private TransactionTemplate transactionTemplate;
+  @Autowired private EntityManager entityManager;
 
   private Library library;
 
@@ -59,12 +71,7 @@ class SkippedMidnightZoneIT extends AbstractIntegrationTest {
   @DisplayName("Should list a movie with its release date when the JVM zone skipped that day")
   void shouldListMovieWithItsReleaseDateWhenJvmZoneSkippedThatDay() {
     saveMovieReleasedOn(SKIPPED_DAY);
-    var filter =
-        MediaFilter.builder()
-            .libraryId(library.getId())
-            .sortBy(OrderMediaBy.RELEASE_DATE)
-            .sortDirection(SortOrder.ASC)
-            .build();
+    var filter = releaseDateFilter();
 
     var page = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
@@ -75,6 +82,34 @@ class SkippedMidnightZoneIT extends AbstractIntegrationTest {
               assertThat(item.item().getReleaseDate()).isEqualTo(SKIPPED_DAY);
               assertThat(item.sortValue()).isEqualTo(SKIPPED_DAY);
             });
+  }
+
+  @Test
+  @DisplayName("Should page past every movie released on a day the JVM zone skipped")
+  void shouldPagePastEveryMovieReleasedOnDayJvmZoneSkipped() {
+    saveMovieTitledReleasedOn("Skipped Day A", SKIPPED_DAY);
+    saveMovieTitledReleasedOn("Skipped Day B", SKIPPED_DAY);
+    saveMovieTitledReleasedOn("Day After", SKIPPED_DAY.plusDays(1));
+    var filter = releaseDateFilter();
+
+    var first = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
+    var second =
+        movieService.getMoviesWithFilter(
+            buildForwardContinuation(1, filter, first.items().getFirst()));
+    var third =
+        movieService.getMoviesWithFilter(
+            buildForwardContinuation(1, filter, second.items().getFirst()));
+    var beforeLast =
+        movieService.getMoviesWithFilter(
+            buildBackwardContinuation(2, filter, third.items().getFirst()));
+
+    assertThat(Stream.of(first, second, third).flatMap(page -> page.items().stream()))
+        .extracting(item -> item.item().getTitle())
+        .containsExactlyInAnyOrder("Skipped Day A", "Skipped Day B", "Day After")
+        .endsWith("Day After");
+    assertThat(beforeLast.items())
+        .extracting(item -> item.item().getTitle())
+        .containsExactlyInAnyOrder("Skipped Day A", "Skipped Day B");
   }
 
   @Test
@@ -126,16 +161,56 @@ class SkippedMidnightZoneIT extends AbstractIntegrationTest {
   @DisplayName("Should read an instant unchanged when it precedes the Unix epoch")
   void shouldReadInstantUnchangedWhenItPrecedesUnixEpoch(String value) {
     var instant = Instant.parse(value);
+    storeScanStartedOn(instant);
+
+    var found = libraryRepository.findById(library.getId()).orElseThrow();
+
+    assertThat(found.getScanStartedOn()).isEqualTo(instant);
+  }
+
+  @Test
+  @DisplayName("Should match a release date when a native query binds a day the JVM zone skipped")
+  void shouldMatchReleaseDateWhenNativeQueryBindsDayJvmZoneSkipped() {
+    var movie = saveMovieReleasedOn(SKIPPED_DAY);
+
+    var ids =
+        JooqQueryHelper.nativeQuery(
+            entityManager,
+            DSL.select(MOVIE.ID)
+                .from(MOVIE)
+                .where(MOVIE.ID.eq(movie.getId()))
+                .and(MOVIE.RELEASE_DATE.eq(SKIPPED_DAY)),
+            UUID.class);
+
+    assertThat(ids).containsExactly(movie.getId());
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {PRE_GREGORIAN_INSTANT, BEFORE_COMMON_ERA_INSTANT, PRE_EPOCH_FRACTION})
+  @DisplayName("Should match an instant when a native query binds one before the Unix epoch")
+  void shouldMatchInstantWhenNativeQueryBindsOneBeforeUnixEpoch(String value) {
+    var instant = Instant.parse(value);
+    storeScanStartedOn(instant);
+
+    var ids =
+        JooqQueryHelper.nativeQuery(
+            entityManager,
+            DSL.select(LIBRARY.ID)
+                .from(LIBRARY)
+                .where(LIBRARY.ID.eq(library.getId()))
+                .and(LIBRARY.SCAN_STARTED_ON.eq(instant.atOffset(ZoneOffset.UTC))),
+            UUID.class);
+
+    assertThat(ids).containsExactly(library.getId());
+  }
+
+  private void storeScanStartedOn(Instant instant) {
     transactionTemplate.executeWithoutResult(
         _ ->
             jdbcTemplate.update(
                 "update library set scan_started_on = to_timestamp(?) where id = ?",
                 epochSeconds(instant),
                 library.getId()));
-
-    var found = libraryRepository.findById(library.getId()).orElseThrow();
-
-    assertThat(found.getScanStartedOn()).isEqualTo(instant);
   }
 
   private static BigDecimal epochSeconds(Instant instant) {
@@ -143,11 +218,23 @@ class SkippedMidnightZoneIT extends AbstractIntegrationTest {
         .add(BigDecimal.valueOf(instant.getNano(), 9));
   }
 
+  private MediaFilter releaseDateFilter() {
+    return MediaFilter.builder()
+        .libraryId(library.getId())
+        .sortBy(OrderMediaBy.RELEASE_DATE)
+        .sortDirection(SortOrder.ASC)
+        .build();
+  }
+
   private Movie saveMovieReleasedOn(LocalDate releaseDate) {
+    return saveMovieTitledReleasedOn("Skipped Day", releaseDate);
+  }
+
+  private Movie saveMovieTitledReleasedOn(String title, LocalDate releaseDate) {
     return movieRepository.saveAndFlush(
         Movie.builder()
-            .title("Skipped Day")
-            .titleSort("skipped day")
+            .title(title)
+            .titleSort(title.toLowerCase(Locale.ROOT))
             .releaseDate(releaseDate)
             .library(library)
             .build());
