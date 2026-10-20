@@ -16,6 +16,7 @@ import java.util.Base64;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,11 +40,11 @@ class LibraryItemsCursorIT extends AbstractIntegrationTest {
   @ParameterizedTest(name = "{0} cursor with sort value {1}")
   @CsvSource({
     "LAST_WATCHED, yesterday",
-    "LAST_WATCHED, +10000-01-01T00:00:00Z",
+    "LAST_WATCHED, +294277-01-01T00:00:00Z",
     "ADDED, yesterday",
-    "ADDED, +10000-01-01T00:00:00Z",
+    "ADDED, -4713-12-31T23:59:59Z",
     "RELEASE_DATE, someday",
-    "RELEASE_DATE, +10000-01-01",
+    "RELEASE_DATE, +5874898-01-01",
     "RUNTIME, ninety"
   })
   @DisplayName("Should reject a cursor as INVALID_CURSOR when its sort value cannot be read")
@@ -64,6 +65,51 @@ class LibraryItemsCursorIT extends AbstractIntegrationTest {
   @DisplayName("Should reject a cursor as INVALID_CURSOR when it names no sort field")
   void shouldRejectACursorAsInvalidWhenItNamesNoSortField(String sort) {
     assertForgedCursorIsInvalid(sort, cursor -> mediaFilter(cursor).putNull("sortBy"));
+  }
+
+  @Test
+  @DisplayName("Should follow a RELEASE_DATE cursor when its item is released after year 9999")
+  void shouldFollowAReleaseDateCursorWhenItsItemIsReleasedAfterYear9999() {
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var released = new LocalDate[] {LocalDate.of(10000, 1, 1), LocalDate.of(10001, 1, 1)};
+    var later =
+        movies.saveAndFlush(
+            Movie.builder()
+                .title("Bravo")
+                .titleSort("Bravo")
+                .releaseDate(released[1])
+                .library(library)
+                .build());
+    movies.saveAndFlush(
+        Movie.builder()
+            .title("Alpha")
+            .titleSort("Alpha")
+            .releaseDate(released[0])
+            .library(library)
+            .build());
+
+    var identity = auth.createIdentity();
+    var bearer = auth.profileBearer(identity);
+    try (var http =
+        new GraphQlHttpTestClient(URI.create("http://localhost:%d/graphql".formatted(port)))) {
+      var query =
+          """
+          { library(id: "%s") { items(%%s, sort: {by: RELEASE_DATE, direction: ASC}) {
+            edges { cursor node { ... on Movie { id } } }
+          } } }
+          """
+              .formatted(library.getId());
+      var first = http.execute(bearer, query.formatted("first: 1"));
+      var cursor = first.at("/data/library/items/edges/0/cursor").asString();
+
+      var next = http.execute(bearer, query.formatted("first: 1, after: \"%s\"".formatted(cursor)));
+
+      assertThat(next.has("errors")).as(next.toPrettyString()).isFalse();
+      assertThat(next.at("/data/library/items/edges/0/node/id").asString())
+          .isEqualTo(later.getId().toString());
+    } finally {
+      auth.deleteIdentity(identity);
+    }
   }
 
   private void assertForgedCursorIsInvalid(String sort, Consumer<ObjectNode> forge) {

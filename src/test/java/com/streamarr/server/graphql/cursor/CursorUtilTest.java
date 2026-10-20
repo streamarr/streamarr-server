@@ -261,7 +261,7 @@ class CursorUtilTest {
               + "\"previousSortFieldValue\":\"yesterday\"}}",
           "{\"cursorId\":\"5d2f6a8e-0c1b-4f3e-9a7d-2b4c6e8f0a1c\",\"mediaFilter\":"
               + "{\"sortBy\":\"ADDED\",\"sortDirection\":\"ASC\","
-              + "\"previousSortFieldValue\":\"+10000-01-01T00:00:00Z\"}}",
+              + "\"previousSortFieldValue\":\"+294277-01-01T00:00:00Z\"}}",
           "{\"cursorId\":\"5d2f6a8e-0c1b-4f3e-9a7d-2b4c6e8f0a1c\",\"mediaFilter\":"
               + "{\"sortBy\":\"RELEASE_DATE\",\"sortDirection\":\"ASC\","
               + "\"previousSortFieldValue\":\"someday\"}}",
@@ -322,6 +322,8 @@ class CursorUtilTest {
           Arguments.of(OrderMediaBy.TITLE, "Alpha"),
           Arguments.of(OrderMediaBy.ADDED, Instant.parse("2026-10-19T15:07:00Z")),
           Arguments.of(OrderMediaBy.RELEASE_DATE, LocalDate.of(2020, 1, 1)),
+          Arguments.of(OrderMediaBy.RELEASE_DATE, LocalDate.of(5874897, 12, 31)),
+          Arguments.of(OrderMediaBy.ADDED, Instant.parse("+294276-12-31T23:59:59.999999Z")),
           Arguments.of(OrderMediaBy.RUNTIME, 90),
           Arguments.of(OrderMediaBy.LAST_WATCHED, Instant.parse("2026-10-19T15:07:12.345Z")));
     }

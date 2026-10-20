@@ -10,11 +10,11 @@ public enum OrderMediaBy {
   RUNTIME,
   LAST_WATCHED;
 
-  // PostgreSQL stores four-digit years; java.time reads wider ones it cannot bind.
-  private static final LocalDate EARLIEST_DATE = LocalDate.of(1, 1, 1);
-  private static final LocalDate LATEST_DATE = LocalDate.of(9999, 12, 31);
-  private static final Instant EARLIEST_INSTANT = Instant.parse("0001-01-01T00:00:00Z");
-  private static final Instant LATEST_INSTANT = Instant.parse("9999-12-31T23:59:59.999999Z");
+  // PostgreSQL's date and timestamptz ranges, narrower than java.time's.
+  private static final LocalDate EARLIEST_DATE = LocalDate.of(-4712, 1, 1);
+  private static final LocalDate LATEST_DATE = LocalDate.of(5874897, 12, 31);
+  private static final Instant EARLIEST_INSTANT = Instant.parse("-4712-01-01T00:00:00Z");
+  private static final Instant LATEST_INSTANT = Instant.parse("+294276-12-31T23:59:59.999999Z");
 
   /**
    * Reads a sort value carried by a cursor as this sort's own type: a String title, an Instant
@@ -47,7 +47,7 @@ public enum OrderMediaBy {
   private static Instant readInstant(Object value) {
     var instant = Instant.parse(value.toString());
     if (instant.isBefore(EARLIEST_INSTANT) || instant.isAfter(LATEST_INSTANT)) {
-      throw new IllegalArgumentException("A time sort value must have a four-digit year.");
+      throw new IllegalArgumentException("A time sort value lies outside the stored range.");
     }
 
     return instant;
@@ -56,7 +56,7 @@ public enum OrderMediaBy {
   private static LocalDate readDate(Object value) {
     var date = LocalDate.parse(value.toString());
     if (date.isBefore(EARLIEST_DATE) || date.isAfter(LATEST_DATE)) {
-      throw new IllegalArgumentException("A date sort value must have a four-digit year.");
+      throw new IllegalArgumentException("A date sort value lies outside the stored range.");
     }
 
     return date;
