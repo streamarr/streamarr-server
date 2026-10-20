@@ -24,6 +24,7 @@ import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Record;
 import org.jooq.Select;
+import org.jooq.SelectJoinStep;
 import org.jooq.SelectWhereStep;
 import org.jooq.SortField;
 import org.jooq.Table;
@@ -43,6 +44,11 @@ public record Keyset<V>(@NonNull Field<V> sortValue, @NonNull Field<UUID> itemId
    */
   public Field<V> selectedSortValue() {
     return sortValue.as(SELECTED_SORT_VALUE);
+  }
+
+  /** Every column of {@code table} and the sort value, for {@code JooqQueryHelper.nativeRows}. */
+  public SelectJoinStep<Record> selectFrom(DSLContext dsl, Table<?> table) {
+    return dsl.select(table.asterisk(), selectedSortValue()).from(table);
   }
 
   /** Restricts, orders and limits {@code select} to the rows the seek reads, nearest first. */

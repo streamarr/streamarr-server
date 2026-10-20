@@ -33,11 +33,7 @@ public class AccountInvitationRepositoryCustomImpl implements AccountInvitationR
             .sortValue(ACCOUNT_INVITATION.CREATED_ON)
             .itemId(ACCOUNT_INVITATION.ID)
             .build();
-    var query =
-        keyset.rowsBeyond(
-            dsl.select(ACCOUNT_INVITATION.asterisk(), keyset.selectedSortValue())
-                .from(ACCOUNT_INVITATION),
-            seek);
+    var query = keyset.rowsBeyond(keyset.selectFrom(dsl, ACCOUNT_INVITATION), seek);
     return JooqQueryHelper.nativeRows(entityManager, query, AccountInvitation.class, keyset);
   }
 

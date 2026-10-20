@@ -35,9 +35,7 @@ public class HouseholdRepositoryCustomImpl implements HouseholdRepositoryCustom 
   public List<Row<Household>> rowsBeyond(Seek seek) {
     var keyset =
         Keyset.<String>builder().sortValue(lower(HOUSEHOLD.NAME)).itemId(HOUSEHOLD.ID).build();
-    var query =
-        keyset.rowsBeyond(
-            dsl.select(HOUSEHOLD.asterisk(), keyset.selectedSortValue()).from(HOUSEHOLD), seek);
+    var query = keyset.rowsBeyond(keyset.selectFrom(dsl, HOUSEHOLD), seek);
     return JooqQueryHelper.nativeRows(entityManager, query, Household.class, keyset);
   }
 
