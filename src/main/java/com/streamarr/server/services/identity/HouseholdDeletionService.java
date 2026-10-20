@@ -15,7 +15,6 @@ import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
-import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationService;
@@ -25,14 +24,14 @@ import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.PageItem;
+import com.streamarr.server.services.pagination.PageRequest;
+import com.streamarr.server.services.pagination.Pager;
 import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.PaginationService;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -69,9 +68,8 @@ public class HouseholdDeletionService {
   private final DeviceRegistrationLifecycle registrationLifecycle;
   private final AccountInvitationRepository accountInvitationRepository;
   private final SecurityAuditEventRepository securityAuditEventRepository;
-  private final SessionProgressRepository sessionProgressRepository;
+  private final ProfileActivityList profileActivityList;
   private final MutationTransactions mutationTransactions;
-  private final PaginationService paginationService;
   private final Clock clock;
 
   public Outcome<UUID, HouseholdDeletionRejections.Delete> deleteEmptyHousehold(
@@ -286,13 +284,14 @@ public class HouseholdDeletionService {
     return auditPage(fetched, request);
   }
 
-  /** A managed Profile's viewing activity; hidden Profiles read as empty. */
-  public MediaPage<SessionProgress> profileActivity(
-      AuthenticatedIdentity identity, UUID profileId, KeysetPaginationOptions options) {
+  /** A page of a managed Profile's viewing activity, most recent first; hidden reads as empty. */
+  public ListPage<SessionProgress> profileActivity(
+      AuthenticatedIdentity identity, UUID profileId, PageRequest request) {
     return switch (authorizationService.decide(
         identity, new Intent.ViewProfileActivity(profileId))) {
-      case Decision.Allowed<AuthorizationUnit> _ -> profileActivityPage(profileId, options);
-      case Decision.Denied<AuthorizationUnit> _ -> profileActivityPage(List.of(), options);
+      case Decision.Allowed<AuthorizationUnit> _ ->
+          Pager.page(profileActivityList, profileId, request);
+      case Decision.Denied<AuthorizationUnit> _ -> new ListPage<>(List.of(), false, false);
       case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
     };
   }
@@ -310,25 +309,6 @@ public class HouseholdDeletionService {
     return request.direction() == PaginationDirection.REVERSE
         ? new MediaPage<>(items, hasCursor, hasLookahead)
         : new MediaPage<>(items, hasLookahead, hasCursor);
-  }
-
-  private MediaPage<SessionProgress> profileActivityPage(
-      UUID profileId, KeysetPaginationOptions options) {
-    return profileActivityPage(
-        sessionProgressRepository.findByProfileIdOrderByLastModifiedOnDesc(profileId), options);
-  }
-
-  private MediaPage<SessionProgress> profileActivityPage(
-      List<SessionProgress> activity, KeysetPaginationOptions options) {
-    var items =
-        activity.stream()
-            .sorted(
-                Comparator.comparing(SessionProgress::getLastModifiedOn)
-                    .reversed()
-                    .thenComparing(SessionProgress::getId))
-            .map(progress -> new PageItem<>(progress, progress.getLastModifiedOn()))
-            .toList();
-    return paginationService.buildKeysetPage(items, options, SessionProgress::getId);
   }
 
   private void dispose(UserAccount resident, FinalAccountDisposition disposition, Instant now) {

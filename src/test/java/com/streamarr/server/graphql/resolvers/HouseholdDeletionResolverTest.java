@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
@@ -25,12 +26,15 @@ import com.streamarr.server.services.identity.HouseholdDeletionService.Household
 import com.streamarr.server.services.identity.HouseholdDeletionService.SecurityAuditPageRequest;
 import com.streamarr.server.services.identity.HouseholdDeletionService.TransferLastAccountAndDeleteHouseholdCommand;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import com.streamarr.server.services.pagination.ListIdentity;
+import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.services.pagination.Position;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.SortValue;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
@@ -78,6 +82,7 @@ class HouseholdDeletionResolverTest {
   private static final String REASON = "closing reviewed Household";
   @Autowired private DgsQueryExecutor executor;
   @Autowired private ObjectMapper mapper;
+  @Autowired private PositionCursorCodec positionCursors;
   @MockitoBean private HouseholdDeletionService service;
   @MockitoBean private AuthorizationService authorization;
   private final AuthenticatedIdentity identity =
@@ -265,8 +270,11 @@ class HouseholdDeletionResolverTest {
             .durationSeconds(600)
             .build();
     AuditFieldSetter.setLastModifiedOn(progress, watchedAt);
-    when(service.profileActivity(identity, SOURCE, activityOptions()))
-        .thenReturn(new MediaPage<>(List.of(new PageItem<>(progress, watchedAt)), true, false));
+    var position = new Position(new SortValue.OfInstant(watchedAt), DESTINATION);
+    when(service.profileActivity(identity, SOURCE, firstRows(2)))
+        .thenReturn(new ListPage<>(List.of(new Row<>(progress, position)), true, false));
+    var cursor =
+        positionCursors.encode(new ListIdentity("profile-activity", SOURCE), position).getValue();
 
     var response =
         query(
@@ -296,8 +304,7 @@ class HouseholdDeletionResolverTest {
                     600,
                     "watchedAt",
                     "2026-08-01T12:00:00Z")));
-    assertThat(response.at("/data/profileActivity/edges/0/cursor").asString())
-        .isEqualTo(opaque(DESTINATION.toString()));
+    assertThat(response.at("/data/profileActivity/edges/0/cursor").asString()).isEqualTo(cursor);
     assertThat(response.at("/data/profileActivity/pageInfo"))
         .isEqualTo(
             mapper.valueToTree(
@@ -307,16 +314,16 @@ class HouseholdDeletionResolverTest {
                     "hasPreviousPage",
                     false,
                     "startCursor",
-                    opaque(DESTINATION.toString()),
+                    cursor,
                     "endCursor",
-                    opaque(DESTINATION.toString()))));
+                    cursor)));
   }
 
   @Test
   @DisplayName("Should return an empty activity connection when the service hides the Profile")
   void shouldReturnEmptyActivityConnectionWhenServiceHidesProfile() {
-    when(service.profileActivity(identity, SOURCE, activityOptions()))
-        .thenReturn(new MediaPage<>(List.of(), false, false));
+    when(service.profileActivity(identity, SOURCE, firstRows(2)))
+        .thenReturn(new ListPage<>(List.of(), false, false));
     var response =
         query(
             """
@@ -439,22 +446,34 @@ class HouseholdDeletionResolverTest {
     assertThat(response.at("/errors/0/extensions").size()).isEqualTo(3);
   }
 
+  @Test
+  @DisplayName("Should reject an activity cursor when it continues another Profile's activity")
+  void shouldRejectAnActivityCursorWhenItContinuesAnotherProfilesActivity() {
+    var cursor =
+        positionCursors
+            .encode(
+                new ListIdentity("profile-activity", DESTINATION),
+                new Position(
+                    new SortValue.OfInstant(Instant.parse("2026-08-01T12:00:00Z")),
+                    UUID.randomUUID()))
+            .getValue();
+
+    var response =
+        query(
+            """
+            query { profileActivity(profileId: "%s", first: 2, after: "%s") { edges { node { id } } } }
+            """
+                .formatted(SOURCE, cursor));
+
+    assertThat(response.at("/errors/0/extensions/code").asString()).isEqualTo("INVALID_CURSOR");
+  }
+
   private static Stream<String> invalidAuditCursors() {
     return Stream.of(
         "%%%",
         opaque("missing separator"),
         opaque("not-a-time|" + SOURCE),
         opaque("2026-08-01T12:00:00Z|not-an-id"));
-  }
-
-  private static KeysetPaginationOptions activityOptions() {
-    return new KeysetPaginationOptions(
-        null,
-        PaginationOptions.builder()
-            .paginationDirection(PaginationDirection.FORWARD)
-            .cursor(Optional.empty())
-            .limit(2)
-            .build());
   }
 
   private JsonNode query(String document) {

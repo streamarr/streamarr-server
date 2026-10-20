@@ -1,5 +1,6 @@
 package com.streamarr.server.services.identity;
 
+import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -40,14 +41,10 @@ import com.streamarr.server.services.identity.HouseholdDeletionService.TransferL
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.PaginationOptions;
-import com.streamarr.server.services.pagination.PaginationService;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -486,8 +483,8 @@ class HouseholdDeletionServiceTest {
   }
 
   @Test
-  @DisplayName("Should return Profile activity when the caller may view the Profile")
-  void shouldReturnProfileActivityWhenCallerMayViewProfile() {
+  @DisplayName("Should return only the requested Profile's activity when the caller may view it")
+  void shouldReturnOnlyTheRequestedProfilesActivityWhenTheCallerMayViewIt() {
     var profileId = UUID.randomUUID();
     var older = progress.save(progressFor(profileId));
     var newer = progress.save(progressFor(profileId));
@@ -496,69 +493,22 @@ class HouseholdDeletionServiceTest {
     AuditFieldSetter.setLastModifiedOn(newer, Instant.parse("2026-08-02T00:00:00Z"));
     AuditFieldSetter.setLastModifiedOn(otherProfileActivity, Instant.parse("2026-08-03T00:00:00Z"));
 
-    assertThat(service.profileActivity(identity(), profileId, paginationOptions()).items())
-        .extracting(item -> item.item().getId())
+    assertThat(service.profileActivity(identity(), profileId, firstRows(10)).rows())
+        .extracting(row -> row.item().getId())
         .containsExactly(newer.getId(), older.getId());
-  }
-
-  @Test
-  @DisplayName("Should continue only the requested Profile's activity when its cursor advances")
-  void shouldContinueOnlyRequestedProfileActivityWhenCursorAdvances() {
-    var profileId = UUID.randomUUID();
-    var older = progress.save(progressFor(profileId));
-    var newer = progress.save(progressFor(profileId));
-    var foreign = progress.save(progressFor(UUID.randomUUID()));
-    AuditFieldSetter.setLastModifiedOn(older, NOW);
-    AuditFieldSetter.setLastModifiedOn(newer, NOW.plusSeconds(1));
-    AuditFieldSetter.setLastModifiedOn(foreign, NOW.plusSeconds(2));
-    var oneItem =
-        PaginationOptions.builder()
-            .paginationDirection(PaginationDirection.FORWARD)
-            .cursor(Optional.empty())
-            .limit(1)
-            .build();
-
-    var first =
-        service.profileActivity(identity(), profileId, new KeysetPaginationOptions(null, oneItem));
-    assertThat(first.items())
-        .extracting(item -> item.item().getId())
-        .containsExactly(newer.getId());
-    assertThat(first.hasNextPage()).isTrue();
-    assertThat(first.hasPreviousPage()).isFalse();
-
-    var second =
-        service.profileActivity(
-            identity(), profileId, new KeysetPaginationOptions(newer.getId(), oneItem));
-    assertThat(second.items())
-        .extracting(item -> item.item().getId())
-        .containsExactly(older.getId());
-    assertThat(second.hasNextPage()).isFalse();
-    assertThat(second.hasPreviousPage()).isTrue();
-
-    var terminal =
-        service.profileActivity(
-            identity(), profileId, new KeysetPaginationOptions(older.getId(), oneItem));
-    assertThat(terminal.items()).isEmpty();
-    assertThat(terminal.hasNextPage()).isFalse();
-    assertThat(terminal.hasPreviousPage()).isTrue();
   }
 
   @Test
   @DisplayName("Should hide Profile activity when the caller may not view the Profile")
   void shouldHideProfileActivityWhenCallerMayNotViewProfile() {
     var profileId = UUID.randomUUID();
-    progress.save(
-        SessionProgress.builder()
-            .sessionId(UUID.randomUUID())
-            .profileId(profileId)
-            .mediaFileId(UUID.randomUUID())
-            .positionSeconds(60)
-            .percentComplete(10.0)
-            .durationSeconds(600)
-            .build());
+    progress.save(progressFor(profileId));
     authorization.denyAll();
-    assertThat(service.profileActivity(identity(), profileId, paginationOptions()).items())
-        .isEmpty();
+
+    var page = service.profileActivity(identity(), profileId, firstRows(10));
+
+    assertThat(page.rows()).isEmpty();
+    assertThat(page.hasNextPage()).isFalse();
   }
 
   @Test
@@ -593,9 +543,9 @@ class HouseholdDeletionServiceTest {
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
     var identity = identity();
     var profileId = UUID.randomUUID();
-    var options = paginationOptions();
+    var request = firstRows(10);
 
-    assertThatThrownBy(() -> service.profileActivity(identity, profileId, options))
+    assertThatThrownBy(() -> service.profileActivity(identity, profileId, request))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
@@ -732,20 +682,9 @@ class HouseholdDeletionServiceTest {
         registrationLifecycle,
         accountInvitations,
         audit,
-        progress,
+        new ProfileActivityList(progress),
         new MutationTransactions(new FakeTransactionManager(), new ConstraintViolationTranslator()),
-        new PaginationService(),
         Clock.fixed(NOW, ZoneOffset.UTC));
-  }
-
-  private static KeysetPaginationOptions paginationOptions() {
-    return new KeysetPaginationOptions(
-        null,
-        PaginationOptions.builder()
-            .paginationDirection(PaginationDirection.FORWARD)
-            .cursor(Optional.empty())
-            .limit(100)
-            .build());
   }
 
   private AuthenticatedIdentity identity() {

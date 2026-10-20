@@ -14,6 +14,4 @@ public interface SessionProgressRepository
 
   List<SessionProgress> findByProfileIdAndMediaFileIdIn(
       UUID profileId, Collection<UUID> mediaFileIds);
-
-  List<SessionProgress> findByProfileIdOrderByLastModifiedOnDesc(UUID profileId);
 }
