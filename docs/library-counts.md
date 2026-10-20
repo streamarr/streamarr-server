@@ -4,7 +4,8 @@
 its last recount. It is independent of the selected filter, sort and page. Seasons,
 episodes and extra file versions do not increase it. An empty library returns zero.
 The total equals the sum of `alphabetIndex.count`, including `HASH` for titles
-whose sort title does not start with an ASCII letter.
+whose sort title does not start with an ASCII letter. Sort titles fold Latin
+diacritics, so `Élite` counts under `E`; titles in other scripts count under `HASH`.
 
 The upgrade migration rebuilds existing alphabet buckets from top-level movies and series,
 removing legacy season/episode counts and stale buckets.

@@ -425,6 +425,21 @@ class TMDBSeriesProviderIT {
   }
 
   @Test
+  @DisplayName("Should normalize only the sort title when TMDB returns an accented series name")
+  void shouldNormalizeOnlyTheSortTitleWhenTmdbReturnsAnAccentedSeriesName() {
+    stubMinimalSeriesResponse(
+        "1396",
+        """
+        ,"name": "~Ōkura Nights"
+        """);
+
+    var series = found(provider.getMetadata(buildSearchResult("1396"), savedLibrary)).entity();
+
+    assertThat(series.getTitle()).isEqualTo("~Ōkura Nights");
+    assertThat(series.getTitleSort()).isEqualTo("Okura Nights");
+  }
+
+  @Test
   @DisplayName("Should handle null credits when credits absent from TV response")
   void shouldHandleNullCreditsWhenCreditsAbsentFromTvResponse() {
     stubMinimalSeriesResponse("1396");

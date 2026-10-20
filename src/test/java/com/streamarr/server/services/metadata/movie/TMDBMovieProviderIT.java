@@ -602,6 +602,21 @@ class TMDBMovieProviderIT {
   }
 
   @Test
+  @DisplayName("Should normalize only the sort title when TMDB returns an accented title")
+  void shouldNormalizeOnlyTheSortTitleWhenTmdbReturnsAnAccentedTitle() {
+    stubMinimalMovieResponse(
+        "27205",
+        """
+        ,"title": "The Élite Harbor"
+        """);
+
+    var movie = found(provider.getMetadata(buildSearchResult("27205"), savedLibrary)).entity();
+
+    assertThat(movie.getTitle()).isEqualTo("The Élite Harbor");
+    assertThat(movie.getTitleSort()).isEqualTo("Elite Harbor, The");
+  }
+
+  @Test
   @DisplayName("Should handle null credits when credits absent from response")
   void shouldHandleNullCreditsWhenCreditsAbsentFromResponse() {
     stubMinimalMovieResponse("27205");

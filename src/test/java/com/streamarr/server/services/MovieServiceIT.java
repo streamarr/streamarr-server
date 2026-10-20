@@ -118,8 +118,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
     movieRepository.saveAndFlush(
         Movie.builder()
-            .title("~Tilde Movie")
-            .titleSort("~tilde movie")
+            .title("Ωmega Movie")
+            .titleSort("Ωmega movie")
             .releaseDate(LocalDate.of(2024, 1, 1))
             .library(savedLibraryE)
             .build());
@@ -943,7 +943,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
           List.of(
               Movie.builder().title("Alpha").titleSort("alpha").library(library).build(),
               Movie.builder().title("Zorro").titleSort("zorro").library(library).build(),
-              Movie.builder().title("~Tilde").titleSort("~tilde").library(library).build()));
+              Movie.builder().title("Ωmega").titleSort("Ωmega").library(library).build()));
       var filter =
           MediaFilter.builder()
               .libraryId(library.getId())
@@ -974,7 +974,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
       var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
-      assertThat(titles).containsExactlyInAnyOrder("123 Numbers", "~Tilde Movie");
+      assertThat(titles).containsExactlyInAnyOrder("123 Numbers", "Ωmega Movie");
     }
 
     @Test
@@ -1002,7 +1002,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
       assertThat(landing.hasPreviousPage()).isTrue();
       assertThat(above.items())
           .extracting(pi -> pi.item().getTitle())
-          .containsExactly("~Tilde Movie", "Alpha Movie");
+          .containsExactly("Ωmega Movie", "Alpha Movie");
       assertThat(above.hasPreviousPage()).isFalse();
     }
   }

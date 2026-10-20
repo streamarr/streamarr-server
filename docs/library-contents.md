@@ -77,7 +77,12 @@ clients do not reconstruct filters from a partially selected entity.
   a null flag, the normalized title with null coalesced to an empty string, and the ID.
   Comparing that whole tuple keeps nullable cursor seeks within the index range instead
   of scanning earlier titles. The database performs case normalization for keys too,
-  so client locale and Unicode casing cannot disagree with query ordering. RELEASE_DATE,
+  so client locale and Unicode casing cannot disagree with query ordering. The server
+  writes `title_sort` from the display title, which itself never changes: Latin
+  diacritics and compatibility characters fold to their base letters, so `Élite` sorts
+  and counts as `Elite`; leading `{`, `|`, `}` and `~` are removed; and a leading
+  article moves to the end. Titles in other scripts keep their characters and sort
+  above `z`. RELEASE_DATE,
   RUNTIME and LAST_WATCHED keep nulls last in either direction. TITLE and ADDED retain
   SQL's ascending-null-last and descending-null-first ordering; the added time is never
   null. Backward seeks reverse the physical null order too.

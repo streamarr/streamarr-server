@@ -3,8 +3,13 @@ package com.streamarr.server.utils;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
+@Tag("UnitTest")
 @DisplayName("Title Sort Utility Tests")
 class TitleSortUtilTest {
 
@@ -43,5 +48,65 @@ class TitleSortUtilTest {
   @DisplayName("Should handle title that is only an article")
   void shouldHandleTitleThatIsOnlyArticle() {
     assertThat(TitleSortUtil.computeTitleSort("The")).isEqualTo("The");
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "Élite Harbor, Elite Harbor",
+    "Ōkura Nights, Okura Nights",
+    "Çelik Günler, Celik Gunler",
+    "İnci Bay, Inci Bay",
+    "Naïve Crossing, Naive Crossing"
+  })
+  @DisplayName("Should fold Latin diacritics when the title contains accented letters")
+  void shouldFoldLatinDiacriticsWhenTitleContainsAccentedLetters(String title, String expected) {
+    assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
+  }
+
+  @ParameterizedTest
+  @CsvSource({"ﬁeld Notes, field Notes", "Ｚｅｎ Garden, Zen Garden", "Ⅻ Gates, XII Gates"})
+  @DisplayName("Should decompose compatibility characters when the title contains ligatures")
+  void shouldDecomposeCompatibilityCharactersWhenTitleContainsLigatures(
+      String title, String expected) {
+    assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "~Tilde Tales, Tilde Tales",
+    "{Brace} Yourself, Brace} Yourself",
+    "| Pipe Dreams, Pipe Dreams",
+    "~ {Spaced} Out, Spaced} Out",
+    "}}~ Closing Time, Closing Time"
+  })
+  @DisplayName("Should strip leading characters above z when the title starts with them")
+  void shouldStripLeadingCharactersAboveZWhenTitleStartsWithThem(String title, String expected) {
+    assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"~~~", "{ }", "|"})
+  @DisplayName("Should keep the title when only characters above z remain")
+  void shouldKeepTitleWhenOnlyCharactersAboveZRemain(String title) {
+    assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(title);
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "The Élite, 'Elite, The'",
+    "An Ōkura Night, 'Okura Night, An'",
+    "~The Harbor, 'Harbor, The'",
+    "The ~Harbor, 'Harbor, The'"
+  })
+  @DisplayName("Should move the article after normalizing when the title starts with an article")
+  void shouldMoveArticleAfterNormalizingWhenTitleStartsWithArticle(String title, String expected) {
+    assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"Жёлтый Дом", "がっこう日記", "한강의 밤", "Ώρα Μηδέν", "東京の空"})
+  @DisplayName("Should leave the title unchanged when it is written in a non-Latin script")
+  void shouldLeaveTitleUnchangedWhenItIsWrittenInNonLatinScript(String title) {
+    assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(title);
   }
 }
