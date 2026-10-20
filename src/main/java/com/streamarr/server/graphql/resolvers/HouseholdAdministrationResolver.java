@@ -10,6 +10,7 @@ import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.cursor.ConnectionArguments;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.CursorValidator;
+import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dataloaders.AdministrationAccountsLoaderKey;
 import com.streamarr.server.graphql.dto.AccountAdministration;
@@ -23,11 +24,13 @@ import com.streamarr.server.graphql.mutation.administration.RenameHouseholdPaylo
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.AdministrationQueryService;
 import com.streamarr.server.services.identity.HouseholdAdministrationService;
+import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.MediaPaginationOptionsResolver;
 import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.services.pagination.ServerScope;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
 import java.util.concurrent.CompletableFuture;
@@ -39,6 +42,7 @@ import org.dataloader.DataLoader;
 public class HouseholdAdministrationResolver {
 
   private static final int DEFAULT_PAGE_SIZE = 100;
+  private static final ListIdentity HOUSEHOLDS = new ListIdentity("households", ServerScope.SERVER);
 
   private final AuthorizationService authorizationService;
   private final HouseholdAdministrationService householdAdministrationService;
@@ -47,6 +51,7 @@ public class HouseholdAdministrationResolver {
   private final CursorUtil cursorUtil;
   private final CursorValidator cursorValidator;
   private final RelayConnectionAdapter relayConnectionAdapter;
+  private final PositionCursorCodec positionCursors;
 
   @DgsQuery
   public HouseholdAdministration householdAdministration(@InputArgument String householdId) {
@@ -58,10 +63,13 @@ public class HouseholdAdministrationResolver {
 
   @DgsQuery
   public Connection<HouseholdAdministration> households(DataFetchingEnvironment dfe) {
-    var options = mediaOptions(dfe);
+    var request =
+        positionCursors.pageRequest(
+            HOUSEHOLDS,
+            ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE));
     var page =
-        administrationQueryService.households(authorizationService.currentIdentity(), options);
-    return relayConnectionAdapter.toConnection(page, options, HouseholdAdministration::from);
+        administrationQueryService.households(authorizationService.currentIdentity(), request);
+    return relayConnectionAdapter.toConnection(page, HOUSEHOLDS, HouseholdAdministration::from);
   }
 
   @DgsData(parentType = "HouseholdAdministration", field = "accounts")

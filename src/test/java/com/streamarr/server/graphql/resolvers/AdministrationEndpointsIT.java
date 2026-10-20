@@ -19,14 +19,19 @@ import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.graphql.cursor.CursorUtil;
+import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.Position;
+import com.streamarr.server.services.pagination.ServerScope;
+import com.streamarr.server.services.pagination.SortValue;
 import com.streamarr.server.support.AuthTestSupport;
 import java.util.HashMap;
 import java.util.List;
@@ -42,7 +47,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -66,15 +70,14 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
+  @Autowired private PositionCursorCodec positionCursors;
 
   private AuthTestSupport.TestIdentity serverAdmin;
   private AuthTestSupport.TestIdentity resident;
 
-  @ParameterizedTest
-  @ValueSource(booleans = {false, true})
-  @DisplayName("Should reject an administrative cursor when its name is missing")
-  void shouldRejectAdministrativeCursorWhenItsNameIsMissing(boolean nestedAccounts)
-      throws Exception {
+  @Test
+  @DisplayName("Should reject an Account cursor when its name is missing")
+  void shouldRejectAccountCursorWhenItsNameIsMissing() throws Exception {
     var cursor =
         new CursorUtil(objectMapper)
             .encodeMediaCursor(
@@ -83,21 +86,43 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
                 null)
             .getValue();
     var query =
-        nestedAccounts
-            ? """
-              query { householdAdministration(householdId: "%s") {
-                accounts(first: 1, after: "%s") { edges { node { id } } }
-              } }
-              """
-                .formatted(resident.household().getId(), cursor)
-            : """
-              query { households(first: 1, after: "%s") { edges { node { id } } } }
-              """
-                .formatted(cursor);
+        """
+        query { householdAdministration(householdId: "%s") {
+          accounts(first: 1, after: "%s") { edges { node { id } } }
+        } }
+        """
+            .formatted(resident.household().getId(), cursor);
 
     graphql(authTestSupport.accountBearer(serverAdmin), query)
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
+  }
+
+  @ParameterizedTest
+  @MethodSource("cursorsOutsideTheHouseholdList")
+  @DisplayName("Should reject a Household cursor when it cannot continue the Household list")
+  void shouldRejectAHouseholdCursorWhenItCannotContinueTheHouseholdList(
+      ListIdentity list, SortValue value) throws Exception {
+    var cursor = positionCursors.encode(list, new Position(value, UUID.randomUUID())).getValue();
+
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            """
+            query { households(first: 1, after: "%s") { edges { node { id } } } }
+            """
+                .formatted(cursor))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
+  }
+
+  static Stream<Arguments> cursorsOutsideTheHouseholdList() {
+    var households = new ListIdentity("households", ServerScope.SERVER);
+    return Stream.of(
+        Arguments.of(households, new SortValue.Absent()),
+        Arguments.of(households, new SortValue.OfNumber(1)),
+        Arguments.of(
+            new ListIdentity("account-invitations", ServerScope.SERVER),
+            new SortValue.OfText("household")));
   }
 
   @BeforeEach

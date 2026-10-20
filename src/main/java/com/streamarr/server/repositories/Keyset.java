@@ -18,7 +18,7 @@ import lombok.NonNull;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.Record;
-import org.jooq.ResultQuery;
+import org.jooq.Select;
 import org.jooq.SelectWhereStep;
 import org.jooq.SortField;
 import org.jooq.impl.SQLDataType;
@@ -27,8 +27,18 @@ import org.jooq.impl.SQLDataType;
 @Builder
 public record Keyset<V>(@NonNull Field<V> sortValue, @NonNull Field<UUID> itemId) {
 
+  /** The name a query gives the sort value it selects beside an entity's columns. */
+  public static final String SELECTED_SORT_VALUE = "keyset_sort_value";
+
+  /**
+   * The sort value, to select beside an entity's columns for {@code JooqQueryHelper.nativeRows}.
+   */
+  public Field<V> selectedSortValue() {
+    return sortValue.as(SELECTED_SORT_VALUE);
+  }
+
   /** Restricts, orders and limits {@code select} to the rows the seek reads, nearest first. */
-  public <R extends Record> ResultQuery<R> rowsBeyond(SelectWhereStep<R> select, Seek seek) {
+  public <R extends Record> Select<R> rowsBeyond(SelectWhereStep<R> select, Seek seek) {
     var ascending = isAscending(seek);
     return select
         .where(beyond(seek, ascending))

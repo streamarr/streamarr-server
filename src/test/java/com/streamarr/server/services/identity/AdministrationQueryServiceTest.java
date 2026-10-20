@@ -21,8 +21,6 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.access.AccessDeniedException;
 
 @Tag("UnitTest")
@@ -32,30 +30,29 @@ class AdministrationQueryServiceTest {
   private final FakeAuthorizationService authorization =
       new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
   private final FakeProfileRepository profiles = new FakeProfileRepository();
+  private final FakeHouseholdRepository households = new FakeHouseholdRepository();
   private final AdministrationQueryService service =
-      new AdministrationQueryService(
-          authorization,
-          new FakeHouseholdRepository(),
-          new FakeUserAccountRepository(),
-          new PaginationService(),
-          profiles,
-          new FakeAccountInvitationRepository());
+      AdministrationQueryService.builder()
+          .authorizationService(authorization)
+          .householdRepository(households)
+          .userAccountRepository(new FakeUserAccountRepository())
+          .paginationService(new PaginationService())
+          .profileRepository(profiles)
+          .accountInvitationRepository(new FakeAccountInvitationRepository())
+          .householdsList(new HouseholdsList(households))
+          .build();
 
-  @ParameterizedTest
-  @ValueSource(booleans = {false, true})
-  @DisplayName("Should reject an administrative cursor when its name is missing")
-  void shouldRejectAdministrativeCursorWhenItsNameIsMissing(boolean nestedAccounts) {
+  @Test
+  @DisplayName("Should reject an Account cursor when its name is missing")
+  void shouldRejectAccountCursorWhenItsNameIsMissing() {
     authorization.allowAll();
     var options =
         PaginationFixture.buildForwardOptions(10, MediaFilter.builder().build()).toBuilder()
             .cursorId(UUID.randomUUID())
             .build();
-    Runnable query =
-        nestedAccounts
-            ? () -> service.accountPagesOf(Set.of(UUID.randomUUID()), options)
-            : () -> service.households(authorization.currentIdentity(), options);
+    var householdIds = Set.of(UUID.randomUUID());
 
-    assertThatThrownBy(query::run)
+    assertThatThrownBy(() -> service.accountPagesOf(householdIds, options))
         .isInstanceOf(InvalidPaginationCursorException.class)
         .hasMessage("Cursor sort value is required.");
   }

@@ -46,7 +46,7 @@ public class ContinueWatchingResolver {
     var profileId = authorizationService.requireProfile();
     var list = listOf(profileId);
     var page = continueWatchingService.getPage(profileId, cursors.pageRequest(list, pagination));
-    return connections.toConnection(page, list, ContinueWatchingResolver::orderOf);
+    return connections.toOrderedConnection(page, list, ContinueWatchingResolver::orderOf);
   }
 
   @DgsData(parentType = "WatchStateChange", field = "continueWatching")

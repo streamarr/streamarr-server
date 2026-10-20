@@ -1,7 +1,8 @@
 package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.Household;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -10,7 +11,8 @@ public interface HouseholdRepositoryCustom {
 
   void refresh(Household household);
 
-  List<Household> findForAdministration(MediaPaginationOptions options);
+  /** Households beyond the position of the seek, ordered by lowercased name, then ID. */
+  List<Row<Household>> rowsBeyond(Seek seek);
 
   /**
    * Locks the Household row for the caller's transaction, serializing destructive transitions.

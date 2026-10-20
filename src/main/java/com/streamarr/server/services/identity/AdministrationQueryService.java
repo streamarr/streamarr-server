@@ -13,21 +13,27 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PageItem;
+import com.streamarr.server.services.pagination.PageRequest;
+import com.streamarr.server.services.pagination.Pager;
 import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.services.pagination.ServerScope;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /** Hides denied resource reads as not-found and gates the server catalogue as one surface. */
 @Service
+@Builder
 @RequiredArgsConstructor
 public class AdministrationQueryService {
 
@@ -37,6 +43,7 @@ public class AdministrationQueryService {
   private final PaginationService paginationService;
   private final ProfileRepository profileRepository;
   private final AccountInvitationRepository accountInvitationRepository;
+  private final HouseholdsList householdsList;
 
   public Optional<Household> householdAdministration(
       AuthenticatedIdentity identity, UUID householdId) {
@@ -93,17 +100,10 @@ public class AdministrationQueryService {
         items, options.getPaginationOptions(), options.getCursorId());
   }
 
-  /** A bounded page of Households on the server, in stable name-then-id order. */
-  public MediaPage<Household> households(
-      AuthenticatedIdentity identity, MediaPaginationOptions options) {
+  /** A page of the server's Households, ordered by name, then ID. */
+  public ListPage<Household> households(AuthenticatedIdentity identity, PageRequest request) {
     authorizationService.requireAllowed(identity, new Intent.ViewHouseholds());
-    paginationService.requireCursorSortValue(options);
-    var items =
-        householdRepository.findForAdministration(options).stream()
-            .map(household -> new PageItem<>(household, household.getName()))
-            .toList();
-    return paginationService.buildMediaPage(
-        items, options.getPaginationOptions(), options.getCursorId());
+    return Pager.page(householdsList, ServerScope.SERVER, request);
   }
 
   /** A bounded page of Accounts for one already-authorized Household. */

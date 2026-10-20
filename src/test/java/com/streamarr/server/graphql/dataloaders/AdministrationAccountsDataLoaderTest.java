@@ -3,9 +3,6 @@ package com.streamarr.server.graphql.dataloaders;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.auth.UserAccount;
-import com.streamarr.server.fakes.FakeAccountInvitationRepository;
-import com.streamarr.server.fakes.FakeHouseholdRepository;
-import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.services.identity.AdministrationQueryService;
@@ -42,13 +39,10 @@ class AdministrationAccountsDataLoaderTest {
     var firstKey = new AdministrationAccountsLoaderKey(firstHouseholdId, options);
     var secondKey = new AdministrationAccountsLoaderKey(secondHouseholdId, options);
     var service =
-        new AdministrationQueryService(
-            null,
-            new FakeHouseholdRepository(),
-            accounts,
-            new PaginationService(),
-            new FakeProfileRepository(),
-            new FakeAccountInvitationRepository());
+        AdministrationQueryService.builder()
+            .userAccountRepository(accounts)
+            .paginationService(new PaginationService())
+            .build();
     var loader = new AdministrationAccountsDataLoader(service);
 
     var result = loader.load(Set.of(firstKey, secondKey)).toCompletableFuture().get();

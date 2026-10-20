@@ -2,25 +2,18 @@ package com.streamarr.server.repositories.auth;
 
 import static com.streamarr.server.jooq.generated.tables.Household.HOUSEHOLD;
 import static org.jooq.impl.DSL.lower;
-import static org.jooq.impl.DSL.noCondition;
-import static org.jooq.impl.DSL.row;
-import static org.jooq.impl.DSL.val;
-import static org.jooq.impl.DSL.when;
 
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.repositories.JooqQueryHelper;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
-import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.repositories.Keyset;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
 import jakarta.persistence.EntityManager;
-import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.jooq.Condition;
 import org.jooq.DSLContext;
-import org.jooq.Field;
-import org.jooq.SortOrder;
 
 @RequiredArgsConstructor
 public class HouseholdRepositoryCustomImpl implements HouseholdRepositoryCustom {
@@ -34,45 +27,13 @@ public class HouseholdRepositoryCustomImpl implements HouseholdRepositoryCustom 
   }
 
   @Override
-  public List<Household> findForAdministration(MediaPaginationOptions options) {
-    var reverse =
-        options.getPaginationOptions().getPaginationDirection() == PaginationDirection.REVERSE;
-    var sortOrder = reverse ? SortOrder.DESC : SortOrder.ASC;
-    var name = lower(HOUSEHOLD.NAME);
-    var cursorCondition = cursorCondition(options, name, sortOrder);
-    var cursorFirst =
-        options
-            .getCursorId()
-            .map(cursorId -> when(HOUSEHOLD.ID.eq(cursorId), 0).otherwise(1))
-            .orElse(val(0));
-    var extraRows = options.getCursorId().isPresent() ? 2 : 1;
+  public List<Row<Household>> rowsBeyond(Seek seek) {
+    var keyset =
+        Keyset.<String>builder().sortValue(lower(HOUSEHOLD.NAME)).itemId(HOUSEHOLD.ID).build();
     var query =
-        dsl.select(HOUSEHOLD.asterisk())
-            .from(HOUSEHOLD)
-            .where(cursorCondition)
-            .orderBy(cursorFirst.asc(), name.sort(sortOrder), HOUSEHOLD.ID.sort(sortOrder))
-            .limit(options.getPaginationOptions().getLimit() + extraRows);
-    var households = JooqQueryHelper.nativeQuery(entityManager, query, Household.class);
-    if (reverse) {
-      Collections.reverse(households);
-    }
-
-    return households;
-  }
-
-  private Condition cursorCondition(
-      MediaPaginationOptions options, Field<String> name, SortOrder sortOrder) {
-    if (options.getCursorId().isEmpty()) {
-      return noCondition();
-    }
-
-    var cursorName = lower(val(options.getMediaFilter().getPreviousSortFieldValue().toString()));
-    var cursorId = options.getCursorId().orElseThrow();
-    var fields = row(name, HOUSEHOLD.ID);
-    var cursor = row(cursorName, val(cursorId));
-    var afterCursor =
-        sortOrder == SortOrder.ASC ? fields.greaterThan(cursor) : fields.lessThan(cursor);
-    return HOUSEHOLD.ID.eq(cursorId).or(HOUSEHOLD.ID.ne(cursorId).and(afterCursor));
+        keyset.rowsBeyond(
+            dsl.select(HOUSEHOLD.asterisk(), keyset.selectedSortValue()).from(HOUSEHOLD), seek);
+    return JooqQueryHelper.nativeRows(entityManager, query, Household.class, keyset);
   }
 
   @Override

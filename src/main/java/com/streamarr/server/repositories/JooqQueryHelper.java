@@ -17,10 +17,14 @@ import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
 import com.streamarr.server.domain.AlphabetLetter;
+import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.services.pagination.ItemSortValue;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.pagination.Position;
+import com.streamarr.server.services.pagination.Row;
 import com.streamarr.server.services.pagination.SortDirection;
+import com.streamarr.server.services.pagination.SortValue;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -52,10 +56,34 @@ public class JooqQueryHelper {
 
   @SuppressWarnings("unchecked")
   public <E> List<E> nativeQuery(EntityManager em, Query query, Class<E> type) {
-    var result = em.createNativeQuery(query.getSQL(), type).unwrap(NativeQuery.class);
+    NativeQuery<E> result = em.createNativeQuery(query.getSQL(), type).unwrap(NativeQuery.class);
+    bindParameters(em, result, query);
+    return result.getResultList();
+  }
+
+  /**
+   * Reads entities and the keyset sort value {@code query} selects beside their columns as {@link
+   * Keyset#selectedSortValue()}, in query order.
+   */
+  @SuppressWarnings("unchecked")
+  public <E extends BaseAuditableEntity<?>> List<Row<E>> nativeRows(
+      EntityManager em, Query query, Class<E> type, Keyset<?> keyset) {
+    NativeQuery<Object[]> result = em.createNativeQuery(query.getSQL()).unwrap(NativeQuery.class);
+    result.addEntity(type);
+    result.addScalar(Keyset.SELECTED_SORT_VALUE, keyset.sortValue().getType());
+    bindParameters(em, result, query);
+    return result.getResultList().stream()
+        .map(
+            columns -> {
+              var entity = type.cast(columns[0]);
+              return new Row<>(entity, new Position(SortValue.of(columns[1]), entity.getId()));
+            })
+        .toList();
+  }
+
+  private void bindParameters(EntityManager em, NativeQuery<?> result, Query query) {
     var types =
         em.getEntityManagerFactory().unwrap(SessionFactoryImplementor.class).getTypeConfiguration();
-
     List<Object> values = query.getBindValues();
     for (int i = 0; i < values.size(); i++) {
       var value = values.get(i);
@@ -66,8 +94,6 @@ public class JooqQueryHelper {
 
       result.setParameter(i + 1, value);
     }
-
-    return result.getResultList();
   }
 
   // Hibernate types an untyped parameter by the basic type registered for its Java class, which

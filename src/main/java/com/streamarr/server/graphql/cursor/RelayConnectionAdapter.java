@@ -29,8 +29,20 @@ public class RelayConnectionAdapter {
   private final CursorUtil cursorUtil;
   private final PositionCursorCodec positionCursors;
 
+  /** Builds edges whose cursors continue {@code list} from each row's position. */
+  public <S, T> Connection<T> toConnection(
+      ListPage<S> page, ListIdentity list, Function<S, T> nodeOf) {
+    return toConnection(
+        page.rows(),
+        page.hasPreviousPage(),
+        page.hasNextPage(),
+        row ->
+            new DefaultEdge<>(
+                nodeOf.apply(row.item()), positionCursors.encode(list, row.position())));
+  }
+
   /** Builds ordered edges whose cursors continue {@code list} from each row's position. */
-  public <T> Connection<T> toConnection(
+  public <T> Connection<T> toOrderedConnection(
       ListPage<T> page, ListIdentity list, Function<Position, MediaOrder> orderOf) {
     return toConnection(
         page.rows(), page.hasPreviousPage(), page.hasNextPage(), row -> toEdge(row, list, orderOf));
