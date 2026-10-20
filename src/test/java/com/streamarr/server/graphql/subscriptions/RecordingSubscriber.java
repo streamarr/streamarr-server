@@ -16,16 +16,16 @@ import org.reactivestreams.Subscription;
 import reactor.core.publisher.BaseSubscriber;
 
 /** Requests a fixed demand up front and keeps every signal for the test to take. */
-final class RecordingSubscriber extends BaseSubscriber<String> {
+public final class RecordingSubscriber<T> extends BaseSubscriber<T> {
 
   private static final Duration BOUND = Duration.ofSeconds(5);
 
   private final long initialDemand;
-  private final BlockingQueue<String> values = new LinkedBlockingQueue<>();
+  private final BlockingQueue<T> values = new LinkedBlockingQueue<>();
   private final Queue<String> deliveryThreads = new ConcurrentLinkedQueue<>();
   private final CompletableFuture<Throwable> error = new CompletableFuture<>();
 
-  RecordingSubscriber(long initialDemand) {
+  public RecordingSubscriber(long initialDemand) {
     this.initialDemand = initialDemand;
   }
 
@@ -37,7 +37,7 @@ final class RecordingSubscriber extends BaseSubscriber<String> {
   }
 
   @Override
-  protected void hookOnNext(String value) {
+  protected void hookOnNext(T value) {
     deliveryThreads.add(Thread.currentThread().getName());
     values.add(value);
   }
@@ -47,7 +47,7 @@ final class RecordingSubscriber extends BaseSubscriber<String> {
     error.complete(throwable);
   }
 
-  Throwable awaitError() {
+  public Throwable awaitError() {
     try {
       return error.get(BOUND.toMillis(), TimeUnit.MILLISECONDS);
     } catch (InterruptedException e) {
@@ -58,11 +58,11 @@ final class RecordingSubscriber extends BaseSubscriber<String> {
     }
   }
 
-  List<String> deliveryThreads() {
+  public List<String> deliveryThreads() {
     return List.copyOf(deliveryThreads);
   }
 
-  String take() {
+  public T take() {
     try {
       var value = values.poll(BOUND.toMillis(), TimeUnit.MILLISECONDS);
       assertThat(value).as("a delivered value within %s", BOUND).isNotNull();

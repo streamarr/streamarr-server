@@ -25,12 +25,14 @@ import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import graphql.schema.DataFetchingEnvironment;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @DgsComponent
+@Builder
 @RequiredArgsConstructor
 public class LibraryContentsSubscriptionResolver {
 

@@ -38,8 +38,8 @@ class KeyedSubscriptionBroadcasterTest {
   @Test
   @DisplayName("Should deliver only to the broadcast key's registrations when two keys register")
   void shouldDeliverOnlyToBroadcastKeysRegistrationsWhenTwoKeysRegister() {
-    var first = new RecordingSubscriber(Long.MAX_VALUE);
-    var second = new RecordingSubscriber(Long.MAX_VALUE);
+    var first = new RecordingSubscriber<String>(Long.MAX_VALUE);
+    var second = new RecordingSubscriber<String>(Long.MAX_VALUE);
     broadcaster.register("profile-a").subscribe(first);
     broadcaster.register("profile-b").subscribe(second);
 
@@ -53,8 +53,8 @@ class KeyedSubscriptionBroadcasterTest {
   @Test
   @DisplayName("Should deliver to every registration of the key in broadcast order")
   void shouldDeliverToEveryRegistrationOfKeyInBroadcastOrder() {
-    var first = new RecordingSubscriber(Long.MAX_VALUE);
-    var second = new RecordingSubscriber(Long.MAX_VALUE);
+    var first = new RecordingSubscriber<String>(Long.MAX_VALUE);
+    var second = new RecordingSubscriber<String>(Long.MAX_VALUE);
     broadcaster.register("profile-a").subscribe(first);
     broadcaster.register("profile-a").subscribe(second);
 
@@ -70,9 +70,9 @@ class KeyedSubscriptionBroadcasterTest {
   @Test
   @DisplayName("Should count registrations of every key on the field gauge")
   void shouldCountRegistrationsOfEveryKeyOnFieldGauge() {
-    broadcaster.register("profile-a").subscribe(new RecordingSubscriber(Long.MAX_VALUE));
-    broadcaster.register("profile-a").subscribe(new RecordingSubscriber(Long.MAX_VALUE));
-    broadcaster.register("profile-b").subscribe(new RecordingSubscriber(Long.MAX_VALUE));
+    broadcaster.register("profile-a").subscribe(new RecordingSubscriber<String>(Long.MAX_VALUE));
+    broadcaster.register("profile-a").subscribe(new RecordingSubscriber<String>(Long.MAX_VALUE));
+    broadcaster.register("profile-b").subscribe(new RecordingSubscriber<String>(Long.MAX_VALUE));
 
     assertThat(activeRegistrations()).isEqualTo(3);
   }
@@ -80,8 +80,8 @@ class KeyedSubscriptionBroadcasterTest {
   @Test
   @DisplayName("Should keep the other registration of the key when one registration cancels")
   void shouldKeepOtherRegistrationOfKeyWhenOneRegistrationCancels() {
-    var cancelled = new RecordingSubscriber(Long.MAX_VALUE);
-    var kept = new RecordingSubscriber(Long.MAX_VALUE);
+    var cancelled = new RecordingSubscriber<String>(Long.MAX_VALUE);
+    var kept = new RecordingSubscriber<String>(Long.MAX_VALUE);
     broadcaster.register("profile-a").subscribe(cancelled);
     broadcaster.register("profile-a").subscribe(kept);
 
@@ -95,11 +95,11 @@ class KeyedSubscriptionBroadcasterTest {
   @Test
   @DisplayName("Should register the key again when its last registration cancelled earlier")
   void shouldRegisterKeyAgainWhenItsLastRegistrationCancelledEarlier() {
-    var cancelled = new RecordingSubscriber(Long.MAX_VALUE);
+    var cancelled = new RecordingSubscriber<String>(Long.MAX_VALUE);
     broadcaster.register("profile-a").subscribe(cancelled);
     cancelled.cancel();
     assertThat(activeRegistrations()).isZero();
-    var renewed = new RecordingSubscriber(Long.MAX_VALUE);
+    var renewed = new RecordingSubscriber<String>(Long.MAX_VALUE);
 
     broadcaster.register("profile-a").subscribe(renewed);
     broadcaster.broadcast("profile-a", "after-renewal");
@@ -110,7 +110,7 @@ class KeyedSubscriptionBroadcasterTest {
   @Test
   @DisplayName("Should ignore a broadcast when the key has no registration")
   void shouldIgnoreBroadcastWhenKeyHasNoRegistration() {
-    var other = new RecordingSubscriber(Long.MAX_VALUE);
+    var other = new RecordingSubscriber<String>(Long.MAX_VALUE);
     broadcaster.register("profile-b").subscribe(other);
 
     broadcaster.broadcast("profile-a", "nobody-listens");
@@ -123,7 +123,7 @@ class KeyedSubscriptionBroadcasterTest {
   @DisplayName("Should complete only the removed scope when its queued values are delivered")
   void shouldCompleteOnlyTheRemovedScopeWhenItsQueuedValuesAreDelivered() throws Exception {
     var ended = broadcaster.register("library-a").collectList().toFuture();
-    var kept = new RecordingSubscriber(Long.MAX_VALUE);
+    var kept = new RecordingSubscriber<String>(Long.MAX_VALUE);
     broadcaster.register("library-b").subscribe(kept);
 
     broadcaster.broadcast("library-a", "before-removal");
@@ -168,8 +168,8 @@ class KeyedSubscriptionBroadcasterTest {
             .deliveryScheduler(Schedulers.immediate())
             .operationBuffer(OPERATION_BUFFER)
             .build();
-    var stalled = new RecordingSubscriber(0);
-    var keepingUp = new RecordingSubscriber(Long.MAX_VALUE);
+    var stalled = new RecordingSubscriber<String>(0);
+    var keepingUp = new RecordingSubscriber<String>(Long.MAX_VALUE);
     immediate.register("profile-a").subscribe(stalled);
     immediate.register("profile-a").subscribe(keepingUp);
 
@@ -193,7 +193,7 @@ class KeyedSubscriptionBroadcasterTest {
     var threads = 8;
     var rounds = 200;
     var start = new CyclicBarrier(threads + 1);
-    var kept = new RecordingSubscriber(Long.MAX_VALUE);
+    var kept = new RecordingSubscriber<String>(Long.MAX_VALUE);
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var churn =
@@ -204,7 +204,7 @@ class KeyedSubscriptionBroadcasterTest {
                           () -> {
                             start.await(BOUND.toMillis(), TimeUnit.MILLISECONDS);
                             for (var round = 0; round < rounds; round++) {
-                              var shortLived = new RecordingSubscriber(Long.MAX_VALUE);
+                              var shortLived = new RecordingSubscriber<String>(Long.MAX_VALUE);
                               broadcaster.register("profile-a").subscribe(shortLived);
                               shortLived.cancel();
                             }

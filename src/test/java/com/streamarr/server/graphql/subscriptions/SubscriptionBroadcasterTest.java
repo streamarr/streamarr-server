@@ -36,7 +36,7 @@ class SubscriptionBroadcasterTest {
   @Test
   @DisplayName("Should deliver every broadcast in order when the subscriber requests unbounded")
   void shouldDeliverEveryBroadcastInOrderWhenSubscriberRequestsUnbounded() {
-    var subscriber = new RecordingSubscriber(Long.MAX_VALUE);
+    var subscriber = new RecordingSubscriber<String>(Long.MAX_VALUE);
     broadcaster.register().subscribe(subscriber);
 
     broadcaster.broadcast("SCANNING");
@@ -51,7 +51,7 @@ class SubscriptionBroadcasterTest {
   void shouldCountRegistrationWhenOperationSubscribes() {
     assertThat(activeRegistrations()).isZero();
 
-    broadcaster.register().subscribe(new RecordingSubscriber(Long.MAX_VALUE));
+    broadcaster.register().subscribe(new RecordingSubscriber<String>(Long.MAX_VALUE));
 
     assertThat(activeRegistrations()).isEqualTo(1);
   }
@@ -59,7 +59,7 @@ class SubscriptionBroadcasterTest {
   @Test
   @DisplayName("Should release the registration when the subscriber cancels")
   void shouldReleaseRegistrationWhenSubscriberCancels() {
-    var subscriber = new RecordingSubscriber(Long.MAX_VALUE);
+    var subscriber = new RecordingSubscriber<String>(Long.MAX_VALUE);
     broadcaster.register().subscribe(subscriber);
 
     subscriber.cancel();
@@ -80,8 +80,8 @@ class SubscriptionBroadcasterTest {
             .deliveryScheduler(Schedulers.immediate())
             .operationBuffer(OPERATION_BUFFER)
             .build();
-    var stalled = new RecordingSubscriber(0);
-    var keepingUp = new RecordingSubscriber(Long.MAX_VALUE);
+    var stalled = new RecordingSubscriber<String>(0);
+    var keepingUp = new RecordingSubscriber<String>(Long.MAX_VALUE);
     immediateBroadcaster.register().subscribe(stalled);
     immediateBroadcaster.register().subscribe(keepingUp);
 
@@ -100,7 +100,7 @@ class SubscriptionBroadcasterTest {
   @Test
   @DisplayName("Should deliver on the delivery scheduler when a value is broadcast")
   void shouldDeliverOnDeliverySchedulerWhenValueIsBroadcast() {
-    var subscriber = new RecordingSubscriber(Long.MAX_VALUE);
+    var subscriber = new RecordingSubscriber<String>(Long.MAX_VALUE);
     broadcaster.register().subscribe(subscriber);
 
     broadcaster.broadcast("SCANNING");
