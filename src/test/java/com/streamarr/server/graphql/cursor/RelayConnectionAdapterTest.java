@@ -9,6 +9,7 @@ import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationOptions;
+import graphql.relay.DefaultConnectionCursor;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -42,13 +43,13 @@ class RelayConnectionAdapterTest {
           adapter.toConnection(
               page,
               item -> new GraphqlNode(item.item().name()),
-              item -> cursorUtil.encodeOpaqueCursor(item.item().id().toString()));
+              item -> new DefaultConnectionCursor(item.item().id().toString()));
 
       assertThat(connection.getEdges())
           .extracting(edge -> edge.getNode().name())
           .containsExactly("Andrew");
       assertThat(connection.getEdges().getFirst().getCursor())
-          .isEqualTo(cursorUtil.encodeOpaqueCursor(id.toString()));
+          .isEqualTo(new DefaultConnectionCursor(id.toString()));
     }
 
     @Test

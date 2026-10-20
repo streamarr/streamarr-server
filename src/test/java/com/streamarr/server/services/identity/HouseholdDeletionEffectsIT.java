@@ -28,6 +28,7 @@ import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.fixtures.PaginationFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
@@ -48,10 +49,8 @@ import com.streamarr.server.services.auth.RefreshResult;
 import com.streamarr.server.services.auth.RefreshTokenService;
 import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteLastAccountAndHouseholdCommand;
 import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteLastAccountAndHouseholdPreservingPersonalProfileCommand;
-import com.streamarr.server.services.identity.HouseholdDeletionService.SecurityAuditPageRequest;
 import com.streamarr.server.services.identity.HouseholdDeletionService.TransferLastAccountAndDeleteHouseholdCommand;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
 import java.util.UUID;
@@ -221,12 +220,8 @@ class HouseholdDeletionEffectsIT extends AbstractIntegrationTest {
     assertThat(
             service
                 .securityAuditEvents(
-                    authTestSupport.freshIdentityOf(admin),
-                    SecurityAuditPageRequest.builder()
-                        .direction(PaginationDirection.FORWARD)
-                        .limit(10)
-                        .build())
-                .items())
+                    authTestSupport.freshIdentityOf(admin), PaginationFixture.firstRows(10))
+                .rows())
         .singleElement()
         .satisfies(
             item -> {

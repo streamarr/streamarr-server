@@ -23,21 +23,18 @@ import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteLas
 import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteLastAccountAndHouseholdPreservingPersonalProfileCommand;
 import com.streamarr.server.services.identity.HouseholdDeletionService.DoomedProfileDetails;
 import com.streamarr.server.services.identity.HouseholdDeletionService.HouseholdDeletionPreflightDetails;
-import com.streamarr.server.services.identity.HouseholdDeletionService.SecurityAuditPageRequest;
 import com.streamarr.server.services.identity.HouseholdDeletionService.TransferLastAccountAndDeleteHouseholdCommand;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.ListPage;
-import com.streamarr.server.services.pagination.MediaPage;
-import com.streamarr.server.services.pagination.PageItem;
+import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationService;
 import com.streamarr.server.services.pagination.Position;
 import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.ServerScope;
 import com.streamarr.server.services.pagination.SortValue;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -76,6 +73,9 @@ import tools.jackson.databind.ObjectMapper;
     })
 @DisplayName("Household Deletion Resolver Tests")
 class HouseholdDeletionResolverTest {
+
+  private static final ListIdentity SECURITY_AUDIT =
+      new ListIdentity("security-audit-events", ServerScope.SERVER);
   private static final UUID SOURCE = UUID.fromString("00000000-0000-0000-0000-000000000001");
   private static final UUID DESTINATION = UUID.fromString("00000000-0000-0000-0000-000000000002");
   private static final UUID MANAGER = UUID.fromString("00000000-0000-0000-0000-000000000003");
@@ -344,6 +344,8 @@ class HouseholdDeletionResolverTest {
   @DisplayName(
       "Should decode the reverse audit cursor and project its row when the service returns a page")
   void shouldDecodeReverseAuditCursorAndProjectRowWhenServiceReturnsPage() {
+    var before =
+        new Position(new SortValue.OfInstant(Instant.parse("2026-08-01T12:00:00Z")), DESTINATION);
     var occurredAt = Instant.parse("2026-08-01T12:00:00Z");
     var row =
         mapper.convertValue(
@@ -363,15 +365,15 @@ class HouseholdDeletionResolverTest {
                 "resources",
                 "{\"householdId\":\"example\"}"),
             SecurityAuditEventRecordView.class);
+    var position = new Position(new SortValue.OfInstant(row.occurredAt()), MANAGER);
     when(service.securityAuditEvents(
             identity,
-            SecurityAuditPageRequest.builder()
+            PageRequest.builder()
+                .position(Optional.of(before))
                 .direction(PaginationDirection.REVERSE)
-                .cursorId(DESTINATION)
-                .cursorOccurredAt(occurredAt)
                 .limit(2)
                 .build()))
-        .thenReturn(new MediaPage<>(List.of(new PageItem<>(row, row.occurredAt())), true, false));
+        .thenReturn(new ListPage<>(List.of(new Row<>(row, position)), true, false));
 
     var response =
         query(
@@ -381,7 +383,7 @@ class HouseholdDeletionResolverTest {
           pageInfo { hasNextPage hasPreviousPage }
         } }
         """
-                .formatted(opaque(occurredAt + "|" + DESTINATION)));
+                .formatted(positionCursors.encode(SECURITY_AUDIT, before).getValue()));
 
     assertThat(response.has("errors")).isFalse();
     assertThat(response.at("/data/securityAuditEvents/edges").size()).isEqualTo(1);
@@ -404,15 +406,22 @@ class HouseholdDeletionResolverTest {
                     "resources",
                     "{\"householdId\":\"example\"}")));
     assertThat(response.at("/data/securityAuditEvents/edges/0/cursor").asString())
-        .isEqualTo(opaque("2026-08-01T12:00:01Z|" + MANAGER));
+        .isEqualTo(positionCursors.encode(SECURITY_AUDIT, position).getValue());
     assertThat(response.at("/data/securityAuditEvents/pageInfo"))
         .isEqualTo(mapper.valueToTree(Map.of("hasNextPage", true, "hasPreviousPage", false)));
   }
 
   @ParameterizedTest
-  @MethodSource("invalidAuditCursors")
-  @DisplayName("Should return invalid cursor when the audit cursor cannot identify a time and ID")
-  void shouldReturnInvalidCursorWhenAuditCursorCannotIdentifyTimeAndId(String cursor) {
+  @MethodSource("cursorsFromOtherLists")
+  @DisplayName("Should return invalid cursor when an audit cursor was issued by another list")
+  void shouldReturnInvalidCursorWhenAuditCursorWasIssuedByAnotherList(ListIdentity issuedBy) {
+    var cursor =
+        positionCursors
+            .encode(
+                issuedBy,
+                new Position(
+                    new SortValue.OfInstant(Instant.parse("2026-08-01T12:00:00Z")), SOURCE))
+            .getValue();
     var response =
         query(
             """
@@ -429,12 +438,7 @@ class HouseholdDeletionResolverTest {
   @Test
   @DisplayName("Should expose a forbidden top-level error when audit access is denied")
   void shouldExposeForbiddenTopLevelErrorWhenAuditAccessIsDenied() {
-    when(service.securityAuditEvents(
-            identity,
-            SecurityAuditPageRequest.builder()
-                .direction(PaginationDirection.FORWARD)
-                .limit(2)
-                .build()))
+    when(service.securityAuditEvents(identity, firstRows(2)))
         .thenThrow(new AccessDeniedException("Access denied."));
     var response = query("query { securityAuditEvents(first: 2) { edges { node { id } } } }");
     assertThat(response.path("data").isNull()).isTrue();
@@ -468,22 +472,14 @@ class HouseholdDeletionResolverTest {
     assertThat(response.at("/errors/0/extensions/code").asString()).isEqualTo("INVALID_CURSOR");
   }
 
-  private static Stream<String> invalidAuditCursors() {
+  private static Stream<ListIdentity> cursorsFromOtherLists() {
     return Stream.of(
-        "%%%",
-        opaque("missing separator"),
-        opaque("not-a-time|" + SOURCE),
-        opaque("2026-08-01T12:00:00Z|not-an-id"));
+        new ListIdentity("profile-activity", SOURCE),
+        new ListIdentity("server-esn-blocks", ServerScope.SERVER));
   }
 
   private JsonNode query(String document) {
     return mapper.valueToTree(executor.execute(document).toSpecification());
-  }
-
-  private static String opaque(String value) {
-    return Base64.getUrlEncoder()
-        .withoutPadding()
-        .encodeToString(value.getBytes(StandardCharsets.UTF_8));
   }
 
   private static Stream<RejectionCase> rejections() {

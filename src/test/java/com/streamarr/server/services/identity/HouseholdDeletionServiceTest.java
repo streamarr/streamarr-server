@@ -28,6 +28,7 @@ import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
+import com.streamarr.server.fixtures.PaginationFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
@@ -41,7 +42,6 @@ import com.streamarr.server.services.identity.HouseholdDeletionService.TransferL
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.pagination.PaginationDirection;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -460,15 +460,7 @@ class HouseholdDeletionServiceTest {
             .reason("because")
             .resource("householdId", doomed.getId())
             .build());
-    assertThat(
-            service
-                .securityAuditEvents(
-                    identity(),
-                    HouseholdDeletionService.SecurityAuditPageRequest.builder()
-                        .direction(PaginationDirection.FORWARD)
-                        .limit(10)
-                        .build())
-                .items())
+    assertThat(service.securityAuditEvents(identity(), PaginationFixture.firstRows(10)).rows())
         .singleElement()
         .satisfies(
             item -> {
@@ -516,11 +508,7 @@ class HouseholdDeletionServiceTest {
   void shouldForbidSecurityAuditWhenCallerMayNotViewIt() {
     authorization.denyAll();
     var identity = identity();
-    var request =
-        HouseholdDeletionService.SecurityAuditPageRequest.builder()
-            .direction(PaginationDirection.FORWARD)
-            .limit(10)
-            .build();
+    var request = PaginationFixture.firstRows(10);
 
     assertThatThrownBy(() -> service.securityAuditEvents(identity, request))
         .isInstanceOf(AccessDeniedException.class);
@@ -567,11 +555,7 @@ class HouseholdDeletionServiceTest {
   void shouldFailClosedWhenSecurityAuditAuthorizationIsUnavailable() {
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
     var identity = identity();
-    var request =
-        HouseholdDeletionService.SecurityAuditPageRequest.builder()
-            .direction(PaginationDirection.FORWARD)
-            .limit(10)
-            .build();
+    var request = PaginationFixture.firstRows(10);
 
     assertThatThrownBy(() -> service.securityAuditEvents(identity, request))
         .isInstanceOf(AuthorizationUnavailableException.class);
@@ -682,6 +666,7 @@ class HouseholdDeletionServiceTest {
         registrationLifecycle,
         accountInvitations,
         audit,
+        new SecurityAuditList(audit),
         new ProfileActivityList(progress),
         new MutationTransactions(new FakeTransactionManager(), new ConstraintViolationTranslator()),
         Clock.fixed(NOW, ZoneOffset.UTC));
