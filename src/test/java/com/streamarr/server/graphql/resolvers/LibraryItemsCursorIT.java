@@ -42,9 +42,11 @@ class LibraryItemsCursorIT extends AbstractIntegrationTest {
     "LAST_WATCHED, yesterday",
     "LAST_WATCHED, +294277-01-01T00:00:00Z",
     "ADDED, yesterday",
-    "ADDED, -4713-12-31T23:59:59Z",
+    "ADDED, -0001-01-01T00:00:00Z",
+    "LAST_WATCHED, 0000-12-31T23:59:59Z",
     "RELEASE_DATE, someday",
     "RELEASE_DATE, +5874898-01-01",
+    "RELEASE_DATE, 0000-12-31",
     "RUNTIME, ninety"
   })
   @DisplayName("Should reject a cursor as INVALID_CURSOR when its sort value cannot be read")
