@@ -2,10 +2,12 @@ package com.streamarr.server.graphql.cursor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.Position;
 import com.streamarr.server.services.pagination.SortValue;
+import com.streamarr.server.support.MalformedCursors;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -140,6 +142,30 @@ class PositionCursorCodecTest {
 
     assertThatThrownBy(() -> codec.decode(CONTINUE_WATCHING, cursor))
         .isInstanceOf(InvalidCursorException.class);
+  }
+
+  static Stream<String> malformedCursors() {
+    var genuine =
+        new PositionCursorCodec(new ObjectMapper())
+            .encode(
+                CONTINUE_WATCHING,
+                new Position(
+                    new SortValue.OfInstant(Instant.parse("2026-10-20T12:00:00Z")),
+                    UUID.randomUUID()))
+            .getValue();
+    return MalformedCursors.of(genuine);
+  }
+
+  @ParameterizedTest
+  @MethodSource("malformedCursors")
+  @DisplayName("Should decode a cursor or reject it as invalid when a client alters it")
+  void shouldDecodeACursorOrRejectItAsInvalidWhenAClientAltersIt(String cursor) {
+    var thrown = catchThrowable(() -> codec.decode(CONTINUE_WATCHING, cursor));
+
+    assertThat(thrown)
+        .satisfiesAnyOf(
+            rejection -> assertThat(rejection).isNull(),
+            rejection -> assertThat(rejection).isInstanceOf(InvalidCursorException.class));
   }
 
   private static String corrupt(String cursor, String corruption) {
