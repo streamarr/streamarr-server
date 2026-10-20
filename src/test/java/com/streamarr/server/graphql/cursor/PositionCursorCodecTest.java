@@ -106,7 +106,8 @@ class PositionCursorCodecTest {
         "type=INSTANT,value=2026-10-20T11:59:59.999999999Z",
         "value=ninety",
         "type=TEXT,-value",
-        "version=2"
+        "version=2",
+        "sortedBy=title"
       })
   @DisplayName("Should reject a cursor when one part of its position cannot be read")
   void shouldRejectACursorWhenOnePartOfItsPositionCannotBeRead(String corruption) {

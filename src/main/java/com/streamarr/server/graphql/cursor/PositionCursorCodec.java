@@ -35,6 +35,7 @@ public class PositionCursorCodec {
         objectMapper
             .readerFor(PositionCursorPayload.class)
             .with(
+                DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES,
                 DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES,
                 DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
             .without(DeserializationFeature.ACCEPT_FLOAT_AS_INT);
