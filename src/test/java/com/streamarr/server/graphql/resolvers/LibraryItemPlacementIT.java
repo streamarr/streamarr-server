@@ -233,6 +233,41 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
     }
   }
 
+  @ParameterizedTest
+  @EnumSource(
+      value = MediaType.class,
+      names = {"MOVIE", "SERIES"})
+  @DisplayName("Should land a descending HASH jump at the top when every HASH title sorts above z")
+  void shouldLandDescendingHashJumpAtTopWhenEveryHashTitleSortsAboveZ(MediaType kind) {
+    var library =
+        libraries.saveAndFlush(
+            LibraryFixtureCreator.buildFakeLibrary().toBuilder().type(kind).build());
+    var omega = saveTitledItem(library, kind, "Ωmega");
+    var lettered = saveTitledItem(library, kind, "Alpha");
+    var identity = auth.createIdentity();
+    try (var http =
+        new GraphQlHttpTestClient(URI.create("http://localhost:%d/graphql".formatted(port)))) {
+      var landing =
+          http.execute(
+              auth.profileBearer(identity),
+              """
+              { library(id: "%s") { items(first: 10, sort: {by: TITLE, direction: DESC},
+                  filter: {startLetter: HASH}) {
+                edges { node { ... on Movie { id } ... on Series { id } } }
+                pageInfo { hasPreviousPage }
+              } } }
+              """
+                  .formatted(library.getId()));
+
+      assertThat(landing.has("errors")).as(landing.toPrettyString()).isFalse();
+      assertThat(nodeIds(landing.at("/data/library/items/edges")))
+          .containsExactly(omega.getId().toString(), lettered.getId().toString());
+      assertThat(landing.at("/data/library/items/pageInfo/hasPreviousPage").asBoolean()).isFalse();
+    } finally {
+      auth.deleteIdentity(identity);
+    }
+  }
+
   private BaseCollectable<?> saveTitledItem(Library library, MediaType kind, String title) {
     return switch (kind) {
       case MOVIE ->
