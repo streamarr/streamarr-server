@@ -2,10 +2,10 @@ package com.streamarr.server.services.library;
 
 import com.streamarr.server.repositories.LibraryItemScopeRepository;
 import com.streamarr.server.services.events.library.CollectablesChangedEvent;
-import com.streamarr.server.services.events.library.LibraryItemChangedEvent;
+import com.streamarr.server.services.events.library.LibraryItemAudience;
+import com.streamarr.server.services.events.library.LibraryItemUpdatedEvent;
 import com.streamarr.server.services.events.watchprogress.WatchStateChangedEvent;
 import java.util.Collection;
-import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -24,27 +24,26 @@ public class LibraryItemChangeListener {
   @EventListener
   @Transactional(readOnly = true)
   public void onCollectablesChanged(CollectablesChangedEvent event) {
-    publishUpdates(event.itemIds(), Optional.empty());
+    publishUpdates(event.itemIds(), LibraryItemAudience.everyProfile());
   }
 
   @EventListener
   @Transactional(readOnly = true)
   public void onWatchStateChanged(WatchStateChangedEvent event) {
-    publishUpdates(event.itemIds(), Optional.of(event.profileId()));
+    publishUpdates(event.itemIds(), LibraryItemAudience.profile(event.profileId()));
   }
 
-  private void publishUpdates(Collection<UUID> itemIds, Optional<UUID> profileId) {
+  private void publishUpdates(Collection<UUID> itemIds, LibraryItemAudience audience) {
     scopes
         .findItems(itemIds)
         .forEach(
             item ->
                 events.publishEvent(
-                    LibraryItemChangedEvent.builder()
-                        .change(LibraryItemChangedEvent.Change.UPDATED)
+                    LibraryItemUpdatedEvent.builder()
                         .libraryId(item.libraryId())
                         .itemId(item.id())
                         .kind(item.kind())
-                        .profileId(profileId)
+                        .audience(audience)
                         .build()));
   }
 }

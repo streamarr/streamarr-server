@@ -21,7 +21,8 @@ import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
-import com.streamarr.server.services.events.library.LibraryItemChangedEvent;
+import com.streamarr.server.services.events.library.LibraryItemAudience;
+import com.streamarr.server.services.events.library.LibraryItemUpdatedEvent;
 import com.streamarr.server.services.library.LibraryContentsService;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaOrder;
@@ -197,9 +198,9 @@ class MediaOrderEquivalenceIT extends AbstractIntegrationTest {
     };
   }
 
-  private LibraryItemChangedEvent changeFor(BaseCollectable<?> item) {
-    return LibraryItemChangedEvent.builder()
-        .change(LibraryItemChangedEvent.Change.UPDATED)
+  private LibraryItemUpdatedEvent changeFor(BaseCollectable<?> item) {
+    return LibraryItemUpdatedEvent.builder()
+        .audience(LibraryItemAudience.everyProfile())
         .kind(item.getLibrary().getType())
         .libraryId(item.getLibrary().getId())
         .itemId(item.getId())
