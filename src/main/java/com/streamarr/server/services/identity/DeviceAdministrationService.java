@@ -1,8 +1,6 @@
 package com.streamarr.server.services.identity;
 
-import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.domain.auth.DeviceRegistration;
-import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
 import com.streamarr.server.domain.auth.EsnBlock;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
@@ -20,12 +18,11 @@ import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
-import com.streamarr.server.services.pagination.MediaPage;
-import com.streamarr.server.services.pagination.PageItem;
-import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.services.pagination.ListPage;
+import com.streamarr.server.services.pagination.PageRequest;
+import com.streamarr.server.services.pagination.Pager;
+import com.streamarr.server.services.pagination.ServerScope;
 import java.time.Clock;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -54,7 +51,9 @@ public class DeviceAdministrationService {
   private final DeviceRegistrationLifecycle registrationLifecycle;
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final MutationTransactions mutationTransactions;
-  private final PaginationService paginationService;
+  private final HouseholdDevicesList householdDevicesList;
+  private final HouseholdEsnBlocksList householdEsnBlocksList;
+  private final ServerEsnBlocksList serverEsnBlocksList;
   private final Clock clock;
 
   public Outcome<UUID, DeviceRejections.Revoke> revokeDeviceRegistration(
@@ -202,42 +201,33 @@ public class DeviceAdministrationService {
         "unblockEsnServerWide");
   }
 
-  /** ACTIVE registrations of the Household, for whoever may view its device administration. */
-  public MediaPage<DeviceRegistration> householdDevices(
-      AuthenticatedIdentity identity, UUID householdId, KeysetPaginationOptions options) {
+  /** A page of the Household's ACTIVE registrations, newest first; hidden reads as empty. */
+  public ListPage<DeviceRegistration> householdDevices(
+      AuthenticatedIdentity identity, UUID householdId, PageRequest request) {
     if (!mayReadDevices(identity, new Intent.ViewDeviceAdministration(householdId))) {
-      return page(List.<DeviceRegistration>of(), options);
+      return ListPage.empty();
     }
 
-    return page(
-        registrationRepository.findPageByHouseholdIdAndStatus(
-            householdId, DeviceRegistrationStatus.ACTIVE, options),
-        options);
+    return Pager.page(householdDevicesList, householdId, request);
   }
 
-  public MediaPage<EsnBlock> esnBlocks(
-      AuthenticatedIdentity identity, UUID householdId, KeysetPaginationOptions options) {
+  /** A page of the Household's ESN blocks, newest first; hidden reads as empty. */
+  public ListPage<EsnBlock> esnBlocks(
+      AuthenticatedIdentity identity, UUID householdId, PageRequest request) {
     if (!mayReadDevices(identity, new Intent.ViewDeviceAdministration(householdId))) {
-      return page(List.<EsnBlock>of(), options);
+      return ListPage.empty();
     }
 
-    return page(esnBlockRepository.findPageByHouseholdId(householdId, options), options);
+    return Pager.page(householdEsnBlocksList, householdId, request);
   }
 
-  public MediaPage<EsnBlock> serverEsnBlocks(
-      AuthenticatedIdentity identity, KeysetPaginationOptions options) {
+  /** A page of the server-wide ESN blocks, newest first; hidden reads as empty. */
+  public ListPage<EsnBlock> serverEsnBlocks(AuthenticatedIdentity identity, PageRequest request) {
     if (!mayReadDevices(identity, new Intent.ViewServerDeviceAdministration())) {
-      return page(List.<EsnBlock>of(), options);
+      return ListPage.empty();
     }
 
-    return page(esnBlockRepository.findPageByHouseholdIdIsNull(options), options);
-  }
-
-  private <T extends BaseAuditableEntity<T>> MediaPage<T> page(
-      List<T> values, KeysetPaginationOptions options) {
-    var items = values.stream().map(value -> new PageItem<>(value, value.getCreatedOn())).toList();
-    return paginationService.buildMediaPage(
-        items, options.getPaginationOptions(), options.getCursorId());
+    return Pager.page(serverEsnBlocksList, ServerScope.SERVER, request);
   }
 
   private <R> Outcome<EsnBlock, R> writeBlock(

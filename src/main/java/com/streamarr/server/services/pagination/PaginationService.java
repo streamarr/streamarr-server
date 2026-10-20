@@ -2,7 +2,6 @@ package com.streamarr.server.services.pagination;
 
 import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
-import com.streamarr.server.exceptions.InvalidPaginationCursorException;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -146,29 +145,6 @@ public class PaginationService {
     items = pruneListByLimitGivenDirection(items, limit, direction);
 
     return new MediaPage<>(items, hasNextPage, hasPreviousPage);
-  }
-
-  public <T> MediaPage<T> buildKeysetPage(
-      List<PageItem<T>> ordered, KeysetPaginationOptions options, Function<T, UUID> idOf) {
-    var cursorId = options.getCursorId();
-    var anchor =
-        cursorId
-            .map(id -> ordered.stream().map(PageItem::item).map(idOf).toList().indexOf(id))
-            .orElse(-1);
-    if (cursorId.isPresent() && anchor < 0) {
-      throw new InvalidPaginationCursorException("Cursor no longer identifies an item.");
-    }
-
-    var pagination = options.getPaginationOptions();
-    if (pagination.getPaginationDirection() == PaginationDirection.REVERSE) {
-      var to = cursorId.isPresent() ? anchor : ordered.size();
-      var from = Math.max(0, to - pagination.getLimit());
-      return new MediaPage<>(ordered.subList(from, to), to < ordered.size(), from > 0);
-    }
-
-    var from = anchor + 1;
-    var to = Math.min(ordered.size(), from + pagination.getLimit());
-    return new MediaPage<>(ordered.subList(from, to), to < ordered.size(), from > 0);
   }
 
   private <T> MediaPage<T> emptyMediaPage() {

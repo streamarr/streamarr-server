@@ -8,6 +8,11 @@ import lombok.NonNull;
 public record ListPage<T>(
     @NonNull List<Row<T>> rows, boolean hasNextPage, boolean hasPreviousPage) {
 
+  /** A page without rows or neighbours, for a list the caller may not read. */
+  public static <T> ListPage<T> empty() {
+    return new ListPage<>(List.of(), false, false);
+  }
+
   /** The same page with each item replaced, keeping every row's position. */
   public <U> ListPage<U> map(Function<T, U> mapper) {
     var mapped =

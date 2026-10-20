@@ -1,9 +1,9 @@
 package com.streamarr.server.services.identity;
 
+import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
@@ -26,13 +26,7 @@ import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
-import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.PaginationOptions;
-import com.streamarr.server.services.pagination.PaginationService;
 import java.time.Clock;
-import java.time.Instant;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -66,7 +60,9 @@ class DeviceAdministrationServiceTest {
           audit,
           new MutationTransactions(
               new FakeTransactionManager(), new ConstraintViolationTranslator()),
-          new PaginationService(),
+          new HouseholdDevicesList(registrations),
+          new HouseholdEsnBlocksList(blocks),
+          new ServerEsnBlocksList(blocks),
           Clock.systemUTC());
 
   private UUID householdId;
@@ -243,38 +239,14 @@ class DeviceAdministrationServiceTest {
     blocks.save(EsnBlock.builder().esn("esn-2").householdId(householdId).reason("x").build());
     blocks.save(EsnBlock.builder().esn("esn-3").reason("server-wide").build());
 
-    assertThat(service.householdDevices(identity(), householdId, paginationOptions()).items())
-        .hasSize(1);
-    assertThat(service.esnBlocks(identity(), householdId, paginationOptions()).items()).hasSize(1);
-    assertThat(service.serverEsnBlocks(identity(), paginationOptions()).items()).hasSize(1);
+    assertThat(service.householdDevices(identity(), householdId, firstRows(10)).rows()).hasSize(1);
+    assertThat(service.esnBlocks(identity(), householdId, firstRows(10)).rows()).hasSize(1);
+    assertThat(service.serverEsnBlocks(identity(), firstRows(10)).rows()).hasSize(1);
 
     authorization.denyAll();
-    assertThat(service.householdDevices(identity(), householdId, paginationOptions()).items())
-        .isEmpty();
-    assertThat(service.esnBlocks(identity(), householdId, paginationOptions()).items()).isEmpty();
-    assertThat(service.serverEsnBlocks(identity(), paginationOptions()).items()).isEmpty();
-  }
-
-  @Test
-  @DisplayName("Should page device administration reads by stable keyset")
-  void shouldPageDeviceAdministrationReadsByStableKeyset() {
-    var newest = activeRegistration("esn-newest");
-    var oldest = activeRegistration("esn-oldest");
-    AuditFieldSetter.setCreatedOn(newest, Instant.parse("2026-08-22T12:00:00Z"));
-    AuditFieldSetter.setCreatedOn(oldest, Instant.parse("2026-08-21T12:00:00Z"));
-
-    var firstPage = service.householdDevices(identity(), householdId, paginationOptions(null, 1));
-    var secondPage =
-        service.householdDevices(identity(), householdId, paginationOptions(newest.getId(), 1));
-
-    assertThat(firstPage.items())
-        .extracting(item -> item.item().getEsn())
-        .containsExactly("esn-newest");
-    assertThat(firstPage.hasNextPage()).isTrue();
-    assertThat(secondPage.items())
-        .extracting(item -> item.item().getEsn())
-        .containsExactly("esn-oldest");
-    assertThat(secondPage.hasPreviousPage()).isTrue();
+    assertThat(service.householdDevices(identity(), householdId, firstRows(10)).rows()).isEmpty();
+    assertThat(service.esnBlocks(identity(), householdId, firstRows(10)).rows()).isEmpty();
+    assertThat(service.serverEsnBlocks(identity(), firstRows(10)).rows()).isEmpty();
   }
 
   @Test
@@ -282,13 +254,13 @@ class DeviceAdministrationServiceTest {
   void shouldFailClosedWhenAuthorizationCannotDecideDeviceRead() {
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
     var currentIdentity = identity();
-    var options = paginationOptions();
+    var request = firstRows(10);
 
-    assertThatThrownBy(() -> service.householdDevices(currentIdentity, householdId, options))
+    assertThatThrownBy(() -> service.householdDevices(currentIdentity, householdId, request))
         .isInstanceOf(AuthorizationUnavailableException.class);
-    assertThatThrownBy(() -> service.esnBlocks(currentIdentity, householdId, options))
+    assertThatThrownBy(() -> service.esnBlocks(currentIdentity, householdId, request))
         .isInstanceOf(AuthorizationUnavailableException.class);
-    assertThatThrownBy(() -> service.serverEsnBlocks(currentIdentity, options))
+    assertThatThrownBy(() -> service.serverEsnBlocks(currentIdentity, request))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
@@ -321,20 +293,6 @@ class DeviceAdministrationServiceTest {
             .displayName("Living Room TV")
             .householdId(householdId)
             .authorizingAccountId(UUID.randomUUID())
-            .build());
-  }
-
-  private static KeysetPaginationOptions paginationOptions() {
-    return paginationOptions(null, 100);
-  }
-
-  private static KeysetPaginationOptions paginationOptions(UUID cursorId, int limit) {
-    return new KeysetPaginationOptions(
-        cursorId,
-        PaginationOptions.builder()
-            .paginationDirection(PaginationDirection.FORWARD)
-            .cursor(Optional.empty())
-            .limit(limit)
             .build());
   }
 
