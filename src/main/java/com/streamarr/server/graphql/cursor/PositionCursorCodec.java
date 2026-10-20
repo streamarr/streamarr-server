@@ -46,21 +46,19 @@ public class PositionCursorCodec {
   }
 
   /**
+   * Reads a cursor a client sent. Decoding is total: any cursor either yields a position or fails
+   * with {@link InvalidCursorException}, whatever step rejects it.
+   *
    * @throws InvalidCursorException when the cursor is malformed, holds an unreadable position, or
    *     belongs to another list or scope
    */
   public Position decode(ListIdentity list, String cursor) {
-    var payload = readPayload(cursor);
-    if (!issuedFor(list, payload)) {
-      throw new InvalidCursorException("Cursor belongs to another list.");
-    }
-
     try {
-      return new Position(
-          valueOf(payload.path("type").asString(), payload.get("value")),
-          UUID.fromString(payload.path("item").asString()));
+      return readPosition(list, cursor);
+    } catch (InvalidCursorException rejection) {
+      throw rejection;
     } catch (RuntimeException _) {
-      throw new InvalidCursorException("Cursor position cannot be read.");
+      throw new InvalidCursorException("Cursor is not valid.");
     }
   }
 
@@ -77,17 +75,15 @@ public class PositionCursorCodec {
         .build();
   }
 
-  private JsonNode readPayload(String cursor) {
-    try {
-      var payload = objectMapper.readTree(Base64.getUrlDecoder().decode(cursor));
-      if (!payload.isObject()) {
-        throw new InvalidCursorException("Cursor is not valid.");
-      }
-
-      return payload;
-    } catch (RuntimeException _) {
-      throw new InvalidCursorException("Cursor is not valid.");
+  private Position readPosition(ListIdentity list, String cursor) {
+    var payload = objectMapper.readTree(Base64.getUrlDecoder().decode(cursor));
+    if (!issuedFor(list, payload)) {
+      throw new InvalidCursorException("Cursor belongs to another list.");
     }
+
+    return new Position(
+        valueOf(payload.path("type").asString(), payload.get("value")),
+        UUID.fromString(payload.path("item").asString()));
   }
 
   private boolean issuedFor(ListIdentity list, JsonNode payload) {
