@@ -7,8 +7,7 @@ import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.cursor.ConnectionArguments;
-import com.streamarr.server.graphql.cursor.CursorUtil;
-import com.streamarr.server.graphql.cursor.CursorValidator;
+import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.AccountInvitationDetails;
 import com.streamarr.server.graphql.dto.IssuedAccountInvitation;
@@ -29,12 +28,9 @@ import com.streamarr.server.services.identity.CredentialIssuanceService;
 import com.streamarr.server.services.identity.CredentialIssuanceService.AccountInvitationProfilePreview;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationForProfileCommand;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationWithNewProfileCommand;
-import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
-import com.streamarr.server.services.pagination.MediaPaginationOptionsResolver;
-import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.PaginationService;
-import com.streamarr.server.services.pagination.SortDirection;
+import com.streamarr.server.services.pagination.ServerScope;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
 import java.time.Clock;
@@ -45,13 +41,14 @@ import lombok.RequiredArgsConstructor;
 public class CredentialAdministrationResolver {
 
   private static final int DEFAULT_PAGE_SIZE = 100;
+  private static final ListIdentity ACCOUNT_INVITATIONS =
+      new ListIdentity("account-invitations", ServerScope.SERVER);
 
   private final AuthorizationService authorizationService;
   private final CredentialIssuanceService credentialIssuanceService;
   private final AdministrationQueryService administrationQueryService;
   private final PaginationService paginationService;
-  private final CursorUtil cursorUtil;
-  private final CursorValidator cursorValidator;
+  private final PositionCursorCodec positionCursors;
   private final RelayConnectionAdapter relayConnectionAdapter;
   private final Clock clock;
 
@@ -66,11 +63,14 @@ public class CredentialAdministrationResolver {
 
   @DgsQuery
   public Connection<AccountInvitationDetails> accountInvitations(DataFetchingEnvironment dfe) {
-    var options = mediaOptions(dfe);
+    var request =
+        positionCursors.pageRequest(
+            ACCOUNT_INVITATIONS,
+            ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE));
     var page =
         administrationQueryService.accountInvitations(
-            authorizationService.currentIdentity(), options);
-    return relayConnectionAdapter.toConnection(page, options, this::invitationDetails);
+            authorizationService.currentIdentity(), request);
+    return relayConnectionAdapter.toConnection(page, ACCOUNT_INVITATIONS, this::invitationDetails);
   }
 
   @DgsMutation
@@ -156,17 +156,5 @@ public class CredentialAdministrationResolver {
 
   private AccountInvitationDetails invitationDetails(AccountInvitation invitation) {
     return AccountInvitationDetails.from(invitation, clock.instant());
-  }
-
-  private MediaPaginationOptions mediaOptions(DataFetchingEnvironment dfe) {
-    var paginationOptions =
-        ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
-    var filter =
-        MediaFilter.builder().sortBy(OrderMediaBy.ADDED).sortDirection(SortDirection.DESC).build();
-    return MediaPaginationOptionsResolver.resolve(
-        paginationOptions,
-        filter,
-        cursorUtil::decodeMediaCursor,
-        cursorValidator::validateCursorAgainstFilter);
   }
 }

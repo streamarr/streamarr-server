@@ -5,7 +5,6 @@ import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
-import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -14,12 +13,8 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.pagination.ListPage;
-import com.streamarr.server.services.pagination.MediaPage;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
-import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.Pager;
-import com.streamarr.server.services.pagination.PaginationService;
 import com.streamarr.server.services.pagination.ServerScope;
 import java.util.Map;
 import java.util.Optional;
@@ -37,10 +32,9 @@ public class AdministrationQueryService {
   private final AuthorizationService authorizationService;
   private final HouseholdRepository householdRepository;
   private final UserAccountRepository userAccountRepository;
-  private final PaginationService paginationService;
   private final ProfileRepository profileRepository;
-  private final AccountInvitationRepository accountInvitationRepository;
   private final HouseholdsList householdsList;
+  private final AccountInvitationsList accountInvitationsList;
   private final HouseholdAccountsList householdAccountsList;
 
   public Optional<Household> householdAdministration(
@@ -86,16 +80,11 @@ public class AdministrationQueryService {
 
   public record ProfileAdministrationDetails(Profile profile, boolean linked) {}
 
-  /** Every invitation, newest first — ServerAdmin's inspection surface. */
-  public MediaPage<AccountInvitation> accountInvitations(
-      AuthenticatedIdentity identity, MediaPaginationOptions options) {
+  /** A page of every invitation, newest first, then by ID descending. */
+  public ListPage<AccountInvitation> accountInvitations(
+      AuthenticatedIdentity identity, PageRequest request) {
     authorizationService.requireAllowed(identity, new Intent.ViewAccountInvitations());
-    var items =
-        accountInvitationRepository.findForAdministration(options).stream()
-            .map(invitation -> new PageItem<>(invitation, invitation.getCreatedOn()))
-            .toList();
-    return paginationService.buildMediaPage(
-        items, options.getPaginationOptions(), options.getCursorId());
+    return Pager.page(accountInvitationsList, ServerScope.SERVER, request);
   }
 
   /** A page of the server's Households, ordered by name, then ID. */

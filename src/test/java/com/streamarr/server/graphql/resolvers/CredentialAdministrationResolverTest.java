@@ -9,8 +9,7 @@ import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.graphql.StreamarrDataFetcherExceptionHandler;
-import com.streamarr.server.graphql.cursor.CursorUtil;
-import com.streamarr.server.graphql.cursor.CursorValidator;
+import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.AdministrationQueryService;
@@ -112,9 +111,7 @@ class CredentialAdministrationResolverTest {
 
   @MockitoBean private PaginationService paginationService;
 
-  @MockitoBean private CursorUtil cursorUtil;
-
-  @MockitoBean private CursorValidator cursorValidator;
+  @MockitoBean private PositionCursorCodec positionCursors;
 
   @MockitoBean private RelayConnectionAdapter relayConnectionAdapter;
 

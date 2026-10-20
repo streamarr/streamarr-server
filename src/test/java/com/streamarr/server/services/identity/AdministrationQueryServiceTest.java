@@ -13,8 +13,6 @@ import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.PaginationFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.authorization.Decision;
-import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.PaginationService;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -34,9 +32,8 @@ class AdministrationQueryServiceTest {
           .authorizationService(authorization)
           .householdRepository(households)
           .userAccountRepository(new FakeUserAccountRepository())
-          .paginationService(new PaginationService())
           .profileRepository(profiles)
-          .accountInvitationRepository(new FakeAccountInvitationRepository())
+          .accountInvitationsList(new AccountInvitationsList(new FakeAccountInvitationRepository()))
           .householdsList(new HouseholdsList(households))
           .build();
 
@@ -87,9 +84,9 @@ class AdministrationQueryServiceTest {
   void shouldForbidInvitationCatalogueWhenCallerIsDenied() {
     authorization.denyAll();
     var identity = authorization.currentIdentity();
-    var options = PaginationFixture.buildForwardOptions(10, MediaFilter.builder().build());
+    var request = PaginationFixture.firstRows(10);
 
-    assertThatThrownBy(() -> service.accountInvitations(identity, options))
+    assertThatThrownBy(() -> service.accountInvitations(identity, request))
         .isInstanceOf(AccessDeniedException.class);
   }
 }

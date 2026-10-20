@@ -17,6 +17,7 @@ import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
+import com.streamarr.server.fixtures.PaginationFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.AccountInvitationReofferRepository;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
@@ -35,13 +36,10 @@ import com.streamarr.server.services.identity.CredentialRejections;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.identity.SessionContextService;
 import com.streamarr.server.services.pagination.KeysetPaginationOptions;
-import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
-import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationOptions;
-import com.streamarr.server.services.pagination.SortDirection;
+import com.streamarr.server.services.pagination.Row;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.TestFixtureWork;
 import java.sql.Connection;
@@ -519,10 +517,10 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
 
     var invitationHistory =
         administrationQueryService
-            .accountInvitations(accountIdentity(sourceAdmin), invitationPaginationOptions())
-            .items()
+            .accountInvitations(accountIdentity(sourceAdmin), PaginationFixture.firstRows(100))
+            .rows()
             .stream()
-            .map(PageItem::item)
+            .map(Row::item)
             .filter(invitation -> invitation.getId().equals(expiredInvitation.getId()))
             .findFirst()
             .orElseThrow();
@@ -872,22 +870,6 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
             .cursor(Optional.empty())
             .limit(100)
             .build());
-  }
-
-  private static MediaPaginationOptions invitationPaginationOptions() {
-    return MediaPaginationOptions.builder()
-        .paginationOptions(
-            PaginationOptions.builder()
-                .paginationDirection(PaginationDirection.FORWARD)
-                .cursor(Optional.empty())
-                .limit(100)
-                .build())
-        .mediaFilter(
-            MediaFilter.builder()
-                .sortBy(OrderMediaBy.ADDED)
-                .sortDirection(SortDirection.DESC)
-                .build())
-        .build();
   }
 
   private static AcceptInvitationCommand acceptCommand(String code) {

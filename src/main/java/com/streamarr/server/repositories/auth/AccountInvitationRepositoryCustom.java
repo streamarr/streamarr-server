@@ -1,7 +1,8 @@
 package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.AccountInvitation;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -9,7 +10,8 @@ import java.util.UUID;
 
 public interface AccountInvitationRepositoryCustom {
 
-  List<AccountInvitation> findForAdministration(MediaPaginationOptions options);
+  /** The invitations beyond the seek, ordered by creation time, then ID, in one direction. */
+  List<Row<AccountInvitation>> rowsBeyond(Seek seek);
 
   /** Serializes replacement for one case-insensitive recipient across application instances. */
   void lockInvitationIssuanceForRecipientEmail(String recipientEmail);
