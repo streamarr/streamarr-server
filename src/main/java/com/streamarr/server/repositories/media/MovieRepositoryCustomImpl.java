@@ -269,7 +269,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
 
   private Field<?> sortField(MediaFilter filter) {
     return switch (filter.getSortBy()) {
-      case TITLE -> JooqQueryHelper.titleSortField();
+      case TITLE -> BASE_COLLECTABLE.TITLE_SORT;
       case ADDED -> BASE_COLLECTABLE.CREATED_ON;
       case RELEASE_DATE -> MOVIE.RELEASE_DATE;
       case RUNTIME -> MOVIE.RUNTIME;

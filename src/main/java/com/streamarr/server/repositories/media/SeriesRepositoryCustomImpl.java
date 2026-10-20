@@ -303,7 +303,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
 
   private Field<?> sortField(MediaFilter filter) {
     return switch (filter.getSortBy()) {
-      case TITLE -> JooqQueryHelper.titleSortField();
+      case TITLE -> BASE_COLLECTABLE.TITLE_SORT;
       case ADDED -> BASE_COLLECTABLE.CREATED_ON;
       case RELEASE_DATE -> SERIES.FIRST_AIR_DATE;
       case RUNTIME -> SERIES.RUNTIME;
