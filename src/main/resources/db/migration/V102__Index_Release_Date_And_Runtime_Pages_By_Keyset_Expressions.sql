@@ -1,17 +1,7 @@
--- Library pages seek by one row comparison over (placement, value, id). The placement flag is
--- (value IS NULL) when items without a value sort in the value's direction, and
+-- Release-date and runtime pages seek by one row comparison over (placement, value, id). The
+-- placement flag is (value IS NULL) when items without a value sort in the value's direction, and
 -- (value IS NOT NULL) when they sort against it. Each index names those exact expressions, so a
--- late page reads only its own rows. Titles sort lowercased and compared byte by byte.
-DROP INDEX idx_base_collectable_library_title_seek;
-
-CREATE INDEX idx_base_collectable_library_title_seek
-    ON base_collectable (
-        library_id,
-        (LOWER(title_sort COLLATE "C") IS NULL),
-        LOWER(title_sort COLLATE "C"),
-        id
-    );
-
+-- late page reads only its own rows. They replace V042's indexes, which start with the value.
 DROP INDEX idx_movie_releasedate_id;
 DROP INDEX idx_movie_releasedate_desc_id;
 DROP INDEX idx_movie_runtime_id;

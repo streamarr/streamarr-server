@@ -34,8 +34,12 @@ class LibraryCountsMigrationIT extends AbstractIntegrationTest {
       statement.execute(
           """
           CREATE TABLE base_collectable (id INT PRIMARY KEY, library_id INT, title_sort TEXT);
-          CREATE INDEX idx_base_collectable_library_titlesort_ci_id
-            ON base_collectable (library_id, LOWER(title_sort), id);
+          CREATE INDEX idx_base_collectable_library_title_seek
+            ON base_collectable (
+              library_id,
+              (title_sort IS NULL),
+              COALESCE(LOWER(title_sort COLLATE "C"), '') COLLATE "C",
+              id);
           INSERT INTO base_collectable
             SELECT n, 1, 'title' || lpad(n::text, 6, '0') FROM generate_series(1,200000) n;
           INSERT INTO base_collectable VALUES (200001, 1, NULL);
@@ -44,9 +48,9 @@ class LibraryCountsMigrationIT extends AbstractIntegrationTest {
           .configuration(flyway.getConfiguration())
           .schemas(schema)
           .defaultSchema(schema)
-          .baselineVersion("98")
+          .baselineVersion("100")
           .baselineOnMigrate(true)
-          .target("99")
+          .target("101")
           .load()
           .migrate();
       statement.execute("ANALYZE base_collectable");
@@ -57,9 +61,9 @@ class LibraryCountsMigrationIT extends AbstractIntegrationTest {
               EXPLAIN (ANALYZE, FORMAT JSON)
               SELECT id FROM base_collectable
               WHERE library_id = 1
-                AND (title_sort IS NULL, COALESCE(LOWER(title_sort COLLATE "C"), '') COLLATE "C", id)
+                AND (LOWER(title_sort COLLATE "C") IS NULL, LOWER(title_sort COLLATE "C"), id)
                   >= (false, 'title180000', 180000)
-              ORDER BY title_sort IS NULL, COALESCE(LOWER(title_sort COLLATE "C"), '') COLLATE "C", id
+              ORDER BY LOWER(title_sort COLLATE "C") IS NULL, LOWER(title_sort COLLATE "C"), id
               LIMIT 50
               """)) {
         assertThat(rows.next()).isTrue();
