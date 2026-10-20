@@ -21,11 +21,8 @@ import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.Pager;
 import com.streamarr.server.services.pagination.PaginationService;
 import com.streamarr.server.services.pagination.ServerScope;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +41,7 @@ public class AdministrationQueryService {
   private final ProfileRepository profileRepository;
   private final AccountInvitationRepository accountInvitationRepository;
   private final HouseholdsList householdsList;
+  private final HouseholdAccountsList householdAccountsList;
 
   public Optional<Household> householdAdministration(
       AuthenticatedIdentity identity, UUID householdId) {
@@ -106,27 +104,8 @@ public class AdministrationQueryService {
     return Pager.page(householdsList, ServerScope.SERVER, request);
   }
 
-  /** A bounded page of Accounts for one already-authorized Household. */
-  public Map<UUID, MediaPage<UserAccount>> accountPagesOf(
-      Set<UUID> householdIds, MediaPaginationOptions options) {
-    paginationService.requireCursorSortValue(options);
-    var accountsByHousehold = userAccountRepository.findAdministrationPages(householdIds, options);
-    var pages = new LinkedHashMap<UUID, MediaPage<UserAccount>>();
-    householdIds.forEach(
-        householdId ->
-            pages.put(
-                householdId,
-                accountPage(accountsByHousehold.getOrDefault(householdId, List.of()), options)));
-    return pages;
-  }
-
-  private MediaPage<UserAccount> accountPage(
-      List<UserAccount> accounts, MediaPaginationOptions options) {
-    var items =
-        accounts.stream()
-            .map(account -> new PageItem<>(account, account.getDisplayName()))
-            .toList();
-    return paginationService.buildMediaPage(
-        items, options.getPaginationOptions(), options.getCursorId());
+  /** A page of Accounts for each already-authorized Household, ordered by display name, then ID. */
+  public Map<UUID, ListPage<UserAccount>> accountPages(Map<UUID, PageRequest> requests) {
+    return Pager.pages(householdAccountsList, requests);
   }
 }

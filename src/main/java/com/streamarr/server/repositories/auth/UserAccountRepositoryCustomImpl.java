@@ -8,11 +8,7 @@ import static com.streamarr.server.jooq.generated.tables.Profile.PROFILE;
 import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
 import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
 import static org.jooq.impl.DSL.lower;
-import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.row;
-import static org.jooq.impl.DSL.rowNumber;
-import static org.jooq.impl.DSL.val;
-import static org.jooq.impl.DSL.when;
 
 import com.streamarr.server.domain.auth.AccountAuthorityFacts;
 import com.streamarr.server.domain.auth.AccountShareFacts;
@@ -22,13 +18,13 @@ import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.jooq.generated.enums.ProfileShareStatus;
 import com.streamarr.server.jooq.generated.tables.records.UserAccountRecord;
 import com.streamarr.server.repositories.JooqQueryHelper;
+import com.streamarr.server.repositories.Keyset;
 import com.streamarr.server.repositories.PostgresTransactionLocks;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
-import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
 import jakarta.persistence.EntityManager;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,9 +34,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
-import org.jooq.Field;
 import org.jooq.Record2;
-import org.jooq.SortOrder;
 import org.jooq.TableField;
 import org.jooq.impl.DSL;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -58,69 +52,21 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
   }
 
   @Override
-  public Map<UUID, List<UserAccount>> findAdministrationPages(
-      Set<UUID> householdIds, MediaPaginationOptions options) {
-    if (householdIds.isEmpty()) {
-      return Map.of();
+  public Map<UUID, List<Row<UserAccount>>> rowsBeyond(Map<UUID, Seek> seeksByHousehold) {
+    var rows = new LinkedHashMap<UUID, List<Row<UserAccount>>>();
+    seeksByHousehold.keySet().forEach(householdId -> rows.put(householdId, new ArrayList<>()));
+    var keyset =
+        Keyset.<String>builder()
+            .sortValue(lower(USER_ACCOUNT.DISPLAY_NAME))
+            .itemId(USER_ACCOUNT.ID)
+            .build();
+    for (var query :
+        keyset.rowsBeyondEach(dsl, USER_ACCOUNT, USER_ACCOUNT.HOUSEHOLD_ID, seeksByHousehold)) {
+      JooqQueryHelper.nativeRows(entityManager, query, UserAccount.class, keyset)
+          .forEach(row -> rows.get(row.item().getHouseholdId()).add(row));
     }
 
-    var reverse =
-        options.getPaginationOptions().getPaginationDirection() == PaginationDirection.REVERSE;
-    var sortOrder = reverse ? SortOrder.DESC : SortOrder.ASC;
-    var displayName = lower(USER_ACCOUNT.DISPLAY_NAME);
-    var cursorCondition = accountCursorCondition(options, displayName, sortOrder);
-    var cursorFirst =
-        options
-            .getCursorId()
-            .map(cursorId -> when(USER_ACCOUNT.ID.eq(cursorId), 0).otherwise(1))
-            .orElse(val(0));
-    var pageRow =
-        rowNumber()
-            .over()
-            .partitionBy(USER_ACCOUNT.HOUSEHOLD_ID)
-            .orderBy(
-                cursorFirst.asc(), displayName.sort(sortOrder), USER_ACCOUNT.ID.sort(sortOrder))
-            .as("administration_page_row");
-    var ranked =
-        dsl.select(USER_ACCOUNT.asterisk())
-            .select(pageRow)
-            .from(USER_ACCOUNT)
-            .where(USER_ACCOUNT.HOUSEHOLD_ID.in(householdIds))
-            .and(cursorCondition)
-            .asTable("ranked_administration_accounts");
-    var rankedHouseholdId = ranked.field(USER_ACCOUNT.HOUSEHOLD_ID);
-    var rankedPageRow = ranked.field(pageRow);
-    var extraRows = options.getCursorId().isPresent() ? 2 : 1;
-    var query =
-        dsl.select(ranked.fields())
-            .from(ranked)
-            .where(rankedPageRow.le(options.getPaginationOptions().getLimit() + extraRows))
-            .orderBy(rankedHouseholdId.asc(), rankedPageRow.asc());
-    var accounts = JooqQueryHelper.nativeQuery(entityManager, query, UserAccount.class);
-    Map<UUID, List<UserAccount>> pages = new LinkedHashMap<>();
-    accounts.forEach(
-        account ->
-            pages.computeIfAbsent(account.getHouseholdId(), _ -> new ArrayList<>()).add(account));
-    if (reverse) {
-      pages.values().forEach(Collections::reverse);
-    }
-
-    return pages;
-  }
-
-  private Condition accountCursorCondition(
-      MediaPaginationOptions options, Field<String> displayName, SortOrder sortOrder) {
-    if (options.getCursorId().isEmpty()) {
-      return noCondition();
-    }
-
-    var cursorName = lower(val(options.getMediaFilter().getPreviousSortFieldValue().toString()));
-    var cursorId = options.getCursorId().orElseThrow();
-    var fields = row(displayName, USER_ACCOUNT.ID);
-    var cursor = row(cursorName, val(cursorId));
-    var afterCursor =
-        sortOrder == SortOrder.ASC ? fields.greaterThan(cursor) : fields.lessThan(cursor);
-    return USER_ACCOUNT.ID.eq(cursorId).or(USER_ACCOUNT.ID.ne(cursorId).and(afterCursor));
+    return rows;
   }
 
   @Override

@@ -5,7 +5,8 @@ import com.streamarr.server.domain.auth.AccountShareFacts;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileManagerEligibility;
 import com.streamarr.server.domain.auth.UserAccount;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -18,8 +19,11 @@ public interface UserAccountRepositoryCustom {
 
   void refresh(UserAccount account);
 
-  Map<UUID, List<UserAccount>> findAdministrationPages(
-      Set<UUID> householdIds, MediaPaginationOptions options);
+  /**
+   * The Accounts beyond each Household's seek, keyed by Household, ordered by lowercased display
+   * name, then ID.
+   */
+  Map<UUID, List<Row<UserAccount>>> rowsBeyond(Map<UUID, Seek> seeksByHousehold);
 
   /**
    * The Account's current enabled state and ServerAdmin authority, read as scalars so the

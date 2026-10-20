@@ -1,15 +1,16 @@
 package com.streamarr.server.graphql.dataloaders;
 
+import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.services.identity.AdministrationQueryService;
-import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
-import com.streamarr.server.services.pagination.PaginationOptions;
-import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.services.identity.HouseholdAccountsList;
+import com.streamarr.server.services.pagination.ListPage;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -23,41 +24,52 @@ import org.junit.jupiter.api.Test;
 @DisplayName("Administration Accounts Data Loader Tests")
 class AdministrationAccountsDataLoaderTest {
 
+  private final RecordingUserAccountRepository accounts = new RecordingUserAccountRepository();
+  private final AdministrationAccountsDataLoader loader =
+      new AdministrationAccountsDataLoader(
+          AdministrationQueryService.builder()
+              .householdAccountsList(new HouseholdAccountsList(accounts))
+              .build());
+
   @Test
-  @DisplayName("Should batch Households into one request when pagination options match")
-  void shouldBatchHouseholdsIntoOneRequestWhenPaginationOptionsMatch() throws Exception {
+  @DisplayName(
+      "Should read every Household's Accounts together when Households are loaded together")
+  void shouldReadEveryHouseholdsAccountsTogetherWhenHouseholdsAreLoadedTogether() throws Exception {
     var firstHouseholdId = UUID.randomUUID();
     var secondHouseholdId = UUID.randomUUID();
-    var accounts = new RecordingUserAccountRepository();
     accounts.save(account(firstHouseholdId, "First Account"));
     accounts.save(account(secondHouseholdId, "Second Account"));
-    var options =
-        MediaPaginationOptions.builder()
-            .paginationOptions(PaginationOptions.builder().limit(10).build())
-            .mediaFilter(MediaFilter.builder().build())
-            .build();
-    var firstKey = new AdministrationAccountsLoaderKey(firstHouseholdId, options);
-    var secondKey = new AdministrationAccountsLoaderKey(secondHouseholdId, options);
-    var service =
-        AdministrationQueryService.builder()
-            .userAccountRepository(accounts)
-            .paginationService(new PaginationService())
-            .build();
-    var loader = new AdministrationAccountsDataLoader(service);
+    var firstKey = new AdministrationAccountsLoaderKey(firstHouseholdId, firstRows(10));
+    var secondKey = new AdministrationAccountsLoaderKey(secondHouseholdId, firstRows(5));
 
     var result = loader.load(Set.of(firstKey, secondKey)).toCompletableFuture().get();
 
     assertThat(accounts.requestedHouseholds)
         .containsExactly(Set.of(firstHouseholdId, secondHouseholdId));
     assertThat(result).containsOnlyKeys(firstKey, secondKey);
-    assertThat(result.get(firstKey).items())
-        .singleElement()
-        .extracting(item -> item.item().getDisplayName())
-        .isEqualTo("First Account");
-    assertThat(result.get(secondKey).items())
-        .singleElement()
-        .extracting(item -> item.item().getDisplayName())
-        .isEqualTo("Second Account");
+    assertThat(displayNames(result.get(firstKey))).containsExactly("First Account");
+    assertThat(displayNames(result.get(secondKey))).containsExactly("Second Account");
+  }
+
+  @Test
+  @DisplayName("Should answer each request when one Household is loaded with different arguments")
+  void shouldAnswerEachRequestWhenOneHouseholdIsLoadedWithDifferentArguments() throws Exception {
+    var householdId = UUID.randomUUID();
+    accounts.save(account(householdId, "Alpha"));
+    accounts.save(account(householdId, "Bravo"));
+    var oneAccount = new AdministrationAccountsLoaderKey(householdId, firstRows(1));
+    var twoAccounts = new AdministrationAccountsLoaderKey(householdId, firstRows(2));
+
+    var result = loader.load(Set.of(oneAccount, twoAccounts)).toCompletableFuture().get();
+
+    assertThat(displayNames(result.get(oneAccount))).containsExactly("Alpha");
+    assertThat(displayNames(result.get(twoAccounts))).containsExactly("Alpha", "Bravo");
+    assertThat(accounts.requestedHouseholds)
+        .containsExactly(Set.of(householdId), Set.of(householdId));
+  }
+
+  private static List<String> displayNames(ListPage<UserAccount> page) {
+    return page.rows().stream().map(Row::item).map(UserAccount::getDisplayName).toList();
   }
 
   private static UserAccount account(UUID householdId, String displayName) {
@@ -72,10 +84,9 @@ class AdministrationAccountsDataLoaderTest {
     private final List<Set<UUID>> requestedHouseholds = new ArrayList<>();
 
     @Override
-    public Map<UUID, List<UserAccount>> findAdministrationPages(
-        Set<UUID> householdIds, MediaPaginationOptions options) {
-      requestedHouseholds.add(Set.copyOf(householdIds));
-      return super.findAdministrationPages(householdIds, options);
+    public Map<UUID, List<Row<UserAccount>>> rowsBeyond(Map<UUID, Seek> seeksByHousehold) {
+      requestedHouseholds.add(Set.copyOf(seeksByHousehold.keySet()));
+      return super.rowsBeyond(seeksByHousehold);
     }
   }
 }
