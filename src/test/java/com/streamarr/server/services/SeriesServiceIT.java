@@ -902,8 +902,10 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("Should return only hash series when start letter is hash and sort is DESC")
-    void shouldReturnOnlyHashSeriesWhenStartLetterIsHashDesc() {
+    @DisplayName(
+        "Should land below the lettered series and page backward to them when start letter is"
+            + " HASH and sort is DESC")
+    void shouldLandBelowLetteredSeriesWhenStartLetterIsHashAndSortIsDesc() {
       var filter =
           MediaFilter.builder()
               .libraryId(savedLibraryD.getId())
@@ -911,10 +913,25 @@ class SeriesServiceIT extends AbstractIntegrationTest {
               .sortDirection(SortDirection.DESC)
               .build();
 
-      var result = seriesService.getSeriesWithFilter(buildForwardOptions(10, filter));
+      var landing = seriesService.getSeriesWithFilter(buildForwardOptions(10, filter));
+      var above =
+          seriesService.getSeriesWithFilter(
+              buildBackwardContinuation(10, filter, landing.items().getFirst()));
 
-      var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
-      assertThat(titles).containsExactly("123 Show");
+      assertThat(landing.items())
+          .extracting(pi -> pi.item().getTitle())
+          .containsExactly("123 Show");
+      assertThat(landing.hasPreviousPage()).isTrue();
+      assertThat(above.items())
+          .extracting(pi -> pi.item().getTitle())
+          .containsExactly(
+              "Zorro Show",
+              "Gamma Show",
+              "Beta Show",
+              "Batman Show",
+              "Avengers Show",
+              "Alpha Show");
+      assertThat(above.hasPreviousPage()).isFalse();
     }
 
     @Test

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.BaseCollectable;
+import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
@@ -47,6 +48,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -147,6 +149,95 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
     } finally {
       auth.deleteIdentity(identity);
     }
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = MediaType.class,
+      names = {"MOVIE", "SERIES"})
+  @DisplayName(
+      "Should place a lettered title above a descending HASH landing page when its change arrives")
+  void shouldPlaceLetteredTitleAboveDescendingHashLandingPageWhenItsChangeArrives(MediaType kind) {
+    var library =
+        libraries.saveAndFlush(
+            LibraryFixtureCreator.buildFakeLibrary().toBuilder().type(kind).build());
+    var tilde = saveTitledItem(library, kind, "~Tilde");
+    var lettered = saveTitledItem(library, kind, "Zulu");
+    var numbered = saveTitledItem(library, kind, "123 Numbers");
+    var arguments = "sort: {by: TITLE, direction: DESC}, filter: {startLetter: HASH}";
+    var identity = auth.createIdentity();
+    var bearer = auth.profileBearer(identity);
+    try (var http =
+            new GraphQlHttpTestClient(URI.create("http://localhost:%d/graphql".formatted(port)));
+        var socket = GraphQlTransportWsTestClient.connectWithBearer(port, bearer)) {
+      var query =
+          """
+          { library(id: "%s") { items(%%s, %s) {
+            edges { cursor orderKey node { ... on Movie { id } ... on Series { id } } }
+            pageInfo { startCursor hasPreviousPage }
+          } } }
+          """
+              .formatted(library.getId(), arguments);
+      var landing = http.execute(bearer, query.formatted("first: 10"));
+      assertThat(landing.has("errors")).as(landing.toPrettyString()).isFalse();
+      assertThat(nodeIds(landing.at("/data/library/items/edges")))
+          .containsExactly(numbered.getId().toString());
+      assertThat(landing.at("/data/library/items/pageInfo/hasPreviousPage").asBoolean()).isTrue();
+      socket.subscribe(
+          "hash",
+          """
+          subscription { libraryItemUpdated(libraryId: "%s") {
+            edge(%s) { cursor orderKey node { ... on Movie { id } ... on Series { id } } }
+          } }
+          """
+              .formatted(library.getId(), arguments));
+      new ActiveSubscriptions(metrics).awaitCount("libraryItemUpdated", 1);
+      transactions.executeWithoutResult(
+          _ ->
+              events.publishEvent(
+                  LibraryItemChangedEvent.builder()
+                      .change(LibraryItemChangedEvent.Change.UPDATED)
+                      .libraryId(library.getId())
+                      .itemId(lettered.getId())
+                      .kind(kind)
+                      .build()));
+
+      var message = socket.nextMessageFor("hash");
+      assertThat(message.at("/payload").has("errors")).as(message.toPrettyString()).isFalse();
+      var edge = message.at("/payload/data/libraryItemUpdated/edge");
+      assertThat(edge.path("orderKey").asString())
+          .isLessThan(landing.at("/data/library/items/edges/0/orderKey").asString());
+      var above =
+          http.execute(
+              bearer,
+              query.formatted(
+                  "last: 10, before: \"%s\""
+                      .formatted(
+                          landing.at("/data/library/items/pageInfo/startCursor").asString())));
+      assertThat(above.has("errors")).as(above.toPrettyString()).isFalse();
+      assertThat(nodeIds(above.at("/data/library/items/edges")))
+          .containsExactly(tilde.getId().toString(), lettered.getId().toString());
+      assertThat(above.at("/data/library/items/edges/1/orderKey")).isEqualTo(edge.path("orderKey"));
+    } finally {
+      new ActiveSubscriptions(metrics).awaitNoneActive();
+      auth.deleteIdentity(identity);
+    }
+  }
+
+  private BaseCollectable<?> saveTitledItem(Library library, MediaType kind, String title) {
+    return switch (kind) {
+      case MOVIE ->
+          movies.saveAndFlush(
+              Movie.builder().title(title).titleSort(title).library(library).build());
+      case SERIES ->
+          seriesRepository.saveAndFlush(
+              Series.builder().title(title).titleSort(title).library(library).build());
+      default -> throw new IllegalArgumentException("Expected a Library item");
+    };
+  }
+
+  private List<String> nodeIds(JsonNode edges) {
+    return edges.valueStream().map(edge -> edge.at("/node/id").asString()).toList();
   }
 
   private LibraryItemChangedEvent timestampItem(MediaType kind, UUID profileId) {

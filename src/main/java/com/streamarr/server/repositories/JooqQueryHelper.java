@@ -103,21 +103,26 @@ public class JooqQueryHelper {
 
   // Matches the rows above a TITLE-sort letter jump's landing page - the exact negation of the
   // landing condition. Empty when nothing can sit above the anchor: HASH lands at the top under
-  // ASC, Z at the top under DESC, and DESC HASH matches two non-adjacent runs of the ordering so
-  // it has no single anchor to sit below.
+  // ASC and Z at the top under DESC.
   public Optional<Condition> letterJumpPredecessorCondition(
       AlphabetLetter startLetter, SortDirection direction) {
+    if (direction == SortDirection.DESC) {
+      return descLetterJumpPredecessorCondition(startLetter);
+    }
+
     if (startLetter == AlphabetLetter.HASH) {
       return Optional.empty();
     }
 
-    if (direction == SortDirection.DESC) {
-      return startLetter == AlphabetLetter.Z
-          ? Optional.empty()
-          : Optional.of(titleSeekPosition().ge(row(inline(false), nextLetterValue(startLetter))));
+    return Optional.of(titleSeekPosition().lt(row(inline(false), letterValue(startLetter))));
+  }
+
+  private Optional<Condition> descLetterJumpPredecessorCondition(AlphabetLetter startLetter) {
+    if (startLetter == AlphabetLetter.Z) {
+      return Optional.empty();
     }
 
-    return Optional.of(titleSeekPosition().lt(row(inline(false), letterValue(startLetter))));
+    return Optional.of(titleSeekPosition().ge(descLandingCeiling(startLetter)));
   }
 
   // Under TITLE sort the letter is a seek anchor consumed by the landing page - on cursor pages
@@ -147,15 +152,17 @@ public class JooqQueryHelper {
       return noCondition();
     }
 
-    if (startLetter == AlphabetLetter.HASH) {
-      return hashLetterCondition();
-    }
-
-    return titleSeekPosition().lt(row(inline(false), nextLetterValue(startLetter)));
+    return titleSeekPosition().lt(descLandingCeiling(startLetter));
   }
 
-  private Condition hashLetterCondition() {
-    return equalityLetterCondition(AlphabetLetter.HASH);
+  // HASH lands on the contiguous titles below "a"; titles above "z" stay at the top of the
+  // ordering, reachable by paging backward.
+  private Row2<Boolean, String> descLandingCeiling(AlphabetLetter startLetter) {
+    if (startLetter == AlphabetLetter.HASH) {
+      return row(inline(false), letterValue(AlphabetLetter.A));
+    }
+
+    return row(inline(false), nextLetterValue(startLetter));
   }
 
   public Field<String> alphabetLetterField() {
