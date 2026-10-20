@@ -183,7 +183,7 @@ public class JooqQueryHelper {
     return libraryId != null ? BASE_COLLECTABLE.LIBRARY_ID.eq(libraryId) : noCondition();
   }
 
-  public Field<String> titleSortField() {
+  private Field<String> titleSortField() {
     return normalizeTitle(BASE_COLLECTABLE.TITLE_SORT);
   }
 

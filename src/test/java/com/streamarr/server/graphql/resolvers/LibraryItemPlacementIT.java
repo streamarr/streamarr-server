@@ -79,13 +79,21 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
 
   @ParameterizedTest
   @CsvSource({
+    "MOVIE,TITLE,ASC", "MOVIE,TITLE,DESC",
     "MOVIE,ADDED,ASC", "MOVIE,ADDED,DESC",
+    "MOVIE,RELEASE_DATE,ASC", "MOVIE,RELEASE_DATE,DESC",
+    "MOVIE,RUNTIME,ASC", "MOVIE,RUNTIME,DESC",
     "MOVIE,LAST_WATCHED,ASC", "MOVIE,LAST_WATCHED,DESC",
+    "SERIES,TITLE,ASC", "SERIES,TITLE,DESC",
     "SERIES,ADDED,ASC", "SERIES,ADDED,DESC",
+    "SERIES,RELEASE_DATE,ASC", "SERIES,RELEASE_DATE,DESC",
+    "SERIES,RUNTIME,ASC", "SERIES,RUNTIME,DESC",
     "SERIES,LAST_WATCHED,ASC", "SERIES,LAST_WATCHED,DESC"
   })
-  @DisplayName("Should preserve query and event placement when a timestamp falls on a whole minute")
-  void shouldPreserveQueryAndEventPlacementWhenTimestampFallsOnWholeMinute(
+  @DisplayName(
+      "Should supply identical query and event edges when sorting by any field, including"
+          + " mixed-case titles and whole-minute timestamps")
+  void shouldSupplyIdenticalQueryAndEventEdgesWhenSortingByAnyField(
       MediaType kind, OrderMediaBy by, SortDirection direction) {
     var identity = auth.createIdentity();
     var bearer = auth.profileBearer(identity);
@@ -217,7 +225,7 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
       assertThat(above.has("errors")).as(above.toPrettyString()).isFalse();
       assertThat(nodeIds(above.at("/data/library/items/edges")))
           .containsExactly(tilde.getId().toString(), lettered.getId().toString());
-      assertThat(above.at("/data/library/items/edges/1/orderKey")).isEqualTo(edge.path("orderKey"));
+      assertThat(above.at("/data/library/items/edges/1")).isEqualTo(edge);
     } finally {
       new ActiveSubscriptions(metrics).awaitNoneActive();
       auth.deleteIdentity(identity);
@@ -244,15 +252,7 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
     var library =
         libraries.saveAndFlush(
             LibraryFixtureCreator.buildFakeLibrary().toBuilder().type(kind).build());
-    BaseCollectable<?> item =
-        switch (kind) {
-          case MOVIE ->
-              movies.saveAndFlush(Movie.builder().title("Whole minute").library(library).build());
-          case SERIES ->
-              seriesRepository.saveAndFlush(
-                  Series.builder().title("Whole minute").library(library).build());
-          default -> throw new IllegalArgumentException("Expected a Library item");
-        };
+    var item = saveTitledItem(library, kind, "Whole minute");
     var watchedId =
         switch (item) {
           case Movie movie -> movie.getId();
