@@ -19,6 +19,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -58,7 +59,9 @@ public class ContinueWatchingService {
         .build();
   }
 
-  @Transactional(readOnly = true)
+  // The ordered read and the item loads must see one snapshot: a deletion committed between them
+  // would shrink the over-fetched page and report no next page while later items remain.
+  @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
   public MediaPage<BaseCollectable<?>> getPage(UUID profileId, MediaPaginationOptions options) {
     paginationService.requireCursorSortValue(options);
     return paginationService.buildMediaPage(
