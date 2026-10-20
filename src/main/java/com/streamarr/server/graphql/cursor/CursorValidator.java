@@ -21,13 +21,13 @@ public class CursorValidator {
           "Continue Watching cursors require an item ID and timestamp.");
     }
 
-    if (!isStorableTimestamp(timestamp.toString())) {
+    if (!isSupportedIso8601Timestamp(timestamp.toString())) {
       throw new InvalidCursorException("Continue Watching cursor timestamp is invalid.");
     }
   }
 
   // Instant spans years PostgreSQL timestamptz cannot store; progress times have four-digit years.
-  private static boolean isStorableTimestamp(String value) {
+  private static boolean isSupportedIso8601Timestamp(String value) {
     try {
       var instant = Instant.parse(value);
       return !instant.isBefore(EARLIEST_TIMESTAMP) && !instant.isAfter(LATEST_TIMESTAMP);
