@@ -11,14 +11,21 @@ import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.SortDirection;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import tools.jackson.databind.ObjectMapper;
 
 @Tag("UnitTest")
@@ -242,6 +249,81 @@ class CursorUtilTest {
 
       assertThatThrownBy(() -> cursorUtil.decodeMediaCursor(paginationOptions))
           .isInstanceOf(InvalidCursorException.class);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(
+        strings = {
+          "{\"cursorId\":\"5d2f6a8e-0c1b-4f3e-9a7d-2b4c6e8f0a1c\"}",
+          "{\"mediaFilter\":{\"sortBy\":\"TITLE\",\"sortDirection\":\"ASC\"}}",
+          "{\"cursorId\":\"5d2f6a8e-0c1b-4f3e-9a7d-2b4c6e8f0a1c\",\"mediaFilter\":"
+              + "{\"sortBy\":\"LAST_WATCHED\",\"sortDirection\":\"DESC\","
+              + "\"previousSortFieldValue\":\"yesterday\"}}",
+          "{\"cursorId\":\"5d2f6a8e-0c1b-4f3e-9a7d-2b4c6e8f0a1c\",\"mediaFilter\":"
+              + "{\"sortBy\":\"ADDED\",\"sortDirection\":\"ASC\","
+              + "\"previousSortFieldValue\":\"+10000-01-01T00:00:00Z\"}}",
+          "{\"cursorId\":\"5d2f6a8e-0c1b-4f3e-9a7d-2b4c6e8f0a1c\",\"mediaFilter\":"
+              + "{\"sortBy\":\"RELEASE_DATE\",\"sortDirection\":\"ASC\","
+              + "\"previousSortFieldValue\":\"someday\"}}",
+          "{\"cursorId\":\"5d2f6a8e-0c1b-4f3e-9a7d-2b4c6e8f0a1c\",\"mediaFilter\":"
+              + "{\"sortBy\":\"RUNTIME\",\"sortDirection\":\"ASC\","
+              + "\"previousSortFieldValue\":\"ninety\"}}",
+          "{\"cursorId\":\"5d2f6a8e-0c1b-4f3e-9a7d-2b4c6e8f0a1c\",\"mediaFilter\":"
+              + "{\"sortBy\":null,\"sortDirection\":\"ASC\"}}"
+        })
+    @DisplayName("Should throw InvalidCursorException when a media cursor cannot be read")
+    void shouldThrowInvalidCursorExceptionWhenAMediaCursorCannotBeRead(String json) {
+      var cursor =
+          Base64.getUrlEncoder()
+              .withoutPadding()
+              .encodeToString(json.getBytes(StandardCharsets.UTF_8));
+
+      assertThatThrownBy(() -> cursorUtil.decodeMediaCursor(forwardFrom(cursor)))
+          .isInstanceOf(InvalidCursorException.class);
+    }
+
+    private static PaginationOptions forwardFrom(String cursor) {
+      return PaginationOptions.builder()
+          .cursor(Optional.of(cursor))
+          .paginationDirection(PaginationDirection.FORWARD)
+          .limit(10)
+          .build();
+    }
+  }
+
+  @Nested
+  @DisplayName("Typed Sort Values")
+  class TypedSortValues {
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("sortValuesOfEachSortField")
+    @DisplayName("Should decode a sort value as its sort field's type when the cursor round-trips")
+    void shouldDecodeASortValueAsItsSortFieldsTypeWhenTheCursorRoundTrips(
+        OrderMediaBy sortBy, Object sortValue) {
+      var options =
+          MediaPaginationOptions.builder()
+              .mediaFilter(MediaFilter.builder().sortBy(sortBy).build())
+              .build();
+      var cursor = cursorUtil.encodeMediaCursor(options, UUID.randomUUID(), sortValue);
+
+      var decoded =
+          cursorUtil.decodeMediaCursor(
+              PaginationOptions.builder()
+                  .cursor(Optional.of(cursor.getValue()))
+                  .paginationDirection(PaginationDirection.FORWARD)
+                  .limit(10)
+                  .build());
+
+      assertThat(decoded.getMediaFilter().getPreviousSortFieldValue()).isEqualTo(sortValue);
+    }
+
+    static Stream<Arguments> sortValuesOfEachSortField() {
+      return Stream.of(
+          Arguments.of(OrderMediaBy.TITLE, "Alpha"),
+          Arguments.of(OrderMediaBy.ADDED, Instant.parse("2026-10-19T15:07:00Z")),
+          Arguments.of(OrderMediaBy.RELEASE_DATE, LocalDate.of(2020, 1, 1)),
+          Arguments.of(OrderMediaBy.RUNTIME, 90),
+          Arguments.of(OrderMediaBy.LAST_WATCHED, Instant.parse("2026-10-19T15:07:12.345Z")));
     }
   }
 }
