@@ -82,8 +82,14 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
 
   private Library library;
 
+  // An earlier test class can leave a step that becomes due once a test starts its own schedulers,
+  // which would count the step's completion as the test's own. Stopping the context's schedulers
+  // first lets a running step finish before its rows are deleted.
   @BeforeEach
   void setUp() {
+    artworkPrioritySchedulers.stop();
+    deleteArtworkRequestsAndTasks();
+    artworkPrioritySchedulers.start();
     wireMock.resetAll();
     wireMock.stubFor(
         get(urlPathEqualTo("/poster.jpg"))
