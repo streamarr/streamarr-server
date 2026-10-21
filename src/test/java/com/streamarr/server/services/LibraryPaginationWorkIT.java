@@ -35,8 +35,8 @@ import tools.jackson.databind.ObjectMapper;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class LibraryPaginationWorkIT extends AbstractIntegrationTest {
 
-  private static final int ITEMS = 200_000;
-  private static final int ANCHOR_RANK = 100_000;
+  private static final int ITEMS = 1_000;
+  private static final int ANCHOR_RANK = 500;
   private static final LocalDate FIRST_RELEASE = LocalDate.of(2000, 1, 1);
 
   @Autowired private LibraryRepository libraries;
@@ -50,9 +50,9 @@ class LibraryPaginationWorkIT extends AbstractIntegrationTest {
   private Library library;
   private Movie anchor;
 
-  // Every case reads the same large Library, so it is seeded once.
+  // Every case reads the same Library, so it is seeded once.
   @BeforeAll
-  void seedALargeLibrary() {
+  void seedTheLibrary() {
     library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     anchor =
         movies.saveAndFlush(
@@ -67,7 +67,7 @@ class LibraryPaginationWorkIT extends AbstractIntegrationTest {
   }
 
   @AfterAll
-  void deleteTheLargeLibrary() {
+  void deleteTheLibrary() {
     new TransactionTemplate(transactions)
         .executeWithoutResult(
             _ -> {
@@ -99,18 +99,24 @@ class LibraryPaginationWorkIT extends AbstractIntegrationTest {
             .build();
 
     var plans =
-        AnalyzedSelects.builder()
-            .dsl(dsl)
-            .jdbc(jdbc)
-            .json(objectMapper)
-            .build()
-            .of(
-                () -> {
-                  var page =
-                      service.getMoviesWithFilter(
-                          filter, rowsAfter(50, new Row<>(anchor, positionOf(anchor, sort))));
-                  assertThat(page.rows()).hasSize(50);
-                  assertThat(page.hasNextPage()).isTrue();
+        new TransactionTemplate(transactions)
+            .execute(
+                _ -> {
+                  preferAnyIndexThatServesTheOrder();
+                  return AnalyzedSelects.builder()
+                      .dsl(dsl)
+                      .jdbc(jdbc)
+                      .json(objectMapper)
+                      .build()
+                      .of(
+                          () -> {
+                            var page =
+                                service.getMoviesWithFilter(
+                                    filter,
+                                    rowsAfter(50, new Row<>(anchor, positionOf(anchor, sort))));
+                            assertThat(page.rows()).hasSize(50);
+                            assertThat(page.hasNextPage()).isTrue();
+                          });
                 });
 
     assertThat(plans).isNotEmpty();
@@ -137,10 +143,6 @@ class LibraryPaginationWorkIT extends AbstractIntegrationTest {
         """,
         ITEMS,
         anchor.getId());
-    // A pooled connection can hold a generic plan for movie's foreign-key check built while
-    // base_collectable was one page: a sequential scan. Analyzing invalidates it, so the checks
-    // below use the primary key instead of each scanning the whole table.
-    jdbc.execute("ANALYZE base_collectable");
     jdbc.update(
         """
         INSERT INTO movie
@@ -156,6 +158,15 @@ class LibraryPaginationWorkIT extends AbstractIntegrationTest {
         """,
         FIRST_RELEASE, library.getId(), anchor.getId());
     jdbc.execute("ANALYZE base_collectable, movie");
+  }
+
+  // The planner weighs an index against a sequential scan and a sort by estimated cost, which
+  // moves with table size and statistics. Ruling both out makes it use an index whenever one
+  // serves the page, so the bound tests the indexes alone. Without one, the page still sorts every
+  // item or filters out the items before the anchor, and either exceeds the bound.
+  private void preferAnyIndexThatServesTheOrder() {
+    jdbc.execute("SET LOCAL enable_seqscan = off");
+    jdbc.execute("SET LOCAL enable_sort = off");
   }
 
   private static Position positionOf(Movie anchor, OrderMediaBy sort) {
