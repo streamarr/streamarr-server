@@ -16,6 +16,7 @@ import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.pagination.SortDirection;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -25,7 +26,6 @@ import java.time.ZoneOffset;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.stream.Stream;
-import org.jooq.SortOrder;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -222,7 +222,7 @@ class SkippedMidnightZoneIT extends AbstractIntegrationTest {
     return MediaFilter.builder()
         .libraryId(library.getId())
         .sortBy(OrderMediaBy.RELEASE_DATE)
-        .sortDirection(SortOrder.ASC)
+        .sortDirection(SortDirection.ASC)
         .build();
   }
 
