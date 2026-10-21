@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
-import com.streamarr.server.exceptions.InvalidPaginationCursorException;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
@@ -14,15 +13,10 @@ import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.PaginationFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.authorization.Decision;
-import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.PaginationService;
-import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.access.AccessDeniedException;
 
 @Tag("UnitTest")
@@ -32,33 +26,16 @@ class AdministrationQueryServiceTest {
   private final FakeAuthorizationService authorization =
       new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
   private final FakeProfileRepository profiles = new FakeProfileRepository();
+  private final FakeHouseholdRepository households = new FakeHouseholdRepository();
   private final AdministrationQueryService service =
-      new AdministrationQueryService(
-          authorization,
-          new FakeHouseholdRepository(),
-          new FakeUserAccountRepository(),
-          new PaginationService(),
-          profiles,
-          new FakeAccountInvitationRepository());
-
-  @ParameterizedTest
-  @ValueSource(booleans = {false, true})
-  @DisplayName("Should reject an administrative cursor when its name is missing")
-  void shouldRejectAdministrativeCursorWhenItsNameIsMissing(boolean nestedAccounts) {
-    authorization.allowAll();
-    var options =
-        PaginationFixture.buildForwardOptions(10, MediaFilter.builder().build()).toBuilder()
-            .cursorId(UUID.randomUUID())
-            .build();
-    Runnable query =
-        nestedAccounts
-            ? () -> service.accountPagesOf(Set.of(UUID.randomUUID()), options)
-            : () -> service.households(authorization.currentIdentity(), options);
-
-    assertThatThrownBy(query::run)
-        .isInstanceOf(InvalidPaginationCursorException.class)
-        .hasMessage("Cursor sort value is required.");
-  }
+      AdministrationQueryService.builder()
+          .authorizationService(authorization)
+          .householdRepository(households)
+          .userAccountRepository(new FakeUserAccountRepository())
+          .profileRepository(profiles)
+          .accountInvitationsList(new AccountInvitationsList(new FakeAccountInvitationRepository()))
+          .householdsList(new HouseholdsList(households))
+          .build();
 
   @Test
   @DisplayName("Should fail closed when Household administration visibility cannot be decided")
@@ -107,9 +84,9 @@ class AdministrationQueryServiceTest {
   void shouldForbidInvitationCatalogueWhenCallerIsDenied() {
     authorization.denyAll();
     var identity = authorization.currentIdentity();
-    var options = PaginationFixture.buildForwardOptions(10, MediaFilter.builder().build());
+    var request = PaginationFixture.firstRows(10);
 
-    assertThatThrownBy(() -> service.accountInvitations(identity, options))
+    assertThatThrownBy(() -> service.accountInvitations(identity, request))
         .isInstanceOf(AccessDeniedException.class);
   }
 }

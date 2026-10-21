@@ -7,14 +7,16 @@ import com.streamarr.server.domain.auth.ProfileManagerEligibility;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
-import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.services.pagination.Position;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
+import com.streamarr.server.services.pagination.SortValue;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -22,7 +24,6 @@ import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 
@@ -77,51 +78,28 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
                     account.getPersonalProfileId()));
   }
 
-  private List<UserAccount> findAdministrationPage(
-      UUID householdId, MediaPaginationOptions options) {
-    var comparator =
-        Comparator.comparing(UserAccount::getDisplayName, String.CASE_INSENSITIVE_ORDER)
-            .thenComparing(UserAccount::getId);
-    var reverse =
-        options.getPaginationOptions().getPaginationDirection() == PaginationDirection.REVERSE;
-    var cursorId = options.getCursorId();
-    var cursorName =
-        options.getMediaFilter().getPreviousSortFieldValue() == null
-            ? null
-            : options.getMediaFilter().getPreviousSortFieldValue().toString();
-    var extraRows = cursorId.isPresent() ? 2 : 1;
-    var limit = options.getPaginationOptions().getLimit() + extraRows;
-    var cursor =
-        cursorId
-            .flatMap(this::findById)
-            .filter(account -> householdId.equals(account.getHouseholdId()));
-    var afterCursor =
-        database.values().stream()
-            .filter(account -> householdId.equals(account.getHouseholdId()))
-            .filter(account -> cursorId.map(id -> !id.equals(account.getId())).orElse(true))
-            .filter(
-                account ->
-                    cursorName == null
-                        || compare(account, cursorName, cursorId.orElseThrow()) * (reverse ? -1 : 1)
-                            > 0)
-            .sorted(reverse ? comparator.reversed() : comparator)
-            .toList();
-    var page = Stream.concat(cursor.stream(), afterCursor.stream()).limit(limit).toList();
-    return reverse ? page.reversed() : page;
-  }
-
   @Override
-  public Map<UUID, List<UserAccount>> findAdministrationPages(
-      Set<UUID> householdIds, MediaPaginationOptions options) {
-    var pages = new LinkedHashMap<UUID, List<UserAccount>>();
-    householdIds.forEach(
-        householdId -> pages.put(householdId, findAdministrationPage(householdId, options)));
-    return pages;
+  public Map<UUID, List<Row<UserAccount>>> rowsBeyond(Map<UUID, Seek> seeksByHousehold) {
+    var rows = new LinkedHashMap<UUID, List<Row<UserAccount>>>();
+    seeksByHousehold.forEach(
+        (householdId, seek) ->
+            rows.put(
+                householdId,
+                InMemoryKeyset.rowsBeyond(
+                    database.values().stream()
+                        .filter(account -> householdId.equals(account.getHouseholdId()))
+                        .map(FakeUserAccountRepository::rowOf)
+                        .toList(),
+                    seek)));
+    return rows;
   }
 
-  private int compare(UserAccount account, String cursorName, UUID cursorId) {
-    var nameComparison = account.getDisplayName().compareToIgnoreCase(cursorName);
-    return nameComparison != 0 ? nameComparison : account.getId().compareTo(cursorId);
+  private static Row<UserAccount> rowOf(UserAccount account) {
+    return new Row<>(
+        account,
+        new Position(
+            new SortValue.OfText(account.getDisplayName().toLowerCase(Locale.ROOT)),
+            account.getId()));
   }
 
   @Override

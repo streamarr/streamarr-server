@@ -14,6 +14,7 @@ import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.PageRequest;
+import com.streamarr.server.services.pagination.Position;
 import com.streamarr.server.services.pagination.SortDirection;
 import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
@@ -21,6 +22,7 @@ import com.streamarr.server.support.PagedListContract;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -93,6 +95,16 @@ class ContinueWatchingPagedListIT
   @Override
   protected SortDirection tieDirection() {
     return SortDirection.DESC;
+  }
+
+  @Override
+  protected Optional<Position> positionBeforeArrangedItems(AuthTestSupport.TestIdentity identity) {
+    return Optional.empty();
+  }
+
+  @Override
+  protected Optional<Position> positionAfterArrangedItems(AuthTestSupport.TestIdentity identity) {
+    return Optional.empty();
   }
 
   private static Movie movieWithFile(Library library) {

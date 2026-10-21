@@ -7,6 +7,7 @@ import com.streamarr.server.exceptions.InvalidPaginationCursorException;
 import com.streamarr.server.fakes.FakePagedList;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -128,6 +129,32 @@ class PagerTest {
     var page = Pager.page(list, SCOPE, reverse(anchor, 2));
 
     assertPage(page, true, false, "item-3", "item-4");
+  }
+
+  @Test
+  @DisplayName("Should read one row past the limit when the page starts the list")
+  void shouldReadOneRowPastTheLimitWhenThePageStartsTheList() {
+    Pager.page(list, "scope", forward(Optional.empty(), 2));
+
+    assertThat(list.rowsRead()).isEqualTo(3);
+  }
+
+  @Test
+  @DisplayName("Should page each scope from its own position when scopes are paged together")
+  void shouldPageEachScopeFromItsOwnPositionWhenScopesArePagedTogether() {
+    var removedAnchor = position(4);
+    list.remove(rows.get(3));
+    var requests = new LinkedHashMap<String, PageRequest>();
+    requests.put("first", forward(Optional.empty(), 2));
+    requests.put("continued", forward(position(2), 2));
+    requests.put("removed", reverse(removedAnchor, 2));
+
+    var pages = Pager.pages(list, requests);
+
+    assertThat(pages).containsOnlyKeys("first", "continued", "removed");
+    assertPage(pages.get("first"), false, true, "item-1", "item-2");
+    assertPage(pages.get("continued"), true, false, "item-3", "item-5");
+    assertPage(pages.get("removed"), true, true, "item-2", "item-3");
   }
 
   @Test

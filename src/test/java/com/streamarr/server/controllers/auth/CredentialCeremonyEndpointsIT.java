@@ -37,6 +37,7 @@ import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
@@ -50,6 +51,10 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
+import com.streamarr.server.services.pagination.ListIdentity;
+import com.streamarr.server.services.pagination.Position;
+import com.streamarr.server.services.pagination.ServerScope;
+import com.streamarr.server.services.pagination.SortValue;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import jakarta.persistence.EntityManagerFactory;
@@ -61,6 +66,7 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 import javax.sql.DataSource;
 import lombok.Builder;
 import org.hibernate.SessionFactory;
@@ -71,6 +77,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Isolated;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -110,6 +119,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   @Autowired private WatchHistoryRepository watchHistoryRepository;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
+  @Autowired private PositionCursorCodec positionCursors;
   @Autowired private DataSource dataSource;
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private EntityManagerFactory entityManagerFactory;
@@ -342,6 +352,33 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.accountInvitations.edges[0].node.recipientEmail")
                 .value("newest@example.com"));
+  }
+
+  @ParameterizedTest
+  @MethodSource("cursorsOutsideTheInvitationList")
+  @DisplayName("Should reject an invitation cursor when it cannot continue the invitation list")
+  void shouldRejectAnInvitationCursorWhenItCannotContinueTheInvitationList(
+      ListIdentity list, SortValue value) throws Exception {
+    var cursor = positionCursors.encode(list, new Position(value, UUID.randomUUID())).getValue();
+
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            """
+            query { accountInvitations(first: 1, after: "%s") { edges { node { id } } } }
+            """
+                .formatted(cursor))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
+  }
+
+  static Stream<Arguments> cursorsOutsideTheInvitationList() {
+    var invitations = new ListIdentity("account-invitations", ServerScope.SERVER);
+    return Stream.of(
+        Arguments.of(invitations, new SortValue.Absent()),
+        Arguments.of(invitations, new SortValue.OfText("2026-08-26T16:00:00Z")),
+        Arguments.of(
+            new ListIdentity("households", ServerScope.SERVER),
+            new SortValue.OfInstant(Instant.parse("2026-08-26T16:00:00Z"))));
   }
 
   @Test

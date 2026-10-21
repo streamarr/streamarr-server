@@ -1,6 +1,7 @@
 package com.streamarr.server.support;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.services.pagination.ListPage;
@@ -58,6 +59,16 @@ public abstract class PagedListContract<T, S> extends AbstractIntegrationTest {
   /** The direction the list orders item IDs in when sort values tie. */
   protected abstract SortDirection tieDirection();
 
+  /**
+   * A position that sorts before every arranged item and after every other item of the list. A list
+   * whose scope holds only the arranged items, such as one Profile's list, answers empty and pages
+   * from its start; a server-wide list names a position so other rows cannot interleave.
+   */
+  protected abstract Optional<Position> positionBeforeArrangedItems(S scope);
+
+  /** A position that sorts after every arranged item; see {@link #positionBeforeArrangedItems}. */
+  protected abstract Optional<Position> positionAfterArrangedItems(S scope);
+
   @BeforeEach
   void createContractScope() {
     scope = createScope();
@@ -72,45 +83,58 @@ public abstract class PagedListContract<T, S> extends AbstractIntegrationTest {
   @DisplayName("Should visit every item once in list order when paging forward")
   void shouldVisitEveryItemOnceInListOrderWhenPagingForward() {
     var expected = arrange();
+    var start = positionBeforeArrangedItems(scope);
     var visited = new ArrayList<UUID>();
-    var page = page(scope, request(Optional.empty(), PaginationDirection.FORWARD));
-    assertThat(page.hasPreviousPage()).as("first page hasPreviousPage").isFalse();
-    while (true) {
-      visited.addAll(ids(page));
-      if (!page.hasNextPage()) {
-        break;
-      }
+    var page = page(scope, request(start, PaginationDirection.FORWARD));
+    if (start.isEmpty()) {
+      assertThat(page.hasPreviousPage()).as("first page hasPreviousPage").isFalse();
+    }
 
+    visited.addAll(ids(page));
+    while (visited.size() < expected.size()) {
+      assertThat(page.hasNextPage()).as("a page before the last arranged item").isTrue();
       assertThat(page.rows()).as("a page that has a next page").isNotEmpty();
       page = page(scope, request(lastPosition(page), PaginationDirection.FORWARD));
       assertThat(page.hasPreviousPage()).as("continued page hasPreviousPage").isTrue();
+      visited.addAll(ids(page));
     }
 
-    assertThat(visited).isEqualTo(expected);
+    assertThat(visited.subList(0, expected.size())).isEqualTo(expected);
+    if (positionAfterArrangedItems(scope).isEmpty()) {
+      assertThat(visited).hasSameSizeAs(expected);
+      assertThat(page.hasNextPage()).as("last page hasNextPage").isFalse();
+    }
   }
 
   @Test
   @DisplayName("Should visit every item once in list order when paging backward")
   void shouldVisitEveryItemOnceInListOrderWhenPagingBackward() {
     var expected = arrange();
+    var start = positionAfterArrangedItems(scope);
     var visited = new ArrayList<UUID>();
-    var page = page(scope, request(Optional.empty(), PaginationDirection.REVERSE));
-    assertThat(page.hasNextPage()).as("last page hasNextPage").isFalse();
-    while (true) {
-      visited.addAll(0, ids(page));
-      if (!page.hasPreviousPage()) {
-        break;
-      }
+    var page = page(scope, request(start, PaginationDirection.REVERSE));
+    if (start.isEmpty()) {
+      assertThat(page.hasNextPage()).as("last page hasNextPage").isFalse();
+    }
 
+    visited.addAll(0, ids(page));
+    while (visited.size() < expected.size()) {
+      assertThat(page.hasPreviousPage()).as("a page after the first arranged item").isTrue();
       assertThat(page.rows()).as("a page that has a previous page").isNotEmpty();
       page =
           page(
               scope,
               request(Optional.of(page.rows().getFirst().position()), PaginationDirection.REVERSE));
       assertThat(page.hasNextPage()).as("continued page hasNextPage").isTrue();
+      visited.addAll(0, ids(page));
     }
 
-    assertThat(visited).isEqualTo(expected);
+    assertThat(visited.subList(visited.size() - expected.size(), visited.size()))
+        .isEqualTo(expected);
+    if (positionBeforeArrangedItems(scope).isEmpty()) {
+      assertThat(visited).hasSameSizeAs(expected);
+      assertThat(page.hasPreviousPage()).as("first page hasPreviousPage").isFalse();
+    }
   }
 
   @Test
@@ -121,7 +145,7 @@ public abstract class PagedListContract<T, S> extends AbstractIntegrationTest {
         page(
             scope,
             PageRequest.builder()
-                .position(Optional.empty())
+                .position(positionBeforeArrangedItems(scope))
                 .direction(PaginationDirection.FORWARD)
                 .limit(3)
                 .build());
@@ -138,8 +162,8 @@ public abstract class PagedListContract<T, S> extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should report no previous page when the only item before a position left the list")
   void shouldReportNoPreviousPageWhenTheOnlyItemBeforeAPositionLeftTheList() {
+    assumeTrue(holdsOnlyArrangedItems(), "the list holds rows other than the arranged items");
     var expected = arrange();
-    var first = page(scope, request(Optional.empty(), PaginationDirection.FORWARD));
     var firstOnly =
         page(
             scope,
@@ -152,7 +176,7 @@ public abstract class PagedListContract<T, S> extends AbstractIntegrationTest {
 
     var next = page(scope, request(lastPosition(firstOnly), PaginationDirection.FORWARD));
 
-    assertThat(ids(first)).startsWith(expected.getFirst());
+    assertThat(ids(firstOnly)).containsExactly(expected.getFirst());
     assertThat(ids(next)).isEqualTo(expected.subList(1, 3));
     assertThat(next.hasPreviousPage()).isFalse();
   }
@@ -160,11 +184,17 @@ public abstract class PagedListContract<T, S> extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should return an empty page without neighbours when the list is empty")
   void shouldReturnAnEmptyPageWithoutNeighboursWhenTheListIsEmpty() {
+    assumeTrue(holdsOnlyArrangedItems(), "the list holds rows other than the arranged items");
     var page = page(scope, request(Optional.empty(), PaginationDirection.FORWARD));
 
     assertThat(page.rows()).isEmpty();
     assertThat(page.hasNextPage()).isFalse();
     assertThat(page.hasPreviousPage()).isFalse();
+  }
+
+  private boolean holdsOnlyArrangedItems() {
+    return positionBeforeArrangedItems(scope).isEmpty()
+        && positionAfterArrangedItems(scope).isEmpty();
   }
 
   private List<UUID> arrange() {

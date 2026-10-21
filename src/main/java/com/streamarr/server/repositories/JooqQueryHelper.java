@@ -17,10 +17,14 @@ import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
 import com.streamarr.server.domain.AlphabetLetter;
+import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.services.pagination.ItemSortValue;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.pagination.Position;
+import com.streamarr.server.services.pagination.Row;
 import com.streamarr.server.services.pagination.SortDirection;
+import com.streamarr.server.services.pagination.SortValue;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -52,32 +56,63 @@ public class JooqQueryHelper {
 
   @SuppressWarnings("unchecked")
   public <E> List<E> nativeQuery(EntityManager em, Query query, Class<E> type) {
-    var result = em.createNativeQuery(query.getSQL(), type).unwrap(NativeQuery.class);
-    var types =
-        em.getEntityManagerFactory().unwrap(SessionFactoryImplementor.class).getTypeConfiguration();
+    NativeQuery<E> result = em.createNativeQuery(query.getSQL(), type).unwrap(NativeQuery.class);
+    bindParameters(em, result, query);
+    return result.getResultList();
+  }
 
+  /**
+   * Reads entities and the keyset sort value {@code query} selects beside their columns as {@link
+   * Keyset#selectedSortValue()}, in query order.
+   */
+  @SuppressWarnings("unchecked")
+  public <E extends BaseAuditableEntity<?>> List<Row<E>> nativeRows(
+      EntityManager em, Query query, Class<E> type, Keyset<?> keyset) {
+    NativeQuery<Object[]> result = em.createNativeQuery(query.getSQL()).unwrap(NativeQuery.class);
+    result.addEntity(type);
+    result.addScalar(
+        Keyset.SELECTED_SORT_VALUE, directJdbcType(keyset.sortValue().getType(), typesOf(em)));
+    bindParameters(em, result, query);
+    return result.getResultList().stream()
+        .map(
+            columns -> {
+              var entity = type.cast(columns[0]);
+              return new Row<>(entity, new Position(SortValue.of(columns[1]), entity.getId()));
+            })
+        .toList();
+  }
+
+  private void bindParameters(EntityManager em, NativeQuery<?> result, Query query) {
+    var types = typesOf(em);
     List<Object> values = query.getBindValues();
     for (int i = 0; i < values.size(); i++) {
       var value = values.get(i);
       if (value instanceof Temporal temporal) {
-        result.setParameter(i + 1, temporal, directBindingType(temporal, types));
+        result.setParameter(i + 1, temporal, directJdbcType(classOf(temporal), types));
         continue;
       }
 
       result.setParameter(i + 1, value);
     }
-
-    return result.getResultList();
   }
 
-  // Hibernate types an untyped parameter by the basic type registered for its Java class, which
-  // binds java.time values through java.sql.Date and java.sql.Timestamp regardless of
-  // hibernate.type.java_time_use_direct_jdbc. A java.time value binds with the JDBC type an entity
-  // attribute of the same class uses.
-  private <T extends Temporal> BasicType<T> directBindingType(T value, TypeConfiguration types) {
-    @SuppressWarnings("unchecked")
-    var valueClass = (Class<T>) value.getClass();
-    var javaType = types.getJavaTypeRegistry().resolveDescriptor(valueClass);
+  private TypeConfiguration typesOf(EntityManager em) {
+    return em.getEntityManagerFactory()
+        .unwrap(SessionFactoryImplementor.class)
+        .getTypeConfiguration();
+  }
+
+  @SuppressWarnings("unchecked")
+  private <T extends Temporal> Class<T> classOf(T value) {
+    return (Class<T>) value.getClass();
+  }
+
+  // Hibernate types an untyped parameter or scalar by the basic type registered for its Java
+  // class, which binds and reads java.time values through java.sql.Date and java.sql.Timestamp
+  // regardless of hibernate.type.java_time_use_direct_jdbc. A value of a Java class binds and reads
+  // with the JDBC type an entity attribute of the same class uses.
+  private <T> BasicType<T> directJdbcType(Class<T> javaClass, TypeConfiguration types) {
+    var javaType = types.getJavaTypeRegistry().resolveDescriptor(javaClass);
     var jdbcType = javaType.getRecommendedJdbcType(types.getCurrentBaseSqlTypeIndicators());
     return types.getBasicTypeRegistry().resolve(javaType, jdbcType);
   }

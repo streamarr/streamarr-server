@@ -1,29 +1,23 @@
 package com.streamarr.server.repositories.auth;
 
 import static com.streamarr.server.jooq.generated.tables.AccountInvitation.ACCOUNT_INVITATION;
-import static org.jooq.impl.DSL.noCondition;
-import static org.jooq.impl.DSL.val;
-import static org.jooq.impl.DSL.when;
 
 import com.streamarr.server.domain.auth.AccountInvitation;
-import com.streamarr.server.exceptions.InvalidPaginationCursorException;
 import com.streamarr.server.jooq.generated.enums.AccountInvitationStatus;
 import com.streamarr.server.repositories.JooqQueryHelper;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
-import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.repositories.Keyset;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.time.format.DateTimeParseException;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
-import org.jooq.SortOrder;
 
 @RequiredArgsConstructor
 public class AccountInvitationRepositoryCustomImpl implements AccountInvitationRepositoryCustom {
@@ -33,74 +27,18 @@ public class AccountInvitationRepositoryCustomImpl implements AccountInvitationR
   private final InvitationIssuanceLock invitationIssuanceLock;
 
   @Override
-  public List<AccountInvitation> findForAdministration(MediaPaginationOptions options) {
-    var reverse =
-        options.getPaginationOptions().getPaginationDirection() == PaginationDirection.REVERSE;
-    var createdOnOrder = reverse ? SortOrder.ASC : SortOrder.DESC;
-    var idOrder = reverse ? SortOrder.DESC : SortOrder.ASC;
-    var cursorCondition = administrationCursorCondition(options, reverse);
-    var cursorFirst =
-        options
-            .getCursorId()
-            .map(cursorId -> when(ACCOUNT_INVITATION.ID.eq(cursorId), 0).otherwise(1))
-            .orElse(val(0));
-    var extraRows = options.getCursorId().isPresent() ? 2 : 1;
+  public List<Row<AccountInvitation>> rowsBeyond(Seek seek) {
+    var keyset =
+        Keyset.<OffsetDateTime>builder()
+            .sortValue(ACCOUNT_INVITATION.CREATED_ON)
+            .itemId(ACCOUNT_INVITATION.ID)
+            .build();
     var query =
-        dsl.select(ACCOUNT_INVITATION.asterisk())
-            .from(ACCOUNT_INVITATION)
-            .where(cursorCondition)
-            .orderBy(
-                cursorFirst.asc(),
-                ACCOUNT_INVITATION.CREATED_ON.sort(createdOnOrder),
-                ACCOUNT_INVITATION.ID.sort(idOrder))
-            .limit(options.getPaginationOptions().getLimit() + extraRows);
-    var invitations = JooqQueryHelper.nativeQuery(entityManager, query, AccountInvitation.class);
-    if (reverse) {
-      Collections.reverse(invitations);
-    }
-
-    return invitations;
-  }
-
-  private Condition administrationCursorCondition(MediaPaginationOptions options, boolean reverse) {
-    if (options.getCursorId().isEmpty()) {
-      return noCondition();
-    }
-
-    var cursorId = options.getCursorId().orElseThrow();
-    var cursorCreatedOn = cursorCreatedOn(options);
-    var afterCursor =
-        reverse
-            ? ACCOUNT_INVITATION
-                .CREATED_ON
-                .gt(cursorCreatedOn)
-                .or(
-                    ACCOUNT_INVITATION
-                        .CREATED_ON
-                        .eq(cursorCreatedOn)
-                        .and(ACCOUNT_INVITATION.ID.lt(cursorId)))
-            : ACCOUNT_INVITATION
-                .CREATED_ON
-                .lt(cursorCreatedOn)
-                .or(
-                    ACCOUNT_INVITATION
-                        .CREATED_ON
-                        .eq(cursorCreatedOn)
-                        .and(ACCOUNT_INVITATION.ID.gt(cursorId)));
-    return ACCOUNT_INVITATION.ID.eq(cursorId).or(afterCursor);
-  }
-
-  private OffsetDateTime cursorCreatedOn(MediaPaginationOptions options) {
-    var sortValue = options.getMediaFilter().getPreviousSortFieldValue();
-    if (sortValue == null) {
-      throw new InvalidPaginationCursorException("Cursor sort value is required.");
-    }
-
-    try {
-      return Instant.parse(sortValue.toString()).atOffset(ZoneOffset.UTC);
-    } catch (DateTimeParseException _) {
-      throw new InvalidPaginationCursorException("Cursor sort value is invalid.");
-    }
+        keyset.rowsBeyond(
+            dsl.select(ACCOUNT_INVITATION.asterisk(), keyset.selectedSortValue())
+                .from(ACCOUNT_INVITATION),
+            seek);
+    return JooqQueryHelper.nativeRows(entityManager, query, AccountInvitation.class, keyset);
   }
 
   @Override
