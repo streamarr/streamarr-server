@@ -11,6 +11,7 @@ import com.streamarr.server.services.pagination.Position;
 import com.streamarr.server.services.pagination.Row;
 import com.streamarr.server.services.pagination.SortDirection;
 import com.streamarr.server.services.pagination.SortValue;
+import graphql.relay.Edge;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -43,9 +44,7 @@ class RelayConnectionAdapterTest {
       var connection =
           adapter.toConnection(new ListPage<>(List.of(row), false, false), LIST, SourceItem::name);
 
-      assertThat(connection.getEdges())
-          .extracting(edge -> edge.getNode())
-          .containsExactly("Andrew");
+      assertThat(connection.getEdges()).extracting(Edge::getNode).containsExactly("Andrew");
       var cursor = connection.getEdges().getFirst().getCursor().getValue();
       assertThat(positionCursors.decode(LIST, cursor)).isEqualTo(row.position());
     }
@@ -59,7 +58,7 @@ class RelayConnectionAdapterTest {
           adapter.toConnection(new ListPage<>(rows, true, false), LIST, SourceItem::name);
 
       assertThat(connection.getEdges())
-          .extracting(edge -> edge.getNode())
+          .extracting(Edge::getNode)
           .containsExactly("Alpha", "Bravo", "Charlie");
       var pageInfo = connection.getPageInfo();
       assertThat(pageInfo.getStartCursor()).isEqualTo(connection.getEdges().getFirst().getCursor());

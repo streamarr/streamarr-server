@@ -14,7 +14,9 @@ public record ListOrder(
     @NonNull AbsentValuePlacement absentValues) {
 
   public static class ListOrderBuilder {
-    private AbsentValuePlacement absentValues = AbsentValuePlacement.NOT_ALLOWED;
+    ListOrderBuilder() {
+      absentValues = AbsentValuePlacement.NOT_ALLOWED;
+    }
   }
 
   /** Whether a row of this list can sort by {@code value}. */
