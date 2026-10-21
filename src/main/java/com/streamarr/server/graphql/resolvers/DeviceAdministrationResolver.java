@@ -4,11 +4,9 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
-import com.streamarr.server.domain.auth.DeviceRegistration;
-import com.streamarr.server.domain.auth.EsnBlock;
 import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.cursor.ConnectionArguments;
-import com.streamarr.server.graphql.cursor.CursorUtil;
+import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.DeviceRegistrationDetails;
 import com.streamarr.server.graphql.dto.EsnBlockDetails;
@@ -26,8 +24,10 @@ import com.streamarr.server.graphql.mutation.devices.UnblockEsnPayload;
 import com.streamarr.server.graphql.mutation.devices.UnblockEsnServerWidePayload;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.DeviceAdministrationService;
-import com.streamarr.server.services.pagination.MediaPage;
+import com.streamarr.server.services.pagination.ListIdentity;
+import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.services.pagination.ServerScope;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
 import java.util.UUID;
@@ -38,44 +38,43 @@ import lombok.RequiredArgsConstructor;
 public class DeviceAdministrationResolver {
 
   private static final int DEFAULT_PAGE_SIZE = 100;
+  private static final ListIdentity SERVER_ESN_BLOCKS =
+      new ListIdentity("server-esn-blocks", ServerScope.SERVER);
 
   private final AuthorizationService authorizationService;
   private final DeviceAdministrationService deviceAdministrationService;
   private final PaginationService paginationService;
-  private final CursorUtil cursorUtil;
+  private final PositionCursorCodec positionCursors;
   private final RelayConnectionAdapter relayConnectionAdapter;
 
   @DgsQuery
   public Connection<DeviceRegistrationDetails> householdDevices(
       @InputArgument String householdId, DataFetchingEnvironment dfe) {
-    var options = ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
+    var household = Ids.parseUuid(householdId);
+    var list = new ListIdentity("household-devices", household);
     var page =
         deviceAdministrationService.householdDevices(
-            authorizationService.currentIdentity(),
-            Ids.parseUuid(householdId),
-            cursorUtil.decodeKeysetCursor(options));
-    return toDeviceConnection(page);
+            authorizationService.currentIdentity(), household, pageRequest(list, dfe));
+    return relayConnectionAdapter.toConnection(page, list, DeviceRegistrationDetails::from);
   }
 
   @DgsQuery
   public Connection<EsnBlockDetails> esnBlocks(
       @InputArgument String householdId, DataFetchingEnvironment dfe) {
-    var options = ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
+    var household = Ids.parseUuid(householdId);
+    var list = new ListIdentity("household-esn-blocks", household);
     var page =
         deviceAdministrationService.esnBlocks(
-            authorizationService.currentIdentity(),
-            Ids.parseUuid(householdId),
-            cursorUtil.decodeKeysetCursor(options));
-    return toEsnBlockConnection(page);
+            authorizationService.currentIdentity(), household, pageRequest(list, dfe));
+    return relayConnectionAdapter.toConnection(page, list, EsnBlockDetails::from);
   }
 
   @DgsQuery
   public Connection<EsnBlockDetails> serverEsnBlocks(DataFetchingEnvironment dfe) {
-    var options = ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
     var page =
         deviceAdministrationService.serverEsnBlocks(
-            authorizationService.currentIdentity(), cursorUtil.decodeKeysetCursor(options));
-    return toEsnBlockConnection(page);
+            authorizationService.currentIdentity(), pageRequest(SERVER_ESN_BLOCKS, dfe));
+    return relayConnectionAdapter.toConnection(page, SERVER_ESN_BLOCKS, EsnBlockDetails::from);
   }
 
   @DgsMutation
@@ -136,18 +135,8 @@ public class DeviceAdministrationResolver {
         UnblockEsnServerWidePayload::new);
   }
 
-  private Connection<DeviceRegistrationDetails> toDeviceConnection(
-      MediaPage<DeviceRegistration> page) {
-    return relayConnectionAdapter.toConnection(
-        page,
-        item -> DeviceRegistrationDetails.from(item.item()),
-        item -> cursorUtil.encodeKeysetCursor(item.item().getId()));
-  }
-
-  private Connection<EsnBlockDetails> toEsnBlockConnection(MediaPage<EsnBlock> page) {
-    return relayConnectionAdapter.toConnection(
-        page,
-        item -> EsnBlockDetails.from(item.item()),
-        item -> cursorUtil.encodeKeysetCursor(item.item().getId()));
+  private PageRequest pageRequest(ListIdentity list, DataFetchingEnvironment dfe) {
+    return positionCursors.pageRequest(
+        list, ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE));
   }
 }

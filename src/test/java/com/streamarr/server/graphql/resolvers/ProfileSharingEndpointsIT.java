@@ -19,12 +19,16 @@ import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.pagination.ListIdentity;
+import com.streamarr.server.services.pagination.Position;
+import com.streamarr.server.services.pagination.SortValue;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import java.time.Duration;
@@ -68,6 +72,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
+  @Autowired private PositionCursorCodec positionCursors;
   @Autowired private DataSource dataSource;
   @Autowired private JdbcTemplate jdbcTemplate;
 
@@ -827,6 +832,41 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should reject a share cursor when it continues another Profile's or Household's list")
+  void shouldRejectAShareCursorWhenItContinuesAnotherProfilesOrHouseholdsList() throws Exception {
+    var otherProfile =
+        positionCursors
+            .encode(
+                new ListIdentity("profile-shares", UUID.randomUUID()),
+                new Position(new SortValue.OfInstant(Instant.now()), UUID.randomUUID()))
+            .getValue();
+    var profileList =
+        positionCursors
+            .encode(
+                new ListIdentity("profile-shares", owner.profile().getId()),
+                new Position(new SortValue.OfInstant(Instant.now()), UUID.randomUUID()))
+            .getValue();
+
+    graphql(
+            authTestSupport.accountBearer(owner),
+            """
+            query { profileShares(profileId: "%s", after: "%s") { edges { node { id } } } }
+            """
+                .formatted(owner.profile().getId(), otherProfile))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
+    graphql(
+            authTestSupport.accountBearer(host),
+            """
+            query { pendingShareOffers(householdId: "%s", after: "%s") { edges { node { id } } } }
+            """
+                .formatted(host.household().getId(), profileList))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
+  }
+
+  @Test
   @DisplayName("Should return the next share when an after cursor is supplied")
   void shouldReturnNextShareWhenAfterCursorIsSupplied() throws Exception {
     var orphan = managedOrphan();
@@ -961,11 +1001,12 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
         .get(0, int.class);
   }
 
+  // The list order: newest first, then ID descending.
   private List<UUID> orderedShareIds(UUID profileId) {
     return dsl.select(PROFILE_HOUSEHOLD_SHARE.ID)
         .from(PROFILE_HOUSEHOLD_SHARE)
         .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
-        .orderBy(PROFILE_HOUSEHOLD_SHARE.ID.asc())
+        .orderBy(PROFILE_HOUSEHOLD_SHARE.CREATED_ON.desc(), PROFILE_HOUSEHOLD_SHARE.ID.desc())
         .fetch(PROFILE_HOUSEHOLD_SHARE.ID);
   }
 

@@ -1,20 +1,19 @@
 package com.streamarr.server.repositories.auth;
 
+import static com.streamarr.server.fixtures.PaginationFixture.firstSeek;
 import static com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation.PROFILE_MANAGER_INVITATION;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
-import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.PaginationOptions;
-import com.streamarr.server.support.AuditColumnFixtures;
+import com.streamarr.server.services.pagination.ListOrder;
+import com.streamarr.server.services.pagination.SortDirection;
+import com.streamarr.server.services.pagination.SortValueKind;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.security.WithAccountContext;
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
@@ -32,93 +31,49 @@ import org.springframework.transaction.support.TransactionTemplate;
 @WithAccountContext
 class ProfileManagerInvitationRepositoryCustomImplIT extends AbstractIntegrationTest {
 
+  private static final ListOrder NEWEST_FIRST =
+      ListOrder.builder().valueKind(SortValueKind.INSTANT).direction(SortDirection.DESC).build();
+
   @Autowired private ProfileManagerInvitationRepository invitationRepository;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private DSLContext dsl;
   @Autowired private TransactionTemplate transactionTemplate;
-  @Autowired private AuditColumnFixtures auditColumns;
 
   @Test
   @Transactional(propagation = Propagation.NOT_SUPPORTED)
-  @DisplayName(
-      "Should return the newest pending Profile invitation window when lookahead is requested")
-  void shouldReturnNewestPendingProfileInvitationWindowWhenLookaheadIsRequested() {
+  @DisplayName("Should read only live pending invitations when expired and accepted ones exist")
+  void shouldReadOnlyLivePendingInvitationsWhenExpiredAndAcceptedOnesExist() {
     var inviter = authTestSupport.createAdminIdentity();
     var recipients =
         List.of(
             authTestSupport.createIdentity(),
             authTestSupport.createIdentity(),
             authTestSupport.createIdentity());
-    var expiresAt = Instant.parse("2026-08-21T13:00:00Z");
-    var invitations =
-        recipients.stream()
-            .map(recipient -> saveInvitation(inviter, recipient, expiresAt))
-            .toList();
-    var createdAt = Instant.parse("2026-08-21T12:00:00Z");
-    for (var index = 0; index < invitations.size(); index++) {
-      auditColumns.overwriteCreatedOn(
-          PROFILE_MANAGER_INVITATION,
-          PROFILE_MANAGER_INVITATION.ID.eq(invitations.get(index).getId()),
-          createdAt.plusSeconds(index));
-    }
+    var now = Instant.now();
+    var live = saveInvitation(inviter, recipients.get(0), now.plusSeconds(3600));
+    var expired = saveInvitation(inviter, recipients.get(1), now.minusSeconds(1));
+    var accepted = saveInvitation(inviter, recipients.get(2), now.plusSeconds(3600));
+    transactionTemplate.executeWithoutResult(
+        _ -> assertThat(invitationRepository.tryAcceptPending(accepted.getId(), now)).isTrue());
 
     try {
-      var found =
-          invitationRepository.findPendingByProfileId(
-              inviter.profile().getId(), createdAt, forwardOptions(2));
-
-      assertThat(found)
-          .extracting(ProfileManagerInvitation::getId)
-          .containsExactly(
-              invitations.get(2).getId(),
-              invitations.get(1).getId(),
-              invitations.getFirst().getId());
+      assertThat(
+              invitationRepository.rowsPendingForProfile(
+                  inviter.profile().getId(), now, firstSeek(NEWEST_FIRST, 10)))
+          .extracting(row -> row.item().getId())
+          .containsExactly(live.getId());
+      assertThat(
+              invitationRepository.rowsPendingForRecipient(
+                  recipients.get(1).account().getId(), now, firstSeek(NEWEST_FIRST, 10)))
+          .isEmpty();
+      assertThat(
+              invitationRepository.rowsPendingForRecipient(
+                  recipients.get(2).account().getId(), now, firstSeek(NEWEST_FIRST, 10)))
+          .isEmpty();
     } finally {
-      invitationRepository.deleteAllById(
-          invitations.stream().map(ProfileManagerInvitation::getId).toList());
+      invitationRepository.deleteAllById(List.of(live.getId(), expired.getId(), accepted.getId()));
       recipients.forEach(authTestSupport::deleteIdentity);
       authTestSupport.deleteIdentity(inviter);
-    }
-  }
-
-  @Test
-  @Transactional(propagation = Propagation.NOT_SUPPORTED)
-  @DisplayName(
-      "Should return the newest pending recipient invitation window when lookahead is requested")
-  void shouldReturnNewestPendingRecipientInvitationWindowWhenLookaheadIsRequested() {
-    var inviters =
-        List.of(
-            authTestSupport.createAdminIdentity(),
-            authTestSupport.createAdminIdentity(),
-            authTestSupport.createAdminIdentity());
-    var recipient = authTestSupport.createIdentity();
-    var expiresAt = Instant.parse("2026-08-21T13:00:00Z");
-    var invitations =
-        inviters.stream().map(inviter -> saveInvitation(inviter, recipient, expiresAt)).toList();
-    var createdAt = Instant.parse("2026-08-21T12:00:00Z");
-    for (var index = 0; index < invitations.size(); index++) {
-      auditColumns.overwriteCreatedOn(
-          PROFILE_MANAGER_INVITATION,
-          PROFILE_MANAGER_INVITATION.ID.eq(invitations.get(index).getId()),
-          createdAt.plusSeconds(index));
-    }
-
-    try {
-      var found =
-          invitationRepository.findPendingByRecipientAccountId(
-              recipient.account().getId(), createdAt, forwardOptions(2));
-
-      assertThat(found)
-          .extracting(ProfileManagerInvitation::getId)
-          .containsExactly(
-              invitations.get(2).getId(),
-              invitations.get(1).getId(),
-              invitations.getFirst().getId());
-    } finally {
-      invitationRepository.deleteAllById(
-          invitations.stream().map(ProfileManagerInvitation::getId).toList());
-      authTestSupport.deleteIdentity(recipient);
-      inviters.forEach(authTestSupport::deleteIdentity);
     }
   }
 
@@ -241,16 +196,6 @@ class ProfileManagerInvitationRepositoryCustomImplIT extends AbstractIntegration
             .expiresAt(expiresAt)
             .publicId(UUID.randomUUID().toString())
             .secretDigest(new byte[] {1})
-            .build());
-  }
-
-  private KeysetPaginationOptions forwardOptions(int limit) {
-    return new KeysetPaginationOptions(
-        null,
-        PaginationOptions.builder()
-            .paginationDirection(PaginationDirection.FORWARD)
-            .cursor(Optional.empty())
-            .limit(limit)
             .build());
   }
 

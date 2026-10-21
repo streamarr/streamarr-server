@@ -21,13 +21,11 @@ import com.streamarr.server.services.authorization.ProfileSafetyRule;
 import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
-import com.streamarr.server.services.pagination.MediaPage;
-import com.streamarr.server.services.pagination.PageItem;
-import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.services.pagination.ListPage;
+import com.streamarr.server.services.pagination.PageRequest;
+import com.streamarr.server.services.pagination.Pager;
 import java.time.Clock;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
@@ -66,7 +64,8 @@ public class ProfileSharingService {
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final MutationTransactions mutationTransactions;
   private final CredentialCodeProperties credentialCodeProperties;
-  private final PaginationService paginationService;
+  private final PendingShareOffersList pendingShareOffersList;
+  private final ProfileSharesList profileSharesList;
   private final Clock clock;
 
   public Outcome<ProfileHouseholdShare, ShareRejections.Offer> offerProfileShare(
@@ -472,32 +471,24 @@ public class ProfileSharingService {
     };
   }
 
-  /** Pending offers into one Household, for its admins; empty when the caller may not view. */
-  public MediaPage<ProfileHouseholdShare> pendingShareOffers(
-      AuthenticatedIdentity identity, UUID householdId, KeysetPaginationOptions options) {
+  /** A page of pending offers into one Household, newest first; hidden reads as empty. */
+  public ListPage<ProfileHouseholdShare> pendingShareOffers(
+      AuthenticatedIdentity identity, UUID householdId, PageRequest request) {
     if (!mayViewHousehold(identity, householdId)) {
-      return page(List.of(), options);
+      return ListPage.empty();
     }
 
-    return page(
-        shareRepository.findPendingByHouseholdId(householdId, clock.instant(), options), options);
+    return Pager.page(pendingShareOffersList, householdId, request);
   }
 
-  /** Every share of one Profile, for its managers; empty when the caller may not view. */
-  public MediaPage<ProfileHouseholdShare> profileShares(
-      AuthenticatedIdentity identity, UUID profileId, KeysetPaginationOptions options) {
+  /** A page of every share of one Profile, newest first; hidden reads as empty. */
+  public ListPage<ProfileHouseholdShare> profileShares(
+      AuthenticatedIdentity identity, UUID profileId, PageRequest request) {
     if (profileRepository.findById(profileId).isEmpty() || !mayViewProfile(identity, profileId)) {
-      return page(List.of(), options);
+      return ListPage.empty();
     }
 
-    return page(shareRepository.findByProfileId(profileId, options), options);
-  }
-
-  private MediaPage<ProfileHouseholdShare> page(
-      List<ProfileHouseholdShare> shares, KeysetPaginationOptions options) {
-    var items = shares.stream().map(share -> new PageItem<>(share, null)).toList();
-    return paginationService.buildMediaPage(
-        items, options.getPaginationOptions(), options.getCursorId());
+    return Pager.page(profileSharesList, profileId, request);
   }
 
   /** The offerer's whole preflight: nothing else about the target Household leaks. */

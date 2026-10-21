@@ -7,7 +7,7 @@ import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.cursor.ConnectionArguments;
-import com.streamarr.server.graphql.cursor.CursorUtil;
+import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.ProfileShareDetails;
 import com.streamarr.server.graphql.dto.ProfileSharePreview;
@@ -27,7 +27,8 @@ import com.streamarr.server.graphql.mutation.sharing.RejectProfileSharePayload;
 import com.streamarr.server.graphql.mutation.sharing.ShareErrors;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.ProfileSharingService;
-import com.streamarr.server.services.pagination.MediaPage;
+import com.streamarr.server.services.pagination.ListIdentity;
+import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
@@ -43,7 +44,7 @@ public class ProfileSharingResolver {
   private final AuthorizationService authorizationService;
   private final ProfileSharingService profileSharingService;
   private final PaginationService paginationService;
-  private final CursorUtil cursorUtil;
+  private final PositionCursorCodec positionCursors;
   private final RelayConnectionAdapter relayConnectionAdapter;
   private final Clock clock;
 
@@ -62,25 +63,23 @@ public class ProfileSharingResolver {
   @DgsQuery
   public Connection<ProfileShareDetails> pendingShareOffers(
       @InputArgument String householdId, DataFetchingEnvironment dfe) {
-    var options = ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
+    var household = Ids.parseUuid(householdId);
+    var list = new ListIdentity("pending-share-offers", household);
     var page =
         profileSharingService.pendingShareOffers(
-            authorizationService.currentIdentity(),
-            Ids.parseUuid(householdId),
-            cursorUtil.decodeKeysetCursor(options));
-    return toConnection(page);
+            authorizationService.currentIdentity(), household, pageRequest(list, dfe));
+    return relayConnectionAdapter.toConnection(page, list, this::details);
   }
 
   @DgsQuery
   public Connection<ProfileShareDetails> profileShares(
       @InputArgument String profileId, DataFetchingEnvironment dfe) {
-    var options = ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
+    var profile = Ids.parseUuid(profileId);
+    var list = new ListIdentity("profile-shares", profile);
     var page =
         profileSharingService.profileShares(
-            authorizationService.currentIdentity(),
-            Ids.parseUuid(profileId),
-            cursorUtil.decodeKeysetCursor(options));
-    return toConnection(page);
+            authorizationService.currentIdentity(), profile, pageRequest(list, dfe));
+    return relayConnectionAdapter.toConnection(page, list, this::details);
   }
 
   @DgsMutation
@@ -160,10 +159,8 @@ public class ProfileSharingResolver {
     return ProfileShareDetails.from(share, clock.instant());
   }
 
-  private Connection<ProfileShareDetails> toConnection(MediaPage<ProfileHouseholdShare> page) {
-    return relayConnectionAdapter.toConnection(
-        page,
-        item -> details(item.item()),
-        item -> cursorUtil.encodeKeysetCursor(item.item().getId()));
+  private PageRequest pageRequest(ListIdentity list, DataFetchingEnvironment dfe) {
+    return positionCursors.pageRequest(
+        list, ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE));
   }
 }

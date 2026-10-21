@@ -21,12 +21,16 @@ import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.jooq.generated.enums.CredentialKind;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.pagination.ListIdentity;
+import com.streamarr.server.services.pagination.Position;
+import com.streamarr.server.services.pagination.SortValue;
 import com.streamarr.server.support.AuthTestSupport;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -66,6 +70,7 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
+  @Autowired private PositionCursorCodec positionCursors;
   @Autowired private ProfileManagerInvitationRepository invitationRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private UserAccountRepository userAccountRepository;
@@ -237,6 +242,43 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.pendingManagerInvitationsForProfile.edges").isEmpty());
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject an invitation cursor when it continues another Account's or Profile's list")
+  void shouldRejectAnInvitationCursorWhenItContinuesAnotherAccountsOrProfilesList()
+      throws Exception {
+    var otherRecipient =
+        positionCursors
+            .encode(
+                new ListIdentity("received-manager-invitations", UUID.randomUUID()),
+                new Position(new SortValue.OfInstant(Instant.now()), UUID.randomUUID()))
+            .getValue();
+    var receivedList =
+        positionCursors
+            .encode(
+                new ListIdentity("received-manager-invitations", owner.profile().getId()),
+                new Position(new SortValue.OfInstant(Instant.now()), UUID.randomUUID()))
+            .getValue();
+
+    graphql(
+            authTestSupport.accountBearer(recipient),
+            """
+            query { pendingManagerInvitations(after: "%s") { edges { node { id } } } }
+            """
+                .formatted(otherRecipient))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
+    graphql(
+            authTestSupport.accountBearer(owner),
+            """
+            query { pendingManagerInvitationsForProfile(profileId: "%s", after: "%s") {
+              edges { node { id } } } }
+            """
+                .formatted(owner.profile().getId(), receivedList))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
   }
 
   @Test

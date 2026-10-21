@@ -35,10 +35,7 @@ import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInv
 import com.streamarr.server.services.identity.CredentialRejections;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.identity.SessionContextService;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
-import com.streamarr.server.services.pagination.PageItem;
-import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.PaginationOptions;
+import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.Row;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.TestFixtureWork;
@@ -47,7 +44,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -342,7 +338,7 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
             profileSharingService
                 .pendingShareOffers(
                     accountIdentity(targetAdmin), targetHouseholdId, paginationOptions())
-                .items())
+                .rows())
         .isEmpty();
   }
 
@@ -402,7 +398,7 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
     var reoffer =
         profileSharingService
             .pendingShareOffers(targetIdentity, targetHouseholdId, paginationOptions())
-            .items()
+            .rows()
             .getFirst()
             .item();
 
@@ -529,9 +525,9 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
     var shareHistory =
         profileSharingService
             .profileShares(accountIdentity(sourceAdmin), orphan.getId(), paginationOptions())
-            .items()
+            .rows()
             .stream()
-            .map(PageItem::item)
+            .map(Row::item)
             .filter(share -> share.getId().equals(expiredOffer.getId()))
             .findFirst()
             .orElseThrow();
@@ -862,14 +858,8 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
     }
   }
 
-  private static KeysetPaginationOptions paginationOptions() {
-    return new KeysetPaginationOptions(
-        null,
-        PaginationOptions.builder()
-            .paginationDirection(PaginationDirection.FORWARD)
-            .cursor(Optional.empty())
-            .limit(100)
-            .build());
+  private static PageRequest paginationOptions() {
+    return PaginationFixture.firstRows(100);
   }
 
   private static AcceptInvitationCommand acceptCommand(String code) {

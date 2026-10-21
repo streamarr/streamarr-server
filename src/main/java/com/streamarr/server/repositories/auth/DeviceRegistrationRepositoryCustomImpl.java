@@ -8,11 +8,14 @@ import static org.jooq.impl.DSL.inline;
 
 import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
-import com.streamarr.server.jooq.generated.tables.records.DeviceRegistrationRecord;
+import com.streamarr.server.repositories.JooqQueryHelper;
+import com.streamarr.server.repositories.Keyset;
 import com.streamarr.server.repositories.PostgresTransactionLocks;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
@@ -30,22 +33,22 @@ public class DeviceRegistrationRepositoryCustomImpl implements DeviceRegistratio
   private final EntityManager entityManager;
 
   @Override
-  public List<DeviceRegistration> findPageByHouseholdIdAndStatus(
-      UUID householdId, DeviceRegistrationStatus status, KeysetPaginationOptions options) {
-    var request =
-        AuditableEntityPageQuery.PageRequest.<DeviceRegistrationRecord, DeviceRegistration>builder()
-            .table(DEVICE_REGISTRATION)
-            .createdOn(DEVICE_REGISTRATION.CREATED_ON)
-            .id(DEVICE_REGISTRATION.ID)
-            .scope(
-                DEVICE_REGISTRATION
-                    .HOUSEHOLD_ID
-                    .eq(householdId)
-                    .and(DEVICE_REGISTRATION.STATUS.eq(inline(valueOf(status.name())))))
-            .options(options)
-            .entityType(DeviceRegistration.class)
+  public List<Row<DeviceRegistration>> rowsInHousehold(
+      UUID householdId, DeviceRegistrationStatus status, Seek seek) {
+    var keyset =
+        Keyset.<OffsetDateTime>builder()
+            .sortValue(DEVICE_REGISTRATION.CREATED_ON)
+            .itemId(DEVICE_REGISTRATION.ID)
             .build();
-    return new AuditableEntityPageQuery(dsl, entityManager).findPage(request);
+    var query =
+        keyset.rowsBeyond(
+            keyset.selectFrom(dsl, DEVICE_REGISTRATION),
+            DEVICE_REGISTRATION
+                .HOUSEHOLD_ID
+                .eq(householdId)
+                .and(DEVICE_REGISTRATION.STATUS.eq(inline(valueOf(status.name())))),
+            seek);
+    return JooqQueryHelper.nativeRows(entityManager, query, DeviceRegistration.class, keyset);
   }
 
   @Override

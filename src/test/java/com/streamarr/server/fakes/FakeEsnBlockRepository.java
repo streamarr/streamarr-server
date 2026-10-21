@@ -2,7 +2,8 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.EsnBlock;
 import com.streamarr.server.repositories.auth.EsnBlockRepository;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Objects;
@@ -15,16 +16,18 @@ public class FakeEsnBlockRepository extends FakeJpaRepository<EsnBlock>
     implements EsnBlockRepository {
 
   @Override
-  public List<EsnBlock> findPageByHouseholdId(
-      UUID householdId, KeysetPaginationOptions paginationOptions) {
-    return FakeAuditableEntityPage.find(
-        database.values(), block -> householdId.equals(block.getHouseholdId()), paginationOptions);
+  public List<Row<EsnBlock>> rowsInHousehold(UUID householdId, Seek seek) {
+    return InMemoryKeyset.byCreationTime(
+        database.values().stream()
+            .filter(block -> householdId.equals(block.getHouseholdId()))
+            .toList(),
+        seek);
   }
 
   @Override
-  public List<EsnBlock> findPageByHouseholdIdIsNull(KeysetPaginationOptions paginationOptions) {
-    return FakeAuditableEntityPage.find(
-        database.values(), block -> block.getHouseholdId() == null, paginationOptions);
+  public List<Row<EsnBlock>> rowsServerWide(Seek seek) {
+    return InMemoryKeyset.byCreationTime(
+        database.values().stream().filter(block -> block.getHouseholdId() == null).toList(), seek);
   }
 
   @Override

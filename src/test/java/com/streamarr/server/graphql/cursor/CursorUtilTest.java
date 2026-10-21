@@ -7,7 +7,6 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.exceptions.InvalidPaginationCursorException;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.MediaPaginationOptionsResolver;
@@ -43,24 +42,6 @@ class CursorUtilTest {
   @Nested
   @DisplayName("Encode/Decode Round-Trip")
   class EncodeDecodeRoundTrip {
-
-    @Test
-    @DisplayName("Should preserve a keyset cursor id when round-tripping encode and decode")
-    void shouldPreserveKeysetCursorIdWhenRoundTrippingEncodeAndDecode() {
-      var cursorId = UUID.randomUUID();
-      var encoded = cursorUtil.encodeKeysetCursor(cursorId);
-      var paginationOptions =
-          PaginationOptions.builder()
-              .cursor(Optional.of(encoded.getValue()))
-              .paginationDirection(PaginationDirection.FORWARD)
-              .limit(10)
-              .build();
-
-      KeysetPaginationOptions decoded = cursorUtil.decodeKeysetCursor(paginationOptions);
-
-      assertThat(decoded.getCursorId()).contains(cursorId);
-      assertThat(decoded.getPaginationOptions()).isEqualTo(paginationOptions);
-    }
 
     @Test
     @DisplayName("Should preserve an opaque cursor value when round-tripping encode and decode")
@@ -196,20 +177,6 @@ class CursorUtilTest {
   @Nested
   @DisplayName("Decode Errors")
   class DecodeErrors {
-
-    @Test
-    @DisplayName("Should throw InvalidCursorException when a keyset cursor is malformed")
-    void shouldThrowInvalidCursorExceptionWhenKeysetCursorIsMalformed() {
-      var paginationOptions =
-          PaginationOptions.builder()
-              .cursor(Optional.of("not-base64!!!"))
-              .paginationDirection(PaginationDirection.FORWARD)
-              .limit(10)
-              .build();
-
-      assertThatThrownBy(() -> cursorUtil.decodeKeysetCursor(paginationOptions))
-          .isInstanceOf(InvalidCursorException.class);
-    }
 
     @Test
     @DisplayName("Should throw InvalidCursorException when cursor string is malformed Base64")
@@ -367,11 +334,6 @@ class CursorUtilTest {
       return MalformedCursors.of(genuine);
     }
 
-    static Stream<String> malformedKeysetCursors() {
-      return MalformedCursors.of(
-          new CursorUtil(new ObjectMapper()).encodeKeysetCursor(UUID.randomUUID()).getValue());
-    }
-
     @ParameterizedTest
     @MethodSource("malformedMediaCursors")
     @DisplayName("Should continue or reject a media cursor as invalid when a client alters it")
@@ -388,23 +350,6 @@ class CursorUtilTest {
                       REQUEST,
                       cursorUtil::decodeMediaCursor,
                       new CursorValidator()::validateCursorAgainstFilter));
-
-      assertDecodedOrInvalid(thrown);
-    }
-
-    @ParameterizedTest
-    @MethodSource("malformedKeysetCursors")
-    @DisplayName("Should decode or reject a keyset cursor as invalid when a client alters it")
-    void shouldDecodeOrRejectAKeysetCursorAsInvalidWhenAClientAltersIt(String cursor) {
-      var thrown =
-          catchThrowable(
-              () ->
-                  cursorUtil.decodeKeysetCursor(
-                      PaginationOptions.builder()
-                          .cursor(Optional.of(cursor))
-                          .paginationDirection(PaginationDirection.FORWARD)
-                          .limit(10)
-                          .build()));
 
       assertDecodedOrInvalid(thrown);
     }

@@ -8,7 +8,7 @@ import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.graphql.ClientIpAddressGraphQlInterceptor;
 import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.cursor.ConnectionArguments;
-import com.streamarr.server.graphql.cursor.CursorUtil;
+import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.IssuedManagerInvitation;
 import com.streamarr.server.graphql.dto.ManagerInvitationDetails;
@@ -33,7 +33,8 @@ import com.streamarr.server.graphql.mutation.managers.RemoveProfileManagerPayloa
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.ProfileManagerAdministrationService;
 import com.streamarr.server.services.identity.ProfileManagerAdministrationService.ManagerInvitationCodeCommand;
-import com.streamarr.server.services.pagination.MediaPage;
+import com.streamarr.server.services.pagination.ListIdentity;
+import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
@@ -50,30 +51,28 @@ public class ProfileManagerResolver {
   private final AuthorizationService authorizationService;
   private final ProfileManagerAdministrationService managerService;
   private final PaginationService paginationService;
-  private final CursorUtil cursorUtil;
+  private final PositionCursorCodec positionCursors;
   private final RelayConnectionAdapter relayConnectionAdapter;
   private final Clock clock;
 
   @DgsQuery
   public Connection<ManagerInvitationDetails> pendingManagerInvitationsForProfile(
       @InputArgument String profileId, DataFetchingEnvironment dfe) {
-    var options = ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
+    var profile = Ids.parseUuid(profileId);
+    var list = new ListIdentity("profile-manager-invitations", profile);
     var page =
         managerService.pendingManagerInvitationsForProfile(
-            authorizationService.currentIdentity(),
-            Ids.parseUuid(profileId),
-            cursorUtil.decodeKeysetCursor(options));
-    return toConnection(page);
+            authorizationService.currentIdentity(), profile, pageRequest(list, dfe));
+    return relayConnectionAdapter.toConnection(page, list, this::invitationDetails);
   }
 
   @DgsQuery
   public Connection<ManagerInvitationDetails> pendingManagerInvitations(
       DataFetchingEnvironment dfe) {
-    var options = ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
-    var page =
-        managerService.pendingManagerInvitations(
-            authorizationService.currentIdentity(), cursorUtil.decodeKeysetCursor(options));
-    return toConnection(page);
+    var identity = authorizationService.currentIdentity();
+    var list = new ListIdentity("received-manager-invitations", identity.accountId());
+    var page = managerService.pendingManagerInvitations(identity, pageRequest(list, dfe));
+    return relayConnectionAdapter.toConnection(page, list, this::invitationDetails);
   }
 
   @DgsMutation
@@ -185,12 +184,9 @@ public class ProfileManagerResolver {
         AdministrativelyRemoveProfileManagerPayload::new);
   }
 
-  private Connection<ManagerInvitationDetails> toConnection(
-      MediaPage<ProfileManagerInvitation> page) {
-    return relayConnectionAdapter.toConnection(
-        page,
-        item -> invitationDetails(item.item()),
-        item -> cursorUtil.encodeKeysetCursor(item.item().getId()));
+  private PageRequest pageRequest(ListIdentity list, DataFetchingEnvironment dfe) {
+    return positionCursors.pageRequest(
+        list, ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE));
   }
 
   private ManagerInvitationDetails invitationDetails(ProfileManagerInvitation invitation) {

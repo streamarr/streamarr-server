@@ -12,6 +12,7 @@ import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.EsnBlock;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
+import com.streamarr.server.fakes.InMemoryPagedList;
 import com.streamarr.server.graphql.StreamarrDataFetcherExceptionHandler;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.CursorValidator;
@@ -22,10 +23,17 @@ import com.streamarr.server.services.authorization.SecurityContextAuthorizationS
 import com.streamarr.server.services.identity.DeviceAdministrationService;
 import com.streamarr.server.services.identity.DeviceRejections;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
-import com.streamarr.server.services.pagination.MediaPage;
-import com.streamarr.server.services.pagination.PageItem;
+import com.streamarr.server.services.pagination.ListIdentity;
+import com.streamarr.server.services.pagination.ListOrder;
+import com.streamarr.server.services.pagination.ListPage;
+import com.streamarr.server.services.pagination.PageRequest;
+import com.streamarr.server.services.pagination.Pager;
 import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.services.pagination.Position;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.SortDirection;
+import com.streamarr.server.services.pagination.SortValue;
+import com.streamarr.server.services.pagination.SortValueKind;
 import com.streamarr.server.support.security.WithAccountContext;
 import java.time.Instant;
 import java.util.List;
@@ -64,6 +72,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 class DeviceAdministrationResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
+  @Autowired private PositionCursorCodec positionCursors;
 
   @MockitoBean private DeviceAdministrationService deviceAdministrationService;
   @MockitoBean private UserAccountRepository userAccountRepository;
@@ -159,12 +168,11 @@ class DeviceAdministrationResolverTest {
   void shouldMapHouseholdAndServerWideEsnBlockQueries() {
     var householdBlock = block("household-esn", householdId);
     var serverBlock = block("server-esn", null);
-    when(deviceAdministrationService.esnBlocks(
-            any(), eq(householdId), any(KeysetPaginationOptions.class)))
+    when(deviceAdministrationService.esnBlocks(any(), eq(householdId), any(PageRequest.class)))
         .thenAnswer(
             invocation ->
                 page(List.of(householdBlock), invocation.getArgument(2), EsnBlock::getId));
-    when(deviceAdministrationService.serverEsnBlocks(any(), any(KeysetPaginationOptions.class)))
+    when(deviceAdministrationService.serverEsnBlocks(any(), any(PageRequest.class)))
         .thenAnswer(
             invocation -> page(List.of(serverBlock), invocation.getArgument(1), EsnBlock::getId));
 
@@ -270,16 +278,61 @@ class DeviceAdministrationResolverTest {
 
   private void stubRegistrations(List<DeviceRegistration> registrations) {
     when(deviceAdministrationService.householdDevices(
-            any(), eq(householdId), any(KeysetPaginationOptions.class)))
+            any(), eq(householdId), any(PageRequest.class)))
         .thenAnswer(
             invocation ->
                 page(registrations, invocation.getArgument(2), DeviceRegistration::getId));
   }
 
-  private static <T> MediaPage<T> page(
-      List<T> values, KeysetPaginationOptions options, Function<T, UUID> idOf) {
-    var items = values.stream().map(value -> new PageItem<>(value, null)).toList();
-    return new PaginationService().buildKeysetPage(items, options, idOf);
+  @ParameterizedTest
+  @MethodSource("cursorsFromOtherLists")
+  @DisplayName("Should reject a device cursor when it continues another list or Household")
+  void shouldRejectADeviceCursorWhenItContinuesAnotherListOrHousehold(
+      ListIdentity issuedBy, String query) {
+    var cursor =
+        positionCursors
+            .encode(
+                issuedBy,
+                new Position(
+                    new SortValue.OfInstant(Instant.parse("2026-08-22T12:00:00Z")),
+                    UUID.randomUUID()))
+            .getValue();
+
+    var result = dgsQueryExecutor.execute(query.formatted(householdId, cursor));
+
+    assertThat(result.getErrors())
+        .singleElement()
+        .satisfies(
+            error -> assertThat(error.getExtensions()).containsEntry("code", "INVALID_CURSOR"));
+  }
+
+  static Stream<Arguments> cursorsFromOtherLists() {
+    var otherHousehold = UUID.randomUUID();
+    return Stream.of(
+        Arguments.of(
+            new ListIdentity("household-devices", otherHousehold),
+            "{ householdDevices(householdId: \"%s\", after: \"%s\") { edges { node { esn } } } }"),
+        Arguments.of(
+            new ListIdentity("household-devices", otherHousehold),
+            "{ esnBlocks(householdId: \"%s\", after: \"%s\") { edges { node { esn } } } }"),
+        Arguments.of(
+            new ListIdentity("household-esn-blocks", otherHousehold),
+            "{ serverEsnBlocks(after: \"%2$s\") { edges { node { esn } } } }"));
+  }
+
+  // Rows keep the given order: each one's sort value is its index.
+  private static <T> ListPage<T> page(List<T> values, PageRequest request, Function<T, UUID> idOf) {
+    var rows =
+        IntStream.range(0, values.size())
+            .mapToObj(
+                index ->
+                    new Row<>(
+                        values.get(index),
+                        new Position(new SortValue.OfNumber(index), idOf.apply(values.get(index)))))
+            .toList();
+    var order =
+        ListOrder.builder().valueKind(SortValueKind.NUMBER).direction(SortDirection.ASC).build();
+    return Pager.page(new InMemoryPagedList<T, Object>(order, rows), "scope", request);
   }
 
   private DeviceRegistration registration(String esn) {

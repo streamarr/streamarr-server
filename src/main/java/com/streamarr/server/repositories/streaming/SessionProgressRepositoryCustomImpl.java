@@ -35,8 +35,7 @@ public class SessionProgressRepositoryCustomImpl implements SessionProgressRepos
             .build();
     var query =
         keyset.rowsBeyond(
-            dsl.select(SESSION_PROGRESS.asterisk(), keyset.selectedSortValue())
-                .from(SESSION_PROGRESS),
+            keyset.selectFrom(dsl, SESSION_PROGRESS),
             SESSION_PROGRESS.PROFILE_ID.eq(profileId),
             seek);
     return JooqQueryHelper.nativeRows(entityManager, query, SessionProgress.class, keyset);

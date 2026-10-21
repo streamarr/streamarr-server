@@ -1,5 +1,6 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.Position;
 import com.streamarr.server.services.pagination.Row;
@@ -20,6 +21,21 @@ public final class InMemoryKeyset {
           .thenComparing(Position::itemId, Comparator.comparing(UUID::toString));
 
   private InMemoryKeyset() {}
+
+  /** The entities beyond the seek, ordered by creation time, then ID. */
+  public static <E extends BaseAuditableEntity<?>> List<Row<E>> byCreationTime(
+      Collection<E> entities, Seek seek) {
+    return rowsBeyond(
+        entities.stream()
+            .map(
+                entity ->
+                    new Row<>(
+                        entity,
+                        new Position(
+                            new SortValue.OfInstant(entity.getCreatedOn()), entity.getId())))
+            .toList(),
+        seek);
+  }
 
   public static <T> List<Row<T>> rowsBeyond(Collection<Row<T>> rows, Seek seek) {
     var order = isAscending(seek) ? ASCENDING : ASCENDING.reversed();

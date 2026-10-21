@@ -22,10 +22,9 @@ import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
-import com.streamarr.server.services.pagination.MediaPage;
-import com.streamarr.server.services.pagination.PageItem;
-import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.services.pagination.ListPage;
+import com.streamarr.server.services.pagination.PageRequest;
+import com.streamarr.server.services.pagination.Pager;
 import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
@@ -66,7 +65,8 @@ public class ProfileManagerAdministrationService {
   private final CredentialAttemptGate credentialAttempts;
   private final CredentialCodeProperties properties;
   private final MutationTransactions mutationTransactions;
-  private final PaginationService paginationService;
+  private final ProfileManagerInvitationsList profileManagerInvitationsList;
+  private final ReceivedManagerInvitationsList receivedManagerInvitationsList;
   private final Clock clock;
 
   public Outcome<IssuedManagerInvitation, ManagerRejections.Invite> inviteProfileManager(
@@ -397,34 +397,23 @@ public class ProfileManagerAdministrationService {
             eligibleManagerRejection(constraint, ManagerRejections.EligibleManagerRequired::new));
   }
 
-  /** Pending invitations for the Profile, visible only to direct managers and ServerAdmin. */
-  public MediaPage<ProfileManagerInvitation> pendingManagerInvitationsForProfile(
-      AuthenticatedIdentity identity, UUID profileId, KeysetPaginationOptions options) {
+  /** A page of the Profile's pending manager invitations, newest first; hidden reads as empty. */
+  public ListPage<ProfileManagerInvitation> pendingManagerInvitationsForProfile(
+      AuthenticatedIdentity identity, UUID profileId, PageRequest request) {
     if (!authorizationService.isAllowed(identity, new Intent.ViewManagerInvitations(profileId))) {
-      return page(List.of(), options);
+      return ListPage.empty();
     }
 
-    return page(
-        invitationRepository.findPendingByProfileId(profileId, clock.instant(), options), options);
+    return Pager.page(profileManagerInvitationsList, profileId, request);
   }
 
-  /** The caller's own pending invitations; possession of the seat is the visibility. */
-  public MediaPage<ProfileManagerInvitation> pendingManagerInvitations(
-      AuthenticatedIdentity identity, KeysetPaginationOptions options) {
-    return page(
-        invitationRepository.findPendingByRecipientAccountId(
-            identity.accountId(), clock.instant(), options),
-        options);
-  }
-
-  private MediaPage<ProfileManagerInvitation> page(
-      List<ProfileManagerInvitation> invitations, KeysetPaginationOptions options) {
-    var items =
-        invitations.stream()
-            .map(invitation -> new PageItem<>(invitation, invitation.getCreatedOn()))
-            .toList();
-    return paginationService.buildMediaPage(
-        items, options.getPaginationOptions(), options.getCursorId());
+  /**
+   * A page of the caller's own pending manager invitations, newest first; holding the seat is the
+   * visibility.
+   */
+  public ListPage<ProfileManagerInvitation> pendingManagerInvitations(
+      AuthenticatedIdentity identity, PageRequest request) {
+    return Pager.page(receivedManagerInvitationsList, identity.accountId(), request);
   }
 
   private void removeDisputedAuthority(

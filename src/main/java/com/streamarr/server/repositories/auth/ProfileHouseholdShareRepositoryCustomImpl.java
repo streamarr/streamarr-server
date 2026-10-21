@@ -8,13 +8,13 @@ import static org.jooq.impl.DSL.when;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.jooq.generated.enums.ProfileShareStatus;
 import com.streamarr.server.repositories.JooqQueryHelper;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
-import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.repositories.Keyset;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -22,7 +22,6 @@ import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
-import org.jooq.impl.DSL;
 
 @RequiredArgsConstructor
 public class ProfileHouseholdShareRepositoryCustomImpl
@@ -89,15 +88,15 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
-  public List<ProfileHouseholdShare> findPendingByHouseholdId(
-      UUID householdId, Instant now, KeysetPaginationOptions options) {
-    return findPage(
+  public List<Row<ProfileHouseholdShare>> rowsPendingInHousehold(
+      UUID householdId, Instant now, Seek seek) {
+    return rowsBeyond(
         PROFILE_HOUSEHOLD_SHARE
             .HOUSEHOLD_ID
             .eq(householdId)
             .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(inline(ProfileShareStatus.PENDING)))
             .and(unexpiredAt(inline(now.atOffset(ZoneOffset.UTC)))),
-        options);
+        seek);
   }
 
   /** Expiry is a predicate over expires_at; a NULL expiry never expires. */
@@ -109,37 +108,18 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
-  public List<ProfileHouseholdShare> findByProfileId(
-      UUID profileId, KeysetPaginationOptions options) {
-    return findPage(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId), options);
+  public List<Row<ProfileHouseholdShare>> rowsOfProfile(UUID profileId, Seek seek) {
+    return rowsBeyond(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId), seek);
   }
 
-  private List<ProfileHouseholdShare> findPage(Condition scope, KeysetPaginationOptions options) {
-    var pagination = options.getPaginationOptions();
-    var reverse = pagination.getPaginationDirection() == PaginationDirection.REVERSE;
-    var cursorCondition =
-        options
-            .getCursorId()
-            .<Condition>map(
-                cursorId ->
-                    reverse
-                        ? PROFILE_HOUSEHOLD_SHARE.ID.le(cursorId)
-                        : PROFILE_HOUSEHOLD_SHARE.ID.ge(cursorId))
-            .orElseGet(DSL::noCondition);
-    var extraRows = options.getCursorId().isPresent() ? 2 : 1;
-    var query =
-        dsl.select()
-            .from(PROFILE_HOUSEHOLD_SHARE)
-            .where(scope)
-            .and(cursorCondition)
-            .orderBy(reverse ? PROFILE_HOUSEHOLD_SHARE.ID.desc() : PROFILE_HOUSEHOLD_SHARE.ID.asc())
-            .limit(pagination.getLimit() + extraRows);
-    var found = JooqQueryHelper.nativeQuery(entityManager, query, ProfileHouseholdShare.class);
-    if (reverse) {
-      Collections.reverse(found);
-    }
-
-    return found;
+  private List<Row<ProfileHouseholdShare>> rowsBeyond(Condition scope, Seek seek) {
+    var keyset =
+        Keyset.<OffsetDateTime>builder()
+            .sortValue(PROFILE_HOUSEHOLD_SHARE.CREATED_ON)
+            .itemId(PROFILE_HOUSEHOLD_SHARE.ID)
+            .build();
+    var query = keyset.rowsBeyond(keyset.selectFrom(dsl, PROFILE_HOUSEHOLD_SHARE), scope, seek);
+    return JooqQueryHelper.nativeRows(entityManager, query, ProfileHouseholdShare.class, keyset);
   }
 
   @Override
