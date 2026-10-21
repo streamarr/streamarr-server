@@ -197,7 +197,6 @@ class LibraryManagementServiceTest {
           null,
           null,
           null,
-          null,
           _ -> {});
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
 
@@ -1404,8 +1403,7 @@ class LibraryManagementServiceTest {
       CreditService credits,
       ArtworkRequestService artwork) {
     return new SeriesService(
-        series, credits, null, artwork, null, seasons, episodes, files, null, null, null, null,
-        _ -> {});
+        series, credits, null, artwork, null, seasons, episodes, files, null, null, null, _ -> {});
   }
 
   private static final class ContendedPathMutexes extends MutexFactoryProvider {

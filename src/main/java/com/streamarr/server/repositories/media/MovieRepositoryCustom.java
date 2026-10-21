@@ -1,9 +1,9 @@
 package com.streamarr.server.repositories.media;
 
 import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.services.pagination.ItemSortValue;
 import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -12,13 +12,11 @@ import java.util.UUID;
 
 public interface MovieRepositoryCustom {
 
-  Optional<ItemSortValue> findItemPosition(UUID itemId, MediaFilter filter);
+  /** The Library's movies the filter admits beyond the seek, in the filter's sort order. */
+  List<Row<Movie>> rowsInLibrary(MediaFilter filter, Seek seek);
 
-  List<Movie> seekWithFilter(MediaPaginationOptions options);
-
-  List<Movie> findFirstWithFilter(MediaPaginationOptions options);
-
-  Optional<Movie> findLetterJumpPredecessor(MediaFilter filter);
+  /** The movie's row in its Library's list under the filter, when the filter admits it. */
+  Optional<Row<Movie>> rowInLibrary(UUID itemId, MediaFilter filter);
 
   Optional<Movie> findInLibraryByTmdbId(UUID libraryId, String tmdbId);
 

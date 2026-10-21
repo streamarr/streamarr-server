@@ -14,8 +14,6 @@ import com.streamarr.server.domain.auth.EsnBlock;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fakes.InMemoryPagedList;
 import com.streamarr.server.graphql.StreamarrDataFetcherExceptionHandler;
-import com.streamarr.server.graphql.cursor.CursorUtil;
-import com.streamarr.server.graphql.cursor.CursorValidator;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -59,8 +57,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
     classes = {
       DeviceAdministrationResolver.class,
       PaginationService.class,
-      CursorUtil.class,
-      CursorValidator.class,
       RelayConnectionAdapter.class,
       PositionCursorCodec.class,
       JacksonAutoConfiguration.class,

@@ -10,15 +10,6 @@ public record MediaOrder(
     @NonNull SortDirection direction,
     @NonNull UUID itemId,
     Object value) {
-  public static MediaOrder from(MediaFilter filter, UUID itemId, Object value) {
-    return builder()
-        .by(filter.getSortBy())
-        .direction(filter.getSortDirection())
-        .itemId(itemId)
-        .value(value)
-        .build();
-  }
-
   /** The order of a list position, for a list sorted {@code by} in {@code direction}. */
   public static MediaOrder at(OrderMediaBy by, SortDirection direction, Position position) {
     return builder()

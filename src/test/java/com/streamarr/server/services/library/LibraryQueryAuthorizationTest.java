@@ -2,7 +2,7 @@ package com.streamarr.server.services.library;
 
 import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountScopedBuilder;
 import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.profileScopedBuilder;
-import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
+import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -11,10 +11,9 @@ import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
+import com.streamarr.server.services.LibraryMoviesList;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
-import com.streamarr.server.services.pagination.PaginationService;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -22,8 +21,7 @@ import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
 class LibraryQueryAuthorizationTest {
-  private static final MediaPaginationOptions FIRST_PAGE =
-      buildForwardOptions(10, MediaFilter.builder().build());
+  private static final MediaFilter ANY_LIBRARY = MediaFilter.builder().build();
 
   @Test
   @DisplayName(
@@ -37,7 +35,7 @@ class LibraryQueryAuthorizationTest {
             .movies(
                 MovieService.builder()
                     .movieRepository(new FakeMovieRepository())
-                    .paginationService(new PaginationService())
+                    .libraryMoviesList(new LibraryMoviesList(new FakeMovieRepository()))
                     .events(_ -> {})
                     .build())
             .authorization(authorization)
@@ -45,7 +43,8 @@ class LibraryQueryAuthorizationTest {
 
     assertThat(service.findAll(identity)).isEmpty();
     assertThat(service.findById(identity, UUID.randomUUID())).isEmpty();
-    assertThat(service.getItems(identity, MediaType.MOVIE, FIRST_PAGE).items()).isEmpty();
+    assertThat(service.getItems(identity, MediaType.MOVIE, ANY_LIBRARY, firstRows(10)).rows())
+        .isEmpty();
   }
 
   @Test
@@ -53,6 +52,7 @@ class LibraryQueryAuthorizationTest {
   void shouldRefuseLibraryQueriesWhenTokenHasNoSelectedProfile() {
     var identity = accountScopedBuilder().build();
     var libraryId = UUID.randomUUID();
+    var firstPage = firstRows(10);
     var service =
         LibraryQueryService.builder()
             .libraries(new FakeLibraryRepository())
@@ -63,7 +63,7 @@ class LibraryQueryAuthorizationTest {
         .isInstanceOf(ProfileRequiredException.class);
     assertThatThrownBy(() -> service.findById(identity, libraryId))
         .isInstanceOf(ProfileRequiredException.class);
-    assertThatThrownBy(() -> service.getItems(identity, MediaType.MOVIE, FIRST_PAGE))
+    assertThatThrownBy(() -> service.getItems(identity, MediaType.MOVIE, ANY_LIBRARY, firstPage))
         .isInstanceOf(ProfileRequiredException.class);
   }
 }

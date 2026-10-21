@@ -9,9 +9,8 @@ import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.events.library.LibraryItemChangedEvent;
-import com.streamarr.server.services.pagination.ItemSortValue;
 import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.PageItem;
+import com.streamarr.server.services.pagination.Row;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;
@@ -37,28 +36,24 @@ public class LibraryContentsService {
     return libraries.findById(libraryId);
   }
 
+  /** The changed item's row in the Library's list under the filter, when the filter admits it. */
   @Transactional(readOnly = true)
-  public Optional<PageItem<BaseCollectable<?>>> findMatchingItem(
+  public Optional<Row<BaseCollectable<?>>> findMatchingRow(
       LibraryItemChangedEvent change, MediaFilter filter) {
-    return findSortValue(change, filter)
-        .flatMap(value -> itemOf(change).map(item -> new PageItem<>(item, value.value())));
-  }
-
-  private Optional<ItemSortValue> findSortValue(
-      LibraryItemChangedEvent change, MediaFilter filter) {
+    var scope = filter.listScope();
     return switch (change.kind()) {
-      case MOVIE -> movies.findItemPosition(change.itemId(), filter);
-      case SERIES -> series.findItemPosition(change.itemId(), filter);
+      case MOVIE -> movies.rowInLibrary(change.itemId(), scope).map(LibraryContentsService::row);
+      case SERIES -> series.rowInLibrary(change.itemId(), scope).map(LibraryContentsService::row);
       default -> throw new UnsupportedMediaTypeException(change.kind().name());
     };
   }
 
-  @Transactional(readOnly = true)
-  public Optional<BaseCollectable<?>> findItem(LibraryItemChangedEvent change) {
-    return itemOf(change);
+  private static Row<BaseCollectable<?>> row(Row<? extends BaseCollectable<?>> row) {
+    return new Row<>(row.item(), row.position());
   }
 
-  private Optional<BaseCollectable<?>> itemOf(LibraryItemChangedEvent change) {
+  @Transactional(readOnly = true)
+  public Optional<BaseCollectable<?>> findItem(LibraryItemChangedEvent change) {
     return switch (change.kind()) {
       case MOVIE -> movies.findById(change.itemId()).map(item -> item);
       case SERIES -> series.findById(change.itemId()).map(item -> item);

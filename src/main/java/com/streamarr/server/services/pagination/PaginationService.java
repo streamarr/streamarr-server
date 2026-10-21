@@ -1,11 +1,7 @@
 package com.streamarr.server.services.pagination;
 
-import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
-import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
-import java.util.function.Function;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
@@ -76,91 +72,4 @@ public class PaginationService {
   }
 
   /** Checks the opposite boundary when a missing or moved media anchor cannot establish it. */
-  public <T extends BaseAuditableEntity<?>> MediaPage<T> buildMediaPage(
-      List<PageItem<T>> items,
-      MediaPaginationOptions options,
-      Function<MediaPaginationOptions, List<T>> seek) {
-    var page = buildMediaPage(items, options.getPaginationOptions(), options.getCursorId());
-    var forward =
-        options.getPaginationOptions().getPaginationDirection() == PaginationDirection.FORWARD;
-    var hasOppositePage = forward ? page.hasPreviousPage() : page.hasNextPage();
-    if (options.getCursorId().isEmpty() || hasOppositePage) {
-      return page;
-    }
-
-    var opposite =
-        options.toBuilder()
-            .paginationOptions(
-                options.getPaginationOptions().toBuilder()
-                    .paginationDirection(
-                        forward ? PaginationDirection.REVERSE : PaginationDirection.FORWARD)
-                    .limit(0)
-                    .build())
-            .build();
-    var oppositeExists = !seek.apply(opposite).isEmpty();
-    return forward
-        ? new MediaPage<>(page.items(), page.hasNextPage(), oppositeExists)
-        : new MediaPage<>(page.items(), oppositeExists, page.hasPreviousPage());
-  }
-
-  public <T extends BaseAuditableEntity<?>> MediaPage<T> buildMediaPage(
-      List<PageItem<T>> items, PaginationOptions options, Optional<UUID> cursorId) {
-
-    if (items.isEmpty()) {
-      return emptyMediaPage();
-    }
-
-    var limit = options.getLimit();
-    var direction = options.getPaginationDirection();
-
-    var hasPreviousPage = false;
-    var hasNextPage = false;
-
-    if (cursorId.isPresent()
-        && direction == PaginationDirection.FORWARD
-        && items.getFirst().item().getId().equals(cursorId.orElseThrow())) {
-      hasPreviousPage = true;
-      items = items.subList(1, items.size());
-    }
-
-    if (cursorId.isPresent()
-        && direction == PaginationDirection.REVERSE
-        && items.getLast().item().getId().equals(cursorId.orElseThrow())) {
-      hasNextPage = true;
-      items = items.subList(0, items.size() - 1);
-    }
-
-    if (items.isEmpty()) {
-      return new MediaPage<>(List.of(), hasNextPage, hasPreviousPage);
-    }
-
-    var isListLargerThanLimit = items.size() > limit;
-
-    if (direction == PaginationDirection.FORWARD) {
-      hasNextPage = isListLargerThanLimit;
-    } else {
-      hasPreviousPage = isListLargerThanLimit;
-    }
-
-    items = pruneListByLimitGivenDirection(items, limit, direction);
-
-    return new MediaPage<>(items, hasNextPage, hasPreviousPage);
-  }
-
-  private <T> MediaPage<T> emptyMediaPage() {
-    return new MediaPage<>(List.of(), false, false);
-  }
-
-  private <T> List<T> pruneListByLimitGivenDirection(
-      List<T> list, int limit, PaginationDirection direction) {
-    if (list.size() <= limit) {
-      return list;
-    }
-
-    if (direction == PaginationDirection.REVERSE) {
-      return list.subList(list.size() - limit, list.size());
-    }
-
-    return list.subList(0, limit);
-  }
 }

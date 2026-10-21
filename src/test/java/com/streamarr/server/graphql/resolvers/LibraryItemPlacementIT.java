@@ -31,6 +31,7 @@ import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.SortDirection;
+import com.streamarr.server.services.pagination.SortValue;
 import com.streamarr.server.support.ActiveSubscriptions;
 import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
@@ -153,8 +154,8 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
               .profileId(identity.profile().getId())
               .sortBy(by)
               .build();
-      assertThat(contents.findMatchingItem(change, filter).orElseThrow().sortValue())
-          .isEqualTo(WHOLE_MINUTE);
+      assertThat(contents.findMatchingRow(change, filter).orElseThrow().position().value())
+          .isEqualTo(new SortValue.OfInstant(WHOLE_MINUTE));
     } finally {
       auth.deleteIdentity(identity);
     }

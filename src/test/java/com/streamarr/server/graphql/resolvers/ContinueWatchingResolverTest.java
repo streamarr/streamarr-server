@@ -13,7 +13,6 @@ import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
-import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -44,7 +43,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
     classes = {
       ContinueWatchingResolver.class,
       PaginationService.class,
-      CursorUtil.class,
       PositionCursorCodec.class,
       RelayConnectionAdapter.class,
       JacksonAutoConfiguration.class,

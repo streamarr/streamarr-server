@@ -6,6 +6,8 @@ import static org.jooq.impl.DSL.row;
 import static org.jooq.impl.DSL.values;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.fakes.InMemoryKeyset;
+import com.streamarr.server.services.pagination.AbsentValuePlacement;
 import com.streamarr.server.services.pagination.ListOrder;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.Position;
@@ -16,7 +18,9 @@ import com.streamarr.server.services.pagination.SortValue;
 import com.streamarr.server.services.pagination.SortValueKind;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -36,6 +40,9 @@ class KeysetIT extends AbstractIntegrationTest {
   private static final UUID LOW_ID = UUID.fromString("00000000-0000-4000-8000-000000000001");
   private static final UUID MIDDLE_ID = UUID.fromString("00000000-0000-4000-8000-000000000002");
   private static final UUID HIGH_ID = UUID.fromString("00000000-0000-4000-8000-000000000003");
+  private static final UUID ABSENT_ID = UUID.fromString("00000000-0000-4000-8000-000000000004");
+  private static final UUID OTHER_ABSENT_ID =
+      UUID.fromString("00000000-0000-4000-8000-000000000005");
 
   @Autowired private DSLContext dsl;
 
@@ -142,6 +149,112 @@ class KeysetIT extends AbstractIntegrationTest {
             .build();
 
     assertThatThrownBy(() -> read(values, seek)).isInstanceOf(IllegalStateException.class);
+  }
+
+  /** A list order over two dates and two items without one, and the order it lists them in. */
+  static Stream<Arguments> absentValueOrders() {
+    return Stream.of(
+        Arguments.of(
+            AbsentValuePlacement.LAST,
+            SortDirection.ASC,
+            List.of(LOW_ID, HIGH_ID, ABSENT_ID, OTHER_ABSENT_ID)),
+        Arguments.of(
+            AbsentValuePlacement.LAST,
+            SortDirection.DESC,
+            List.of(HIGH_ID, LOW_ID, OTHER_ABSENT_ID, ABSENT_ID)),
+        Arguments.of(
+            AbsentValuePlacement.AS_LARGEST,
+            SortDirection.ASC,
+            List.of(LOW_ID, HIGH_ID, ABSENT_ID, OTHER_ABSENT_ID)),
+        Arguments.of(
+            AbsentValuePlacement.AS_LARGEST,
+            SortDirection.DESC,
+            List.of(OTHER_ABSENT_ID, ABSENT_ID, HIGH_ID, LOW_ID)));
+  }
+
+  @ParameterizedTest(name = "absent values {0}, {1}")
+  @MethodSource("absentValueOrders")
+  @DisplayName("Should read the rows beyond every position when some items have no sort value")
+  void shouldReadTheRowsBeyondEveryPositionWhenSomeItemsHaveNoSortValue(
+      AbsentValuePlacement placement, SortDirection direction, List<UUID> listed) {
+    var order =
+        ListOrder.builder()
+            .valueKind(SortValueKind.DATE)
+            .direction(direction)
+            .absentValues(placement)
+            .build();
+    var positions =
+        Map.of(
+            LOW_ID, new Position(new SortValue.OfDate(LocalDate.of(2011, 12, 29)), LOW_ID),
+            HIGH_ID, new Position(new SortValue.OfDate(LocalDate.of(2011, 12, 31)), HIGH_ID),
+            ABSENT_ID, new Position(new SortValue.Absent(), ABSENT_ID),
+            OTHER_ABSENT_ID, new Position(new SortValue.Absent(), OTHER_ABSENT_ID));
+
+    assertThat(readDates(seekFrom(order, Optional.empty(), PaginationDirection.FORWARD, false)))
+        .extracting(Row::item)
+        .containsExactlyElementsOf(listed);
+    for (var at : listed) {
+      var index = listed.indexOf(at);
+      for (var including : List.of(false, true)) {
+        var forward = new ArrayList<>(listed.subList(including ? index : index + 1, listed.size()));
+        var reverse = new ArrayList<>(listed.subList(0, including ? index + 1 : index).reversed());
+        var position = Optional.of(positions.get(at));
+
+        assertThat(readDates(seekFrom(order, position, PaginationDirection.FORWARD, including)))
+            .as("forward from %s, including %s", at, including)
+            .extracting(Row::item)
+            .containsExactlyElementsOf(forward);
+        assertThat(readDates(seekFrom(order, position, PaginationDirection.REVERSE, including)))
+            .as("reverse from %s, including %s", at, including)
+            .extracting(Row::item)
+            .containsExactlyElementsOf(reverse);
+      }
+    }
+  }
+
+  // Reads the rows in PostgreSQL and checks the in-memory keyset the fakes use reads the same.
+  private List<Row<UUID>> readDates(Seek seek) {
+    var table =
+        values(
+                row(LocalDate.of(2011, 12, 29), LOW_ID),
+                row(LocalDate.of(2011, 12, 31), HIGH_ID),
+                row((LocalDate) null, ABSENT_ID),
+                row((LocalDate) null, OTHER_ABSENT_ID))
+            .as("listed", "sort_value", "item_id");
+    var keyset =
+        Keyset.<LocalDate>builder()
+            .sortValue(table.field("sort_value", LocalDate.class))
+            .itemId(table.field("item_id", UUID.class))
+            .build();
+    var rows =
+        keyset
+            .rowsBeyond(dsl.select(keyset.sortValue(), keyset.itemId()).from(table), seek)
+            .fetch(keyset::rowOf);
+    var inMemory = InMemoryKeyset.rowsBeyond(allDateRows(), seek);
+    assertThat(inMemory).as("in-memory keyset").isEqualTo(rows);
+    return rows;
+  }
+
+  private static List<Row<UUID>> allDateRows() {
+    return List.of(
+        new Row<>(LOW_ID, new Position(new SortValue.OfDate(LocalDate.of(2011, 12, 29)), LOW_ID)),
+        new Row<>(HIGH_ID, new Position(new SortValue.OfDate(LocalDate.of(2011, 12, 31)), HIGH_ID)),
+        new Row<>(ABSENT_ID, new Position(new SortValue.Absent(), ABSENT_ID)),
+        new Row<>(OTHER_ABSENT_ID, new Position(new SortValue.Absent(), OTHER_ABSENT_ID)));
+  }
+
+  private static Seek seekFrom(
+      ListOrder order,
+      Optional<Position> position,
+      PaginationDirection direction,
+      boolean including) {
+    return Seek.builder()
+        .order(order)
+        .position(position)
+        .direction(direction)
+        .limit(10)
+        .includingPosition(including)
+        .build();
   }
 
   private <V> List<Row<UUID>> read(Values<V> values, Seek seek) {

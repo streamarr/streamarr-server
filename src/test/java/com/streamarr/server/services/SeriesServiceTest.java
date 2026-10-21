@@ -1,8 +1,8 @@
 package com.streamarr.server.services;
 
 import static com.streamarr.server.fakes.TestImages.createTestImage;
-import static com.streamarr.server.fixtures.PaginationFixture.buildCursorOptions;
-import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
+import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
+import static com.streamarr.server.fixtures.PaginationFixture.rowsFrom;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
@@ -39,7 +39,6 @@ import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.PaginationService;
 import com.streamarr.server.services.pagination.SortDirection;
 import java.time.LocalDate;
 import java.util.List;
@@ -84,7 +83,6 @@ class SeriesServiceTest {
     artworkRun =
         artworkRequestService.openLibraryOperationRun(
             "scan", ImageRefreshMode.PRESERVE, UUID.randomUUID());
-    var paginationService = new PaginationService();
     var fileSystem = Jimfs.newFileSystem(Configuration.unix());
     var imageService =
         new ImageService(
@@ -98,12 +96,11 @@ class SeriesServiceTest {
         new SeriesService(
             seriesRepository,
             CreditServiceFixture.creditServiceBuilder().build(),
-            paginationService,
+            new LibrarySeriesList(seriesRepository),
             artworkRequestService,
             imageService,
             seasonRepository,
             episodeRepository,
-            null,
             null,
             null,
             null,
@@ -201,10 +198,9 @@ class SeriesServiceTest {
       seriesRepository.save(seriesBuilder("Zebra").build());
       seriesRepository.save(seriesBuilder("Apple").build());
 
-      var result =
-          seriesService.getSeriesWithFilter(buildForwardOptions(10, MediaFilter.builder().build()));
+      var result = seriesService.getSeriesWithFilter(MediaFilter.builder().build(), firstRows(10));
 
-      var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
+      var titles = result.rows().stream().map(pi -> pi.item().getTitle()).toList();
 
       assertThat(titles).containsExactly("Apple", "Zebra");
     }
@@ -221,9 +217,9 @@ class SeriesServiceTest {
               .sortDirection(SortDirection.DESC)
               .build();
 
-      var result = seriesService.getSeriesWithFilter(buildForwardOptions(10, filter));
+      var result = seriesService.getSeriesWithFilter(filter, firstRows(10));
 
-      var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
+      var titles = result.rows().stream().map(pi -> pi.item().getTitle()).toList();
 
       assertThat(titles).containsExactly("Zebra", "Apple");
     }
@@ -241,19 +237,19 @@ class SeriesServiceTest {
       seriesRepository.save(seriesBuilder("Cherry").build());
 
       var filter = MediaFilter.builder().build();
-      var firstPage = seriesService.getSeriesWithFilter(buildForwardOptions(1, filter));
+      var firstPage = seriesService.getSeriesWithFilter(filter, firstRows(1));
 
-      assertThat(firstPage.items()).hasSize(1);
-      assertThat(firstPage.items().getFirst().item().getTitle()).isEqualTo("Apple");
+      assertThat(firstPage.rows()).hasSize(1);
+      assertThat(firstPage.rows().getFirst().item().getTitle()).isEqualTo("Apple");
       assertThat(firstPage.hasNextPage()).isTrue();
 
-      var lastItem = firstPage.items().getLast();
+      var lastItem = firstPage.rows().getLast();
       var secondPage =
           seriesService.getSeriesWithFilter(
-              buildCursorOptions(1, PaginationDirection.FORWARD, lastItem, filter));
+              filter, rowsFrom(1, PaginationDirection.FORWARD, lastItem));
 
-      assertThat(secondPage.items()).hasSize(1);
-      assertThat(secondPage.items().getFirst().item().getTitle()).isEqualTo("Banana");
+      assertThat(secondPage.rows()).hasSize(1);
+      assertThat(secondPage.rows().getFirst().item().getTitle()).isEqualTo("Banana");
       assertThat(secondPage.hasNextPage()).isTrue();
     }
 
@@ -265,25 +261,24 @@ class SeriesServiceTest {
       seriesRepository.save(seriesBuilder("Cherry").build());
 
       var filter = MediaFilter.builder().build();
-      var allSeries = seriesService.getSeriesWithFilter(buildForwardOptions(3, filter));
-      var lastItem = allSeries.items().getLast();
+      var allSeries = seriesService.getSeriesWithFilter(filter, firstRows(3));
+      var lastItem = allSeries.rows().getLast();
 
       var backwardPage =
           seriesService.getSeriesWithFilter(
-              buildCursorOptions(1, PaginationDirection.REVERSE, lastItem, filter));
+              filter, rowsFrom(1, PaginationDirection.REVERSE, lastItem));
 
-      assertThat(backwardPage.items()).hasSize(1);
-      assertThat(backwardPage.items().getFirst().item().getTitle()).isEqualTo("Banana");
+      assertThat(backwardPage.rows()).hasSize(1);
+      assertThat(backwardPage.rows().getFirst().item().getTitle()).isEqualTo("Banana");
       assertThat(backwardPage.hasPreviousPage()).isTrue();
     }
 
     @Test
     @DisplayName("Should return empty connection when no series exist")
     void shouldReturnEmptyConnectionWhenNoSeriesExist() {
-      var result =
-          seriesService.getSeriesWithFilter(buildForwardOptions(10, MediaFilter.builder().build()));
+      var result = seriesService.getSeriesWithFilter(MediaFilter.builder().build(), firstRows(10));
 
-      assertThat(result.items()).isEmpty();
+      assertThat(result.rows()).isEmpty();
       assertThat(result.hasNextPage()).isFalse();
       assertThat(result.hasPreviousPage()).isFalse();
     }

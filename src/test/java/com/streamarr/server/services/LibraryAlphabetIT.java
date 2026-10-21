@@ -1,7 +1,7 @@
 package com.streamarr.server.services;
 
-import static com.streamarr.server.fixtures.PaginationFixture.buildForwardContinuation;
-import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
+import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
+import static com.streamarr.server.fixtures.PaginationFixture.rowsAfter;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
@@ -74,35 +74,40 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
         direction == SortDirection.ASC
             ? List.of("Alpha", "INDIGO", "Zulu")
             : List.of("Zulu", "INDIGO", "Alpha");
-    var complete = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
-    assertThat(complete.items())
+    var complete = movieService.getMoviesWithFilter(filter, firstRows(10));
+    assertThat(complete.rows())
         .extracting(item -> item.item().getTitle())
         .containsExactlyElementsOf(expected);
 
     var orders =
-        complete.items().stream()
-            .map(item -> MediaOrder.from(filter, item.item().getId(), item.sortValue()))
+        complete.rows().stream()
+            .map(
+                item ->
+                    MediaOrder.at(filter.getSortBy(), filter.getSortDirection(), item.position()))
             .collect(Collectors.toSet());
     var keys = orderKeys.getKeys(orders);
     assertThat(
-            complete.items().stream()
+            complete.rows().stream()
                 .sorted(
                     Comparator.comparing(
                         item ->
                             keys.get(
-                                MediaOrder.from(filter, item.item().getId(), item.sortValue()))))
+                                MediaOrder.at(
+                                    filter.getSortBy(),
+                                    filter.getSortDirection(),
+                                    item.position()))))
                 .map(item -> item.item().getTitle())
                 .toList())
         .containsExactlyElementsOf(expected);
 
     var traversed = new ArrayList<String>();
-    var options = buildForwardOptions(1, filter);
+    var request = firstRows(1);
     for (int index = 0; index < expected.size(); index++) {
-      var page = movieService.getMoviesWithFilter(options);
-      assertThat(page.items()).hasSize(1);
-      var item = page.items().getFirst();
+      var page = movieService.getMoviesWithFilter(filter, request);
+      assertThat(page.rows()).hasSize(1);
+      var item = page.rows().getFirst();
       traversed.add(item.item().getTitle());
-      options = buildForwardContinuation(1, filter, item);
+      request = rowsAfter(1, item);
       assertThat(page.hasNextPage()).isEqualTo(index < expected.size() - 1);
     }
 
@@ -139,14 +144,13 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
         (letter, titles) -> {
           var page =
               movieService.getMoviesWithFilter(
-                  buildForwardOptions(
-                      10,
-                      MediaFilter.builder()
-                          .libraryId(library.getId())
-                          .sortBy(OrderMediaBy.ADDED)
-                          .startLetter(letter)
-                          .build()));
-          assertThat(page.items())
+                  MediaFilter.builder()
+                      .libraryId(library.getId())
+                      .sortBy(OrderMediaBy.ADDED)
+                      .startLetter(letter)
+                      .build(),
+                  firstRows(10));
+          assertThat(page.rows())
               .extracting(item -> item.item().getTitle())
               .as("titles in %s under %s", letter, collation)
               .containsExactlyInAnyOrderElementsOf(titles);
@@ -167,17 +171,16 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
 
     var items =
         movieService.getMoviesWithFilter(
-            buildForwardOptions(
-                10,
-                MediaFilter.builder()
-                    .libraryId(library.getId())
-                    .startLetter(AlphabetLetter.A)
-                    .sortDirection(direction)
-                    .build()));
+            MediaFilter.builder()
+                .libraryId(library.getId())
+                .startLetter(AlphabetLetter.A)
+                .sortDirection(direction)
+                .build(),
+            firstRows(10));
 
     var expectedTitles =
         direction == SortDirection.ASC ? List.of("Alpha", "Unnamed") : List.of("Alpha");
-    assertThat(items.items())
+    assertThat(items.rows())
         .extracting(item -> item.item().getTitle())
         .containsExactlyElementsOf(expectedTitles);
     assertThat(items.hasPreviousPage()).isEqualTo(direction == SortDirection.DESC);
@@ -201,20 +204,19 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
     var totals = counts.getItemCounts(List.of(library.getId())).get(library.getId());
     var items =
         movieService.getMoviesWithFilter(
-            buildForwardOptions(
-                10,
-                MediaFilter.builder()
-                    .libraryId(library.getId())
-                    .sortBy(OrderMediaBy.ADDED)
-                    .startLetter(AlphabetLetter.HASH)
-                    .build()));
+            MediaFilter.builder()
+                .libraryId(library.getId())
+                .sortBy(OrderMediaBy.ADDED)
+                .startLetter(AlphabetLetter.HASH)
+                .build(),
+            firstRows(10));
 
     assertThat(totals.total()).isEqualTo(3);
     assertThat(totals.alphabetIndex())
         .extracting(LibraryMetadata::getLetter, LibraryMetadata::getItemCount)
         .containsExactlyInAnyOrder(
             tuple(AlphabetLetter.HASH, 1), tuple(AlphabetLetter.A, 1), tuple(AlphabetLetter.E, 1));
-    assertThat(items.items()).extracting(item -> item.item().getTitle()).containsExactly("Unnamed");
+    assertThat(items.rows()).extracting(item -> item.item().getTitle()).containsExactly("Unnamed");
   }
 
   @ParameterizedTest
@@ -228,19 +230,18 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
 
     var page =
         movieService.getMoviesWithFilter(
-            buildForwardOptions(
-                10,
-                MediaFilter.builder()
-                    .libraryId(library.getId())
-                    .sortDirection(direction)
-                    .startLetter(AlphabetLetter.E)
-                    .build()));
+            MediaFilter.builder()
+                .libraryId(library.getId())
+                .sortDirection(direction)
+                .startLetter(AlphabetLetter.E)
+                .build(),
+            firstRows(10));
 
     var expected =
         direction == SortDirection.ASC
             ? List.of("Echo", "Élite Harbor", "Foxtrot")
             : List.of("Élite Harbor", "Echo", "Delta");
-    assertThat(page.items())
+    assertThat(page.rows())
         .extracting(item -> item.item().getTitle())
         .containsExactlyElementsOf(expected);
   }
@@ -255,18 +256,14 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
     var totals = counts.getItemCounts(List.of(library.getId())).get(library.getId());
     var page =
         movieService.getMoviesWithFilter(
-            buildForwardOptions(
-                10,
-                MediaFilter.builder()
-                    .libraryId(library.getId())
-                    .startLetter(AlphabetLetter.T)
-                    .build()));
+            MediaFilter.builder().libraryId(library.getId()).startLetter(AlphabetLetter.T).build(),
+            firstRows(10));
 
     assertThat(totals.alphabetIndex())
         .extracting(LibraryMetadata::getLetter, LibraryMetadata::getItemCount)
         .containsExactlyInAnyOrder(
             tuple(AlphabetLetter.A, 1), tuple(AlphabetLetter.B, 1), tuple(AlphabetLetter.T, 1));
-    assertThat(page.items())
+    assertThat(page.rows())
         .extracting(item -> item.item().getTitle())
         .containsExactly("~Tilde Tales");
     assertThat(page.hasPreviousPage()).isTrue();
@@ -301,18 +298,14 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
     var totals = counts.getItemCounts(List.of(library.getId())).get(library.getId());
     var page =
         movieService.getMoviesWithFilter(
-            buildForwardOptions(
-                10,
-                MediaFilter.builder()
-                    .libraryId(library.getId())
-                    .startLetter(AlphabetLetter.A)
-                    .build()));
+            MediaFilter.builder().libraryId(library.getId()).startLetter(AlphabetLetter.A).build(),
+            firstRows(10));
 
     assertThat(totals.alphabetIndex())
         .extracting(LibraryMetadata::getLetter, LibraryMetadata::getItemCount)
         .containsExactlyInAnyOrder(
             tuple(AlphabetLetter.A, 3), tuple(AlphabetLetter.B, 1), tuple(AlphabetLetter.L, 1));
-    assertThat(page.items())
+    assertThat(page.rows())
         .extracting(item -> item.item().getTitle())
         .containsExactly(
             "A\u0300 bout de souffle", "\u00C0 la folie", "The Alpha", "Bravo", "Lima");

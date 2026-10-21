@@ -1,8 +1,8 @@
 package com.streamarr.server;
 
-import static com.streamarr.server.fixtures.PaginationFixture.buildBackwardContinuation;
-import static com.streamarr.server.fixtures.PaginationFixture.buildForwardContinuation;
-import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
+import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
+import static com.streamarr.server.fixtures.PaginationFixture.rowsAfter;
+import static com.streamarr.server.fixtures.PaginationFixture.rowsBefore;
 import static com.streamarr.server.jooq.generated.tables.Library.LIBRARY;
 import static com.streamarr.server.jooq.generated.tables.Movie.MOVIE;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -76,14 +76,14 @@ class SkippedMidnightZoneIT extends AbstractIntegrationTest {
     saveMovieReleasedOn(SKIPPED_DAY);
     var filter = releaseDateFilter();
 
-    var page = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
+    var page = movieService.getMoviesWithFilter(filter, firstRows(10));
 
-    assertThat(page.items())
+    assertThat(page.rows())
         .singleElement()
         .satisfies(
-            item -> {
-              assertThat(item.item().getReleaseDate()).isEqualTo(SKIPPED_DAY);
-              assertThat(item.sortValue()).isEqualTo(SKIPPED_DAY);
+            row -> {
+              assertThat(row.item().getReleaseDate()).isEqualTo(SKIPPED_DAY);
+              assertThat(row.position().value()).isEqualTo(new SortValue.OfDate(SKIPPED_DAY));
             });
   }
 
@@ -95,23 +95,18 @@ class SkippedMidnightZoneIT extends AbstractIntegrationTest {
     saveMovieTitledReleasedOn("Day After", SKIPPED_DAY.plusDays(1));
     var filter = releaseDateFilter();
 
-    var first = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
-    var second =
-        movieService.getMoviesWithFilter(
-            buildForwardContinuation(1, filter, first.items().getFirst()));
-    var third =
-        movieService.getMoviesWithFilter(
-            buildForwardContinuation(1, filter, second.items().getFirst()));
+    var first = movieService.getMoviesWithFilter(filter, firstRows(1));
+    var second = movieService.getMoviesWithFilter(filter, rowsAfter(1, first.rows().getFirst()));
+    var third = movieService.getMoviesWithFilter(filter, rowsAfter(1, second.rows().getFirst()));
     var beforeLast =
-        movieService.getMoviesWithFilter(
-            buildBackwardContinuation(2, filter, third.items().getFirst()));
+        movieService.getMoviesWithFilter(filter, rowsBefore(2, third.rows().getFirst()));
 
-    assertThat(Stream.of(first, second, third).flatMap(page -> page.items().stream()))
-        .extracting(item -> item.item().getTitle())
+    assertThat(Stream.of(first, second, third).flatMap(page -> page.rows().stream()))
+        .extracting(row -> row.item().getTitle())
         .containsExactlyInAnyOrder("Skipped Day A", "Skipped Day B", "Day After")
         .endsWith("Day After");
-    assertThat(beforeLast.items())
-        .extracting(item -> item.item().getTitle())
+    assertThat(beforeLast.rows())
+        .extracting(row -> row.item().getTitle())
         .containsExactlyInAnyOrder("Skipped Day A", "Skipped Day B");
   }
 

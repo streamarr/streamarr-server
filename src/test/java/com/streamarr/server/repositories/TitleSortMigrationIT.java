@@ -68,7 +68,7 @@ class TitleSortMigrationIT extends AbstractIntegrationTest {
         .defaultSchema(schema)
         .baselineVersion("99")
         .baselineOnMigrate(true)
-        .target("latest")
+        .target("100")
         .load()
         .migrate();
   }

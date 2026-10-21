@@ -3,16 +3,13 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.repositories.media.SeriesRepository;
-import com.streamarr.server.services.pagination.ItemSortValue;
 import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
-import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.SortDirection;
-import java.util.ArrayList;
+import com.streamarr.server.services.pagination.Position;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
+import com.streamarr.server.services.pagination.SortValue;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -23,8 +20,34 @@ import java.util.stream.Stream;
 public class FakeSeriesRepository extends FakeJpaRepository<Series> implements SeriesRepository {
 
   @Override
-  public Optional<ItemSortValue> findItemPosition(UUID itemId, MediaFilter filter) {
-    throw new UnsupportedOperationException("Placement is tested against PostgreSQL");
+  public List<Row<Series>> rowsInLibrary(MediaFilter filter, Seek seek) {
+    return InMemoryKeyset.rowsBeyond(
+        listed(filter).map(item -> new Row<>(item, positionOf(item, filter))).toList(), seek);
+  }
+
+  @Override
+  public Optional<Row<Series>> rowInLibrary(UUID itemId, MediaFilter filter) {
+    return listed(filter)
+        .filter(item -> item.getId().equals(itemId))
+        .findFirst()
+        .map(item -> new Row<>(item, positionOf(item, filter)));
+  }
+
+  private Stream<Series> listed(MediaFilter filter) {
+    return filterByStartLetter(filterByLibrary(filter), filter);
+  }
+
+  private static Position positionOf(Series item, MediaFilter filter) {
+    var value =
+        switch (filter.getSortBy()) {
+          case TITLE -> FakeFilterHelper.titleSortValue(item.getTitleSort());
+          case ADDED -> item.getCreatedOn();
+          case RELEASE_DATE -> item.getFirstAirDate();
+          case RUNTIME -> item.getRuntime();
+          case LAST_WATCHED ->
+              throw new UnsupportedOperationException("Last watched is tested against PostgreSQL");
+        };
+    return new Position(SortValue.of(value), item.getId());
   }
 
   @Override
@@ -52,42 +75,6 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
   }
 
   @Override
-  public List<Series> findFirstWithFilter(MediaPaginationOptions options) {
-    var filter = options.getMediaFilter();
-    var limit = options.getPaginationOptions().getLimit();
-
-    return filterByStartLetter(filterByLibrary(filter), filter)
-        .sorted(comparatorFor(filter, filter.getSortDirection()))
-        .limit(limit + 1L)
-        .toList();
-  }
-
-  @Override
-  public List<Series> seekWithFilter(MediaPaginationOptions options) {
-    var filter = options.getMediaFilter();
-    var shouldReverse =
-        options.getPaginationOptions().getPaginationDirection().equals(PaginationDirection.REVERSE);
-    var limit = options.getPaginationOptions().getLimit();
-
-    var effectiveFilter = shouldReverse ? FakeFilterHelper.reverseFilter(filter) : filter;
-
-    var sorted =
-        filterByCursorPageStartLetter(filterByLibrary(effectiveFilter), effectiveFilter)
-            .sorted(comparatorFor(effectiveFilter, effectiveFilter.getSortDirection()))
-            .toList();
-
-    var startIndex = FakeFilterHelper.findCursorIndex(sorted, options.getCursorId());
-    var endIndex = Math.min(sorted.size(), startIndex + limit + 2);
-    var result = new ArrayList<>(sorted.subList(startIndex, endIndex));
-
-    if (shouldReverse) {
-      Collections.reverse(result);
-    }
-
-    return result;
-  }
-
-  @Override
   public List<Series> findByLibrary_Id(UUID libraryId) {
     return database.values().stream()
         .filter(
@@ -98,18 +85,6 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
   @Override
   public List<Series> findWithExternalIdsByLibrary_Id(UUID libraryId) {
     return findByLibrary_Id(libraryId);
-  }
-
-  @Override
-  public Optional<Series> findLetterJumpPredecessor(MediaFilter filter) {
-    var reversed = FakeFilterHelper.reverseFilter(filter);
-    return filterByLibrary(filter)
-        .filter(
-            s ->
-                FakeFilterHelper.isAboveLetterAnchor(
-                    s.getTitleSort(), filter.getStartLetter(), filter.getSortDirection()))
-        .sorted(comparatorFor(reversed, reversed.getSortDirection()))
-        .findFirst();
   }
 
   private Stream<Series> filterByLibrary(MediaFilter filter) {
@@ -124,10 +99,7 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
     return applyFilters(stream, filter);
   }
 
-  // Mirrors production seekWithFilter: under TITLE sort the letter was consumed as the landing
-  // page's seek anchor, so cursor pages only re-apply it as an equality restriction for other
-  // sorts.
-  private Stream<Series> filterByCursorPageStartLetter(Stream<Series> stream, MediaFilter filter) {
+  private Stream<Series> filterByStartLetter(Stream<Series> stream, MediaFilter filter) {
     var letter = filter.getStartLetter();
     if (letter == null || filter.getSortBy() == OrderMediaBy.TITLE) {
       return stream;
@@ -182,52 +154,5 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
     }
 
     return stream;
-  }
-
-  private Stream<Series> filterByStartLetter(Stream<Series> stream, MediaFilter filter) {
-    var letter = filter.getStartLetter();
-    if (letter == null) {
-      return stream;
-    }
-
-    if (filter.getSortBy() != OrderMediaBy.TITLE) {
-      return stream.filter(s -> FakeFilterHelper.matchesLetterEquality(s.getTitleSort(), letter));
-    }
-
-    if (filter.getSortDirection() == SortDirection.DESC) {
-      return stream.filter(s -> FakeFilterHelper.matchesLetterDescRange(s.getTitleSort(), letter));
-    }
-
-    return stream.filter(s -> FakeFilterHelper.matchesLetterAscRange(s.getTitleSort(), letter));
-  }
-
-  private Comparator<Series> comparatorFor(MediaFilter filter, SortDirection idSortOrder) {
-    var isDesc = filter.getSortDirection() == SortDirection.DESC;
-
-    Comparator<Series> primary =
-        switch (filter.getSortBy()) {
-          case ADDED -> Comparator.comparing(Series::getCreatedOn, nullsLastDirectional(isDesc));
-          case RELEASE_DATE ->
-              Comparator.comparing(Series::getFirstAirDate, nullsLastDirectional(isDesc));
-          case RUNTIME -> Comparator.comparing(Series::getRuntime, nullsLastDirectional(isDesc));
-          case TITLE ->
-              Comparator.comparing(
-                  Series::getTitleSort,
-                  FakeFilterHelper.titleSortComparator(filter.getSortDirection()));
-          case LAST_WATCHED ->
-              throw new UnsupportedOperationException("LAST_WATCHED not yet implemented in fake");
-        };
-
-    Comparator<Series> idComparator = Comparator.comparing(Series::getId);
-    if (idSortOrder == SortDirection.DESC) {
-      idComparator = idComparator.reversed();
-    }
-
-    return primary.thenComparing(idComparator);
-  }
-
-  private <T extends Comparable<T>> Comparator<T> nullsLastDirectional(boolean desc) {
-    Comparator<T> inner = desc ? Comparator.reverseOrder() : Comparator.naturalOrder();
-    return Comparator.nullsLast(inner);
   }
 }

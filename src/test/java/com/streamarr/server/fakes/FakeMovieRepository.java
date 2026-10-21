@@ -3,16 +3,13 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.repositories.media.MovieRepository;
-import com.streamarr.server.services.pagination.ItemSortValue;
 import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
-import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.SortDirection;
-import java.util.ArrayList;
+import com.streamarr.server.services.pagination.Position;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
+import com.streamarr.server.services.pagination.SortValue;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -23,8 +20,34 @@ import java.util.stream.Stream;
 public class FakeMovieRepository extends FakeJpaRepository<Movie> implements MovieRepository {
 
   @Override
-  public Optional<ItemSortValue> findItemPosition(UUID itemId, MediaFilter filter) {
-    throw new UnsupportedOperationException("Placement is tested against PostgreSQL");
+  public List<Row<Movie>> rowsInLibrary(MediaFilter filter, Seek seek) {
+    return InMemoryKeyset.rowsBeyond(
+        listed(filter).map(movie -> new Row<>(movie, positionOf(movie, filter))).toList(), seek);
+  }
+
+  @Override
+  public Optional<Row<Movie>> rowInLibrary(UUID itemId, MediaFilter filter) {
+    return listed(filter)
+        .filter(movie -> movie.getId().equals(itemId))
+        .findFirst()
+        .map(movie -> new Row<>(movie, positionOf(movie, filter)));
+  }
+
+  private Stream<Movie> listed(MediaFilter filter) {
+    return filterByStartLetter(filterByLibrary(filter), filter);
+  }
+
+  private static Position positionOf(Movie movie, MediaFilter filter) {
+    var value =
+        switch (filter.getSortBy()) {
+          case TITLE -> FakeFilterHelper.titleSortValue(movie.getTitleSort());
+          case ADDED -> movie.getCreatedOn();
+          case RELEASE_DATE -> movie.getReleaseDate();
+          case RUNTIME -> movie.getRuntime();
+          case LAST_WATCHED ->
+              throw new UnsupportedOperationException("Last watched is tested against PostgreSQL");
+        };
+    return new Position(SortValue.of(value), movie.getId());
   }
 
   @Override
@@ -50,54 +73,6 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
         .findFirst();
   }
 
-  @Override
-  public List<Movie> findFirstWithFilter(MediaPaginationOptions options) {
-    var filter = options.getMediaFilter();
-    var limit = options.getPaginationOptions().getLimit();
-
-    return filterByStartLetter(filterByLibrary(filter), filter)
-        .sorted(comparatorFor(filter, filter.getSortDirection()))
-        .limit(limit + 1L)
-        .toList();
-  }
-
-  @Override
-  public List<Movie> seekWithFilter(MediaPaginationOptions options) {
-    var filter = options.getMediaFilter();
-    var shouldReverse =
-        options.getPaginationOptions().getPaginationDirection().equals(PaginationDirection.REVERSE);
-    var limit = options.getPaginationOptions().getLimit();
-
-    var effectiveFilter = shouldReverse ? FakeFilterHelper.reverseFilter(filter) : filter;
-
-    var sorted =
-        filterByCursorPageStartLetter(filterByLibrary(effectiveFilter), effectiveFilter)
-            .sorted(comparatorFor(effectiveFilter, effectiveFilter.getSortDirection()))
-            .toList();
-
-    var startIndex = FakeFilterHelper.findCursorIndex(sorted, options.getCursorId());
-    var endIndex = Math.min(sorted.size(), startIndex + limit + 2);
-    var result = new ArrayList<>(sorted.subList(startIndex, endIndex));
-
-    if (shouldReverse) {
-      Collections.reverse(result);
-    }
-
-    return result;
-  }
-
-  @Override
-  public Optional<Movie> findLetterJumpPredecessor(MediaFilter filter) {
-    var reversed = FakeFilterHelper.reverseFilter(filter);
-    return filterByLibrary(filter)
-        .filter(
-            m ->
-                FakeFilterHelper.isAboveLetterAnchor(
-                    m.getTitleSort(), filter.getStartLetter(), filter.getSortDirection()))
-        .sorted(comparatorFor(reversed, reversed.getSortDirection()))
-        .findFirst();
-  }
-
   private Stream<Movie> filterByLibrary(MediaFilter filter) {
     var libraryId = filter.getLibraryId();
 
@@ -110,10 +85,7 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
     return applyFilters(stream, filter);
   }
 
-  // Mirrors production seekWithFilter: under TITLE sort the letter was consumed as the landing
-  // page's seek anchor, so cursor pages only re-apply it as an equality restriction for other
-  // sorts.
-  private Stream<Movie> filterByCursorPageStartLetter(Stream<Movie> stream, MediaFilter filter) {
+  private Stream<Movie> filterByStartLetter(Stream<Movie> stream, MediaFilter filter) {
     var letter = filter.getStartLetter();
     if (letter == null || filter.getSortBy() == OrderMediaBy.TITLE) {
       return stream;
@@ -168,53 +140,6 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
     }
 
     return stream;
-  }
-
-  private Stream<Movie> filterByStartLetter(Stream<Movie> stream, MediaFilter filter) {
-    var letter = filter.getStartLetter();
-    if (letter == null) {
-      return stream;
-    }
-
-    if (filter.getSortBy() != OrderMediaBy.TITLE) {
-      return stream.filter(m -> FakeFilterHelper.matchesLetterEquality(m.getTitleSort(), letter));
-    }
-
-    if (filter.getSortDirection() == SortDirection.DESC) {
-      return stream.filter(m -> FakeFilterHelper.matchesLetterDescRange(m.getTitleSort(), letter));
-    }
-
-    return stream.filter(m -> FakeFilterHelper.matchesLetterAscRange(m.getTitleSort(), letter));
-  }
-
-  private Comparator<Movie> comparatorFor(MediaFilter filter, SortDirection idSortOrder) {
-    var isDesc = filter.getSortDirection() == SortDirection.DESC;
-
-    Comparator<Movie> primary =
-        switch (filter.getSortBy()) {
-          case ADDED -> Comparator.comparing(Movie::getCreatedOn, nullsLastDirectional(isDesc));
-          case RELEASE_DATE ->
-              Comparator.comparing(Movie::getReleaseDate, nullsLastDirectional(isDesc));
-          case RUNTIME -> Comparator.comparing(Movie::getRuntime, nullsLastDirectional(isDesc));
-          case TITLE ->
-              Comparator.comparing(
-                  Movie::getTitleSort,
-                  FakeFilterHelper.titleSortComparator(filter.getSortDirection()));
-          case LAST_WATCHED ->
-              throw new UnsupportedOperationException("LAST_WATCHED not yet implemented in fake");
-        };
-
-    Comparator<Movie> idComparator = Comparator.comparing(Movie::getId);
-    if (idSortOrder == SortDirection.DESC) {
-      idComparator = idComparator.reversed();
-    }
-
-    return primary.thenComparing(idComparator);
-  }
-
-  private <T extends Comparable<T>> Comparator<T> nullsLastDirectional(boolean desc) {
-    Comparator<T> inner = desc ? Comparator.reverseOrder() : Comparator.naturalOrder();
-    return Comparator.nullsLast(inner);
   }
 
   @Override

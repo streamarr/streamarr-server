@@ -1,7 +1,7 @@
 package com.streamarr.server.services;
 
-import static com.streamarr.server.fixtures.PaginationFixture.buildForwardContinuation;
-import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
+import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
+import static com.streamarr.server.fixtures.PaginationFixture.rowsAfter;
 import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.entry;
@@ -26,10 +26,11 @@ import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
+import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.SortDirection;
+import com.streamarr.server.services.pagination.SortValue;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
@@ -146,13 +147,9 @@ class LastWatchedSortIT extends AbstractIntegrationTest {
     saveCompletion(third, minute(3));
     var filter = lastWatchedFilter(library);
 
-    var page1 = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
-    var page2 =
-        movieService.getMoviesWithFilter(
-            buildForwardContinuation(1, filter, page1.items().getLast()));
-    var page3 =
-        movieService.getMoviesWithFilter(
-            buildForwardContinuation(1, filter, page2.items().getLast()));
+    var page1 = movieService.getMoviesWithFilter(filter, firstRows(1));
+    var page2 = movieService.getMoviesWithFilter(filter, rowsAfter(1, page1.rows().getLast()));
+    var page3 = movieService.getMoviesWithFilter(filter, rowsAfter(1, page2.rows().getLast()));
 
     assertThat(idsOf(page1)).containsExactly(third.getId());
     assertThat(idsOf(page2)).containsExactly(second.getId());
@@ -170,10 +167,9 @@ class LastWatchedSortIT extends AbstractIntegrationTest {
     saveCompletion(finished, minute(3));
     saveProgress(paused, 600, minute(2));
 
-    var page =
-        seriesService.getSeriesWithFilter(buildForwardOptions(20, lastWatchedFilter(library)));
+    var page = seriesService.getSeriesWithFilter(lastWatchedFilter(library), firstRows(20));
 
-    assertThat(page.items())
+    assertThat(page.rows())
         .extracting(item -> item.item().getTitle())
         .containsExactly("Finished", "Paused");
   }
@@ -190,18 +186,19 @@ class LastWatchedSortIT extends AbstractIntegrationTest {
     saveProgress(finished, 600, minute(1));
     saveCompletion(finished, minute(2));
 
-    var page =
-        movieService.getMoviesWithFilter(buildForwardOptions(20, lastWatchedFilter(library)));
+    var page = movieService.getMoviesWithFilter(lastWatchedFilter(library), firstRows(20));
     var fieldValues =
         watchStatusService.getLastWatchedAtForItems(
             profileId,
             CollectableScope.MOVIE_OR_EPISODE,
             List.of(rewatched.getId(), finished.getId(), unwatched.getId()));
 
-    assertThat(page.items())
+    assertThat(page.rows())
         .hasSize(3)
         .allSatisfy(
-            item -> assertThat(item.sortValue()).isEqualTo(fieldValues.get(item.item().getId())));
+            item ->
+                assertThat(item.position().value())
+                    .isEqualTo(SortValue.of(fieldValues.get(item.item().getId()))));
     assertThat(fieldValues)
         .containsOnly(entry(rewatched.getId(), minute(3)), entry(finished.getId(), minute(2)));
   }
@@ -215,15 +212,16 @@ class LastWatchedSortIT extends AbstractIntegrationTest {
     saveCompletion(finished, minute(4));
     saveProgress(paused, 600, minute(2));
 
-    var page =
-        seriesService.getSeriesWithFilter(buildForwardOptions(20, lastWatchedFilter(library)));
-    var seriesIds = page.items().stream().map(item -> item.item().getId()).toList();
+    var page = seriesService.getSeriesWithFilter(lastWatchedFilter(library), firstRows(20));
+    var seriesIds = page.rows().stream().map(item -> item.item().getId()).toList();
     var fieldValues =
         watchStatusService.getLastWatchedAtForItems(profileId, CollectableScope.SERIES, seriesIds);
 
-    assertThat(page.items())
+    assertThat(page.rows())
         .allSatisfy(
-            item -> assertThat(item.sortValue()).isEqualTo(fieldValues.get(item.item().getId())));
+            item ->
+                assertThat(item.position().value())
+                    .isEqualTo(SortValue.of(fieldValues.get(item.item().getId()))));
     assertThat(fieldValues.values()).containsExactlyInAnyOrder(minute(4), minute(2));
   }
 
@@ -244,8 +242,7 @@ class LastWatchedSortIT extends AbstractIntegrationTest {
   }
 
   private List<UUID> movieIdsByLastWatched(Library library) {
-    return idsOf(
-        movieService.getMoviesWithFilter(buildForwardOptions(20, lastWatchedFilter(library))));
+    return idsOf(movieService.getMoviesWithFilter(lastWatchedFilter(library), firstRows(20)));
   }
 
   private MediaFilter lastWatchedFilter(Library library) {
@@ -257,8 +254,8 @@ class LastWatchedSortIT extends AbstractIntegrationTest {
         .build();
   }
 
-  private static <T extends BaseCollectable<?>> List<UUID> idsOf(MediaPage<T> page) {
-    return page.items().stream().map(item -> item.item().getId()).toList();
+  private static <T extends BaseCollectable<?>> List<UUID> idsOf(ListPage<T> page) {
+    return page.rows().stream().map(item -> item.item().getId()).toList();
   }
 
   private void saveProgress(BaseCollectable<?> item, int positionSeconds, Instant lastModifiedOn) {
