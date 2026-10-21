@@ -68,7 +68,8 @@ class SubscriptionContractTest {
     assertThat(descriptionOf(subscriptionField("watchStateChanged")))
         .contains("selected Profile")
         .contains("ViewProfileActivity")
-        .contains("continueWatching");
+        .contains("continueWatching")
+        .contains("edge");
   }
 
   @Test
@@ -76,12 +77,8 @@ class SubscriptionContractTest {
       "Should deliver a non-null list of nullable items when a watch-state change is delivered")
   void shouldDeliverNonNullListOfNullableItemsWhenWatchStateChangeIsDelivered() {
     assertThat(objectType("WatchStateChange").getFieldDefinitions())
-        .singleElement()
-        .satisfies(
-            field -> {
-              assertThat(field.getName()).isEqualTo("items");
-              assertThat(AstPrinter.printAst(field.getType())).isEqualTo("[WatchStateItem]!");
-            });
+        .extracting(field -> field.getName() + ": " + AstPrinter.printAst(field.getType()))
+        .containsExactly("items: [WatchStateItem]!", "continueWatching: [ContinueWatchingChange]");
   }
 
   @Test
@@ -108,6 +105,24 @@ class SubscriptionContractTest {
                       nonNull ->
                           assertThat(((TypeName) nonNull.getType()).getName()).isEqualTo("ID"));
             });
+  }
+
+  @Test
+  @DisplayName("Should expose Continue Watching membership on edges instead of media nodes")
+  void shouldExposeContinueWatchingMembershipOnEdgesInsteadOfMediaNodes() {
+    for (var type : List.of("Movie", "Episode")) {
+      assertThat(objectType(type).getFieldDefinitions())
+          .extracting(FieldDefinition::getName)
+          .doesNotContain("continueWatchingPosition");
+    }
+
+    assertThat(SCHEMA.getType("ContinueWatchingPosition")).isEmpty();
+    assertThat(objectType("ContinueWatchingChange").getFieldDefinitions())
+        .filteredOn(field -> field.getName().equals("edge"))
+        .singleElement()
+        .satisfies(
+            field ->
+                assertThat(AstPrinter.printAst(field.getType())).isEqualTo("ContinueWatchingEdge"));
   }
 
   private static List<FieldDefinition> subscriptionFields() {

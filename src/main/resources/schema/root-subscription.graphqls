@@ -65,7 +65,13 @@ type Subscription {
     receives carries the latest values.
 
     To build current state, subscribe first, then query `continueWatching` and the library views
-    the client shows. Select the same fields in the change as in those queries.
+    the client shows. Select the same fields in the change as in those queries. For Continue
+    Watching, select continueWatching { itemId edge { cursor orderKey node { ... } } } alongside
+    items. The edge uses the same membership and ordering as the query. Merge by ID, compare
+    opaque orderKey values and retain the client's shelf cap without backfill. An eligible
+    displayed item moved to the tail stays while it fits that cap. Remove only an explicitly
+    null edge with no error affecting that change's response path, including aliases and list
+    indices. A non-null edge with a null node is not a removal.
 
     A field that fails to resolve does not end the operation. The `errors` of the message name the
     path of each failed field. A failed nullable field arrives as null. A failed non-null field of
@@ -83,4 +89,23 @@ type WatchStateChange {
     resolve.
     """
     items: [WatchStateItem]!
+    """
+    Continue Watching membership for every touched movie or episode, independent of
+    the client's shelf cap, including departures with a null edge. A null list means membership
+    could not be evaluated: preserve the shelf and still apply usable entity updates through items.
+    """
+    continueWatching: [ContinueWatchingChange]
+}
+
+"A touched item's current membership in the selected Profile's Continue Watching list."
+type ContinueWatchingChange {
+    itemId: ID!
+    """
+    The same edge returned by the query, or null when the item no longer belongs.
+    Remove membership only for an explicitly resolved null edge with no error whose
+    response path starts at this change, including aliases and list indices. A
+    non-null edge with a null node is never a removal. Preserve affected cached
+    fields and membership until shared recovery; usable sibling changes may apply.
+    """
+    edge: ContinueWatchingEdge
 }

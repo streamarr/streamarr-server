@@ -229,14 +229,24 @@ There is no order across operations or across fields.
 A client keeps its lists current with the same rules the server's queries use.
 It needs no follow-up query.
 
-* *Continue Watching* holds each movie and episode whose `watchStatus` is `IN_PROGRESS`.
-It orders them by `lastWatchedAt`, newest first, then by `id`.
-A client inserts an item when the item becomes `IN_PROGRESS`, moves the item when `lastWatchedAt` changes, and removes the item when the item leaves `IN_PROGRESS`.
-* *Library views* hold an item when `library { id }` names the view's library and the item matches every active filter.
-The `watchStatus` filter compares the item's `watchStatus`.
-The `unmatched` filter compares the item's `unmatched` field.
-A client selects the fields its active filters compare.
-* *The `LAST_WATCHED` sort* orders by `lastWatchedAt`, with items that have none last in both directions, then by `id`.
+* *Continue Watching* queries `continueWatching(first, after) { edges { cursor orderKey node { ... } } pageInfo { ... } }`.
+The existing watch-state subscription carries `items` for independent entity updates and `continueWatching { itemId edge { cursor orderKey node { ... } } }` for list changes.
+The change list includes every touched movie or episode, including departures with a null edge.
+A null change list means membership is unknown: preserve the shelf and still apply usable `items`.
+Continuation work is bounded by the selected Profile: the query groups that Profile's progress before applying the cursor, so it does not promise an index seek directly to the next shelf page.
+The connection and event edges share counted-resume-position membership and last-watched ordering, including the descending ID tie-breaker.
+Clients select full card fields on event nodes, merge eligible edges by ID, compare opaque `orderKey` values as ascending ASCII strings, and retain at most their shelf cap.
+An explicitly null edge with no error affecting that change's response path removes the item without reading a replacement; membership is independent of the cap.
+A non-null edge with a null node never removes an item. Error paths include aliases and list indices; preserve affected changes and recover through the shared subscription lifecycle.
+An existing eligible item moved to the tail remains while it fits the cap; an initially full shelf does not establish a permanent boundary.
+`pageInfo.hasNextPage` describes query-time coverage and does not change this policy or promise an exact live top-N shelf.
+Compare keys only within this Profile's Continue Watching list.
+This is the bounded shelf policy in https://github.com/streamarr/streamarr-adr/blob/main/adr/0046-home-continue-watching-keeps-a-cap-without-backfill-reads.adoc[ADR 0046].
+* *Library views* use `edge(sort, filter)` from `libraryItemAdded` and `libraryItemUpdated`, with the same arguments as `Library.items`.
+The server supplies the same `MediaEdge` as the query, including an opaque `orderKey` and usable cursor, for watch-status filters and `LAST_WATCHED` ordering too.
+The independent `item` selection updates entity data even when the edge is null because the item left a filtered view.
+Clients compare keys against their loaded window and reconcile by item ID; they do not reconstruct filter or sort rules from selected entity fields.
+See link:library-contents.md[Live library contents] for window boundaries, removals and recovery.
 
 A client keeps the `pageInfo` cursors from its last page query and never builds a cursor.
 A cursor stays a valid position after its item leaves the view or moves.

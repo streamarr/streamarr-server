@@ -8,7 +8,7 @@ import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
-import com.streamarr.server.graphql.dto.MediaEdge;
+import com.streamarr.server.graphql.dto.OrderedEdge;
 import com.streamarr.server.graphql.inputs.MediaFilterInput;
 import com.streamarr.server.graphql.inputs.MediaFilterMapper;
 import com.streamarr.server.graphql.inputs.MediaFilterRequest;
@@ -51,7 +51,7 @@ public class LibraryContentsSubscriptionResolver {
   }
 
   @DgsData(parentType = "LibraryItemChange")
-  public Optional<MediaEdge<BaseCollectable<?>>> edge(
+  public Optional<OrderedEdge<BaseCollectable<?>>> edge(
       @InputArgument MediaSortInput sort,
       @InputArgument MediaFilterInput filter,
       DataFetchingEnvironment environment) {

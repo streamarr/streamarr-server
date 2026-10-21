@@ -7,7 +7,6 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class CursorValidator {
-
   public void validateCursorAgainstFilter(
       MediaPaginationOptions decodedOptions, MediaFilter filter) {
     MediaFilterComparator.findMismatch(decodedOptions.getMediaFilter(), filter)

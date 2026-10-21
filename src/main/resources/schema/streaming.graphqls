@@ -53,6 +53,20 @@ type WatchProgress {
 
 union ContinueWatchingMedia = Movie | Episode
 
+"A page of the selected Profile's Continue Watching list."
+type ContinueWatchingConnection {
+    edges: [ContinueWatchingEdge]!
+    pageInfo: PageInfo!
+}
+
+"Membership and ordering in Continue Watching, shared by queries and change payloads."
+type ContinueWatchingEdge implements OrderedEdge {
+    node: ContinueWatchingMedia
+    cursor: String!
+    "Compare as ascending ASCII strings; includes last-watched descending and the ID tie-breaker."
+    orderKey: String!
+}
+
 "An item whose watch state a Profile can change."
 union WatchStateItem = Movie | Episode | Season | Series
 

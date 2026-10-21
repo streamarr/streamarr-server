@@ -148,6 +148,14 @@ public class PaginationService {
     return new MediaPage<>(items, hasNextPage, hasPreviousPage);
   }
 
+  /** Rejects a cursor without a sort value, for a list whose sort value is never null. */
+  public void requireCursorSortValue(MediaPaginationOptions options) {
+    if (options.getCursorId().isPresent()
+        && options.getMediaFilter().getPreviousSortFieldValue() == null) {
+      throw new InvalidPaginationCursorException("Cursor sort value is required.");
+    }
+  }
+
   public <T> MediaPage<T> buildKeysetPage(
       List<PageItem<T>> ordered, KeysetPaginationOptions options, Function<T, UUID> idOf) {
     var cursorId = options.getCursorId();

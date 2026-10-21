@@ -8,7 +8,12 @@ type Query {
     rating(id: ID!): Rating!
     library(id: ID!): Library!
     libraries: [Library!]!
-    continueWatching(first: Int): [ContinueWatchingMedia!]!
+    """
+    The selected Profile's Continue Watching list, newest last-watched first. Forward-only:
+    first defaults to 20; after continues from an opaque cursor for this Profile and list.
+    Authorizes from the signed selected-Profile token, including revalidation queries.
+    """
+    continueWatching(first: Int, after: String): ContinueWatchingConnection!
     householdAdministration(householdId: ID!): HouseholdAdministration
     households(first: Int, after: String, last: Int, before: String): HouseholdAdministrationConnection!
     accountAdministration(accountId: ID!): AccountAdministration

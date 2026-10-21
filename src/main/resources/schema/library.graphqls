@@ -96,7 +96,18 @@ type MediaConnection {
     pageInfo: PageInfo!
 }
 
-type MediaEdge {
+"""
+An edge in a server-ordered list. Query pages and change payloads build it the same way, so clients
+can place a changed item by its order key and continue paging from its cursor.
+"""
+interface OrderedEdge {
+    "Pass unchanged to before or after. Never decode or synthesize it."
+    cursor: String!
+    "Compare as ascending ASCII strings, only with keys from the same list, sort and filter."
+    orderKey: String!
+}
+
+type MediaEdge implements OrderedEdge {
     "Server ordering key. Compare bytewise ascending within the same sort and filter, including DESC sorts."
     orderKey: String!
     node: Media

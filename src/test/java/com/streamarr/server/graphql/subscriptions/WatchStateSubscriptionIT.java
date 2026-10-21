@@ -61,6 +61,9 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
       """
       subscription {
         watchStateChanged {
+          continueWatching {
+            itemId edge { cursor orderKey node { ... on Movie { id title } ... on Episode { id title } } }
+          }
           items {
             __typename
             ... on Movie {
@@ -71,7 +74,9 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
               library { id }
               unmatched
             }
-            ... on Episode { id watchStatus lastWatchedAt watchProgress { positionSeconds } }
+            ... on Episode {
+              id watchStatus lastWatchedAt watchProgress { positionSeconds }
+            }
             ... on Season { id watchStatus watchProgress { positionSeconds } }
             ... on Series {
               id
@@ -120,6 +125,54 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
     activeSubscriptions.awaitNoneActive();
     streamSessionIds.forEach(runtimeRegistry::removeById);
     identities.forEach(authTestSupport::deleteIdentity);
+  }
+
+  @Test
+  @DisplayName("Should match query placement when an episode enters and leaves Continue Watching")
+  void shouldMatchQueryPlacementWhenAnEpisodeEntersAndLeavesContinueWatching() {
+    var identity = createIdentity();
+    var otherIdentity = createIdentity();
+    var episode = createEpisode();
+    var session = openStreamSession(identity, episode);
+    var reporter = authTestSupport.profileBearer(identity);
+    var subscriber = subscribedSocket(reporter);
+
+    reportPaused(reporter, session, PAUSED_POSITION_SECONDS);
+
+    var added = nextChange(subscriber);
+    var changes = added.path("continueWatching");
+    assertThat(changes.isArray()).isTrue();
+    assertThat(changes.size()).isEqualTo(1);
+    assertThat(changes.get(0).path("itemId").asString()).isEqualTo(episode.getId().toString());
+    var edge = changes.get(0).path("edge");
+    assertThat(edge.path("orderKey").asString()).isNotBlank();
+    assertThat(edge.at("/node/id").asString()).isEqualTo(episode.getId().toString());
+    var query =
+        """
+        { continueWatching(first: 12) {
+          edges { cursor orderKey node { ... on Episode { id title } } }
+        } }
+        """;
+    var shelf = http.execute(reporter, query);
+    assertThat(shelf.path("errors").isMissingNode()).isTrue();
+    assertThat(shelf.at("/data/continueWatching/edges/0")).isEqualTo(edge);
+    var otherShelf = http.execute(authTestSupport.profileBearer(otherIdentity), query);
+    assertThat(otherShelf.path("errors").isMissingNode()).isTrue();
+    assertThat(otherShelf.at("/data/continueWatching/edges").isArray()).isTrue();
+    assertThat(otherShelf.at("/data/continueWatching/edges").isEmpty()).isTrue();
+
+    markWatched(reporter, episode.getId());
+
+    var removed = nextChange(subscriber);
+    assertThat(itemsById(removed).get(episode.getId().toString()).path("watchStatus").asString())
+        .isEqualTo("WATCHED");
+    assertThat(removed.at("/continueWatching/0/itemId").asString())
+        .isEqualTo(episode.getId().toString());
+    assertThat(removed.at("/continueWatching/0/edge").isNull()).isTrue();
+    var afterRemoval = http.execute(reporter, query);
+    assertThat(afterRemoval.path("errors").isMissingNode()).isTrue();
+    assertThat(afterRemoval.at("/data/continueWatching/edges").isArray()).isTrue();
+    assertThat(afterRemoval.at("/data/continueWatching/edges").isEmpty()).isTrue();
   }
 
   @Test

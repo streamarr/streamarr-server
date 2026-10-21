@@ -29,7 +29,9 @@ selected watch-state fields still resolve for each subscriber's own Profile.
 ## Placement and pagination
 
 Select `orderKey` on ordinary `MediaEdge` results. Select `edge` with the **same sort
-and filter** on addition and update payloads:
+and filter** on addition and update payloads. `MediaEdge` and `ContinueWatchingEdge` both
+implement `OrderedEdge { cursor orderKey }`, so one fragment and one merge routine can
+serve every server-ordered list:
 
 ```graphql
 subscription LibraryAdditions($id: ID!, $sort: MediaSort, $filter: MediaFilter) {
