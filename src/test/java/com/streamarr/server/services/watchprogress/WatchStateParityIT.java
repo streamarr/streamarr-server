@@ -1,6 +1,7 @@
 package com.streamarr.server.services.watchprogress;
 
 import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
+import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
 import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -367,9 +368,8 @@ class WatchStateParityIT extends AbstractIntegrationTest {
 
   private List<UUID> continueWatchingIds() {
     return continueWatchingService
-        .getPage(
-            profileId, buildForwardOptions(CONTINUE_WATCHING_LIMIT, MediaFilter.builder().build()))
-        .items()
+        .getPage(profileId, firstRows(CONTINUE_WATCHING_LIMIT))
+        .rows()
         .stream()
         .map(item -> item.item().getId())
         .toList();

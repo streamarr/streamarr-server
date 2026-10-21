@@ -1,6 +1,6 @@
 package com.streamarr.server.services.watchprogress;
 
-import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
+import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackAuthorityFor;
 import static com.streamarr.server.support.PostgresLockTestSupport.awaitWaitersBehind;
@@ -17,7 +17,6 @@ import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
-import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.BoundedTask;
@@ -229,9 +228,8 @@ class WatchStateAcrossDevicesIT extends AbstractIntegrationTest {
 
   private List<UUID> continueWatchingIds() {
     return continueWatchingService
-        .getPage(
-            profileId, buildForwardOptions(CONTINUE_WATCHING_LIMIT, MediaFilter.builder().build()))
-        .items()
+        .getPage(profileId, firstRows(CONTINUE_WATCHING_LIMIT))
+        .rows()
         .stream()
         .map(item -> item.item().getId())
         .toList();

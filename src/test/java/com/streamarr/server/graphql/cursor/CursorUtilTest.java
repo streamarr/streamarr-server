@@ -2,14 +2,20 @@ package com.streamarr.server.graphql.cursor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
+import com.streamarr.server.domain.AlphabetLetter;
+import com.streamarr.server.domain.streaming.WatchStatus;
+import com.streamarr.server.exceptions.InvalidPaginationCursorException;
 import com.streamarr.server.services.pagination.KeysetPaginationOptions;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.MediaPaginationOptionsResolver;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.SortDirection;
+import com.streamarr.server.support.MalformedCursors;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -329,6 +335,88 @@ class CursorUtilTest {
           Arguments.of(OrderMediaBy.ADDED, Instant.parse("+294276-12-31T23:59:59.999999Z")),
           Arguments.of(OrderMediaBy.RUNTIME, 90),
           Arguments.of(OrderMediaBy.LAST_WATCHED, Instant.parse("2026-10-19T15:07:12.345Z")));
+    }
+  }
+
+  @Nested
+  @DisplayName("Malformed Cursors")
+  class GeneratedMalformedCursors {
+
+    private static final MediaFilter REQUEST =
+        MediaFilter.builder()
+            .sortBy(OrderMediaBy.RELEASE_DATE)
+            .sortDirection(SortDirection.DESC)
+            .libraryId(UUID.fromString("0e6f2c1a-3b4d-4e5f-8a9b-1c2d3e4f5a6b"))
+            .profileId(UUID.fromString("5d2f6a8e-0c1b-4f3e-9a7d-2b4c6e8f0a1c"))
+            .startLetter(AlphabetLetter.Q)
+            .genreIds(List.of(UUID.fromString("7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d")))
+            .years(List.of(1999))
+            .contentRatings(List.of("PG"))
+            .unmatched(false)
+            .watchStatus(WatchStatus.IN_PROGRESS)
+            .build();
+
+    static Stream<String> malformedMediaCursors() {
+      var genuine =
+          new CursorUtil(new ObjectMapper())
+              .encodeMediaCursor(
+                  MediaPaginationOptions.builder().mediaFilter(REQUEST).build(),
+                  UUID.randomUUID(),
+                  LocalDate.of(1999, 3, 31))
+              .getValue();
+      return MalformedCursors.of(genuine);
+    }
+
+    static Stream<String> malformedKeysetCursors() {
+      return MalformedCursors.of(
+          new CursorUtil(new ObjectMapper()).encodeKeysetCursor(UUID.randomUUID()).getValue());
+    }
+
+    @ParameterizedTest
+    @MethodSource("malformedMediaCursors")
+    @DisplayName("Should continue or reject a media cursor as invalid when a client alters it")
+    void shouldContinueOrRejectAMediaCursorAsInvalidWhenAClientAltersIt(String cursor) {
+      var thrown =
+          catchThrowable(
+              () ->
+                  MediaPaginationOptionsResolver.resolve(
+                      PaginationOptions.builder()
+                          .cursor(Optional.of(cursor))
+                          .paginationDirection(PaginationDirection.FORWARD)
+                          .limit(10)
+                          .build(),
+                      REQUEST,
+                      cursorUtil::decodeMediaCursor,
+                      new CursorValidator()::validateCursorAgainstFilter));
+
+      assertDecodedOrInvalid(thrown);
+    }
+
+    @ParameterizedTest
+    @MethodSource("malformedKeysetCursors")
+    @DisplayName("Should decode or reject a keyset cursor as invalid when a client alters it")
+    void shouldDecodeOrRejectAKeysetCursorAsInvalidWhenAClientAltersIt(String cursor) {
+      var thrown =
+          catchThrowable(
+              () ->
+                  cursorUtil.decodeKeysetCursor(
+                      PaginationOptions.builder()
+                          .cursor(Optional.of(cursor))
+                          .paginationDirection(PaginationDirection.FORWARD)
+                          .limit(10)
+                          .build()));
+
+      assertDecodedOrInvalid(thrown);
+    }
+
+    private static void assertDecodedOrInvalid(Throwable thrown) {
+      assertThat(thrown)
+          .satisfiesAnyOf(
+              rejection -> assertThat(rejection).isNull(),
+              rejection ->
+                  assertThat(rejection)
+                      .isInstanceOfAny(
+                          InvalidCursorException.class, InvalidPaginationCursorException.class));
     }
   }
 }

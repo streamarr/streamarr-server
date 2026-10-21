@@ -11,6 +11,7 @@ import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.graphql.StreamarrDataFetcherExceptionHandler;
 import com.streamarr.server.graphql.cursor.CursorUtil;
+import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
@@ -66,6 +67,7 @@ import tools.jackson.databind.ObjectMapper;
       StreamarrDataFetcherExceptionHandler.class,
       CursorUtil.class,
       RelayConnectionAdapter.class,
+      PositionCursorCodec.class,
       PaginationService.class
     })
 @DisplayName("Household Deletion Resolver Tests")

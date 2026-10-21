@@ -1,7 +1,7 @@
 package com.streamarr.server.services.watchprogress;
 
-import static com.streamarr.server.fixtures.PaginationFixture.buildForwardContinuation;
-import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
+import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
+import static com.streamarr.server.fixtures.PaginationFixture.rowsAfter;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -13,9 +13,6 @@ import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
-import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.OrderMediaBy;
-import com.streamarr.server.services.pagination.SortDirection;
 import com.streamarr.server.support.AnalyzedSelects;
 import com.streamarr.server.support.AuthTestSupport;
 import java.util.Set;
@@ -90,13 +87,7 @@ class ContinueWatchingPaginationWorkIT extends AbstractIntegrationTest {
         otherProfile,
         profile);
     jdbc.execute("ANALYZE session_progress, media_file, watch_history");
-    var filter =
-        MediaFilter.builder()
-            .profileId(profile)
-            .sortBy(OrderMediaBy.LAST_WATCHED)
-            .sortDirection(SortDirection.DESC)
-            .build();
-    var first = service.getPage(profile, buildForwardOptions(12, filter));
+    var first = service.getPage(profile, firstRows(12));
     var plans =
         AnalyzedSelects.builder()
             .dsl(dsl)
@@ -105,10 +96,8 @@ class ContinueWatchingPaginationWorkIT extends AbstractIntegrationTest {
             .build()
             .of(
                 () -> {
-                  var next =
-                      service.getPage(
-                          profile, buildForwardContinuation(12, filter, first.items().getLast()));
-                  assertThat(next.items()).hasSize(12).doesNotContainAnyElementsOf(first.items());
+                  var next = service.getPage(profile, rowsAfter(12, first.rows().getLast()));
+                  assertThat(next.rows()).hasSize(12).doesNotContainAnyElementsOf(first.rows());
                   assertThat(next.hasNextPage()).isTrue();
                   assertThat(next.hasPreviousPage()).isTrue();
                 });

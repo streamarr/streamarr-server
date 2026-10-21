@@ -26,6 +26,7 @@ import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.graphql.StreamarrDataFetcherExceptionHandler;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.CursorValidator;
+import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dataloaders.LibraryItemCountDataLoader;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -94,6 +95,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       CursorUtil.class,
       CursorValidator.class,
       RelayConnectionAdapter.class,
+      PositionCursorCodec.class,
       JacksonAutoConfiguration.class,
       SecurityContextAuthorizationService.class,
       FakeAuthorizationDecider.class,

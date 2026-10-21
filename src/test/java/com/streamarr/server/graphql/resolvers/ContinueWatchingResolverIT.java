@@ -16,15 +16,15 @@ import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
-import com.streamarr.server.graphql.cursor.CursorUtil;
+import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
-import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
-import com.streamarr.server.services.watchprogress.ContinueWatchingService;
+import com.streamarr.server.services.pagination.ListIdentity;
+import com.streamarr.server.services.pagination.Position;
+import com.streamarr.server.services.pagination.SortValue;
 import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
@@ -33,13 +33,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.NullSource;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -51,7 +51,7 @@ import tools.jackson.databind.ObjectMapper;
 class ContinueWatchingResolverIT extends AbstractIntegrationTest {
 
   @Autowired private MockMvc mockMvc;
-  @Autowired private CursorUtil cursors;
+  @Autowired private PositionCursorCodec cursors;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private SeriesRepository seriesRepository;
@@ -59,6 +59,9 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
   @Autowired private EpisodeRepository episodeRepository;
   @Autowired private SessionProgressRepository sessionProgressRepository;
   @Autowired private AuditColumnFixtures auditColumns;
+
+  private static final SortValue WATCHED_AT =
+      new SortValue.OfInstant(Instant.parse("2026-10-19T15:07:00Z"));
 
   private AuthTestSupport.TestIdentity identity;
 
@@ -70,36 +73,39 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
   }
 
   @ParameterizedTest
-  @NullSource
-  @ValueSource(strings = {"not-a-timestamp", "2026-10-19T15:07Z"})
-  @DisplayName("Should reject a malformed Continue Watching timestamp as an invalid cursor")
-  void shouldRejectMalformedContinueWatchingTimestampAsInvalidCursor(String timestamp)
+  @MethodSource("positionsOutsideContinueWatching")
+  @DisplayName("Should reject a cursor when its position cannot belong to Continue Watching")
+  void shouldRejectACursorWhenItsPositionCannotBelongToContinueWatching(SortValue value)
       throws Exception {
     identity = authTestSupport.createIdentity();
-    var filter = ContinueWatchingService.listOptions(identity.profile().getId()).getMediaFilter();
+    var list = new ListIdentity("continue-watching", identity.profile().getId());
 
-    assertContinuingIsInvalid(cursorAt(filter, timestamp));
+    assertContinuingIsInvalid(cursorAt(list, value));
+  }
+
+  static Stream<SortValue> positionsOutsideContinueWatching() {
+    return Stream.of(
+        new SortValue.Absent(),
+        new SortValue.OfText("2026-10-19T15:07:00Z"),
+        new SortValue.OfNumber(1));
   }
 
   @Test
   @DisplayName("Should reject a cursor when it continues another list")
   void shouldRejectACursorWhenItContinuesAnotherList() throws Exception {
     identity = authTestSupport.createIdentity();
-    var filter =
-        ContinueWatchingService.listOptions(identity.profile().getId()).getMediaFilter().toBuilder()
-            .libraryId(UUID.randomUUID())
-            .build();
+    var list = new ListIdentity("library-items", identity.profile().getId());
 
-    assertContinuingIsInvalid(cursorAt(filter, "2026-10-19T15:07:00Z"));
+    assertContinuingIsInvalid(cursorAt(list, WATCHED_AT));
   }
 
   @Test
   @DisplayName("Should reject a cursor when it continues another Profile's list")
   void shouldRejectACursorWhenItContinuesAnotherProfilesList() throws Exception {
     identity = authTestSupport.createIdentity();
-    var filter = ContinueWatchingService.listOptions(UUID.randomUUID()).getMediaFilter();
+    var list = new ListIdentity("continue-watching", UUID.randomUUID());
 
-    assertContinuingIsInvalid(cursorAt(filter, "2026-10-19T15:07:00Z"));
+    assertContinuingIsInvalid(cursorAt(list, WATCHED_AT));
   }
 
   @Test
@@ -263,13 +269,8 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
     }
   }
 
-  private String cursorAt(MediaFilter filter, String timestamp) {
-    return cursors
-        .encodeMediaCursor(
-            MediaPaginationOptions.builder().mediaFilter(filter).build(),
-            UUID.randomUUID(),
-            timestamp)
-        .getValue();
+  private String cursorAt(ListIdentity list, SortValue value) {
+    return cursors.encode(list, new Position(value, UUID.randomUUID())).getValue();
   }
 
   private void assertContinuingIsInvalid(String cursor) throws Exception {

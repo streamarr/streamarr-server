@@ -4,13 +4,31 @@ import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PageItem;
+import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationOptions;
+import com.streamarr.server.services.pagination.Row;
 import java.util.Optional;
 
 public final class PaginationFixture {
 
   private PaginationFixture() {}
+
+  public static PageRequest firstRows(int limit) {
+    return PageRequest.builder()
+        .position(Optional.empty())
+        .direction(PaginationDirection.FORWARD)
+        .limit(limit)
+        .build();
+  }
+
+  public static PageRequest rowsAfter(int limit, Row<?> row) {
+    return PageRequest.builder()
+        .position(Optional.of(row.position()))
+        .direction(PaginationDirection.FORWARD)
+        .limit(limit)
+        .build();
+  }
 
   public static MediaPaginationOptions buildForwardOptions(int limit, MediaFilter filter) {
     return MediaPaginationOptions.builder()

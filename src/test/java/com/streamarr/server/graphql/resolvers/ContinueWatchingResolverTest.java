@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
@@ -13,17 +14,15 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.graphql.cursor.CursorUtil;
-import com.streamarr.server.graphql.cursor.CursorValidator;
+import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
-import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.MediaPage;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
-import com.streamarr.server.services.pagination.OrderMediaBy;
-import com.streamarr.server.services.pagination.PageItem;
+import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.PaginationService;
-import com.streamarr.server.services.pagination.SortDirection;
+import com.streamarr.server.services.pagination.Position;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.SortValue;
 import com.streamarr.server.services.watchprogress.ContinueWatchingService;
 import com.streamarr.server.support.security.TestIdentityConstants;
 import com.streamarr.server.support.security.WithProfileContext;
@@ -46,7 +45,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       ContinueWatchingResolver.class,
       PaginationService.class,
       CursorUtil.class,
-      CursorValidator.class,
+      PositionCursorCodec.class,
       RelayConnectionAdapter.class,
       JacksonAutoConfiguration.class,
       SecurityContextAuthorizationService.class,
@@ -62,21 +61,10 @@ class ContinueWatchingResolverTest {
   @MockitoBean private ContinueWatchingService continueWatchingService;
   @MockitoBean private UserAccountRepository userAccountRepository;
 
-  private MediaPage<BaseCollectable<?>> page(BaseCollectable<?> item) {
-    return new MediaPage<>(
-        List.of(new PageItem<>(item, Instant.parse("2026-10-19T15:07:00Z"))), false, false);
-  }
-
-  private MediaPaginationOptions options(int first) {
-    return MediaPaginationOptions.builder()
-        .paginationOptions(new PaginationService().getPaginationOptions(first, null, 0, null))
-        .mediaFilter(
-            MediaFilter.builder()
-                .profileId(PROFILE_ID)
-                .sortBy(OrderMediaBy.LAST_WATCHED)
-                .sortDirection(SortDirection.DESC)
-                .build())
-        .build();
+  private ListPage<BaseCollectable<?>> page(BaseCollectable<?> item) {
+    var position =
+        new Position(new SortValue.OfInstant(Instant.parse("2026-10-19T15:07:00Z")), item.getId());
+    return new ListPage<>(List.of(new Row<>(item, position)), false, false);
   }
 
   @Nested
@@ -89,7 +77,7 @@ class ContinueWatchingResolverTest {
       var movie = Movie.builder().title("Test Movie").titleSort("Test Movie").build();
       movie.setId(UUID.randomUUID());
 
-      when(continueWatchingService.getPage(PROFILE_ID, options(10))).thenReturn(page(movie));
+      when(continueWatchingService.getPage(PROFILE_ID, firstRows(10))).thenReturn(page(movie));
 
       List<String> titles =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -102,8 +90,8 @@ class ContinueWatchingResolverTest {
     @Test
     @DisplayName("Should return empty list when no items in progress")
     void shouldReturnEmptyListWhenNoItemsInProgress() {
-      when(continueWatchingService.getPage(PROFILE_ID, options(20)))
-          .thenReturn(new MediaPage<>(List.of(), false, false));
+      when(continueWatchingService.getPage(PROFILE_ID, firstRows(20)))
+          .thenReturn(new ListPage<>(List.of(), false, false));
 
       List<Object> results =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -119,7 +107,7 @@ class ContinueWatchingResolverTest {
       var movie = Movie.builder().title("Movie Item").titleSort("Movie Item").build();
       movie.setId(UUID.randomUUID());
 
-      when(continueWatchingService.getPage(PROFILE_ID, options(20))).thenReturn(page(movie));
+      when(continueWatchingService.getPage(PROFILE_ID, firstRows(20))).thenReturn(page(movie));
 
       String typename =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -135,7 +123,7 @@ class ContinueWatchingResolverTest {
       var episode = Episode.builder().title("Episode Item").episodeNumber(1).build();
       episode.setId(UUID.randomUUID());
 
-      when(continueWatchingService.getPage(PROFILE_ID, options(20))).thenReturn(page(episode));
+      when(continueWatchingService.getPage(PROFILE_ID, firstRows(20))).thenReturn(page(episode));
 
       String typename =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -171,8 +159,7 @@ class ContinueWatchingResolverTest {
                   new FakeAuthorizationDecider(), new FakeUserAccountRepository()),
               new PaginationService(),
               mock(RelayConnectionAdapter.class),
-              mock(CursorUtil.class),
-              new CursorValidator());
+              mock(PositionCursorCodec.class));
       var unsupported = new Object();
 
       assertThatThrownBy(() -> resolver.resolveContinueWatchingMedia(unsupported))
