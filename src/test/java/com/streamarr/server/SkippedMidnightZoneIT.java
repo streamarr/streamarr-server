@@ -11,16 +11,19 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.JooqQueryHelper;
+import com.streamarr.server.repositories.Keyset;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.SortDirection;
+import com.streamarr.server.services.pagination.SortValue;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.Locale;
@@ -202,6 +205,33 @@ class SkippedMidnightZoneIT extends AbstractIntegrationTest {
             UUID.class);
 
     assertThat(ids).containsExactly(library.getId());
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {PRE_GREGORIAN_INSTANT, BEFORE_COMMON_ERA_INSTANT, PRE_EPOCH_FRACTION})
+  @DisplayName("Should read a row's instant position unchanged when it precedes the Unix epoch")
+  void shouldReadRowInstantPositionUnchangedWhenItPrecedesUnixEpoch(String value) {
+    var instant = Instant.parse(value);
+    storeScanStartedOn(instant);
+    var keyset =
+        Keyset.<OffsetDateTime>builder()
+            .sortValue(LIBRARY.SCAN_STARTED_ON)
+            .itemId(LIBRARY.ID)
+            .build();
+
+    var rows =
+        JooqQueryHelper.nativeRows(
+            entityManager,
+            DSL.select(LIBRARY.asterisk(), keyset.selectedSortValue())
+                .from(LIBRARY)
+                .where(LIBRARY.ID.eq(library.getId())),
+            Library.class,
+            keyset);
+
+    assertThat(rows)
+        .singleElement()
+        .extracting(row -> row.position().value())
+        .isEqualTo(new SortValue.OfInstant(instant));
   }
 
   private void storeScanStartedOn(Instant instant) {

@@ -70,7 +70,8 @@ public class JooqQueryHelper {
       EntityManager em, Query query, Class<E> type, Keyset<?> keyset) {
     NativeQuery<Object[]> result = em.createNativeQuery(query.getSQL()).unwrap(NativeQuery.class);
     result.addEntity(type);
-    result.addScalar(Keyset.SELECTED_SORT_VALUE, keyset.sortValue().getType());
+    result.addScalar(
+        Keyset.SELECTED_SORT_VALUE, directJdbcType(keyset.sortValue().getType(), typesOf(em)));
     bindParameters(em, result, query);
     return result.getResultList().stream()
         .map(
@@ -82,13 +83,12 @@ public class JooqQueryHelper {
   }
 
   private void bindParameters(EntityManager em, NativeQuery<?> result, Query query) {
-    var types =
-        em.getEntityManagerFactory().unwrap(SessionFactoryImplementor.class).getTypeConfiguration();
+    var types = typesOf(em);
     List<Object> values = query.getBindValues();
     for (int i = 0; i < values.size(); i++) {
       var value = values.get(i);
       if (value instanceof Temporal temporal) {
-        result.setParameter(i + 1, temporal, directBindingType(temporal, types));
+        result.setParameter(i + 1, temporal, directJdbcType(classOf(temporal), types));
         continue;
       }
 
@@ -96,14 +96,23 @@ public class JooqQueryHelper {
     }
   }
 
-  // Hibernate types an untyped parameter by the basic type registered for its Java class, which
-  // binds java.time values through java.sql.Date and java.sql.Timestamp regardless of
-  // hibernate.type.java_time_use_direct_jdbc. A java.time value binds with the JDBC type an entity
-  // attribute of the same class uses.
-  private <T extends Temporal> BasicType<T> directBindingType(T value, TypeConfiguration types) {
-    @SuppressWarnings("unchecked")
-    var valueClass = (Class<T>) value.getClass();
-    var javaType = types.getJavaTypeRegistry().resolveDescriptor(valueClass);
+  private TypeConfiguration typesOf(EntityManager em) {
+    return em.getEntityManagerFactory()
+        .unwrap(SessionFactoryImplementor.class)
+        .getTypeConfiguration();
+  }
+
+  @SuppressWarnings("unchecked")
+  private <T extends Temporal> Class<T> classOf(T value) {
+    return (Class<T>) value.getClass();
+  }
+
+  // Hibernate types an untyped parameter or scalar by the basic type registered for its Java
+  // class, which binds and reads java.time values through java.sql.Date and java.sql.Timestamp
+  // regardless of hibernate.type.java_time_use_direct_jdbc. A value of a Java class binds and reads
+  // with the JDBC type an entity attribute of the same class uses.
+  private <T> BasicType<T> directJdbcType(Class<T> javaClass, TypeConfiguration types) {
+    var javaType = types.getJavaTypeRegistry().resolveDescriptor(javaClass);
     var jdbcType = javaType.getRecommendedJdbcType(types.getCurrentBaseSqlTypeIndicators());
     return types.getBasicTypeRegistry().resolve(javaType, jdbcType);
   }
