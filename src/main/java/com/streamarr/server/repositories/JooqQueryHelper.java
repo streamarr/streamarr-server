@@ -25,6 +25,7 @@ import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.time.temporal.Temporal;
 import java.util.Collection;
 import java.util.List;
@@ -278,19 +279,6 @@ public class JooqQueryHelper {
         || sortBy == OrderMediaBy.LAST_WATCHED;
   }
 
-  public Object coerceSortValue(MediaFilter filter) {
-    var value = filter.getPreviousSortFieldValue();
-    if (value == null) {
-      return null;
-    }
-    return switch (filter.getSortBy()) {
-      case RELEASE_DATE -> value instanceof LocalDate d ? d : LocalDate.parse(value.toString());
-      case RUNTIME -> value instanceof Integer i ? i : Integer.parseInt(value.toString());
-      case LAST_WATCHED -> value instanceof Instant i ? i : Instant.parse(value.toString());
-      default -> value;
-    };
-  }
-
   @SuppressWarnings("unchecked")
   public Condition buildSeekCondition(MediaSeek seek) {
     var filter = seek.filter();
@@ -299,7 +287,7 @@ public class JooqQueryHelper {
     var cursorId = seek.cursorId();
     var reversePage = seek.reversePage();
     var idField = BASE_COLLECTABLE.ID;
-    var coercedValue = coerceSortValue(filter);
+    var sortValue = seekValue(filter.getPreviousSortFieldValue());
     var isAsc = filter.getSortDirection() == SortDirection.ASC;
 
     if (filter.getSortBy() == OrderMediaBy.TITLE) {
@@ -308,15 +296,15 @@ public class JooqQueryHelper {
 
     if (!isNullableSortField(filter.getSortBy())) {
       var fields = orderByColumns.stream().map(SortField::$field).toList();
-      var seekValues = new Object[] {coercedValue, cursorId};
+      var seekValues = new Object[] {sortValue, cursorId};
       return isAsc ? row(fields).greaterOrEqual(seekValues) : row(fields).lessOrEqual(seekValues);
     }
 
     var typedCol = (Field<Object>) sortCol;
 
-    if (coercedValue != null) {
+    if (sortValue != null) {
       var fields = orderByColumns.stream().map(SortField::$field).toList();
-      var seekValues = new Object[] {coercedValue, cursorId};
+      var seekValues = new Object[] {sortValue, cursorId};
       var rowSeek =
           isAsc ? row(fields).greaterOrEqual(seekValues) : row(fields).lessOrEqual(seekValues);
       return reversePage ? rowSeek : rowSeek.or(typedCol.isNull());
@@ -327,8 +315,18 @@ public class JooqQueryHelper {
     return reversePage ? nullSeek.or(typedCol.isNotNull()) : nullSeek;
   }
 
+  // jOOQ converts an Instant through java.sql.Timestamp and local time, which shifts dates
+  // before the Gregorian cutover and instants in a repeated daylight-saving hour.
+  private static Object seekValue(Object value) {
+    if (value instanceof Instant instant) {
+      return instant.atOffset(ZoneOffset.UTC);
+    }
+
+    return value;
+  }
+
   private Condition titleSeekCondition(MediaFilter filter, UUID cursorId) {
-    var value = coerceSortValue(filter);
+    var value = filter.getPreviousSortFieldValue();
     var isAsc = filter.getSortDirection() == SortDirection.ASC;
     var fields =
         row(field(BASE_COLLECTABLE.TITLE_SORT.isNull()), titleSeekField(), BASE_COLLECTABLE.ID);

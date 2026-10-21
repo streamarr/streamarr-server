@@ -84,9 +84,8 @@ public class CursorUtil {
 
     try {
       var jsonStr = new String(Base64.getUrlDecoder().decode(cursor));
-      return objectMapper.readValue(jsonStr, MediaPaginationOptions.class).toBuilder()
-          .paginationOptions(options)
-          .build();
+      var decoded = objectMapper.readValue(jsonStr, MediaPaginationOptions.class);
+      return withTypedSortValue(decoded).toBuilder().paginationOptions(options).build();
 
     } catch (Exception _) {
       var msg =
@@ -96,5 +95,25 @@ public class CursorUtil {
               + MediaPaginationOptions.class.getSimpleName();
       throw new InvalidCursorException(msg);
     }
+  }
+
+  private static MediaPaginationOptions withTypedSortValue(MediaPaginationOptions decoded) {
+    var filter = decoded.getMediaFilter();
+    if (!namesItemSortAndDirection(decoded)) {
+      throw new IllegalArgumentException("A media cursor names its item, sort and direction.");
+    }
+
+    var sortValue = filter.getSortBy().readCursorValue(filter.getPreviousSortFieldValue());
+    return decoded.toBuilder()
+        .mediaFilter(filter.toBuilder().previousSortFieldValue(sortValue).build())
+        .build();
+  }
+
+  private static boolean namesItemSortAndDirection(MediaPaginationOptions decoded) {
+    var filter = decoded.getMediaFilter();
+    return decoded.getCursorId().isPresent()
+        && filter != null
+        && filter.getSortBy() != null
+        && filter.getSortDirection() != null;
   }
 }
