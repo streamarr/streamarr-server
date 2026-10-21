@@ -19,6 +19,7 @@ import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationOptions;
+import com.streamarr.server.services.pagination.SortDirection;
 import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
@@ -27,7 +28,6 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;
 import org.jooq.DSLContext;
-import org.jooq.SortOrder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -234,7 +234,10 @@ class AccountInvitationPaginationIT extends AbstractIntegrationTest {
   }
 
   private static MediaFilter invitationFilter() {
-    return MediaFilter.builder().sortBy(OrderMediaBy.ADDED).sortDirection(SortOrder.DESC).build();
+    return MediaFilter.builder()
+        .sortBy(OrderMediaBy.ADDED)
+        .sortDirection(SortDirection.DESC)
+        .build();
   }
 
   private static CredentialIssuanceService.IssuedInvitation accepted(

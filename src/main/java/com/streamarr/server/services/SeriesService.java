@@ -3,6 +3,7 @@ package com.streamarr.server.services;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Company;
@@ -17,6 +18,9 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
+import com.streamarr.server.services.events.library.LibraryItemAddedEvent;
+import com.streamarr.server.services.events.library.LibraryItemRemovedEvent;
+import com.streamarr.server.services.events.library.LibraryItemUpdatedEvent;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.pagination.LetterJumpResolver;
@@ -35,6 +39,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -54,6 +59,7 @@ public class SeriesService {
   private final GenreRepository genreRepository;
   private final CompanyRepository companyRepository;
   private final WatchHistoryRepository watchHistoryRepository;
+  private final ApplicationEventPublisher events;
 
   @Transactional
   public Series saveSeriesWithMediaFile(Series series, MediaFile mediaFile) {
@@ -93,6 +99,7 @@ public class SeriesService {
             .sources(metadataResult.imageSources())
             .build());
 
+    events.publishEvent(LibraryItemAddedEvent.of(savedSeries, MediaType.SERIES));
     return savedSeries;
   }
 
@@ -138,6 +145,7 @@ public class SeriesService {
     var savedEpisodes = episodeRepository.saveAllAndFlush(episodes);
     requestEpisodeArtwork(savedEpisodes, request);
 
+    events.publishEvent(LibraryItemUpdatedEvent.forEveryProfile(series, MediaType.SERIES));
     return season;
   }
 
@@ -168,6 +176,7 @@ public class SeriesService {
             .targetType(ImageEntityType.SERIES)
             .sources(metadataResult.imageSources())
             .build());
+    events.publishEvent(LibraryItemUpdatedEvent.forEveryProfile(saved, MediaType.SERIES));
     return saved;
   }
 
@@ -219,6 +228,7 @@ public class SeriesService {
     var savedEpisodes = episodeRepository.saveAllAndFlush(episodes);
     requestEpisodeArtwork(savedEpisodes, request);
 
+    events.publishEvent(LibraryItemUpdatedEvent.forEveryProfile(series, MediaType.SERIES));
     return savedSeason;
   }
 
@@ -255,7 +265,13 @@ public class SeriesService {
 
   @Transactional
   public void deleteSeriesById(UUID seriesId) {
-    seriesRepository.findById(seriesId).ifPresent(series -> deleteSeries(List.of(series)));
+    seriesRepository
+        .findById(seriesId)
+        .ifPresent(
+            series -> {
+              deleteSeries(List.of(series));
+              events.publishEvent(LibraryItemRemovedEvent.of(series, MediaType.SERIES));
+            });
   }
 
   private void deleteSeries(List<Series> seriesList) {
@@ -373,7 +389,7 @@ public class SeriesService {
             .toList();
 
     return paginationService.buildMediaPage(
-        pageItems, resolvedOptions.getPaginationOptions(), resolvedOptions.getCursorId());
+        pageItems, resolvedOptions, seriesRepository::seekWithFilter);
   }
 
   private Map<UUID, Instant> lastWatchedFor(MediaFilter filter, List<Series> seriesList) {

@@ -76,6 +76,34 @@ public class PaginationService {
     return pageSize;
   }
 
+  /** Checks the opposite boundary when a missing or moved media anchor cannot establish it. */
+  public <T extends BaseAuditableEntity<?>> MediaPage<T> buildMediaPage(
+      List<PageItem<T>> items,
+      MediaPaginationOptions options,
+      Function<MediaPaginationOptions, List<T>> seek) {
+    var page = buildMediaPage(items, options.getPaginationOptions(), options.getCursorId());
+    var forward =
+        options.getPaginationOptions().getPaginationDirection() == PaginationDirection.FORWARD;
+    var hasOppositePage = forward ? page.hasPreviousPage() : page.hasNextPage();
+    if (options.getCursorId().isEmpty() || hasOppositePage) {
+      return page;
+    }
+
+    var opposite =
+        options.toBuilder()
+            .paginationOptions(
+                options.getPaginationOptions().toBuilder()
+                    .paginationDirection(
+                        forward ? PaginationDirection.REVERSE : PaginationDirection.FORWARD)
+                    .limit(0)
+                    .build())
+            .build();
+    var oppositeExists = !seek.apply(opposite).isEmpty();
+    return forward
+        ? new MediaPage<>(page.items(), page.hasNextPage(), oppositeExists)
+        : new MediaPage<>(page.items(), oppositeExists, page.hasPreviousPage());
+  }
+
   public <T extends BaseAuditableEntity<?>> MediaPage<T> buildMediaPage(
       List<PageItem<T>> items, PaginationOptions options, Optional<UUID> cursorId) {
 

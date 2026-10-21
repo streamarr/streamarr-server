@@ -3,10 +3,12 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.pagination.ItemSortValue;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.services.pagination.SortDirection;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -17,9 +19,13 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import org.jooq.SortOrder;
 
 public class FakeSeriesRepository extends FakeJpaRepository<Series> implements SeriesRepository {
+
+  @Override
+  public Optional<ItemSortValue> findItemPosition(UUID itemId, MediaFilter filter) {
+    throw new UnsupportedOperationException("Placement is tested against PostgreSQL");
+  }
 
   @Override
   public Set<UUID> findUnmatchedSeriesIds(Collection<UUID> ids) {
@@ -188,15 +194,15 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
       return stream.filter(s -> FakeFilterHelper.matchesLetterEquality(s.getTitleSort(), letter));
     }
 
-    if (filter.getSortDirection() == SortOrder.DESC) {
+    if (filter.getSortDirection() == SortDirection.DESC) {
       return stream.filter(s -> FakeFilterHelper.matchesLetterDescRange(s.getTitleSort(), letter));
     }
 
     return stream.filter(s -> FakeFilterHelper.matchesLetterAscRange(s.getTitleSort(), letter));
   }
 
-  private Comparator<Series> comparatorFor(MediaFilter filter, SortOrder idSortOrder) {
-    var isDesc = filter.getSortDirection() == SortOrder.DESC;
+  private Comparator<Series> comparatorFor(MediaFilter filter, SortDirection idSortOrder) {
+    var isDesc = filter.getSortDirection() == SortDirection.DESC;
 
     Comparator<Series> primary =
         switch (filter.getSortBy()) {
@@ -213,7 +219,7 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
         };
 
     Comparator<Series> idComparator = Comparator.comparing(Series::getId);
-    if (idSortOrder == SortOrder.DESC) {
+    if (idSortOrder == SortDirection.DESC) {
       idComparator = idComparator.reversed();
     }
 

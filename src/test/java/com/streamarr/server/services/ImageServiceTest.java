@@ -59,7 +59,8 @@ class ImageServiceTest {
             imageVariantService,
             imageProperties,
             fileSystem,
-            new FakeItemResultRepository());
+            new FakeItemResultRepository(),
+            _ -> {});
   }
 
   @Test

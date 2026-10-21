@@ -20,13 +20,13 @@ import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.pagination.SortDirection;
 import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
-import org.jooq.SortOrder;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -183,7 +183,7 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
               .libraryId(library.getId())
               .profileId(profileId)
               .sortBy(OrderMediaBy.LAST_WATCHED)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
       var page = movieService.getMoviesWithFilter(buildForwardOptions(20, filter));
@@ -214,7 +214,7 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
               .libraryId(paginationLibrary.getId())
               .profileId(profileId)
               .sortBy(OrderMediaBy.LAST_WATCHED)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
       var page1 = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));

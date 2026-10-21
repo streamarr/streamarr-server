@@ -3,12 +3,12 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.services.pagination.MediaFilter;
+import com.streamarr.server.services.pagination.SortDirection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.experimental.UtilityClass;
-import org.jooq.SortOrder;
 
 @UtilityClass
 public class FakeFilterHelper {
@@ -52,29 +52,29 @@ public class FakeFilterHelper {
   // True when the title sits above a TITLE-sort letter jump's landing page - the negation of the
   // landing range. HASH never has rows above it: it lands at the top under ASC, and under DESC it
   // matches two non-adjacent runs of the ordering so it has no single anchor to sit below.
-  public boolean isAboveLetterAnchor(String title, AlphabetLetter letter, SortOrder direction) {
+  public boolean isAboveLetterAnchor(String title, AlphabetLetter letter, SortDirection direction) {
     if (letter == AlphabetLetter.HASH || title == null || title.isEmpty()) {
       return false;
     }
-    if (direction == SortOrder.DESC) {
+    if (direction == SortDirection.DESC) {
       return !matchesLetterDescRange(title, letter);
     }
     return !matchesLetterAscRange(title, letter);
   }
 
-  public Comparator<String> titleSortComparator(SortOrder direction) {
+  public Comparator<String> titleSortComparator(SortDirection direction) {
     var comparator = String.CASE_INSENSITIVE_ORDER;
-    return direction == SortOrder.DESC
+    return direction == SortDirection.DESC
         ? Comparator.nullsFirst(comparator.reversed())
         : Comparator.nullsLast(comparator);
   }
 
   public MediaFilter reverseFilter(MediaFilter filter) {
-    if (filter.getSortDirection().equals(SortOrder.DESC)) {
-      return filter.toBuilder().sortDirection(SortOrder.ASC).build();
+    if (filter.getSortDirection().equals(SortDirection.DESC)) {
+      return filter.toBuilder().sortDirection(SortDirection.ASC).build();
     }
 
-    return filter.toBuilder().sortDirection(SortOrder.DESC).build();
+    return filter.toBuilder().sortDirection(SortDirection.DESC).build();
   }
 
   public int findCursorIndex(

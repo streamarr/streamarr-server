@@ -5,14 +5,17 @@ and mutations run only over HTTP POST on /graphql.
 A subscription delivers changes from the moment it registers. It sends no snapshot and replays
 nothing missed. To build current state, subscribe first, then run the queries the field names,
 and apply each later change by id. For library administration, query
-`libraries { id name status scanStartedOn scanCompletedOn }`. A subscription never completes
-normally while the server runs.
+`libraries { id name status scanStartedOn scanCompletedOn }`. Library-content subscriptions complete
+when their library is removed, or if it is already absent when they register. Other subscriptions
+do not normally complete while the server runs.
 
 A field error does not end the operation. When a selected field of one change fails to resolve,
 the server still delivers the change with the failed value as null and with errors, and later
 changes still arrive. A later change may not repeat a value that failed. After a change that
-carries errors, the client applies the rest of the change and runs the field's queries again
-while the subscription stays open.
+carries errors, the client applies its usable portions according to the field's payload policy
+and runs the field's queries again while the subscription stays open. A field may define an
+atomic unit whose existing cached values are preserved when its selected fragment is incomplete;
+unaffected independent items still apply.
 
 Each field states who may subscribe. These errors end the operation:
 PROFILE_REQUIRED when the field needs a selected Profile and the access token has none,

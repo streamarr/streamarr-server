@@ -28,6 +28,7 @@ import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.CreditServiceFixture;
+import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.ImageVariantService;
@@ -38,12 +39,12 @@ import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.services.pagination.SortDirection;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import org.jooq.SortOrder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -86,7 +87,8 @@ class MovieServiceTest {
             new ImageVariantService(),
             new ImageProperties("/data/images"),
             fileSystem,
-            new FakeItemResultRepository());
+            new FakeItemResultRepository(),
+            _ -> {});
     movieService =
         new MovieService(
             movieRepository,
@@ -100,7 +102,8 @@ class MovieServiceTest {
             null,
             null,
             null,
-            null);
+            null,
+            _ -> {});
   }
 
   @AfterEach
@@ -133,7 +136,10 @@ class MovieServiceTest {
       movieRepository.save(movieBuilder("Zebra").build());
 
       var filter =
-          MediaFilter.builder().sortBy(OrderMediaBy.TITLE).sortDirection(SortOrder.DESC).build();
+          MediaFilter.builder()
+              .sortBy(OrderMediaBy.TITLE)
+              .sortDirection(SortDirection.DESC)
+              .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
@@ -155,7 +161,7 @@ class MovieServiceTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
@@ -176,7 +182,7 @@ class MovieServiceTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
@@ -194,7 +200,10 @@ class MovieServiceTest {
       movieRepository.save(Movie.builder().title("Medium").runtime(120).build());
 
       var filter =
-          MediaFilter.builder().sortBy(OrderMediaBy.RUNTIME).sortDirection(SortOrder.ASC).build();
+          MediaFilter.builder()
+              .sortBy(OrderMediaBy.RUNTIME)
+              .sortDirection(SortDirection.ASC)
+              .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
@@ -210,7 +219,10 @@ class MovieServiceTest {
       movieRepository.save(Movie.builder().title("Long").runtime(180).build());
 
       var filter =
-          MediaFilter.builder().sortBy(OrderMediaBy.RUNTIME).sortDirection(SortOrder.DESC).build();
+          MediaFilter.builder()
+              .sortBy(OrderMediaBy.RUNTIME)
+              .sortDirection(SortDirection.DESC)
+              .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
@@ -229,7 +241,7 @@ class MovieServiceTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
@@ -249,7 +261,7 @@ class MovieServiceTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
@@ -266,7 +278,10 @@ class MovieServiceTest {
       movieRepository.save(Movie.builder().title("No Runtime").build());
 
       var filter =
-          MediaFilter.builder().sortBy(OrderMediaBy.RUNTIME).sortDirection(SortOrder.ASC).build();
+          MediaFilter.builder()
+              .sortBy(OrderMediaBy.RUNTIME)
+              .sortDirection(SortDirection.ASC)
+              .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
@@ -332,7 +347,10 @@ class MovieServiceTest {
       movieRepository.save(movieBuilder("Cherry").build());
 
       var filter =
-          MediaFilter.builder().sortBy(OrderMediaBy.TITLE).sortDirection(SortOrder.DESC).build();
+          MediaFilter.builder()
+              .sortBy(OrderMediaBy.TITLE)
+              .sortDirection(SortDirection.DESC)
+              .build();
 
       var allMovies = movieService.getMoviesWithFilter(buildForwardOptions(3, filter));
       assertThat(allMovies.items()).hasSize(3);
@@ -391,7 +409,7 @@ class MovieServiceTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .build();
 
       var firstPage = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
@@ -416,7 +434,7 @@ class MovieServiceTest {
       var libraryId = UUID.randomUUID();
       var library = Library.builder().id(libraryId).name("Movies").build();
       movieRepository.save(
-          movieBuilder("~Tilde Movie")
+          movieBuilder("Ωmega Movie")
               .releaseDate(LocalDate.of(2024, 1, 1))
               .library(library)
               .build());
@@ -434,7 +452,7 @@ class MovieServiceTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .libraryId(libraryId)
               .startLetter(AlphabetLetter.HASH)
               .build();
@@ -442,7 +460,7 @@ class MovieServiceTest {
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
       var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
-      assertThat(titles).containsExactlyInAnyOrder("123 Numbers", "~Tilde Movie");
+      assertThat(titles).containsExactlyInAnyOrder("123 Numbers", "Ωmega Movie");
     }
 
     @Test
@@ -458,7 +476,7 @@ class MovieServiceTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.ADDED)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .libraryId(libraryId)
               .startLetter(AlphabetLetter.A)
               .build();
@@ -482,7 +500,7 @@ class MovieServiceTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.TITLE)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .libraryId(libraryId)
               .startLetter(AlphabetLetter.A)
               .build();
@@ -508,7 +526,7 @@ class MovieServiceTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.TITLE)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .libraryId(libraryId)
               .startLetter(AlphabetLetter.B)
               .build();
@@ -842,7 +860,11 @@ class MovieServiceTest {
     @Test
     @DisplayName("Should fetch required artwork for saved movie when creating movie")
     void shouldFetchRequiredArtworkForSavedMovieWhenCreatingMovie() {
-      var movie = Movie.builder().title("Inception").build();
+      var movie =
+          Movie.builder()
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+              .title("Inception")
+              .build();
       var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
       var metadataResult = new MetadataResult<>(movie, imageSources, Map.of(), Map.of());
 
@@ -858,7 +880,11 @@ class MovieServiceTest {
     @Test
     @DisplayName("Should report unavailable artwork when creating movie without image sources")
     void shouldReportUnavailableArtworkWhenCreatingMovieWithoutImageSources() {
-      var movie = Movie.builder().title("Inception").build();
+      var movie =
+          Movie.builder()
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+              .title("Inception")
+              .build();
       var metadataResult = new MetadataResult<>(movie, List.of(), Map.of(), Map.of());
 
       movieService.createMovieWithAssociations(metadataResult, mediaFile(), artworkRun);
@@ -874,6 +900,7 @@ class MovieServiceTest {
       var existing =
           movieRepository.save(
               Movie.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Old Title")
                   .originalTitle("Old Original")
                   .titleSort("old title")
@@ -886,6 +913,7 @@ class MovieServiceTest {
 
       var fresh =
           Movie.builder()
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
               .title("New Title")
               .originalTitle("New Original")
               .titleSort("new title")
@@ -919,13 +947,19 @@ class MovieServiceTest {
       var existing =
           movieRepository.save(
               Movie.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Inception")
                   .tagline("Old tagline")
                   .summary("Old summary")
                   .contentRating(new ContentRating("MPAA", "PG", "US"))
                   .build());
 
-      var fresh = Movie.builder().title("Inception").titleSort("inception").build();
+      var fresh =
+          Movie.builder()
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+              .title("Inception")
+              .titleSort("inception")
+              .build();
       var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
 
       var result = movieService.refreshMovieMetadata(existing, metadataResult, artworkRun);
@@ -938,10 +972,16 @@ class MovieServiceTest {
     @Test
     @DisplayName("Should update associations when refreshing movie metadata")
     void shouldUpdateAssociationsWhenRefreshingMovieMetadata() {
-      var existing = movieRepository.save(Movie.builder().title("Inception").build());
+      var existing =
+          movieRepository.save(
+              Movie.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+                  .title("Inception")
+                  .build());
 
       var fresh =
           Movie.builder()
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
               .title("Inception")
               .cast(List.of(Person.builder().name("Leonardo DiCaprio").sourceId("6193").build()))
               .directors(
@@ -964,9 +1004,18 @@ class MovieServiceTest {
     @Test
     @DisplayName("Should fetch required artwork for existing movie when refreshing metadata")
     void shouldFetchRequiredArtworkForExistingMovieWhenRefreshingMetadata() {
-      var existing = movieRepository.save(Movie.builder().title("Inception").build());
+      var existing =
+          movieRepository.save(
+              Movie.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+                  .title("Inception")
+                  .build());
       var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
-      var fresh = Movie.builder().title("Inception").build();
+      var fresh =
+          Movie.builder()
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+              .title("Inception")
+              .build();
       var metadataResult = new MetadataResult<>(fresh, imageSources, Map.of(), Map.of());
 
       movieService.refreshMovieMetadata(existing, metadataResult, artworkRun);
@@ -982,12 +1031,23 @@ class MovieServiceTest {
     @Test
     @DisplayName("Should replace stored artwork when refresh run forces refresh")
     void shouldReplaceStoredArtworkWhenRefreshRunForcesRefresh() {
-      var existing = movieRepository.save(Movie.builder().title("Inception").build());
+      var existing =
+          movieRepository.save(
+              Movie.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+                  .title("Inception")
+                  .build());
       var stored = seedImage(existing.getId());
       var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
       var metadataResult =
           new MetadataResult<>(
-              Movie.builder().title("Inception").build(), imageSources, Map.of(), Map.of());
+              Movie.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+                  .title("Inception")
+                  .build(),
+              imageSources,
+              Map.of(),
+              Map.of());
 
       var forcedRun =
           artworkRequestService.openLibraryOperationRun(
@@ -1007,8 +1067,17 @@ class MovieServiceTest {
     @DisplayName(
         "Should report unavailable artwork when refreshing movie metadata with empty sources")
     void shouldReportUnavailableArtworkWhenRefreshingMovieMetadataWithEmptySources() {
-      var existing = movieRepository.save(Movie.builder().title("Inception").build());
-      var fresh = Movie.builder().title("Inception").build();
+      var existing =
+          movieRepository.save(
+              Movie.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+                  .title("Inception")
+                  .build());
+      var fresh =
+          Movie.builder()
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+              .title("Inception")
+              .build();
       var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
 
       movieService.refreshMovieMetadata(existing, metadataResult, artworkRun);

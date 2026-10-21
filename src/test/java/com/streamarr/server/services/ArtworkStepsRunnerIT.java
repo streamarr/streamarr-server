@@ -186,7 +186,7 @@ class ArtworkStepsRunnerIT extends AbstractWireMockIntegrationTest {
               () ->
                   transactionTemplate.executeWithoutResult(
                       _ -> {
-                        movieService.deleteMovieById(entityId);
+                        movieService.tryDeleteMovieById(entityId);
                         deletePid.complete(
                             jdbcTemplate.queryForObject("SELECT pg_backend_pid()", Integer.class));
                         awaitLatch(commitDelete);
@@ -234,7 +234,7 @@ class ArtworkStepsRunnerIT extends AbstractWireMockIntegrationTest {
         var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var attempt = executor.submit(() -> artworkStepsRunner.runSteps(movie));
       awaitWaitersBehind(jdbcTemplate, resultLock.backendPid(), 1);
-      var delete = executor.submit(() -> movieService.deleteMovieById(entityId));
+      var delete = executor.submit(() -> movieService.tryDeleteMovieById(entityId));
       awaitWaitersBehind(jdbcTemplate, resultLock.backendPid(), 2);
       resultLock.release();
 

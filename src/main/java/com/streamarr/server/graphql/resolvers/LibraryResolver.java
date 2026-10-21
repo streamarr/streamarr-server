@@ -19,6 +19,8 @@ import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.AlphabetIndexDto;
 import com.streamarr.server.graphql.inputs.AddLibraryInput;
 import com.streamarr.server.graphql.inputs.MediaFilterInput;
+import com.streamarr.server.graphql.inputs.MediaFilterMapper;
+import com.streamarr.server.graphql.inputs.MediaFilterRequest;
 import com.streamarr.server.graphql.inputs.MediaSortInput;
 import com.streamarr.server.graphql.inputs.RemoveLibraryInput;
 import com.streamarr.server.graphql.inputs.StartLibraryRefreshInput;
@@ -30,13 +32,10 @@ import com.streamarr.server.graphql.mutation.library.LibraryOperationErrors;
 import com.streamarr.server.graphql.mutation.library.RemoveLibraryPayload;
 import com.streamarr.server.graphql.mutation.library.StartLibraryRefreshPayload;
 import com.streamarr.server.graphql.mutation.library.StartLibraryScanPayload;
-import com.streamarr.server.repositories.LibraryRepository;
-import com.streamarr.server.services.MovieService;
-import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.library.LibraryAdministrationService;
-import com.streamarr.server.services.library.LibraryManagementService;
-import com.streamarr.server.services.pagination.MediaFilter;
+import com.streamarr.server.services.library.LibraryCountsService.Counts;
+import com.streamarr.server.services.library.LibraryQueryService;
 import com.streamarr.server.services.pagination.MediaPaginationOptionsResolver;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
@@ -44,18 +43,17 @@ import graphql.schema.DataFetchingEnvironment;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import lombok.RequiredArgsConstructor;
+import org.dataloader.DataLoader;
 
 @DgsComponent
 @RequiredArgsConstructor
 public class LibraryResolver {
 
-  private final LibraryRepository libraryRepository;
+  private final LibraryQueryService libraryQueries;
   private final AuthorizationService authorizationService;
   private final LibraryAdministrationService libraryAdministrationService;
-  private final LibraryManagementService libraryManagementService;
-  private final MovieService movieService;
-  private final SeriesService seriesService;
   private final PaginationService paginationService;
   private final CursorUtil cursorUtil;
   private final CursorValidator cursorValidator;
@@ -131,18 +129,17 @@ public class LibraryResolver {
 
   @DgsQuery
   public List<Library> libraries() {
-    authorizationService.requireProfile();
-    return libraryRepository.findAll();
+    return libraryQueries.findAll(authorizationService.currentIdentity());
   }
 
   @DgsQuery
   public Optional<Library> library(String id) {
     authorizationService.requireProfile();
-    return libraryRepository.findById(parseUuid(id));
+    return libraryQueries.findById(authorizationService.currentIdentity(), parseUuid(id));
   }
 
   @DgsData(parentType = "Library")
-  public Connection<? extends BaseCollectable<?>> items(
+  public Connection<BaseCollectable<?>> items(
       @InputArgument MediaSortInput sort,
       @InputArgument MediaFilterInput filter,
       DataFetchingEnvironment dfe) {
@@ -152,27 +149,14 @@ public class LibraryResolver {
     int last = dfe.getArgumentOrDefault("last", 0);
     String before = dfe.getArgument("before");
 
-    var builder =
-        MediaFilter.builder()
-            .libraryId(library.getId())
-            .profileId(authorizationService.requireProfile());
-
-    applySortOptions(builder, sort);
-
-    if (filter != null) {
-      builder
-          .startLetter(filter.startLetter())
-          .genreIds(parseUuidList(filter.genreIds()))
-          .years(filter.years())
-          .contentRatings(filter.contentRatings())
-          .studioIds(parseUuidList(filter.studioIds()))
-          .directorIds(parseUuidList(filter.directorIds()))
-          .castMemberIds(parseUuidList(filter.castMemberIds()))
-          .unmatched(filter.unmatched())
-          .watchStatus(filter.watchStatus());
-    }
-
-    var effectiveFilter = builder.build();
+    var effectiveFilter =
+        MediaFilterMapper.from(
+            MediaFilterRequest.builder()
+                .libraryId(library.getId())
+                .profileId(authorizationService.requireProfile())
+                .sort(sort)
+                .filter(filter)
+                .build());
     var paginationOptions = paginationService.getPaginationOptions(first, after, last, before);
     var options =
         MediaPaginationOptionsResolver.resolve(
@@ -182,22 +166,23 @@ public class LibraryResolver {
             cursorValidator::validateCursorAgainstFilter);
 
     var page =
-        switch (library.getType()) {
-          case MOVIE -> movieService.getMoviesWithFilter(options);
-          case SERIES -> seriesService.getSeriesWithFilter(options);
-          default -> throw new UnsupportedMediaTypeException(library.getType().name());
-        };
+        libraryQueries.getItems(authorizationService.currentIdentity(), library.getType(), options);
 
     return relayConnectionAdapter.toConnection(page, options);
   }
 
   @DgsData(parentType = "Library")
-  public List<AlphabetIndexDto> alphabetIndex(DataFetchingEnvironment dfe) {
+  public CompletableFuture<List<AlphabetIndexDto>> alphabetIndex(DataFetchingEnvironment dfe) {
     authorizationService.requireProfile();
     Library library = dfe.getSource();
-    return libraryManagementService.getAlphabetIndex(library.getId()).stream()
-        .map(m -> new AlphabetIndexDto(m.getLetter(), m.getItemCount()))
-        .toList();
+    DataLoader<UUID, Counts> loader = dfe.getDataLoader("libraryItemCount");
+    return loader
+        .load(library.getId())
+        .thenApply(
+            counts ->
+                counts.alphabetIndex().stream()
+                    .map(m -> new AlphabetIndexDto(m.getLetter(), m.getItemCount()))
+                    .toList());
   }
 
   @DgsTypeResolver(name = "Media")
@@ -213,30 +198,11 @@ public class LibraryResolver {
     throw new UnsupportedMediaTypeException(media.getClass().getSimpleName());
   }
 
-  private void applySortOptions(MediaFilter.MediaFilterBuilder builder, MediaSortInput sort) {
-    if (sort == null) {
-      return;
-    }
-    if (sort.by() != null) {
-      builder.sortBy(sort.by());
-    }
-    if (sort.direction() != null) {
-      builder.sortDirection(sort.direction().toSortOrder());
-    }
-  }
-
   private UUID parseUuid(String id) {
     try {
       return UUID.fromString(id);
     } catch (IllegalArgumentException _) {
       throw new InvalidIdException(id);
     }
-  }
-
-  private List<UUID> parseUuidList(List<String> ids) {
-    if (ids == null || ids.isEmpty()) {
-      return List.of();
-    }
-    return ids.stream().map(this::parseUuid).toList();
   }
 }

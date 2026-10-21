@@ -28,6 +28,7 @@ import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.pagination.SortDirection;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -35,7 +36,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
-import org.jooq.SortOrder;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -540,7 +540,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.ADDED)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .libraryId(savedLibraryC.getId())
               .build();
 
@@ -557,7 +557,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.ADDED)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .libraryId(savedLibraryC.getId())
               .build();
 
@@ -613,7 +613,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.TITLE)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .libraryId(duplicateLibrary.getId())
               .build();
 
@@ -828,7 +828,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(savedLibraryD.getId())
               .startLetter(AlphabetLetter.B)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
       var landing = seriesService.getSeriesWithFilter(buildForwardOptions(2, filter));
@@ -867,7 +867,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(savedLibraryD.getId())
               .startLetter(AlphabetLetter.B)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
       var result = seriesService.getSeriesWithFilter(buildForwardOptions(10, filter));
@@ -884,7 +884,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(savedLibraryD.getId())
               .startLetter(AlphabetLetter.Z)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
       var result = seriesService.getSeriesWithFilter(buildForwardOptions(10, filter));
@@ -902,19 +902,36 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("Should return only hash series when start letter is hash and sort is DESC")
-    void shouldReturnOnlyHashSeriesWhenStartLetterIsHashDesc() {
+    @DisplayName(
+        "Should land below the lettered series and page backward to them when start letter is"
+            + " HASH and sort is DESC")
+    void shouldLandBelowLetteredSeriesWhenStartLetterIsHashAndSortIsDesc() {
       var filter =
           MediaFilter.builder()
               .libraryId(savedLibraryD.getId())
               .startLetter(AlphabetLetter.HASH)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
-      var result = seriesService.getSeriesWithFilter(buildForwardOptions(10, filter));
+      var landing = seriesService.getSeriesWithFilter(buildForwardOptions(10, filter));
+      var above =
+          seriesService.getSeriesWithFilter(
+              buildBackwardContinuation(10, filter, landing.items().getFirst()));
 
-      var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
-      assertThat(titles).containsExactly("123 Show");
+      assertThat(landing.items())
+          .extracting(pi -> pi.item().getTitle())
+          .containsExactly("123 Show");
+      assertThat(landing.hasPreviousPage()).isTrue();
+      assertThat(above.items())
+          .extracting(pi -> pi.item().getTitle())
+          .containsExactly(
+              "Zorro Show",
+              "Gamma Show",
+              "Beta Show",
+              "Batman Show",
+              "Avengers Show",
+              "Alpha Show");
+      assertThat(above.hasPreviousPage()).isFalse();
     }
 
     @Test
@@ -924,7 +941,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(savedLibraryD.getId())
               .startLetter(AlphabetLetter.B)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
       var firstPage = seriesService.getSeriesWithFilter(buildForwardOptions(3, filter));
@@ -1041,7 +1058,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(library.getId())
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .build();
 
       var result = seriesService.getSeriesWithFilter(buildForwardOptions(10, filter));
@@ -1082,7 +1099,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(library.getId())
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .build();
 
       var page1 = seriesService.getSeriesWithFilter(buildForwardOptions(1, filter));
@@ -1122,7 +1139,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(library.getId())
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .build();
 
       // Page 1: first=2 returns Dated Show + one Undated (nulls last, secondary sort by ID)
@@ -1181,7 +1198,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(library.getId())
               .sortBy(OrderMediaBy.RUNTIME)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .build();
 
       var result = seriesService.getSeriesWithFilter(buildForwardOptions(10, filter));
@@ -1205,7 +1222,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(library.getId())
               .sortBy(OrderMediaBy.RUNTIME)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .build();
 
       var page1 = seriesService.getSeriesWithFilter(buildForwardOptions(1, filter));

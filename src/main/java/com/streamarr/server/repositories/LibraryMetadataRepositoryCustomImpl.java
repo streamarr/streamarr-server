@@ -2,11 +2,9 @@ package com.streamarr.server.repositories;
 
 import static com.streamarr.server.jooq.generated.tables.BaseCollectable.BASE_COLLECTABLE;
 import static com.streamarr.server.jooq.generated.tables.LibraryMetadata.LIBRARY_METADATA;
+import static com.streamarr.server.jooq.generated.tables.Movie.MOVIE;
+import static com.streamarr.server.jooq.generated.tables.Series.SERIES;
 import static org.jooq.impl.DSL.count;
-import static org.jooq.impl.DSL.inline;
-import static org.jooq.impl.DSL.left;
-import static org.jooq.impl.DSL.upper;
-import static org.jooq.impl.DSL.when;
 
 import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.LibraryMetadata;
@@ -16,7 +14,6 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jooq.DSLContext;
-import org.jooq.Field;
 import org.jooq.Query;
 import org.jooq.Record2;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,16 +33,18 @@ public class LibraryMetadataRepositoryCustomImpl implements LibraryMetadataRepos
   }
 
   private List<LibraryMetadata> queryLetterCounts(UUID libraryId) {
-    var firstChar = left(BASE_COLLECTABLE.TITLE_SORT, inline(1));
-
-    Field<String> letterExpression =
-        when(firstChar.likeRegex(inline("[a-zA-Z]")), upper(firstChar)).otherwise(inline("HASH"));
+    var letterExpression = JooqQueryHelper.alphabetLetterField();
 
     List<Record2<String, Integer>> results =
         context
             .select(letterExpression.as("letter"), count().as("item_count"))
             .from(BASE_COLLECTABLE)
+            .leftJoin(MOVIE)
+            .on(MOVIE.ID.eq(BASE_COLLECTABLE.ID))
+            .leftJoin(SERIES)
+            .on(SERIES.ID.eq(BASE_COLLECTABLE.ID))
             .where(BASE_COLLECTABLE.LIBRARY_ID.eq(libraryId))
+            .and(MOVIE.ID.isNotNull().or(SERIES.ID.isNotNull()))
             .groupBy(letterExpression)
             .orderBy(letterExpression)
             .fetch();

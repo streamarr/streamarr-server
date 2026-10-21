@@ -1,6 +1,8 @@
 package com.streamarr.server.graphql.cursor;
 
 import com.streamarr.server.domain.BaseAuditableEntity;
+import com.streamarr.server.graphql.dto.MediaEdge;
+import com.streamarr.server.services.pagination.MediaOrder;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PageItem;
@@ -29,28 +31,39 @@ public class RelayConnectionAdapter {
 
   public <S extends BaseAuditableEntity<?>, T> Connection<T> toConnection(
       MediaPage<S> page, MediaPaginationOptions options, Function<S, T> nodeOf) {
-    return toConnection(
-        page,
-        pageItem -> nodeOf.apply(pageItem.item()),
-        pageItem ->
-            cursorUtil.encodeMediaCursor(options, pageItem.item().getId(), pageItem.sortValue()));
+    return toConnection(page, pageItem -> toEdge(pageItem, options, nodeOf));
+  }
+
+  public <T extends BaseAuditableEntity<?>> MediaEdge<T> toEdge(
+      PageItem<T> item, MediaPaginationOptions options) {
+    return toEdge(item, options, Function.identity());
+  }
+
+  private <S extends BaseAuditableEntity<?>, T> MediaEdge<T> toEdge(
+      PageItem<S> item, MediaPaginationOptions options, Function<S, T> nodeOf) {
+    return new MediaEdge<>(
+        nodeOf.apply(item.item()),
+        cursorUtil.encodeMediaCursor(options, item.item().getId(), item.sortValue()),
+        MediaOrder.from(options.getMediaFilter(), item.item().getId(), item.sortValue()));
   }
 
   public <S, T> Connection<T> toConnection(
       MediaPage<S> page,
       Function<PageItem<S>, T> nodeOf,
       Function<PageItem<S>, ConnectionCursor> cursorOf) {
+    return toConnection(
+        page, pageItem -> new DefaultEdge<>(nodeOf.apply(pageItem), cursorOf.apply(pageItem)));
+  }
+
+  private <S, T> Connection<T> toConnection(
+      MediaPage<S> page, Function<PageItem<S>, Edge<T>> edgeOf) {
     if (page.items().isEmpty()) {
       return new DefaultConnection<>(
           Collections.emptyList(),
           new DefaultPageInfo(null, null, page.hasPreviousPage(), page.hasNextPage()));
     }
 
-    List<Edge<T>> edges =
-        page.items().stream()
-            .<Edge<T>>map(
-                pageItem -> new DefaultEdge<>(nodeOf.apply(pageItem), cursorOf.apply(pageItem)))
-            .toList();
+    List<Edge<T>> edges = page.items().stream().map(edgeOf).toList();
 
     var first = edges.getFirst();
     var last = edges.getLast();

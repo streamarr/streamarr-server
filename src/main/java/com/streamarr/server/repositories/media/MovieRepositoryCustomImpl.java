@@ -16,7 +16,9 @@ import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.jooq.generated.enums.ExternalSourceType;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import com.streamarr.server.repositories.LastWatchedExpression;
+import com.streamarr.server.repositories.MediaSeek;
 import com.streamarr.server.repositories.WatchStateConditions;
+import com.streamarr.server.services.pagination.ItemSortValue;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
@@ -41,6 +43,22 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
   private final DSLContext context;
   private final EntityManager entityManager;
 
+  @Override
+  public Optional<ItemSortValue> findItemPosition(UUID itemId, MediaFilter filter) {
+    return context
+        .select(sortField(filter))
+        .from(MOVIE)
+        .join(BASE_COLLECTABLE)
+        .on(MOVIE.ID.eq(BASE_COLLECTABLE.ID))
+        .where(MOVIE.ID.eq(itemId))
+        .and(JooqQueryHelper.libraryCondition(filter.getLibraryId()))
+        .and(
+            JooqQueryHelper.startLetterCursorPageCondition(
+                filter.getStartLetter(), filter.getSortBy()))
+        .and(filterConditions(filter))
+        .fetchOptional(row -> JooqQueryHelper.itemSortValue(row.value1()));
+  }
+
   public List<Movie> seekWithFilter(MediaPaginationOptions options) {
 
     var shouldReverse =
@@ -51,12 +69,17 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
       filter = JooqQueryHelper.reverseFilter(filter);
     }
 
-    var orderByColumns =
-        new SortField[] {buildOrderBy(filter), BASE_COLLECTABLE.ID.sort(filter.getSortDirection())};
+    var orderByColumns = buildOrderBy(filter, shouldReverse);
 
     var seekCondition =
         JooqQueryHelper.buildSeekCondition(
-            filter, sortField(filter), orderByColumns, options.getCursorId().orElseThrow());
+            MediaSeek.builder()
+                .filter(filter)
+                .sortColumn(sortField(filter))
+                .orderByColumns(orderByColumns)
+                .cursorId(options.getCursorId().orElseThrow())
+                .reversePage(shouldReverse)
+                .build());
 
     var query =
         context
@@ -111,11 +134,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
 
   public List<Movie> findFirstWithFilter(MediaPaginationOptions options) {
 
-    var orderByColumns =
-        new SortField[] {
-          buildOrderBy(options.getMediaFilter()),
-          BASE_COLLECTABLE.ID.sort(options.getMediaFilter().getSortDirection())
-        };
+    var orderByColumns = buildOrderBy(options.getMediaFilter(), false);
 
     var query =
         context
@@ -156,10 +175,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     }
 
     var reversed = JooqQueryHelper.reverseFilter(filter);
-    var orderByColumns =
-        new SortField[] {
-          buildOrderBy(reversed), BASE_COLLECTABLE.ID.sort(reversed.getSortDirection())
-        };
+    var orderByColumns = buildOrderBy(reversed, true);
 
     var query =
         context
@@ -253,7 +269,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
 
   private Field<?> sortField(MediaFilter filter) {
     return switch (filter.getSortBy()) {
-      case TITLE -> JooqQueryHelper.titleSortField();
+      case TITLE -> BASE_COLLECTABLE.TITLE_SORT;
       case ADDED -> BASE_COLLECTABLE.CREATED_ON;
       case RELEASE_DATE -> MOVIE.RELEASE_DATE;
       case RUNTIME -> MOVIE.RUNTIME;
@@ -261,15 +277,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     };
   }
 
-  private SortField<?> buildOrderBy(MediaFilter filter) {
-    var direction = filter.getSortDirection();
-
-    return switch (filter.getSortBy()) {
-      case TITLE -> JooqQueryHelper.titleSortField().sort(direction);
-      case ADDED -> BASE_COLLECTABLE.CREATED_ON.sort(direction);
-      case RELEASE_DATE -> MOVIE.RELEASE_DATE.sort(direction).nullsLast();
-      case RUNTIME -> MOVIE.RUNTIME.sort(direction).nullsLast();
-      case LAST_WATCHED -> lastWatchedAt(filter).sort(direction).nullsLast();
-    };
+  private List<SortField<?>> buildOrderBy(MediaFilter filter, boolean reversePage) {
+    return JooqQueryHelper.mediaOrderBy(filter, sortField(filter), reversePage);
   }
 }

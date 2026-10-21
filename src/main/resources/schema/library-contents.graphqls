@@ -1,0 +1,76 @@
+"""
+A committed change to a top-level movie or series. Read library queries for initial
+state; these operations have no snapshot or readiness handshake. Selectable fields
+are read at delivery and may reflect a later commit. Operations do not establish a
+global event order. See Subscription for transport errors, completion and recovery.
+
+On field errors, clients may treat the selected item and its edge as one atomic
+update: preserve both cached entity fields and membership until shared query recovery
+succeeds, even if the edge is usable. This avoids writing failure-null fields or
+inserting an incomplete card, at the cost of delaying a usable move or removal.
+Normal payloads still update entity and membership without a follow-up query.
+"""
+type LibraryItemChange {
+    libraryId: ID!
+    itemId: ID!
+    kind: MediaType!
+    "Current selectable movie or series fields; null if the item has since been removed."
+    item: Media
+    """
+    Current edge using the same sort and filter as the displayed
+    Library.items connection. TITLE startLetter is a seek anchor, not a membership
+    filter. Normalize item fields and reconcile edges
+    by itemId without rereading the query. In-range additions grow the window;
+    removals shrink it without backfilling.
+    Preserve pagination anchors when a partial window becomes empty.
+
+    Null means the item is not in this view, unless this change has a field error.
+    Remove membership only for an explicitly resolved null edge with no error whose
+    response path starts at this change, including aliases and list indices. A
+    non-null edge with a null node is never a removal. An errored change preserves
+    cached entity fields and membership until shared query recovery succeeds.
+    Leaving a view does not evict the entity; only a deletion receipt does.
+    """
+    edge(sort: MediaSort, filter: MediaFilter): MediaEdge
+}
+
+extend type Subscription {
+    """
+    A top-level item was committed to the library. Initial state comes from
+    Library.items queries. Requires a selected Profile and ViewProfileActivity permission for that Profile. Library removal completes the
+    operation; refusal of readable scope is an error, not evidence of deletion.
+    """
+    libraryItemAdded(libraryId: ID!): LibraryItemChange
+    """
+    Committed metadata, artwork, file or nested season/episode changes identify the
+    affected movie or parent series. Watch-state changes reach only the authenticated
+    connection's selected Profile; other changes reach all subscribed Profiles, with
+    watch-state fields resolved for each subscriber. Update the initially queried
+    Library.items state using item and edge. Requires a selected Profile and
+    ViewProfileActivity permission for that Profile, as libraryItemAdded does.
+    """
+    libraryItemUpdated(libraryId: ID!): LibraryItemChange
+    """
+    A top-level item's deletion committed. Remove its edge from initially queried
+    Library.items state by itemId without fetching a replacement. Whole-library
+    removal completes the scope instead of publishing each item. Uses the same
+    visibility as libraryItemAdded, requires ViewProfileActivity for the selected Profile,
+    and follows Subscription's common delivery/recovery rules.
+    """
+    libraryItemRemoved(libraryId: ID!): LibraryItemRemoval
+    """
+    Authoritative itemCount and alphabetIndex after a committed recount, including
+    changes outside the loaded window. Apply these values independently of loaded
+    edges. Initial counts come from library or libraries queries. Uses
+    libraryItemAdded visibility, requires ViewProfileActivity for the selected Profile,
+    and requires no follow-up query.
+    """
+    libraryCountsChanged(libraryId: ID!): Library
+}
+
+"The identity and scope of an item that no longer exists."
+type LibraryItemRemoval {
+    libraryId: ID!
+    itemId: ID!
+    kind: MediaType!
+}

@@ -78,7 +78,8 @@ public record ArtworkFixture(
             new ImageVariantService(),
             new ImageProperties("/data/images"),
             imageFileSystem,
-            results);
+            results,
+            _ -> {});
     var stepsRunner =
         ArtworkStepsRunner.builder()
             .requests(requests)

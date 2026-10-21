@@ -197,7 +197,8 @@ class LibraryManagementServiceTest {
           null,
           null,
           null,
-          null);
+          null,
+          _ -> {});
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
 
   private final MovieFileProcessor movieFileProcessor =
@@ -278,7 +279,13 @@ class LibraryManagementServiceTest {
         .thenReturn(
             new MetadataFetchOutcome.Found<>(
                 new MetadataResult<>(
-                    Movie.builder().title(movieFolder).build(), List.of(), Map.of(), Map.of())));
+                    Movie.builder()
+                        .title(movieFolder)
+                        .library(fakeLibraryRepository.findById(savedLibraryId).orElseThrow())
+                        .build(),
+                    List.of(),
+                    Map.of(),
+                    Map.of())));
 
     libraryManagementService.processDiscoveredFile(savedLibraryId, moviePath);
 
@@ -1384,7 +1391,8 @@ class LibraryManagementServiceTest {
         fakeMediaFileRepository,
         matchedSeasons,
         matchedEpisodes,
-        new MutexFactoryProvider());
+        new MutexFactoryProvider(),
+        _ -> {});
   }
 
   @Builder(builderMethodName = "matchingSeriesServiceBuilder")
@@ -1396,7 +1404,8 @@ class LibraryManagementServiceTest {
       CreditService credits,
       ArtworkRequestService artwork) {
     return new SeriesService(
-        series, credits, null, artwork, null, seasons, episodes, files, null, null, null, null);
+        series, credits, null, artwork, null, seasons, episodes, files, null, null, null, null,
+        _ -> {});
   }
 
   private static final class ContendedPathMutexes extends MutexFactoryProvider {

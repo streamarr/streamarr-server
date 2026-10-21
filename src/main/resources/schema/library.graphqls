@@ -18,6 +18,13 @@ type Library {
           sort: MediaSort
           filter: MediaFilter): MediaConnection!
     alphabetIndex: [AlphabetIndex!]!
+    """
+    Top-level movies or series at the last alphabet recount, independent of filters and pagination.
+    Seasons, episodes and additional file versions are excluded. Zero for an empty library.
+    Changes during a library operation become visible when its finishing recount commits;
+    otherwise the total changes when an item-processing recount commits. This is not scan progress.
+    """
+    itemCount: Int!
 }
 
 "The receipt for a removed library: the id of the library that no longer exists."
@@ -90,6 +97,8 @@ type MediaConnection {
 }
 
 type MediaEdge {
+    "Server ordering key. Compare bytewise ascending within the same sort and filter, including DESC sorts."
+    orderKey: String!
     node: Media
     cursor: String!
 }

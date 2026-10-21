@@ -2,7 +2,9 @@ package com.streamarr.server.repositories;
 
 import static com.streamarr.server.jooq.generated.tables.BaseCollectable.BASE_COLLECTABLE;
 import static com.streamarr.server.jooq.generated.tables.ExternalIdentifier.EXTERNAL_IDENTIFIER;
+import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.exists;
+import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.left;
 import static org.jooq.impl.DSL.lower;
@@ -10,16 +12,20 @@ import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.not;
 import static org.jooq.impl.DSL.row;
 import static org.jooq.impl.DSL.select;
+import static org.jooq.impl.DSL.upper;
 import static org.jooq.impl.DSL.val;
+import static org.jooq.impl.DSL.when;
 
 import com.streamarr.server.domain.AlphabetLetter;
+import com.streamarr.server.services.pagination.ItemSortValue;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.pagination.SortDirection;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.temporal.Temporal;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -34,6 +40,7 @@ import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.Query;
 import org.jooq.Record;
+import org.jooq.Row2;
 import org.jooq.SortField;
 import org.jooq.SortOrder;
 import org.jooq.Table;
@@ -74,8 +81,12 @@ public class JooqQueryHelper {
     return types.getBasicTypeRegistry().resolve(javaType, jdbcType);
   }
 
+  public ItemSortValue itemSortValue(Object value) {
+    return new ItemSortValue(value instanceof OffsetDateTime time ? time.toInstant() : value);
+  }
+
   public Condition startLetterCondition(
-      AlphabetLetter startLetter, SortOrder direction, OrderMediaBy sortBy) {
+      AlphabetLetter startLetter, SortDirection direction, OrderMediaBy sortBy) {
     if (startLetter == null) {
       return noCondition();
     }
@@ -84,28 +95,33 @@ public class JooqQueryHelper {
       return equalityLetterCondition(startLetter);
     }
 
-    return direction == SortOrder.DESC
+    return direction == SortDirection.DESC
         ? descLetterCondition(startLetter)
         : ascLetterCondition(startLetter);
   }
 
   // Matches the rows above a TITLE-sort letter jump's landing page - the exact negation of the
   // landing condition. Empty when nothing can sit above the anchor: HASH lands at the top under
-  // ASC, Z at the top under DESC, and DESC HASH matches two non-adjacent runs of the ordering so
-  // it has no single anchor to sit below.
+  // ASC and Z at the top under DESC.
   public Optional<Condition> letterJumpPredecessorCondition(
-      AlphabetLetter startLetter, SortOrder direction) {
+      AlphabetLetter startLetter, SortDirection direction) {
+    if (direction == SortDirection.DESC) {
+      return descLetterJumpPredecessorCondition(startLetter);
+    }
+
     if (startLetter == AlphabetLetter.HASH) {
       return Optional.empty();
     }
 
-    if (direction == SortOrder.DESC) {
-      return startLetter == AlphabetLetter.Z
-          ? Optional.empty()
-          : Optional.of(titleSortField().greaterOrEqual(nextLetterValue(startLetter)));
+    return Optional.of(titleSeekPosition().lt(row(inline(false), letterValue(startLetter))));
+  }
+
+  private Optional<Condition> descLetterJumpPredecessorCondition(AlphabetLetter startLetter) {
+    if (startLetter == AlphabetLetter.Z) {
+      return Optional.empty();
     }
 
-    return Optional.of(titleSortField().lessThan(letterValue(startLetter)));
+    return Optional.of(titleSeekPosition().ge(descLandingCeiling(startLetter)));
   }
 
   // Under TITLE sort the letter is a seek anchor consumed by the landing page - on cursor pages
@@ -119,20 +135,7 @@ public class JooqQueryHelper {
   }
 
   private Condition equalityLetterCondition(AlphabetLetter startLetter) {
-    if (startLetter == AlphabetLetter.HASH) {
-      return hashLetterCondition();
-    }
-
-    var titleSort = titleSortField();
-    if (startLetter == AlphabetLetter.Z) {
-      return titleSort
-          .greaterOrEqual(letterValue(startLetter))
-          .and(lower(left(BASE_COLLECTABLE.TITLE_SORT, 1)).eq(letterValue(startLetter)));
-    }
-
-    return titleSort
-        .greaterOrEqual(letterValue(startLetter))
-        .and(titleSort.lessThan(nextLetterValue(startLetter)));
+    return alphabetLetterField().eq(inline(startLetter.name()));
   }
 
   private Condition ascLetterCondition(AlphabetLetter startLetter) {
@@ -140,7 +143,7 @@ public class JooqQueryHelper {
       return noCondition();
     }
 
-    return titleSortField().greaterOrEqual(letterValue(startLetter));
+    return titleSeekPosition().ge(row(inline(false), letterValue(startLetter)));
   }
 
   private Condition descLetterCondition(AlphabetLetter startLetter) {
@@ -148,16 +151,23 @@ public class JooqQueryHelper {
       return noCondition();
     }
 
-    if (startLetter == AlphabetLetter.HASH) {
-      return hashLetterCondition();
-    }
-
-    return titleSortField().lessThan(nextLetterValue(startLetter));
+    return titleSeekPosition().lt(descLandingCeiling(startLetter));
   }
 
-  private Condition hashLetterCondition() {
-    var firstCharLower = lower(left(BASE_COLLECTABLE.TITLE_SORT, 1));
-    return firstCharLower.lessThan(inline("a")).or(firstCharLower.greaterThan(inline("z")));
+  // HASH lands on the contiguous titles below "a"; titles above "z" stay at the top of the
+  // ordering, reachable by paging backward.
+  private Row2<Boolean, String> descLandingCeiling(AlphabetLetter startLetter) {
+    if (startLetter == AlphabetLetter.HASH) {
+      return row(inline(false), letterValue(AlphabetLetter.A));
+    }
+
+    return row(inline(false), nextLetterValue(startLetter));
+  }
+
+  public Field<String> alphabetLetterField() {
+    var firstChar = left(BASE_COLLECTABLE.TITLE_SORT, inline(1)).collate("C");
+    return when(firstChar.likeRegex(inline("[a-zA-Z]")), upper(firstChar))
+        .otherwise(inline("HASH"));
   }
 
   private Field<String> letterValue(AlphabetLetter letter) {
@@ -172,8 +182,44 @@ public class JooqQueryHelper {
     return libraryId != null ? BASE_COLLECTABLE.LIBRARY_ID.eq(libraryId) : noCondition();
   }
 
-  public Field<String> titleSortField() {
-    return lower(BASE_COLLECTABLE.TITLE_SORT);
+  private Field<String> titleSortField() {
+    return normalizeTitle(BASE_COLLECTABLE.TITLE_SORT);
+  }
+
+  public Field<String> normalizeTitle(Field<String> title) {
+    return lower(title.collate("C"));
+  }
+
+  public List<SortField<?>> titleOrderBy(SortDirection direction) {
+    var sqlDirection = direction == SortDirection.ASC ? SortOrder.ASC : SortOrder.DESC;
+    return List.of(
+        field(BASE_COLLECTABLE.TITLE_SORT.isNull()).sort(sqlDirection),
+        titleSeekField().sort(sqlDirection),
+        BASE_COLLECTABLE.ID.sort(sqlDirection));
+  }
+
+  public List<SortField<?>> mediaOrderBy(
+      MediaFilter filter, Field<?> sortField, boolean reversePage) {
+    var direction = filter.getSortDirection();
+    if (filter.getSortBy() == OrderMediaBy.TITLE) {
+      return titleOrderBy(direction);
+    }
+
+    var sqlDirection = direction == SortDirection.ASC ? SortOrder.ASC : SortOrder.DESC;
+    var order = sortField.sort(sqlDirection);
+    if (isNullableSortField(filter.getSortBy())) {
+      order = reversePage ? order.nullsFirst() : order.nullsLast();
+    }
+
+    return List.of(order, BASE_COLLECTABLE.ID.sort(sqlDirection));
+  }
+
+  private Field<String> titleSeekField() {
+    return coalesce(titleSortField(), inline("")).collate("C");
+  }
+
+  private Row2<Boolean, String> titleSeekPosition() {
+    return row(field(BASE_COLLECTABLE.TITLE_SORT.isNull()), titleSeekField());
   }
 
   public Condition yearCondition(Field<LocalDate> dateField, List<Integer> years) {
@@ -219,11 +265,11 @@ public class JooqQueryHelper {
   }
 
   public MediaFilter reverseFilter(MediaFilter filter) {
-    if (filter.getSortDirection().equals(SortOrder.DESC)) {
-      return filter.toBuilder().sortDirection(SortOrder.ASC).build();
+    if (filter.getSortDirection().equals(SortDirection.DESC)) {
+      return filter.toBuilder().sortDirection(SortDirection.ASC).build();
     }
 
-    return filter.toBuilder().sortDirection(SortOrder.DESC).build();
+    return filter.toBuilder().sortDirection(SortDirection.DESC).build();
   }
 
   public boolean isNullableSortField(OrderMediaBy sortBy) {
@@ -246,23 +292,22 @@ public class JooqQueryHelper {
   }
 
   @SuppressWarnings("unchecked")
-  public Condition buildSeekCondition(
-      MediaFilter filter, Field<?> sortCol, SortField<?>[] orderByColumns, UUID cursorId) {
+  public Condition buildSeekCondition(MediaSeek seek) {
+    var filter = seek.filter();
+    var sortCol = seek.sortColumn();
+    var orderByColumns = seek.orderByColumns();
+    var cursorId = seek.cursorId();
+    var reversePage = seek.reversePage();
     var idField = BASE_COLLECTABLE.ID;
     var coercedValue = coerceSortValue(filter);
-    var isAsc = filter.getSortDirection() == SortOrder.ASC;
+    var isAsc = filter.getSortDirection() == SortDirection.ASC;
 
     if (filter.getSortBy() == OrderMediaBy.TITLE) {
-      var titleSortCol = (Field<String>) sortCol;
-      var cursorTitleSortValue = titleSortValue(coercedValue);
-      var cursorTitleSort = lower(val(cursorTitleSortValue));
-      var fields = row(titleSortCol, idField);
-      var seekValues = row(cursorTitleSort, val(cursorId));
-      return isAsc ? fields.greaterOrEqual(seekValues) : fields.lessOrEqual(seekValues);
+      return titleSeekCondition(filter, cursorId);
     }
 
     if (!isNullableSortField(filter.getSortBy())) {
-      var fields = Arrays.stream(orderByColumns).map(SortField::$field).toList();
+      var fields = orderByColumns.stream().map(SortField::$field).toList();
       var seekValues = new Object[] {coercedValue, cursorId};
       return isAsc ? row(fields).greaterOrEqual(seekValues) : row(fields).lessOrEqual(seekValues);
     }
@@ -270,18 +315,29 @@ public class JooqQueryHelper {
     var typedCol = (Field<Object>) sortCol;
 
     if (coercedValue != null) {
-      var fields = Arrays.stream(orderByColumns).map(SortField::$field).toList();
+      var fields = orderByColumns.stream().map(SortField::$field).toList();
       var seekValues = new Object[] {coercedValue, cursorId};
       var rowSeek =
           isAsc ? row(fields).greaterOrEqual(seekValues) : row(fields).lessOrEqual(seekValues);
-      // NULLS LAST: null rows come after all non-null rows regardless of sort direction
-      return rowSeek.or(typedCol.isNull());
+      return reversePage ? rowSeek : rowSeek.or(typedCol.isNull());
     }
 
-    if (isAsc) {
-      return typedCol.isNull().and(idField.greaterOrEqual(cursorId));
-    }
-    return typedCol.isNull().and(idField.lessOrEqual(cursorId));
+    var idSeek = isAsc ? idField.ge(cursorId) : idField.le(cursorId);
+    var nullSeek = typedCol.isNull().and(idSeek);
+    return reversePage ? nullSeek.or(typedCol.isNotNull()) : nullSeek;
+  }
+
+  private Condition titleSeekCondition(MediaFilter filter, UUID cursorId) {
+    var value = coerceSortValue(filter);
+    var isAsc = filter.getSortDirection() == SortDirection.ASC;
+    var fields =
+        row(field(BASE_COLLECTABLE.TITLE_SORT.isNull()), titleSeekField(), BASE_COLLECTABLE.ID);
+    var seekValues =
+        row(
+            inline(value == null),
+            value == null ? inline("") : normalizeTitle(val(titleSortValue(value))),
+            val(cursorId));
+    return isAsc ? fields.ge(seekValues) : fields.le(seekValues);
   }
 
   private String titleSortValue(@NonNull Object value) {

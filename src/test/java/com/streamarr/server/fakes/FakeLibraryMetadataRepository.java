@@ -3,6 +3,7 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.repositories.LibraryMetadataRepository;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -51,6 +52,13 @@ public class FakeLibraryMetadataRepository implements LibraryMetadataRepository 
     return database.values().stream()
         .filter(m -> m.getLibraryId().equals(libraryId))
         .sorted(Comparator.comparing(m -> m.getLetter().ordinal()))
+        .toList();
+  }
+
+  @Override
+  public List<LibraryMetadata> findByLibraryIdIn(Collection<UUID> libraryIds) {
+    return database.values().stream()
+        .filter(metadata -> libraryIds.contains(metadata.getLibraryId()))
         .toList();
   }
 

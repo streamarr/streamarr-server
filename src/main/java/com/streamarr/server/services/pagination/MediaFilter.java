@@ -9,7 +9,6 @@ import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.jooq.SortOrder;
 
 @Getter
 @EqualsAndHashCode(exclude = "previousSortFieldValue")
@@ -19,7 +18,7 @@ import org.jooq.SortOrder;
 public class MediaFilter {
 
   @Builder.Default private final OrderMediaBy sortBy = OrderMediaBy.TITLE;
-  @Builder.Default private final SortOrder sortDirection = SortOrder.ASC;
+  @Builder.Default private final SortDirection sortDirection = SortDirection.ASC;
 
   private UUID libraryId;
   private UUID profileId;

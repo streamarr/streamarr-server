@@ -1,4 +1,4 @@
-package com.streamarr.server.services.watchprogress.events;
+package com.streamarr.server.services.events.watchprogress;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

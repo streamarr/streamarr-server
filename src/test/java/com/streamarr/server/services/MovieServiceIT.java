@@ -26,13 +26,13 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.pagination.SortDirection;
 import com.streamarr.server.utils.TitleSortUtil;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
-import org.jooq.SortOrder;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -118,8 +118,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
     movieRepository.saveAndFlush(
         Movie.builder()
-            .title("~Tilde Movie")
-            .titleSort("~tilde movie")
+            .title("Ωmega Movie")
+            .titleSort("Ωmega movie")
             .releaseDate(LocalDate.of(2024, 1, 1))
             .library(savedLibraryE)
             .build());
@@ -315,7 +315,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.ADDED)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .libraryId(savedLibraryC.getId())
               .build();
 
@@ -333,7 +333,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.ADDED)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .libraryId(savedLibraryC.getId())
               .build();
 
@@ -379,7 +379,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .sortBy(OrderMediaBy.TITLE)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .libraryId(duplicateLibrary.getId())
               .build();
 
@@ -652,7 +652,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(savedLibraryD.getId())
               .startLetter(AlphabetLetter.B)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
@@ -670,7 +670,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(savedLibraryD.getId())
               .startLetter(AlphabetLetter.Z)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
@@ -689,7 +689,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(savedLibraryD.getId())
               .startLetter(AlphabetLetter.HASH)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
@@ -707,7 +707,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(savedLibraryD.getId())
               .startLetter(AlphabetLetter.B)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
       var firstPage = movieService.getMoviesWithFilter(buildForwardOptions(3, filter));
@@ -796,19 +796,19 @@ class MovieServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("Should not report previous page when start letter is HASH and sort is DESC")
-    void shouldNotReportPreviousPageWhenStartLetterIsHashAndSortIsDesc() {
+    @DisplayName("Should report previous page when start letter is HASH and sort is DESC")
+    void shouldReportPreviousPageWhenStartLetterIsHashAndSortIsDesc() {
       var filter =
           MediaFilter.builder()
               .libraryId(savedLibraryD.getId())
               .startLetter(AlphabetLetter.HASH)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
       var landing = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
       assertThat(landing.items().getFirst().item().getTitle()).isEqualTo("123 Movie");
-      assertThat(landing.hasPreviousPage()).isFalse();
+      assertThat(landing.hasPreviousPage()).isTrue();
     }
 
     @Test
@@ -819,7 +819,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(savedLibraryD.getId())
               .startLetter(AlphabetLetter.B)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
       var landing = movieService.getMoviesWithFilter(buildForwardOptions(2, filter));
@@ -838,7 +838,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(savedLibraryD.getId())
               .startLetter(AlphabetLetter.Z)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
       var landing = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
@@ -896,7 +896,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(savedLibraryD.getId())
               .startLetter(AlphabetLetter.B)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
       var landing = movieService.getMoviesWithFilter(buildForwardOptions(2, filter));
@@ -943,7 +943,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
           List.of(
               Movie.builder().title("Alpha").titleSort("alpha").library(library).build(),
               Movie.builder().title("Zorro").titleSort("zorro").library(library).build(),
-              Movie.builder().title("~Tilde").titleSort("~tilde").library(library).build()));
+              Movie.builder().title("Ωmega").titleSort("Ωmega").library(library).build()));
       var filter =
           MediaFilter.builder()
               .libraryId(library.getId())
@@ -966,7 +966,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(savedLibraryE.getId())
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .startLetter(AlphabetLetter.HASH)
               .build();
 
@@ -974,26 +974,36 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
       var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
-      assertThat(titles).containsExactlyInAnyOrder("123 Numbers", "~Tilde Movie");
+      assertThat(titles).containsExactlyInAnyOrder("123 Numbers", "Ωmega Movie");
     }
 
     @Test
-    @DisplayName("Should include title starting above z in HASH filter when sortBy is TITLE DESC")
-    void shouldIncludeTitleStartingAboveZInHashFilterWhenSortByIsTitleDesc() {
+    @DisplayName(
+        "Should land below the lettered titles and page backward to titles above z when start"
+            + " letter is HASH and sort is TITLE DESC")
+    void shouldLandBelowLetteredTitlesWhenStartLetterIsHashAndSortIsTitleDesc() {
 
       var filter =
           MediaFilter.builder()
               .libraryId(savedLibraryE.getId())
               .sortBy(OrderMediaBy.TITLE)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .startLetter(AlphabetLetter.HASH)
               .build();
 
-      var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
+      var landing = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
+      var above =
+          movieService.getMoviesWithFilter(
+              buildBackwardContinuation(10, filter, landing.items().getFirst()));
 
-      var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
-
-      assertThat(titles).containsExactlyInAnyOrder("123 Numbers", "~Tilde Movie");
+      assertThat(landing.items())
+          .extracting(pi -> pi.item().getTitle())
+          .containsExactly("123 Numbers");
+      assertThat(landing.hasPreviousPage()).isTrue();
+      assertThat(above.items())
+          .extracting(pi -> pi.item().getTitle())
+          .containsExactly("Ωmega Movie", "Alpha Movie");
+      assertThat(above.hasPreviousPage()).isFalse();
     }
   }
 
@@ -1028,7 +1038,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(library.getId())
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
@@ -1071,7 +1081,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(library.getId())
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
@@ -1112,7 +1122,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(library.getId())
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .build();
 
       var page1 = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
@@ -1156,7 +1166,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(library.getId())
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
       var page1 = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
@@ -1189,7 +1199,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(library.getId())
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .build();
 
       // Page 1: first=2 returns Dated + one Undated (nulls last, secondary sort by ID)
@@ -1238,7 +1248,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(library.getId())
               .sortBy(OrderMediaBy.RUNTIME)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .build();
 
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
@@ -1269,7 +1279,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(library.getId())
               .sortBy(OrderMediaBy.RUNTIME)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .build();
 
       var page1 = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
@@ -1294,7 +1304,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(library.getId())
               .sortBy(OrderMediaBy.RUNTIME)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
       var page1 = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
@@ -1336,7 +1346,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(library.getId())
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .build();
 
       var forwardAll = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
@@ -1372,7 +1382,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(library.getId())
               .sortBy(OrderMediaBy.RUNTIME)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
       var forwardAll = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
@@ -1413,7 +1423,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(library.getId())
               .sortBy(OrderMediaBy.RELEASE_DATE)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .build();
 
       // Page 1: first=2, gets Dated A + Dated B. Cursor encodes non-null date.
@@ -1445,7 +1455,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(library.getId())
               .sortBy(OrderMediaBy.RUNTIME)
-              .sortDirection(SortOrder.ASC)
+              .sortDirection(SortDirection.ASC)
               .build();
 
       var page1 = movieService.getMoviesWithFilter(buildForwardOptions(2, filter));
@@ -1476,7 +1486,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
           MediaFilter.builder()
               .libraryId(library.getId())
               .sortBy(OrderMediaBy.RUNTIME)
-              .sortDirection(SortOrder.DESC)
+              .sortDirection(SortDirection.DESC)
               .build();
 
       // Page 1: first=2 returns Long + one null (NULLS LAST in DESC)

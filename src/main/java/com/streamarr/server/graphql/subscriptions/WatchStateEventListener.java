@@ -1,7 +1,7 @@
 package com.streamarr.server.graphql.subscriptions;
 
 import com.streamarr.server.graphql.dto.WatchStateChange;
-import com.streamarr.server.services.watchprogress.events.WatchStateChangedEvent;
+import com.streamarr.server.services.events.watchprogress.WatchStateChangedEvent;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;

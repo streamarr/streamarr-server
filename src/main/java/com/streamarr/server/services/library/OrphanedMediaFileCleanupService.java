@@ -4,16 +4,19 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.MovieService;
+import com.streamarr.server.services.events.library.CollectablesChangedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -24,6 +27,7 @@ public class OrphanedMediaFileCleanupService {
   private final MediaFileRepository mediaFileRepository;
   private final MovieService movieService;
   private final FileSystem fileSystem;
+  private final ApplicationEventPublisher events;
 
   /**
    * Removes the library's media files that no longer exist on disk, in the caller's transaction,
@@ -47,7 +51,10 @@ public class OrphanedMediaFileCleanupService {
 
     mediaFileRepository.deleteAll(orphanedFiles);
 
-    deleteMoviesWithNoRemainingFiles(affectedMovieIds);
+    var changedItemIds = deleteMoviesWithNoRemainingFiles(affectedMovieIds);
+    if (!changedItemIds.isEmpty()) {
+      events.publishEvent(new CollectablesChangedEvent(changedItemIds));
+    }
 
     log.info(
         "Removed {} orphaned media file(s) from {} library.",
@@ -68,18 +75,24 @@ public class OrphanedMediaFileCleanupService {
     return Files.exists(path);
   }
 
-  private void deleteMoviesWithNoRemainingFiles(Set<UUID> movieIds) {
+  private Set<UUID> deleteMoviesWithNoRemainingFiles(Set<UUID> movieIds) {
     if (movieIds.isEmpty()) {
-      return;
+      return Set.of();
     }
 
     var mediaIdsWithRemainingFiles = mediaFileRepository.findDistinctMediaIdsByMediaIdIn(movieIds);
+    var remainingIds = new HashSet<>(movieIds);
 
     for (var movieId : movieIds) {
-      if (!mediaIdsWithRemainingFiles.contains(movieId)) {
-        movieService.deleteMovieById(movieId);
-        log.info("Deleted Movie id: {} — no remaining media files.", movieId);
+      if (mediaIdsWithRemainingFiles.contains(movieId)
+          || !movieService.tryDeleteMovieById(movieId)) {
+        continue;
       }
+
+      remainingIds.remove(movieId);
+      log.info("Deleted Movie id: {} — no remaining media files.", movieId);
     }
+
+    return remainingIds;
   }
 }

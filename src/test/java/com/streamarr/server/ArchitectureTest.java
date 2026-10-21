@@ -262,14 +262,14 @@ class ArchitectureTest {
                   + " virtual threads");
 
   @ArchTest
-  static final ArchRule authServicesMustNotDependOnJooq =
+  static final ArchRule servicesMustNotDependOnJooq =
       noClasses()
           .that()
-          .resideInAPackage("..services.auth..")
+          .resideInAPackage("..services..")
           .should()
           .dependOnClassesThat()
           .resideInAPackage("org.jooq..")
-          .as("Auth services must not depend on jOOQ; DSLContext stays in repositories");
+          .as("Services must not depend on jOOQ; DSLContext stays in repositories");
 
   // Transaction boundaries belong in services. A transactional controller/resolver would run
   // several service calls in one persistence context, where a JPA read can return Hibernate's

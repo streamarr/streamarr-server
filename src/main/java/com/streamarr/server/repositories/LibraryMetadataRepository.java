@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories;
 
 import com.streamarr.server.domain.LibraryMetadata;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -11,6 +12,8 @@ public interface LibraryMetadataRepository
     extends JpaRepository<LibraryMetadata, UUID>, LibraryMetadataRepositoryCustom {
 
   List<LibraryMetadata> findByLibraryIdOrderByLetterAsc(UUID libraryId);
+
+  List<LibraryMetadata> findByLibraryIdIn(Collection<UUID> libraryIds);
 
   void deleteByLibraryId(UUID libraryId);
 }

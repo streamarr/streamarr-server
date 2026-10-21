@@ -28,6 +28,7 @@ import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.CreditServiceFixture;
+import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.ImageVariantService;
@@ -39,12 +40,12 @@ import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.services.pagination.SortDirection;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import org.jooq.SortOrder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -91,7 +92,8 @@ class SeriesServiceTest {
             new ImageVariantService(),
             new ImageProperties("/data/images"),
             fileSystem,
-            new FakeItemResultRepository());
+            new FakeItemResultRepository(),
+            _ -> {});
     seriesService =
         new SeriesService(
             seriesRepository,
@@ -105,7 +107,8 @@ class SeriesServiceTest {
             null,
             null,
             null,
-            null);
+            null,
+            _ -> {});
   }
 
   @AfterEach
@@ -213,7 +216,10 @@ class SeriesServiceTest {
       seriesRepository.save(seriesBuilder("Zebra").build());
 
       var filter =
-          MediaFilter.builder().sortBy(OrderMediaBy.TITLE).sortDirection(SortOrder.DESC).build();
+          MediaFilter.builder()
+              .sortBy(OrderMediaBy.TITLE)
+              .sortDirection(SortDirection.DESC)
+              .build();
 
       var result = seriesService.getSeriesWithFilter(buildForwardOptions(10, filter));
 
@@ -290,7 +296,11 @@ class SeriesServiceTest {
     @Test
     @DisplayName("Should fetch required artwork for saved series when creating series")
     void shouldFetchRequiredArtworkForSavedSeriesWhenCreatingSeries() {
-      var series = Series.builder().title("Breaking Bad").build();
+      var series =
+          Series.builder()
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+              .title("Breaking Bad")
+              .build();
       var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
       var metadataResult = new MetadataResult<>(series, imageSources, Map.of(), Map.of());
 
@@ -305,7 +315,11 @@ class SeriesServiceTest {
     @Test
     @DisplayName("Should report unavailable artwork when creating series without image sources")
     void shouldReportUnavailableArtworkWhenCreatingSeriesWithoutImageSources() {
-      var series = Series.builder().title("Breaking Bad").build();
+      var series =
+          Series.builder()
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+              .title("Breaking Bad")
+              .build();
       var metadataResult = new MetadataResult<>(series, List.of(), Map.of(), Map.of());
 
       seriesService.createSeriesWithAssociations(metadataResult, artworkRun);
@@ -318,7 +332,12 @@ class SeriesServiceTest {
     @Test
     @DisplayName("Should fetch season artwork for saved season when season has image sources")
     void shouldFetchSeasonArtworkForSavedSeasonWhenSeasonHasImageSources() {
-      var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+      var series =
+          seriesRepository.save(
+              Series.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+                  .title("Breaking Bad")
+                  .build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
       var details =
           SeasonDetails.builder()
@@ -345,7 +364,12 @@ class SeriesServiceTest {
     @Test
     @DisplayName("Should fetch episode artwork for each saved episode when episodes have stills")
     void shouldFetchEpisodeArtworkForEachSavedEpisodeWhenEpisodesHaveStills() {
-      var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+      var series =
+          seriesRepository.save(
+              Series.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+                  .title("Breaking Bad")
+                  .build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
       var details =
           SeasonDetails.builder()
@@ -383,7 +407,12 @@ class SeriesServiceTest {
     @Test
     @DisplayName("Should report unavailable season and episode artwork when sources are empty")
     void shouldReportUnavailableSeasonAndEpisodeArtworkWhenSourcesAreEmpty() {
-      var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+      var series =
+          seriesRepository.save(
+              Series.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+                  .title("Breaking Bad")
+                  .build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
       var details =
           SeasonDetails.builder()
@@ -410,7 +439,12 @@ class SeriesServiceTest {
     @DisplayName(
         "Should persist season and episodes with all metadata fields when details provided")
     void shouldPersistSeasonAndEpisodesWithAllMetadataFieldsWhenDetailsProvided() {
-      var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+      var series =
+          seriesRepository.save(
+              Series.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+                  .title("Breaking Bad")
+                  .build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
       var details =
           SeasonDetails.builder()
@@ -464,7 +498,12 @@ class SeriesServiceTest {
     @Test
     @DisplayName("Should save season with no episodes when episode list is empty")
     void shouldSaveSeasonWithNoEpisodesWhenEpisodeListIsEmpty() {
-      var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+      var series =
+          seriesRepository.save(
+              Series.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+                  .title("Breaking Bad")
+                  .build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
       var details =
           SeasonDetails.builder()
@@ -488,7 +527,12 @@ class SeriesServiceTest {
     @Test
     @DisplayName("Should report unavailable stills only for episodes without image sources")
     void shouldReportUnavailableStillsOnlyForEpisodesWithoutImageSources() {
-      var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+      var series =
+          seriesRepository.save(
+              Series.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+                  .title("Breaking Bad")
+                  .build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
       var details =
           SeasonDetails.builder()
@@ -534,6 +578,7 @@ class SeriesServiceTest {
       var existing =
           seriesRepository.save(
               Series.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Old Title")
                   .originalTitle("Old Original")
                   .titleSort("old title")
@@ -546,6 +591,7 @@ class SeriesServiceTest {
 
       var fresh =
           Series.builder()
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
               .title("New Title")
               .originalTitle("New Original")
               .titleSort("new title")
@@ -579,13 +625,19 @@ class SeriesServiceTest {
       var existing =
           seriesRepository.save(
               Series.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
                   .title("Breaking Bad")
                   .tagline("Old tagline")
                   .summary("Old summary")
                   .contentRating(new ContentRating("MPAA", "PG", "US"))
                   .build());
 
-      var fresh = Series.builder().title("Breaking Bad").titleSort("breaking bad").build();
+      var fresh =
+          Series.builder()
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+              .title("Breaking Bad")
+              .titleSort("breaking bad")
+              .build();
       var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
 
       var result = seriesService.refreshSeriesMetadata(existing, metadataResult, artworkRun);
@@ -598,10 +650,16 @@ class SeriesServiceTest {
     @Test
     @DisplayName("Should update associations when refreshing series metadata")
     void shouldUpdateAssociationsWhenRefreshingSeriesMetadata() {
-      var existing = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+      var existing =
+          seriesRepository.save(
+              Series.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+                  .title("Breaking Bad")
+                  .build());
 
       var fresh =
           Series.builder()
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
               .title("Breaking Bad")
               .cast(List.of(Person.builder().name("Bryan Cranston").sourceId("17419").build()))
               .directors(List.of(Person.builder().name("Vince Gilligan").sourceId("66633").build()))
@@ -623,9 +681,18 @@ class SeriesServiceTest {
     @Test
     @DisplayName("Should fetch required artwork for existing series when refreshing metadata")
     void shouldFetchRequiredArtworkForExistingSeriesWhenRefreshingMetadata() {
-      var existing = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+      var existing =
+          seriesRepository.save(
+              Series.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+                  .title("Breaking Bad")
+                  .build());
       var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
-      var fresh = Series.builder().title("Breaking Bad").build();
+      var fresh =
+          Series.builder()
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+              .title("Breaking Bad")
+              .build();
       var metadataResult = new MetadataResult<>(fresh, imageSources, Map.of(), Map.of());
 
       seriesService.refreshSeriesMetadata(existing, metadataResult, artworkRun);
@@ -639,8 +706,17 @@ class SeriesServiceTest {
     @Test
     @DisplayName("Should report unavailable artwork when refreshing series with empty sources")
     void shouldReportUnavailableArtworkWhenRefreshingSeriesWithEmptySources() {
-      var existing = seriesRepository.save(Series.builder().title("Breaking Bad").build());
-      var fresh = Series.builder().title("Breaking Bad").build();
+      var existing =
+          seriesRepository.save(
+              Series.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+                  .title("Breaking Bad")
+                  .build());
+      var fresh =
+          Series.builder()
+              .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+              .title("Breaking Bad")
+              .build();
       var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
 
       seriesService.refreshSeriesMetadata(existing, metadataResult, artworkRun);
@@ -652,7 +728,12 @@ class SeriesServiceTest {
     @Test
     @DisplayName("Should update existing season when refreshing with matching season number")
     void shouldUpdateExistingSeasonWhenRefreshingWithMatchingSeasonNumber() {
-      var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+      var series =
+          seriesRepository.save(
+              Series.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+                  .title("Breaking Bad")
+                  .build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
 
       var existingSeason =
@@ -687,7 +768,12 @@ class SeriesServiceTest {
     @Test
     @DisplayName("Should create new season when refreshing with unknown season number")
     void shouldCreateNewSeasonWhenRefreshingWithUnknownSeasonNumber() {
-      var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+      var series =
+          seriesRepository.save(
+              Series.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+                  .title("Breaking Bad")
+                  .build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
 
       var details =
@@ -709,7 +795,12 @@ class SeriesServiceTest {
     @Test
     @DisplayName("Should update existing episode when refreshing with matching episode number")
     void shouldUpdateExistingEpisodeWhenRefreshingWithMatchingEpisodeNumber() {
-      var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+      var series =
+          seriesRepository.save(
+              Series.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+                  .title("Breaking Bad")
+                  .build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
       var season =
           seasonRepository.saveAndFlush(
@@ -759,7 +850,12 @@ class SeriesServiceTest {
     @Test
     @DisplayName("Should create new episode when refreshing with unknown episode number")
     void shouldCreateNewEpisodeWhenRefreshingWithUnknownEpisodeNumber() {
-      var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+      var series =
+          seriesRepository.save(
+              Series.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+                  .title("Breaking Bad")
+                  .build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
       var season =
           seasonRepository.saveAndFlush(
@@ -808,7 +904,12 @@ class SeriesServiceTest {
     @Test
     @DisplayName("Should fetch season and episode artwork when refreshing season")
     void shouldFetchSeasonAndEpisodeArtworkWhenRefreshingSeason() {
-      var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+      var series =
+          seriesRepository.save(
+              Series.builder()
+                  .library(LibraryFixtureCreator.buildFakeLibraryWithId())
+                  .title("Breaking Bad")
+                  .build());
       var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
 
       var details =
@@ -842,6 +943,7 @@ class SeriesServiceTest {
 
   private SeasonWithEpisodesRequest seasonRequest(
       Series series, SeasonDetails details, Library library) {
+    series.setLibrary(library);
     return SeasonWithEpisodesRequest.builder()
         .series(series)
         .details(details)

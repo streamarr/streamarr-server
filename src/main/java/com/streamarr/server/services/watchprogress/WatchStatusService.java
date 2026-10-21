@@ -18,9 +18,8 @@ import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
-import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.services.events.watchprogress.WatchStateChangedEvent;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.watchprogress.events.WatchStateChangedEvent;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.Comparator;
@@ -58,12 +57,7 @@ public class WatchStatusService {
    * AuthorizationService#requireAllowed} does.
    */
   public void requireViewProfileActivity(AuthenticatedIdentity identity) {
-    var profileId = identity.profileId();
-    if (profileId == null) {
-      throw new ProfileRequiredException();
-    }
-
-    authorizationService.requireAllowed(identity, new Intent.ViewProfileActivity(profileId));
+    authorizationService.requireViewProfileActivity(identity);
   }
 
   @Transactional

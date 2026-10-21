@@ -4,6 +4,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BooleanSupplier;
 import lombok.Builder;
 import lombok.NonNull;
 import reactor.core.publisher.Flux;
@@ -45,11 +46,32 @@ public final class KeyedSubscriptionBroadcaster<K, T> {
    * releases it. The last release of a key removes the key.
    */
   public Flux<T> register(@NonNull K key) {
+    return register(key, () -> true);
+  }
+
+  /**
+   * Checks the scope after registering, so completing a scope concurrently with its existence check
+   * cannot strand a registration. A missing scope completes without an initial value.
+   */
+  public Flux<T> register(@NonNull K key, @NonNull BooleanSupplier scopeExists) {
     return delivery.register(
         sink -> {
           add(key, sink);
           sink.onDispose(() -> remove(key, sink));
+          if (!scopeExists.getAsBoolean()) {
+            sink.complete();
+          }
         });
+  }
+
+  /** Completes the key's current registrations after their already-queued values. */
+  public void complete(@NonNull K key) {
+    var registrations = registrationsByKey.remove(key);
+    if (registrations == null) {
+      return;
+    }
+
+    registrations.forEach(FluxSink::complete);
   }
 
   public void broadcast(@NonNull K key, T value) {

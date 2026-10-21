@@ -63,7 +63,7 @@ class ItemArtworkDeletionIT extends AbstractIntegrationTest {
 
   @AfterEach
   void removeMovie() {
-    movieService.deleteMovieById(movieId);
+    movieService.tryDeleteMovieById(movieId);
     imageService.deleteFiles(poster.writtenFiles());
   }
 
@@ -73,7 +73,7 @@ class ItemArtworkDeletionIT extends AbstractIntegrationTest {
     transactionTemplate.executeWithoutResult(
         status -> {
           status.setRollbackOnly();
-          movieService.deleteMovieById(movieId);
+          movieService.tryDeleteMovieById(movieId);
         });
 
     assertThat(imageRepository.findByEntityIdAndEntityType(movieId, ImageEntityType.MOVIE))
@@ -98,7 +98,7 @@ class ItemArtworkDeletionIT extends AbstractIntegrationTest {
         var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
       var replace = executor.submit(() -> imageService.replaceImages(replacement, attempt));
       awaitWaitersBehind(jdbcTemplate, imageLock.backendPid(), 1);
-      var delete = executor.submit(() -> movieService.deleteMovieById(movieId));
+      var delete = executor.submit(() -> movieService.tryDeleteMovieById(movieId));
       awaitWaitersBehind(jdbcTemplate, imageLock.backendPid(), 2);
       imageLock.release();
 
@@ -123,7 +123,7 @@ class ItemArtworkDeletionIT extends AbstractIntegrationTest {
   void shouldRejectAReplacementAndDeleteItsFilesWhenTheMovieWasDeleted() {
     var replacement = processedPoster("/replacement.jpg");
     var attempt = requestedAttempt(replacement.images());
-    movieService.deleteMovieById(movieId);
+    movieService.tryDeleteMovieById(movieId);
 
     assertThatThrownBy(() -> imageService.replaceImages(replacement, attempt))
         .isInstanceOf(ObsoleteArtworkStepsAttemptException.class);

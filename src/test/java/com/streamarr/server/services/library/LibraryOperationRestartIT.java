@@ -95,6 +95,7 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
   @Autowired private ApplicationContext applicationContext;
   @Autowired private MeterRegistry meterRegistry;
   @Autowired private ArtworkPrioritySchedulers artworkPrioritySchedulers;
+  @Autowired private LibraryCountsService libraryCounts;
 
   @TempDir Path tempDir;
 
@@ -280,8 +281,9 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should run the scan again and end HEALTHY with every file matched when the"
-          + " library-operation scheduler stops mid-scan and a new one starts on the same database")
+      "Should run the scan again, end HEALTHY with every file matched and count the movie only"
+          + " when the scan ends, when the library-operation scheduler stops mid-scan and a new"
+          + " one starts on the same database")
   void shouldRunTheScanAgainAndEndHealthyWhenTheSchedulerStopsMidScanAndANewOneStarts()
       throws Exception {
     var library = createMovieLibrary();
@@ -298,6 +300,7 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
 
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
     assertThat(libraryStatus(library)).isEqualTo(LibraryStatus.SCANNING);
+    assertThat(itemCountOf(library)).isZero();
 
     heldResponses.release();
     var completed = new CompletableFuture<ExecutionComplete>();
@@ -314,6 +317,7 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
     assertThat(mediaFileRepository.findByLibraryId(library.getId()))
         .extracting(MediaFile::getStatus)
         .containsExactly(MediaFileStatus.MATCHED);
+    assertThat(itemCountOf(library)).isOne();
     assertThat(storedLibraryOperations()).isZero();
     assertThat(scheduledLibraryOperations()).isZero();
   }
@@ -533,6 +537,10 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
         "SELECT count(*) FROM item_result WHERE step = 'ARTWORK' AND library_operation_id = ?",
         Integer.class,
         libraryOperationId);
+  }
+
+  private int itemCountOf(Library library) {
+    return libraryCounts.getItemCounts(Set.of(library.getId())).get(library.getId()).total();
   }
 
   private LibraryStatus libraryStatus(Library library) {
