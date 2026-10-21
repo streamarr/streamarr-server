@@ -52,6 +52,7 @@ class LibraryQueryAuthorizationTest {
   void shouldRefuseLibraryQueriesWhenTokenHasNoSelectedProfile() {
     var identity = accountScopedBuilder().build();
     var libraryId = UUID.randomUUID();
+    var firstPage = firstRows(10);
     var service =
         LibraryQueryService.builder()
             .libraries(new FakeLibraryRepository())
@@ -62,8 +63,7 @@ class LibraryQueryAuthorizationTest {
         .isInstanceOf(ProfileRequiredException.class);
     assertThatThrownBy(() -> service.findById(identity, libraryId))
         .isInstanceOf(ProfileRequiredException.class);
-    assertThatThrownBy(
-            () -> service.getItems(identity, MediaType.MOVIE, ANY_LIBRARY, firstRows(10)))
+    assertThatThrownBy(() -> service.getItems(identity, MediaType.MOVIE, ANY_LIBRARY, firstPage))
         .isInstanceOf(ProfileRequiredException.class);
   }
 }
