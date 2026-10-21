@@ -48,6 +48,10 @@ class TitlePaginationWorkIT extends AbstractIntegrationTest {
         FROM base_collectable seed CROSS JOIN generate_series(1, 200000) n WHERE seed.id = ?
         """,
         anchor.getId());
+    // A pooled connection can hold a generic plan for movie's foreign-key check built while
+    // base_collectable was one page: a sequential scan. Analyzing invalidates it, so the 200,000
+    // checks below use the primary key instead of each scanning the whole table.
+    jdbc.execute("ANALYZE base_collectable");
     jdbc.update(
         """
         INSERT INTO movie
