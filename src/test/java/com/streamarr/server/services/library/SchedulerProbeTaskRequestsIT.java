@@ -46,6 +46,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -87,6 +88,7 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   private final FakeFfprobeService producer = new FakeFfprobeService();
   private final List<MediaFile> createdFiles = new ArrayList<>();
   private final CountDownLatch firstExecutionFinished = new CountDownLatch(1);
+  private final LinkedBlockingQueue<String> completedInstances = new LinkedBlockingQueue<>();
   private Task<ProbeTaskRequest> task;
   private SchedulerClient client;
   private Scheduler scheduler;
@@ -356,6 +358,38 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should run the probe that playback requests during its running attempt before queued probes"
+          + " when the probe runs again")
+  void shouldRunTheProbeThatPlaybackRequestsDuringItsRunningAttemptBeforeQueuedProbes()
+      throws Exception {
+    var running = requestFor(createMediaFile());
+    var queued = requestFor(createMediaFile());
+    var probing = new CountDownLatch(1);
+    var release = new CompletableFuture<Void>();
+    producer.runDuringProbe(
+        () -> {
+          probing.countDown();
+          release.orTimeout(15, TimeUnit.SECONDS).join();
+        });
+    scheduling.request(running);
+    startScheduler();
+    assertThat(probing.await(15, TimeUnit.SECONDS)).isTrue();
+    scheduling.request(queued);
+
+    scheduling.requestAheadOfQueuedProbes(
+        running.toBuilder()
+            .snapshot(new SourceFileSnapshot(running.snapshot().size() + 1, Instant.EPOCH))
+            .build());
+    release.complete(null);
+
+    assertThat(completedInstances.poll(15, TimeUnit.SECONDS))
+        .isEqualTo(running.mediaFileId().toString());
+    assertThat(completedInstances.poll(15, TimeUnit.SECONDS))
+        .isEqualTo(running.mediaFileId().toString());
+  }
+
+  @Test
   @DisplayName("Should keep a quiet period when discovery requests the same inputs again")
   void shouldKeepAQuietPeriodWhenDiscoveryRequestsTheSameInputsAgain() throws IOException {
     var request = requestFor(createMediaFile());
@@ -427,12 +461,14 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
             .threads(1)
             .pollUsingLockAndFetch(0.5, 1.0)
             .pollingInterval(Duration.ofMillis(200))
+            .enablePriority()
             .executorService(Executors.newVirtualThreadPerTaskExecutor())
             .serializer(probeTaskSerializer)
             .addSchedulerListener(
                 new AbstractSchedulerListener() {
                   @Override
                   public void onExecutionComplete(ExecutionComplete executionComplete) {
+                    completedInstances.add(executionComplete.getExecution().taskInstance.getId());
                     firstExecutionFinished.countDown();
                   }
                 })

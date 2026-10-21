@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.within;
 
 import com.github.kagkarlsson.scheduler.SchedulerClient;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
+import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.ItemFailureReason;
@@ -277,6 +278,64 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
     assertThat(worker.attempts(file)).isOne();
   }
 
+  @Test
+  @DisplayName(
+      "Should probe the requested file next when the scan's running probe of it finds every worker"
+          + " busy")
+  void shouldProbeTheRequestedFileNextWhenTheScansRunningProbeOfItFindsEveryWorkerBusy()
+      throws Exception {
+    var files = createUnchangedFiles(QUEUED_BY_SCAN + 1);
+    var requested = files.getFirst();
+    var findWorkersBusy = new CompletableFuture<Void>();
+    worker.answerWith(
+        requested,
+        attempt -> {
+          if (attempt == 1) {
+            findWorkersBusy.orTimeout(BOUND_SECONDS, TimeUnit.SECONDS).join();
+            throw new ProbeWorkersBusyException();
+          }
+
+          return null;
+        });
+    var completions = new Semaphore(0);
+    scheduling.request(requested);
+    startScheduler(
+        probeExecution.toBuilder().producer(worker).build(),
+        releasingOnCompletion(completions),
+        clock);
+    worker.awaitStarted(requested);
+    files.subList(1, files.size()).forEach(scheduling::request);
+
+    var playback = createSession(requested);
+    PROBE_WORKERS.awaitAsked(1);
+    findWorkersBusy.complete(null);
+    awaitCompletion(completions);
+    var holdingCapacity = worker.awaitStarts(2).getLast();
+    clock.advance(probeScheduling.busyWorkerRetryDelay());
+    worker.release(holdingCapacity);
+    awaitCompletion(completions);
+    worker.awaitStarts(1);
+
+    assertThat(worker.started().get(2)).isEqualTo(sourceOf(requested));
+    assertThat(accepted(playback.get(BOUND_SECONDS, TimeUnit.SECONDS)).getMediaFileId())
+        .isEqualTo(requested.mediaFileId());
+  }
+
+  // The scheduler polls once the thread that ran the completed attempt is free.
+  private void awaitCompletion(Semaphore completions) throws InterruptedException {
+    assertThat(completions.tryAcquire(BOUND_SECONDS, TimeUnit.SECONDS)).isTrue();
+    checkForDueExecutions();
+  }
+
+  private static AbstractSchedulerListener releasingOnCompletion(Semaphore completions) {
+    return new AbstractSchedulerListener() {
+      @Override
+      public void onExecutionComplete(ExecutionComplete executionComplete) {
+        completions.release();
+      }
+    };
+  }
+
   // The test scheduler is not the client that stores the requests, and its frozen clock never
   // ends a polling interval, so it polls when told to.
   private void pickUpPlaybackRequests(int requests) throws InterruptedException {
@@ -412,7 +471,11 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
     }
 
     void release(ProbeTaskRequest file) {
-      futureOf(releases, sourceOf(file)).complete(null);
+      release(sourceOf(file));
+    }
+
+    void release(Path source) {
+      futureOf(releases, source).complete(null);
     }
 
     void releaseAll() {
@@ -432,6 +495,10 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
     List<Path> awaitStarts(int count) throws InterruptedException {
       assertThat(starts.tryAcquire(count, BOUND_SECONDS, TimeUnit.SECONDS)).isTrue();
       return List.copyOf(started).subList(0, count);
+    }
+
+    List<Path> started() {
+      return List.copyOf(started);
     }
 
     List<Path> finished() {

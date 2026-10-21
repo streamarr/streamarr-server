@@ -19,7 +19,6 @@ public class JooqProbeTaskPriorityRepository implements ProbeTaskPriorityReposit
   private static final Field<String> TASK_NAME = DSL.field(DSL.name("task_name"), String.class);
   private static final Field<String> TASK_INSTANCE =
       DSL.field(DSL.name("task_instance"), String.class);
-  private static final Field<Boolean> PICKED = DSL.field(DSL.name("picked"), Boolean.class);
   private static final Field<Short> PRIORITY = DSL.field(DSL.name("priority"), Short.class);
 
   private final DSLContext dsl;
@@ -32,7 +31,6 @@ public class JooqProbeTaskPriorityRepository implements ProbeTaskPriorityReposit
             .set(PRIORITY, raised)
             .where(TASK_NAME.eq(instance.getTaskName()))
             .and(TASK_INSTANCE.eq(instance.getId()))
-            .and(PICKED.isFalse())
             .and(PRIORITY.lt(raised))
             .execute()
         == 1;
