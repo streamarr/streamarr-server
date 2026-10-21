@@ -23,6 +23,8 @@ record ProbeSchedulerStarter(
     DataSource dataSource,
     Environment environment) {
 
+  static final int THREADS = 2;
+
   record StartedProbeScheduler(Scheduler scheduler, SchedulerClient client) {}
 
   static ProbeSchedulerStarter fromContext(ApplicationContext context) {
@@ -38,7 +40,7 @@ record ProbeSchedulerStarter(
       ProbeExecution execution, AbstractSchedulerListener listener, Clock clock) {
     var task = MediaProbeTask.create(execution, completion);
     var properties = UnstartedSchedulerConfiguration.schedulerProperties(environment);
-    properties.setThreads(2);
+    properties.setThreads(THREADS);
     var scheduler =
         DbSchedulerConfigurationSupport.buildScheduler(
             properties,
