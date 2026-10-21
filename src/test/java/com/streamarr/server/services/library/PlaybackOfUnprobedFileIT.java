@@ -101,15 +101,11 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
   private final ExecutorService viewers = Executors.newVirtualThreadPerTaskExecutor();
 
   @BeforeEach
-  void connectProbeWorker() {
+  void connectProbeWorkerAndStartTheClockBetweenMicroseconds() {
     PROBE_WORKERS.reset(true);
-  }
-
-  // A Linux clock reads in nanoseconds, and PostgreSQL keeps each time to the nearest
-  // microsecond. Each test starts 400 ns past a microsecond, so a time read back from the
-  // database rounds down, as it does for most Linux readings.
-  @BeforeEach
-  void startTheClockBetweenMicroseconds() {
+    // A Linux clock reads in nanoseconds, and PostgreSQL keeps each time to the nearest
+    // microsecond. Each test starts 400 ns past a microsecond, so a time read back from the
+    // database rounds down, as it does for most Linux readings.
     var pastMicrosecond = clock.instant().getNano() % 1_000;
     clock.advance(Duration.ofNanos(Math.floorMod(400 - pastMicrosecond, 1_000)));
   }
