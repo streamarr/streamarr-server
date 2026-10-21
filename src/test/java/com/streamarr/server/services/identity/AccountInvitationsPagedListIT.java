@@ -100,6 +100,11 @@ class AccountInvitationsPagedListIT
   }
 
   @Override
+  protected boolean sortValuesCanTie() {
+    return true;
+  }
+
+  @Override
   protected Optional<Position> positionBeforeArrangedItems(Scope scope) {
     return Optional.of(
         new Position(new SortValue.OfInstant(scope.newestCreatedOn().plusSeconds(1)), LOWEST_ID));

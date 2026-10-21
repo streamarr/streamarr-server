@@ -47,9 +47,16 @@ public record Keyset<V>(@NonNull Field<V> sortValue, @NonNull Field<UUID> itemId
 
   /** Restricts, orders and limits {@code select} to the rows the seek reads, nearest first. */
   public <R extends Record> Select<R> rowsBeyond(SelectWhereStep<R> select, Seek seek) {
+    return rowsBeyond(select, noCondition(), seek);
+  }
+
+  /** As {@link #rowsBeyond(SelectWhereStep, Seek)}, among the rows {@code scope} admits. */
+  public <R extends Record> Select<R> rowsBeyond(
+      SelectWhereStep<R> select, Condition scope, Seek seek) {
     var ascending = isAscending(seek);
     return select
-        .where(beyond(seek, ascending))
+        .where(scope)
+        .and(beyond(seek, ascending))
         .orderBy(sort(sortValue, ascending), sort(itemId, ascending))
         .limit(seek.limit());
   }

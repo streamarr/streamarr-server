@@ -5,11 +5,11 @@ import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.auth.SecurityAuditEventRecordView;
-import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.cursor.ConnectionArguments;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
+import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.HouseholdDeletionPreview;
 import com.streamarr.server.graphql.dto.ProfileActivityDetails;
@@ -33,6 +33,7 @@ import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteLas
 import com.streamarr.server.services.identity.HouseholdDeletionService.HouseholdDeletionPreflightDetails;
 import com.streamarr.server.services.identity.HouseholdDeletionService.SecurityAuditPageRequest;
 import com.streamarr.server.services.identity.HouseholdDeletionService.TransferLastAccountAndDeleteHouseholdCommand;
+import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
@@ -54,6 +55,7 @@ public class HouseholdDeletionResolver {
   private final HouseholdDeletionService householdDeletionService;
   private final PaginationService paginationService;
   private final CursorUtil cursorUtil;
+  private final PositionCursorCodec positionCursors;
   private final RelayConnectionAdapter relayConnectionAdapter;
 
   @DgsMutation
@@ -195,13 +197,15 @@ public class HouseholdDeletionResolver {
   @DgsQuery
   public Connection<ProfileActivityDetails> profileActivity(
       @InputArgument String profileId, DataFetchingEnvironment dfe) {
-    var options = ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
+    var profile = Ids.parseUuid(profileId);
+    var list = new ListIdentity("profile-activity", profile);
+    var request =
+        positionCursors.pageRequest(
+            list, ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE));
     var page =
         householdDeletionService.profileActivity(
-            authorizationService.currentIdentity(),
-            Ids.parseUuid(profileId),
-            cursorUtil.decodeKeysetCursor(options));
-    return toActivityConnection(page);
+            authorizationService.currentIdentity(), profile, request);
+    return relayConnectionAdapter.toConnection(page, list, ProfileActivityDetails::from);
   }
 
   private static HouseholdDeletionPreview toDto(HouseholdDeletionPreflightDetails preview) {
@@ -249,13 +253,6 @@ public class HouseholdDeletionResolver {
         page,
         item -> SecurityAuditEventDetails.from(item.item()),
         item -> cursorUtil.encodeOpaqueCursor(item.item().occurredAt() + "|" + item.item().id()));
-  }
-
-  private Connection<ProfileActivityDetails> toActivityConnection(MediaPage<SessionProgress> page) {
-    return relayConnectionAdapter.toConnection(
-        page,
-        item -> ProfileActivityDetails.from(item.item()),
-        item -> cursorUtil.encodeKeysetCursor(item.item().getId()));
   }
 
   private static DeleteEmptyHouseholdPayload invalidDeleteEmptyHousehold(String inputName) {

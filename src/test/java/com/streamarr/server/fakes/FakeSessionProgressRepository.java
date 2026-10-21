@@ -3,8 +3,11 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.repositories.streaming.SaveWatchProgress;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
+import com.streamarr.server.services.pagination.Position;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
+import com.streamarr.server.services.pagination.SortValue;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -26,11 +29,19 @@ public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProg
   }
 
   @Override
-  public List<SessionProgress> findByProfileIdOrderByLastModifiedOnDesc(UUID profileId) {
-    return database.values().stream()
-        .filter(progress -> profileId.equals(progress.getProfileId()))
-        .sorted(Comparator.comparing(SessionProgress::getLastModifiedOn).reversed())
-        .toList();
+  public List<Row<SessionProgress>> rowsBeyond(UUID profileId, Seek seek) {
+    return InMemoryKeyset.rowsBeyond(
+        database.values().stream()
+            .filter(progress -> profileId.equals(progress.getProfileId()))
+            .map(
+                progress ->
+                    new Row<>(
+                        progress,
+                        new Position(
+                            new SortValue.OfInstant(progress.getLastModifiedOn()),
+                            progress.getId())))
+            .toList(),
+        seek);
   }
 
   @Override

@@ -15,6 +15,12 @@ public interface HouseholdRepositoryCustom {
   List<Row<Household>> rowsBeyond(Seek seek);
 
   /**
+   * The Households the Account may use beyond the seek: its own Household first, then the
+   * Households its Personal Profile is actively shared into, by lowercased name, then ID.
+   */
+  List<Row<Household>> rowsUsableBy(UUID accountId, Seek seek);
+
+  /**
    * Locks the Household row for the caller's transaction, serializing destructive transitions.
    * False when the Household no longer exists after a competing transaction commits.
    */

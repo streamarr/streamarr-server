@@ -1,5 +1,6 @@
 package com.streamarr.server.services.identity;
 
+import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -24,11 +25,7 @@ import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteLas
 import com.streamarr.server.services.identity.HouseholdDeletionService.HouseholdDeletionPreflightDetails;
 import com.streamarr.server.services.identity.HouseholdDeletionService.TransferLastAccountAndDeleteHouseholdCommand;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.pagination.KeysetPaginationOptions;
-import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.support.AuthTestSupport;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.jooq.DSLContext;
@@ -90,18 +87,10 @@ class HouseholdDeletionServiceIT extends AbstractIntegrationTest {
 
       var page =
           service.profileActivity(
-              authTestSupport.identityOf(admin),
-              source.profile().getId(),
-              new KeysetPaginationOptions(
-                  null,
-                  PaginationOptions.builder()
-                      .paginationDirection(PaginationDirection.FORWARD)
-                      .cursor(Optional.empty())
-                      .limit(10)
-                      .build()));
+              authTestSupport.identityOf(admin), source.profile().getId(), firstRows(10));
 
-      assertThat(page.items())
-          .extracting(item -> item.item().getId())
+      assertThat(page.rows())
+          .extracting(row -> row.item().getId())
           .containsExactly(selected.getId());
     } finally {
       authTestSupport.deleteIdentity(source);

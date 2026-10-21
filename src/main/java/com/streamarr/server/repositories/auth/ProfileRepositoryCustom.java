@@ -3,6 +3,8 @@ package com.streamarr.server.repositories.auth;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfilePolicySnapshot;
 import com.streamarr.server.domain.auth.ProfilePolicyTarget;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -11,6 +13,15 @@ public interface ProfileRepositoryCustom {
 
   /** Profiles actively shared into the Household, ordered by name then id for stable paging. */
   List<Profile> findAvailableInHousehold(UUID householdId);
+
+  /**
+   * The Profiles actively shared into the Household beyond the seek, ordered by lowercased name,
+   * then ID.
+   */
+  List<Row<Profile>> rowsAvailableInHousehold(UUID householdId, Seek seek);
+
+  /** The Kid Profiles actively shared into the Household, which decide its PIN safety rule. */
+  List<Profile> findAvailableKidsInHousehold(UUID householdId);
 
   boolean existsAvailableInHouseholdWithNameIgnoreCase(UUID householdId, String name);
 

@@ -78,6 +78,11 @@ class HouseholdsPagedListIT extends PagedListContract<Household, HouseholdsPaged
     return SortDirection.ASC;
   }
 
+  @Override
+  protected boolean sortValuesCanTie() {
+    return true;
+  }
+
   // Names are compared lowercased, and letters sort after digits in every collation.
   @Override
   protected Optional<Position> positionBeforeArrangedItems(Scope scope) {

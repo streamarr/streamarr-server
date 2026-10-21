@@ -5,7 +5,15 @@ import static com.streamarr.server.jooq.generated.tables.WatchHistory.WATCH_HIST
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.row;
 
+import com.streamarr.server.domain.streaming.SessionProgress;
+import com.streamarr.server.repositories.JooqQueryHelper;
+import com.streamarr.server.repositories.Keyset;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
+import jakarta.persistence.EntityManager;
+import java.time.OffsetDateTime;
 import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
@@ -16,6 +24,23 @@ public class SessionProgressRepositoryCustomImpl implements SessionProgressRepos
 
   private final DSLContext dsl;
   private final StreamSessionLock streamSessionLock;
+  private final EntityManager entityManager;
+
+  @Override
+  public List<Row<SessionProgress>> rowsBeyond(UUID profileId, Seek seek) {
+    var keyset =
+        Keyset.<OffsetDateTime>builder()
+            .sortValue(SESSION_PROGRESS.LAST_MODIFIED_ON)
+            .itemId(SESSION_PROGRESS.ID)
+            .build();
+    var query =
+        keyset.rowsBeyond(
+            dsl.select(SESSION_PROGRESS.asterisk(), keyset.selectedSortValue())
+                .from(SESSION_PROGRESS),
+            SESSION_PROGRESS.PROFILE_ID.eq(profileId),
+            seek);
+    return JooqQueryHelper.nativeRows(entityManager, query, SessionProgress.class, keyset);
+  }
 
   @Override
   public boolean upsertProgress(SaveWatchProgress progress) {
