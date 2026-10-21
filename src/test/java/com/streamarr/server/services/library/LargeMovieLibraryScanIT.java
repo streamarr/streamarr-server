@@ -31,6 +31,7 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterEach;
@@ -38,6 +39,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -73,8 +75,10 @@ class LargeMovieLibraryScanIT extends AbstractScanningIntegrationTest {
   private static final int FIRST_TMDB_ID = 7_000_000;
   private static final int FIRST_PERSON_ID = 70_000_000;
   private static final Duration TMDB_DELAY = Duration.ofMillis(200);
-  private static final Duration SCAN_BOUND = Duration.ofSeconds(90);
   private static final Duration MOVIE_INSERT_DELAY = Duration.ofMillis(500);
+  // Covers every movie insert delay run one after another, as when the limit falls to one task.
+  private static final Duration SCAN_BOUND =
+      Duration.ofSeconds(90).plus(MOVIE_INSERT_DELAY.multipliedBy(FILES));
 
   // Plain words keep the filename parser from reading part of a title as a year or release tag.
   private static final List<String> TITLE_ADJECTIVES =
@@ -132,6 +136,7 @@ class LargeMovieLibraryScanIT extends AbstractScanningIntegrationTest {
   }
 
   @Test
+  @Timeout(value = 4, unit = TimeUnit.MINUTES)
   @DisplayName(
       "Should match every file and save every requested image without a connection timeout when"
           + " scanning 200 files whose movie transactions each hold a connection for half a second")
