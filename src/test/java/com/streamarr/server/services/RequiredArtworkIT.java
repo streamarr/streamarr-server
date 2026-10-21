@@ -98,6 +98,10 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
   // Background steps that a test leaves pending would otherwise run during later tests.
   @AfterEach
   void tearDown() {
+    deleteArtworkRequestsAndTasks();
+  }
+
+  private void deleteArtworkRequestsAndTasks() {
     jdbcTemplate.update("DELETE FROM artwork_request");
     jdbcTemplate.update("DELETE FROM " + ArtworkSchedulerStarter.PRIMARY_TABLE);
     jdbcTemplate.update("DELETE FROM " + ArtworkSchedulerStarter.BACKGROUND_TABLE);
