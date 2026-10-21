@@ -137,6 +137,10 @@ class LibraryPaginationWorkIT extends AbstractIntegrationTest {
         """,
         ITEMS,
         anchor.getId());
+    // A pooled connection can hold a generic plan for movie's foreign-key check built while
+    // base_collectable was one page: a sequential scan. Analyzing invalidates it, so the checks
+    // below use the primary key instead of each scanning the whole table.
+    jdbc.execute("ANALYZE base_collectable");
     jdbc.update(
         """
         INSERT INTO movie
