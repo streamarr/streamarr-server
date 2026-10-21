@@ -111,9 +111,10 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
   }
 
   @AfterEach
-  void releaseWorkerAndViewers() {
+  void releaseWorkerAndViewers() throws InterruptedException {
     worker.releaseAll();
     viewers.shutdownNow();
+    assertThat(viewers.awaitTermination(BOUND_SECONDS, TimeUnit.SECONDS)).isTrue();
   }
 
   @Test
@@ -121,7 +122,7 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
   void shouldStartTheStreamSessionWhenTheWorkerReturnsTheProbeOfTheFile() throws Exception {
     var file = createUnchangedFiles(1).getFirst();
     worker.answerAtOnce(file);
-    startScheduler(1);
+    startScheduler();
 
     var playback = createSession(file);
     pickUpPlaybackRequests(1);
@@ -141,7 +142,7 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
     var queuedByScan = files.subList(1, files.size());
     var requested = queuedByScan.getLast();
     scheduling.request(holdingCapacity);
-    startScheduler(1);
+    startScheduler();
     worker.awaitStarted(holdingCapacity);
     queuedByScan.forEach(scheduling::request);
     worker.answerAtOnce(requested);
@@ -174,7 +175,7 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
 
           return null;
         });
-    startScheduler(1);
+    startScheduler();
 
     var playback = createSession(file);
     pickUpPlaybackRequests(1);
@@ -201,7 +202,7 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
 
     var refused = createSession(requested).get(BOUND_SECONDS, TimeUnit.SECONDS);
     PROBE_WORKERS.reset(true);
-    startScheduler(1);
+    startScheduler();
 
     assertThat(refused).isEqualTo(notReady());
     assertThat(worker.awaitStarts(1)).containsExactly(sourceOf(requested));
@@ -218,7 +219,7 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
           throw new ProbeExecutionException(
               ItemFailureReason.SOURCE_INACCESSIBLE, "The worker could not read the source");
         });
-    var client = startScheduler(1);
+    var client = startScheduler();
 
     var playback = createSession(file);
     pickUpPlaybackRequests(1);
@@ -240,7 +241,7 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
   @DisplayName("Should run one probe and start both sessions when two viewers play the same file")
   void shouldRunOneProbeAndStartBothSessionsWhenTwoViewersPlayTheSameFile() throws Exception {
     var file = createUnchangedFiles(1).getFirst();
-    var client = startScheduler(1);
+    var client = startScheduler();
 
     var firstViewer = createSession(file);
     var secondViewer = createSession(file);
@@ -262,7 +263,7 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
       "Should not start a second probe when playback requests a file whose probe is running")
   void shouldNotStartASecondProbeWhenPlaybackRequestsAFileWhoseProbeIsRunning() throws Exception {
     var file = createUnchangedFiles(1).getFirst();
-    startScheduler(1);
+    startScheduler();
     var firstViewer = createSession(file);
     pickUpPlaybackRequests(1);
     worker.awaitStarted(file);
@@ -283,12 +284,16 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
     checkForDueExecutions();
   }
 
-  private SchedulerClient startScheduler(int threads) {
+  @Override
+  ProbeSchedulerStarter probeSchedulerStarter() {
+    return super.probeSchedulerStarter().toBuilder().threads(1).build();
+  }
+
+  private SchedulerClient startScheduler() {
     return startScheduler(
         probeExecution.toBuilder().producer(worker).build(),
         new AbstractSchedulerListener() {},
-        clock,
-        threads);
+        clock);
   }
 
   private CompletableFuture<Outcome<StreamSession, CreateStreamSessionRejection>> createSession(
@@ -380,13 +385,15 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
       return outcome;
     }
 
+    // Registering the release before reading releasedAll keeps releaseAll from missing it.
     private void awaitRelease(Path source) {
+      var release = futureOf(releases, source);
       if (releasedAll) {
         return;
       }
 
       try {
-        futureOf(releases, source).get();
+        release.get();
       } catch (InterruptedException exception) {
         Thread.currentThread().interrupt();
         throw new ProbeCancelledException("The held probe was cancelled", exception);

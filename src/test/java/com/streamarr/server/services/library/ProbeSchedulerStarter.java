@@ -19,13 +19,14 @@ import org.springframework.core.env.Environment;
 // Starts a probe scheduler against the test database from the application's scheduler customizer
 // and scheduler listeners, as the db-scheduler starter would. The test profile turns the starter
 // off.
-@Builder
+@Builder(toBuilder = true)
 record ProbeSchedulerStarter(
     DbSchedulerCustomizer customizer,
     ProbeTaskCompletion completion,
     DataSource dataSource,
     Environment environment,
-    List<SchedulerListener> applicationListeners) {
+    List<SchedulerListener> applicationListeners,
+    int threads) {
 
   static final int THREADS = 2;
 
@@ -38,16 +39,12 @@ record ProbeSchedulerStarter(
         .dataSource(context.getBean(DataSource.class))
         .environment(context.getEnvironment())
         .applicationListeners(List.copyOf(context.getBeansOfType(SchedulerListener.class).values()))
+        .threads(THREADS)
         .build();
   }
 
   StartedProbeScheduler start(
       ProbeExecution execution, AbstractSchedulerListener listener, Clock clock) {
-    return start(execution, listener, clock, THREADS);
-  }
-
-  StartedProbeScheduler start(
-      ProbeExecution execution, AbstractSchedulerListener listener, Clock clock, int threads) {
     var task = MediaProbeTask.create(execution, completion, clock);
     var properties = UnstartedSchedulerConfiguration.schedulerProperties(environment);
     properties.setThreads(threads);
