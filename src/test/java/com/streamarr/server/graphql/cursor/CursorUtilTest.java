@@ -277,8 +277,9 @@ class CursorUtilTest {
           Base64.getUrlEncoder()
               .withoutPadding()
               .encodeToString(json.getBytes(StandardCharsets.UTF_8));
+      var options = forwardFrom(cursor);
 
-      assertThatThrownBy(() -> cursorUtil.decodeMediaCursor(forwardFrom(cursor)))
+      assertThatThrownBy(() -> cursorUtil.decodeMediaCursor(options))
           .isInstanceOf(InvalidCursorException.class);
     }
 
