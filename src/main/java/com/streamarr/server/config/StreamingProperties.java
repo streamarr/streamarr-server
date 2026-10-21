@@ -22,7 +22,9 @@ public record StreamingProperties(
     // A producer that publishes nothing for this long is classified stalled and replaced; the
     // recovery budget is attempt-bounded (targets × threshold), never a wall clock.
     Duration producerStallThreshold,
-    String segmentBasePath) {
+    String segmentBasePath,
+    // How long createStreamSession waits for the probe of a file that has no probe outcome yet.
+    Duration probeWaitLimit) {
 
   public StreamingProperties {
     if (maxConcurrentTranscodes == null) {
@@ -49,10 +51,7 @@ public record StreamingProperties(
 
     // Segment duration divides the relocation gap and scales every seek offset; zero divides by
     // zero on the segment-request path.
-    if (targetSegmentDuration.isZero() || targetSegmentDuration.isNegative()) {
-      throw new IllegalArgumentException(
-          "streaming.target-segment-duration must be positive, got " + targetSegmentDuration);
-    }
+    requirePositive("streaming.target-segment-duration", targetSegmentDuration);
 
     if (sessionTimeout == null) {
       sessionTimeout = Duration.ofSeconds(60);
@@ -68,14 +67,23 @@ public record StreamingProperties(
 
     // A zero threshold classifies every producer stalled on its first poll, replacing healthy
     // producers until every execution target is exhausted.
-    if (producerStallThreshold.isZero() || producerStallThreshold.isNegative()) {
-      throw new IllegalArgumentException(
-          "streaming.producer-stall-threshold must be positive, got " + producerStallThreshold);
+    requirePositive("streaming.producer-stall-threshold", producerStallThreshold);
+
+    if (probeWaitLimit == null) {
+      probeWaitLimit = Duration.ofSeconds(15);
     }
+
+    requirePositive("streaming.probe-wait-limit", probeWaitLimit);
 
     if (segmentBasePath == null || segmentBasePath.isBlank()) {
       segmentBasePath =
           Path.of(System.getProperty("java.io.tmpdir"), "streamarr-segments").toString();
+    }
+  }
+
+  private static void requirePositive(String property, Duration value) {
+    if (value.isZero() || value.isNegative()) {
+      throw new IllegalArgumentException(property + " must be positive, got " + value);
     }
   }
 }

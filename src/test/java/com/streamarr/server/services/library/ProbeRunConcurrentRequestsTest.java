@@ -129,6 +129,11 @@ class ProbeRunConcurrentRequestsTest {
       delegate.requestRetryingFailure(request);
     }
 
+    @Override
+    public void requestAheadOfQueuedProbes(ProbeTaskRequest request) {
+      delegate.requestAheadOfQueuedProbes(request);
+    }
+
     private void awaitRelease() {
       try {
         assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();

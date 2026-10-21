@@ -13,4 +13,10 @@ public interface ProbeTaskRequests {
    * failure keeps its time.
    */
   void requestRetryingFailure(ProbeTaskRequest request);
+
+  /**
+   * Requests the probe like {@link #request}, and runs it before every queued probe that is due and
+   * not running. A running probe is left alone, and a pending probe keeps its time and backoff.
+   */
+  void requestAheadOfQueuedProbes(ProbeTaskRequest request);
 }

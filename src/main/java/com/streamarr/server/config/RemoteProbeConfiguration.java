@@ -2,6 +2,7 @@ package com.streamarr.server.config;
 
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.KeyframePacketScanner;
+import com.streamarr.server.services.streaming.ProbeWorkers;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import java.nio.file.Path;
@@ -27,6 +28,12 @@ public class RemoteProbeConfiguration {
   public KeyframePacketScanner keyframePacketScanner(
       WorkerSessionServer workerSessionServer, RemoteTranscodeProperties properties) {
     return remoteFfprobeService(workerSessionServer, properties)::scanKeyframePackets;
+  }
+
+  @Bean
+  public ProbeWorkers probeWorkers(
+      WorkerSessionServer workerSessionServer, RemoteTranscodeProperties properties) {
+    return remoteFfprobeService(workerSessionServer, properties)::hasCompatibleWorker;
   }
 
   private static RemoteFfprobeService remoteFfprobeService(
