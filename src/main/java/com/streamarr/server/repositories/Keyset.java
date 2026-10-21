@@ -11,6 +11,7 @@ import com.streamarr.server.services.pagination.Seek;
 import com.streamarr.server.services.pagination.SortDirection;
 import com.streamarr.server.services.pagination.SortValue;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.NonNull;
@@ -20,6 +21,7 @@ import org.jooq.Record;
 import org.jooq.ResultQuery;
 import org.jooq.SelectWhereStep;
 import org.jooq.SortField;
+import org.jooq.impl.SQLDataType;
 
 /** The columns a list sorts by, and the query that reads its rows beyond a position. */
 @Builder
@@ -45,13 +47,24 @@ public record Keyset<V>(@NonNull Field<V> sortValue, @NonNull Field<UUID> itemId
     }
 
     var position = seek.position().orElseThrow();
-    var current = row(sortValue, itemId);
-    var at = row(val(bindValue(position.value()), sortValue), val(position.itemId(), itemId));
+    var current = row(List.of(sortValue, itemId));
+    var at = row(List.of(boundValue(position.value()), val(position.itemId(), itemId)));
     if (ascending) {
       return seek.includingPosition() ? current.ge(at) : current.gt(at);
     }
 
     return seek.includingPosition() ? current.le(at) : current.lt(at);
+  }
+
+  // A number binds as bigint whatever the column's width: coerced to an integer column it would
+  // wrap, so a position beyond the column's range would seek from the wrong end. PostgreSQL
+  // compares integer with bigint exactly, and an index on the column still serves the seek.
+  private Field<?> boundValue(SortValue value) {
+    if (value instanceof SortValue.OfNumber(var number)) {
+      return val(number, SQLDataType.BIGINT);
+    }
+
+    return val(bindValue(value), sortValue);
   }
 
   private static boolean isAscending(Seek seek) {

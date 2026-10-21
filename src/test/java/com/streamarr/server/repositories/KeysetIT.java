@@ -92,6 +92,43 @@ class KeysetIT extends AbstractIntegrationTest {
         .isEqualTo(new Position(SortValue.of(values.middle()), MIDDLE_ID));
   }
 
+  static Stream<Arguments> positionsOutsideTheColumnRange() {
+    var aboveEveryInteger = Integer.MAX_VALUE + 1L;
+    var belowEveryInteger = Integer.MIN_VALUE - 1L;
+    return Stream.of(
+        Arguments.of(aboveEveryInteger, SortDirection.ASC, PaginationDirection.FORWARD, List.of()),
+        Arguments.of(
+            aboveEveryInteger,
+            SortDirection.DESC,
+            PaginationDirection.FORWARD,
+            List.of(HIGH_ID, MIDDLE_ID, LOW_ID)),
+        Arguments.of(
+            belowEveryInteger,
+            SortDirection.ASC,
+            PaginationDirection.FORWARD,
+            List.of(LOW_ID, MIDDLE_ID, HIGH_ID)),
+        Arguments.of(
+            belowEveryInteger, SortDirection.DESC, PaginationDirection.FORWARD, List.of()));
+  }
+
+  @ParameterizedTest(name = "{0} {1} {2}")
+  @MethodSource("positionsOutsideTheColumnRange")
+  @DisplayName(
+      "Should seek past a number the column cannot hold when a position is outside its range")
+  void shouldSeekPastANumberTheColumnCannotHoldWhenAPositionIsOutsideItsRange(
+      long value, SortDirection order, PaginationDirection direction, List<UUID> expectedIds) {
+    var values = new Values<>(SortValueKind.NUMBER, Integer.class, 89, 90, 91);
+    var seek =
+        Seek.builder()
+            .order(order(values.kind(), order))
+            .position(Optional.of(new Position(new SortValue.OfNumber(value), MIDDLE_ID)))
+            .direction(direction)
+            .limit(3)
+            .build();
+
+    assertThat(read(values, seek)).extracting(Row::item).containsExactlyElementsOf(expectedIds);
+  }
+
   @Test
   @DisplayName("Should refuse to seek when the position has no value")
   void shouldRefuseToSeekWhenThePositionHasNoValue() {
