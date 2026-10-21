@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.AlphabetLetter;
+import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
@@ -19,6 +20,7 @@ import com.streamarr.server.services.pagination.MediaOrder;
 import com.streamarr.server.services.pagination.MediaOrderKeys;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.SortDirection;
+import com.streamarr.server.utils.TitleSortUtil;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -26,6 +28,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -183,18 +186,16 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
 
   @ParameterizedTest
   @ValueSource(strings = {"C", "en-US-x-icu"})
-  @DisplayName("Should include null and accented sort titles in the counted HASH bucket")
-  void shouldIncludeNullAndAccentedSortTitlesInCountedHashBucket(String collation) {
+  @DisplayName(
+      "Should count an accented title under its base letter when its sort title is encoded")
+  void shouldCountAccentedTitleUnderItsBaseLetterWhenItsSortTitleIsEncoded(String collation) {
     jdbc.execute(
         "ALTER TABLE base_collectable ALTER COLUMN title_sort TYPE TEXT COLLATE \""
             + collation
             + "\"");
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
-    movies.saveAllAndFlush(
-        List.of(
-            Movie.builder().title("Unnamed").library(library).build(),
-            Movie.builder().title("Élite").titleSort("Élite").library(library).build(),
-            Movie.builder().title("Alpha").titleSort("Alpha").library(library).build()));
+    movies.saveAndFlush(Movie.builder().title("Unnamed").library(library).build());
+    saveEncodedMovies(library, List.of("Élite Harbor", "Alpha"));
     recalculator.recalculateLetterIndex(library.getId());
 
     var totals = counts.getItemCounts(List.of(library.getId())).get(library.getId());
@@ -211,9 +212,120 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
     assertThat(totals.total()).isEqualTo(3);
     assertThat(totals.alphabetIndex())
         .extracting(LibraryMetadata::getLetter, LibraryMetadata::getItemCount)
-        .containsExactlyInAnyOrder(tuple(AlphabetLetter.HASH, 2), tuple(AlphabetLetter.A, 1));
-    assertThat(items.items())
+        .containsExactlyInAnyOrder(
+            tuple(AlphabetLetter.HASH, 1), tuple(AlphabetLetter.A, 1), tuple(AlphabetLetter.E, 1));
+    assertThat(items.items()).extracting(item -> item.item().getTitle()).containsExactly("Unnamed");
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = SortDirection.class,
+      names = {"ASC", "DESC"})
+  @DisplayName("Should include an accented title when jumping to its base letter by title")
+  void shouldIncludeAccentedTitleWhenJumpingToItsBaseLetterByTitle(SortDirection direction) {
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    saveEncodedMovies(library, List.of("Delta", "Élite Harbor", "Echo", "Foxtrot"));
+
+    var page =
+        movieService.getMoviesWithFilter(
+            buildForwardOptions(
+                10,
+                MediaFilter.builder()
+                    .libraryId(library.getId())
+                    .sortDirection(direction)
+                    .startLetter(AlphabetLetter.E)
+                    .build()));
+
+    var expected =
+        direction == SortDirection.ASC
+            ? List.of("Echo", "Élite Harbor", "Foxtrot")
+            : List.of("Élite Harbor", "Echo", "Delta");
+    assertThat(page.items())
         .extracting(item -> item.item().getTitle())
-        .containsExactlyInAnyOrder("Unnamed", "Élite");
+        .containsExactlyElementsOf(expected);
+  }
+
+  @Test
+  @DisplayName("Should place a title under its first letter when it starts with characters above z")
+  void shouldPlaceTitleUnderItsFirstLetterWhenItStartsWithCharactersAboveZ() {
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    saveEncodedMovies(library, List.of("~Tilde Tales", "{Brace} Yourself", "Alpha"));
+    recalculator.recalculateLetterIndex(library.getId());
+
+    var totals = counts.getItemCounts(List.of(library.getId())).get(library.getId());
+    var page =
+        movieService.getMoviesWithFilter(
+            buildForwardOptions(
+                10,
+                MediaFilter.builder()
+                    .libraryId(library.getId())
+                    .startLetter(AlphabetLetter.T)
+                    .build()));
+
+    assertThat(totals.alphabetIndex())
+        .extracting(LibraryMetadata::getLetter, LibraryMetadata::getItemCount)
+        .containsExactlyInAnyOrder(
+            tuple(AlphabetLetter.A, 1), tuple(AlphabetLetter.B, 1), tuple(AlphabetLetter.T, 1));
+    assertThat(page.items())
+        .extracting(item -> item.item().getTitle())
+        .containsExactly("~Tilde Tales");
+    assertThat(page.hasPreviousPage()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should sum letter counts to the total when HASH holds only non-Latin titles")
+  void shouldSumLetterCountsToTotalWhenHashHoldsOnlyNonLatinTitles() {
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    saveEncodedMovies(
+        library, List.of("Ωmega Point", "Жёлтый Дом", "東京の空", "Alpha", "Échos du Nord"));
+    recalculator.recalculateLetterIndex(library.getId());
+
+    var totals = counts.getItemCounts(List.of(library.getId())).get(library.getId());
+
+    assertThat(totals.alphabetIndex())
+        .extracting(LibraryMetadata::getLetter, LibraryMetadata::getItemCount)
+        .containsExactlyInAnyOrder(
+            tuple(AlphabetLetter.HASH, 3), tuple(AlphabetLetter.A, 1), tuple(AlphabetLetter.E, 1));
+    assertThat(totals.total()).isEqualTo(5);
+  }
+
+  @Test
+  @DisplayName("Should count an accented first word under its letter when it folds to an article")
+  void shouldCountAccentedFirstWordUnderItsLetterWhenItFoldsToAnArticle() {
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    saveEncodedMovies(
+        library,
+        List.of("\u00C0 la folie", "A\u0300 bout de souffle", "Bravo", "Lima", "The Alpha"));
+    recalculator.recalculateLetterIndex(library.getId());
+
+    var totals = counts.getItemCounts(List.of(library.getId())).get(library.getId());
+    var page =
+        movieService.getMoviesWithFilter(
+            buildForwardOptions(
+                10,
+                MediaFilter.builder()
+                    .libraryId(library.getId())
+                    .startLetter(AlphabetLetter.A)
+                    .build()));
+
+    assertThat(totals.alphabetIndex())
+        .extracting(LibraryMetadata::getLetter, LibraryMetadata::getItemCount)
+        .containsExactlyInAnyOrder(
+            tuple(AlphabetLetter.A, 3), tuple(AlphabetLetter.B, 1), tuple(AlphabetLetter.L, 1));
+    assertThat(page.items())
+        .extracting(item -> item.item().getTitle())
+        .containsExactly(
+            "A\u0300 bout de souffle", "\u00C0 la folie", "The Alpha", "Bravo", "Lima");
+  }
+
+  private void saveEncodedMovies(Library library, List<String> titles) {
+    for (var title : titles) {
+      movies.saveAndFlush(
+          Movie.builder()
+              .title(title)
+              .titleSort(TitleSortUtil.computeTitleSort(title))
+              .library(library)
+              .build());
+    }
   }
 }

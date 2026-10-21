@@ -434,7 +434,7 @@ class MovieServiceTest {
       var libraryId = UUID.randomUUID();
       var library = Library.builder().id(libraryId).name("Movies").build();
       movieRepository.save(
-          movieBuilder("~Tilde Movie")
+          movieBuilder("Ωmega Movie")
               .releaseDate(LocalDate.of(2024, 1, 1))
               .library(library)
               .build());
@@ -460,7 +460,7 @@ class MovieServiceTest {
       var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
       var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
-      assertThat(titles).containsExactlyInAnyOrder("123 Numbers", "~Tilde Movie");
+      assertThat(titles).containsExactlyInAnyOrder("123 Numbers", "Ωmega Movie");
     }
 
     @Test
