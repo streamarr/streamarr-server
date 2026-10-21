@@ -35,9 +35,10 @@ public class MediaFileProbeTaskScheduler {
   private final KeyframePacketScanRequests packetScans;
   private final FileSystem fileSystem;
 
+  /** Playback waits for this probe, so the probe runs before every queued probe. */
   @EventListener
   public void onProbeTaskRequested(MediaFileProbeTaskRequested event) {
-    schedule(event.mediaFileId(), probeTaskRequests::request);
+    schedule(event.mediaFileId(), probeTaskRequests::requestAheadOfQueuedProbes);
   }
 
   /**

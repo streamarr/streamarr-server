@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static com.streamarr.server.fixtures.ProbeFixture.completeProbe;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,7 +36,6 @@ import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.library.MediaFileProbeTaskScheduler;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.streaming.HlsStreamingService;
-import com.streamarr.server.services.streaming.PlaybackProbeService;
 import com.streamarr.server.services.streaming.PlaybackSessionService;
 import com.streamarr.server.services.streaming.QualityLadderService;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
@@ -319,7 +319,8 @@ class AdversarialPlaybackTest {
           .mediaFileRepository(files)
           .transcodeExecutor(executor)
           .segmentStore(segments)
-          .playbackProbeService(new PlaybackProbeService(reader, events))
+          .playbackProbeService(
+              playbackProbeServiceBuilder(outcomes).eventPublisher(events).build())
           .transcodeDecisionService(
               new TranscodeDecisionService(properties, new SimpleMeterRegistry()))
           .qualityLadderService(new QualityLadderService())

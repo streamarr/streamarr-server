@@ -1,13 +1,15 @@
 package com.streamarr.server.services.library;
 
 import com.github.kagkarlsson.scheduler.ScheduledExecution;
-import com.github.kagkarlsson.scheduler.SchedulerClient;
+import com.github.kagkarlsson.scheduler.Scheduler;
 import com.github.kagkarlsson.scheduler.exceptions.TaskInstanceCurrentlyExecutingException;
 import com.github.kagkarlsson.scheduler.exceptions.TaskInstanceNotFoundException;
+import com.github.kagkarlsson.scheduler.task.Priority;
 import com.github.kagkarlsson.scheduler.task.Task;
 import com.github.kagkarlsson.scheduler.task.TaskInstance;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
+import com.streamarr.server.repositories.media.ProbeTaskPriorityRepository;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import java.time.Clock;
 import java.time.Instant;
@@ -16,6 +18,8 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * The single entry point for requesting a probe. Requests are idempotent per media file: a pending
@@ -27,10 +31,12 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class SchedulerProbeTaskRequests implements ProbeTaskRequests {
 
-  private final SchedulerClient client;
+  // The db-scheduler starter's scheduler both stores probe requests and runs them.
+  private final Scheduler client;
 
   private final Task<ProbeTaskRequest> task;
   private final MediaFileContainerInfoRepository outcomes;
+  private final ProbeTaskPriorityRepository priorities;
   private final Clock clock;
 
   @Override
@@ -58,26 +64,54 @@ public class SchedulerProbeTaskRequests implements ProbeTaskRequests {
         .ifPresent(_ -> replacePendingInputs(instance, request, now));
   }
 
+  @Override
+  @Transactional
+  public void requestAheadOfQueuedProbes(ProbeTaskRequest request) {
+    var instance =
+        task.instanceBuilder(request.mediaFileId().toString())
+            .data(request)
+            .priority(Priority.HIGH)
+            .build();
+    if (!enqueue(request, instance)) {
+      return;
+    }
+
+    priorities.tryRaisePendingPriority(instance, Priority.HIGH);
+    // The scheduler's own check when a request is stored runs before this transaction commits, so
+    // it misses the request, which would then wait for the next poll.
+    TransactionSynchronizationManager.registerSynchronization(
+        new TransactionSynchronization() {
+          @Override
+          public void afterCommit() {
+            client.triggerCheckForDueExecutions();
+          }
+        });
+  }
+
   private boolean hasSavedFailure(UUID mediaFileId) {
     return outcomes.findProbeStates(List.of(mediaFileId)).stream()
         .anyMatch(state -> state.failure().isPresent());
   }
 
   private void enqueue(ProbeTaskRequest request) {
+    enqueue(request, task.instance(request.mediaFileId().toString(), request));
+  }
+
+  // Returns false when the media file no longer exists, so no probe is requested.
+  private boolean enqueue(ProbeTaskRequest request, TaskInstance<ProbeTaskRequest> instance) {
     if (!outcomes.trySaveProbeRequest(request.mediaFileId(), request.inputs())) {
-      return;
+      return false;
     }
 
-    var instance = task.instance(request.mediaFileId().toString(), request);
     if (client.scheduleIfNotExists(instance, clock.instant())) {
-      return;
+      return true;
     }
 
     var pending = client.getScheduledExecution(instance);
     if (pending
         .filter(existing -> existing.isPicked() || request.equals(existing.getData()))
         .isPresent()) {
-      return;
+      return true;
     }
 
     var now = clock.instant();
@@ -85,6 +119,7 @@ public class SchedulerProbeTaskRequests implements ProbeTaskRequests {
         instance,
         request,
         pending.map(ScheduledExecution::getExecutionTime).filter(now::isBefore).orElse(now));
+    return true;
   }
 
   private void replacePendingInputs(

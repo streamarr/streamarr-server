@@ -104,6 +104,24 @@ class StreamingPropertiesTest {
         .hasMessageContaining("producer-stall-threshold");
   }
 
+  @ParameterizedTest
+  @ValueSource(longs = {0, -1})
+  @DisplayName("Should reject probe wait limit when not positive")
+  void shouldRejectProbeWaitLimitWhenNotPositive(long seconds) {
+    var builder = StreamingProperties.builder().probeWaitLimit(Duration.ofSeconds(seconds));
+
+    assertThatThrownBy(builder::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("streaming.probe-wait-limit");
+  }
+
+  @Test
+  @DisplayName("Should default probe wait limit to 15 seconds when null")
+  void shouldDefaultProbeWaitLimitToFifteenSecondsWhenNull() {
+    assertThat(StreamingProperties.builder().build().probeWaitLimit())
+        .isEqualTo(Duration.ofSeconds(15));
+  }
+
   @Test
   @DisplayName("Should default segment duration to 6 seconds when null")
   void shouldDefaultSegmentDurationToSixSecondsWhenNull() {
