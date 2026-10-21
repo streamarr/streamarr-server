@@ -82,8 +82,14 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
 
   private Library library;
 
+  // An earlier test class can leave a step that becomes due once a test starts its own schedulers,
+  // which would count the step's completion as the test's own. Stopping the context's schedulers
+  // first lets a running step finish before its rows are deleted.
   @BeforeEach
   void setUp() {
+    artworkPrioritySchedulers.stop();
+    deleteArtworkRequestsAndTasks();
+    artworkPrioritySchedulers.start();
     wireMock.resetAll();
     wireMock.stubFor(
         get(urlPathEqualTo("/poster.jpg"))
@@ -98,6 +104,10 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
   // Background steps that a test leaves pending would otherwise run during later tests.
   @AfterEach
   void tearDown() {
+    deleteArtworkRequestsAndTasks();
+  }
+
+  private void deleteArtworkRequestsAndTasks() {
     jdbcTemplate.update("DELETE FROM artwork_request");
     jdbcTemplate.update("DELETE FROM " + ArtworkSchedulerStarter.PRIMARY_TABLE);
     jdbcTemplate.update("DELETE FROM " + ArtworkSchedulerStarter.BACKGROUND_TABLE);
