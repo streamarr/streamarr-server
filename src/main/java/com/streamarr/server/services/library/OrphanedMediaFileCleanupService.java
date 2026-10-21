@@ -84,11 +84,8 @@ public class OrphanedMediaFileCleanupService {
     var remainingIds = new HashSet<>(movieIds);
 
     for (var movieId : movieIds) {
-      if (mediaIdsWithRemainingFiles.contains(movieId)) {
-        continue;
-      }
-
-      if (!movieService.tryDeleteMovieById(movieId)) {
+      if (mediaIdsWithRemainingFiles.contains(movieId)
+          || !movieService.tryDeleteMovieById(movieId)) {
         continue;
       }
 

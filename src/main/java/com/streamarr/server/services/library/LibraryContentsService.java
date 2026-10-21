@@ -41,7 +41,7 @@ public class LibraryContentsService {
   public Optional<PageItem<BaseCollectable<?>>> findMatchingItem(
       LibraryItemChangedEvent change, MediaFilter filter) {
     return findSortValue(change, filter)
-        .flatMap(value -> findItem(change).map(item -> new PageItem<>(item, value.value())));
+        .flatMap(value -> itemOf(change).map(item -> new PageItem<>(item, value.value())));
   }
 
   private Optional<ItemSortValue> findSortValue(
@@ -55,6 +55,10 @@ public class LibraryContentsService {
 
   @Transactional(readOnly = true)
   public Optional<BaseCollectable<?>> findItem(LibraryItemChangedEvent change) {
+    return itemOf(change);
+  }
+
+  private Optional<BaseCollectable<?>> itemOf(LibraryItemChangedEvent change) {
     return switch (change.kind()) {
       case MOVIE -> movies.findById(change.itemId()).map(item -> item);
       case SERIES -> series.findById(change.itemId()).map(item -> item);
