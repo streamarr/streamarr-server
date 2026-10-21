@@ -20,8 +20,12 @@ public class CreditService {
   /**
    * Finds or creates every credited person, genre and studio. Every transaction inserts people
    * first, then genres, then studios, each table in {@link CreditInsertOrder}. Cast and directors
-   * go in one pass, and the returned cast and directors keep their listed order. Credits that a
-   * stopped library operation saves request no person or company artwork (ADR 0027).
+   * go in one pass, and the returned cast and directors keep their listed order.
+   *
+   * <p>When a library operation saves the credits, the method first checks whether a ServerAdmin
+   * stopped that operation. If so, the method requests no person or company artwork (ADR 0027). If
+   * a ServerAdmin stops the operation after the method checks, the method still requests that
+   * artwork.
    */
   @Transactional
   public MediaTitleCredits getOrCreateCredits(@NonNull MediaTitleCreditsRequest creditsRequest) {
