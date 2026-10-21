@@ -17,13 +17,19 @@ import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.concurrency.AdaptiveAdmissions;
+import com.streamarr.server.services.concurrency.AdmissionListener;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.support.LibraryOperationDriver;
+import com.zaxxer.hikari.HikariDataSource;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -36,34 +42,39 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
 
 /**
  * Scans a library with far more files than database connections. TMDB answers after a delay, so
  * every file that a scan starts at once waits for a connection at the same moment, and each movie
- * with its credits holds a connection for tens of statements.
+ * transaction holds its connection for at least {@link #MOVIE_INSERT_DELAY}.
+ *
+ * <p>The pool holds one connection for each task that the scan admits before its limit has learned
+ * from any latency, and one for each artwork and probe thread, which are not admitted. Without
+ * admission, all 200 files would wait for those connections at once.
  */
 @Isolated
 @Tag("IntegrationTest")
 @DisplayName("Large movie library scan")
 @TestPropertySource(
     properties = {
-      "spring.datasource.hikari.maximum-pool-size=4",
       // HikariCP replaces a timeout below 250 ms with its 30 s default.
       "spring.datasource.hikari.connection-timeout=1000",
-      "tmdb.api.requests-per-second=10000",
-      // Artwork threads share the four connections and are not admitted.
-      "artwork.scheduling.primary-threads=2",
-      "artwork.scheduling.background-threads=1"
+      "tmdb.api.requests-per-second=10000"
     })
 class LargeMovieLibraryScanIT extends AbstractScanningIntegrationTest {
 
+  private static final int PRIMARY_ARTWORK_THREADS = 2;
+  private static final int BACKGROUND_ARTWORK_THREADS = 1;
   private static final int FILES = 200;
   private static final int CREDITS_PER_MOVIE = 40;
   private static final int FIRST_TMDB_ID = 7_000_000;
   private static final int FIRST_PERSON_ID = 70_000_000;
   private static final Duration TMDB_DELAY = Duration.ofMillis(200);
   private static final Duration SCAN_BOUND = Duration.ofSeconds(90);
+  private static final Duration MOVIE_INSERT_DELAY = Duration.ofMillis(500);
 
   // Plain words keep the filename parser from reading part of a title as a year or release tag.
   private static final List<String> TITLE_ADJECTIVES =
@@ -82,27 +93,50 @@ class LargeMovieLibraryScanIT extends AbstractScanningIntegrationTest {
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private MeterRegistry meterRegistry;
+  @Autowired private HikariDataSource dataSource;
 
   @TempDir Path tempDir;
+
+  @DynamicPropertySource
+  static void connectionPool(DynamicPropertyRegistry registry) {
+    registry.add("artwork.scheduling.primary-threads", () -> PRIMARY_ARTWORK_THREADS);
+    registry.add("artwork.scheduling.background-threads", () -> BACKGROUND_ARTWORK_THREADS);
+    registry.add(
+        "spring.datasource.hikari.maximum-pool-size",
+        () ->
+            initialAdmissionLimit()
+                + PRIMARY_ARTWORK_THREADS
+                + BACKGROUND_ARTWORK_THREADS
+                + ProbeSchedulerStarter.THREADS);
+  }
+
+  private static int initialAdmissionLimit() {
+    try (var admission = new AdaptiveAdmissions().open(AdmissionListener.NONE)) {
+      return admission.limit();
+    }
+  }
 
   @BeforeEach
   void cleanupDatabase() {
     wireMock.resetAll();
     deleteScannedRows();
+    delayMovieInserts();
   }
 
   @AfterEach
   void cleanupScannedRows() {
     stopStartedProbeScheduler();
+    jdbcTemplate.execute("DROP TRIGGER IF EXISTS delay_movie_insert ON movie");
+    jdbcTemplate.execute("DROP FUNCTION IF EXISTS delay_movie_insert()");
     deleteScannedRows();
   }
 
   @Test
   @DisplayName(
       "Should match every file and save every requested image without a connection timeout when"
-          + " scanning 200 files through four connections")
+          + " scanning 200 files whose movie transactions each hold a connection for half a second")
   void
-      shouldMatchEveryFileAndSaveEveryRequestedImageWithoutAConnectionTimeoutWhenScanning200FilesThroughFourConnections()
+      shouldMatchEveryFileAndSaveEveryRequestedImageWithoutAConnectionTimeoutWhenScanning200FilesWhoseMovieTransactionsEachHoldAConnectionForHalfASecond()
           throws Exception {
     var library = movieLibraryWithFiles();
     stubTmdb();
@@ -110,6 +144,8 @@ class LargeMovieLibraryScanIT extends AbstractScanningIntegrationTest {
     var connectionTimeouts = meterRegistry.find("hikaricp.connections.timeout").counter();
     assertThat(connectionTimeouts).as("HikariCP connection timeout meter").isNotNull();
     var timeoutsBefore = connectionTimeouts.count();
+
+    openEveryPoolConnection();
 
     libraryOperationDriver.scanToEnd(library.getId(), SCAN_BOUND);
 
@@ -247,6 +283,42 @@ class LargeMovieLibraryScanIT extends AbstractScanningIntegrationTest {
           AND r.image_type IN ('POSTER', 'BACKDROP')
         """,
         Integer.class);
+  }
+
+  // The test profile opens connections on demand (minimum-idle 0), one at a time, while a
+  // production pool keeps every connection open. Opening them all first keeps the scan's first
+  // tasks from waiting for new connections.
+  private void openEveryPoolConnection() throws SQLException {
+    var connections = new ArrayList<Connection>();
+    try {
+      while (connections.size() < dataSource.getMaximumPoolSize()) {
+        connections.add(dataSource.getConnection());
+      }
+    } finally {
+      for (var connection : connections) {
+        connection.close();
+      }
+    }
+  }
+
+  // The delay runs inside each movie's transaction, so the transaction holds its connection at
+  // least this long on any machine.
+  private void delayMovieInserts() {
+    jdbcTemplate.execute(
+        """
+        CREATE OR REPLACE FUNCTION delay_movie_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          PERFORM pg_sleep(%s);
+          RETURN NEW;
+        END
+        $$
+        """
+            .formatted(MOVIE_INSERT_DELAY.toMillis() / 1000.0));
+    jdbcTemplate.execute(
+        """
+        CREATE OR REPLACE TRIGGER delay_movie_insert BEFORE INSERT ON movie
+        FOR EACH ROW EXECUTE FUNCTION delay_movie_insert()
+        """);
   }
 
   private void deleteScannedRows() {
