@@ -18,14 +18,16 @@ public class TitleSortUtil {
    * Encodes a display title as its stored sort title. Latin diacritics and compatibility characters
    * fold to their base letters, leading ASCII characters that sort above {@code z} under the {@code
    * C} collation are removed unless nothing else remains, and a leading article moves to the end.
+   * An article is recognized as written, so a first word that only folds to one, such as the French
+   * preposition "À", stays in place.
    */
   public static String computeTitleSort(String title) {
     if (title == null) {
       return null;
     }
 
-    var normalized = stripLeadingAboveZ(foldLatin(title));
-    return stripLeadingAboveZ(moveLeadingArticle(normalized));
+    var withArticleMoved = moveLeadingArticle(stripLeadingAboveZ(title));
+    return stripLeadingAboveZ(foldLatin(withArticleMoved));
   }
 
   // Folds code point by code point: a compatibility mapping applied to the whole title would

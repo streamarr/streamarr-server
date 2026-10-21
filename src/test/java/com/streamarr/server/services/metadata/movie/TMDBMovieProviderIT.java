@@ -37,6 +37,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import tools.jackson.databind.ObjectMapper;
 
 @Tag("IntegrationTest")
@@ -614,6 +616,18 @@ class TMDBMovieProviderIT {
 
     assertThat(movie.getTitle()).isEqualTo("The Élite Harbor");
     assertThat(movie.getTitleSort()).isEqualTo("Elite Harbor, The");
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"\u00C0 bout de souffle", "A\u0300 bout de souffle"})
+  @DisplayName("Should keep an accented first word in place when it folds to an article")
+  void shouldKeepAccentedFirstWordInPlaceWhenItFoldsToAnArticle(String title) {
+    stubMinimalMovieResponse("27205", ",\"title\": \"" + title + "\"");
+
+    var movie = found(provider.getMetadata(buildSearchResult("27205"), savedLibrary)).entity();
+
+    assertThat(movie.getTitle()).isEqualTo(title);
+    assertThat(movie.getTitleSort()).isEqualTo("A bout de souffle");
   }
 
   @Test

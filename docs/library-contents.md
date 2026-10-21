@@ -81,7 +81,8 @@ clients do not reconstruct filters from a partially selected entity.
   writes `title_sort` from the display title, which itself never changes: Latin
   diacritics, ligatures and full-width Latin letters fold to their base letters, so
   `Élite` sorts and counts as `Elite`; leading `{`, `|`, `}` and `~` are removed; and a
-  leading article moves to the end. Text in other scripts is left exactly as written
+  leading article moves to the end when it is written without diacritics, so `À bout de
+  souffle` stays under A. Text in other scripts is left exactly as written
   and sorts above `z`. RELEASE_DATE,
   RUNTIME and LAST_WATCHED keep nulls last in either direction. TITLE and ADDED retain
   SQL's ascending-null-last and descending-null-first ordering; the added time is never

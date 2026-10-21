@@ -289,6 +289,35 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
     assertThat(totals.total()).isEqualTo(5);
   }
 
+  @Test
+  @DisplayName("Should count an accented first word under its letter when it folds to an article")
+  void shouldCountAccentedFirstWordUnderItsLetterWhenItFoldsToAnArticle() {
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    saveEncodedMovies(
+        library,
+        List.of("\u00C0 la folie", "A\u0300 bout de souffle", "Bravo", "Lima", "The Alpha"));
+    recalculator.recalculateLetterIndex(library.getId());
+
+    var totals = counts.getItemCounts(List.of(library.getId())).get(library.getId());
+    var page =
+        movieService.getMoviesWithFilter(
+            buildForwardOptions(
+                10,
+                MediaFilter.builder()
+                    .libraryId(library.getId())
+                    .startLetter(AlphabetLetter.A)
+                    .build()));
+
+    assertThat(totals.alphabetIndex())
+        .extracting(LibraryMetadata::getLetter, LibraryMetadata::getItemCount)
+        .containsExactlyInAnyOrder(
+            tuple(AlphabetLetter.A, 3), tuple(AlphabetLetter.B, 1), tuple(AlphabetLetter.L, 1));
+    assertThat(page.items())
+        .extracting(item -> item.item().getTitle())
+        .containsExactly(
+            "A\u0300 bout de souffle", "\u00C0 la folie", "The Alpha", "Bravo", "Lima");
+  }
+
   private void saveEncodedMovies(Library library, List<String> titles) {
     for (var title : titles) {
       movies.saveAndFlush(

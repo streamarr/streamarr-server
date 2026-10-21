@@ -105,6 +105,23 @@ class TitleSortUtilTest {
   }
 
   @ParameterizedTest
+  @CsvSource({
+    "\u00C0 bout de souffle, A bout de souffle",
+    "A\u0300 bout de souffle, A bout de souffle",
+    "\u00C0 la folie, A la folie",
+    "\u00C1 Winter Tale, A Winter Tale",
+    "\u00C5 Song, A Song",
+    "\u0102n Tr\u01B0a, An Trua",
+    "\u00C2n Harbor, An Harbor",
+    "Th\u00E9 au harem, The au harem",
+    "The\u0301 au harem, The au harem"
+  })
+  @DisplayName("Should keep the first word in place when only its folded form is an article")
+  void shouldKeepFirstWordInPlaceWhenOnlyItsFoldedFormIsAnArticle(String title, String expected) {
+    assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
+  }
+
+  @ParameterizedTest
   @ValueSource(
       strings = {
         "Жёлтый Дом",
