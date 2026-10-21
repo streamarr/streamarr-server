@@ -14,11 +14,9 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.RefreshResult;
 import com.streamarr.server.services.auth.RefreshTokenService;
 import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteLastAccountAndHouseholdPreservingPersonalProfileCommand;
-import com.streamarr.server.services.identity.HouseholdDeletionService.SecurityAuditPageRequest;
 import com.streamarr.server.services.identity.HouseholdDeletionService.TransferLastAccountAndDeleteHouseholdCommand;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.pagination.PageRequest;
-import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.support.AuthTestSupport;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -183,11 +181,8 @@ class HouseholdDeletionCompletionIT extends AbstractIntegrationTest {
             });
   }
 
-  private static SecurityAuditPageRequest auditPage() {
-    return SecurityAuditPageRequest.builder()
-        .direction(PaginationDirection.FORWARD)
-        .limit(100)
-        .build();
+  private static PageRequest auditPage() {
+    return PaginationFixture.firstRows(100);
   }
 
   private static PageRequest page() {

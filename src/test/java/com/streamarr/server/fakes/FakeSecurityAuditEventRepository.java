@@ -3,21 +3,17 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.SecurityAuditEventRecordView;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
+import com.streamarr.server.services.pagination.Position;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
+import com.streamarr.server.services.pagination.SortValue;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 public class FakeSecurityAuditEventRepository implements SecurityAuditEventRepository {
-
-  private static final Comparator<SecurityAuditEventRecordView> NEWEST_FIRST =
-      Comparator.comparing(SecurityAuditEventRecordView::occurredAt)
-          .thenComparing(auditEvent -> auditEvent.id().toString())
-          .reversed();
-  private static final Comparator<SecurityAuditEventRecordView> OLDEST_FIRST =
-      NEWEST_FIRST.reversed();
 
   private final List<SecurityAuditEntry> entries = new ArrayList<>();
   private final List<SecurityAuditEventRecordView> records = new ArrayList<>();
@@ -39,33 +35,16 @@ public class FakeSecurityAuditEventRepository implements SecurityAuditEventRepos
   }
 
   @Override
-  public List<SecurityAuditEventRecordView> findNewestFirst(
-      Instant beforeOccurredAt, UUID beforeId, int limit) {
-    return records.stream()
-        .sorted(NEWEST_FIRST)
-        .filter(
-            row ->
-                beforeOccurredAt == null
-                    || row.occurredAt().isBefore(beforeOccurredAt)
-                    || row.occurredAt().equals(beforeOccurredAt)
-                        && row.id().toString().compareTo(beforeId.toString()) < 0)
-        .limit(limit)
-        .toList();
-  }
-
-  @Override
-  public List<SecurityAuditEventRecordView> findOldestFirst(
-      Instant afterOccurredAt, UUID afterId, int limit) {
-    return records.stream()
-        .sorted(OLDEST_FIRST)
-        .filter(
-            row ->
-                afterOccurredAt == null
-                    || row.occurredAt().isAfter(afterOccurredAt)
-                    || row.occurredAt().equals(afterOccurredAt)
-                        && row.id().toString().compareTo(afterId.toString()) > 0)
-        .limit(limit)
-        .toList();
+  public List<Row<SecurityAuditEventRecordView>> rowsBeyond(Seek seek) {
+    return InMemoryKeyset.rowsBeyond(
+        records.stream()
+            .map(
+                event ->
+                    new Row<>(
+                        event,
+                        new Position(new SortValue.OfInstant(event.occurredAt()), event.id())))
+            .toList(),
+        seek);
   }
 
   public List<SecurityAuditEntry> entries() {

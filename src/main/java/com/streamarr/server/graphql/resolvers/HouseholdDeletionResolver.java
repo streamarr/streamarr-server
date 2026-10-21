@@ -4,11 +4,8 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
-import com.streamarr.server.domain.auth.SecurityAuditEventRecordView;
 import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.cursor.ConnectionArguments;
-import com.streamarr.server.graphql.cursor.CursorUtil;
-import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.HouseholdDeletionPreview;
@@ -31,16 +28,12 @@ import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteEmp
 import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteLastAccountAndHouseholdCommand;
 import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteLastAccountAndHouseholdPreservingPersonalProfileCommand;
 import com.streamarr.server.services.identity.HouseholdDeletionService.HouseholdDeletionPreflightDetails;
-import com.streamarr.server.services.identity.HouseholdDeletionService.SecurityAuditPageRequest;
 import com.streamarr.server.services.identity.HouseholdDeletionService.TransferLastAccountAndDeleteHouseholdCommand;
 import com.streamarr.server.services.pagination.ListIdentity;
-import com.streamarr.server.services.pagination.MediaPage;
-import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.services.pagination.ServerScope;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
-import java.time.DateTimeException;
-import java.time.Instant;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 
@@ -49,12 +42,13 @@ import lombok.RequiredArgsConstructor;
 public class HouseholdDeletionResolver {
 
   private static final int DEFAULT_PAGE_SIZE = 100;
+  private static final ListIdentity SECURITY_AUDIT =
+      new ListIdentity("security-audit-events", ServerScope.SERVER);
   private static final String HOUSEHOLD_ID = "householdId";
 
   private final AuthorizationService authorizationService;
   private final HouseholdDeletionService householdDeletionService;
   private final PaginationService paginationService;
-  private final CursorUtil cursorUtil;
   private final PositionCursorCodec positionCursors;
   private final RelayConnectionAdapter relayConnectionAdapter;
 
@@ -187,11 +181,15 @@ public class HouseholdDeletionResolver {
 
   @DgsQuery
   public Connection<SecurityAuditEventDetails> securityAuditEvents(DataFetchingEnvironment dfe) {
-    var options = ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
+    var request =
+        positionCursors.pageRequest(
+            SECURITY_AUDIT,
+            ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE));
     var page =
         householdDeletionService.securityAuditEvents(
-            authorizationService.currentIdentity(), auditPageRequest(options));
-    return toAuditConnection(page);
+            authorizationService.currentIdentity(), request);
+    return relayConnectionAdapter.toConnection(
+        page, SECURITY_AUDIT, SecurityAuditEventDetails::from);
   }
 
   @DgsQuery
@@ -215,44 +213,6 @@ public class HouseholdDeletionResolver {
             .toList();
     return new HouseholdDeletionPreview(
         preview.accountCount(), profiles, preview.hostedVisitCount());
-  }
-
-  private SecurityAuditPageRequest auditPageRequest(PaginationOptions options) {
-    var cursor =
-        options
-            .getCursor()
-            .map(cursorUtil::decodeOpaqueCursor)
-            .map(HouseholdDeletionResolver::auditCursor)
-            .orElse(null);
-    return SecurityAuditPageRequest.builder()
-        .direction(options.getPaginationDirection())
-        .cursorOccurredAt(cursor == null ? null : cursor.occurredAt())
-        .cursorId(cursor == null ? null : cursor.id())
-        .limit(options.getLimit())
-        .build();
-  }
-
-  private static AuditCursor auditCursor(String key) {
-    var separator = key.lastIndexOf('|');
-    if (separator < 0) {
-      throw new InvalidCursorException("Cursor is not valid.");
-    }
-
-    try {
-      return new AuditCursor(
-          Instant.parse(key.substring(0, separator)),
-          UUID.fromString(key.substring(separator + 1)));
-    } catch (DateTimeException | IllegalArgumentException _) {
-      throw new InvalidCursorException("Cursor is not valid.");
-    }
-  }
-
-  private Connection<SecurityAuditEventDetails> toAuditConnection(
-      MediaPage<SecurityAuditEventRecordView> page) {
-    return relayConnectionAdapter.toConnection(
-        page,
-        item -> SecurityAuditEventDetails.from(item.item()),
-        item -> cursorUtil.encodeOpaqueCursor(item.item().occurredAt() + "|" + item.item().id()));
   }
 
   private static DeleteEmptyHouseholdPayload invalidDeleteEmptyHousehold(String inputName) {
@@ -279,6 +239,4 @@ public class HouseholdDeletionResolver {
         HouseholdDeletionErrors.invalidId(inputName),
         DeleteLastAccountAndHouseholdPreservingPersonalProfilePayload::new);
   }
-
-  private record AuditCursor(Instant occurredAt, UUID id) {}
 }

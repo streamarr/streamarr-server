@@ -7,14 +7,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
+import com.streamarr.server.fixtures.PaginationFixture;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteLastAccountAndHouseholdCommand;
-import com.streamarr.server.services.identity.HouseholdDeletionService.SecurityAuditPageRequest;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Clock;
 import java.time.Instant;
@@ -117,18 +116,14 @@ class HouseholdDeletionAuthorizationIT extends AbstractIntegrationTest {
             .reason("access check")
             .resource("householdId", candidate.household().getId())
             .build());
-    var request =
-        SecurityAuditPageRequest.builder()
-            .direction(PaginationDirection.FORWARD)
-            .limit(100)
-            .build();
+    var request = PaginationFixture.firstRows(100);
     if (caller != Caller.FRESH_SERVER_ADMIN) {
       assertThatThrownBy(() -> service.securityAuditEvents(identity, request))
           .isInstanceOf(AccessDeniedException.class);
       return;
     }
 
-    assertThat(service.securityAuditEvents(identity, request).items())
+    assertThat(service.securityAuditEvents(identity, request).rows())
         .extracting(item -> item.item().operation())
         .contains(operation);
   }

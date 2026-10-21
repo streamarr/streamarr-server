@@ -25,11 +25,9 @@ import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.pagination.ListPage;
-import com.streamarr.server.services.pagination.MediaPage;
-import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.Pager;
-import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.services.pagination.ServerScope;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
@@ -68,6 +66,7 @@ public class HouseholdDeletionService {
   private final DeviceRegistrationLifecycle registrationLifecycle;
   private final AccountInvitationRepository accountInvitationRepository;
   private final SecurityAuditEventRepository securityAuditEventRepository;
+  private final SecurityAuditList securityAuditList;
   private final ProfileActivityList profileActivityList;
   private final MutationTransactions mutationTransactions;
   private final Clock clock;
@@ -267,21 +266,11 @@ public class HouseholdDeletionService {
             residents.size(), doomedProfiles, (int) hostedVisits));
   }
 
-  /** The security audit, newest first; only ServerAdmin reads it (whole-surface gate). */
-  public MediaPage<SecurityAuditEventRecordView> securityAuditEvents(
-      AuthenticatedIdentity identity, SecurityAuditPageRequest request) {
+  /** A page of the security audit, newest first; only ServerAdmin reads it (whole-surface gate). */
+  public ListPage<SecurityAuditEventRecordView> securityAuditEvents(
+      AuthenticatedIdentity identity, PageRequest request) {
     authorizationService.requireAllowed(identity, new Intent.ViewSecurityAudit());
-    var fetchLimit = request.limit() + 1;
-    var fetched =
-        switch (request.direction()) {
-          case FORWARD ->
-              securityAuditEventRepository.findNewestFirst(
-                  request.cursorOccurredAt(), request.cursorId(), fetchLimit);
-          case REVERSE ->
-              securityAuditEventRepository.findOldestFirst(
-                  request.cursorOccurredAt(), request.cursorId(), fetchLimit);
-        };
-    return auditPage(fetched, request);
+    return Pager.page(securityAuditList, ServerScope.SERVER, request);
   }
 
   /** A page of a managed Profile's viewing activity, most recent first; hidden reads as empty. */
@@ -294,21 +283,6 @@ public class HouseholdDeletionService {
       case Decision.Denied<AuthorizationUnit> _ -> new ListPage<>(List.of(), false, false);
       case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
     };
-  }
-
-  private MediaPage<SecurityAuditEventRecordView> auditPage(
-      List<SecurityAuditEventRecordView> fetched, SecurityAuditPageRequest request) {
-    var hasLookahead = fetched.size() > request.limit();
-    var selected = fetched.subList(0, Math.min(fetched.size(), request.limit()));
-    if (request.direction() == PaginationDirection.REVERSE) {
-      selected = selected.reversed();
-    }
-
-    var items = selected.stream().map(row -> new PageItem<>(row, row.occurredAt())).toList();
-    var hasCursor = request.cursorId() != null;
-    return request.direction() == PaginationDirection.REVERSE
-        ? new MediaPage<>(items, hasCursor, hasLookahead)
-        : new MediaPage<>(items, hasLookahead, hasCursor);
   }
 
   private void dispose(UserAccount resident, FinalAccountDisposition disposition, Instant now) {
@@ -493,10 +467,6 @@ public class HouseholdDeletionService {
       String reason,
       @NonNull String operation,
       FinalAccountDisposition finalAccount) {}
-
-  @Builder
-  public record SecurityAuditPageRequest(
-      PaginationDirection direction, Instant cursorOccurredAt, UUID cursorId, int limit) {}
 
   public record DoomedProfileDetails(UUID id, String name) {}
 

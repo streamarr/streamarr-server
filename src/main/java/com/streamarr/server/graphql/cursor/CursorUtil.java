@@ -16,21 +16,6 @@ public class CursorUtil {
 
   private final ObjectMapper objectMapper;
 
-  public DefaultConnectionCursor encodeOpaqueCursor(String value) {
-    return new DefaultConnectionCursor(
-        Base64.getUrlEncoder()
-            .withoutPadding()
-            .encodeToString(value.getBytes(StandardCharsets.UTF_8)));
-  }
-
-  public String decodeOpaqueCursor(String cursor) {
-    try {
-      return new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
-    } catch (IllegalArgumentException _) {
-      throw new InvalidCursorException("Cursor is not valid.");
-    }
-  }
-
   public DefaultConnectionCursor encodeMediaCursor(
       MediaPaginationOptions options, UUID cursorId, Object sortValue) {
     try {

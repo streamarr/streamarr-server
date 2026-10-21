@@ -4,8 +4,11 @@ import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECU
 
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.SecurityAuditEventRecordView;
-import java.time.Instant;
-import java.time.ZoneOffset;
+import com.streamarr.server.jooq.generated.tables.records.SecurityAuditEventRecord;
+import com.streamarr.server.repositories.Keyset;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -37,63 +40,26 @@ public class SecurityAuditEventRepositoryImpl implements SecurityAuditEventRepos
   }
 
   @Override
-  public List<SecurityAuditEventRecordView> findNewestFirst(
-      Instant beforeOccurredAt, UUID beforeId, int limit) {
-    var query = dsl.selectFrom(SECURITY_AUDIT_EVENT);
-    var page =
-        beforeOccurredAt == null
-            ? query
-            : query.where(
-                SECURITY_AUDIT_EVENT
-                    .OCCURRED_AT
-                    .lt(beforeOccurredAt.atOffset(ZoneOffset.UTC))
-                    .or(
-                        SECURITY_AUDIT_EVENT
-                            .OCCURRED_AT
-                            .eq(beforeOccurredAt.atOffset(ZoneOffset.UTC))
-                            .and(SECURITY_AUDIT_EVENT.ID.lt(beforeId))));
-    return page.orderBy(SECURITY_AUDIT_EVENT.OCCURRED_AT.desc(), SECURITY_AUDIT_EVENT.ID.desc())
-        .limit(limit)
-        .fetch(
-            row ->
-                new SecurityAuditEventRecordView(
-                    row.getId(),
-                    row.getOccurredAt().toInstant(),
-                    row.getActorAccountId(),
-                    row.getOperation(),
-                    row.getOutcome(),
-                    row.getReason(),
-                    row.getResources().data()));
+  public List<Row<SecurityAuditEventRecordView>> rowsBeyond(Seek seek) {
+    var keyset =
+        Keyset.<OffsetDateTime>builder()
+            .sortValue(SECURITY_AUDIT_EVENT.OCCURRED_AT)
+            .itemId(SECURITY_AUDIT_EVENT.ID)
+            .build();
+    return keyset
+        .rowsBeyond(dsl.selectFrom(SECURITY_AUDIT_EVENT), seek)
+        .fetch(row -> new Row<>(view(row), keyset.rowOf(row).position()));
   }
 
-  @Override
-  public List<SecurityAuditEventRecordView> findOldestFirst(
-      Instant afterOccurredAt, UUID afterId, int limit) {
-    var query = dsl.selectFrom(SECURITY_AUDIT_EVENT);
-    var page =
-        afterOccurredAt == null
-            ? query
-            : query.where(
-                SECURITY_AUDIT_EVENT
-                    .OCCURRED_AT
-                    .gt(afterOccurredAt.atOffset(ZoneOffset.UTC))
-                    .or(
-                        SECURITY_AUDIT_EVENT
-                            .OCCURRED_AT
-                            .eq(afterOccurredAt.atOffset(ZoneOffset.UTC))
-                            .and(SECURITY_AUDIT_EVENT.ID.gt(afterId))));
-    return page.orderBy(SECURITY_AUDIT_EVENT.OCCURRED_AT.asc(), SECURITY_AUDIT_EVENT.ID.asc())
-        .limit(limit)
-        .fetch(
-            row ->
-                new SecurityAuditEventRecordView(
-                    row.getId(),
-                    row.getOccurredAt().toInstant(),
-                    row.getActorAccountId(),
-                    row.getOperation(),
-                    row.getOutcome(),
-                    row.getReason(),
-                    row.getResources().data()));
+  private static SecurityAuditEventRecordView view(SecurityAuditEventRecord row) {
+    return new SecurityAuditEventRecordView(
+        row.getId(),
+        row.getOccurredAt().toInstant(),
+        row.getActorAccountId(),
+        row.getOperation(),
+        row.getOutcome(),
+        row.getReason(),
+        row.getResources().data());
   }
 
   private JSONB resourcesJson(Map<String, UUID> resources) {
