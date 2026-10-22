@@ -176,11 +176,19 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
 
           return null;
         });
-    startScheduler();
+    var completions = new Semaphore(0);
+    startScheduler(
+        probeExecution.toBuilder().producer(worker).build(),
+        releasingOnCompletion(completions),
+        clock);
 
     var playback = createSession(file);
     pickUpPlaybackRequests(1);
     var refused = playback.get(BOUND_SECONDS, TimeUnit.SECONDS);
+    // The playback can refuse before the busy attempt ends. When the attempt ends, the scheduler
+    // sets the retry time from the clock. If the test advanced the clock first, the retry would
+    // never become due.
+    awaitCompletion(completions);
     clock.advance(probeScheduling.busyWorkerRetryDelay());
     checkForDueExecutions();
     worker.awaitFinished(file);
