@@ -147,6 +147,7 @@ union AddLibraryError =
   | LibraryPathNotDirectoryError
   | LibraryPathNotReadableError
   | LibraryPathAlreadyRegisteredError
+  | LibraryPathOverlapError
 
 input StartLibraryScanInput {
     libraryId: ID!

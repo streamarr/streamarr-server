@@ -8,7 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface LibraryRepository extends JpaRepository<Library, UUID> {
+public interface LibraryRepository extends JpaRepository<Library, UUID>, LibraryRepositoryCustom {
 
   List<Library> findAllByStatus(LibraryStatus status);
 }
