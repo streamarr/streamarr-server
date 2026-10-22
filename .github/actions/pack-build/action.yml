@@ -26,6 +26,11 @@ runs:
         build_arch="$(uname -m)"
         build_image="index.docker.io/streamarr/streamarr-server:build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${build_arch}"
         image_revision="$(git rev-parse HEAD)"
+        # Paketo sets Metaspace from 35% of the image's classes with no slack. The server's Metaspace
+        # grows after startup with JIT profiling and late class loading: it peaked at about 218 MB
+        # against a 227 MB limit, and a library scan crossed it. 150% raises the limit to about
+        # 333 MB. Metaspace commits on use, but the calculator takes the extra from -Xmx.
+        metaspace_class_adjustment=150
         pack_args=(
           --builder paketobuildpacks/ubuntu-noble-builder:0.0.203
           --buildpack paketo-buildpacks/java
@@ -35,6 +40,7 @@ runs:
           --env "BP_OCI_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
           --env "BP_OCI_REVISION=${image_revision}"
           --env "BP_OCI_VERSION=${INPUT_IMAGE_VERSION}"
+          --env "BPE_DEFAULT_BPL_JVM_CLASS_ADJUSTMENT=${metaspace_class_adjustment}%"
           --path .
         )
 
@@ -49,4 +55,5 @@ runs:
           "${image_revision}"
 
         "${ACTION_PATH}/verify-cedar-image.sh" "${build_image}"
+        "${ACTION_PATH}/verify-metaspace-image.sh" "${build_image}" "${metaspace_class_adjustment}"
         echo "image=${build_image}" >> "${GITHUB_OUTPUT}"

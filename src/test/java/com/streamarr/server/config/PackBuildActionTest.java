@@ -36,7 +36,7 @@ class PackBuildActionTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"server", "cedar"})
+  @ValueSource(strings = {"server", "cedar", "metaspace"})
   @DisplayName("Should leave the registry untouched when a native image check fails")
   void shouldLeaveRegistryUntouchedWhenNativeImageCheckFails(String failedCheck) throws Exception {
     var command = build();
@@ -60,7 +60,7 @@ class PackBuildActionTest {
         """);
     stub("git", "printf '%040d' 1\n");
     stub("uname", "echo x86_64\n");
-    for (var check : List.of("server", "cedar")) {
+    for (var check : List.of("server", "cedar", "metaspace")) {
       stub(
           "workflow-action/verify-" + check + "-image.sh",
           "[ -f local-image ] || exit 24\n[ \"${FAILED_CHECK:-}\" != " + check + " ] || exit 23\n");
