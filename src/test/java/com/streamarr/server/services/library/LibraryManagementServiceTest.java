@@ -5,6 +5,7 @@ import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.default
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -98,6 +99,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -124,9 +126,9 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 
@@ -1081,74 +1083,25 @@ class LibraryManagementServiceTest {
       assertThat(transactionManager.rollbacks()).isEqualTo(1);
     }
 
+    // Paths compare as the JDK's paths compare them, like the unique index on the library path and
+    // the file watcher. Jimfs's osX configuration folds letter case in Path.startsWith, unlike the
+    // JDK, so this test uses the real temporary directory and runs only where it ignores letter
+    // case.
     @Test
     @DisplayName(
-        "Should reject with PathAlreadyRegistered when the path differs only in letter case on a"
+        "Should accept a path when it differs only in letter case from another library's path on a"
             + " file system that ignores letter case")
-    void
-        shouldRejectWithPathAlreadyRegisteredWhenPathDiffersOnlyInLetterCaseOnCaseIgnoringFileSystem()
-            throws IOException {
-      try (var caseIgnoringFileSystem = Jimfs.newFileSystem(Configuration.osX())) {
-        Files.createDirectories(caseIgnoringFileSystem.getPath("/media/Movies"));
-        var service = serviceWith(caseIgnoringFileSystem);
-        // The registered spelling differs from the folder's spelling on disk.
-        var registered =
-            accepted(service.addLibrary(identity, libraryNamed("Movies", "/media/movies")));
+    void shouldAcceptPathWhenItDiffersOnlyInLetterCaseOnFileSystemThatIgnoresLetterCase(
+        @TempDir Path media) throws IOException {
+      var folder = Files.createDirectory(media.resolve("Movies"));
+      var otherSpelling = media.resolve("MOVIES");
+      assumeTrue(Files.isDirectory(otherSpelling), "the temporary directory ignores letter case");
+      var service = serviceWith(FileSystems.getDefault());
+      accepted(service.addLibrary(identity, libraryNamed("Movies", folder.toString())));
 
-        var outcome = service.addLibrary(identity, libraryNamed("Films", "/MEDIA/MOVIES"));
+      var outcome = service.addLibrary(identity, libraryNamed("Films", otherSpelling.toString()));
 
-        assertThat(outcome)
-            .isEqualTo(
-                Outcome.rejected(
-                    new AddLibraryRejection.PathAlreadyRegistered(
-                        registered, caseIgnoringFileSystem.getPath("/media/movies"))));
-      }
-    }
-
-    // Neither deepest name has an ASCII letter to swap, so the letter-case check reads the folder
-    // above it. Swapping the dotless i would name another folder on such a file system.
-    @ParameterizedTest
-    @ValueSource(strings = {"2024", "ı"})
-    @DisplayName(
-        "Should reject with an INSIDE overlap when the path differs in letter case on a file"
-            + " system that ignores letter case")
-    void shouldRejectWithInsideOverlapWhenPathDiffersInLetterCaseOnCaseIgnoringFileSystem(
-        String deepestName) throws IOException {
-      try (var caseIgnoringFileSystem = Jimfs.newFileSystem(Configuration.osX())) {
-        Files.createDirectories(caseIgnoringFileSystem.getPath("/media/Movies", deepestName));
-        var service = serviceWith(caseIgnoringFileSystem);
-        var registered =
-            accepted(service.addLibrary(identity, libraryNamed("Movies", "/media/Movies")));
-
-        var outcome =
-            service.addLibrary(identity, libraryNamed("Inner", "/MEDIA/movies/" + deepestName));
-
-        assertThat(outcome)
-            .isEqualTo(
-                Outcome.rejected(
-                    new AddLibraryRejection.PathOverlap(
-                        LibraryPathOverlap.INSIDE,
-                        registered,
-                        caseIgnoringFileSystem.getPath("/media/Movies"))));
-      }
-    }
-
-    @Test
-    @DisplayName(
-        "Should store the path as given when the file system ignores letter case, so scans keep"
-            + " the spelling the source root uses")
-    void shouldStorePathAsGivenWhenFileSystemIgnoresLetterCase() throws IOException {
-      try (var caseIgnoringFileSystem = Jimfs.newFileSystem(Configuration.osX())) {
-        Files.createDirectories(caseIgnoringFileSystem.getPath("/Media/Movies"));
-
-        var saved =
-            accepted(
-                serviceWith(caseIgnoringFileSystem)
-                    .addLibrary(identity, libraryNamed("Movies", "/media/movies")));
-
-        assertThat(saved.getFilepathUri())
-            .isEqualTo(FilepathCodec.encode(caseIgnoringFileSystem.getPath("/media/movies")));
-      }
+      assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
     }
 
     @Test
