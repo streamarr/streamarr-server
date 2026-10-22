@@ -6,12 +6,11 @@ import java.nio.file.FileSystem;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.IntStream;
 
 /**
  * Finds the libraries whose path conflicts with the path given to addLibrary. Paths compare
- * lexically, after normalization, by whole names. Where the file system ignores letter case, the
- * names compare without letter case. No file is read while addLibrary holds its lock.
+ * lexically, after normalization, as {@link Path} compares them, like the unique index on the
+ * library path and the file watcher. No file is read while addLibrary holds its lock.
  */
 final class LibraryPathConflicts {
 
@@ -29,45 +28,21 @@ final class LibraryPathConflicts {
     var libraryPath =
         FilepathCodec.decode(fileSystem, library.getFilepathUri()).toAbsolutePath().normalize();
     var path = requested.path();
-    var ignoreLetterCase = requested.ignoresLetterCase();
-    if (startsWith(path, libraryPath, ignoreLetterCase)
-        && startsWith(libraryPath, path, ignoreLetterCase)) {
+    if (path.equals(libraryPath)) {
       return Optional.of(new AddLibraryRejection.PathAlreadyRegistered(library, libraryPath));
     }
 
-    if (startsWith(path, libraryPath, ignoreLetterCase)) {
+    // Path.startsWith compares whole names, so /media/movies2 does not start with /media/movies.
+    if (path.startsWith(libraryPath)) {
       return Optional.of(
           new AddLibraryRejection.PathOverlap(LibraryPathOverlap.INSIDE, library, libraryPath));
     }
 
-    if (startsWith(libraryPath, path, ignoreLetterCase)) {
+    if (libraryPath.startsWith(path)) {
       return Optional.of(
           new AddLibraryRejection.PathOverlap(LibraryPathOverlap.CONTAINS, library, libraryPath));
     }
 
     return Optional.empty();
-  }
-
-  // Compares the roots and then whole names, so /media/movies2 does not start with /media/movies.
-  private static boolean startsWith(Path path, Path prefix, boolean ignoreLetterCase) {
-    if (prefix.getNameCount() > path.getNameCount()) {
-      return false;
-    }
-
-    if (!isSameName(path.getRoot(), prefix.getRoot(), ignoreLetterCase)) {
-      return false;
-    }
-
-    return IntStream.range(0, prefix.getNameCount())
-        .allMatch(
-            index -> isSameName(path.getName(index), prefix.getName(index), ignoreLetterCase));
-  }
-
-  private static boolean isSameName(Path name, Path otherName, boolean ignoreLetterCase) {
-    if (ignoreLetterCase) {
-      return name.toString().equalsIgnoreCase(otherName.toString());
-    }
-
-    return name.equals(otherName);
   }
 }
