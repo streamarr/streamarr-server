@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.fixtures.AdmissionEndFixture.neverReached;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -91,7 +92,7 @@ class LibraryRefreshTransactionIT extends AbstractIntegrationTest {
     var movie = saveMovieWithTmdbId(library, "Original", "27205");
     var operation = LibraryOperationFixture.refreshBuilder(library.getId()).build();
 
-    refreshServiceFailingTheFirstMetadataWrite().refreshLibrary(library, operation);
+    refreshServiceFailingTheFirstMetadataWrite().refreshLibrary(library, operation, neverReached());
 
     assertThat(movieRepository.findById(movie.getId()).orElseThrow().getTitle())
         .isEqualTo("Original");
@@ -128,7 +129,7 @@ class LibraryRefreshTransactionIT extends AbstractIntegrationTest {
     refreshServiceWith(
             result ->
                 result.itemType() == ImageEntityType.SERIES && failed.compareAndSet(false, true))
-        .refreshLibrary(library, operation);
+        .refreshLibrary(library, operation, neverReached());
 
     assertThat(seasonMetadataOutcomes(series, operation))
         .containsExactly(Map.entry(1, "SUCCEEDED"), Map.entry(2, "SUCCEEDED"));
@@ -157,8 +158,9 @@ class LibraryRefreshTransactionIT extends AbstractIntegrationTest {
     var refreshService =
         refreshServiceWith(
             result -> result.step() == ItemStep.METADATA && metadataWrites.getAndIncrement() > 0);
+    var end = neverReached();
 
-    assertThatThrownBy(() -> refreshService.refreshLibrary(library, operation))
+    assertThatThrownBy(() -> refreshService.refreshLibrary(library, operation, end))
         .isInstanceOf(LibraryRefreshFailedException.class);
     assertThat(seasonMetadataOutcomes(series, operation))
         .containsExactly(Map.entry(1, "SUCCEEDED"));

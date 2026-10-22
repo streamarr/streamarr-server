@@ -1,5 +1,6 @@
 package com.streamarr.server.services;
 
+import com.streamarr.server.repositories.LibraryOperationRepository;
 import java.util.List;
 import java.util.stream.Stream;
 import lombok.NonNull;
@@ -14,14 +15,25 @@ public class CreditService {
   private final PersonService personService;
   private final GenreService genreService;
   private final CompanyService companyService;
+  private final LibraryOperationRepository libraryOperations;
 
   /**
    * Finds or creates every credited person, genre and studio. Every transaction inserts people
    * first, then genres, then studios, each table in {@link CreditInsertOrder}. Cast and directors
    * go in one pass, and the returned cast and directors keep their listed order.
+   *
+   * <p>When a library operation saves the credits, the method first checks whether a ServerAdmin
+   * stopped that operation. If so, the method requests no person or company artwork (ADR 0027). If
+   * a ServerAdmin stops the operation after the method checks, the method still requests that
+   * artwork.
    */
   @Transactional
-  public MediaTitleCredits getOrCreateCredits(@NonNull MediaTitleCreditsRequest request) {
+  public MediaTitleCredits getOrCreateCredits(@NonNull MediaTitleCreditsRequest creditsRequest) {
+    var request = creditsRequest;
+    if (isSavedByStoppedLibraryOperation(request)) {
+      request = request.withoutArtwork();
+    }
+
     var credits = request.credits();
     var imageRefreshMode = request.imageRefreshMode();
 
@@ -44,5 +56,9 @@ public class CreditService {
         .genres(genres)
         .studios(studios)
         .build();
+  }
+
+  private boolean isSavedByStoppedLibraryOperation(MediaTitleCreditsRequest request) {
+    return request.libraryOperationId().filter(libraryOperations::hasStoredStop).isPresent();
   }
 }

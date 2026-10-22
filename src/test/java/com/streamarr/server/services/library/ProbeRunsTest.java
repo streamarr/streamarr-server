@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.fixtures.AdmissionEndFixture.neverReached;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.common.jimfs.Configuration;
@@ -26,6 +27,7 @@ import java.nio.file.Files;
 import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -79,9 +81,23 @@ class ProbeRunsTest {
     run.request(mediaFile("movie.mkv").getId());
     sleeper.onSleep(_ -> requests.succeed(onlyRequest()));
 
-    var summary = probeRuns.awaitResults(run);
+    var summary = probeRuns.awaitResults(run, neverReached());
 
     assertThat(summary.count(RequestedProbeResult.READY)).isOne();
+    assertThat(sleeper.sleeps()).containsExactly(CHECK_INTERVAL);
+  }
+
+  @Test
+  @DisplayName("Should stop waiting for a requested probe when the admission end is reached")
+  void shouldStopWaitingForARequestedProbeWhenTheAdmissionEndIsReached() throws Exception {
+    var run = probeRuns.open();
+    run.request(mediaFile("movie.mkv").getId());
+    var reached = new AtomicBoolean();
+    sleeper.onSleep(_ -> reached.set(true));
+
+    var summary = probeRuns.awaitResults(run, reached::get);
+
+    assertThat(summary.count(RequestedProbeResult.READY)).isZero();
     assertThat(sleeper.sleeps()).containsExactly(CHECK_INTERVAL);
   }
 
@@ -97,7 +113,7 @@ class ProbeRunsTest {
     var run = probeRuns.open();
 
     run.request(mediaFileId);
-    var summary = probeRuns.awaitResults(run);
+    var summary = probeRuns.awaitResults(run, neverReached());
 
     assertThat(requests.requests()).hasSize(1);
     assertThat(summary.count(RequestedProbeResult.READY)).isOne();
@@ -112,7 +128,7 @@ class ProbeRunsTest {
     sleeper.onSleep(
         _ -> requests.fail(onlyRequest(), ItemFailureReason.SOURCE_INACCESSIBLE, clock.instant()));
 
-    var summary = probeRuns.awaitResults(run);
+    var summary = probeRuns.awaitResults(run, neverReached());
 
     assertThat(summary.count(RequestedProbeResult.FAILED)).isOne();
     assertThat(sleeper.sleeps()).hasSize(1);
@@ -129,7 +145,7 @@ class ProbeRunsTest {
     run.request(mediaFileId);
     sleeper.onSleep(_ -> requests.succeed(requests.requests().getLast()));
 
-    var summary = probeRuns.awaitResults(run);
+    var summary = probeRuns.awaitResults(run, neverReached());
 
     assertThat(summary.count(RequestedProbeResult.READY)).isOne();
     assertThat(sleeper.sleeps()).hasSize(1);
@@ -147,7 +163,7 @@ class ProbeRunsTest {
           }
         });
 
-    var summary = probeRuns.awaitResults(run);
+    var summary = probeRuns.awaitResults(run, neverReached());
 
     assertThat(summary.count(RequestedProbeResult.READY)).isOne();
     assertThat(sleeper.sleeps()).hasSize(3);
@@ -160,7 +176,7 @@ class ProbeRunsTest {
     run.request(mediaFile("movie.mkv").getId());
     sleeper.onSleep(_ -> requests.request(changed(onlyRequest())));
 
-    var summary = probeRuns.awaitResults(run);
+    var summary = probeRuns.awaitResults(run, neverReached());
 
     assertThat(summary.count(RequestedProbeResult.SUPERSEDED)).isOne();
   }
@@ -173,7 +189,7 @@ class ProbeRunsTest {
     run.request(mediaFileId);
     sleeper.onSleep(_ -> outcomes.deleteMediaFile(mediaFileId));
 
-    var summary = probeRuns.awaitResults(run);
+    var summary = probeRuns.awaitResults(run, neverReached());
 
     assertThat(summary.count(RequestedProbeResult.REMOVED)).isOne();
   }
@@ -186,7 +202,7 @@ class ProbeRunsTest {
     var run = probeRuns.open();
 
     run.request(mediaFile.getId());
-    var summary = probeRuns.awaitResults(run);
+    var summary = probeRuns.awaitResults(run, neverReached());
 
     assertThat(requests.requests()).isEmpty();
     assertThat(summary.counts()).isEmpty();
@@ -202,7 +218,7 @@ class ProbeRunsTest {
     run.request(mediaFile("movie.mkv").getId());
     requests.succeed(requests.requests().getLast());
 
-    var summary = probeRuns.awaitResults(run);
+    var summary = probeRuns.awaitResults(run, neverReached());
 
     assertThat(summary.counts()).isEqualTo(Map.of(RequestedProbeResult.READY, 1));
     assertThat(sleeper.sleeps()).isEmpty();
@@ -221,7 +237,7 @@ class ProbeRunsTest {
           }
         });
 
-    var summary = probeRuns.awaitResults(run);
+    var summary = probeRuns.awaitResults(run, neverReached());
 
     assertThat(summary.elapsed()).isEqualTo(CHECK_INTERVAL.multipliedBy(2));
   }

@@ -4,6 +4,8 @@ type Mutation {
     removeLibrary(input: RemoveLibraryInput!): RemoveLibraryPayload
     startLibraryScan(input: StartLibraryScanInput!): StartLibraryScanPayload
     startLibraryRefresh(input: StartLibraryRefreshInput!): StartLibraryRefreshPayload
+    stopLibraryScan(input: StopLibraryScanInput!): StopLibraryScanPayload
+    stopLibraryRefresh(input: StopLibraryRefreshInput!): StopLibraryRefreshPayload
     createPlaybackSession(input: CreatePlaybackSessionInput!): CreatePlaybackSessionPayload
     reportPlaybackFormatFailure(input: ReportPlaybackFormatFailureInput!): ReportPlaybackFormatFailurePayload
     destroyPlaybackSession(input: DestroyPlaybackSessionInput!): DestroyPlaybackSessionPayload

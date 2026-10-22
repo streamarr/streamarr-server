@@ -93,6 +93,8 @@ spec:
         app.kubernetes.io/component: control-plane
     spec:
       serviceAccountName: streamarr-server
+      # Outlasts the 30 s shutdown drain of library operations.
+      terminationGracePeriodSeconds: 45
       containers:
         - name: server
           # Replace with the release you are deploying; :latest breaks rollback.

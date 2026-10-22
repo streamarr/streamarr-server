@@ -14,9 +14,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * Runs the finishing steps of a library operation, in order, before the transaction that ends the
  * operation. The operation's kind and conclusion select the steps. A finished scan checks the
- * library folder and then removes the media files that no longer exist on disk. A failed scan and
- * every refresh run no step here. The transaction that ends the operation recalculates the letter
- * index, the last step of every operation.
+ * library folder and then removes the media files that no longer exist on disk. A failed or stopped
+ * scan and every refresh run no step here. The transaction that ends the operation recalculates the
+ * letter index, the last step of every operation.
  *
  * <p>Each step runs in its own transaction, which first shares the operation's row. A step for an
  * operation that has ended does nothing. A step that a restart interrupted has the same effect when
@@ -85,7 +85,10 @@ public class LibraryOperationFinishingStepsRunner {
 
   private void removeMissingMediaFiles(
       LibraryOperation operation, AtomicBoolean libraryFolderPassed) {
-    if (!libraryOperations.tryLockLibraryOperation(operation.id())) {
+    // A stop stored after the execution last read it skips this step, which has not started. A
+    // stop stored once the step started lets the step finish.
+    if (!libraryOperations.tryLockLibraryOperation(operation.id())
+        || libraryOperations.hasStoredStop(operation.id())) {
       return;
     }
 

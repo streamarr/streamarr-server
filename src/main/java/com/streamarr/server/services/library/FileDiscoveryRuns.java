@@ -48,17 +48,19 @@ public class FileDiscoveryRuns {
   /**
    * Waits for the probe results of a closed scan's discovery and for the primary artwork results of
    * its library operation, including artwork that an earlier execution of the operation requested.
-   * Background artwork and the retries of failed artwork steps and probes continue in the
-   * background.
+   * The wait for probes ends early once the admission end is reached, because neither a stop nor a
+   * shutdown waits for probes. Background artwork and the retries of failed artwork steps and
+   * probes continue in the background.
    *
    * @throws LibraryScanFailedException if the stored results cannot be read or the wait fails
    *     unexpectedly
    * @throws InterruptedException if the wait is interrupted
    */
-  public ScanResults awaitResults(FileDiscovery discovery) throws InterruptedException {
+  public ScanResults awaitResults(FileDiscovery discovery, AdmissionEnd admissionEnd)
+      throws InterruptedException {
     var libraryName = discovery.library().getName();
     try {
-      return awaitRequiredResults(discovery);
+      return awaitRequiredResults(discovery, admissionEnd);
     } catch (ExecutionException exception) {
       throw new LibraryScanFailedException(libraryName, exception.getCause());
     } catch (RuntimeException exception) {
@@ -67,10 +69,11 @@ public class FileDiscoveryRuns {
   }
 
   // Probes are checked while the artwork finishes, so each phase's timer stops with its own work.
-  private ScanResults awaitRequiredResults(FileDiscovery discovery)
+  private ScanResults awaitRequiredResults(FileDiscovery discovery, AdmissionEnd admissionEnd)
       throws InterruptedException, ExecutionException {
     try (var executor = SystemWork.newExecutorRunningAsSystemActor("library-scan-probes-")) {
-      var probes = executor.submit(() -> probeRuns.awaitResults(discovery.probeRun()));
+      var probes =
+          executor.submit(() -> probeRuns.awaitResults(discovery.probeRun(), admissionEnd));
       try {
         var artwork = artworkRunWaiter.awaitLibraryOperationResults(discovery.artworkRun());
         return ScanResults.builder()

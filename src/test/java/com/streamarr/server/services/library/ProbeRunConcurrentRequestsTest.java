@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.fixtures.AdmissionEndFixture.neverReached;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.common.jimfs.Configuration;
@@ -64,7 +65,7 @@ class ProbeRunConcurrentRequestsTest {
     parked.release.countDown();
     earlierRequest.get(5, TimeUnit.SECONDS);
 
-    var summary = probeRuns.awaitResults(run);
+    var summary = probeRuns.awaitResults(run, neverReached());
 
     assertThat(summary.elapsed()).isEqualTo(Duration.ofSeconds(5));
   }

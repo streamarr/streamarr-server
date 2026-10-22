@@ -6,5 +6,7 @@ import java.util.List;
 public record LibraryNotFoundError(String message, List<String> inputPath)
     implements StartLibraryScanError,
         StartLibraryRefreshError,
+        StopLibraryScanError,
+        StopLibraryRefreshError,
         RemoveLibraryError,
         InputMutationError {}

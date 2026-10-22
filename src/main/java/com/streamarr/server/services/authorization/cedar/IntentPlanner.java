@@ -30,6 +30,10 @@ final class IntentPlanner {
       case Intent.RemoveLibrary _ -> unitPlan(AuthorizationCheck.onServer(Action.REMOVE_LIBRARY));
       case Intent.ScanLibrary _ -> unitPlan(AuthorizationCheck.onServer(Action.SCAN_LIBRARY));
       case Intent.RefreshLibrary _ -> unitPlan(AuthorizationCheck.onServer(Action.REFRESH_LIBRARY));
+      case Intent.StopLibraryScan _ ->
+          unitPlan(AuthorizationCheck.onServer(Action.STOP_LIBRARY_SCAN));
+      case Intent.StopLibraryRefresh _ ->
+          unitPlan(AuthorizationCheck.onServer(Action.STOP_LIBRARY_REFRESH));
       case Intent.ViewLibraryAdministration _ ->
           unitPlan(AuthorizationCheck.onServer(Action.VIEW_LIBRARY_ADMINISTRATION));
       case Intent.ViewProfilePicker _ ->

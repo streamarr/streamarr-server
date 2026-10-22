@@ -108,6 +108,11 @@ public class LibraryOperation extends TableImpl<LibraryOperationRecord> {
      */
     public final TableField<LibraryOperationRecord, UUID> LAST_MODIFIED_BY = createField(DSL.name("last_modified_by"), SQLDataType.UUID, this, "");
 
+    /**
+     * The column <code>public.library_operation.stop_requested</code>.
+     */
+    public final TableField<LibraryOperationRecord, Boolean> STOP_REQUESTED = createField(DSL.name("stop_requested"), SQLDataType.BOOLEAN.nullable(false).defaultValue(DSL.field(DSL.raw("false"), SQLDataType.BOOLEAN)), this, "");
+
     private LibraryOperation(Name alias, Table<LibraryOperationRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

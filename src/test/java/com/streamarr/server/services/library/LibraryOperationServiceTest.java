@@ -30,6 +30,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.CannotAcquireLockException;
@@ -227,6 +228,144 @@ class LibraryOperationServiceTest {
 
     assertThatThrownBy(() -> service.storeFirstLibraryScan(libraryId))
         .isInstanceOf(IllegalStateException.class);
+  }
+
+  @Nested
+  @DisplayName("Stopping an operation")
+  class StopTests {
+
+    @Test
+    @DisplayName(
+        "Should return the library STOPPING, store the stop and publish the status when a"
+            + " ServerAdmin stops a running scan")
+    void shouldReturnTheLibraryStoppingAndStoreTheStopWhenAServerAdminStopsARunningScan() {
+      service.startLibraryScan(identity, libraryId);
+      eventPublisher.clear();
+
+      var outcome = service.stopLibraryScan(identity, libraryId);
+
+      assertThat(outcome.map(Library::getStatus))
+          .isEqualTo(Outcome.accepted(LibraryStatus.STOPPING));
+      assertThat(libraryOperations.operationFor(libraryId).orElseThrow().stopRequested()).isTrue();
+      assertThat(libraries.findById(libraryId).orElseThrow().getStatus())
+          .isEqualTo(LibraryStatus.STOPPING);
+      assertThat(eventPublisher.getEventsOfType(LibraryStatusChangedEvent.class))
+          .containsExactly(new LibraryStatusChangedEvent(libraryId));
+      assertThat(libraryMutationTransaction.executions())
+          .extracting(FakeLibraryMutationTransaction.Execution::intent)
+          .containsExactly(
+              new Intent.ScanLibrary(libraryId), new Intent.StopLibraryScan(libraryId));
+    }
+
+    @Test
+    @DisplayName(
+        "Should return the library STOPPING through its own intent when a ServerAdmin stops a"
+            + " running refresh")
+    void shouldReturnTheLibraryStoppingThroughItsOwnIntentWhenAServerAdminStopsARunningRefresh() {
+      service.startLibraryRefresh(identity, libraryId, ImageRefreshMode.PRESERVE);
+
+      var outcome = service.stopLibraryRefresh(identity, libraryId);
+
+      assertThat(outcome.map(Library::getStatus))
+          .isEqualTo(Outcome.accepted(LibraryStatus.STOPPING));
+      assertThat(libraryOperations.operationFor(libraryId).orElseThrow().stopRequested()).isTrue();
+      assertThat(libraryMutationTransaction.executions())
+          .extracting(FakeLibraryMutationTransaction.Execution::intent)
+          .endsWith(new Intent.StopLibraryRefresh(libraryId));
+    }
+
+    @Test
+    @DisplayName(
+        "Should return the library STOPPING unchanged and publish nothing when a stop repeats")
+    void shouldReturnTheLibraryStoppingUnchangedAndPublishNothingWhenAStopRepeats() {
+      service.startLibraryScan(identity, libraryId);
+      service.stopLibraryScan(identity, libraryId);
+      var storedStop = libraryOperations.operationFor(libraryId).orElseThrow();
+      eventPublisher.clear();
+
+      var outcome = service.stopLibraryScan(identity, libraryId);
+
+      assertThat(outcome.map(Library::getStatus))
+          .isEqualTo(Outcome.accepted(LibraryStatus.STOPPING));
+      assertThat(libraryOperations.libraryOperations()).containsExactly(storedStop);
+      assertThat(eventPublisher.getEventsOfType(LibraryStatusChangedEvent.class)).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+        "Should refuse with NotInProgress naming the running refresh and keep the refresh running"
+            + " when a stop asks for a scan")
+    void shouldRefuseWithNotInProgressNamingTheRunningRefreshWhenAStopAsksForAScan() {
+      service.startLibraryRefresh(identity, libraryId, ImageRefreshMode.PRESERVE);
+
+      var outcome = service.stopLibraryScan(identity, libraryId);
+
+      assertThat(outcome)
+          .isEqualTo(
+              Outcome.rejected(
+                  new LibraryOperationStopRejection.NotInProgress(
+                      LibraryStatus.REFRESHING, Optional.of(LibraryOperationKind.REFRESH))));
+      assertThat(libraryOperations.operationFor(libraryId).orElseThrow().stopRequested()).isFalse();
+      assertThat(libraries.findById(libraryId).orElseThrow().getStatus())
+          .isEqualTo(LibraryStatus.REFRESHING);
+      assertThat(transactionManager.rollbacks()).isOne();
+    }
+
+    @Test
+    @DisplayName("Should refuse with NotInProgress naming no operation when the library is idle")
+    void shouldRefuseWithNotInProgressNamingNoOperationWhenTheLibraryIsIdle() {
+      var outcome = service.stopLibraryRefresh(identity, libraryId);
+
+      assertThat(outcome)
+          .isEqualTo(
+              Outcome.rejected(
+                  new LibraryOperationStopRejection.NotInProgress(
+                      LibraryStatus.HEALTHY, Optional.empty())));
+    }
+
+    @Test
+    @DisplayName("Should refuse with LibraryNotFound when the library to stop is missing")
+    void shouldRefuseWithLibraryNotFoundWhenTheLibraryToStopIsMissing() {
+      var outcome = service.stopLibraryScan(identity, UUID.randomUUID());
+
+      assertThat(outcome)
+          .isEqualTo(Outcome.rejected(new LibraryOperationStopRejection.LibraryNotFound()));
+      assertThat(eventPublisher.getEventsOfType(LibraryStatusChangedEvent.class)).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+        "Should refuse a scan and a refresh with LibraryBusy carrying STOPPING while a stopped"
+            + " scan drains")
+    void shouldRefuseAScanAndARefreshWithLibraryBusyCarryingStoppingWhileAStoppedScanDrains() {
+      service.startLibraryScan(identity, libraryId);
+      service.stopLibraryScan(identity, libraryId);
+
+      var scan = service.startLibraryScan(identity, libraryId);
+      var refresh = service.startLibraryRefresh(identity, libraryId, ImageRefreshMode.PRESERVE);
+
+      var busy =
+          Outcome.rejected(new LibraryBusy(LibraryStatus.STOPPING, LibraryOperationKind.SCAN));
+      assertThat(scan).isEqualTo(busy);
+      assertThat(refresh).isEqualTo(busy);
+      assertThat(libraryOperations.libraryOperations()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("Should throw ResourceBusyException when the library's row stays locked on a stop")
+    void shouldThrowResourceBusyExceptionWhenTheLibrarysRowStaysLockedOnAStop() {
+      var failingService =
+          serviceStoringWith(
+              new FakeLibraryOperationRepository(libraries) {
+                @Override
+                public StopOutcome stopLibraryOperation(LibraryOperationStop stop) {
+                  throw new CannotAcquireLockException("lock timeout");
+                }
+              });
+
+      assertThatThrownBy(() -> failingService.stopLibraryScan(identity, libraryId))
+          .isInstanceOf(ResourceBusyException.class);
+    }
   }
 
   private LibraryOperationService serviceStoringWith(LibraryOperationRepository repository) {

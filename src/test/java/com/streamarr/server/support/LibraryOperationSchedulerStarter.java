@@ -15,8 +15,9 @@ import org.springframework.core.env.Environment;
 /**
  * Starts a library-operation scheduler on the shared table, built as the application builds its own
  * scheduler. The test passes a listener and waits for the listener's signals. A shutdown interrupts
- * the scheduler's executions after 200 ms. A test that starts such a scheduler stops the context's
- * scheduler first, so that the context's scheduler does not pick the test's executions.
+ * the scheduler's executions after the shutdown's maximum wait, 200 ms unless the test sets it. A
+ * test that starts such a scheduler stops the context's scheduler first, so that the context's
+ * scheduler does not pick the test's executions.
  */
 @Builder(toBuilder = true)
 public record LibraryOperationSchedulerStarter(
@@ -25,7 +26,8 @@ public record LibraryOperationSchedulerStarter(
     LibraryOperationExecution execution,
     Environment environment,
     Clock clock,
-    int threads) {
+    int threads,
+    Duration shutdownMaxWait) {
 
   public static LibraryOperationSchedulerStarter fromContext(ApplicationContext context) {
     return LibraryOperationSchedulerStarter.builder()
@@ -35,13 +37,14 @@ public record LibraryOperationSchedulerStarter(
         .environment(context.getEnvironment())
         .clock(Clock.systemUTC())
         .threads(2)
+        .shutdownMaxWait(Duration.ofMillis(200))
         .build();
   }
 
   /** Starts a scheduler that runs library operations. The caller stops the scheduler. */
   public LibraryOperationScheduler start(SchedulerListener listener) {
     var properties = UnstartedSchedulerConfiguration.schedulerProperties(environment);
-    properties.setShutdownMaxWait(Duration.ofMillis(200));
+    properties.setShutdownMaxWait(shutdownMaxWait);
     properties.setPollingInterval(Duration.ofMillis(100));
     var scheduler =
         LibraryOperationScheduler.builder()

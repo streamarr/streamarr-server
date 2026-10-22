@@ -13,9 +13,15 @@ import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fakes.FakeCompanyRepository;
 import com.streamarr.server.fakes.FakeGenreRepository;
+import com.streamarr.server.fakes.FakeLibraryOperationRepository;
+import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakePersonRepository;
 import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.CreditServiceFixture;
+import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.services.library.LibraryOperationKind;
+import com.streamarr.server.services.library.LibraryOperationStop;
+import com.streamarr.server.services.library.NewLibraryOperation;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
@@ -23,6 +29,7 @@ import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,6 +45,8 @@ class CreditServiceTest {
   private FakeGenreRepository genreRepository;
   private FakeCompanyRepository companyRepository;
   private ArtworkFixture artwork;
+  private FakeLibraryRepository libraries;
+  private FakeLibraryOperationRepository libraryOperations;
   private CreditService creditService;
 
   @BeforeEach
@@ -47,12 +56,15 @@ class CreditServiceTest {
     companyRepository = new FakeCompanyRepository();
     artwork = ArtworkFixture.builder().build();
     artwork.scheduling().holdScheduledSteps();
+    libraries = new FakeLibraryRepository();
+    libraryOperations = new FakeLibraryOperationRepository(libraries);
     creditService =
         CreditServiceFixture.creditServiceBuilder()
             .personRepository(personRepository)
             .genreRepository(genreRepository)
             .companyRepository(companyRepository)
             .artworkRequestService(artwork.artworkRequestService())
+            .libraryOperationRepository(libraryOperations)
             .build();
   }
 
@@ -124,6 +136,63 @@ class CreditServiceTest {
             backgroundRequest(
                 artworkOf(saved.cast().getFirst().getId(), ImageEntityType.PERSON, profile),
                 ImageRefreshMode.PRESERVE));
+  }
+
+  @Test
+  @DisplayName(
+      "Should save the credits and request no person or company artwork when a stopped library"
+          + " operation saves them")
+  void shouldSaveTheCreditsAndRequestNoArtworkWhenAStoppedLibraryOperationSavesThem() {
+    var libraryOperationId = storedScan();
+    libraryOperations.stopLibraryOperation(
+        new LibraryOperationStop(
+            libraryOperations.findLibraryOperation(libraryOperationId).orElseThrow().libraryId(),
+            LibraryOperationKind.SCAN));
+
+    var saved =
+        creditService.getOrCreateCredits(
+            creditsWithArtworkSources()
+                .libraryOperationId(Optional.of(libraryOperationId))
+                .build());
+
+    assertThat(saved.cast()).extracting(Person::getSourceId).containsExactly("100");
+    assertThat(saved.studios()).extracting(Company::getSourceId).containsExactly("174");
+    assertThat(artwork.requests().requests()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should request person and company artwork when a running library operation saves the"
+          + " credits")
+  void shouldRequestPersonAndCompanyArtworkWhenARunningLibraryOperationSavesTheCredits() {
+    var libraryOperationId = storedScan();
+
+    creditService.getOrCreateCredits(
+        creditsWithArtworkSources().libraryOperationId(Optional.of(libraryOperationId)).build());
+
+    assertThat(artwork.requests().requests())
+        .extracting(request -> request.artwork().targetType())
+        .containsExactlyInAnyOrder(ImageEntityType.PERSON, ImageEntityType.COMPANY);
+  }
+
+  private UUID storedScan() {
+    var library = libraries.save(LibraryFixtureCreator.buildFakeLibrary());
+    libraryOperations.storeLibraryOperation(NewLibraryOperation.scan(library.getId()));
+    return libraryOperations.operationFor(library.getId()).orElseThrow().id();
+  }
+
+  private static MediaTitleCreditsRequest.MediaTitleCreditsRequestBuilder
+      creditsWithArtworkSources() {
+    var credits =
+        MediaTitleCredits.builder()
+            .cast(List.of(person("100", "Actor 100")))
+            .studios(Set.of(company("174", "Studio With Logo")))
+            .build();
+    return requestFor(credits)
+        .personImageSources(
+            Map.of("100", List.of(new TmdbImageSource(ImageType.PROFILE, "/profile.jpg"))))
+        .companyImageSources(
+            Map.of("174", List.of(new TmdbImageSource(ImageType.LOGO, "/logo.png"))));
   }
 
   @Test
@@ -245,8 +314,10 @@ class CreditServiceTest {
   @Test
   @DisplayName("Should reject a missing metadata result when building a credits request from it")
   void shouldRejectAMissingMetadataResultWhenBuildingACreditsRequestFromIt() {
+    var run = discoveryRun();
+
     assertThatThrownBy(
-            () -> MediaTitleCreditsRequest.fromMetadataResult(null, ImageRefreshMode.PRESERVE))
+            () -> MediaTitleCreditsRequest.fromMetadataResult(null, ImageRefreshMode.PRESERVE, run))
         .isInstanceOf(NullPointerException.class);
   }
 
@@ -254,8 +325,9 @@ class CreditServiceTest {
   @DisplayName("Should reject a missing image refresh mode when building a credits request")
   void shouldRejectAMissingImageRefreshModeWhenBuildingACreditsRequest() {
     var metadataResult = new MetadataResult<>(Movie.builder().build(), List.of(), null, null);
+    var run = discoveryRun();
 
-    assertThatThrownBy(() -> MediaTitleCreditsRequest.fromMetadataResult(metadataResult, null))
+    assertThatThrownBy(() -> MediaTitleCreditsRequest.fromMetadataResult(metadataResult, null, run))
         .isInstanceOf(NullPointerException.class);
   }
 
@@ -280,8 +352,16 @@ class CreditServiceTest {
     var metadataResult =
         new MetadataResult<>(series, List.of(), Map.of("100", profile), Map.of("174", logo));
 
+    var libraryOperationId = UUID.randomUUID();
+
     var request =
-        MediaTitleCreditsRequest.fromMetadataResult(metadataResult, ImageRefreshMode.FORCE_REFRESH);
+        MediaTitleCreditsRequest.fromMetadataResult(
+            metadataResult,
+            ImageRefreshMode.FORCE_REFRESH,
+            artwork
+                .artworkRequestService()
+                .openLibraryOperationRun(
+                    "refresh", ImageRefreshMode.FORCE_REFRESH, libraryOperationId));
 
     assertThat(request.credits())
         .isEqualTo(
@@ -290,6 +370,23 @@ class CreditServiceTest {
     assertThat(request.personImageSources()).isEqualTo(Map.of("100", profile));
     assertThat(request.companyImageSources()).isEqualTo(Map.of("174", logo));
     assertThat(request.imageRefreshMode()).isEqualTo(ImageRefreshMode.FORCE_REFRESH);
+    assertThat(request.libraryOperationId()).contains(libraryOperationId);
+  }
+
+  @Test
+  @DisplayName("Should reject a missing artwork run when building a credits request")
+  void shouldRejectAMissingArtworkRunWhenBuildingACreditsRequest() {
+    var metadataResult = new MetadataResult<>(Movie.builder().build(), List.of(), null, null);
+
+    assertThatThrownBy(
+            () ->
+                MediaTitleCreditsRequest.fromMetadataResult(
+                    metadataResult, ImageRefreshMode.PRESERVE, null))
+        .isInstanceOf(NullPointerException.class);
+  }
+
+  private ArtworkRun discoveryRun() {
+    return artwork.artworkRequestService().openRun("file discovery", ImageRefreshMode.PRESERVE);
   }
 
   @Test

@@ -255,6 +255,22 @@ class LibraryOperationServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should refuse removeLibrary with STOPPING and keep the library while a scan stops")
+  void shouldRefuseRemoveLibraryWithStoppingAndKeepTheLibraryWhileAScanStops() {
+    var library = createLibrary();
+    asAdmin(() -> libraryOperationService.startLibraryScan(identity, library.getId()));
+    asAdmin(() -> libraryOperationService.stopLibraryScan(identity, library.getId()));
+
+    var outcome = asAdmin(() -> libraryManagementService.removeLibrary(identity, library.getId()));
+
+    assertThat(outcome)
+        .isEqualTo(
+            Outcome.rejected(new LibraryBusy(LibraryStatus.STOPPING, LibraryOperationKind.SCAN)));
+    assertThat(libraryRepository.existsById(library.getId())).isTrue();
+    assertThat(storedLibraryOperations()).isOne();
+  }
+
+  @Test
   @DisplayName(
       "Should refuse the scan with LibraryNotFound and schedule nothing when removeLibrary takes"
           + " the library's row first")

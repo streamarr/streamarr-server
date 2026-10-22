@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static com.streamarr.server.fakes.TestImages.createTestImage;
+import static com.streamarr.server.fixtures.AdmissionEndFixture.neverReached;
 import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.defaultIdentityBuilder;
 import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -113,6 +114,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -132,6 +134,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 class LibraryOperationExecutionTest {
 
   private static final Duration SCAN_BOUND = Duration.ofSeconds(5);
+  private static final BooleanSupplier NOT_SHUTTING_DOWN = () -> false;
 
   private final AuthenticatedIdentity identity = defaultIdentityBuilder().build();
   private final FakeLibraryMutationTransaction libraryMutationTransaction =
@@ -304,7 +307,8 @@ class LibraryOperationExecutionTest {
     var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
     var fileWalk = fileWalkBuilder().build();
 
-    var failure = catchThrowable(() -> fileWalk.discoverFiles(library, UUID.randomUUID()));
+    var failure =
+        catchThrowable(() -> fileWalk.discoverFiles(library, UUID.randomUUID(), neverReached()));
 
     assertThat(failure)
         .isInstanceOf(LibraryScanFailedException.class)
@@ -1000,7 +1004,8 @@ class LibraryOperationExecutionTest {
         }
 
         @Override
-        public boolean tryEndLibraryOperation(LibraryOperationEnd end) {
+        public Optional<LibraryOperationConclusion> tryEndLibraryOperation(
+            LibraryOperationEnd end) {
           return libraryOperations.tryEndLibraryOperation(end);
         }
       };
@@ -1675,7 +1680,7 @@ class LibraryOperationExecutionTest {
     @Test
     @DisplayName("Should end and change nothing when the operation no longer exists")
     void shouldEndAndChangeNothingWhenTheOperationNoLongerExists() {
-      var result = operations.execution().execute(UUID.randomUUID());
+      var result = operations.execution().execute(UUID.randomUUID(), NOT_SHUTTING_DOWN);
 
       assertThat(result).isEqualTo(new LibraryOperationExecutionResult.Ended());
       assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
@@ -1716,7 +1721,8 @@ class LibraryOperationExecutionTest {
                     }
 
                     @Override
-                    public boolean tryEndLibraryOperation(LibraryOperationEnd end) {
+                    public Optional<LibraryOperationConclusion> tryEndLibraryOperation(
+                        LibraryOperationEnd end) {
                       throw failure;
                     }
                   })
@@ -1724,7 +1730,8 @@ class LibraryOperationExecutionTest {
       failingRuns.service().startLibraryScan(identity, savedLibraryId);
       var libraryOperationId = failingRuns.scheduling().scheduledExecutions().getLast();
 
-      assertThatThrownBy(() -> failingRuns.execution().execute(libraryOperationId))
+      assertThatThrownBy(
+              () -> failingRuns.execution().execute(libraryOperationId, NOT_SHUTTING_DOWN))
           .isSameAs(failure);
 
       assertThat(libraryStatus()).isEqualTo(LibraryStatus.SCANNING);
@@ -1774,8 +1781,9 @@ class LibraryOperationExecutionTest {
                     }
 
                     @Override
-                    public boolean tryEndLibraryOperation(LibraryOperationEnd end) {
-                      assertThat(libraryOperations.tryEndLibraryOperation(end)).isTrue();
+                    public Optional<LibraryOperationConclusion> tryEndLibraryOperation(
+                        LibraryOperationEnd end) {
+                      assertThat(libraryOperations.tryEndLibraryOperation(end)).isPresent();
                       return libraryOperations.tryEndLibraryOperation(end);
                     }
                   })
@@ -1783,7 +1791,7 @@ class LibraryOperationExecutionTest {
       endedElsewhere.service().startLibraryScan(identity, savedLibraryId);
       var libraryOperationId = endedElsewhere.scheduling().scheduledExecutions().getLast();
 
-      var result = endedElsewhere.execution().execute(libraryOperationId);
+      var result = endedElsewhere.execution().execute(libraryOperationId, NOT_SHUTTING_DOWN);
 
       assertThat(result).isEqualTo(new LibraryOperationExecutionResult.Ended());
       assertThat(libraryOperations.libraryOperations()).isEmpty();
@@ -1817,6 +1825,282 @@ class LibraryOperationExecutionTest {
               .find("streamarr.library.operations.duration")
               .tag("kind", kind.tagValue())
               .tag("conclusion", conclusion.name().toLowerCase(Locale.ROOT))
+              .timer();
+      if (timer == null) {
+        return 0;
+      }
+
+      return timer.count();
+    }
+  }
+
+  @Nested
+  @DisplayName("Stopped and drained executions")
+  class StopAndDrainTests {
+
+    @Test
+    @DisplayName(
+        "Should admit no further file, wait for no probe, remove no missing media file and return"
+            + " the library UNHEALTHY when a stop is stored while the only admitted file runs")
+    void shouldAdmitNoFurtherFileAndReturnTheLibraryUnhealthyWhenAStopIsStoredWhileAFileRuns()
+        throws Exception {
+      markLibrary(LibraryStatus.UNHEALTHY);
+      var root = createRootLibraryDirectory();
+      var heldPath = createMovieFile(root, "A Held", "Held (2001).mkv");
+      var neverPath = createMovieFile(root, "B Never", "Never (2002).mkv");
+      var missingPath = root.resolve("Missing").resolve("Missing (2003).mkv");
+      saveMatchedMediaFile(missingPath);
+      probeTaskRequests.dispatchWith(_ -> {});
+      probeCheckSleeper.onSleep(
+          _ -> {
+            throw new AssertionError("A stopped scan waited for a probe");
+          });
+      var runner = runnerAdmittingOneFileAtATime();
+      tmdbMovieProvider.answerSearchesWith(
+          _ -> {
+            assertThat(runner.service().stopLibraryScan(identity, savedLibraryId))
+                .isInstanceOf(Outcome.Accepted.class);
+            return new NotFound();
+          });
+
+      LibraryOperationExecutionResult result;
+      try (var scan = BoundedTask.start(() -> runner.scanLibrary(savedLibraryId))) {
+        result = scan.await(SCAN_BOUND);
+      }
+
+      assertThat(result).isEqualTo(new LibraryOperationExecutionResult.Ended());
+      assertThat(mediaFile(heldPath)).isPresent();
+      assertThat(mediaFile(neverPath)).isEmpty();
+      assertThat(mediaFile(missingPath)).isPresent();
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+      assertThat(libraryOperations.libraryOperations()).isEmpty();
+      assertThat(libraryMetadata.letterCountReplacements()).containsExactly(savedLibraryId);
+      assertThat(stoppedOperations(LibraryOperationKind.SCAN)).isOne();
+    }
+
+    @Test
+    @DisplayName(
+        "Should check and walk no library folder and return the library HEALTHY when the execution"
+            + " finds the stop already stored")
+    void shouldWalkNoLibraryFolderAndReturnTheLibraryHealthyWhenTheExecutionFindsTheStopStored() {
+      assertThat(operations.service().startLibraryScan(identity, savedLibraryId))
+          .isInstanceOf(Outcome.Accepted.class);
+      assertThat(operations.service().stopLibraryScan(identity, savedLibraryId))
+          .isInstanceOf(Outcome.Accepted.class);
+
+      var result =
+          operations
+              .execution()
+              .execute(operations.scheduling().scheduledExecutions().getLast(), NOT_SHUTTING_DOWN);
+
+      assertThat(result).isEqualTo(new LibraryOperationExecutionResult.Ended());
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+      assertThat(meterRegistry.find(LibraryFolderCheck.FAILURES_METRIC).counters()).isEmpty();
+      assertThat(stoppedOperations(LibraryOperationKind.SCAN)).isOne();
+      assertThat(capturingEventPublisher.getEventsOfType(ScanEndedEvent.class))
+          .containsExactly(new ScanEndedEvent(savedLibraryId));
+    }
+
+    @Test
+    @DisplayName(
+        "Should stop waiting for probes and remove no missing media file when a stop is stored"
+            + " while the scan waits for its probes")
+    void shouldStopWaitingForProbesAndRemoveNothingWhenAStopIsStoredWhileTheScanWaits()
+        throws Exception {
+      var root = createRootLibraryDirectory();
+      saveMatchedMediaFile(createMovieFile(root, "Present", "Present.mkv"));
+      var missingPath = root.resolve("Missing").resolve("Missing (2003).mkv");
+      saveMatchedMediaFile(missingPath);
+      probeTaskRequests.dispatchWith(_ -> {});
+      probeCheckSleeper.onSleep(
+          _ -> operations.service().stopLibraryScan(identity, savedLibraryId));
+
+      BoundedTask.runWithin(SCAN_BOUND, () -> operations.scanLibrary(savedLibraryId));
+
+      assertThat(probeCheckSleeper.sleeps()).hasSize(1);
+      assertThat(mediaFile(missingPath)).isPresent();
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+      assertThat(stoppedOperations(LibraryOperationKind.SCAN)).isOne();
+    }
+
+    @Test
+    @DisplayName(
+        "Should end the scan FAILED with the library UNHEALTHY when an admitted file fails after a"
+            + " stop was stored")
+    void shouldEndTheScanFailedWhenAnAdmittedFileFailsAfterAStopWasStored() throws Exception {
+      createMovieFile(createRootLibraryDirectory(), "Failing", "Failing (2001).mkv");
+      tmdbMovieProvider.answerSearchesWith(
+          _ -> {
+            operations.service().stopLibraryScan(identity, savedLibraryId);
+            throw new IllegalStateException("simulated search failure");
+          });
+
+      BoundedTask.runWithin(SCAN_BOUND, () -> operations.scanLibrary(savedLibraryId));
+
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+      assertThat(stoppedOperations(LibraryOperationKind.SCAN)).isZero();
+    }
+
+    @Test
+    @DisplayName(
+        "Should return the library UNHEALTHY and recalculate the letter index when a stop is stored"
+            + " during a refresh")
+    void shouldReturnTheLibraryUnhealthyWhenAStopIsStoredDuringARefresh() {
+      markLibrary(LibraryStatus.UNHEALTHY);
+      libraryRefreshService.answerRefreshesWith(
+          () -> operations.service().stopLibraryRefresh(identity, savedLibraryId));
+
+      var result = operations.refreshLibrary(savedLibraryId);
+
+      assertThat(result).isEqualTo(new LibraryOperationExecutionResult.Ended());
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+      assertThat(libraryMetadata.letterCountReplacements()).containsExactly(savedLibraryId);
+      assertThat(stoppedOperations(LibraryOperationKind.REFRESH)).isOne();
+    }
+
+    @Test
+    @DisplayName(
+        "Should return the library to its earlier status when the stop is stored after the"
+            + " execution last read the stop")
+    void
+        shouldReturnTheLibraryToItsEarlierStatusWhenTheStopIsStoredAfterTheExecutionLastReadTheStop() {
+      markLibrary(LibraryStatus.UNHEALTHY);
+      var stopBeforeEnd =
+          serviceBuilder()
+              .executionLibraryOperations(
+                  new FakeLibraryOperationRepository(fakeLibraryRepository) {
+                    @Override
+                    public Optional<LibraryOperation> findLibraryOperation(UUID id) {
+                      return libraryOperations.findLibraryOperation(id);
+                    }
+
+                    @Override
+                    public Optional<LibraryOperationConclusion> tryEndLibraryOperation(
+                        LibraryOperationEnd end) {
+                      libraryOperations.stopLibraryOperation(
+                          new LibraryOperationStop(savedLibraryId, LibraryOperationKind.REFRESH));
+                      return libraryOperations.tryEndLibraryOperation(end);
+                    }
+                  })
+              .build();
+
+      stopBeforeEnd.refreshLibrary(savedLibraryId);
+
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+      assertThat(stoppedOperations(LibraryOperationKind.REFRESH)).isOne();
+    }
+
+    @Test
+    @DisplayName(
+        "Should admit the file and return the library HEALTHY when the stop commits after the"
+            + " admission found a next file and before the admission took the file")
+    void shouldAdmitTheFileAndReturnTheLibraryHealthyWhenTheStopCommitsBetweenTheChecks()
+        throws Exception {
+      var path = createMovieFile(createRootLibraryDirectory(), "Only", "Only (2001).mkv");
+      var stopAfterFirstCheck =
+          serviceBuilder()
+              .executionLibraryOperations(
+                  new FakeLibraryOperationRepository(fakeLibraryRepository) {
+                    private final AtomicBoolean checked = new AtomicBoolean();
+
+                    @Override
+                    public Optional<LibraryOperation> findLibraryOperation(UUID id) {
+                      return libraryOperations.findLibraryOperation(id);
+                    }
+
+                    @Override
+                    public boolean hasStoredStop(UUID libraryOperationId) {
+                      var stored = libraryOperations.hasStoredStop(libraryOperationId);
+                      if (checked.compareAndSet(false, true)) {
+                        libraryOperations.stopLibraryOperation(
+                            new LibraryOperationStop(savedLibraryId, LibraryOperationKind.SCAN));
+                      }
+
+                      return stored;
+                    }
+
+                    @Override
+                    public Optional<LibraryOperationConclusion> tryEndLibraryOperation(
+                        LibraryOperationEnd end) {
+                      return libraryOperations.tryEndLibraryOperation(end);
+                    }
+                  })
+              .build();
+
+      LibraryOperationExecutionResult result;
+      try (var scan = BoundedTask.start(() -> stopAfterFirstCheck.scanLibrary(savedLibraryId))) {
+        result = scan.await(SCAN_BOUND);
+      }
+
+      assertThat(result).isEqualTo(new LibraryOperationExecutionResult.Ended());
+      assertThat(mediaFileStatus(path)).isEqualTo(MediaFileStatus.METADATA_NOT_FOUND);
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+      assertThat(stoppedOperations(LibraryOperationKind.SCAN)).isOne();
+    }
+
+    @Test
+    @DisplayName(
+        "Should admit no further file and keep the library SCANNING with its operation stored when"
+            + " the scheduler shuts down while the only admitted file runs")
+    void shouldAdmitNoFurtherFileAndKeepTheLibraryScanningWhenTheSchedulerShutsDown()
+        throws Exception {
+      var root = createRootLibraryDirectory();
+      var heldPath = createMovieFile(root, "A Held", "Held (2001).mkv");
+      var neverPath = createMovieFile(root, "B Never", "Never (2002).mkv");
+      var shuttingDown = new AtomicBoolean();
+      tmdbMovieProvider.answerSearchesWith(
+          _ -> {
+            shuttingDown.set(true);
+            return new NotFound();
+          });
+      var runner = runnerAdmittingOneFileAtATime();
+      runner.service().startLibraryScan(identity, savedLibraryId);
+      var libraryOperationId = runner.scheduling().scheduledExecutions().getLast();
+
+      LibraryOperationExecutionResult result;
+      try (var execution =
+          BoundedTask.start(
+              () -> runner.execution().execute(libraryOperationId, shuttingDown::get))) {
+        result = execution.await(SCAN_BOUND);
+      }
+
+      assertThat(result).isEqualTo(new LibraryOperationExecutionResult.Interrupted());
+      assertThat(mediaFileStatus(heldPath)).isEqualTo(MediaFileStatus.METADATA_NOT_FOUND);
+      assertThat(mediaFile(neverPath)).isEmpty();
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.SCANNING);
+      assertThat(libraryOperations.findLibraryOperation(libraryOperationId)).isPresent();
+      assertThat(capturingEventPublisher.getEventsOfType(ScanEndedEvent.class)).isEmpty();
+    }
+
+    private OperationRunner runnerAdmittingOneFileAtATime() {
+      return serviceBuilder()
+          .libraryFileWalk(
+              fileWalkBuilder()
+                  .libraryOperationAdmissions(admissionsWith(new FixedLimitAdmissions(1)))
+                  .build())
+          .build();
+    }
+
+    private void markLibrary(LibraryStatus status) {
+      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      library.setStatus(status);
+      fakeLibraryRepository.save(library);
+    }
+
+    private Optional<MediaFile> mediaFile(Path path) {
+      return fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
+    }
+
+    private MediaFileStatus mediaFileStatus(Path path) {
+      return mediaFile(path).orElseThrow().getStatus();
+    }
+
+    private long stoppedOperations(LibraryOperationKind kind) {
+      var timer =
+          meterRegistry
+              .find("streamarr.library.operations.duration")
+              .tag("kind", kind.tagValue())
+              .tag("conclusion", "stopped")
               .timer();
       if (timer == null) {
         return 0;
@@ -1874,7 +2158,8 @@ class LibraryOperationExecutionTest {
     }
 
     @Override
-    public void refreshLibrary(Library library, LibraryOperation operation) {
+    public void refreshLibrary(
+        Library library, LibraryOperation operation, AdmissionEnd admissionEnd) {
       imageRefreshMode.set(operation.imageRefreshMode().orElseThrow());
       refreshAnswer.run();
     }
@@ -2167,7 +2452,7 @@ class LibraryOperationExecutionTest {
     private LibraryOperationExecutionResult execute(
         Outcome<Library, LibraryOperationRejection> started) {
       assertThat(started).isInstanceOf(Outcome.Accepted.class);
-      return execution.execute(scheduling.scheduledExecutions().getLast());
+      return execution.execute(scheduling.scheduledExecutions().getLast(), NOT_SHUTTING_DOWN);
     }
   }
 

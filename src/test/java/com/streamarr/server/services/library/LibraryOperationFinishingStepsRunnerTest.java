@@ -232,6 +232,35 @@ class LibraryOperationFinishingStepsRunnerTest {
   }
 
   @Test
+  @DisplayName(
+      "Should remove no media file when a stop is stored after the execution concluded the scan"
+          + " finished")
+  void shouldRemoveNoMediaFileWhenAStopIsStoredAfterTheExecutionConcludedTheScanFinished()
+      throws IOException {
+    var kept = saveMediaFile("Kept (2020).mkv");
+    Files.createFile(FilepathCodec.decode(fileSystem, kept.getFilepathUri()));
+    saveMediaFile("Gone (2020).mkv");
+    var scan = storeScan();
+    libraryOperations.stopLibraryOperation(
+        new LibraryOperationStop(library.getId(), LibraryOperationKind.SCAN));
+
+    runner.runFinishingSteps(scan, LibraryOperationConclusion.FINISHED);
+
+    assertThat(mediaFiles.findByLibraryId(library.getId())).hasSize(2);
+  }
+
+  @Test
+  @DisplayName("Should remove no media file when a stopped scan runs its finishing steps")
+  void shouldRemoveNoMediaFileWhenAStoppedScanRunsItsFinishingSteps() {
+    saveMediaFile("Gone (2020).mkv");
+
+    var conclusion = runner.runFinishingSteps(storeScan(), LibraryOperationConclusion.STOPPED);
+
+    assertThat(conclusion).isEqualTo(LibraryOperationConclusion.STOPPED);
+    assertThat(mediaFiles.findByLibraryId(library.getId())).hasSize(1);
+  }
+
+  @Test
   @DisplayName("Should keep the scan finished when the removal of missing media files fails")
   void shouldKeepTheScanFinishedWhenTheRemovalOfMissingMediaFilesFails() throws IOException {
     var kept = saveMediaFile("Kept (2020).mkv");

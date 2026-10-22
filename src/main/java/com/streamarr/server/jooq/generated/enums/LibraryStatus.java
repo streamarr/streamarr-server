@@ -23,7 +23,9 @@ public enum LibraryStatus implements EnumType {
 
     UNHEALTHY("UNHEALTHY"),
 
-    REFRESHING("REFRESHING");
+    REFRESHING("REFRESHING"),
+
+    STOPPING("STOPPING");
 
     private final String literal;
 

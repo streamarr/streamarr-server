@@ -91,6 +91,16 @@ namespace Streamarr {
     resource: Server,
     context: {},
   };
+  action stopLibraryScan in libraryAdministration appliesTo {
+    principal: Account,
+    resource: Server,
+    context: {},
+  };
+  action stopLibraryRefresh in libraryAdministration appliesTo {
+    principal: Account,
+    resource: Server,
+    context: {},
+  };
   action viewLibraryAdministration in libraryAdministration appliesTo {
     principal: Account,
     resource: Server,

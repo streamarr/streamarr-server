@@ -5,6 +5,7 @@ import com.streamarr.server.exceptions.LibraryOperationNotScheduledException;
 import com.streamarr.server.exceptions.LibraryOperationNotStartedException;
 import com.streamarr.server.exceptions.ResourceBusyException;
 import com.streamarr.server.repositories.LibraryOperationRepository;
+import com.streamarr.server.repositories.LibraryOperationRepository.StopOutcome;
 import com.streamarr.server.repositories.LibraryOperationRepository.StoreOutcome;
 import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -29,10 +30,12 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Starts scans and refreshes as stored library operations (ADR 0027). One transaction decides on
- * the library's row, gives the library its busy status, stores the operation and schedules the
- * operation's one scheduled task. A busy or missing library refuses the request, and nothing is
- * queued. The status change is published after the transaction commits.
+ * Starts and stops scans and refreshes as stored library operations (ADR 0027). One transaction
+ * decides on the library's row, gives the library its busy status, stores the operation and
+ * schedules the operation's one scheduled task. A busy or missing library refuses the request, and
+ * nothing is queued. A stop is stored with the running operation, and the library shows {@code
+ * STOPPING} until the operation ends. Each status change is published after the transaction
+ * commits.
  */
 @Service
 @Builder
@@ -79,6 +82,30 @@ public class LibraryOperationService {
                 identity,
                 new Intent.RefreshLibrary(libraryId),
                 () -> storeAndSchedule(newLibraryOperation)));
+  }
+
+  /**
+   * Stores a stop with the running scan. The scan admits no further task, its admitted tasks finish
+   * their foreground steps, and the library then returns to the status it had before the scan. A
+   * repeated stop returns the library unchanged.
+   *
+   * @return the library, already {@code STOPPING}, or why it refused the stop
+   * @throws ResourceBusyException when the library's row stayed locked past the bounded wait
+   */
+  public Outcome<Library, LibraryOperationStopRejection> stopLibraryScan(
+      @NonNull AuthenticatedIdentity identity, @NonNull UUID libraryId) {
+    return stop(identity, new LibraryOperationStop(libraryId, LibraryOperationKind.SCAN));
+  }
+
+  /**
+   * Stores a stop with the running refresh, as {@link #stopLibraryScan} does with a scan.
+   *
+   * @return the library, already {@code STOPPING}, or why it refused the stop
+   * @throws ResourceBusyException when the library's row stayed locked past the bounded wait
+   */
+  public Outcome<Library, LibraryOperationStopRejection> stopLibraryRefresh(
+      @NonNull AuthenticatedIdentity identity, @NonNull UUID libraryId) {
+    return stop(identity, new LibraryOperationStop(libraryId, LibraryOperationKind.REFRESH));
   }
 
   /**
@@ -146,6 +173,31 @@ public class LibraryOperationService {
     scheduling.scheduleExecution(libraryOperation.id());
     eventPublisher.publishEvent(new LibraryStatusChangedEvent(library.getId()));
     return library;
+  }
+
+  private Outcome<Library, LibraryOperationStopRejection> stop(
+      AuthenticatedIdentity identity, LibraryOperationStop stop) {
+    return mutationTransactions.write(
+        () -> libraryMutationTransaction.execute(identity, intentFor(stop), () -> storeStop(stop)),
+        _ -> Optional.empty());
+  }
+
+  private static Intent.UnitIntent intentFor(LibraryOperationStop stop) {
+    return switch (stop.kind()) {
+      case SCAN -> new Intent.StopLibraryScan(stop.libraryId());
+      case REFRESH -> new Intent.StopLibraryRefresh(stop.libraryId());
+    };
+  }
+
+  private Library storeStop(LibraryOperationStop stop) {
+    return switch (libraryOperations.stopLibraryOperation(stop)) {
+      case StopOutcome.Stored(var library) -> {
+        eventPublisher.publishEvent(new LibraryStatusChangedEvent(library.getId()));
+        yield library;
+      }
+      case StopOutcome.AlreadyStored(var library) -> library;
+      case StopOutcome.Rejected(var rejection) -> throw new MutationRejection(rejection);
+    };
   }
 
   private static RequestOutcome requestOutcome(
