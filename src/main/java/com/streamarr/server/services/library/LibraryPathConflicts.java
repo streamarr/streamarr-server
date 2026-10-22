@@ -17,17 +17,16 @@ final class LibraryPathConflicts {
   private LibraryPathConflicts() {}
 
   static List<AddLibraryRejection> conflictsOf(
-      FileSystem fileSystem, RequestedLibraryPath requested, List<Library> libraries) {
+      FileSystem fileSystem, Path path, List<Library> libraries) {
     return libraries.stream()
-        .flatMap(library -> conflictOf(fileSystem, requested, library).stream())
+        .flatMap(library -> conflictOf(fileSystem, path, library).stream())
         .toList();
   }
 
   private static Optional<AddLibraryRejection> conflictOf(
-      FileSystem fileSystem, RequestedLibraryPath requested, Library library) {
+      FileSystem fileSystem, Path path, Library library) {
     var libraryPath =
         FilepathCodec.decode(fileSystem, library.getFilepathUri()).toAbsolutePath().normalize();
-    var path = requested.path();
     if (path.equals(libraryPath)) {
       return Optional.of(new AddLibraryRejection.PathAlreadyRegistered(library, libraryPath));
     }
