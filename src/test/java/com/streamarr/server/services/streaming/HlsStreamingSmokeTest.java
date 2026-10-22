@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -16,14 +17,12 @@ import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoQuality;
-import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.ServerSettingsFixture;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.filepath.FilepathCodec;
-import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
@@ -107,7 +106,6 @@ class HlsStreamingSmokeTest {
     var completeProbe = (ProbeOutcome.Success) outcome;
     var probeRepository = new FakeMediaFileContainerInfoRepository();
     probeRepository.setDefaultOutcome(completeProbe);
-    var probeReader = new PersistedProbeReader(probeRepository);
 
     var qualityLadderService = new QualityLadderService();
     var properties =
@@ -134,8 +132,7 @@ class HlsStreamingSmokeTest {
             .mediaFileRepository(mediaFileRepository)
             .transcodeExecutor(transcodeExecutor)
             .segmentStore(segmentStore)
-            .playbackProbeService(
-                new PlaybackProbeService(probeReader, new CapturingEventPublisher()))
+            .playbackProbeService(playbackProbeServiceBuilder(probeRepository).build())
             .transcodeDecisionService(decisionService)
             .qualityLadderService(qualityLadderService)
             .properties(properties)

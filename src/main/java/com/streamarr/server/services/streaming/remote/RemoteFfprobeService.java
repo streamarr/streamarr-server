@@ -19,17 +19,24 @@ import java.util.concurrent.TimeoutException;
 public final class RemoteFfprobeService implements FfprobeService {
 
   private final WorkerSessionServer server;
+  private final UUID sourceNamespaceId;
   private final RemoteMediaSourceMapper sourceMapper;
   private final RemoteProbeResultMapper resultMapper = new RemoteProbeResultMapper();
 
   public RemoteFfprobeService(WorkerSessionServer server, UUID sourceNamespaceId, Path sourceRoot) {
     this.server = server;
+    this.sourceNamespaceId = sourceNamespaceId;
     this.sourceMapper = new RemoteMediaSourceMapper(sourceNamespaceId, sourceRoot);
   }
 
   @Override
   public ProbeOutcome probe(ProbeExecutionRequest request) {
     return dispatch(probeRequest(request).build());
+  }
+
+  /** Serves {@link com.streamarr.server.services.streaming.ProbeWorkers}. */
+  public boolean hasCompatibleWorker(int probeVersion) {
+    return server.hasProbeWorker(sourceNamespaceId, probeVersion);
   }
 
   /** Serves {@link com.streamarr.server.services.streaming.KeyframePacketScanner}. */
