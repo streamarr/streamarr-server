@@ -110,7 +110,7 @@ These metrics report the same facts:
 * `streamarr.probes.background_capacity_control` is `1` for each worker. Its `control` tag is `adaptive`, or `fixed` when `TRANSCODE_WORKER_PROBE_CAPACITY` sets the capacity.
 * `streamarr.probes.waiting` reports the probes that running scans still wait for. A probe waits unclaimed while no worker has a free unit for it.
 * `streamarr.probes.deferred` counts the probes that the server deferred after it claimed them. Its `reason` tag is `workers_busy`, `no_compatible_worker`, or `no_connected_worker` when no worker could take the probe at dispatch, and `no_free_capacity` when the worker refused the probe because it had just lowered the probe's capacity.
-* `streamarr.playback.probe_unit_wait` times how long a playback request waited until a worker had a free unit for its file's probe. A nonzero time shows that the playback probe capacity is too small.
+* `streamarr.playback.probe_queue_latency` records queue latency for a claimed probe, from its earliest still-waiting playback request until execution starts. It includes scheduler polling, any remaining quiet period or retry backoff, and capacity waits, so a nonzero value alone does not establish capacity exhaustion. Requests that stop waiting before execution starts contribute no sample.
 * `streamarr.playback.probe_wait` times how long a playback request waited for its file's probe outcome. Its `outcome` tag is `ready`, `probe_failed`, or `not_ready`.
 * `streamarr.playback.probe_waits` reports the playback requests that wait for a probe now.
 * `streamarr.streaming.playback_slots` and `streamarr.streaming.playback_slots_in_use` report each worker's playback slots and the job attempts that use them. They carry the `worker` tag.

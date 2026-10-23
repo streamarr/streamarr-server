@@ -173,9 +173,8 @@ class PlaybackProbeServiceTest {
 
     @Test
     @DisplayName(
-        "Should time the wait for a free unit from the playback request when the scheduler claims"
-            + " the probe")
-    void shouldTimeTheWaitForAFreeUnitFromThePlaybackRequestWhenTheSchedulerClaimsTheProbe()
+        "Should time queue latency from the playback request when the scheduler claims the probe")
+    void shouldTimeQueueLatencyFromThePlaybackRequestWhenTheSchedulerClaimsTheProbe()
         throws Exception {
       var playback = readInBackground(service());
       probeRequested.get(10, TimeUnit.SECONDS);
@@ -188,7 +187,7 @@ class PlaybackProbeServiceTest {
         playback.get(10, TimeUnit.SECONDS);
       }
 
-      assertThat(meterRegistry.get("streamarr.playback.probe_unit_wait").timer())
+      assertThat(meterRegistry.get("streamarr.playback.probe_queue_latency").timer())
           .returns(1L, Timer::count)
           .returns(2.0, timer -> timer.totalTime(TimeUnit.SECONDS));
       assertThat(waitTimer("ready").totalTime(TimeUnit.SECONDS)).isEqualTo(7);
