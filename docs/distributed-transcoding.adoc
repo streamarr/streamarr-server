@@ -209,6 +209,13 @@ The worker uses its own Spring Boot image and normal entrypoint.
 The server image contains neither the worker application nor FFmpeg.
 To encode on an NVIDIA GPU, see <<_gpu_encoding>>.
 
+Compose also runs Prometheus, which stores the server's metrics.
+The server sends its metrics to Prometheus over OTLP every 10 seconds.
+Prometheus keeps the metrics for 15 days in the `prometheus-data` volume. `STREAMARR_METRICS_RETENTION` changes how long.
+The Prometheus UI and query API have no authentication, so Compose publishes them on the host's loopback port `9090` only. `STREAMARR_PROMETHEUS_PORT` changes the port.
+To open the UI from another machine, forward the port over SSH with `ssh -L 9090:localhost:9090 <user>@<media-server>`, then open `http://localhost:9090`.
+Prometheus replaces each dot in a metric name with an underscore, so `streamarr.probes.capacity` becomes `streamarr_probes_capacity`.
+
 == Kubernetes
 
 link:../deploy/kubernetes/distributed-transcoding.yaml[The example manifest] creates the `streamarr` namespace with sidecar injection enabled, separate server and worker ServiceAccounts, one server replica, and two worker replicas.

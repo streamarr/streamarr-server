@@ -26,8 +26,35 @@ services:
       STREAMING_WORKER_SESSION_PORT: ${STREAMARR_WORKER_SESSION_PORT:-9090}
       STREAMING_REMOTE_SOURCE_NAMESPACE_ID: ${STREAMARR_SOURCE_NAMESPACE_ID:-cccccccc-cccc-cccc-cccc-cccccccccccc}
       STREAMING_REMOTE_SOURCE_ROOT: /media
+      # Exports the Micrometer meters to Prometheus. Every other OpenTelemetry instrumentation stays
+      # off, so the server's database and request paths are unchanged, and no spans or log records
+      # are produced. The starter cannot bind OTEL_METRICS_EXPORTER or OTEL_LOGS_EXPORTER from the
+      # environment, and the server fails to start with either of them.
+      OTEL_SDK_DISABLED: "false"
+      OTEL_SERVICE_NAME: streamarr-server
+      OTEL_INSTRUMENTATION_COMMON_DEFAULT_ENABLED: "false"
+      OTEL_INSTRUMENTATION_MICROMETER_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_METRICS_PROTOCOL: http/protobuf
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: http://prometheus:9090/api/v1/otlp/v1/metrics
+      OTEL_METRIC_EXPORT_INTERVAL: "10000"
     volumes:
       - ${STREAMARR_MEDIA_PATH:-/mpool/media/clean/movies}:/media:ro
+    depends_on:
+      - prometheus
+
+  prometheus:
+    image: prom/prometheus:v3.13.4
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${STREAMARR_METRICS_RETENTION:-15d}
+      - --web.enable-otlp-receiver
+    # The UI and query API have no authentication, so they listen on the host's loopback only.
+    ports:
+      - "127.0.0.1:${STREAMARR_PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - prometheus-data:/prometheus
 
   transcode-worker:
     image: ${STREAMARR_WORKER_IMAGE:?Set STREAMARR_WORKER_IMAGE to the verified standalone worker image}
@@ -63,3 +90,6 @@ services:
       GRAFANA_CLOUD_OTLP_ENDPOINT: ${GRAFANA_CLOUD_OTLP_ENDPOINT:-}
     profiles:
       - observability
+
+volumes:
+  prometheus-data:
