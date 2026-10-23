@@ -205,16 +205,6 @@ class LibraryRefreshServiceTest {
         .build();
   }
 
-  private double refreshReports() {
-    return meterRegistry
-        .find("streamarr.library.admission.reports")
-        .tag("operation", "refresh")
-        .counters()
-        .stream()
-        .mapToDouble(Counter::count)
-        .sum();
-  }
-
   private double refreshReports(String report) {
     return meterRegistry
         .find("streamarr.library.admission.reports")
@@ -249,11 +239,11 @@ class LibraryRefreshServiceTest {
       var library = buildMovieLibrary();
       saveMovieWithTmdbId("Inception", "27205", library);
       saveMovieWithTmdbId("Interstellar", "157336", library);
-      var reportsAtEachFetch = new CopyOnWriteArrayList<Double>();
+      var inFlightAtEachFetch = new CopyOnWriteArrayList<Double>();
       when(movieProviderResolver.getMetadata(any(), eq(library)))
           .thenAnswer(
               invocation -> {
-                reportsAtEachFetch.add(refreshReports());
+                inFlightAtEachFetch.add(refreshTasksInFlight());
                 var tmdbId = invocation.getArgument(0, RemoteSearchResult.class).externalId();
                 return new MetadataFetchOutcome.Found<>(
                     MetadataFixture.<Movie>metadataResultBuilder()
@@ -264,7 +254,7 @@ class LibraryRefreshServiceTest {
 
       service.refreshLibrary(library, refreshOf(library), neverReached());
 
-      assertThat(reportsAtEachFetch).containsExactly(0.0, 1.0);
+      assertThat(inFlightAtEachFetch).containsExactly(1.0, 1.0);
       assertThat(refreshAdmissions()).isEqualTo(2);
     }
 
@@ -274,11 +264,11 @@ class LibraryRefreshServiceTest {
       var library = buildSeriesLibrary();
       saveSeriesWithTmdbId("Breaking Bad", "1396", library);
       saveSeriesWithTmdbId("Better Call Saul", "60059", library);
-      var reportsAtEachFetch = new CopyOnWriteArrayList<Double>();
+      var inFlightAtEachFetch = new CopyOnWriteArrayList<Double>();
       when(seriesProviderResolver.getMetadata(any(), eq(library)))
           .thenAnswer(
               invocation -> {
-                reportsAtEachFetch.add(refreshReports());
+                inFlightAtEachFetch.add(refreshTasksInFlight());
                 var tmdbId = invocation.getArgument(0, RemoteSearchResult.class).externalId();
                 return new MetadataFetchOutcome.Found<>(
                     MetadataFixture.<Series>metadataResultBuilder()
@@ -291,7 +281,7 @@ class LibraryRefreshServiceTest {
 
       service.refreshLibrary(library, refreshOf(library), neverReached());
 
-      assertThat(reportsAtEachFetch).containsExactly(0.0, 1.0);
+      assertThat(inFlightAtEachFetch).containsExactly(1.0, 1.0);
       assertThat(refreshAdmissions()).isEqualTo(2);
     }
 
