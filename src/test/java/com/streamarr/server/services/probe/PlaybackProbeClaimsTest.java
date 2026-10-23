@@ -36,8 +36,8 @@ class PlaybackProbeClaimsTest {
     clock.advance(Duration.ofSeconds(4));
 
     try (var _ = claims.claimed(mediaFileId)) {
-      assertThat(unitWait().count()).isOne();
-      assertThat(unitWait().totalTime(TimeUnit.SECONDS)).isEqualTo(4);
+      assertThat(queueLatency().count()).isOne();
+      assertThat(queueLatency().totalTime(TimeUnit.SECONDS)).isEqualTo(4);
     }
   }
 
@@ -51,8 +51,8 @@ class PlaybackProbeClaimsTest {
     clock.advance(Duration.ofSeconds(2));
 
     try (var _ = claims.claimed(mediaFileId)) {
-      assertThat(unitWait().count()).isOne();
-      assertThat(unitWait().totalTime(TimeUnit.SECONDS)).isEqualTo(3);
+      assertThat(queueLatency().count()).isOne();
+      assertThat(queueLatency().totalTime(TimeUnit.SECONDS)).isEqualTo(3);
     }
   }
 
@@ -63,7 +63,7 @@ class PlaybackProbeClaimsTest {
     claims.waitStarted(mediaFileId, clock.instant()).close();
 
     try (var _ = claims.claimed(mediaFileId)) {
-      assertThat(unitWait().count()).isZero();
+      assertThat(queueLatency().count()).isZero();
     }
   }
 
@@ -74,7 +74,7 @@ class PlaybackProbeClaimsTest {
     claims.waitStarted(mediaFileId, clock.instant());
 
     try (var _ = claims.claimed(mediaFileId)) {
-      assertThat(unitWait().count()).isOne();
+      assertThat(queueLatency().count()).isOne();
     }
   }
 
@@ -91,8 +91,8 @@ class PlaybackProbeClaimsTest {
     clock.advance(Duration.ofSeconds(2));
 
     try (var _ = claims.claimed(mediaFileId)) {
-      assertThat(unitWait().count()).isEqualTo(2);
-      assertThat(unitWait().max(TimeUnit.SECONDS)).isEqualTo(3);
+      assertThat(queueLatency().count()).isEqualTo(2);
+      assertThat(queueLatency().max(TimeUnit.SECONDS)).isEqualTo(3);
     }
   }
 
@@ -149,7 +149,7 @@ class PlaybackProbeClaimsTest {
     return Arguments.of(argument, call);
   }
 
-  private Timer unitWait() {
-    return meterRegistry.get("streamarr.playback.probe_unit_wait").timer();
+  private Timer queueLatency() {
+    return meterRegistry.get("streamarr.playback.probe_queue_latency").timer();
   }
 }

@@ -17,26 +17,27 @@ import org.springframework.stereotype.Component;
 
 /**
  * The probes that playback requests wait for, from the request until the scheduler claims the probe
- * and then until the probe's execution ends. The scheduler claims a playback probe only once a
- * worker has a free unit for it, so the time until the claim is the time that playback waits for a
- * free unit.
+ * and then until the probe's execution ends. Queue latency runs from the earliest still-waiting
+ * playback request until the probe's execution starts. It includes scheduling delays and capacity
+ * waits. Requests that stop waiting before execution starts contribute no sample.
  */
 @Component
 public class PlaybackProbeClaims {
 
-  private static final String UNIT_WAIT_METRIC = "streamarr.playback.probe_unit_wait";
+  private static final String QUEUE_LATENCY_METRIC = "streamarr.playback.probe_queue_latency";
 
   private final Clock clock;
-  private final Timer unitWait;
+  private final Timer queueLatency;
   private final AtomicInteger inProgress = new AtomicInteger();
   private final ConcurrentHashMap<UUID, Set<PlaybackProbeWait>> waiting = new ConcurrentHashMap<>();
 
   public PlaybackProbeClaims(@NonNull Clock clock, @NonNull MeterRegistry meterRegistry) {
     this.clock = clock;
-    unitWait =
-        Timer.builder(UNIT_WAIT_METRIC)
+    queueLatency =
+        Timer.builder(QUEUE_LATENCY_METRIC)
             .description(
-                "How long a playback request waited until a worker had a free unit for its probe")
+                "Queue latency from the earliest waiting playback request until its probe execution"
+                    + " starts")
             .register(meterRegistry);
   }
 
@@ -61,7 +62,7 @@ public class PlaybackProbeClaims {
       waits.stream()
           .map(wait -> wait.since)
           .min(Comparator.naturalOrder())
-          .ifPresent(since -> unitWait.record(Duration.between(since, clock.instant())));
+          .ifPresent(since -> queueLatency.record(Duration.between(since, clock.instant())));
     }
 
     inProgress.incrementAndGet();
