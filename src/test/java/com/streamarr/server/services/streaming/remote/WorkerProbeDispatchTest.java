@@ -12,7 +12,6 @@ import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fakes.FakeSegmentStore;
-import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
@@ -76,7 +75,7 @@ class WorkerProbeDispatchTest {
 
     assertThat(registry.dispatchProbe(decoded))
         .isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.INVALID_REQUEST));
-    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
+    assertThat(runningProbes(registry, 1)).isZero();
   }
 
   @Test
@@ -223,7 +222,7 @@ class WorkerProbeDispatchTest {
     assertThatThrownBy(() -> pending.get(1, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
         .hasCauseInstanceOf(ProbeExecutionException.class);
-    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
+    assertThat(runningProbes(registry, 1)).isZero();
   }
 
   @Test
@@ -366,51 +365,25 @@ class WorkerProbeDispatchTest {
         .isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.INVALID_REQUEST));
   }
 
-  @ParameterizedTest
-  @ValueSource(booleans = {true, false})
-  @DisplayName(
-      "Should share worker capacity when either a probe or transcode occupies the last slot")
-  void shouldShareWorkerCapacityWhenEitherProbeOrTranscodeOccupiesLastSlot(boolean probeFirst) {
-    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
-    var registration = registration();
-    registration.getCapabilitiesBuilder().addProbeVersions(1);
-    registry.register(WORKER_ID, registration.build(), new CapturingResponses());
-    var job =
-        VariantJob.newBuilder()
-            .setJobAttemptId(toProto(UUID.randomUUID()))
-            .setSource(source())
-            .build();
-    var accepted =
-        probeFirst
-            ? registry.dispatchProbe(probe().build()) instanceof ProbeDispatch.Dispatched
-            : registry.dispatch(job).isPresent();
-    assertThat(accepted).isTrue();
-
-    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isZero();
-    assertThat(registry.dispatchProbe(probe().build()))
-        .isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.WORKERS_BUSY));
-    assertThat(
-            registry.dispatch(job.toBuilder().setJobAttemptId(toProto(UUID.randomUUID())).build()))
-        .isEmpty();
-  }
-
   @ParameterizedTest(name = "{0}")
   @MethodSource("compatibleAndIncompatibleVisitingOrders")
   @DisplayName(
-      "Should refuse a probe as busy when a stream fills the compatible worker and another worker"
+      "Should refuse a probe as busy when a probe fills the compatible worker and another worker"
           + " lacks the probe version")
-  void shouldRefuseProbeAsBusyWhenStreamFillsCompatibleWorkerAndAnotherLacksProbeVersion(
+  void shouldRefuseProbeAsBusyWhenProbeFillsCompatibleWorkerAndAnotherLacksProbeVersion(
       UUID compatibleWorker, UUID incompatibleWorker) {
     var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var compatible = registration(compatibleWorker);
     compatible.getCapabilitiesBuilder().addProbeVersions(1);
-    var compatibleSession =
-        registry.register(compatibleWorker, compatible.build(), new CapturingResponses());
-    var incompatible = registration(incompatibleWorker).setAvailableSlots(2);
+    registry.register(compatibleWorker, compatible.build(), new CapturingResponses());
+    var incompatible =
+        registration(incompatibleWorker)
+            .setBackgroundProbeCapacity(2)
+            .setKeyframePacketScanCapacity(1);
     incompatible.getCapabilitiesBuilder().addProbeVersions(2);
     registry.register(incompatibleWorker, incompatible.build(), new CapturingResponses());
-    assertThat(registry.dispatchTo(new ExecutionTargetId(compatibleSession.toString()), stream()))
-        .isPresent();
+    assertThat(registry.dispatchProbe(probe().build()))
+        .isInstanceOf(ProbeDispatch.Dispatched.class);
 
     var attempt = registry.dispatchProbe(probe().build());
 
@@ -420,20 +393,16 @@ class WorkerProbeDispatchTest {
   @ParameterizedTest(name = "{0}")
   @MethodSource("fullAndFreeVisitingOrders")
   @DisplayName(
-      "Should dispatch a probe to a free compatible worker when a stream fills another compatible"
+      "Should dispatch a probe to a free compatible worker when a probe fills another compatible"
           + " worker")
-  void shouldDispatchProbeToFreeCompatibleWorkerWhenStreamFillsAnotherCompatibleWorker(
+  void shouldDispatchProbeToFreeCompatibleWorkerWhenProbeFillsAnotherCompatibleWorker(
       UUID fullWorker, UUID freeWorker) {
     var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
-    var full = registration(fullWorker);
-    full.getCapabilitiesBuilder().addProbeVersions(1);
-    var fullSession = registry.register(fullWorker, full.build(), new CapturingResponses());
+    registerFullProbeWorker(registry, fullWorker);
     var freeResponses = new CapturingResponses();
     var free = registration(freeWorker);
     free.getCapabilitiesBuilder().addProbeVersions(1);
     registry.register(freeWorker, free.build(), freeResponses);
-    assertThat(registry.dispatchTo(new ExecutionTargetId(fullSession.toString()), stream()))
-        .isPresent();
     var request = probe().build();
 
     var attempt = registry.dispatchProbe(request);
@@ -448,14 +417,12 @@ class WorkerProbeDispatchTest {
   @MethodSource("unreachableAndFullVisitingOrders")
   @DisplayName(
       "Should refuse a probe as unreachable when one compatible worker cannot receive it and a"
-          + " stream fills the other")
-  void shouldRefuseProbeAsUnreachableWhenOneCompatibleWorkerCannotReceiveItAndStreamFillsOther(
+          + " probe fills the other")
+  void shouldRefuseProbeAsUnreachableWhenOneCompatibleWorkerCannotReceiveItAndProbeFillsOther(
       UUID unreachableWorker, UUID fullWorker) {
     var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    registerFullProbeWorker(registry, fullWorker);
     registerProbeWorker(registry, unreachableWorker, rejectingStartProbes());
-    var fullSession = registerProbeWorker(registry, fullWorker, new CapturingResponses());
-    assertThat(registry.dispatchTo(new ExecutionTargetId(fullSession.toString()), stream()))
-        .isPresent();
 
     var attempt = registry.dispatchProbe(probe().build());
 
@@ -511,8 +478,9 @@ class WorkerProbeDispatchTest {
 
   @Test
   @DisplayName(
-      "Should complete a probe and release its slot when the current session returns the requested version")
-  void shouldCompleteProbeAndReleaseItsSlotWhenCurrentSessionReturnsRequestedVersion()
+      "Should complete a probe and release its probe capacity when the current session returns the"
+          + " requested version")
+  void shouldCompleteProbeAndReleaseItsProbeCapacityWhenCurrentSessionReturnsRequestedVersion()
       throws Exception {
     var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
@@ -530,7 +498,7 @@ class WorkerProbeDispatchTest {
     assertThat(registry.completeProbe(WORKER_ID, sessionId, result)).isTrue();
 
     assertThat(attempt.get(1, TimeUnit.SECONDS).result()).isEqualTo(result);
-    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
+    assertThat(runningProbes(registry, 2)).isZero();
     assertThat(registry.dispatchProbe(probe().setProbeVersion(2).build()))
         .isInstanceOf(ProbeDispatch.Dispatched.class);
   }
@@ -566,7 +534,7 @@ class WorkerProbeDispatchTest {
         .isInstanceOf(ExecutionException.class)
         .hasCauseInstanceOf(ProbeExecutionException.class)
         .hasRootCauseMessage(diagnostic);
-    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
+    assertThat(runningProbes(registry, requestedVersion)).isZero();
   }
 
   @Test
@@ -637,7 +605,7 @@ class WorkerProbeDispatchTest {
             .setProbeAttemptId(request.getProbeAttemptId())
             .build();
     assertThat(responses.values.getLast().getCancelProbe()).isEqualTo(expected);
-    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isZero();
+    assertThat(runningProbes(registry, 1)).isEqualTo(1);
     assertThat(registry.dispatchProbe(probe().build()))
         .isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.WORKERS_BUSY));
     var reply =
@@ -650,7 +618,7 @@ class WorkerProbeDispatchTest {
     assertThat(registry.completeProbe(WORKER_ID, sessionId, reply)).isTrue();
 
     assertThat(attempt).isCancelled();
-    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
+    assertThat(runningProbes(registry, 1)).isZero();
   }
 
   @Test
@@ -704,7 +672,8 @@ class WorkerProbeDispatchTest {
       "Should preserve the original pending probe when the same attempt is dispatched again")
   void shouldPreserveOriginalPendingProbeWhenSameAttemptIsDispatchedAgain() throws Exception {
     var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
-    var registration = registration().setAvailableSlots(2);
+    var registration =
+        registration().setBackgroundProbeCapacity(2).setKeyframePacketScanCapacity(1);
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     var responses = new CapturingResponses();
     var sessionId = registry.register(WORKER_ID, registration.build(), responses);
@@ -724,7 +693,7 @@ class WorkerProbeDispatchTest {
     assertThat(original.get(1, TimeUnit.SECONDS).result()).isEqualTo(reply);
     assertThat(responses.values.stream().filter(EstablishWorkerSessionResponse::hasStartProbe))
         .hasSize(1);
-    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(2);
+    assertThat(runningProbes(registry, 1)).isZero();
   }
 
   private static SegmentPublication holdPublication(
@@ -748,7 +717,8 @@ class WorkerProbeDispatchTest {
     var responses = new CapturingResponses();
     for (var workerIndex = 0; workerIndex < workerCount; workerIndex++) {
       var workerId = UUID.randomUUID();
-      var registration = registration().setAvailableSlots(2);
+      var registration =
+          registration().setBackgroundProbeCapacity(2).setKeyframePacketScanCapacity(1);
       registration.getWorkerBuilder().setWorkerId(toProto(workerId));
       registration.getCapabilitiesBuilder().addProbeVersions(1);
       registry.register(workerId, registration.build(), responses);
@@ -769,7 +739,7 @@ class WorkerProbeDispatchTest {
         .hasSize(1);
     assertThat(duplicate).isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.ATTEMPT_IN_PROGRESS));
     assertThat(original).isNotDone();
-    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(workerCount * 2 - 1);
+    assertThat(runningProbes(registry, 1)).isEqualTo(1);
   }
 
   @ParameterizedTest
@@ -799,7 +769,7 @@ class WorkerProbeDispatchTest {
 
     assertThat(accepted).isFalse();
     assertThat(pending).isNotDone();
-    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isZero();
+    assertThat(runningProbes(registry, 1)).isEqualTo(1);
     assertThat(registry.completeProbe(WORKER_ID, sessionId, reply)).isTrue();
     assertThat(pending.get(1, TimeUnit.SECONDS).result()).isEqualTo(reply);
   }
@@ -939,7 +909,9 @@ class WorkerProbeDispatchTest {
                 .setBootId(toProto(UUID.randomUUID())))
         .setCapabilities(
             WorkerCapabilities.newBuilder().addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID)))
-        .setAvailableSlots(1);
+        .setAvailableSlots(1)
+        .setBackgroundProbeCapacity(1)
+        .setKeyframePacketScanCapacity(1);
   }
 
   @Test
@@ -990,6 +962,18 @@ class WorkerProbeDispatchTest {
     var registration = registration(workerId);
     registration.getCapabilitiesBuilder().addProbeVersions(1);
     return registry.register(workerId, registration.build(), responses);
+  }
+
+  // The worker registers alone, so the probe that fills its only unit of probe capacity reaches it
+  // whatever order the registry visits workers in later.
+  private void registerFullProbeWorker(LiveWorkerConnectionRegistry registry, UUID workerId) {
+    registerProbeWorker(registry, workerId, new CapturingResponses());
+    assertThat(registry.dispatchProbe(probe().build()))
+        .isInstanceOf(ProbeDispatch.Dispatched.class);
+  }
+
+  private static int runningProbes(LiveWorkerConnectionRegistry registry, int probeVersion) {
+    return registry.probeCapacity(SOURCE_NAMESPACE_ID, probeVersion).runningProbes();
   }
 
   private static CapturingResponses rejectingStartProbes() {
@@ -1095,7 +1079,7 @@ class WorkerProbeDispatchTest {
     assertThat(registry.dispatchProbe(probe().build()))
         .isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.WORKER_UNREACHABLE));
 
-    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
+    assertThat(runningProbes(registry, 1)).isZero();
     assertThat(responses.values)
         .extracting(EstablishWorkerSessionResponse::getCommandCase)
         .containsExactly(EstablishWorkerSessionResponse.CommandCase.SESSION_ACCEPTED);

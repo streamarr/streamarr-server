@@ -34,7 +34,9 @@ import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
+import com.streamarr.server.services.probe.PlaybackProbeClaims;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.FileSystems;
@@ -109,6 +111,8 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
             .outcomes(outcomes)
             .packetScans(new CapturingKeyframePacketScanRequests())
             .transactionManager(transactionManager)
+            .playbackProbeClaims(
+                new PlaybackProbeClaims(Clock.systemUTC(), new SimpleMeterRegistry()))
             .build();
     task = MediaProbeTask.create(probeExecution, probeTaskCompletion);
     client =
@@ -259,7 +263,7 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
     }
 
     if (operation == NativeCompletion.DEFER) {
-      producer.failWith(new ProbeWorkersBusyException());
+      producer.failWith(new ProbeWorkersBusyException("All compatible workers are busy"));
     }
 
     var originalTask =
@@ -305,7 +309,7 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
             changed.set(changeSource(file));
           }
         });
-    producer.failWith(new ProbeWorkersBusyException());
+    producer.failWith(new ProbeWorkersBusyException("All compatible workers are busy"));
 
     startScheduler();
 
@@ -321,7 +325,7 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
     var file = createMediaFile();
     scheduling.request(request(file));
     producer.runDuringProbe(() -> mediaFiles.deleteById(file.getId()));
-    producer.failWith(new ProbeWorkersBusyException());
+    producer.failWith(new ProbeWorkersBusyException("All compatible workers are busy"));
 
     startScheduler();
 

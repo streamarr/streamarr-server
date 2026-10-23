@@ -8,7 +8,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
-import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.domain.streaming.ProbePriority;
+import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
@@ -57,9 +58,10 @@ class WorkerSessionStartupIT extends AbstractIntegrationTest {
             .sourcePath(Path.of("/media/movie.mkv"))
             .attemptId(UUID.randomUUID())
             .probeVersion(1)
+            .priority(ProbePriority.BACKGROUND)
             .build();
 
-    assertThatThrownBy(() -> probe.probe(request)).isInstanceOf(ProbeExecutionException.class);
+    assertThatThrownBy(() -> probe.probe(request)).isInstanceOf(ProbeWorkersBusyException.class);
   }
 
   @Test

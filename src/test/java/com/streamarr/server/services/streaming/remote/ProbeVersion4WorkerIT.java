@@ -19,6 +19,7 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
@@ -216,6 +217,7 @@ class ProbeVersion4WorkerIT extends AbstractIntegrationTest {
         .sourcePath(source)
         .attemptId(UUID.randomUUID())
         .probeVersion(ProbeVersion.CURRENT)
+        .priority(ProbePriority.BACKGROUND)
         .build();
   }
 

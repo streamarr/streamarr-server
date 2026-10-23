@@ -13,6 +13,7 @@ import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeChapter;
 import com.streamarr.transcode.v1.ProbeContainerInfo;
@@ -45,6 +46,11 @@ final class RemoteProbeResultMapper {
       case PROBE_FAILURE_INVALID_MEDIA -> new ProbeOutcome.Failure(ProbeError.INVALID_MEDIA);
       case PROBE_FAILURE_NO_VIDEO_STREAM -> new ProbeOutcome.Failure(ProbeError.NO_VIDEO_STREAM);
       case PROBE_FAILURE_RESULT_TOO_LARGE -> new ProbeOutcome.Failure(ProbeError.RESULT_TOO_LARGE);
+      // The worker lowered the probe's capacity after the server sent the probe. The probe stays
+      // pending without a failure, and any worker with a free unit can take it.
+      case PROBE_FAILURE_NO_FREE_CAPACITY ->
+          throw new ProbeWorkersBusyException(
+              "The worker had no free unit of the probe's capacity when the probe arrived");
       case PROBE_FAILURE_CANCELLED ->
           throw new ProbeCancelledException("Worker cancelled the probe: " + result.getFailure());
       case PROBE_FAILURE_SOURCE_UNAVAILABLE ->

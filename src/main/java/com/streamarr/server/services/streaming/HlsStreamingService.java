@@ -13,9 +13,11 @@ import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.mutation.Outcome;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;
@@ -24,6 +26,8 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Builder
 public class HlsStreamingService implements StreamingService {
+
+  private static final String CAPACITY_REFUSALS_METRIC = "streamarr.streaming.capacity_refusals";
 
   private final MediaFileRepository mediaFileRepository;
   private final TranscodeExecutor transcodeExecutor;
@@ -36,6 +40,7 @@ public class HlsStreamingService implements StreamingService {
   private final RuntimeStreamSessionRegistry runtimeRegistry;
   private final ProducerLifecycleService producerLifecycle;
   private final SegmentDeliveryCoordinator deliveryCoordinator;
+  private final MeterRegistry meterRegistry;
 
   @Override
   public Outcome<StreamSession, CreateStreamSessionRejection> createSession(
@@ -95,10 +100,9 @@ public class HlsStreamingService implements StreamingService {
       return Outcome.rejected(new CreateStreamSessionRejection.FrameRateUnknown());
     }
 
-    if (!hasCapacityFor(decision)) {
-      return Outcome.rejected(
-          new CreateStreamSessionRejection.TranscodeCapacityUnavailable(
-              properties.maxConcurrentTranscodes()));
+    var refusal = capacityRefusalFor(decision);
+    if (refusal.isPresent()) {
+      return Outcome.rejected(refuseForLackOfCapacity(refusal.get()));
     }
 
     var sessionId = command.streamSessionId();
@@ -146,8 +150,7 @@ public class HlsStreamingService implements StreamingService {
 
   private CreateStreamSessionRejection unavailableVideoFormat(TranscodeDecisionRequest request) {
     if (!transcodeExecutor.isHealthy()) {
-      return new CreateStreamSessionRejection.TranscodeCapacityUnavailable(
-          properties.maxConcurrentTranscodes());
+      return refuseForLackOfCapacity(CapacityRefusal.NO_CONNECTED_WORKER);
     }
 
     if (request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
@@ -160,10 +163,19 @@ public class HlsStreamingService implements StreamingService {
                 .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
                 .encodableVideoCodecFamilies(transcodeExecutor.verifiedVideoCodecFamilies())
                 .build());
-    return verifiedCandidate.isPresent()
-        ? new CreateStreamSessionRejection.TranscodeCapacityUnavailable(
-            properties.maxConcurrentTranscodes())
-        : new CreateStreamSessionRejection.NoEligibleVideoFormat();
+    if (verifiedCandidate.isPresent()) {
+      return refuseForLackOfCapacity(CapacityRefusal.NO_ENCODER_WITH_FREE_SLOT);
+    }
+
+    return new CreateStreamSessionRejection.NoEligibleVideoFormat();
+  }
+
+  private CreateStreamSessionRejection refuseForLackOfCapacity(CapacityRefusal refusal) {
+    meterRegistry
+        .counter(CAPACITY_REFUSALS_METRIC, "cause", refusal.name().toLowerCase(Locale.ROOT))
+        .increment();
+    return new CreateStreamSessionRejection.TranscodeCapacityUnavailable(
+        properties.maxConcurrentTranscodes());
   }
 
   private void rollbackFailedStartup(UUID sessionId, RuntimeException startupFailure) {
@@ -267,19 +279,29 @@ public class HlsStreamingService implements StreamingService {
 
   // Creating a stream session starts one job attempt, so a session needs one free slot whatever
   // the size of its ladder.
-  private boolean hasCapacityFor(TranscodeDecision decision) {
-    if (transcodeExecutor.availableSlots(decision) <= 0) {
-      return false;
+  private Optional<CapacityRefusal> capacityRefusalFor(TranscodeDecision decision) {
+    if (!transcodeExecutor.isHealthy()) {
+      return Optional.of(CapacityRefusal.NO_CONNECTED_WORKER);
     }
 
-    return !requiresTranscode(decision.transcodeMode()) || availableTranscodeSlots(decision) > 0;
+    if (transcodeExecutor.availableSlots(decision) <= 0) {
+      return Optional.of(CapacityRefusal.NO_FREE_WORKER_SLOT);
+    }
+
+    if (requiresTranscode(decision.transcodeMode())
+        && producerLifecycle.freeConfiguredTranscodeSlots() <= 0) {
+      return Optional.of(CapacityRefusal.NO_FREE_CONFIGURED_TRANSCODE_SLOT);
+    }
+
+    return Optional.empty();
   }
 
-  private int availableTranscodeSlots(TranscodeDecision decision) {
-    return (int)
-        Math.min(
-            producerLifecycle.freeConfiguredTranscodeSlots(),
-            transcodeExecutor.availableSlots(decision));
+  // Why a stream session could not start now, as the capacity refusal metric names it.
+  private enum CapacityRefusal {
+    NO_CONNECTED_WORKER,
+    NO_ENCODER_WITH_FREE_SLOT,
+    NO_FREE_WORKER_SLOT,
+    NO_FREE_CONFIGURED_TRANSCODE_SLOT
   }
 
   private boolean requiresTranscode(TranscodeMode mode) {

@@ -43,6 +43,8 @@ services:
       TRANSCODE_WORKER_SOURCE_NAMESPACE_ID: ${STREAMARR_SOURCE_NAMESPACE_ID:-cccccccc-cccc-cccc-cccc-cccccccccccc}
       TRANSCODE_WORKER_SOURCE_ROOT: /media
       TRANSCODE_WORKER_SLOTS: ${STREAMARR_WORKER_SLOTS:-1}
+      # Empty adapts the background probe capacity to the host. A positive number fixes it.
+      TRANSCODE_WORKER_PROBE_CAPACITY: ${STREAMARR_WORKER_PROBE_CAPACITY:-}
       LANG: C.UTF-8
     volumes:
       - ${STREAMARR_MEDIA_PATH:-/mpool/media/clean/movies}:/media:ro

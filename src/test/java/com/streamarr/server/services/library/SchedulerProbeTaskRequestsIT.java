@@ -20,6 +20,7 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
+import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.task.ProbeAttemptFailure;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
@@ -33,8 +34,10 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.ProbeTaskPriorityRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
+import com.streamarr.server.services.probe.PlaybackProbeClaims;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import com.streamarr.server.services.streaming.PlaybackProbeService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
@@ -107,6 +110,8 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
             .outcomes(outcomes)
             .packetScans(new CapturingKeyframePacketScanRequests())
             .transactionManager(transactionManager)
+            .playbackProbeClaims(
+                new PlaybackProbeClaims(Clock.systemUTC(), new SimpleMeterRegistry()))
             .build();
     task = MediaProbeTask.create(execution, completion);
     client =
@@ -192,6 +197,7 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
                         .sourcePath(FilepathCodec.decode(file.getFilepathUri()))
                         .attemptId(UUID.randomUUID())
                         .probeVersion(ProbeVersion.CURRENT)
+                        .priority(ProbePriority.BACKGROUND)
                         .build()))
             .build());
 

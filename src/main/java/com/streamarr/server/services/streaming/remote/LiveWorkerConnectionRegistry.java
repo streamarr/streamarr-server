@@ -10,14 +10,18 @@ import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
+import com.streamarr.server.services.streaming.ProbeCapacity;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
+import com.streamarr.transcode.v1.BackgroundProbeCapacityControl;
 import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeCapacityChanged;
+import com.streamarr.transcode.v1.ProbeFailure;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
@@ -35,8 +39,12 @@ import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Duration;
+import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -46,6 +54,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -62,6 +71,14 @@ final class LiveWorkerConnectionRegistry {
       "streamarr.streaming.initialization_segment_mismatches";
   private static final String ENCODER_BACKEND_MISMATCH_METRIC =
       "streamarr.streaming.encoder_backend_mismatches";
+  private static final String DEFERRED_PROBES_METRIC = "streamarr.probes.deferred";
+  // A probe refused for one of these reasons runs again later, when a worker can take it.
+  private static final Set<ProbeRefusal> WAITING_FOR_WORKER =
+      EnumSet.of(
+          ProbeRefusal.WORKERS_BUSY,
+          ProbeRefusal.NO_COMPATIBLE_WORKER,
+          ProbeRefusal.NO_CONNECTED_WORKER);
+  private static final Duration DEFERRAL_WARNING_INTERVAL = Duration.ofMinutes(1);
   private static final Executor PROBE_DEADLINE_CALLBACKS =
       command -> Thread.ofVirtual().name("worker-probe-deadline").start(command);
   private final long probeTimeoutNanos;
@@ -72,6 +89,10 @@ final class LiveWorkerConnectionRegistry {
   private final Counter encoderBackendMismatches;
   private final HeldSegmentRequests heldRequests;
   private final ApplicationEventPublisher eventPublisher;
+  private final MeterRegistry meterRegistry;
+  private final WorkerCapacityMeters capacityMeters;
+  private final ProbeDeferralWarnings deferralWarnings =
+      new ProbeDeferralWarnings(DEFERRAL_WARNING_INTERVAL);
 
   @Builder
   LiveWorkerConnectionRegistry(
@@ -81,6 +102,7 @@ final class LiveWorkerConnectionRegistry {
       @NonNull ApplicationEventPublisher eventPublisher) {
     this.eventPublisher = eventPublisher;
     this.heldRequests = heldRequests;
+    this.meterRegistry = meterRegistry;
     probeTimeoutNanos = configuration.probeTimeout().toNanos();
     keyframeScanTimeoutNanos = configuration.keyframeScanTimeout().toNanos();
     probeCancellationTimeoutNanos = configuration.probeCancellationTimeout().toNanos();
@@ -97,6 +119,7 @@ final class LiveWorkerConnectionRegistry {
                 "Job attempts stopped because the worker reported an encoder backend other than"
                     + " the one pinned for the variant")
             .register(meterRegistry);
+    capacityMeters = new WorkerCapacityMeters(meterRegistry);
   }
 
   private final ConcurrentHashMap<UUID, WorkerConnection> connections = new ConcurrentHashMap<>();
@@ -122,8 +145,18 @@ final class LiveWorkerConnectionRegistry {
 
       abandonedJobs = replaced == null ? List.of() : replaced.abandonAllJobsWithoutWaiting();
     }
+    warnIfNoBackgroundProbeCapacity(workerId, registration.getBackgroundProbeCapacity());
+    capacityMeters.connected(workerId, connection);
     if (replaced == null) {
-      log.info("Worker {} connected", workerId);
+      log.info(
+          "Worker {} connected with {} playback slots, {} playback probes, {} background probes"
+              + " ({}) and {} keyframe packet scans",
+          workerId,
+          registration.getAvailableSlots(),
+          registration.getPlaybackProbeCapacity(),
+          registration.getBackgroundProbeCapacity(),
+          registration.getBackgroundProbeCapacityControl(),
+          registration.getKeyframePacketScanCapacity());
       return connection.workerSessionId();
     }
 
@@ -135,6 +168,36 @@ final class LiveWorkerConnectionRegistry {
         workerId,
         abandonedJobs.size());
     return connection.workerSessionId();
+  }
+
+  private static void warnIfNoBackgroundProbeCapacity(UUID workerId, int backgroundProbeCapacity) {
+    if (backgroundProbeCapacity == 0) {
+      log.warn(
+          "Worker {} grants a background probe capacity of 0, so it receives no background probes",
+          workerId);
+    }
+  }
+
+  /**
+   * Replaces the background probe capacity and keyframe packet scan capacity of the worker's
+   * current session. Probes that already run keep running. Returns false, and changes nothing, when
+   * the report comes from a session that is no longer current.
+   */
+  boolean tryChangeProbeCapacity(
+      UUID workerId, UUID workerSessionId, ProbeCapacityChanged changed) {
+    var connection = currentConnection(workerId, workerSessionId);
+    if (connection.isEmpty()) {
+      return false;
+    }
+
+    connection.get().changeProbeCapacity(changed);
+    log.debug(
+        "Worker {} changed its background probe capacity to {} and its keyframe packet scan"
+            + " capacity to {}",
+        workerId,
+        changed.getBackgroundProbeCapacity(),
+        changed.getKeyframePacketScanCapacity());
+    return true;
   }
 
   private void rollbackRegistration(
@@ -152,6 +215,7 @@ final class LiveWorkerConnectionRegistry {
     if (connection != null
         && connection.workerSessionId().equals(workerSessionId)
         && connections.remove(workerId, connection)) {
+      capacityMeters.disconnected(workerId, connection);
       connection
           .abandonAllJobsWithoutWaiting()
           .forEach(job -> logAbandonedJob(job, "disconnected"));
@@ -188,7 +252,7 @@ final class LiveWorkerConnectionRegistry {
     }
 
     var refusal = ProbeRefusal.NO_CONNECTED_WORKER;
-    for (var connection : connections.values()) {
+    for (var connection : candidatesFor(ProbeKind.of(request))) {
       switch (connection.tryDispatchProbe(request)) {
         case ProbeDispatch.Dispatched dispatched when connections.containsValue(connection) -> {
           return dispatched;
@@ -201,26 +265,76 @@ final class LiveWorkerConnectionRegistry {
       }
     }
 
+    countIfWaitingForWorker(refusal);
     return new ProbeDispatch.Refused(refusal);
   }
 
+  // A playback probe goes first to a worker with a free playback unit, and so leaves background
+  // units to the background probes claimed beside it.
+  private List<WorkerConnection> candidatesFor(ProbeKind kind) {
+    var candidates = List.copyOf(connections.values());
+    if (kind != ProbeKind.PLAYBACK) {
+      return candidates;
+    }
+
+    return candidates.stream()
+        .sorted(Comparator.comparing(connection -> !connection.hasFreePlaybackProbeUnit()))
+        .toList();
+  }
+
+  private void countIfWaitingForWorker(ProbeRefusal refusal) {
+    if (!WAITING_FOR_WORKER.contains(refusal)) {
+      return;
+    }
+
+    countDeferredProbe(refusal.name().toLowerCase(Locale.ROOT), refusal.description());
+  }
+
+  private void countDeferredProbe(String reason, String description) {
+    meterRegistry.counter(DEFERRED_PROBES_METRIC, "reason", reason).increment();
+    deferralWarnings
+        .tryTakeDeferredCount(reason, System.nanoTime())
+        .ifPresent(
+            deferred ->
+                log.warn(
+                    "{} ({}), so probes wait. Probes deferred since the previous warning: {}",
+                    description,
+                    reason,
+                    deferred));
+  }
+
+  /**
+   * The probe capacity of the connected workers that run probes of the version in the namespace.
+   */
+  ProbeCapacity probeCapacity(UUID sourceNamespaceId, int probeVersion) {
+    var sourceNamespace = toProto(sourceNamespaceId);
+    var capacities =
+        connections.values().stream()
+            .filter(connection -> connection.canRunProbes(sourceNamespace, probeVersion))
+            .map(WorkerConnection::probeCapacity)
+            .toList();
+    return capacities.stream().reduce(ProbeCapacity.NONE, ProbeCapacity::plus);
+  }
+
   boolean completeProbe(UUID workerId, UUID workerSessionId, ProbeAttemptResult result) {
-    var connection = connections.get(workerId);
-    if (connection == null || !connection.workerSessionId().equals(workerSessionId)) {
+    var connection = currentConnection(workerId, workerSessionId);
+    if (connection.isEmpty() || !connection.get().completeProbe(result)) {
       return false;
     }
 
-    return connection.completeProbe(result);
+    if (result.getFailure() == ProbeFailure.PROBE_FAILURE_NO_FREE_CAPACITY) {
+      countDeferredProbe(
+          "no_free_capacity", "A worker had no free unit of the probe's capacity when it arrived");
+    }
+
+    return true;
   }
 
   boolean acceptKeyframePositionsPart(
       UUID workerId, UUID workerSessionId, ProbeKeyframePositionsPart part) {
-    var connection = connections.get(workerId);
-    if (connection == null || !connection.workerSessionId().equals(workerSessionId)) {
-      return false;
-    }
-
-    return connection.acceptKeyframePositionsPart(part);
+    return currentConnection(workerId, workerSessionId)
+        .map(connection -> connection.acceptKeyframePositionsPart(part))
+        .orElse(false);
   }
 
   Optional<VariantDispatch> dispatchTo(ExecutionTargetId target, VariantJob job) {
@@ -400,29 +514,23 @@ final class LiveWorkerConnectionRegistry {
 
   private synchronized Optional<VariantJob> acceptJobAttemptFailure(
       UUID workerId, UUID workerSessionId, JobAttemptFailed failed) {
-    var connection = connections.get(workerId);
-    if (connection == null || !connection.workerSessionId().equals(workerSessionId)) {
-      return Optional.empty();
-    }
-
-    return connection.failJobAttempt(failed);
+    return currentConnection(workerId, workerSessionId)
+        .flatMap(connection -> connection.failJobAttempt(failed));
   }
 
   Optional<VariantJob> releaseJobAttempt(UUID workerId, UUID workerSessionId, UUID jobAttemptId) {
-    var connection = connections.get(workerId);
-    if (connection == null || !connection.workerSessionId().equals(workerSessionId)) {
-      return Optional.empty();
-    }
-    return connection.releaseJobAttempt(jobAttemptId);
+    return currentConnection(workerId, workerSessionId)
+        .flatMap(connection -> connection.releaseJobAttempt(jobAttemptId));
   }
 
   void checkReportedEncoderBackend(UUID workerId, UUID workerSessionId, JobAttemptStarted started) {
-    var connection = connections.get(workerId);
-    if (connection == null || !connection.workerSessionId().equals(workerSessionId)) {
-      return;
-    }
+    currentConnection(workerId, workerSessionId)
+        .ifPresent(connection -> connection.checkReportedEncoderBackend(started));
+  }
 
-    connection.checkReportedEncoderBackend(started);
+  private Optional<WorkerConnection> currentConnection(UUID workerId, UUID workerSessionId) {
+    return Optional.ofNullable(connections.get(workerId))
+        .filter(connection -> connection.workerSessionId().equals(workerSessionId));
   }
 
   boolean authorizesUpload(UUID authenticatedWorkerId, SegmentUploadMetadata metadata) {
@@ -448,10 +556,14 @@ final class LiveWorkerConnectionRegistry {
         _ ->
             heldRequests.wakeVariant(
                 fromProto(metadata.getStreamSessionId()), metadata.getVariantLabel()));
+    outcome
+        .filter(SegmentPublication.PUBLISHED::equals)
+        .ifPresent(
+            _ -> capacityMeters.segmentPublished(authenticatedWorkerId, connection, metadata));
     return outcome;
   }
 
-  private final class WorkerConnection {
+  private final class WorkerConnection implements WorkerCapacityMeters.Session {
 
     private final UUID workerSessionId;
     private final WorkerIdentity worker;
@@ -461,6 +573,9 @@ final class LiveWorkerConnectionRegistry {
     // report that names another backend withdraws the family's entry for this worker session.
     private final Map<String, WorkerVerifiedEncoder> countedEncoders;
     private final int maximumActiveVariants;
+    // A worker may report new background and keyframe packet scan capacities at any time during
+    // its session.
+    private final AtomicReference<GrantedProbeCapacities> grantedProbeCapacities;
     private final StreamObserver<EstablishWorkerSessionResponse> responseObserver;
 
     private final Map<UUID, VariantJob> activeVariants = new ConcurrentHashMap<>();
@@ -487,6 +602,7 @@ final class LiveWorkerConnectionRegistry {
                       Collectors.toUnmodifiableMap(
                           encoder -> encoder.backend().codecFamily(), Function.identity())));
       maximumActiveVariants = registration.getAvailableSlots();
+      grantedProbeCapacities = new AtomicReference<>(GrantedProbeCapacities.of(registration));
       this.responseObserver = responseObserver;
     }
 
@@ -528,12 +644,11 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private synchronized ProbeDispatch tryDispatchProbe(ProbeRequest request) {
-      if (!probeVersions.contains(request.getProbeVersion())
-          || !canAccessSourceNamespace(request.getSource().getSourceNamespaceId())) {
+      if (!canRunProbes(request.getSource().getSourceNamespaceId(), request.getProbeVersion())) {
         return new ProbeDispatch.Refused(ProbeRefusal.NO_COMPATIBLE_WORKER);
       }
 
-      if (availableSlots() == 0) {
+      if (!grantedProbeCapacities.get().fits(ProbeKind.of(request), runningProbeKinds())) {
         return new ProbeDispatch.Refused(ProbeRefusal.WORKERS_BUSY);
       }
 
@@ -614,9 +729,12 @@ final class LiveWorkerConnectionRegistry {
       }
 
       pendingProbes.remove(attemptId, pending.result());
-      if (!connections.remove(fromProto(worker.getWorkerId()), this)) {
+      var workerId = fromProto(worker.getWorkerId());
+      if (!connections.remove(workerId, this)) {
         return;
       }
+
+      capacityMeters.disconnected(workerId, this);
 
       log.warn("Worker session {} ignored cancellation of probe {}", workerSessionId, attemptId);
       abandonAllJobsWithoutWaiting()
@@ -818,7 +936,52 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private synchronized int availableSlots() {
-      return Math.max(0, maximumActiveVariants - activeVariants.size() - activeProbes.size());
+      return Math.max(0, maximumActiveVariants - activeVariants.size());
+    }
+
+    private boolean canRunProbes(Uuid sourceNamespaceId, int probeVersion) {
+      return probeVersions.contains(probeVersion) && canAccessSourceNamespace(sourceNamespaceId);
+    }
+
+    private List<ProbeKind> runningProbeKinds() {
+      return activeProbes.values().stream().map(probe -> ProbeKind.of(probe.request())).toList();
+    }
+
+    @Override
+    public int playbackSlots() {
+      return maximumActiveVariants;
+    }
+
+    @Override
+    public int playbackSlotsInUse() {
+      return activeVariants.size();
+    }
+
+    @Override
+    public int grantedUnits(ProbeKind kind) {
+      return grantedProbeCapacities.get().units(kind);
+    }
+
+    @Override
+    public int runningProbes(ProbeKind kind) {
+      return kind.countIn(runningProbeKinds());
+    }
+
+    @Override
+    public BackgroundProbeCapacityControl backgroundProbeCapacityControl() {
+      return grantedProbeCapacities.get().backgroundProbeCapacityControl();
+    }
+
+    private synchronized void changeProbeCapacity(ProbeCapacityChanged changed) {
+      grantedProbeCapacities.updateAndGet(capacities -> capacities.changedTo(changed));
+    }
+
+    private synchronized boolean hasFreePlaybackProbeUnit() {
+      return grantedProbeCapacities.get().hasFreePlaybackUnit(runningProbeKinds());
+    }
+
+    private synchronized ProbeCapacity probeCapacity() {
+      return grantedProbeCapacities.get().capacity(runningProbeKinds());
     }
 
     private synchronized void stopStreamSession(UUID streamSessionId) {

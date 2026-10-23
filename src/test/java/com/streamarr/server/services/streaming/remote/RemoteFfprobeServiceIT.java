@@ -20,6 +20,7 @@ import com.streamarr.server.domain.streaming.MasteringDisplayColorVolume;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.exceptions.ProbeCancelledException;
@@ -45,6 +46,7 @@ import io.grpc.Status;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -130,6 +132,7 @@ class RemoteFfprobeServiceIT {
               .port(server.port())
               .probeVersion(1)
               .availableSlots(3)
+              .backgroundProbeCapacity(2)
               .build()) {
         var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
         assertThat(server.dispatch(variantJob())).isPresent();
@@ -188,6 +191,78 @@ class RemoteFfprobeServiceIT {
                 .setRelativeKey("movie.mkv"))
         .setVariant(VariantSpec.newBuilder().setVariantLabel("720p"))
         .build();
+  }
+
+  @Test
+  @DisplayName(
+      "Should send each probe with its priority and a keyframe packet scan as a background probe"
+          + " when the server dispatches them")
+  // The domain and the worker contract both name a probe's priority ProbePriority.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  void shouldSendEachProbeWithItsPriorityAndAScanAsABackgroundProbeWhenDispatched()
+      throws Exception {
+    try (var server = server()) {
+      server.start();
+      try (var worker =
+          LoopbackProbeWorker.builder()
+              .port(server.port())
+              .probeVersion(1)
+              .availableSlots(1)
+              .backgroundProbeCapacity(2)
+              .build()) {
+        var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
+
+        try (var playback =
+                BoundedTask.start(
+                    () -> service.probe(request().priority(ProbePriority.PLAYBACK).build()));
+            var background = BoundedTask.start(() -> service.probe(request().build()));
+            var scan =
+                BoundedTask.start(
+                    () ->
+                        service.scanKeyframePackets(
+                            request().priority(ProbePriority.PLAYBACK).build()))) {
+          var priorities = new ArrayList<com.streamarr.transcode.v1.ProbePriority>();
+          for (var sent = 0; sent < 3; sent++) {
+            var started = worker.nextResponse().getStartProbe().getRequest();
+            priorities.add(started.getPriority());
+            worker.reply(
+                answer(started).setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA).build());
+          }
+
+          assertThat(priorities)
+              .containsExactlyInAnyOrder(
+                  com.streamarr.transcode.v1.ProbePriority.PROBE_PRIORITY_PLAYBACK,
+                  com.streamarr.transcode.v1.ProbePriority.PROBE_PRIORITY_BACKGROUND,
+                  com.streamarr.transcode.v1.ProbePriority.PROBE_PRIORITY_BACKGROUND);
+          playback.await(Duration.ofSeconds(5));
+          background.await(Duration.ofSeconds(5));
+          scan.await(Duration.ofSeconds(5));
+        }
+      }
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should defer the probe without a failure when the worker reports no free capacity for it")
+  void shouldDeferTheProbeWithoutAFailureWhenTheWorkerReportsNoFreeCapacityForIt()
+      throws Exception {
+    try (var server = server()) {
+      server.start();
+      try (var worker = worker(server.port(), 1)) {
+        var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
+
+        try (var probe = BoundedTask.start(() -> service.probe(request().build()))) {
+          var started = worker.nextResponse().getStartProbe().getRequest();
+          worker.reply(
+              answer(started).setFailure(ProbeFailure.PROBE_FAILURE_NO_FREE_CAPACITY).build());
+
+          var deadline = Duration.ofSeconds(5);
+          assertThatThrownBy(() -> probe.await(deadline))
+              .isExactlyInstanceOf(ProbeWorkersBusyException.class);
+        }
+      }
+    }
   }
 
   @Test
@@ -252,23 +327,25 @@ class RemoteFfprobeServiceIT {
   }
 
   @Test
-  @DisplayName("Should fail for persisted retry when no worker is available")
-  void shouldFailForPersistedRetryWhenNoWorkerIsAvailable() throws Exception {
+  @DisplayName("Should defer the probe without a failure when no worker is available")
+  void shouldDeferTheProbeWithoutAFailureWhenNoWorkerIsAvailable() throws Exception {
     try (var server = server()) {
       server.start();
       var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
       var request = request().build();
 
       assertThatThrownBy(() -> service.probe(request))
-          .isExactlyInstanceOf(ProbeExecutionException.class)
+          .isExactlyInstanceOf(ProbeWorkersBusyException.class)
           .hasMessage("No worker is connected to probe the media source");
     }
   }
 
   @Test
   @DisplayName(
-      "Should fail for persisted retry when the connected worker lacks the requested probe version")
-  void shouldFailForPersistedRetryWhenConnectedWorkerLacksRequestedProbeVersion() throws Exception {
+      "Should defer the probe without a failure when the connected worker lacks the requested probe"
+          + " version")
+  void shouldDeferTheProbeWithoutAFailureWhenConnectedWorkerLacksRequestedProbeVersion()
+      throws Exception {
     try (var server = server()) {
       server.start();
       try (var _ = worker(server.port(), 7)) {
@@ -276,20 +353,20 @@ class RemoteFfprobeServiceIT {
         var request = request().probeVersion(1).build();
 
         assertThatThrownBy(() -> service.probe(request))
-            .isExactlyInstanceOf(ProbeExecutionException.class)
+            .isExactlyInstanceOf(ProbeWorkersBusyException.class)
             .hasMessage(
                 "No connected worker can read the source namespace at the requested probe"
-                    + " version")
-            .isInstanceOfSatisfying(
-                ProbeExecutionException.class,
-                thrown -> assertThat(thrown.reason()).isEqualTo(ItemFailureReason.MISCONFIGURED));
+                    + " version");
       }
     }
   }
 
   @Test
-  @DisplayName("Should report busy workers when the only compatible slot is already probing")
-  void shouldReportBusyWorkersWhenOnlyCompatibleSlotIsAlreadyProbing() throws Exception {
+  @DisplayName(
+      "Should report busy workers when the only unit of compatible probe capacity is already"
+          + " probing")
+  void shouldReportBusyWorkersWhenTheOnlyUnitOfCompatibleProbeCapacityIsAlreadyProbing()
+      throws Exception {
     try (var server = server();
         var calls = Executors.newVirtualThreadPerTaskExecutor()) {
       server.start();
@@ -796,6 +873,7 @@ class RemoteFfprobeServiceIT {
         .port(port)
         .probeVersion(probeVersion)
         .availableSlots(1)
+        .backgroundProbeCapacity(1)
         .build();
   }
 
@@ -812,6 +890,7 @@ class RemoteFfprobeServiceIT {
     return ProbeExecutionRequest.builder()
         .sourcePath(directory.resolve("movie.mkv"))
         .attemptId(UUID.randomUUID())
-        .probeVersion(1);
+        .probeVersion(1)
+        .priority(ProbePriority.BACKGROUND);
   }
 }

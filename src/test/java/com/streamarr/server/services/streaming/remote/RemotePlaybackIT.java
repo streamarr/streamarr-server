@@ -17,6 +17,7 @@ import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -672,6 +673,7 @@ class RemotePlaybackIT {
         .sourcePath(sourcePath)
         .attemptId(UUID.randomUUID())
         .probeVersion(ProbeVersion.CURRENT)
+        .priority(ProbePriority.BACKGROUND)
         .build();
   }
 

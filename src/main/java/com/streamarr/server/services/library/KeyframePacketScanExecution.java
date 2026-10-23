@@ -7,6 +7,7 @@ import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
@@ -61,11 +62,13 @@ public class KeyframePacketScanExecution {
                   .sourcePath(path)
                   .attemptId(UUID.randomUUID())
                   .probeVersion(request.probeVersion())
+                  .priority(ProbePriority.BACKGROUND)
                   .build());
-    } catch (ProbeWorkersBusyException _) {
+    } catch (ProbeWorkersBusyException deferral) {
       log.debug(
-          "Deferring keyframe packet scan for media file {}: all compatible workers are busy",
-          request.mediaFileId());
+          "Deferring keyframe packet scan for media file {}: {}",
+          request.mediaFileId(),
+          deferral.getMessage());
       return new KeyframePacketScanResult.Deferred();
     } catch (ProbeTimedOutException _) {
       log.warn("Keyframe packet scan for media file {} timed out", request.mediaFileId());

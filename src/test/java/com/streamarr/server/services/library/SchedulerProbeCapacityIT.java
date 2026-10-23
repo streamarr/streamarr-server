@@ -14,9 +14,12 @@ import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.probe.PlaybackProbeClaims;
 import com.streamarr.server.services.streaming.FfprobeService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -97,6 +100,8 @@ class SchedulerProbeCapacityIT extends AbstractProbeSchedulerIntegrationTest {
             .outcomes(outcomes)
             .packetScans(new CapturingKeyframePacketScanRequests())
             .transactionManager(transactionManager)
+            .playbackProbeClaims(
+                new PlaybackProbeClaims(Clock.systemUTC(), new SimpleMeterRegistry()))
             .build();
     var client = startScheduler(execution, listener);
 

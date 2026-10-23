@@ -86,7 +86,7 @@ class LibraryScanCompletionIT extends AbstractProbeSchedulerIntegrationTest {
     FfprobeService busyUntilReleased =
         request -> {
           if (busy.get()) {
-            throw new ProbeWorkersBusyException();
+            throw new ProbeWorkersBusyException("All compatible workers are busy");
           }
 
           return producer.probe(request);

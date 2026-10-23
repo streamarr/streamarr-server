@@ -1,5 +1,6 @@
 package com.streamarr.server.config;
 
+import com.github.kagkarlsson.scheduler.PollingStrategyConfig;
 import com.github.kagkarlsson.scheduler.SchedulerName;
 import com.github.kagkarlsson.scheduler.SystemClock;
 import com.github.kagkarlsson.scheduler.TaskRepository;
@@ -10,7 +11,6 @@ import com.github.kagkarlsson.scheduler.event.SchedulerListeners;
 import com.github.kagkarlsson.scheduler.jdbc.AutodetectJdbcCustomization;
 import com.github.kagkarlsson.scheduler.jdbc.JdbcCustomization;
 import com.github.kagkarlsson.scheduler.jdbc.JdbcTaskRepository;
-import com.github.kagkarlsson.scheduler.jdbc.PostgreSqlJdbcCustomization;
 import com.github.kagkarlsson.scheduler.serializer.Serializer;
 import com.github.kagkarlsson.scheduler.task.Task;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
@@ -20,6 +20,8 @@ import com.streamarr.server.services.library.KeyframePacketScanExecution;
 import com.streamarr.server.services.library.MediaProbeTask;
 import com.streamarr.server.services.library.ProbeExecution;
 import com.streamarr.server.services.library.ProbeTaskCompletion;
+import com.streamarr.server.services.probe.PlaybackProbeClaims;
+import com.streamarr.server.services.streaming.ProbeCapacitySource;
 import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
@@ -41,10 +43,46 @@ public class ProbeSchedulingConfiguration {
     return new JacksonTaskDataSerializer();
   }
 
+  /**
+   * Reads the probe scheduler's upper limit from the db-scheduler settings that the starter binds,
+   * which also hold when the starter is off.
+   */
+  @Bean
+  public ProbeCapacityJdbcCustomization probeCapacityJdbcCustomization(
+      ProbeCapacitySource probeCapacitySource,
+      PlaybackProbeClaims playbackProbeClaims,
+      Environment environment) {
+    var properties =
+        Binder.get(environment)
+            .bind("db-scheduler", Bindable.of(DbSchedulerProperties.class))
+            .orElseGet(DbSchedulerProperties::new);
+    var probeProperties =
+        Binder.get(environment).bindOrCreate("probe", ProbeSchedulingProperties.class);
+    var pollingStrategy =
+        new PollingStrategyConfig(
+            properties.getPollingStrategy(),
+            properties.getPollingStrategyLowerLimitFractionOfThreads(),
+            properties.getPollingStrategyUpperLimitFractionOfThreads());
+    return ProbeCapacityJdbcCustomization.builder()
+        .capacitySource(probeCapacitySource)
+        .playbackProbeClaims(playbackProbeClaims)
+        .probeSchedulerUpperLimit(pollingStrategy.getUpperLimit(properties.getThreads()))
+        .scanSchedulerUpperLimit(
+            pollingStrategy.getUpperLimit(probeProperties.keyframePacketScanSchedulerThreads()))
+        .build();
+  }
+
+  /**
+   * Every db-scheduler built from this customizer shares the JDBC customization. Only the probe and
+   * keyframe packet scan schedulers' claims follow the workers' free probe capacities.
+   */
   @Bean
   public DbSchedulerCustomizer dbSchedulerCustomizer(
-      Serializer probeTaskSerializer, DataSource dataSource) {
-    return new VirtualThreadCustomizer(probeTaskSerializer, dataSource);
+      Serializer probeTaskSerializer,
+      DataSource dataSource,
+      ProbeCapacityJdbcCustomization probeCapacityJdbcCustomization) {
+    return new VirtualThreadCustomizer(
+        probeTaskSerializer, dataSource, probeCapacityJdbcCustomization);
   }
 
   @Bean
@@ -109,6 +147,7 @@ public class ProbeSchedulingConfiguration {
 
     private final Serializer serializer;
     private final DataSource dataSource;
+    private final JdbcCustomization jdbcCustomization;
 
     @Override
     public Optional<DataSource> dataSource() {
@@ -126,10 +165,11 @@ public class ProbeSchedulingConfiguration {
     // The library's single-statement PostgreSQL claim nests its LIMIT inside the UPDATE's IN
     // subquery. When the planner rescans that subquery per candidate row, rows the statement has
     // already updated are skipped and the LIMIT bounds each rescan, so one claim can pick every
-    // due execution. The generic claim selects the limited rows first and updates exactly them.
+    // due execution. The generic claim that ProbeCapacityJdbcCustomization extends selects the
+    // limited rows first and updates exactly them.
     @Override
     public Optional<JdbcCustomization> jdbcCustomization() {
-      return Optional.of(new PostgreSqlJdbcCustomization(true, false));
+      return Optional.of(jdbcCustomization);
     }
 
     @Override

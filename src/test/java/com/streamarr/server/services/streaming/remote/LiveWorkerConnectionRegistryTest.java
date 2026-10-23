@@ -33,6 +33,7 @@ import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerVerifiedVideoEncoder;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
+import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.List;
@@ -717,6 +718,118 @@ class LiveWorkerConnectionRegistryTest {
 
   @Test
   @DisplayName(
+      "Should report each published media segment's production speed when the worker uploads it")
+  void shouldReportEachPublishedMediaSegmentsProductionSpeedWhenTheWorkerUploadsIt() {
+    var meterRegistry = new SimpleMeterRegistry();
+    var registry = registryReportingTo(meterRegistry);
+    var workerRegistration = registration();
+    var workerSessionId =
+        registry.register(WORKER_ID, workerRegistration, collecting(new CopyOnWriteArrayList<>()));
+    var job = variantJob();
+    assertThat(registry.dispatch(job)).isPresent();
+    var metadata = uploadMetadata(workerSessionId, workerRegistration.getWorker(), job);
+
+    registry.publishIfAuthorized(WORKER_ID, metadata, () -> SegmentPublication.PUBLISHED);
+    registry.publishIfAuthorized(
+        WORKER_ID,
+        timedUploadMetadata(workerSessionId, workerRegistration.getWorker(), job),
+        () -> SegmentPublication.PUBLISHED);
+
+    var speed = productionSpeed(meterRegistry);
+    assertThat(speed.count()).as("The initialization segment carries no timing").isOne();
+    assertThat(speed.mean()).isEqualTo(3.0);
+  }
+
+  @Test
+  @DisplayName(
+      "Should start a reconnected worker's production speed afresh when its previous session"
+          + " disconnected")
+  void shouldStartAReconnectedWorkersProductionSpeedAfreshWhenItsPreviousSessionDisconnected() {
+    var meterRegistry = new SimpleMeterRegistry();
+    var registry = registryReportingTo(meterRegistry);
+    var workerRegistration = registration();
+    var workerSessionId =
+        registry.register(WORKER_ID, workerRegistration, collecting(new CopyOnWriteArrayList<>()));
+    var job = variantJob();
+    assertThat(registry.dispatch(job)).isPresent();
+    registry.publishIfAuthorized(
+        WORKER_ID,
+        timedUploadMetadata(workerSessionId, workerRegistration.getWorker(), job),
+        () -> SegmentPublication.PUBLISHED);
+
+    registry.disconnect(WORKER_ID, workerSessionId);
+    assertThat(productionSpeed(meterRegistry)).isNull();
+    registry.register(WORKER_ID, registration(), collecting(new CopyOnWriteArrayList<>()));
+
+    assertThat(productionSpeed(meterRegistry)).isNotNull();
+    assertThat(productionSpeed(meterRegistry).count()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should report no production speed when a media segment took no production time")
+  void shouldReportNoProductionSpeedWhenAMediaSegmentTookNoProductionTime() {
+    var meterRegistry = new SimpleMeterRegistry();
+    var registry = registryReportingTo(meterRegistry);
+    var workerRegistration = registration();
+    var workerSessionId =
+        registry.register(WORKER_ID, workerRegistration, collecting(new CopyOnWriteArrayList<>()));
+    var job = variantJob();
+    assertThat(registry.dispatch(job)).isPresent();
+
+    registry.publishIfAuthorized(
+        WORKER_ID,
+        timedUploadMetadata(workerSessionId, workerRegistration.getWorker(), job).toBuilder()
+            .setProductionTime(protoSeconds(0))
+            .build(),
+        () -> SegmentPublication.PUBLISHED);
+
+    assertThat(productionSpeed(meterRegistry).count()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should report no production speed when the worker disconnects during the publication")
+  void shouldReportNoProductionSpeedWhenTheWorkerDisconnectsDuringThePublication() {
+    var meterRegistry = new SimpleMeterRegistry();
+    var registry = registryReportingTo(meterRegistry);
+    var workerRegistration = registration();
+    var workerSessionId =
+        registry.register(WORKER_ID, workerRegistration, collecting(new CopyOnWriteArrayList<>()));
+    var job = variantJob();
+    assertThat(registry.dispatch(job)).isPresent();
+
+    var outcome =
+        registry.publishIfAuthorized(
+            WORKER_ID,
+            timedUploadMetadata(workerSessionId, workerRegistration.getWorker(), job),
+            () -> {
+              registry.disconnect(WORKER_ID, workerSessionId);
+              return SegmentPublication.PUBLISHED;
+            });
+
+    assertThat(outcome).contains(SegmentPublication.PUBLISHED);
+    assertThat(productionSpeed(meterRegistry)).isNull();
+  }
+
+  @Test
+  @DisplayName(
+      "Should report each worker's playback slots and the slots in use when a job attempt runs")
+  void shouldReportEachWorkersPlaybackSlotsAndTheSlotsInUseWhenAJobAttemptRuns() {
+    var meterRegistry = new SimpleMeterRegistry();
+    var registry = registryReportingTo(meterRegistry);
+    registry.register(
+        WORKER_ID,
+        registration().toBuilder().setAvailableSlots(2).build(),
+        collecting(new CopyOnWriteArrayList<>()));
+
+    assertThat(registry.dispatch(variantJob())).isPresent();
+
+    assertThat(workerGauge(meterRegistry, "streamarr.streaming.playback_slots")).isEqualTo(2);
+    assertThat(workerGauge(meterRegistry, "streamarr.streaming.playback_slots_in_use")).isOne();
+  }
+
+  @Test
+  @DisplayName(
       "Should ignore a stale disconnect after the worker connection was replaced when managing a connection")
   void shouldIgnoreAStaleDisconnectAfterTheWorkerConnectionWasReplacedWhenManagingConnection() {
     var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
@@ -1264,6 +1377,41 @@ class LiveWorkerConnectionRegistryTest {
                 .setRelativeKey("movie.mkv"))
         .setVariant(VariantSpec.newBuilder().setVariantLabel("720p"))
         .build();
+  }
+
+  private static LiveWorkerConnectionRegistry registryReportingTo(
+      SimpleMeterRegistry meterRegistry) {
+    return LiveWorkerConnectionRegistry.builder()
+        .eventPublisher(new CapturingEventPublisher())
+        .configuration(WorkerSessionServerConfiguration.builder().build())
+        .meterRegistry(meterRegistry)
+        .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
+        .build();
+  }
+
+  // java.time.Duration and the protobuf Duration share a simple name.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static com.google.protobuf.Duration protoSeconds(long seconds) {
+    return com.google.protobuf.Duration.newBuilder().setSeconds(seconds).build();
+  }
+
+  private static SegmentUploadMetadata timedUploadMetadata(
+      UUID workerSessionId, WorkerIdentity worker, VariantJob job) {
+    return uploadMetadata(workerSessionId, worker, job).toBuilder()
+        .setMediaDuration(protoSeconds(6))
+        .setProductionTime(protoSeconds(2))
+        .build();
+  }
+
+  private static DistributionSummary productionSpeed(SimpleMeterRegistry meterRegistry) {
+    return meterRegistry
+        .find("streamarr.streaming.production_speed")
+        .tag("worker", WORKER_ID.toString())
+        .summary();
+  }
+
+  private static double workerGauge(SimpleMeterRegistry meterRegistry, String name) {
+    return meterRegistry.get(name).tag("worker", WORKER_ID.toString()).gauge().value();
   }
 
   private static SegmentUploadMetadata uploadMetadata(

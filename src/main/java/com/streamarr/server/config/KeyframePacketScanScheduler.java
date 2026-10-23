@@ -63,7 +63,7 @@ public final class KeyframePacketScanScheduler
 
   /**
    * Builds the scan scheduler from the application's db-scheduler settings, overriding the table
-   * and the thread cap. Executions run on the customizer's executor.
+   * and the threads. Executions run on the customizer's executor.
    */
   @Builder
   @SuppressWarnings("java:S107") // The builder names each argument at the call site.
@@ -106,7 +106,7 @@ public final class KeyframePacketScanScheduler
             .serializer(serializer)
             .build();
     schedulerProperties.setTableName(TABLE_NAME);
-    schedulerProperties.setThreads(properties.maxConcurrentKeyframePacketScans());
+    schedulerProperties.setThreads(properties.keyframePacketScanSchedulerThreads());
     var schedulerListeners = listenersOrNone(listeners);
     Supplier<Scheduler> newScheduler =
         () ->

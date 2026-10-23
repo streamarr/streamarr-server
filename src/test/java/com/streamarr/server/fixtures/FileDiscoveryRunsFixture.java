@@ -9,7 +9,10 @@ import com.streamarr.server.services.concurrency.Sleeper;
 import com.streamarr.server.services.library.FileDiscoveryRuns;
 import com.streamarr.server.services.library.MediaFileProbeTaskScheduler;
 import com.streamarr.server.services.library.ProbeRuns;
+import com.streamarr.server.services.library.ScanProbesWaiting;
 import com.streamarr.server.services.probe.PersistedProbeReader;
+import com.streamarr.server.services.streaming.ProbeCapacity;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.FileSystem;
 import java.time.Clock;
 import java.time.Duration;
@@ -63,6 +66,8 @@ public final class FileDiscoveryRunsFixture {
                 .sleeper(probeSleeper)
                 .clock(probeClock)
                 .properties(new ProbeSchedulingProperties(null, CHECK_INTERVAL, null))
+                .capacitySource(() -> ProbeCapacity.builder().build())
+                .scanProbesWaiting(new ScanProbesWaiting(new SimpleMeterRegistry()))
                 .build())
         .mediaFiles(mediaFiles)
         .build();

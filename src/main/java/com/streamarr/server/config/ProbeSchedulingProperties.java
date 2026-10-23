@@ -4,21 +4,28 @@ import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
+ * @param keyframePacketScanSchedulerThreads how many keyframe packet scans one server runs at once
  * @param resultCheckInterval how often a scan that waits for its probes checks their stored results
  */
 @ConfigurationProperties(prefix = "probe")
 public record ProbeSchedulingProperties(
     Duration busyWorkerRetryDelay,
     Duration resultCheckInterval,
-    Integer maxConcurrentKeyframePacketScans) {
+    Integer keyframePacketScanSchedulerThreads) {
 
   private static final Duration DEFAULT_BUSY_WORKER_RETRY_DELAY = Duration.ofSeconds(5);
   private static final Duration DEFAULT_RESULT_CHECK_INTERVAL = Duration.ofSeconds(2);
-  // Probes, packet scans and variant jobs share worker slots. One scan at a time leaves the other
-  // slots to probes and playback.
-  private static final int DEFAULT_MAX_CONCURRENT_KEYFRAME_PACKET_SCANS = 1;
+  private static final int DEFAULT_KEYFRAME_PACKET_SCAN_SCHEDULER_THREADS = 16;
 
   public ProbeSchedulingProperties {
+    if (keyframePacketScanSchedulerThreads == null) {
+      keyframePacketScanSchedulerThreads = DEFAULT_KEYFRAME_PACKET_SCAN_SCHEDULER_THREADS;
+    }
+
+    if (keyframePacketScanSchedulerThreads < 1) {
+      throw new IllegalArgumentException("Keyframe packet scan scheduler threads must be positive");
+    }
+
     if (busyWorkerRetryDelay == null) {
       busyWorkerRetryDelay = DEFAULT_BUSY_WORKER_RETRY_DELAY;
     }
@@ -33,14 +40,6 @@ public record ProbeSchedulingProperties(
 
     if (!resultCheckInterval.isPositive()) {
       throw new IllegalArgumentException("Probe result check interval must be positive");
-    }
-
-    if (maxConcurrentKeyframePacketScans == null) {
-      maxConcurrentKeyframePacketScans = DEFAULT_MAX_CONCURRENT_KEYFRAME_PACKET_SCANS;
-    }
-
-    if (maxConcurrentKeyframePacketScans <= 0) {
-      throw new IllegalArgumentException("The keyframe packet scan maximum must be positive");
     }
   }
 }

@@ -8,8 +8,8 @@ public interface FfprobeService {
   /**
    * Returns a complete success or terminal media error. Execution failures remain retryable.
    *
-   * @throws com.streamarr.server.exceptions.ProbeWorkersBusyException when every compatible
-   *     worker's slots are in use, so the probe did not start
+   * @throws com.streamarr.server.exceptions.ProbeWorkersBusyException when no connected worker can
+   *     start the probe now, so the probe did not start
    */
   ProbeOutcome probe(ProbeExecutionRequest request);
 }
