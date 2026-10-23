@@ -29,14 +29,14 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class PlaybackProbeService {
 
+  private static final String WAIT_METRIC = "streamarr.playback.probe_wait";
+
   private final PersistedProbeReader reader;
   private final MediaFileContainerInfoRepository outcomes;
   private final ApplicationEventPublisher eventPublisher;
   private final ProbeWorkers probeWorkers;
   private final ProbeAttemptEnds attemptEnds;
   private final Clock clock;
-  private static final String WAIT_METRIC = "streamarr.playback.probe_wait";
-
   private final StreamingProperties properties;
   private final MeterRegistry meterRegistry;
 

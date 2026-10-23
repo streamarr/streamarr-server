@@ -59,7 +59,7 @@ public class ProbeSchedulingConfiguration {
             properties.getPollingStrategyLowerLimitFractionOfThreads(),
             properties.getPollingStrategyUpperLimitFractionOfThreads());
     return ProbeCapacityJdbcCustomization.builder()
-        .capacity(probeCapacitySource)
+        .capacitySource(probeCapacitySource)
         .probeSchedulerUpperLimit(pollingStrategy.getUpperLimit(properties.getThreads()))
         .scanSchedulerUpperLimit(pollingStrategy.getUpperLimit(KeyframePacketScanScheduler.THREADS))
         .build();

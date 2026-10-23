@@ -1,11 +1,25 @@
 package com.streamarr.server.config;
 
+import static org.jooq.impl.DSL.field;
+import static org.jooq.impl.DSL.name;
+import static org.jooq.impl.DSL.row;
+import static org.jooq.impl.DSL.select;
+import static org.jooq.impl.DSL.table;
+
 import com.github.kagkarlsson.scheduler.jdbc.JdbcTaskRepository;
 import com.github.kagkarlsson.scheduler.jdbc.PostgreSqlJdbcCustomization;
 import com.github.kagkarlsson.scheduler.task.Priority;
 import com.streamarr.server.services.streaming.ProbeCapacitySource;
+import java.time.Instant;
 import lombok.Builder;
 import lombok.NonNull;
+import org.jooq.Condition;
+import org.jooq.DSLContext;
+import org.jooq.Field;
+import org.jooq.SQLDialect;
+import org.jooq.conf.RenderQuotedNames;
+import org.jooq.conf.Settings;
+import org.jooq.impl.DSL;
 
 /**
  * Lets the probe schedulers claim no more executions than the connected workers' free probe
@@ -25,8 +39,17 @@ import lombok.NonNull;
 public final class ProbeCapacityJdbcCustomization extends PostgreSqlJdbcCustomization {
 
   private static final String PROBE_TABLE = JdbcTaskRepository.DEFAULT_TABLE_NAME;
+  private static final Field<String> TASK_NAME = field(name("task_name"), String.class);
+  private static final Field<String> TASK_INSTANCE = field(name("task_instance"), String.class);
+  private static final Field<Integer> PRIORITY = field(name("priority"), Integer.class);
+  private static final Field<Boolean> PICKED = field(name("picked"), Boolean.class);
+  private static final Field<Instant> EXECUTION_TIME = field(name("execution_time"), Instant.class);
+  // Renders the claim condition with its values inline, so db-scheduler's bind parameters keep
+  // their positions.
+  private static final DSLContext RENDERER =
+      DSL.using(SQLDialect.POSTGRES, new Settings().withRenderQuotedNames(RenderQuotedNames.NEVER));
 
-  private final ProbeCapacitySource capacity;
+  private final ProbeCapacitySource capacitySource;
   private final int probeSchedulerUpperLimit;
   private final int scanSchedulerUpperLimit;
 
@@ -37,11 +60,11 @@ public final class ProbeCapacityJdbcCustomization extends PostgreSqlJdbcCustomiz
    */
   @Builder
   private ProbeCapacityJdbcCustomization(
-      @NonNull ProbeCapacitySource capacity,
+      @NonNull ProbeCapacitySource capacitySource,
       int probeSchedulerUpperLimit,
       int scanSchedulerUpperLimit) {
     super(true, false);
-    this.capacity = capacity;
+    this.capacitySource = capacitySource;
     this.probeSchedulerUpperLimit = probeSchedulerUpperLimit;
     this.scanSchedulerUpperLimit = scanSchedulerUpperLimit;
   }
@@ -53,7 +76,9 @@ public final class ProbeCapacityJdbcCustomization extends PostgreSqlJdbcCustomiz
       case PROBE_TABLE -> probeClaim(limit, requiredAndCondition, orderByPriority);
       case KeyframePacketScanScheduler.TABLE_NAME -> {
         var scans =
-            capacity.probeCapacity().keyframePacketScansToClaim(scanSchedulerUpperLimit - limit);
+            capacitySource
+                .probeCapacity()
+                .keyframePacketScansToClaim(scanSchedulerUpperLimit - limit);
         yield super.createGenericSelectForUpdateQuery(
             tableName, Math.min(limit, scans), requiredAndCondition, orderByPriority);
       }
@@ -64,27 +89,30 @@ public final class ProbeCapacityJdbcCustomization extends PostgreSqlJdbcCustomiz
   }
 
   private String probeClaim(int limit, String requiredAndCondition, boolean orderByPriority) {
-    var claim = capacity.probeCapacity().probesToClaim(probeSchedulerUpperLimit - limit);
+    var claim = capacitySource.probeCapacity().probesToClaim(probeSchedulerUpperLimit - limit);
     return super.createGenericSelectForUpdateQuery(
         PROBE_TABLE,
         Math.min(limit, claim.total()),
-        requiredAndCondition + oldestBackgroundProbesOnly(claim.backgroundProbes()),
+        requiredAndCondition
+            + " AND "
+            + RENDERER.renderInlined(oldestBackgroundProbesOnly(claim.backgroundProbes()))
+            + " ",
         orderByPriority);
   }
 
   // Every probe that no playback request waits for must be among the oldest pending ones that the
   // free background units allow. Rows due later sort after every due row, so the oldest rows
-  // include the due ones first. The condition binds no parameter, so db-scheduler's parameters
-  // keep their positions.
-  private static String oldestBackgroundProbesOnly(int backgroundProbes) {
-    return " AND (priority >= "
-        + Priority.HIGH
-        + " OR (task_name, task_instance) IN (SELECT task_name, task_instance FROM "
-        + PROBE_TABLE
-        + " WHERE picked = false AND priority < "
-        + Priority.HIGH
-        + " ORDER BY execution_time ASC, task_instance ASC LIMIT "
-        + backgroundProbes
-        + ")) ";
+  // include the due ones first.
+  private static Condition oldestBackgroundProbesOnly(int backgroundProbes) {
+    return PRIORITY
+        .ge(Priority.HIGH)
+        .or(
+            row(TASK_NAME, TASK_INSTANCE)
+                .in(
+                    select(TASK_NAME, TASK_INSTANCE)
+                        .from(table(name(PROBE_TABLE)))
+                        .where(PICKED.isFalse().and(PRIORITY.lt(Priority.HIGH)))
+                        .orderBy(EXECUTION_TIME.asc(), TASK_INSTANCE.asc())
+                        .limit(backgroundProbes)));
   }
 }
