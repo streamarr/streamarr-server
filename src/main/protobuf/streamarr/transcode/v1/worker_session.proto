@@ -69,13 +69,50 @@ message WorkerCapabilities {
   repeated WorkerVerifiedVideoEncoder video_encoders = 3;
 }
 
+// The worker's first message on its session. The registration grants the worker's capacities. A
+// capacity is the number of items of one kind that the connection accepts at once. A capacity of 0
+// accepts no item of that kind. ADR 0032 decides how a worker sets each capacity.
+//
+// A probe's kind decides which probe capacity the probe uses. A probe that sets
+// ProbeRequest.scan_keyframe_packets is a keyframe packet scan, whatever its priority. Every other
+// probe is a playback probe or a background probe, as ProbeRequest.priority says. Job attempts
+// never use a probe capacity, and probes never use a playback slot.
+//
+// A playback probe can use a free unit of the background probe capacity. A background probe never
+// uses the playback probe capacity. No probe holds a particular unit. The server and the worker
+// each count the playback probes and the background probes that run, and each computes the
+// background units in use with the same formula: the background probes, plus the playback probes
+// beyond the playback probe capacity. A playback probe fits while fewer playback probes run than
+// the playback probe capacity, or while a background unit is free. A background probe fits only
+// while a background unit is free. The server counts a probe until the probe's result arrives, so
+// the server's counts never fall below the worker's counts. The worker therefore accepts every
+// probe that the server sends against capacities that have not changed.
 message WorkerRegistration {
   // This worker describes itself; target is reserved for server commands addressed to a worker.
   WorkerIdentity worker = 1;
   WorkerCapabilities capabilities = 2;
-  // Configured slot capacity for this connection, fixed at registration; the server derives
-  // remaining capacity from its own active-attempt accounting. Probes and variants share it.
+  // The playback slots: the number of job attempts that this connection runs at once, fixed at
+  // registration. The server counts its own active job attempts against the slots.
   uint32 available_slots = 3;
+  // The capacity for background probes. A later ProbeCapacityChanged message replaces the value.
+  uint32 background_probe_capacity = 4;
+  // The capacity for playback probes, fixed at registration.
+  uint32 playback_probe_capacity = 5;
+  // The capacity for keyframe packet scans. A later ProbeCapacityChanged message replaces the
+  // value.
+  uint32 keyframe_packet_scan_capacity = 6;
+  // Whether the worker adapts its background probe capacity or keeps a fixed one. The worker
+  // always sets ADAPTIVE or FIXED. The server tags its capacity metrics with the value.
+  BackgroundProbeCapacityControl background_probe_capacity_control = 7;
+}
+
+enum BackgroundProbeCapacityControl {
+  // A worker never sends this value.
+  BACKGROUND_PROBE_CAPACITY_CONTROL_UNSPECIFIED = 0;
+  // The worker raises and lowers the capacity from the production speed of its job attempts.
+  BACKGROUND_PROBE_CAPACITY_CONTROL_ADAPTIVE = 1;
+  // A worker setting fixes the capacity, and the worker never changes the capacity.
+  BACKGROUND_PROBE_CAPACITY_CONTROL_FIXED = 2;
 }
 
 enum TranscodeMode {
@@ -361,6 +398,19 @@ message JobAttemptStopped {
   Uuid job_attempt_id = 1;
 }
 
+// The worker's new background probe capacity and keyframe packet scan capacity. The worker sends
+// the message whenever either capacity changes. The message always carries both current values,
+// including a background probe capacity that stays fixed. The values replace the values from the
+// worker's registration or from its previous ProbeCapacityChanged message. The server sends new probes against the latest
+// values. When a capacity drops below the probes that already run, those probes keep running, and
+// the server sends no new probe of that kind until enough of them end. A probe that the server sent
+// before the message arrived can arrive beyond the lower capacity. The worker answers such a probe
+// with PROBE_FAILURE_NO_FREE_CAPACITY.
+message ProbeCapacityChanged {
+  uint32 background_probe_capacity = 1;
+  uint32 keyframe_packet_scan_capacity = 2;
+}
+
 // One message that a worker sends on its session. The server accepts a message whose protobuf
 // encoding takes at most 131,072 bytes (128 KiB). A larger message ends the worker's session, and
 // the server then abandons the worker's job attempts and fails its other probes. So the worker
@@ -375,6 +425,7 @@ message EstablishWorkerSessionRequest {
     JobAttemptStopped job_attempt_stopped = 5;
     ProbeAttemptResult probe_result = 6;
     ProbeKeyframePositionsPart probe_keyframe_positions_part = 7;
+    ProbeCapacityChanged probe_capacity_changed = 8;
   }
 }
 
@@ -397,8 +448,23 @@ message ProbeRequest {
   // When true, the worker finds keyframe positions by scanning every packet of the chosen video
   // stream instead of reading the container index. Only probe version 3 and later report keyframe
   // positions and accept this flag. A worker answers the flag under probe version 1 with
-  // PROBE_FAILURE_UNSUPPORTED_VERSION.
+  // PROBE_FAILURE_UNSUPPORTED_VERSION. A keyframe packet scan uses the keyframe packet scan
+  // capacity and runs at the lowest CPU priority, whatever the probe's priority.
   bool scan_keyframe_packets = 4;
+  // Whether a playback request waits for the probe. The server sends every keyframe packet scan
+  // with PROBE_PRIORITY_BACKGROUND. The worker treats PROBE_PRIORITY_UNSPECIFIED as
+  // PROBE_PRIORITY_BACKGROUND.
+  ProbePriority priority = 5;
+}
+
+enum ProbePriority {
+  PROBE_PRIORITY_UNSPECIFIED = 0;
+  // A playback request waits for the probe. The probe is a playback probe, and the probe runs at
+  // normal CPU priority.
+  PROBE_PRIORITY_PLAYBACK = 1;
+  // No playback request waits for the probe, as for a probe that a scan requested. The probe is a
+  // background probe, and the probe runs at the lowest CPU priority.
+  PROBE_PRIORITY_BACKGROUND = 2;
 }
 
 message ProbeContainerInfo {
@@ -871,6 +937,10 @@ enum ProbeFailure {
   // stores this failure as the file's probe outcome. It does not retry the probe until the file or
   // the probe version changes. Any probe version may report this failure.
   PROBE_FAILURE_RESULT_TOO_LARGE = 7;
+  // The probe arrived while every unit of the probe's capacity was in use, so ffprobe never
+  // started. The worker lowered that capacity before the server learned of the change. The server
+  // keeps the probe queued without a failure, and any worker with a free unit can take the probe.
+  PROBE_FAILURE_NO_FREE_CAPACITY = 8;
 }
 
 message StartProbeCommand {
@@ -917,6 +987,17 @@ message SegmentUploadMetadata {
   string segment_name = 7;
   SegmentContentType content_type = 8;
   uint64 content_length_bytes = 9;
+  // The media segment's media duration. Present for every media segment, and absent for an
+  // initialization segment.
+  google.protobuf.Duration media_duration = 10;
+  // The wall-clock time that the worker took to produce the media segment. The time runs from the
+  // end of the attempt's previous media segment until the producer finished this segment. For the
+  // attempt's first media segment, the time runs from the moment the worker started FFmpeg. The
+  // time leaves out every wait in which the worker held FFmpeg back until an earlier segment's
+  // upload was accepted. Present for every media segment, and absent for an initialization
+  // segment. The worker and the server derive the attempt's production speed from media_duration
+  // and production_time, as ADR 0032 and ADR 0044 decide.
+  google.protobuf.Duration production_time = 11;
 }
 
 // The first frame carries metadata exactly once. Later frames carry bounded non-empty data chunks.
