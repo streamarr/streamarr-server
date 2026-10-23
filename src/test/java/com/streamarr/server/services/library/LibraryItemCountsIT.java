@@ -23,24 +23,18 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
-import com.streamarr.server.services.audit.SystemWork;
-import com.streamarr.server.services.events.library.ItemProcessedEvent;
-import com.streamarr.server.services.events.library.LibraryCountsChangedEvent;
+import com.streamarr.server.services.MovieService;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.CopyOnWriteArrayList;
+import org.assertj.core.groups.Tuple;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Import;
-import org.springframework.transaction.event.TransactionPhase;
-import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
-@Import(LibraryItemCountsIT.CommittedCounts.class)
 @Tag("IntegrationTest")
 class LibraryItemCountsIT extends AbstractIntegrationTest {
 
@@ -48,15 +42,13 @@ class LibraryItemCountsIT extends AbstractIntegrationTest {
   @Autowired private SeriesRepository series;
   @Autowired private SeasonRepository seasons;
   @Autowired private EpisodeRepository episodes;
-  @Autowired private LetterIndexRecalculator recalculator;
   @Autowired private LibraryManagementService libraryManagement;
   @Autowired private TransactionTemplate transactions;
-  @Autowired private CommittedCounts committedCounts;
   @Autowired private MovieRepository movies;
   @Autowired private MediaFileRepository mediaFiles;
-  @Autowired private LibraryMetadataListener itemProcessing;
   @Autowired private LibraryOperationRepository libraryOperations;
-  @Autowired private LibraryOperationExecution libraryOperationExecution;
+  @Autowired private MovieService movieService;
+  @Autowired private JdbcTemplate jdbc;
   @Autowired private LibraryCountsService counts;
 
   @Test
@@ -84,33 +76,9 @@ class LibraryItemCountsIT extends AbstractIntegrationTest {
             .library(library)
             .build());
 
-    recalculator.recalculateLetterIndex(library.getId());
-
     assertThat(libraryManagement.getAlphabetIndex(library.getId()))
         .extracting(LibraryMetadata::getLetter, LibraryMetadata::getItemCount)
         .containsExactly(tuple(AlphabetLetter.A, 1));
-  }
-
-  @Test
-  @DisplayName("Should publish the recount when it commits and never when it rolls back")
-  void shouldPublishTheRecountWhenItCommitsAndNeverWhenItRollsBack() {
-    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
-    var change = new LibraryCountsChangedEvent(library.getId());
-
-    transactions.executeWithoutResult(
-        status -> {
-          recalculator.recalculateLetterIndex(library.getId());
-          assertThat(committedCounts.events).doesNotContain(change);
-          status.setRollbackOnly();
-        });
-    assertThat(committedCounts.events).doesNotContain(change);
-
-    transactions.executeWithoutResult(
-        _ -> {
-          recalculator.recalculateLetterIndex(library.getId());
-          assertThat(committedCounts.events).doesNotContain(change);
-        });
-    assertThat(committedCounts.events).contains(change);
   }
 
   @Test
@@ -131,29 +99,134 @@ class LibraryItemCountsIT extends AbstractIntegrationTest {
               .build());
     }
 
-    recalculator.recalculateLetterIndex(library.getId());
-
     assertThat(totalOf(library)).isOne();
   }
 
   @Test
-  @DisplayName(
-      "Should keep the previous total while a scan runs and count its items when the scan fails")
-  void shouldKeepThePreviousTotalWhileAScanRunsAndCountItsItemsWhenTheScanFails() {
+  @DisplayName("Should count a movie when its save commits while a scan runs")
+  void shouldCountAMovieWhenItsSaveCommitsWhileAScanRuns() {
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    storeScan(library.getId());
+
     movies.saveAndFlush(Movie.builder().title("Alpha").titleSort("Alpha").library(library).build());
-    recalculator.recalculateLetterIndex(library.getId());
-    var scanId = storeScan(library.getId());
-    movies.saveAndFlush(Movie.builder().title("Bravo").titleSort("Bravo").library(library).build());
-    itemProcessing.onItemProcessed(new ItemProcessedEvent(library.getId()));
-    var totalWhileScanning = totalOf(library);
 
-    SystemWork.runAsSystemActor(() -> libraryOperationExecution.execute(scanId, () -> false));
-
-    assertThat(totalWhileScanning).isOne();
     assertThat(libraries.findById(library.getId()).orElseThrow().getStatus())
-        .isEqualTo(LibraryStatus.UNHEALTHY);
-    assertThat(totalOf(library)).isEqualTo(2);
+        .isEqualTo(LibraryStatus.SCANNING);
+    assertThat(lettersOf(library)).containsExactly(tuple(AlphabetLetter.A, 1));
+  }
+
+  @Test
+  @DisplayName("Should leave the counts unchanged when the save of a movie rolls back")
+  void shouldLeaveTheCountsUnchangedWhenTheSaveOfAMovieRollsBack() {
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+
+    transactions.executeWithoutResult(
+        status -> {
+          movies.saveAndFlush(
+              Movie.builder().title("Alpha").titleSort("Alpha").library(library).build());
+          status.setRollbackOnly();
+        });
+
+    assertThat(lettersOf(library)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should remove the letter when the last movie that starts with it is deleted")
+  void shouldRemoveTheLetterWhenTheLastMovieThatStartsWithItIsDeleted() {
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var alpha =
+        movies.saveAndFlush(
+            Movie.builder().title("Alpha").titleSort("Alpha").library(library).build());
+    movies.saveAndFlush(Movie.builder().title("Bravo").titleSort("Bravo").library(library).build());
+
+    assertThat(movieService.tryDeleteMovieById(alpha.getId())).isTrue();
+
+    assertThat(lettersOf(library)).containsExactly(tuple(AlphabetLetter.B, 1));
+  }
+
+  @Test
+  @DisplayName("Should uncount a series when it is deleted")
+  void shouldUncountASeriesWhenItIsDeleted() {
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+    var show =
+        series.saveAndFlush(
+            Series.builder().title("Alpha").titleSort("Alpha").library(library).build());
+    assertThat(lettersOf(library)).containsExactly(tuple(AlphabetLetter.A, 1));
+
+    series.delete(show);
+
+    assertThat(lettersOf(library)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should uncount a movie when the delete of its catalog row cascades to the movie")
+  void shouldUncountAMovieWhenTheDeleteOfItsCatalogRowCascadesToTheMovie() {
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var alpha =
+        movies.saveAndFlush(
+            Movie.builder().title("Alpha").titleSort("Alpha").library(library).build());
+    assertThat(lettersOf(library)).containsExactly(tuple(AlphabetLetter.A, 1));
+
+    transactions.executeWithoutResult(
+        _ -> jdbc.update("DELETE FROM base_collectable WHERE id = ?", alpha.getId()));
+
+    assertThat(movies.findById(alpha.getId())).isEmpty();
+    assertThat(lettersOf(library)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should delete a library when its delete cascades to titles that share a letter")
+  void shouldDeleteALibraryWhenItsDeleteCascadesToTitlesThatShareALetter() {
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var alpha =
+        movies.saveAndFlush(
+            Movie.builder().title("Alpha").titleSort("Alpha").library(library).build());
+    movies.saveAndFlush(
+        Movie.builder().title("Avalon").titleSort("Avalon").library(library).build());
+    assertThat(lettersOf(library)).containsExactly(tuple(AlphabetLetter.A, 2));
+
+    transactions.executeWithoutResult(
+        _ -> jdbc.update("DELETE FROM library WHERE id = ?", library.getId()));
+
+    assertThat(libraries.findById(library.getId())).isEmpty();
+    assertThat(movies.findById(alpha.getId())).isEmpty();
+    assertThat(lettersOf(library)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should move the count to the new letter when a title changes its first letter")
+  void shouldMoveTheCountToTheNewLetterWhenATitleChangesItsFirstLetter() {
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var movie =
+        movies.saveAndFlush(
+            Movie.builder().title("Alpha").titleSort("Alpha").library(library).build());
+    movies.saveAndFlush(Movie.builder().title("Bravo").titleSort("Bravo").library(library).build());
+
+    movie.setTitleSort("Zulu");
+    movies.saveAndFlush(movie);
+
+    assertThat(lettersOf(library))
+        .containsExactly(tuple(AlphabetLetter.B, 1), tuple(AlphabetLetter.Z, 1));
+  }
+
+  @Test
+  @DisplayName("Should keep one count when a title changes within its letter")
+  void shouldKeepOneCountWhenATitleChangesWithinItsLetter() {
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var movie =
+        movies.saveAndFlush(
+            Movie.builder().title("Alpha").titleSort("Alpha").library(library).build());
+
+    movie.setTitleSort("Avalon");
+    movies.saveAndFlush(movie);
+
+    assertThat(lettersOf(library)).containsExactly(tuple(AlphabetLetter.A, 1));
+  }
+
+  private List<Tuple> lettersOf(Library library) {
+    return libraryManagement.getAlphabetIndex(library.getId()).stream()
+        .map(letter -> tuple(letter.getLetter(), letter.getItemCount()))
+        .toList();
   }
 
   private int totalOf(Library library) {
@@ -170,16 +243,5 @@ class LibraryItemCountsIT extends AbstractIntegrationTest {
           throw new AssertionError("The scan was not stored: " + rejection);
       case null -> throw new AssertionError("The store returned nothing");
     };
-  }
-
-  @TestConfiguration(proxyBeanMethods = false)
-  static class CommittedCounts {
-
-    final List<LibraryCountsChangedEvent> events = new CopyOnWriteArrayList<>();
-
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
-    void onCommitted(LibraryCountsChangedEvent event) {
-      events.add(event);
-    }
   }
 }

@@ -299,7 +299,6 @@ class LibraryOperationRestartIT extends AbstractScanningIntegrationTest {
         .libraryRefreshService(applicationContext.getBean(LibraryRefreshService.class))
         .finishingStepsRunner(
             applicationContext.getBean(LibraryOperationFinishingStepsRunner.class))
-        .letterIndexRecalculator(applicationContext.getBean(LetterIndexRecalculator.class))
         .eventPublisher(applicationContext)
         .transactionManager(applicationContext.getBean(PlatformTransactionManager.class))
         .clock(Clock.systemUTC())

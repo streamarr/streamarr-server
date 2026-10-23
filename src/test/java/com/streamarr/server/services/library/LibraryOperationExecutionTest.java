@@ -30,7 +30,6 @@ import com.streamarr.server.fakes.CountingSleeper;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
-import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.fakes.FakeLibraryMutationTransaction;
 import com.streamarr.server.fakes.FakeLibraryOperationRepository;
 import com.streamarr.server.fakes.FakeLibraryOperationScheduling;
@@ -244,7 +243,6 @@ class LibraryOperationExecutionTest {
 
   private final FakeLibraryOperationRepository libraryOperations =
       new FakeLibraryOperationRepository(fakeLibraryRepository);
-  private final FakeLibraryMetadataRepository libraryMetadata = new FakeLibraryMetadataRepository();
   private final OperationRunner operations = serviceBuilder().build();
 
   private UUID savedLibraryId;
@@ -1874,7 +1872,6 @@ class LibraryOperationExecutionTest {
       assertThat(mediaFile(missingPath)).isPresent();
       assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
       assertThat(libraryOperations.libraryOperations()).isEmpty();
-      assertThat(libraryMetadata.letterCountReplacements()).containsExactly(savedLibraryId);
       assertThat(stoppedOperations(LibraryOperationKind.SCAN)).isOne();
     }
 
@@ -1942,9 +1939,7 @@ class LibraryOperationExecutionTest {
     }
 
     @Test
-    @DisplayName(
-        "Should return the library UNHEALTHY and recalculate the letter index when a stop is stored"
-            + " during a refresh")
+    @DisplayName("Should return the library UNHEALTHY when a stop is stored during a refresh")
     void shouldReturnTheLibraryUnhealthyWhenAStopIsStoredDuringARefresh() {
       markLibrary(LibraryStatus.UNHEALTHY);
       libraryRefreshService.answerRefreshesWith(
@@ -1954,7 +1949,6 @@ class LibraryOperationExecutionTest {
 
       assertThat(result).isEqualTo(new LibraryOperationExecutionResult.Ended());
       assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
-      assertThat(libraryMetadata.letterCountReplacements()).containsExactly(savedLibraryId);
       assertThat(stoppedOperations(LibraryOperationKind.REFRESH)).isOne();
     }
 
@@ -2262,85 +2256,6 @@ class LibraryOperationExecutionTest {
         .build();
   }
 
-  @Nested
-  @DisplayName("Letter index")
-  class LetterIndexTests {
-
-    @Test
-    @DisplayName("Should recalculate the letter index when a scan finishes")
-    void shouldRecalculateTheLetterIndexWhenAScanFinishes() throws IOException {
-      createRootLibraryDirectory();
-
-      operations.scanLibrary(savedLibraryId);
-
-      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
-      assertThat(libraryMetadata.letterCountReplacements()).containsExactly(savedLibraryId);
-    }
-
-    @Test
-    @DisplayName("Should recalculate the letter index when a scan fails")
-    void shouldRecalculateTheLetterIndexWhenAScanFails() {
-      operations.scanLibrary(savedLibraryId);
-
-      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
-      assertThat(libraryMetadata.letterCountReplacements()).containsExactly(savedLibraryId);
-    }
-
-    @Test
-    @DisplayName("Should recalculate the letter index when a refresh finishes")
-    void shouldRecalculateTheLetterIndexWhenARefreshFinishes() {
-      operations.refreshLibrary(savedLibraryId);
-
-      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
-      assertThat(libraryMetadata.letterCountReplacements()).containsExactly(savedLibraryId);
-    }
-
-    @Test
-    @DisplayName(
-        "Should roll back the end and publish no end when the letter index cannot be recalculated")
-    void shouldRollBackTheEndAndPublishNoEndWhenTheLetterIndexCannotBeRecalculated() {
-      var failure = new DataAccessResourceFailureException("simulated connection loss");
-      libraryMetadata.failLetterCountReplacementsWith(failure);
-      var rollbacksBefore = transactionManager.rollbacks();
-
-      assertThatThrownBy(() -> operations.refreshLibrary(savedLibraryId)).isSameAs(failure);
-
-      assertThat(transactionManager.rollbacks()).isEqualTo(rollbacksBefore + 1);
-      // The one status change is the start's.
-      assertThat(capturingEventPublisher.getEventsOfType(LibraryStatusChangedEvent.class))
-          .hasSize(1);
-      assertThat(capturingEventPublisher.getEventsOfType(RefreshEndedEvent.class)).isEmpty();
-    }
-
-    @Test
-    @DisplayName(
-        "Should not recalculate the letter index when another execution ended the operation first")
-    void shouldNotRecalculateTheLetterIndexWhenAnotherExecutionEndedTheOperationFirst() {
-      var staleRuns =
-          serviceBuilder()
-              .executionLibraryOperations(
-                  new FakeLibraryOperationRepository(fakeLibraryRepository) {
-                    @Override
-                    public Optional<LibraryOperation> findLibraryOperation(UUID id) {
-                      var operation = libraryOperations.findLibraryOperation(id);
-                      libraryOperations.tryEndLibraryOperation(
-                          LibraryOperationEnd.builder()
-                              .libraryOperationId(id)
-                              .conclusion(LibraryOperationConclusion.FINISHED)
-                              .endedAt(Instant.now())
-                              .build());
-                      return operation;
-                    }
-                  })
-              .build();
-
-      staleRuns.refreshLibrary(savedLibraryId);
-
-      assertThat(libraryMetadata.letterCountReplacements()).isEmpty();
-      assertThat(capturingEventPublisher.getEventsOfType(RefreshEndedEvent.class)).isEmpty();
-    }
-  }
-
   private RunnerBuilder serviceBuilder() {
     return new RunnerBuilder();
   }
@@ -2418,8 +2333,6 @@ class LibraryOperationExecutionTest {
                               fakeMediaFileRepository, movieService, fileSystem, _ -> {}))
                       .transactionManager(transactionManager)
                       .build())
-              .letterIndexRecalculator(
-                  new LetterIndexRecalculator(libraryMetadata, new MutexFactoryProvider(), _ -> {}))
               .eventPublisher(publisher)
               .transactionManager(transactionManager)
               .clock(Clock.systemUTC())

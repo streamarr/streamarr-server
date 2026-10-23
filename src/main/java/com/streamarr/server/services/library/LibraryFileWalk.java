@@ -112,20 +112,17 @@ public class LibraryFileWalk {
   }
 
   /**
-   * Tries to match a file that the file watcher discovered, and waits for nothing.
-   *
-   * @return false when the file has an unsupported extension, belongs to another library or was
-   *     already matched, so nothing was processed; true otherwise, whether or not matching then
-   *     succeeded
+   * Matches a file that the file watcher discovered, and waits for nothing. A file with an
+   * unsupported extension, a file of another library and a file that was already matched are left
+   * as they are.
    */
-  public boolean tryProcessDiscoveredFile(Library library, Path path) {
+  public void processDiscoveredFile(Library library, Path path) {
     if (!keepSupportedOrWarn(path)) {
-      return false;
+      return;
     }
 
     try (var discovery = fileDiscoveryRuns.open("file discovery in", library)) {
-      var outcome = processFile(discovery, path, discovery.probeRun()::request);
-      return !(outcome instanceof MatchingOutcome.Skipped);
+      processFile(discovery, path, discovery.probeRun()::request);
     }
   }
 

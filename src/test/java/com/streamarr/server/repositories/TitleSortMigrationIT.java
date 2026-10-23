@@ -8,7 +8,6 @@ import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.media.MovieRepository;
-import com.streamarr.server.services.library.LetterIndexRecalculator;
 import com.streamarr.server.services.library.LibraryCountsService;
 import com.streamarr.server.utils.TitleSortUtil;
 import java.sql.Connection;
@@ -51,7 +50,6 @@ class TitleSortMigrationIT extends AbstractIntegrationTest {
   @Autowired private Flyway flyway;
   @Autowired private LibraryRepository libraries;
   @Autowired private MovieRepository movies;
-  @Autowired private LetterIndexRecalculator recalculator;
   @Autowired private LibraryCountsService counts;
   @Autowired private TransactionTemplate transactionTemplate;
 
@@ -164,7 +162,6 @@ class TitleSortMigrationIT extends AbstractIntegrationTest {
                     .build());
           }
 
-          recalculator.recalculateLetterIndex(library.getId());
           return counts
               .getItemCounts(List.of(library.getId()))
               .get(library.getId())
