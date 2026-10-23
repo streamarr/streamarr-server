@@ -818,7 +818,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
             schedulerCustomizer.serializer().orElseThrow(),
             dataSource,
             ProbeCapacityJdbcCustomization.builder()
-                .capacity(capacity)
+                .capacitySource(capacity)
                 .probeSchedulerUpperLimit(threads)
                 .scanSchedulerUpperLimit(KeyframePacketScanScheduler.THREADS)
                 .build());

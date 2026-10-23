@@ -27,13 +27,15 @@ public record ProbeCapacity(
   public static final ProbeCapacity NONE = builder().build();
 
   public ProbeCapacity plus(ProbeCapacity other) {
-    return new ProbeCapacity(
-        backgroundProbeCapacity + other.backgroundProbeCapacity,
-        freePlaybackProbeUnits + other.freePlaybackProbeUnits,
-        freeBackgroundProbeUnits + other.freeBackgroundProbeUnits,
-        freeKeyframePacketScanUnits + other.freeKeyframePacketScanUnits,
-        runningProbes + other.runningProbes,
-        runningKeyframePacketScans + other.runningKeyframePacketScans);
+    return builder()
+        .backgroundProbeCapacity(backgroundProbeCapacity + other.backgroundProbeCapacity)
+        .freePlaybackProbeUnits(freePlaybackProbeUnits + other.freePlaybackProbeUnits)
+        .freeBackgroundProbeUnits(freeBackgroundProbeUnits + other.freeBackgroundProbeUnits)
+        .freeKeyframePacketScanUnits(
+            freeKeyframePacketScanUnits + other.freeKeyframePacketScanUnits)
+        .runningProbes(runningProbes + other.runningProbes)
+        .runningKeyframePacketScans(runningKeyframePacketScans + other.runningKeyframePacketScans)
+        .build();
   }
 
   /**
@@ -43,9 +45,10 @@ public record ProbeCapacity(
    */
   public ProbeClaim probesToClaim(int probeExecutionsInProgress) {
     var awaitingDispatch = Math.max(0, probeExecutionsInProgress - runningProbes);
-    return new ProbeClaim(
-        Math.max(0, freeBackgroundProbeUnits - awaitingDispatch),
-        Math.max(0, freePlaybackProbeUnits - awaitingDispatch));
+    return ProbeClaim.builder()
+        .backgroundProbes(Math.max(0, freeBackgroundProbeUnits - awaitingDispatch))
+        .playbackProbes(Math.max(0, freePlaybackProbeUnits - awaitingDispatch))
+        .build();
   }
 
   /** The keyframe packet scans that the server may claim beside its scans in progress. */

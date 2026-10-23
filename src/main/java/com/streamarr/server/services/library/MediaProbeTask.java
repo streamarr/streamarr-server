@@ -34,8 +34,7 @@ public final class MediaProbeTask {
   }
 
   // A playback request stores its probe at high priority, or raises the pending probe to it. A
-  // raise
-  // after the scheduler claimed the execution reaches only the next attempt.
+  // raise after the scheduler claimed the execution reaches only the next attempt.
   private static ProbePriority priorityOf(TaskInstance<ProbeTaskRequest> instance) {
     if (instance.getPriority() >= Priority.HIGH) {
       return ProbePriority.PLAYBACK;

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.github.kagkarlsson.scheduler.jdbc.JdbcTaskRepository;
 import com.github.kagkarlsson.scheduler.jdbc.PostgreSqlJdbcCustomization;
 import com.streamarr.server.services.streaming.ProbeCapacity;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -20,11 +21,18 @@ class ProbeCapacityJdbcCustomizationTest {
   private static final String CONDITION = " AND task_name = 'media-probe'";
   private static final int SCHEDULER_UPPER_LIMIT = 8;
 
+  private static final Pattern BACKGROUND_LIMIT =
+      Pattern.compile(
+          "(?i)order by execution_time asc, task_instance asc fetch next (\\d+) rows only\\)");
+  private static final Pattern CLAIM_LIMIT = Pattern.compile("LIMIT (\\d+)$");
+
   private final PostgreSqlJdbcCustomization genericLockAndFetch =
       new PostgreSqlJdbcCustomization(true, false);
 
   @ParameterizedTest(
-      name = "limit={0}, free playback={1}, free background={2}, running={3} -> {4} background")
+      name =
+          "limit={0}, free playback={1}, free background={2}, running={3} -> {4} claimed, {5}"
+              + " background")
   @CsvSource({
     "8, 2, 3, 0, 5, 3",
     "6, 2, 3, 0, 1, 1",
@@ -49,20 +57,12 @@ class ProbeCapacityJdbcCustomizationTest {
             .runningProbes(running)
             .build();
 
-    assertThat(
-            customization(capacity)
-                .createGenericSelectForUpdateQuery(PROBE_TABLE, limit, CONDITION, true))
-        .isEqualTo(
-            genericLockAndFetch.createGenericSelectForUpdateQuery(
-                PROBE_TABLE,
-                claimed,
-                CONDITION
-                    + " AND (priority >= 90 OR (task_name, task_instance) IN (SELECT task_name,"
-                    + " task_instance FROM scheduled_tasks WHERE picked = false AND priority < 90"
-                    + " ORDER BY execution_time ASC, task_instance ASC LIMIT "
-                    + backgroundClaim
-                    + ")) ",
-                true));
+    var query =
+        customization(capacity)
+            .createGenericSelectForUpdateQuery(PROBE_TABLE, limit, CONDITION, true);
+
+    assertThat(limit(CLAIM_LIMIT, query)).isEqualTo(claimed);
+    assertThat(limit(BACKGROUND_LIMIT, query)).isEqualTo(backgroundClaim);
   }
 
   @ParameterizedTest(name = "limit={0}, free scans={1}, running scans={2} -> {3}")
@@ -95,9 +95,15 @@ class ProbeCapacityJdbcCustomizationTest {
                 "artwork_tasks", 4, CONDITION, true));
   }
 
+  private static int limit(Pattern pattern, String query) {
+    var matcher = pattern.matcher(query.strip());
+    assertThat(matcher.find()).as("The claim names its limit: %s", query).isTrue();
+    return Integer.parseInt(matcher.group(1));
+  }
+
   private static ProbeCapacityJdbcCustomization customization(ProbeCapacity capacity) {
     return ProbeCapacityJdbcCustomization.builder()
-        .capacity(() -> capacity)
+        .capacitySource(() -> capacity)
         .probeSchedulerUpperLimit(SCHEDULER_UPPER_LIMIT)
         .scanSchedulerUpperLimit(SCHEDULER_UPPER_LIMIT)
         .build();

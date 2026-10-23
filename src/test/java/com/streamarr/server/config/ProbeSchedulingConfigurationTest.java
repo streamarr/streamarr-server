@@ -145,7 +145,7 @@ class ProbeSchedulingConfigurationTest {
 
   private static ProbeCapacityJdbcCustomization jdbcCustomization() {
     return ProbeCapacityJdbcCustomization.builder()
-        .capacity(() -> ProbeCapacity.NONE)
+        .capacitySource(() -> ProbeCapacity.NONE)
         .probeSchedulerUpperLimit(1)
         .scanSchedulerUpperLimit(1)
         .build();

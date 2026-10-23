@@ -24,9 +24,8 @@ import org.springframework.core.env.Environment;
 // Starts a probe scheduler against the test database from the application's scheduler customization
 // and scheduler listeners, as the db-scheduler starter would. The test profile turns the starter
 // off. The scheduler picks probes up to the probe capacity it reads and its own thread count. A
-// test
-// whose fake producer stands in for the workers reads the capacity of FAKE_WORKERS; a test with a
-// real worker session reads the context's ProbeCapacitySource.
+// test whose fake producer stands in for the workers reads the capacity of FAKE_WORKERS; a test
+// with a real worker session reads the context's ProbeCapacitySource.
 @Builder(toBuilder = true)
 record ProbeSchedulerStarter(
     DbSchedulerCustomizer customizer,
@@ -76,7 +75,7 @@ record ProbeSchedulerStarter(
                 serializer,
                 dataSource,
                 ProbeCapacityJdbcCustomization.builder()
-                    .capacity(probeCapacity)
+                    .capacitySource(probeCapacity)
                     .probeSchedulerUpperLimit(threads)
                     .scanSchedulerUpperLimit(KeyframePacketScanScheduler.THREADS)
                     .build());
