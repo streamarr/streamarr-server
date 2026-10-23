@@ -40,6 +40,7 @@ public class ProbeRuns {
   private final Clock clock;
   private final ProbeSchedulingProperties properties;
   private final ProbeCapacitySource capacitySource;
+  private final ScanProbesWaiting scanProbesWaiting;
 
   public ProbeRun open() {
     return new ProbeRun(scheduler, clock);
@@ -53,6 +54,15 @@ public class ProbeRuns {
    */
   public ProbeRunSummary awaitResults(ProbeRun run, String description, AdmissionEnd admissionEnd)
       throws InterruptedException {
+    try {
+      return awaitPendingResults(run, description, admissionEnd);
+    } finally {
+      scanProbesWaiting.ended(run);
+    }
+  }
+
+  private ProbeRunSummary awaitPendingResults(
+      ProbeRun run, String description, AdmissionEnd admissionEnd) throws InterruptedException {
     var requested = run.requested();
     var pending = new HashMap<>(requested);
     var counts = new EnumMap<RequestedProbeResult, Integer>(RequestedProbeResult.class);
@@ -64,6 +74,7 @@ public class ProbeRuns {
                 pending.remove(mediaFileId);
                 counts.merge(result, 1, Integer::sum);
               });
+      scanProbesWaiting.pending(run, pending.size());
       if (pending.isEmpty() || admissionEnd.isReached()) {
         break;
       }
@@ -75,7 +86,7 @@ public class ProbeRuns {
                 .finished(requested.size() - pending.size())
                 .pending(pending.size())
                 .elapsed(elapsed(run))
-                .probeCapacity(capacitySource.probeCapacity().backgroundProbeCapacity())
+                .capacity(capacitySource.probeCapacity())
                 .build());
       }
 
@@ -92,7 +103,9 @@ public class ProbeRuns {
   }
 
   private static void logProgress(String description, ProbeRunProgress progress) {
-    if (progress.probeCapacity() == 0) {
+    var capacity = progress.capacity();
+    // A scan's probes are background probes, so a scan waits while no worker grants a unit.
+    if (capacity.backgroundProbeCapacity() == 0) {
       log.warn(
           "Probing for {}: {} of {} saved, {} waiting for a connected worker that can run probes",
           description,
@@ -103,13 +116,16 @@ public class ProbeRuns {
     }
 
     log.info(
-        "Probing for {}: {} of {} saved, {} waiting, {} files per second, probe capacity {}",
+        "Probing for {}: {} of {} saved, {} waiting, {} files per second, probe capacities of the"
+            + " connected workers: {} playback, {} background, {} keyframe packet scans",
         description,
         progress.finished(),
         progress.finished() + progress.pending(),
         progress.pending(),
         String.format(Locale.ROOT, "%.1f", progress.filesPerSecond()),
-        progress.probeCapacity());
+        capacity.playbackProbeCapacity(),
+        capacity.backgroundProbeCapacity(),
+        capacity.keyframePacketScanCapacity());
   }
 
   private Map<UUID, RequestedProbeResult> finishedProbes(Map<UUID, RequestedProbe> pending) {

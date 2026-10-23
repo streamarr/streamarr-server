@@ -34,7 +34,6 @@ import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.ProbeCapacitySource;
 import com.streamarr.server.services.streaming.QualityLadderService;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
-import com.streamarr.server.services.streaming.remote.ProbeRefusal;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
@@ -236,10 +235,7 @@ class LibraryScanProbeCapacityIT extends AbstractScanningIntegrationTest {
 
   private double deferredBecauseWorkersAreBusy() {
     var counter =
-        meterRegistry
-            .find("streamarr.probes.deferred")
-            .tag("reason", ProbeRefusal.WORKERS_BUSY.name())
-            .counter();
+        meterRegistry.find("streamarr.probes.deferred").tag("reason", "workers_busy").counter();
     if (counter == null) {
       return 0;
     }

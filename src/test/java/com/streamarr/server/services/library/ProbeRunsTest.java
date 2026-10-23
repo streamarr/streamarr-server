@@ -22,6 +22,7 @@ import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.streaming.ProbeCapacity;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
@@ -29,6 +30,7 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -48,6 +50,7 @@ class ProbeRunsTest {
   private final FakeProbeTaskRequests requests = new FakeProbeTaskRequests(outcomes);
   private final MutableClock clock = new MutableClock();
   private final CountingSleeper sleeper = new CountingSleeper(clock);
+  private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
   private FileSystem fileSystem;
   private ProbeRuns probeRuns;
 
@@ -69,7 +72,12 @@ class ProbeRunsTest {
             .clock(clock)
             .properties(new ProbeSchedulingProperties(null, CHECK_INTERVAL))
             .capacitySource(() -> ProbeCapacity.builder().build())
+            .scanProbesWaiting(new ScanProbesWaiting(meterRegistry))
             .build();
+  }
+
+  private double waitingGauge() {
+    return meterRegistry.get("streamarr.probes.waiting").gauge().value();
   }
 
   @AfterEach
@@ -88,6 +96,29 @@ class ProbeRunsTest {
 
     assertThat(summary.count(RequestedProbeResult.READY)).isOne();
     assertThat(sleeper.sleeps()).containsExactly(CHECK_INTERVAL);
+  }
+
+  @Test
+  @DisplayName(
+      "Should report the probes that the scan still waits for until the scan stops waiting when a"
+          + " scan waits for its probes")
+  void shouldReportTheProbesThatTheScanStillWaitsForUntilItStopsWaitingWhenAScanWaits()
+      throws Exception {
+    var run = probeRuns.open();
+    run.request(mediaFile("first.mkv").getId());
+    run.request(mediaFile("second.mkv").getId());
+    var waitingDuringSleep = new AtomicReference<Double>();
+    var reached = new AtomicBoolean();
+    sleeper.onSleep(
+        _ -> {
+          waitingDuringSleep.set(waitingGauge());
+          reached.set(true);
+        });
+
+    probeRuns.awaitResults(run, RUN_DESCRIPTION, reached::get);
+
+    assertThat(waitingDuringSleep.get()).isEqualTo(2);
+    assertThat(waitingGauge()).isZero();
   }
 
   @Test
