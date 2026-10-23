@@ -277,6 +277,25 @@ class PlaybackProbeServiceTest {
 
     @Test
     @DisplayName(
+        "Should start playback from the outcome read at the limit when the limit passes before the"
+            + " wait")
+    void shouldStartPlaybackFromTheOutcomeReadAtTheLimitWhenTheLimitPassesBeforeTheWait()
+        throws Exception {
+      // The outcome arrives and the limit passes after the wait first reads the stored outcome.
+      onNextProbeStateRead.set(
+          () -> {
+            outcomes.store(success());
+            nanoClock.advance(WAIT_LIMIT);
+          });
+
+      var playback = readInBackground(service()).get(10, TimeUnit.SECONDS);
+
+      assertThat(probeOf(playback).videoCodec()).isEqualTo("h264");
+      assertThat(probeWaits()).isZero();
+    }
+
+    @Test
+    @DisplayName(
         "Should start playback from the outcome read at the limit when no attempt end arrives")
     void shouldStartPlaybackFromTheOutcomeReadAtTheLimitWhenNoAttemptEndArrives() throws Exception {
       var service =

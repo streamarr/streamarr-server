@@ -112,7 +112,7 @@ public class PlaybackProbeService {
 
         var remaining = properties.probeWaitLimit().minusNanos(nanoClock.nanoTime() - waitStarted);
         if (!remaining.isPositive()) {
-          return notReady();
+          return storedOrNotReady(mediaFileId);
         }
 
         var waited = awaitEnd(nextEnd, remaining);
@@ -121,13 +121,18 @@ public class PlaybackProbeService {
         }
 
         if (waited == AttemptWait.TIMED_OUT) {
-          return reader
-              .find(mediaFileId)
-              .map(PlaybackProbeService::playable)
-              .orElseGet(PlaybackProbeService::notReady);
+          return storedOrNotReady(mediaFileId);
         }
       }
     }
+  }
+
+  // The limit has passed. An outcome stored since the last read still starts playback.
+  private Outcome<MediaProbe, CreateStreamSessionRejection> storedOrNotReady(UUID mediaFileId) {
+    return reader
+        .find(mediaFileId)
+        .map(PlaybackProbeService::playable)
+        .orElseGet(PlaybackProbeService::notReady);
   }
 
   // A failure saved before the request belongs to an earlier attempt, so the wait continues.
