@@ -27,6 +27,7 @@ public final class PlaybackProbeServiceFixture {
         .probeWorkers(_ -> false)
         .attemptEnds(new ProbeAttemptEnds(new SimpleMeterRegistry()))
         .clock(Clock.systemUTC())
+        .nanoClock(System::nanoTime)
         .meterRegistry(new SimpleMeterRegistry())
         .playbackProbeClaims(new PlaybackProbeClaims(Clock.systemUTC(), new SimpleMeterRegistry()))
         .properties(StreamingProperties.builder().build());

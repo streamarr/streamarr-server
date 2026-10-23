@@ -2,6 +2,7 @@ package com.streamarr.server.config;
 
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.concurrency.NanoClock;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.HlsStreamingService;
@@ -42,6 +43,11 @@ public class StreamingConfig {
   @Bean
   public LocalSegmentStore segmentStore(StreamingProperties properties) {
     return new LocalSegmentStore(Path.of(properties.segmentBasePath()));
+  }
+
+  @Bean
+  public NanoClock nanoClock() {
+    return System::nanoTime;
   }
 
   @Bean
