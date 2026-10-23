@@ -131,6 +131,7 @@ class HlsStreamingSmokeTest {
             .build();
     streamingService =
         HlsStreamingService.builder()
+            .meterRegistry(new SimpleMeterRegistry())
             .mediaFileRepository(mediaFileRepository)
             .transcodeExecutor(transcodeExecutor)
             .segmentStore(segmentStore)

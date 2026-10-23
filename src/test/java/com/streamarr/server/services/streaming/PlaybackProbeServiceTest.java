@@ -27,6 +27,7 @@ import com.streamarr.server.services.events.library.MediaFileProbeTaskRequested;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.ProbeAttemptEnds;
+import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
 import java.time.Duration;
@@ -155,6 +156,7 @@ class PlaybackProbeServiceTest {
       var playback = readInBackground(service());
       probeRequested.get(10, TimeUnit.SECONDS);
 
+      clock.advance(Duration.ofSeconds(3));
       outcomes.store(success());
       attemptEnds.signalEnd(mediaFileId);
 
@@ -162,6 +164,9 @@ class PlaybackProbeServiceTest {
       assertThat(events.getEventsOfType(MediaFileProbeTaskRequested.class))
           .containsExactly(new MediaFileProbeTaskRequested(mediaFileId));
       assertThat(probeWaits()).isZero();
+      assertThat(waitTimer("ready"))
+          .returns(1L, Timer::count)
+          .returns(3.0, timer -> timer.totalTime(TimeUnit.SECONDS));
     }
 
     @Test
@@ -177,6 +182,7 @@ class PlaybackProbeServiceTest {
           .isEqualTo(
               Outcome.rejected(
                   new CreateStreamSessionRejection.ProbeFailed(ProbeError.NO_VIDEO_STREAM)));
+      assertThat(waitTimer("probe_failed").count()).isOne();
     }
 
     @Test
@@ -191,6 +197,9 @@ class PlaybackProbeServiceTest {
       assertThat(playback.get(10, TimeUnit.SECONDS)).isEqualTo(notReady());
       assertThat(probeState().requested()).contains(REQUESTED_INPUTS);
       assertThat(probeWaits()).isZero();
+      assertThat(waitTimer("not_ready"))
+          .returns(1L, Timer::count)
+          .returns((double) WAIT_LIMIT.toSeconds(), timer -> timer.totalTime(TimeUnit.SECONDS));
     }
 
     @Test
@@ -376,7 +385,12 @@ class PlaybackProbeServiceTest {
         .probeWorkers(_ -> true)
         .attemptEnds(attemptEnds)
         .clock(clock)
+        .meterRegistry(meterRegistry)
         .properties(StreamingProperties.builder().probeWaitLimit(WAIT_LIMIT).build());
+  }
+
+  private Timer waitTimer(String outcome) {
+    return meterRegistry.get("streamarr.playback.probe_wait").tag("outcome", outcome).timer();
   }
 
   // Saves the requested inputs as the library's listener does before the event returns.

@@ -10,6 +10,8 @@ import com.streamarr.server.services.events.library.MediaFileProbeTaskRequested;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.ProbeAttemptEnds;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -33,7 +35,10 @@ public class PlaybackProbeService {
   private final ProbeWorkers probeWorkers;
   private final ProbeAttemptEnds attemptEnds;
   private final Clock clock;
+  private static final String WAIT_METRIC = "streamarr.playback.probe_wait";
+
   private final StreamingProperties properties;
+  private final MeterRegistry meterRegistry;
 
   /**
    * Reads the media file's stored probe outcome. When the file has none, requests its probe ahead
@@ -56,7 +61,25 @@ public class PlaybackProbeService {
       return notReady();
     }
 
-    return awaitOutcome(mediaFileId, requestedAt);
+    var outcome = awaitOutcome(mediaFileId, requestedAt);
+    Timer.builder(WAIT_METRIC)
+        .description("How long a playback request waited for its media file's probe")
+        .tag("outcome", waitOutcome(outcome))
+        .register(meterRegistry)
+        .record(Duration.between(requestedAt, clock.instant()));
+    return outcome;
+  }
+
+  private static String waitOutcome(Outcome<MediaProbe, CreateStreamSessionRejection> outcome) {
+    return outcome.fold(_ -> "ready", PlaybackProbeService::rejectedWaitOutcome);
+  }
+
+  private static String rejectedWaitOutcome(List<CreateStreamSessionRejection> rejections) {
+    if (rejections.stream().anyMatch(CreateStreamSessionRejection.ProbeFailed.class::isInstance)) {
+      return "probe_failed";
+    }
+
+    return "not_ready";
   }
 
   private Outcome<MediaProbe, CreateStreamSessionRejection> awaitOutcome(

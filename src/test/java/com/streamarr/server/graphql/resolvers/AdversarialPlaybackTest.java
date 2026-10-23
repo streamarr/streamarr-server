@@ -316,6 +316,7 @@ class AdversarialPlaybackTest {
               .heldRequests(sessions.heldSegmentRequests())
               .build();
       return HlsStreamingService.builder()
+          .meterRegistry(new SimpleMeterRegistry())
           .mediaFileRepository(files)
           .transcodeExecutor(executor)
           .segmentStore(segments)

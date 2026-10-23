@@ -124,6 +124,7 @@ class HlsStreamingServiceTest {
             Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
     assertThat(service.getActiveSessionCount()).isZero();
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+    assertThat(capacityRefusals("no_connected_worker")).isOne();
   }
 
   @Test
@@ -670,7 +671,18 @@ class HlsStreamingServiceTest {
         .runtimeRegistry(registry)
         .producerLifecycle(rig.lifecycle())
         .deliveryCoordinator(rig.coordinator())
+        .meterRegistry(meters)
         .build();
+  }
+
+  private double capacityRefusals(String cause) {
+    var counter =
+        meters.find("streamarr.streaming.capacity_refusals").tag("cause", cause).counter();
+    if (counter == null) {
+      return 0;
+    }
+
+    return counter.count();
   }
 
   @Test
@@ -997,6 +1009,7 @@ class HlsStreamingServiceTest {
         .isEqualTo(
             Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+    assertThat(capacityRefusals("no_encoder_with_free_slot")).isOne();
   }
 
   @Test
@@ -1495,6 +1508,8 @@ class HlsStreamingServiceTest {
     assertThat(service.createSession(createStreamSessionCommand(oneMoreId, profileId, options)))
         .isEqualTo(
             Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(capacityRefusals("no_free_configured_transcode_slot")).isOne();
+    assertThat(capacityRefusals("no_free_worker_slot")).isZero();
   }
 
   @Test
@@ -1570,6 +1585,7 @@ class HlsStreamingServiceTest {
             Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
     assertThat(service.getActiveSessionCount()).isZero();
     assertThat(transcodeExecutor.getRunningCount()).isZero();
+    assertThat(capacityRefusals("no_free_worker_slot")).isOne();
   }
 
   @Test

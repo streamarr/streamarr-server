@@ -213,6 +213,7 @@ class WorkerPlaybackRecoveryIT {
       delivery = lifecycle.coordinator();
       streams =
           HlsStreamingService.builder()
+              .meterRegistry(new SimpleMeterRegistry())
               .mediaFileRepository(files)
               .transcodeExecutor(executor)
               .segmentStore(segments)
