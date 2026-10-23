@@ -175,6 +175,25 @@ class LibraryItemCountsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should delete a library when its delete cascades to titles that share a letter")
+  void shouldDeleteALibraryWhenItsDeleteCascadesToTitlesThatShareALetter() {
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var alpha =
+        movies.saveAndFlush(
+            Movie.builder().title("Alpha").titleSort("Alpha").library(library).build());
+    movies.saveAndFlush(
+        Movie.builder().title("Avalon").titleSort("Avalon").library(library).build());
+    assertThat(lettersOf(library)).containsExactly(tuple(AlphabetLetter.A, 2));
+
+    transactions.executeWithoutResult(
+        _ -> jdbc.update("DELETE FROM library WHERE id = ?", library.getId()));
+
+    assertThat(libraries.findById(library.getId())).isEmpty();
+    assertThat(movies.findById(alpha.getId())).isEmpty();
+    assertThat(lettersOf(library)).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should move the count to the new letter when a title changes its first letter")
   void shouldMoveTheCountToTheNewLetterWhenATitleChangesItsFirstLetter() {
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());

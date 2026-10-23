@@ -52,8 +52,14 @@ BEGIN
     RETURN NULL;
 END $$;
 
+-- A library delete cascades to its letter index as well as to its titles. A decrement after the
+-- library row is gone would re-check the letter row's foreign key and fail.
 CREATE FUNCTION uncount_deleted_collectable() RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
+    IF NOT EXISTS (SELECT 1 FROM library WHERE id = OLD.library_id) THEN
+        RETURN OLD;
+    END IF;
+
     IF EXISTS (SELECT 1 FROM movie WHERE id = OLD.id)
         OR EXISTS (SELECT 1 FROM series WHERE id = OLD.id) THEN
         PERFORM adjust_letter_index(OLD.library_id, alphabet_letter_of(OLD.title_sort), -1);
