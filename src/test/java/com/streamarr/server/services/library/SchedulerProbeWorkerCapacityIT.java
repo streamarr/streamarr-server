@@ -901,10 +901,19 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
     scheduler.triggerCheckForDueExecutions();
   }
 
-  // db-scheduler notifies listeners after the completion handler's transaction commits.
+  // db-scheduler notifies listeners after the completion handler's transaction commits, but before
+  // it stops counting the execution as running. A claim in that gap counts the finished execution
+  // as one that still waits for a probe unit, so the test waits for the count to drop.
   private ExecutionComplete nextCompletion() throws InterruptedException {
     var complete = completions.poll(WORKER_WAIT.toSeconds(), TimeUnit.SECONDS);
     assertThat(complete).as("The scheduler must finish a probe execution").isNotNull();
+    var finished = complete.getExecution().taskInstance;
+    await()
+        .atMost(WORKER_WAIT)
+        .until(
+            () ->
+                scheduler.getCurrentlyExecuting().stream()
+                    .noneMatch(running -> running.getTaskInstance().equals(finished)));
     return complete;
   }
 
