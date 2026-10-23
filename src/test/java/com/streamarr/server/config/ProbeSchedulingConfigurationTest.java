@@ -3,10 +3,12 @@ package com.streamarr.server.config;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
+import com.github.kagkarlsson.scheduler.jdbc.JdbcTaskRepository;
 import com.streamarr.server.config.persistence.SecurityAuditActorSource;
 import com.streamarr.server.domain.audit.AuditActor;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
+import com.streamarr.server.services.streaming.ProbeCapacity;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
@@ -16,6 +18,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.mock.env.MockEnvironment;
 import tools.jackson.databind.json.JsonMapper;
 
 @Tag("UnitTest")
@@ -23,6 +26,7 @@ import tools.jackson.databind.json.JsonMapper;
 class ProbeSchedulingConfigurationTest {
 
   private static final long BOUND_SECONDS = 5;
+  private static final String PROBE_TABLE = JdbcTaskRepository.DEFAULT_TABLE_NAME;
 
   private final ProbeSchedulingConfiguration configuration = new ProbeSchedulingConfiguration();
 
@@ -82,13 +86,68 @@ class ProbeSchedulingConfigurationTest {
     assertThat(restored).isEqualTo(request);
     assertThat(
             configuration
-                .dbSchedulerCustomizer(serializer, new DriverManagerDataSource())
+                .dbSchedulerCustomizer(
+                    serializer, new DriverManagerDataSource(), jdbcCustomization())
                 .serializer())
         .contains(serializer);
   }
 
+  @Test
+  @DisplayName(
+      "Should leave the probe executions in progress out of the free probe capacity when"
+          + " db-scheduler sets the probe scheduler's threads")
+  void
+      shouldLeaveTheProbeExecutionsInProgressOutOfTheFreeProbeCapacityWhenDbSchedulerSetsThreads() {
+    var environment =
+        new MockEnvironment()
+            .withProperty("db-scheduler.threads", "8")
+            .withProperty("db-scheduler.polling-strategy", "lock-and-fetch")
+            .withProperty("db-scheduler.polling-strategy-upper-limit-fraction-of-threads", "1.0");
+    var customization =
+        configuration.probeCapacityJdbcCustomization(
+            () ->
+                ProbeCapacity.builder()
+                    .freeBackgroundProbeUnits(3)
+                    .freeKeyframePacketScanUnits(1)
+                    .build(),
+            environment);
+
+    // Two of the eight threads run probe executions, so db-scheduler asks for at most six probes.
+    assertThat(customization.createGenericSelectForUpdateQuery(PROBE_TABLE, 6, "", true))
+        .endsWith(" LIMIT 1");
+    // One of the scan scheduler's sixteen threads runs a scan that no worker runs yet.
+    assertThat(
+            customization.createGenericSelectForUpdateQuery(
+                KeyframePacketScanScheduler.TABLE_NAME, 15, "", false))
+        .endsWith(" LIMIT 0");
+  }
+
+  @Test
+  @DisplayName(
+      "Should pick probes through the probe capacity customization when customizing db-scheduler")
+  void shouldPickProbesThroughTheProbeCapacityCustomizationWhenCustomizingDbScheduler() {
+    var customization = jdbcCustomization();
+
+    assertThat(
+            configuration
+                .dbSchedulerCustomizer(
+                    configuration.probeTaskSerializer(),
+                    new DriverManagerDataSource(),
+                    customization)
+                .jdbcCustomization())
+        .containsSame(customization);
+  }
+
   private DbSchedulerCustomizer customizer() {
     return configuration.dbSchedulerCustomizer(
-        configuration.probeTaskSerializer(), new DriverManagerDataSource());
+        configuration.probeTaskSerializer(), new DriverManagerDataSource(), jdbcCustomization());
+  }
+
+  private static ProbeCapacityJdbcCustomization jdbcCustomization() {
+    return ProbeCapacityJdbcCustomization.builder()
+        .capacity(() -> ProbeCapacity.NONE)
+        .probeSchedulerUpperLimit(1)
+        .scanSchedulerUpperLimit(1)
+        .build();
   }
 }

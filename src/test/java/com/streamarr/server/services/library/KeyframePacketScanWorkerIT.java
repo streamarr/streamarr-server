@@ -14,6 +14,7 @@ import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
+import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
@@ -110,7 +111,11 @@ class KeyframePacketScanWorkerIT extends AbstractIntegrationTest {
       var remote = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, mediaRoot);
       var packetScans = new CapturingKeyframePacketScanRequests();
 
-      probeExecution.toBuilder().producer(remote).packetScans(packetScans).build().execute(request);
+      probeExecution.toBuilder()
+          .producer(remote)
+          .packetScans(packetScans)
+          .build()
+          .execute(request, ProbePriority.BACKGROUND);
 
       assertThat(storedKeyframes())
           .isEqualTo(

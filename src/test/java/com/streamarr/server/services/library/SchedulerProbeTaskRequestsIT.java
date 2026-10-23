@@ -20,6 +20,7 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
+import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.task.ProbeAttemptFailure;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
@@ -192,6 +193,7 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
                         .sourcePath(FilepathCodec.decode(file.getFilepathUri()))
                         .attemptId(UUID.randomUUID())
                         .probeVersion(ProbeVersion.CURRENT)
+                        .priority(ProbePriority.BACKGROUND)
                         .build()))
             .build());
 

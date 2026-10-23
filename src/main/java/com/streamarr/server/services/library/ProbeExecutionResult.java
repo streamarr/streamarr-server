@@ -5,7 +5,7 @@ import lombok.NonNull;
 
 /**
  * How one probe execution ends: the instance is done, it must run again with new inputs, its source
- * changed and it must run again once the source is quiet, it waits for a free worker slot without
+ * changed and it must run again once the source is quiet, it waits for free probe capacity without
  * counting as a failure, or its source no longer exists and no probe is requested any more.
  */
 public sealed interface ProbeExecutionResult {

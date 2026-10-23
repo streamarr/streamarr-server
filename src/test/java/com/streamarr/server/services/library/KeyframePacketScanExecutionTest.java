@@ -17,6 +17,7 @@ import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
@@ -90,7 +91,8 @@ class KeyframePacketScanExecutionTest {
     var packetScans = new CapturingKeyframePacketScanRequests();
     var producer = new FakeFfprobeService();
     producer.answerWith(success(packetScanRequired()));
-    probeExecution(producer, packetScans).execute(probeRequest(mediaFile, source));
+    probeExecution(producer, packetScans)
+        .execute(probeRequest(mediaFile, source), ProbePriority.BACKGROUND);
     var request = packetScans.requests().getFirst();
 
     var result = execution().execute(request);

@@ -2,13 +2,12 @@ package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
-import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.domain.streaming.ProbePriority;
+import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
@@ -49,6 +48,7 @@ class RemoteFfprobeServiceTest {
               .attemptId(UUID.randomUUID())
               .probeVersion(ProbeVersion.CURRENT)
               .sourcePath(sourceRoot.resolve(relativePath))
+              .priority(ProbePriority.BACKGROUND)
               .build();
 
       assertThatThrownBy(() -> service.probe(request))
@@ -58,8 +58,8 @@ class RemoteFfprobeServiceTest {
   }
 
   @Test
-  @DisplayName("Should report a temporary failure when no worker is connected")
-  void shouldReportTemporaryFailureWhenNoWorkerIsConnected() throws IOException {
+  @DisplayName("Should defer the probe without a failure when no worker is connected")
+  void shouldDeferTheProbeWithoutAFailureWhenNoWorkerIsConnected() throws IOException {
     var sourceRoot = Files.createDirectories(tempDir.resolve("movies"));
     try (var server =
         WorkerSessionServer.builder()
@@ -75,12 +75,11 @@ class RemoteFfprobeServiceTest {
               .attemptId(UUID.randomUUID())
               .probeVersion(ProbeVersion.CURRENT)
               .sourcePath(Files.createFile(sourceRoot.resolve("film.mkv")))
+              .priority(ProbePriority.BACKGROUND)
               .build();
 
       assertThatThrownBy(() -> service.probe(request))
-          .isInstanceOfSatisfying(
-              ProbeExecutionException.class,
-              exception -> assertThat(exception.reason()).isEqualTo(ItemFailureReason.TEMPORARY))
+          .isExactlyInstanceOf(ProbeWorkersBusyException.class)
           .hasMessage(ProbeRefusal.NO_CONNECTED_WORKER.description());
     }
   }

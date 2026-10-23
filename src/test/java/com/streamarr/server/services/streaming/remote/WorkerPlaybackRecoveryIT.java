@@ -14,6 +14,7 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
@@ -83,8 +84,8 @@ class WorkerPlaybackRecoveryIT {
             WorkerSessionServer.builder()
                 .configuration(serverConfigurationBuilder().build())
                 .eventPublisher(events)
-                .segmentStore(segments)
                 .meterRegistry(new SimpleMeterRegistry())
+                .segmentStore(segments)
                 .build();
         var worker =
             WorkerContainerFixture.builder()
@@ -179,6 +180,7 @@ class WorkerPlaybackRecoveryIT {
                       .sourcePath(source)
                       .attemptId(UUID.randomUUID())
                       .probeVersion(ProbeVersion.CURRENT)
+                      .priority(ProbePriority.BACKGROUND)
                       .build());
       assertThat(outcome).isInstanceOf(ProbeOutcome.Success.class);
       var probe = (ProbeOutcome.Success) outcome;

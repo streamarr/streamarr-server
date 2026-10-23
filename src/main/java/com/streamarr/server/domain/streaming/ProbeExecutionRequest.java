@@ -7,4 +7,7 @@ import lombok.NonNull;
 
 @Builder
 public record ProbeExecutionRequest(
-    @NonNull Path sourcePath, @NonNull UUID attemptId, int probeVersion) {}
+    @NonNull Path sourcePath,
+    @NonNull UUID attemptId,
+    int probeVersion,
+    @NonNull ProbePriority priority) {}

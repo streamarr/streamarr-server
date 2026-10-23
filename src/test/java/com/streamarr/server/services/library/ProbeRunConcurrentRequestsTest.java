@@ -17,6 +17,7 @@ import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
+import com.streamarr.server.services.streaming.ProbeCapacity;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
@@ -33,6 +34,8 @@ import org.junit.jupiter.api.Test;
 @Tag("UnitTest")
 @DisplayName("Probe runs with concurrent requests")
 class ProbeRunConcurrentRequestsTest {
+
+  private static final String RUN_DESCRIPTION = "scan of library 'Probes'";
 
   private final FakeMediaFileRepository mediaFiles = new FakeMediaFileRepository();
   private final FakeMediaFileContainerInfoRepository outcomes =
@@ -65,7 +68,7 @@ class ProbeRunConcurrentRequestsTest {
     parked.release.countDown();
     earlierRequest.get(5, TimeUnit.SECONDS);
 
-    var summary = probeRuns.awaitResults(run, neverReached());
+    var summary = probeRuns.awaitResults(run, RUN_DESCRIPTION, neverReached());
 
     assertThat(summary.elapsed()).isEqualTo(Duration.ofSeconds(5));
   }
@@ -86,7 +89,8 @@ class ProbeRunConcurrentRequestsTest {
               throw new AssertionError("every requested probe already has its outcome");
             })
         .clock(clock)
-        .properties(new ProbeSchedulingProperties(null, Duration.ofSeconds(2), null))
+        .properties(new ProbeSchedulingProperties(null, Duration.ofSeconds(2)))
+        .probeCapacity(() -> ProbeCapacity.builder().build())
         .build();
   }
 
