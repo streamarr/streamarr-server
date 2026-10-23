@@ -53,10 +53,8 @@ class PlaybackProbeClaimsTest {
   @Test
   @DisplayName("Should time no wait when the scheduler claims a probe that no playback waits for")
   void shouldTimeNoWaitWhenTheSchedulerClaimsAProbeThatNoPlaybackWaitsFor() {
-    claims.waitStarted(mediaFileId, clock.instant());
-    claims.waitStarted(mediaFileId, clock.instant());
-    claims.waitEnded(mediaFileId);
-    claims.waitEnded(mediaFileId);
+    claims.waitStarted(mediaFileId, clock.instant()).close();
+    claims.waitStarted(mediaFileId, clock.instant()).close();
 
     try (var _ = claims.claimed(mediaFileId)) {
       assertThat(unitWait().count()).isZero();
@@ -66,12 +64,29 @@ class PlaybackProbeClaimsTest {
   @Test
   @DisplayName("Should keep timing the wait when one of two viewers stops waiting")
   void shouldKeepTimingTheWaitWhenOneOfTwoViewersStopsWaiting() {
+    claims.waitStarted(mediaFileId, clock.instant()).close();
     claims.waitStarted(mediaFileId, clock.instant());
-    claims.waitStarted(mediaFileId, clock.instant());
-    claims.waitEnded(mediaFileId);
 
     try (var _ = claims.claimed(mediaFileId)) {
       assertThat(unitWait().count()).isOne();
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should time a later viewer's wait when an earlier viewer of a deferred probe stops waiting")
+  void shouldTimeALaterViewersWaitWhenAnEarlierViewerOfADeferredProbeStopsWaiting() {
+    var earlier = claims.waitStarted(mediaFileId, clock.instant());
+    claims.claimed(mediaFileId).close();
+    clock.advance(Duration.ofSeconds(5));
+    claims.waitStarted(mediaFileId, clock.instant());
+    clock.advance(Duration.ofSeconds(1));
+    earlier.close();
+    clock.advance(Duration.ofSeconds(2));
+
+    try (var _ = claims.claimed(mediaFileId)) {
+      assertThat(unitWait().count()).isEqualTo(2);
+      assertThat(unitWait().max(TimeUnit.SECONDS)).isEqualTo(3);
     }
   }
 
