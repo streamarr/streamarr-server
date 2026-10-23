@@ -18,9 +18,9 @@ import java.nio.file.Path;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
@@ -57,9 +57,11 @@ class RemoteFfprobeServiceTest {
     }
   }
 
-  @Test
+  @ParameterizedTest
+  @EnumSource(ProbePriority.class)
   @DisplayName("Should defer the probe without a failure when no worker is connected")
-  void shouldDeferTheProbeWithoutAFailureWhenNoWorkerIsConnected() throws IOException {
+  void shouldDeferTheProbeWithoutAFailureWhenNoWorkerIsConnected(ProbePriority priority)
+      throws IOException {
     var sourceRoot = Files.createDirectories(tempDir.resolve("movies"));
     try (var server =
         WorkerSessionServer.builder()
@@ -75,7 +77,7 @@ class RemoteFfprobeServiceTest {
               .attemptId(UUID.randomUUID())
               .probeVersion(ProbeVersion.CURRENT)
               .sourcePath(Files.createFile(sourceRoot.resolve("film.mkv")))
-              .priority(ProbePriority.BACKGROUND)
+              .priority(priority)
               .build();
 
       assertThatThrownBy(() -> service.probe(request))

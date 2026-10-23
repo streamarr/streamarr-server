@@ -11,6 +11,7 @@ import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeContainerInfo;
 import com.streamarr.transcode.v1.ProbeFailure;
@@ -214,6 +215,21 @@ class RemoteProbeResultMapperTest {
             ProbeExecutionException.class,
             exception -> assertThat(exception.reason()).isEqualTo(reason))
         .hasMessageContaining(failure.name());
+  }
+
+  @Test
+  @DisplayName("Should defer the probe when the worker had no free unit of the probe's capacity")
+  void shouldDeferTheProbeWhenTheWorkerHadNoFreeUnitOfTheProbesCapacity() {
+    var mapper = new RemoteProbeResultMapper();
+    var result =
+        ProbeAttemptResult.newBuilder()
+            .setFailure(ProbeFailure.PROBE_FAILURE_NO_FREE_CAPACITY)
+            .build();
+    var report = reportOf(result);
+
+    assertThatThrownBy(() -> mapper.map(report))
+        .isExactlyInstanceOf(ProbeWorkersBusyException.class)
+        .hasMessage("The worker had no free unit of the probe's capacity when the probe arrived");
   }
 
   @Test
