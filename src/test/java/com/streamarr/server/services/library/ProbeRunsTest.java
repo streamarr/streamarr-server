@@ -36,6 +36,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Probe runs")
@@ -51,6 +53,8 @@ class ProbeRunsTest {
   private final MutableClock clock = new MutableClock();
   private final CountingSleeper sleeper = new CountingSleeper(clock);
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+  private final AtomicReference<ProbeCapacity> capacity =
+      new AtomicReference<>(ProbeCapacity.builder().build());
   private FileSystem fileSystem;
   private ProbeRuns probeRuns;
 
@@ -71,7 +75,7 @@ class ProbeRunsTest {
             .sleeper(sleeper)
             .clock(clock)
             .properties(new ProbeSchedulingProperties(null, CHECK_INTERVAL))
-            .capacitySource(() -> ProbeCapacity.builder().build())
+            .capacitySource(capacity::get)
             .scanProbesWaiting(new ScanProbesWaiting(meterRegistry))
             .build();
   }
@@ -119,6 +123,28 @@ class ProbeRunsTest {
 
     assertThat(waitingDuringSleep.get()).isEqualTo(2);
     assertThat(waitingGauge()).isZero();
+  }
+
+  @ParameterizedTest(name = "background probe capacity {0}")
+  @ValueSource(ints = {0, 4})
+  @DisplayName(
+      "Should keep waiting for the probe when the probe outlasts the progress report interval")
+  void shouldKeepWaitingForTheProbeWhenTheProbeOutlastsTheProgressReportInterval(
+      int backgroundProbeCapacity) throws Exception {
+    capacity.set(ProbeCapacity.builder().backgroundProbeCapacity(backgroundProbeCapacity).build());
+    var run = probeRuns.open();
+    run.request(mediaFile("movie.mkv").getId());
+    sleeper.onSleep(
+        sleeps -> {
+          if (sleeps == 20) {
+            requests.succeed(onlyRequest());
+          }
+        });
+
+    var summary = probeRuns.awaitResults(run, RUN_DESCRIPTION, neverReached());
+
+    assertThat(summary.count(RequestedProbeResult.READY)).isOne();
+    assertThat(sleeper.sleeps()).hasSize(20);
   }
 
   @Test

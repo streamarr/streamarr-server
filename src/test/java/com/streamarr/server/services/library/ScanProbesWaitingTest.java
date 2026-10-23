@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
@@ -39,6 +40,20 @@ class ScanProbesWaitingTest {
     waiting.ended(first);
 
     assertThat(gauge()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("Should reject the waiting probes when a required argument is missing")
+  void shouldRejectTheWaitingProbesWhenARequiredArgumentIsMissing() {
+    assertThatNullPointerException()
+        .isThrownBy(() -> new ScanProbesWaiting(null))
+        .withMessageContaining("meterRegistry");
+    assertThatNullPointerException()
+        .isThrownBy(() -> waiting.pending(null, 1))
+        .withMessageContaining("run");
+    assertThatNullPointerException()
+        .isThrownBy(() -> waiting.ended(null))
+        .withMessageContaining("run");
   }
 
   private double gauge() {
