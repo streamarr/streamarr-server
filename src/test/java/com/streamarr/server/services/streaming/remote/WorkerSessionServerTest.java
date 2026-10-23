@@ -1,15 +1,18 @@
 package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.streamCopyDecision;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
+import com.streamarr.server.services.streaming.ProbeCapacity;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.VariantJob;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -112,6 +115,15 @@ class WorkerSessionServerTest {
     var request = ProbeRequest.getDefaultInstance();
 
     assertNotStarted(() -> server.dispatchProbe(request));
+  }
+
+  @Test
+  @DisplayName("Should report no probe capacity when the worker session server has not started")
+  void shouldReportNoProbeCapacityWhenTheWorkerSessionServerHasNotStarted() {
+    var server = unstartedServer();
+
+    assertThat(server.probeCapacity(UUID.randomUUID(), ProbeVersion.CURRENT))
+        .isEqualTo(ProbeCapacity.NONE);
   }
 
   @Test
