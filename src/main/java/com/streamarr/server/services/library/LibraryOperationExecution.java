@@ -33,9 +33,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * and then one transaction ends the operation: as failed when the scan or refresh threw or the
  * library folder failed its check before a finishing step, as stopped when the stop is stored, and
  * as finished otherwise. The transaction locks the library's row, gives the library its final
- * status, deletes the operation, and then recalculates the letter index. It also publishes the
- * status change and the end of the scan or refresh for listeners that run after the commit. An end
- * that cannot be saved escapes, so the scheduler runs the operation again with backoff.
+ * status and deletes the operation. It also publishes the status change and the end of the scan or
+ * refresh for listeners that run after the commit. An end that cannot be saved escapes, so the
+ * scheduler runs the operation again with backoff.
  */
 @Slf4j
 @Service
@@ -50,7 +50,6 @@ public class LibraryOperationExecution {
   private final LibraryFolderCheck libraryFolderCheck;
   private final LibraryRefreshService libraryRefreshService;
   private final LibraryOperationFinishingStepsRunner finishingStepsRunner;
-  private final LetterIndexRecalculator letterIndexRecalculator;
   private final ApplicationEventPublisher eventPublisher;
   private final PlatformTransactionManager transactionManager;
   private final Clock clock;
@@ -196,10 +195,6 @@ public class LibraryOperationExecution {
                 Duration.between(operation.createdOn(), end.endedAt())));
   }
 
-  // The letter index is recalculated last, under the library's row lock, because tasks that
-  // finished can change titles even when the operation failed or stopped. The recalculation follows
-  // the deletion of the operation, which waits for every finishing step that shares the operation's
-  // key, so it counts the titles that those steps removed.
   private Optional<LibraryOperationConclusion> tryEnd(
       LibraryOperation operation, LibraryOperationEnd end) {
     var ended = libraryOperations.tryEndLibraryOperation(end);
@@ -208,7 +203,6 @@ public class LibraryOperationExecution {
     }
 
     var libraryId = operation.libraryId();
-    letterIndexRecalculator.recalculateLetterIndex(libraryId);
     eventPublisher.publishEvent(new LibraryStatusChangedEvent(libraryId));
     eventPublisher.publishEvent(
         switch (operation.kind()) {

@@ -8,8 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface LibraryMetadataRepository
-    extends JpaRepository<LibraryMetadata, UUID>, LibraryMetadataRepositoryCustom {
+public interface LibraryMetadataRepository extends JpaRepository<LibraryMetadata, UUID> {
 
   List<LibraryMetadata> findByLibraryIdOrderByLetterAsc(UUID libraryId);
 

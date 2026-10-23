@@ -4,7 +4,10 @@
 package com.streamarr.server.jooq.generated;
 
 
+import com.streamarr.server.jooq.generated.enums.AlphabetLetter;
 import com.streamarr.server.jooq.generated.routines.AccountIsEligible;
+import com.streamarr.server.jooq.generated.routines.AdjustLetterIndex;
+import com.streamarr.server.jooq.generated.routines.AlphabetLetterOf;
 import com.streamarr.server.jooq.generated.routines.AssertDeviceRegistrationsSupported;
 import com.streamarr.server.jooq.generated.routines.AssertEnabledServerAdminRemains;
 import com.streamarr.server.jooq.generated.routines.AssertHouseholdProfileNamesUnique;
@@ -72,6 +75,61 @@ public class Routines {
     ) {
         AccountIsEligible f = new AccountIsEligible();
         f.setCandidateAccountId(candidateAccountId);
+
+        return f.asField();
+    }
+
+    /**
+     * Call <code>public.adjust_letter_index</code>
+     */
+    public static void adjustLetterIndex(
+          Configuration configuration
+        , UUID countedLibraryId
+        , AlphabetLetter countedLetter
+        , Integer delta
+    ) {
+        AdjustLetterIndex p = new AdjustLetterIndex();
+        p.setCountedLibraryId(countedLibraryId);
+        p.setCountedLetter(countedLetter);
+        p.setDelta(delta);
+
+        p.execute(configuration);
+    }
+
+    /**
+     * Call <code>public.alphabet_letter_of</code>
+     */
+    public static AlphabetLetter alphabetLetterOf(
+          Configuration configuration
+        , String titleSort
+    ) {
+        AlphabetLetterOf f = new AlphabetLetterOf();
+        f.setTitleSort(titleSort);
+
+        f.execute(configuration);
+        return f.getReturnValue();
+    }
+
+    /**
+     * Get <code>public.alphabet_letter_of</code> as a field.
+     */
+    public static Field<AlphabetLetter> alphabetLetterOf(
+          String titleSort
+    ) {
+        AlphabetLetterOf f = new AlphabetLetterOf();
+        f.setTitleSort(titleSort);
+
+        return f.asField();
+    }
+
+    /**
+     * Get <code>public.alphabet_letter_of</code> as a field.
+     */
+    public static Field<AlphabetLetter> alphabetLetterOf(
+          Field<String> titleSort
+    ) {
+        AlphabetLetterOf f = new AlphabetLetterOf();
+        f.setTitleSort(titleSort);
 
         return f.asField();
     }

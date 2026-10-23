@@ -9,8 +9,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.apache.commons.lang3.NotImplementedException;
 import org.springframework.data.domain.Example;
@@ -22,30 +20,6 @@ import org.springframework.data.repository.query.FluentQuery;
 public class FakeLibraryMetadataRepository implements LibraryMetadataRepository {
 
   private final ConcurrentHashMap<UUID, LibraryMetadata> database = new ConcurrentHashMap<>();
-  private final List<UUID> letterCountReplacements = new CopyOnWriteArrayList<>();
-  private final AtomicReference<RuntimeException> letterCountFailure = new AtomicReference<>();
-
-  /** Fails every later letter count replacement with {@code failure}. */
-  public void failLetterCountReplacementsWith(RuntimeException failure) {
-    letterCountFailure.set(failure);
-  }
-
-  /** Returns the libraries whose letter counts were replaced, in order. */
-  public List<UUID> letterCountReplacements() {
-    return List.copyOf(letterCountReplacements);
-  }
-
-  // The fake keeps no catalog items to count, so it keeps the stored counts.
-  @Override
-  public int replaceLetterCounts(UUID libraryId) {
-    var failure = letterCountFailure.get();
-    if (failure != null) {
-      throw failure;
-    }
-
-    letterCountReplacements.add(libraryId);
-    return findByLibraryIdOrderByLetterAsc(libraryId).size();
-  }
 
   @Override
   public List<LibraryMetadata> findByLibraryIdOrderByLetterAsc(UUID libraryId) {

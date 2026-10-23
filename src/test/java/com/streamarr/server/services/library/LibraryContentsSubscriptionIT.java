@@ -6,6 +6,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
@@ -77,7 +78,6 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
   @Autowired private SeriesService seriesService;
   @Autowired private ArtworkRequestService artwork;
   @Autowired private TransactionTemplate transactions;
-  @Autowired private LetterIndexRecalculator counts;
   @Autowired private LibraryAdministrationService administration;
   @Autowired private OrphanedMediaFileCleanupService fileCleanup;
   @Autowired private WatchStatusService watchStatus;
@@ -361,11 +361,16 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should deliver authoritative counts only when a recount commits")
-  void shouldDeliverAuthoritativeCountsOnlyWhenARecountCommits() {
-    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
-    movies.saveAndFlush(Movie.builder().title("Alpha").titleSort("Alpha").library(library).build());
-    movies.saveAndFlush(Movie.builder().title("123").titleSort("123").library(library).build());
+  @DisplayName("Should deliver the counts when a scan adds a movie and complete on library removal")
+  void shouldDeliverTheCountsWhenAScanAddsAMovieAndCompleteOnLibraryRemoval() throws Exception {
+    Files.createFile(directory.resolve("Arrival (2016).mkv"));
+    var library =
+        libraries.saveAndFlush(
+            LibraryFixtureCreator.buildFakeLibrary().toBuilder()
+                .filepathUri(FilepathCodec.encode(directory))
+                .build());
+    stubMovie();
+    startProbeScheduler();
     var identity = auth.createIdentity();
     identities.add(identity);
     var socket = GraphQlTransportWsTestClient.connectWithBearer(port, auth.profileBearer(identity));
@@ -379,32 +384,23 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
         """
             .formatted(library.getId()));
     new ActiveSubscriptions(metrics).awaitCount("libraryCountsChanged", 1);
-    transactions.executeWithoutResult(
-        status -> {
-          counts.recalculateLetterIndex(library.getId());
-          assertThat(socket.receivedMessages())
-              .noneMatch(message -> message.path("id").asString().equals("counts"));
-          status.setRollbackOnly();
-        });
 
-    counts.recalculateLetterIndex(library.getId());
+    operations.scanToEnd(library.getId());
 
     var message = socket.nextMessageFor("counts");
     assertThat(message.path("type").asString()).isEqualTo("next");
     var aggregate = message.at("/payload/data/libraryCountsChanged");
     assertThat(aggregate.path("id").asString()).isEqualTo(library.getId().toString());
-    assertThat(aggregate.path("itemCount").asInt()).isEqualTo(2);
+    assertThat(aggregate.path("itemCount").asInt()).isOne();
     assertThat(aggregate.path("alphabetIndex"))
-        .extracting(bucket -> bucket.path("letter").asString())
-        .containsExactly("A", "HASH");
-    assertThat(aggregate.path("alphabetIndex"))
-        .extracting(bucket -> bucket.path("count").asInt())
-        .containsExactly(1, 1);
+        .extracting(
+            bucket -> bucket.path("letter").asString(), bucket -> bucket.path("count").asInt())
+        .containsExactly(tuple("A", 1));
     var administrator = auth.createAdminIdentity();
     identities.add(administrator);
     assertThat(administration.removeLibrary(auth.identityOf(administrator), library.getId()))
         .isInstanceOf(Outcome.Accepted.class);
-    assertThat(socket.nextMessageFor("counts").path("type").asString()).isEqualTo("complete");
+    assertThat(typesUntilCompletion(socket, "counts")).last().isEqualTo("complete");
   }
 
   @ParameterizedTest
@@ -837,6 +833,21 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
     }
 
     new ActiveSubscriptions(metrics).awaitNoneActive();
+  }
+
+  // Pushes that a scan's later item updates scheduled can arrive before the completion.
+  private static List<String> typesUntilCompletion(
+      GraphQlTransportWsTestClient socket, String operationId) {
+    var types = new ArrayList<String>();
+    for (var index = 0; index < 10; index++) {
+      var type = socket.nextMessageFor(operationId).path("type").asString();
+      types.add(type);
+      if (!type.equals("next")) {
+        return types;
+      }
+    }
+
+    return types;
   }
 
   private GraphQlTransportWsTestClient subscribeToAdditions(Library library) {

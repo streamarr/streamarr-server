@@ -59,11 +59,13 @@ extend type Subscription {
     """
     libraryItemRemoved(libraryId: ID!): LibraryItemRemoval
     """
-    Authoritative itemCount and alphabetIndex after a committed recount, including
-    changes outside the loaded window. Apply these values independently of loaded
-    edges. Initial counts come from library or libraries queries. Uses
-    libraryItemAdded visibility, requires ViewProfileActivity for the selected Profile,
-    and requires no follow-up query.
+    Authoritative itemCount and alphabetIndex after committed title changes, including
+    changes outside the loaded window. Delivered at most once every two seconds per
+    library while its titles change; the first change after a quiet interval is delivered
+    at once, and each delivery carries every change committed before it. Apply these
+    values independently of loaded edges. Initial counts come from library or libraries
+    queries. Uses libraryItemAdded visibility, requires ViewProfileActivity for the
+    selected Profile, and requires no follow-up query.
     """
     libraryCountsChanged(libraryId: ID!): Library
 }

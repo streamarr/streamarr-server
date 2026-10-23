@@ -7,7 +7,6 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
-import com.streamarr.server.services.library.LetterIndexRecalculator;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.GraphQlHttpTestClient;
 import java.net.URI;
@@ -26,7 +25,6 @@ class LibraryCountsQueryIT extends AbstractIntegrationTest {
   @Autowired private AuthTestSupport auth;
   @Autowired private LibraryRepository libraries;
   @Autowired private MovieRepository movies;
-  @Autowired private LetterIndexRecalculator recalculator;
 
   @Test
   @DisplayName(
@@ -40,7 +38,6 @@ class LibraryCountsQueryIT extends AbstractIntegrationTest {
       movies.saveAndFlush(
           Movie.builder().title("Alpha").titleSort("Alpha").library(library).build());
       movies.saveAndFlush(Movie.builder().title("123").titleSort("123").library(library).build());
-      recalculator.recalculateLetterIndex(library.getId());
 
       var result =
           http.execute(

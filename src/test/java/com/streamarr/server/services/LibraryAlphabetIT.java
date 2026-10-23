@@ -13,7 +13,6 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
-import com.streamarr.server.services.library.LetterIndexRecalculator;
 import com.streamarr.server.services.library.LibraryCountsService;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaOrder;
@@ -48,7 +47,6 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
   @Autowired private LibraryRepository libraries;
   @Autowired private MovieRepository movies;
   @Autowired private MovieService movieService;
-  @Autowired private LetterIndexRecalculator recalculator;
   @Autowired private LibraryCountsService counts;
   @Autowired private MediaOrderKeys orderKeys;
 
@@ -127,8 +125,6 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
       movies.saveAndFlush(Movie.builder().title(title).titleSort(title).library(library).build());
     }
 
-    recalculator.recalculateLetterIndex(library.getId());
-
     var totals = counts.getItemCounts(List.of(library.getId())).get(library.getId());
     assertThat(totals.total()).isEqualTo(4);
     assertThat(totals.alphabetIndex())
@@ -199,7 +195,6 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     movies.saveAndFlush(Movie.builder().title("Unnamed").library(library).build());
     saveEncodedMovies(library, List.of("Élite Harbor", "Alpha"));
-    recalculator.recalculateLetterIndex(library.getId());
 
     var totals = counts.getItemCounts(List.of(library.getId())).get(library.getId());
     var items =
@@ -251,7 +246,6 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
   void shouldPlaceTitleUnderItsFirstLetterWhenItStartsWithCharactersAboveZ() {
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     saveEncodedMovies(library, List.of("~Tilde Tales", "{Brace} Yourself", "Alpha"));
-    recalculator.recalculateLetterIndex(library.getId());
 
     var totals = counts.getItemCounts(List.of(library.getId())).get(library.getId());
     var page =
@@ -275,7 +269,6 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     saveEncodedMovies(
         library, List.of("Ωmega Point", "Жёлтый Дом", "東京の空", "Alpha", "Échos du Nord"));
-    recalculator.recalculateLetterIndex(library.getId());
 
     var totals = counts.getItemCounts(List.of(library.getId())).get(library.getId());
 
@@ -293,7 +286,6 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
     saveEncodedMovies(
         library,
         List.of("\u00C0 la folie", "A\u0300 bout de souffle", "Bravo", "Lima", "The Alpha"));
-    recalculator.recalculateLetterIndex(library.getId());
 
     var totals = counts.getItemCounts(List.of(library.getId())).get(library.getId());
     var page =
