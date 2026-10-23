@@ -233,6 +233,7 @@ db-scheduler:
 # after this delay, without counting as a failure. This happens when a worker lowers a capacity or
 # disconnects between the scheduler's claim and the probe's dispatch.
 probe:
+  keyframe-packet-scan-scheduler-threads: ${PROBE_KEYFRAME_PACKET_SCAN_SCHEDULER_THREADS:16}
   busy-worker-retry-delay: ${PROBE_BUSY_WORKER_RETRY_DELAY:5s}
   # How often a scan that waits for its probes checks their stored results.
   result-check-interval: ${PROBE_RESULT_CHECK_INTERVAL:2s}

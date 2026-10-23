@@ -55,8 +55,10 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
 
+@TestPropertySource(properties = "PROBE_KEYFRAME_PACKET_SCAN_SCHEDULER_THREADS=1")
 @Tag("IntegrationTest")
 @DisplayName("Keyframe packet scan scheduling")
 class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTest {
@@ -85,6 +87,41 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
 
   private final BlockingQueue<ExecutionComplete> scanCompletions = new LinkedBlockingQueue<>();
   private KeyframePacketScanScheduler scanScheduler;
+
+  @Test
+  @DisplayName(
+      "Should leave further scans pending when the configured scheduler ceiling is reached")
+  void shouldLeaveFurtherScansPendingWhenConfiguredSchedulerCeilingIsReached() throws Exception {
+    var requests = requestUnchangedFiles(3);
+    for (var request : requests) {
+      packetScanRequiredProbe().execute(request, ProbePriority.BACKGROUND);
+    }
+
+    var started = new LinkedBlockingQueue<ProbeExecutionRequest>();
+    var release = new CountDownLatch(1);
+    startScanScheduler(
+        request -> {
+          started.add(request);
+          awaitRelease(release);
+          return success(SCANNED);
+        },
+        Clock.systemUTC());
+
+    try {
+      assertThat(started.poll(10, TimeUnit.SECONDS)).isNotNull();
+      assertThat(started.poll(2, TimeUnit.SECONDS)).isNull();
+    } finally {
+      release.countDown();
+    }
+
+    for (var _ : requests) {
+      assertThat(scanCompletions.poll(30, TimeUnit.SECONDS)).isNotNull();
+    }
+
+    assertThat(requests)
+        .allSatisfy(request -> assertThat(storedKeyframes(request)).isEqualTo(SCANNED));
+    assertThat(scheduledScans()).isZero();
+  }
 
   @Test
   @DisplayName("Should keep the scan scheduled when the server restarts")

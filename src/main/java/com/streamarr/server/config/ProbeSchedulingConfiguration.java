@@ -56,6 +56,8 @@ public class ProbeSchedulingConfiguration {
         Binder.get(environment)
             .bind("db-scheduler", Bindable.of(DbSchedulerProperties.class))
             .orElseGet(DbSchedulerProperties::new);
+    var probeProperties =
+        Binder.get(environment).bindOrCreate("probe", ProbeSchedulingProperties.class);
     var pollingStrategy =
         new PollingStrategyConfig(
             properties.getPollingStrategy(),
@@ -65,7 +67,8 @@ public class ProbeSchedulingConfiguration {
         .capacitySource(probeCapacitySource)
         .playbackProbeClaims(playbackProbeClaims)
         .probeSchedulerUpperLimit(pollingStrategy.getUpperLimit(properties.getThreads()))
-        .scanSchedulerUpperLimit(pollingStrategy.getUpperLimit(KeyframePacketScanScheduler.THREADS))
+        .scanSchedulerUpperLimit(
+            pollingStrategy.getUpperLimit(probeProperties.keyframePacketScanSchedulerThreads()))
         .build();
   }
 

@@ -20,7 +20,6 @@ import com.github.kagkarlsson.scheduler.stats.StatsRegistry;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.github.kagkarlsson.scheduler.task.TaskInstanceId;
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.config.KeyframePacketScanScheduler;
 import com.streamarr.server.config.LibraryWatcherProperties;
 import com.streamarr.server.config.ProbeCapacityJdbcCustomization;
 import com.streamarr.server.config.ProbeSchedulingConfiguration;
@@ -831,7 +830,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
                 .capacitySource(capacity)
                 .playbackProbeClaims(playbackProbeClaims)
                 .probeSchedulerUpperLimit(threads)
-                .scanSchedulerUpperLimit(KeyframePacketScanScheduler.THREADS)
+                .scanSchedulerUpperLimit(probeScheduling.keyframePacketScanSchedulerThreads())
                 .build());
   }
 

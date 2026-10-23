@@ -74,7 +74,7 @@ class ProbeRunsTest {
             .outcomes(outcomes)
             .sleeper(sleeper)
             .clock(clock)
-            .properties(new ProbeSchedulingProperties(null, CHECK_INTERVAL))
+            .properties(new ProbeSchedulingProperties(null, CHECK_INTERVAL, null))
             .capacitySource(capacity::get)
             .scanProbesWaiting(new ScanProbesWaiting(meterRegistry))
             .build();

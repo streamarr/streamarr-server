@@ -7,9 +7,9 @@ import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.event.SchedulerListener;
 import com.github.kagkarlsson.scheduler.stats.StatsRegistry;
-import com.streamarr.server.config.KeyframePacketScanScheduler;
 import com.streamarr.server.config.ProbeCapacityJdbcCustomization;
 import com.streamarr.server.config.ProbeSchedulingConfiguration;
+import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.services.probe.PlaybackProbeClaims;
 import com.streamarr.server.services.streaming.ProbeCapacity;
 import com.streamarr.server.services.streaming.ProbeCapacitySource;
@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import javax.sql.DataSource;
 import lombok.Builder;
+import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.env.Environment;
 
@@ -100,7 +101,10 @@ record ProbeSchedulerStarter(
                 .capacitySource(probeCapacity)
                 .playbackProbeClaims(playbackProbeClaims)
                 .probeSchedulerUpperLimit(threads)
-                .scanSchedulerUpperLimit(KeyframePacketScanScheduler.THREADS)
+                .scanSchedulerUpperLimit(
+                    Binder.get(environment)
+                        .bindOrCreate("probe", ProbeSchedulingProperties.class)
+                        .keyframePacketScanSchedulerThreads())
                 .build());
   }
 }

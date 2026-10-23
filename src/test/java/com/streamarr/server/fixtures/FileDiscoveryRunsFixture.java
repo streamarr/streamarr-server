@@ -65,7 +65,7 @@ public final class FileDiscoveryRunsFixture {
                 .outcomes(outcomes)
                 .sleeper(probeSleeper)
                 .clock(probeClock)
-                .properties(new ProbeSchedulingProperties(null, CHECK_INTERVAL))
+                .properties(new ProbeSchedulingProperties(null, CHECK_INTERVAL, null))
                 .capacitySource(() -> ProbeCapacity.builder().build())
                 .scanProbesWaiting(new ScanProbesWaiting(new SimpleMeterRegistry()))
                 .build())

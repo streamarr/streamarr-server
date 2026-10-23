@@ -142,6 +142,26 @@ class ProbeSchedulingConfigurationTest {
         .containsSame(customization);
   }
 
+  @Test
+  @DisplayName("Should claim scans against the configured scheduler ceiling when a scan is running")
+  void shouldClaimScansAgainstConfiguredSchedulerCeilingWhenAScanIsRunning() {
+    var environment =
+        new MockEnvironment()
+            .withProperty("probe.keyframe-packet-scan-scheduler-threads", "2")
+            .withProperty("db-scheduler.polling-strategy", "lock-and-fetch")
+            .withProperty("db-scheduler.polling-strategy-upper-limit-fraction-of-threads", "1.0");
+    var customization =
+        configuration.probeCapacityJdbcCustomization(
+            () -> ProbeCapacity.builder().freeKeyframePacketScanUnits(2).build(),
+            new PlaybackProbeClaims(Clock.systemUTC(), new SimpleMeterRegistry()),
+            environment);
+
+    assertThat(
+            customization.createGenericSelectForUpdateQuery(
+                KeyframePacketScanScheduler.TABLE_NAME, 1, "", false))
+        .endsWith(" LIMIT 1");
+  }
+
   private DbSchedulerCustomizer customizer() {
     return configuration.dbSchedulerCustomizer(
         configuration.probeTaskSerializer(), new DriverManagerDataSource(), jdbcCustomization());

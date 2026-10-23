@@ -30,7 +30,7 @@ class ProbeSchedulingPropertiesTest {
   @Test
   @DisplayName("Should retry busy workers after five seconds when no delay is configured")
   void shouldRetryBusyWorkersAfterFiveSecondsWhenNoDelayIsConfigured() {
-    var properties = new ProbeSchedulingProperties(null, null);
+    var properties = new ProbeSchedulingProperties(null, null, null);
 
     assertThat(properties.busyWorkerRetryDelay()).isEqualTo(Duration.ofSeconds(5));
   }
@@ -64,7 +64,7 @@ class ProbeSchedulingPropertiesTest {
   void shouldRejectBusyWorkerRetryDelayWhenItIsNotPositive(long seconds) {
     var delay = Duration.ofSeconds(seconds);
 
-    assertThatThrownBy(() -> new ProbeSchedulingProperties(delay, null))
+    assertThatThrownBy(() -> new ProbeSchedulingProperties(delay, null, null))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Busy worker retry delay must be positive");
   }
@@ -72,7 +72,7 @@ class ProbeSchedulingPropertiesTest {
   @Test
   @DisplayName("Should check probe results every two seconds when no interval is configured")
   void shouldCheckProbeResultsEveryTwoSecondsWhenNoIntervalIsConfigured() {
-    var properties = new ProbeSchedulingProperties(null, null);
+    var properties = new ProbeSchedulingProperties(null, null, null);
 
     assertThat(properties.resultCheckInterval()).isEqualTo(Duration.ofSeconds(2));
   }
@@ -83,8 +83,45 @@ class ProbeSchedulingPropertiesTest {
   void shouldRejectProbeResultCheckIntervalWhenItIsNotPositive(long seconds) {
     var interval = Duration.ofSeconds(seconds);
 
-    assertThatThrownBy(() -> new ProbeSchedulingProperties(null, interval))
+    assertThatThrownBy(() -> new ProbeSchedulingProperties(null, interval, null))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Probe result check interval must be positive");
+  }
+
+  @Test
+  @DisplayName("Should default to sixteen scan executions when no scheduler ceiling is configured")
+  void shouldDefaultToSixteenScanExecutionsWhenNoSchedulerCeilingIsConfigured() {
+    assertThat(new ProbeSchedulingProperties(null, null, null).keyframePacketScanSchedulerThreads())
+        .isEqualTo(16);
+    PACKAGED_CONFIGURATION.run(
+        context ->
+            assertThat(
+                    context
+                        .getBean(ProbeSchedulingProperties.class)
+                        .keyframePacketScanSchedulerThreads())
+                .isEqualTo(16));
+  }
+
+  @Test
+  @DisplayName("Should bind the scan scheduler ceiling when its environment variable is set")
+  void shouldBindScanSchedulerCeilingWhenItsEnvironmentVariableIsSet() {
+    PACKAGED_CONFIGURATION
+        .withPropertyValues("PROBE_KEYFRAME_PACKET_SCAN_SCHEDULER_THREADS=1")
+        .run(
+            context ->
+                assertThat(
+                        context
+                            .getBean(ProbeSchedulingProperties.class)
+                            .keyframePacketScanSchedulerThreads())
+                    .isOne());
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {0, -1})
+  @DisplayName("Should reject the scan scheduler ceiling when it is not positive")
+  void shouldRejectScanSchedulerCeilingWhenItIsNotPositive(int threads) {
+    assertThatThrownBy(() -> new ProbeSchedulingProperties(null, null, threads))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Keyframe packet scan scheduler threads must be positive");
   }
 }
