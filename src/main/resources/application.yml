@@ -214,11 +214,12 @@ otel:
 
 # Media file probes run as db-scheduler task instances (ADR 0032). The probe scheduler picks no more
 # probes than the connected workers' free probe capacity, so threads only caps the probes that one
-# server runs at once. Executions run on virtual threads. Due probes run by priority, then by
-# execution time; playback raises the priority of the probe it waits for.
+# server runs at once. Executions run on virtual threads and hold no database connection while a
+# worker probes. Due probes run by priority, then by execution time; playback raises the priority of
+# the probe it waits for.
 db-scheduler:
   priority-enabled: true
-  threads: 128
+  threads: ${PROBE_SCHEDULER_THREADS:128}
   polling-interval: ${PROBE_POLLING_INTERVAL:1s}
   polling-strategy: lock-and-fetch
   polling-strategy-upper-limit-fraction-of-threads: 1.0

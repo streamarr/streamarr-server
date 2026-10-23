@@ -1,6 +1,9 @@
 package com.streamarr.server.services.streaming.remote;
 
+import com.google.protobuf.Duration;
 import com.streamarr.transcode.v1.BackgroundProbeCapacityControl;
+import com.streamarr.transcode.v1.SegmentUploadMetadata;
+import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -15,9 +18,10 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Reports each connected worker's probe capacities, the probes running against them and how the
- * worker sets its background probe capacity. A worker session's meters replace those of the session
- * it replaces, and leave when that session leaves.
+ * Reports each connected worker's playback slots and probe capacities, the work running against
+ * them, how the worker sets its background probe capacity, and how fast it produces media segments.
+ * A worker session's meters replace those of the session it replaces, and leave when that session
+ * leaves.
  */
 @RequiredArgsConstructor
 final class WorkerCapacityMeters {
@@ -26,9 +30,17 @@ final class WorkerCapacityMeters {
   private static final String RUNNING_METRIC = "streamarr.probes.running";
   private static final String CONTROL_METRIC = "streamarr.probes.background_capacity_control";
   private static final String CONTROL_PREFIX = "BACKGROUND_PROBE_CAPACITY_CONTROL_";
+  private static final String PLAYBACK_SLOTS_METRIC = "streamarr.streaming.playback_slots";
+  private static final String PLAYBACK_SLOTS_IN_USE_METRIC =
+      "streamarr.streaming.playback_slots_in_use";
+  private static final String PRODUCTION_SPEED_METRIC = "streamarr.streaming.production_speed";
 
-  /** One worker session's probe capacities and running probes. */
+  /** One worker session's playback slots, probe capacities and the work running against them. */
   interface Session {
+
+    int playbackSlots();
+
+    int playbackSlotsInUse();
 
     int grantedUnits(ProbeKind kind);
 
@@ -63,6 +75,18 @@ final class WorkerCapacityMeters {
     }
 
     meters.add(
+        Gauge.builder(PLAYBACK_SLOTS_METRIC, session, Session::playbackSlots)
+            .description("The job attempts that the worker runs at once")
+            .tag("worker", workerId.toString())
+            .strongReference(true)
+            .register(meterRegistry));
+    meters.add(
+        Gauge.builder(PLAYBACK_SLOTS_IN_USE_METRIC, session, Session::playbackSlotsInUse)
+            .description("The job attempts that run on the worker")
+            .tag("worker", workerId.toString())
+            .strongReference(true)
+            .register(meterRegistry));
+    meters.add(
         Gauge.builder(CONTROL_METRIC, () -> 1)
             .description("The way that the worker sets its background probe capacity")
             .tag("worker", workerId.toString())
@@ -79,6 +103,31 @@ final class WorkerCapacityMeters {
     }
 
     removeMeters(workerId);
+  }
+
+  /**
+   * Reports the media segment's production speed: the media seconds that the worker produced in
+   * each second of production time. An initialization segment carries no timing.
+   */
+  void segmentPublished(@NonNull UUID workerId, @NonNull SegmentUploadMetadata metadata) {
+    if (!metadata.hasMediaDuration() || !metadata.hasProductionTime()) {
+      return;
+    }
+
+    var productionSeconds = seconds(metadata.getProductionTime());
+    if (productionSeconds <= 0) {
+      return;
+    }
+
+    DistributionSummary.builder(PRODUCTION_SPEED_METRIC)
+        .description("Media seconds that the worker produced per second of production time")
+        .tag("worker", workerId.toString())
+        .register(meterRegistry)
+        .record(seconds(metadata.getMediaDuration()) / productionSeconds);
+  }
+
+  private static double seconds(Duration duration) {
+    return duration.getSeconds() + duration.getNanos() / 1_000_000_000.0;
   }
 
   // Guarded by this monitor.

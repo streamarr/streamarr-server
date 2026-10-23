@@ -71,6 +71,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -779,7 +780,10 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
 
   private static double deferred(SimpleMeterRegistry meterRegistry, ProbeRefusal reason) {
     var counter =
-        meterRegistry.find("streamarr.probes.deferred").tag("reason", reason.name()).counter();
+        meterRegistry
+            .find("streamarr.probes.deferred")
+            .tag("reason", reason.name().toLowerCase(Locale.ROOT))
+            .counter();
     if (counter == null) {
       return 0;
     }

@@ -19,18 +19,16 @@ class ProbeDeferralWarningsTest {
   @Test
   @DisplayName("Should warn about the first deferred probe when no warning was due before")
   void shouldWarnAboutTheFirstDeferredProbeWhenNoWarningWasDueBefore() {
-    assertThat(warnings.tryTakeDeferredCount(ProbeRefusal.WORKERS_BUSY, START)).contains(1);
+    assertThat(warnings.tryTakeDeferredCount("workers_busy", START)).contains(1);
   }
 
   @Test
   @DisplayName("Should hold the warning when probes defer again within the interval")
   void shouldHoldTheWarningWhenProbesDeferAgainWithinTheInterval() {
-    warnings.tryTakeDeferredCount(ProbeRefusal.WORKERS_BUSY, START);
+    warnings.tryTakeDeferredCount("workers_busy", START);
 
-    assertThat(warnings.tryTakeDeferredCount(ProbeRefusal.WORKERS_BUSY, START + 1)).isEmpty();
-    assertThat(
-            warnings.tryTakeDeferredCount(
-                ProbeRefusal.WORKERS_BUSY, START + INTERVAL.toNanos() - 1))
+    assertThat(warnings.tryTakeDeferredCount("workers_busy", START + 1)).isEmpty();
+    assertThat(warnings.tryTakeDeferredCount("workers_busy", START + INTERVAL.toNanos() - 1))
         .isEmpty();
   }
 
@@ -38,24 +36,21 @@ class ProbeDeferralWarningsTest {
   @DisplayName(
       "Should report every probe deferred since the last warning when the interval has passed")
   void shouldReportEveryProbeDeferredSinceTheLastWarningWhenTheIntervalHasPassed() {
-    warnings.tryTakeDeferredCount(ProbeRefusal.WORKERS_BUSY, START);
-    warnings.tryTakeDeferredCount(ProbeRefusal.WORKERS_BUSY, START + 1);
-    warnings.tryTakeDeferredCount(ProbeRefusal.WORKERS_BUSY, START + 2);
+    warnings.tryTakeDeferredCount("workers_busy", START);
+    warnings.tryTakeDeferredCount("workers_busy", START + 1);
+    warnings.tryTakeDeferredCount("workers_busy", START + 2);
 
-    assertThat(warnings.tryTakeDeferredCount(ProbeRefusal.WORKERS_BUSY, START + INTERVAL.toNanos()))
+    assertThat(warnings.tryTakeDeferredCount("workers_busy", START + INTERVAL.toNanos()))
         .contains(3);
-    assertThat(
-            warnings.tryTakeDeferredCount(
-                ProbeRefusal.WORKERS_BUSY, START + INTERVAL.toNanos() + 1))
+    assertThat(warnings.tryTakeDeferredCount("workers_busy", START + INTERVAL.toNanos() + 1))
         .isEmpty();
   }
 
   @Test
   @DisplayName("Should warn about each reason on its own when probes defer for different reasons")
   void shouldWarnAboutEachReasonOnItsOwnWhenProbesDeferForDifferentReasons() {
-    warnings.tryTakeDeferredCount(ProbeRefusal.WORKERS_BUSY, START);
+    warnings.tryTakeDeferredCount("workers_busy", START);
 
-    assertThat(warnings.tryTakeDeferredCount(ProbeRefusal.NO_COMPATIBLE_WORKER, START + 1))
-        .contains(1);
+    assertThat(warnings.tryTakeDeferredCount("no_compatible_worker", START + 1)).contains(1);
   }
 }

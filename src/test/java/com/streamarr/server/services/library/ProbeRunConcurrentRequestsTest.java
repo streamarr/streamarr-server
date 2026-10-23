@@ -18,6 +18,7 @@ import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import com.streamarr.server.services.streaming.ProbeCapacity;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
@@ -91,6 +92,7 @@ class ProbeRunConcurrentRequestsTest {
         .clock(clock)
         .properties(new ProbeSchedulingProperties(null, Duration.ofSeconds(2)))
         .capacitySource(() -> ProbeCapacity.builder().build())
+        .scanProbesWaiting(new ScanProbesWaiting(new SimpleMeterRegistry()))
         .build();
   }
 

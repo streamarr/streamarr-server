@@ -21,6 +21,7 @@ import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeCapacityChanged;
+import com.streamarr.transcode.v1.ProbeFailure;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
@@ -43,6 +44,7 @@ import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -284,15 +286,19 @@ final class LiveWorkerConnectionRegistry {
       return;
     }
 
-    meterRegistry.counter(DEFERRED_PROBES_METRIC, "reason", refusal.name()).increment();
+    countDeferredProbe(refusal.name().toLowerCase(Locale.ROOT), refusal.description());
+  }
+
+  private void countDeferredProbe(String reason, String description) {
+    meterRegistry.counter(DEFERRED_PROBES_METRIC, "reason", reason).increment();
     deferralWarnings
-        .tryTakeDeferredCount(refusal, System.nanoTime())
+        .tryTakeDeferredCount(reason, System.nanoTime())
         .ifPresent(
             deferred ->
                 log.warn(
                     "{} ({}), so probes wait. Probes deferred since the previous warning: {}",
-                    refusal.description(),
-                    refusal.name(),
+                    description,
+                    reason,
                     deferred));
   }
 
@@ -310,9 +316,16 @@ final class LiveWorkerConnectionRegistry {
   }
 
   boolean completeProbe(UUID workerId, UUID workerSessionId, ProbeAttemptResult result) {
-    return currentConnection(workerId, workerSessionId)
-        .map(connection -> connection.completeProbe(result))
-        .orElse(false);
+    var completed =
+        currentConnection(workerId, workerSessionId)
+            .map(connection -> connection.completeProbe(result))
+            .orElse(false);
+    if (completed && result.getFailure() == ProbeFailure.PROBE_FAILURE_NO_FREE_CAPACITY) {
+      countDeferredProbe(
+          "no_free_capacity", "A worker had no free unit of the probe's capacity when it arrived");
+    }
+
+    return completed;
   }
 
   boolean acceptKeyframePositionsPart(
@@ -541,6 +554,9 @@ final class LiveWorkerConnectionRegistry {
         _ ->
             heldRequests.wakeVariant(
                 fromProto(metadata.getStreamSessionId()), metadata.getVariantLabel()));
+    outcome
+        .filter(SegmentPublication.PUBLISHED::equals)
+        .ifPresent(_ -> capacityMeters.segmentPublished(authenticatedWorkerId, metadata));
     return outcome;
   }
 
@@ -926,6 +942,16 @@ final class LiveWorkerConnectionRegistry {
 
     private List<ProbeKind> runningProbeKinds() {
       return activeProbes.values().stream().map(probe -> ProbeKind.of(probe.request())).toList();
+    }
+
+    @Override
+    public int playbackSlots() {
+      return maximumActiveVariants;
+    }
+
+    @Override
+    public int playbackSlotsInUse() {
+      return activeVariants.size();
     }
 
     @Override

@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import com.streamarr.server.services.streaming.ProbeCapacity;
 import java.time.Duration;
 import lombok.Builder;
 import lombok.NonNull;
@@ -10,10 +11,11 @@ import lombok.NonNull;
  * @param finished the requested probes with a saved outcome or failure
  * @param pending the requested probes still waiting for a result
  * @param elapsed the time since the run requested its first probe
- * @param probeCapacity the probes that the connected workers run at once, in total
+ * @param capacity the probe capacities of the connected workers
  */
 @Builder
-record ProbeRunProgress(int finished, int pending, @NonNull Duration elapsed, int probeCapacity) {
+record ProbeRunProgress(
+    int finished, int pending, @NonNull Duration elapsed, @NonNull ProbeCapacity capacity) {
 
   double filesPerSecond() {
     if (elapsed.isZero()) {

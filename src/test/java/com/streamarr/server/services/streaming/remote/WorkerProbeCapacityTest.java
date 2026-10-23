@@ -23,6 +23,7 @@ import com.streamarr.transcode.v1.WorkerRegistration;
 import io.grpc.stub.StreamObserver;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.IntStream;
@@ -419,6 +420,34 @@ class WorkerProbeCapacityTest {
   }
 
   @Test
+  @DisplayName("Should count a deferred probe when the worker reports no free capacity for it")
+  void shouldCountADeferredProbeWhenTheWorkerReportsNoFreeCapacityForIt() {
+    var sessionId =
+        registerSession(Worker.builder().backgroundProbeCapacity(1).playbackSlots(1).build());
+    var request = probe().build();
+    assertDispatched(registry.dispatchProbe(request));
+
+    assertThat(
+            registry.completeProbe(
+                WORKER_ID,
+                sessionId,
+                ProbeAttemptResult.newBuilder()
+                    .setProbeAttemptId(request.getProbeAttemptId())
+                    .setProbeVersion(request.getProbeVersion())
+                    .setFailure(ProbeFailure.PROBE_FAILURE_NO_FREE_CAPACITY)
+                    .build()))
+        .isTrue();
+
+    assertThat(
+            meterRegistry
+                .get("streamarr.probes.deferred")
+                .tag("reason", "no_free_capacity")
+                .counter()
+                .count())
+        .isOne();
+  }
+
+  @Test
   @DisplayName("Should count no deferred probe when a probe request is invalid")
   void shouldCountNoDeferredProbeWhenAProbeRequestIsInvalid() {
     register(Worker.builder().backgroundProbeCapacity(1).playbackSlots(1).build());
@@ -507,7 +536,7 @@ class WorkerProbeCapacityTest {
   private double deferred(ProbeRefusal reason) {
     return meterRegistry
         .get("streamarr.probes.deferred")
-        .tag("reason", reason.name())
+        .tag("reason", reason.name().toLowerCase(Locale.ROOT))
         .counter()
         .count();
   }

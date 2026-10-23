@@ -2,6 +2,7 @@ package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.services.streaming.ProbeCapacity;
 import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -24,7 +25,7 @@ class ProbeRunProgressTest {
             .finished(finished)
             .pending(10)
             .elapsed(Duration.ofMillis(elapsedMillis))
-            .probeCapacity(4)
+            .capacity(ProbeCapacity.builder().backgroundProbeCapacity(4).build())
             .build();
 
     assertThat(progress.filesPerSecond()).isEqualTo(filesPerSecond);
