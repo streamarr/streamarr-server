@@ -9,7 +9,9 @@ import static org.jooq.impl.DSL.table;
 import com.github.kagkarlsson.scheduler.jdbc.JdbcTaskRepository;
 import com.github.kagkarlsson.scheduler.jdbc.PostgreSqlJdbcCustomization;
 import com.github.kagkarlsson.scheduler.task.Priority;
+import com.streamarr.server.services.probe.PlaybackProbeClaims;
 import com.streamarr.server.services.streaming.ProbeCapacitySource;
+import com.streamarr.server.services.streaming.ProbeExecutionsInProgress;
 import java.time.Instant;
 import lombok.Builder;
 import lombok.NonNull;
@@ -50,6 +52,7 @@ public final class ProbeCapacityJdbcCustomization extends PostgreSqlJdbcCustomiz
       DSL.using(SQLDialect.POSTGRES, new Settings().withRenderQuotedNames(RenderQuotedNames.NEVER));
 
   private final ProbeCapacitySource capacitySource;
+  private final PlaybackProbeClaims playbackProbeClaims;
   private final int probeSchedulerUpperLimit;
   private final int scanSchedulerUpperLimit;
 
@@ -61,10 +64,12 @@ public final class ProbeCapacityJdbcCustomization extends PostgreSqlJdbcCustomiz
   @Builder
   private ProbeCapacityJdbcCustomization(
       @NonNull ProbeCapacitySource capacitySource,
+      @NonNull PlaybackProbeClaims playbackProbeClaims,
       int probeSchedulerUpperLimit,
       int scanSchedulerUpperLimit) {
     super(true, false);
     this.capacitySource = capacitySource;
+    this.playbackProbeClaims = playbackProbeClaims;
     this.probeSchedulerUpperLimit = probeSchedulerUpperLimit;
     this.scanSchedulerUpperLimit = scanSchedulerUpperLimit;
   }
@@ -89,7 +94,12 @@ public final class ProbeCapacityJdbcCustomization extends PostgreSqlJdbcCustomiz
   }
 
   private String probeClaim(int limit, String requiredAndCondition, boolean orderByPriority) {
-    var claim = capacitySource.probeCapacity().probesToClaim(probeSchedulerUpperLimit - limit);
+    var inProgress =
+        ProbeExecutionsInProgress.builder()
+            .executions(probeSchedulerUpperLimit - limit)
+            .playbackExecutions(playbackProbeClaims.inProgress())
+            .build();
+    var claim = capacitySource.probeCapacity().probesToClaim(inProgress);
     return super.createGenericSelectForUpdateQuery(
         PROBE_TABLE,
         Math.min(limit, claim.total()),

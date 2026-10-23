@@ -33,7 +33,9 @@ import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
+import com.streamarr.server.services.probe.PlaybackProbeClaims;
 import com.streamarr.server.services.streaming.KeyframePacketScanner;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.FileSystems;
@@ -42,6 +44,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -291,6 +294,7 @@ class KeyframePacketScanExecutionTest {
         .outcomes(outcomes)
         .packetScans(packetScans)
         .transactionManager(new FakeTransactionManager())
+        .playbackProbeClaims(new PlaybackProbeClaims(Clock.systemUTC(), new SimpleMeterRegistry()))
         .build();
   }
 

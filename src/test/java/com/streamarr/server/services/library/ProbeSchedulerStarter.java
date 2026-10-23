@@ -10,6 +10,7 @@ import com.github.kagkarlsson.scheduler.stats.StatsRegistry;
 import com.streamarr.server.config.KeyframePacketScanScheduler;
 import com.streamarr.server.config.ProbeCapacityJdbcCustomization;
 import com.streamarr.server.config.ProbeSchedulingConfiguration;
+import com.streamarr.server.services.probe.PlaybackProbeClaims;
 import com.streamarr.server.services.streaming.ProbeCapacity;
 import com.streamarr.server.services.streaming.ProbeCapacitySource;
 import com.streamarr.server.support.UnstartedSchedulerConfiguration;
@@ -30,6 +31,7 @@ import org.springframework.core.env.Environment;
 record ProbeSchedulerStarter(
     DbSchedulerCustomizer customizer,
     ProbeCapacitySource probeCapacity,
+    PlaybackProbeClaims playbackProbeClaims,
     ProbeTaskCompletion completion,
     DataSource dataSource,
     Environment environment,
@@ -53,6 +55,7 @@ record ProbeSchedulerStarter(
     return ProbeSchedulerStarter.builder()
         .customizer(context.getBean(DbSchedulerCustomizer.class))
         .probeCapacity(FAKE_WORKERS)
+        .playbackProbeClaims(context.getBean(PlaybackProbeClaims.class))
         .completion(context.getBean(ProbeTaskCompletion.class))
         .dataSource(context.getBean(DataSource.class))
         .environment(context.getEnvironment())
@@ -76,6 +79,7 @@ record ProbeSchedulerStarter(
                 dataSource,
                 ProbeCapacityJdbcCustomization.builder()
                     .capacitySource(probeCapacity)
+                    .playbackProbeClaims(playbackProbeClaims)
                     .probeSchedulerUpperLimit(threads)
                     .scanSchedulerUpperLimit(KeyframePacketScanScheduler.THREADS)
                     .build());

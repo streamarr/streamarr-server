@@ -322,11 +322,14 @@ class WorkerProbeCapacityTest {
     assertThat(registry.probeCapacity(SOURCE_NAMESPACE_ID, PROBE_VERSION))
         .isEqualTo(
             ProbeCapacity.builder()
+                .playbackProbeCapacity(2)
                 .backgroundProbeCapacity(3)
+                .keyframePacketScanCapacity(1)
                 .freePlaybackProbeUnits(1)
                 .freeBackgroundProbeUnits(2)
                 .freeKeyframePacketScanUnits(0)
                 .runningProbes(2)
+                .runningPlaybackProbes(1)
                 .runningKeyframePacketScans(1)
                 .build());
     assertThat(registry.probeCapacity(UUID.randomUUID(), PROBE_VERSION))

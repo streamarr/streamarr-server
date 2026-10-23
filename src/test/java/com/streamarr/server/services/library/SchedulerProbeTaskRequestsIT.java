@@ -34,8 +34,10 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.ProbeTaskPriorityRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
+import com.streamarr.server.services.probe.PlaybackProbeClaims;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import com.streamarr.server.services.streaming.PlaybackProbeService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
@@ -108,6 +110,8 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
             .outcomes(outcomes)
             .packetScans(new CapturingKeyframePacketScanRequests())
             .transactionManager(transactionManager)
+            .playbackProbeClaims(
+                new PlaybackProbeClaims(Clock.systemUTC(), new SimpleMeterRegistry()))
             .build();
     task = MediaProbeTask.create(execution, completion);
     client =

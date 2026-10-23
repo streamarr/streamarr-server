@@ -26,6 +26,7 @@ import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.services.events.library.MediaFileProbeTaskRequested;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.probe.PersistedProbeReader;
+import com.streamarr.server.services.probe.PlaybackProbeClaims;
 import com.streamarr.server.services.probe.ProbeAttemptEnds;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -65,6 +66,7 @@ class PlaybackProbeServiceTest {
       new FakeMediaFileContainerInfoRepository();
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
   private final ProbeAttemptEnds attemptEnds = new ProbeAttemptEnds(meterRegistry);
+  private final PlaybackProbeClaims claims = new PlaybackProbeClaims(clock, meterRegistry);
   private final CapturingEventPublisher events = new CapturingEventPublisher();
   private final CompletableFuture<Void> probeRequested = new CompletableFuture<>();
   private final ExecutorService playbackThreads = Executors.newVirtualThreadPerTaskExecutor();
@@ -167,6 +169,29 @@ class PlaybackProbeServiceTest {
       assertThat(waitTimer("ready"))
           .returns(1L, Timer::count)
           .returns(3.0, timer -> timer.totalTime(TimeUnit.SECONDS));
+    }
+
+    @Test
+    @DisplayName(
+        "Should time the wait for a free unit from the playback request when the scheduler claims"
+            + " the probe")
+    void shouldTimeTheWaitForAFreeUnitFromThePlaybackRequestWhenTheSchedulerClaimsTheProbe()
+        throws Exception {
+      var playback = readInBackground(service());
+      probeRequested.get(10, TimeUnit.SECONDS);
+
+      clock.advance(Duration.ofSeconds(2));
+      try (var _ = claims.claimed(mediaFileId)) {
+        clock.advance(Duration.ofSeconds(5));
+        outcomes.store(success());
+        attemptEnds.signalEnd(mediaFileId);
+        playback.get(10, TimeUnit.SECONDS);
+      }
+
+      assertThat(meterRegistry.get("streamarr.playback.probe_unit_wait").timer())
+          .returns(1L, Timer::count)
+          .returns(2.0, timer -> timer.totalTime(TimeUnit.SECONDS));
+      assertThat(waitTimer("ready").totalTime(TimeUnit.SECONDS)).isEqualTo(7);
     }
 
     @Test
@@ -386,6 +411,7 @@ class PlaybackProbeServiceTest {
         .attemptEnds(attemptEnds)
         .clock(clock)
         .meterRegistry(meterRegistry)
+        .playbackProbeClaims(claims)
         .properties(StreamingProperties.builder().probeWaitLimit(WAIT_LIMIT).build());
   }
 

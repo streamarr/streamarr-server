@@ -20,6 +20,7 @@ import com.streamarr.server.services.library.KeyframePacketScanExecution;
 import com.streamarr.server.services.library.MediaProbeTask;
 import com.streamarr.server.services.library.ProbeExecution;
 import com.streamarr.server.services.library.ProbeTaskCompletion;
+import com.streamarr.server.services.probe.PlaybackProbeClaims;
 import com.streamarr.server.services.streaming.ProbeCapacitySource;
 import java.time.Clock;
 import java.util.List;
@@ -48,7 +49,9 @@ public class ProbeSchedulingConfiguration {
    */
   @Bean
   public ProbeCapacityJdbcCustomization probeCapacityJdbcCustomization(
-      ProbeCapacitySource probeCapacitySource, Environment environment) {
+      ProbeCapacitySource probeCapacitySource,
+      PlaybackProbeClaims playbackProbeClaims,
+      Environment environment) {
     var properties =
         Binder.get(environment)
             .bind("db-scheduler", Bindable.of(DbSchedulerProperties.class))
@@ -60,6 +63,7 @@ public class ProbeSchedulingConfiguration {
             properties.getPollingStrategyUpperLimitFractionOfThreads());
     return ProbeCapacityJdbcCustomization.builder()
         .capacitySource(probeCapacitySource)
+        .playbackProbeClaims(playbackProbeClaims)
         .probeSchedulerUpperLimit(pollingStrategy.getUpperLimit(properties.getThreads()))
         .scanSchedulerUpperLimit(pollingStrategy.getUpperLimit(KeyframePacketScanScheduler.THREADS))
         .build();
