@@ -5,6 +5,9 @@ import io.micrometer.core.instrument.Timer;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -26,7 +29,7 @@ public class PlaybackProbeClaims {
   private final Clock clock;
   private final Timer unitWait;
   private final AtomicInteger inProgress = new AtomicInteger();
-  private final ConcurrentHashMap<UUID, Waiting> waiting = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<UUID, Set<PlaybackProbeWait>> waiting = new ConcurrentHashMap<>();
 
   public PlaybackProbeClaims(@NonNull Clock clock, @NonNull MeterRegistry meterRegistry) {
     this.clock = clock;
@@ -37,25 +40,15 @@ public class PlaybackProbeClaims {
             .register(meterRegistry);
   }
 
-  /** A playback request for the media file starts waiting for the file's probe. */
-  public void waitStarted(@NonNull UUID mediaFileId, @NonNull Instant requestedAt) {
-    waiting.merge(
-        mediaFileId,
-        new Waiting(requestedAt, 1),
-        (current, _) -> new Waiting(current.since(), current.requests() + 1));
-  }
-
-  /** A playback request for the media file stops waiting, with or without the probe's outcome. */
-  public void waitEnded(@NonNull UUID mediaFileId) {
-    waiting.computeIfPresent(
-        mediaFileId,
-        (_, current) -> {
-          if (current.requests() <= 1) {
-            return null;
-          }
-
-          return new Waiting(current.since(), current.requests() - 1);
-        });
+  /**
+   * A playback request for the media file starts waiting for the file's probe. The wait ends when
+   * the scheduler claims the probe or when the returned wait closes, whichever comes first, and
+   * closing one request's wait never ends another's.
+   */
+  public PlaybackProbeWait waitStarted(@NonNull UUID mediaFileId, @NonNull Instant requestedAt) {
+    var wait = new PlaybackProbeWait(mediaFileId, requestedAt);
+    waiting.merge(mediaFileId, Set.of(wait), PlaybackProbeClaims::union);
+    return wait;
   }
 
   /**
@@ -63,9 +56,12 @@ public class PlaybackProbeClaims {
    * the returned claim closes, when the probe's execution ends.
    */
   public ClaimedPlaybackProbe claimed(@NonNull UUID mediaFileId) {
-    var since = waiting.remove(mediaFileId);
-    if (since != null) {
-      unitWait.record(Duration.between(since.since(), clock.instant()));
+    var waits = waiting.remove(mediaFileId);
+    if (waits != null) {
+      waits.stream()
+          .map(wait -> wait.since)
+          .min(Comparator.naturalOrder())
+          .ifPresent(since -> unitWait.record(Duration.between(since, clock.instant())));
     }
 
     inProgress.incrementAndGet();
@@ -91,5 +87,41 @@ public class PlaybackProbeClaims {
     }
   }
 
-  private record Waiting(Instant since, int requests) {}
+  private static Set<PlaybackProbeWait> union(
+      Set<PlaybackProbeWait> current, Set<PlaybackProbeWait> added) {
+    var waits = new HashSet<>(current);
+    waits.addAll(added);
+    return Set.copyOf(waits);
+  }
+
+  /** One playback request's wait for a probe. */
+  public final class PlaybackProbeWait implements AutoCloseable {
+
+    private final UUID mediaFileId;
+    private final Instant since;
+
+    private PlaybackProbeWait(UUID mediaFileId, Instant since) {
+      this.mediaFileId = mediaFileId;
+      this.since = since;
+    }
+
+    @Override
+    public void close() {
+      waiting.computeIfPresent(
+          mediaFileId,
+          (_, waits) -> {
+            if (!waits.contains(this)) {
+              return waits;
+            }
+
+            var remaining = new HashSet<>(waits);
+            remaining.remove(this);
+            if (remaining.isEmpty()) {
+              return null;
+            }
+
+            return Set.copyOf(remaining);
+          });
+    }
+  }
 }
