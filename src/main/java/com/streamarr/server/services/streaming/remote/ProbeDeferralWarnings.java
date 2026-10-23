@@ -23,12 +23,8 @@ final class ProbeDeferralWarnings {
    * warning is due, which starts a new interval.
    */
   synchronized Optional<Integer> tryTakeDeferredCount(String reason, long nowNanos) {
-    var window = windows.get(reason);
-    if (window == null) {
-      windows.put(reason, new Window(nowNanos, 0));
-      return Optional.of(1);
-    }
-
+    // A reason's first deferral is due a warning at once.
+    var window = windows.computeIfAbsent(reason, _ -> new Window(nowNanos - intervalNanos, 0));
     var deferred = window.deferred() + 1;
     if (nowNanos - window.warnedAtNanos() < intervalNanos) {
       windows.put(reason, new Window(window.warnedAtNanos(), deferred));

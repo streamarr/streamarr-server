@@ -54,6 +54,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -316,16 +317,17 @@ final class LiveWorkerConnectionRegistry {
   }
 
   boolean completeProbe(UUID workerId, UUID workerSessionId, ProbeAttemptResult result) {
-    var completed =
-        currentConnection(workerId, workerSessionId)
-            .map(connection -> connection.completeProbe(result))
-            .orElse(false);
-    if (completed && result.getFailure() == ProbeFailure.PROBE_FAILURE_NO_FREE_CAPACITY) {
+    var connection = currentConnection(workerId, workerSessionId);
+    if (connection.isEmpty() || !connection.get().completeProbe(result)) {
+      return false;
+    }
+
+    if (result.getFailure() == ProbeFailure.PROBE_FAILURE_NO_FREE_CAPACITY) {
       countDeferredProbe(
           "no_free_capacity", "A worker had no free unit of the probe's capacity when it arrived");
     }
 
-    return completed;
+    return true;
   }
 
   boolean acceptKeyframePositionsPart(
@@ -573,7 +575,7 @@ final class LiveWorkerConnectionRegistry {
     private final int maximumActiveVariants;
     // A worker may report new background and keyframe packet scan capacities at any time during
     // its session.
-    private volatile GrantedProbeCapacities grantedProbeCapacities;
+    private final AtomicReference<GrantedProbeCapacities> grantedProbeCapacities;
     private final StreamObserver<EstablishWorkerSessionResponse> responseObserver;
 
     private final Map<UUID, VariantJob> activeVariants = new ConcurrentHashMap<>();
@@ -600,7 +602,7 @@ final class LiveWorkerConnectionRegistry {
                       Collectors.toUnmodifiableMap(
                           encoder -> encoder.backend().codecFamily(), Function.identity())));
       maximumActiveVariants = registration.getAvailableSlots();
-      grantedProbeCapacities = GrantedProbeCapacities.of(registration);
+      grantedProbeCapacities = new AtomicReference<>(GrantedProbeCapacities.of(registration));
       this.responseObserver = responseObserver;
     }
 
@@ -646,7 +648,7 @@ final class LiveWorkerConnectionRegistry {
         return new ProbeDispatch.Refused(ProbeRefusal.NO_COMPATIBLE_WORKER);
       }
 
-      if (!grantedProbeCapacities.fits(ProbeKind.of(request), runningProbeKinds())) {
+      if (!grantedProbeCapacities.get().fits(ProbeKind.of(request), runningProbeKinds())) {
         return new ProbeDispatch.Refused(ProbeRefusal.WORKERS_BUSY);
       }
 
@@ -957,7 +959,7 @@ final class LiveWorkerConnectionRegistry {
 
     @Override
     public int grantedUnits(ProbeKind kind) {
-      return grantedProbeCapacities.units(kind);
+      return grantedProbeCapacities.get().units(kind);
     }
 
     @Override
@@ -967,19 +969,19 @@ final class LiveWorkerConnectionRegistry {
 
     @Override
     public BackgroundProbeCapacityControl backgroundProbeCapacityControl() {
-      return grantedProbeCapacities.backgroundProbeCapacityControl();
+      return grantedProbeCapacities.get().backgroundProbeCapacityControl();
     }
 
     private synchronized void changeProbeCapacity(ProbeCapacityChanged changed) {
-      grantedProbeCapacities = grantedProbeCapacities.changedTo(changed);
+      grantedProbeCapacities.updateAndGet(capacities -> capacities.changedTo(changed));
     }
 
     private synchronized boolean hasFreePlaybackProbeUnit() {
-      return grantedProbeCapacities.hasFreePlaybackUnit(runningProbeKinds());
+      return grantedProbeCapacities.get().hasFreePlaybackUnit(runningProbeKinds());
     }
 
     private synchronized ProbeCapacity probeCapacity() {
-      return grantedProbeCapacities.capacity(runningProbeKinds());
+      return grantedProbeCapacities.get().capacity(runningProbeKinds());
     }
 
     private synchronized void stopStreamSession(UUID streamSessionId) {

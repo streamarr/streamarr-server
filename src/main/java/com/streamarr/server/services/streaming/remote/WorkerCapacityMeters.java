@@ -26,6 +26,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 final class WorkerCapacityMeters {
 
+  private static final String WORKER_TAG = "worker";
   private static final String CAPACITY_METRIC = "streamarr.probes.capacity";
   private static final String RUNNING_METRIC = "streamarr.probes.running";
   private static final String CONTROL_METRIC = "streamarr.probes.background_capacity_control";
@@ -59,7 +60,7 @@ final class WorkerCapacityMeters {
     var meters = new ArrayList<Meter>();
     for (var kind : ProbeKind.values()) {
       var tags =
-          Tags.of("worker", workerId.toString(), "kind", kind.name().toLowerCase(Locale.ROOT));
+          Tags.of(WORKER_TAG, workerId.toString(), "kind", kind.name().toLowerCase(Locale.ROOT));
       meters.add(
           Gauge.builder(CAPACITY_METRIC, session, reported -> reported.grantedUnits(kind))
               .description("The units of a probe capacity that the worker grants")
@@ -77,25 +78,25 @@ final class WorkerCapacityMeters {
     meters.add(
         Gauge.builder(PLAYBACK_SLOTS_METRIC, session, Session::playbackSlots)
             .description("The job attempts that the worker runs at once")
-            .tag("worker", workerId.toString())
+            .tag(WORKER_TAG, workerId.toString())
             .strongReference(true)
             .register(meterRegistry));
     meters.add(
         Gauge.builder(PLAYBACK_SLOTS_IN_USE_METRIC, session, Session::playbackSlotsInUse)
             .description("The job attempts that run on the worker")
-            .tag("worker", workerId.toString())
+            .tag(WORKER_TAG, workerId.toString())
             .strongReference(true)
             .register(meterRegistry));
     meters.add(
         Gauge.builder(CONTROL_METRIC, () -> 1)
             .description("The way that the worker sets its background probe capacity")
-            .tag("worker", workerId.toString())
+            .tag(WORKER_TAG, workerId.toString())
             .tag("control", controlTag(session.backgroundProbeCapacityControl()))
             .register(meterRegistry));
     var productionSpeed =
         DistributionSummary.builder(PRODUCTION_SPEED_METRIC)
             .description("Media seconds that the worker produced per second of production time")
-            .tag("worker", workerId.toString())
+            .tag(WORKER_TAG, workerId.toString())
             .register(meterRegistry);
     meters.add(productionSpeed);
     registered.put(workerId, new Registered(session, meters, productionSpeed));
