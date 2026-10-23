@@ -6,6 +6,7 @@ import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
+import com.streamarr.server.services.concurrency.NanoClock;
 import com.streamarr.server.services.events.library.MediaFileProbeTaskRequested;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.probe.PersistedProbeReader;
@@ -38,6 +39,7 @@ public class PlaybackProbeService {
   private final ProbeWorkers probeWorkers;
   private final ProbeAttemptEnds attemptEnds;
   private final Clock clock;
+  private final NanoClock nanoClock;
   private final StreamingProperties properties;
   private final MeterRegistry meterRegistry;
   private final PlaybackProbeClaims playbackProbeClaims;
@@ -59,24 +61,27 @@ public class PlaybackProbeService {
     // request time keeps a failure after the request from reading back as earlier.
     var requestedAt = clock.instant().truncatedTo(ChronoUnit.MICROS);
     // The wait starts before the request, so a claim that follows the request at once finds it.
-    try (var _ = playbackProbeClaims.waitStarted(mediaFileId, requestedAt)) {
+    try (var _ = playbackProbeClaims.waitStarted(mediaFileId)) {
       return requestAndAwaitOutcome(mediaFileId, requestedAt);
     }
   }
 
   private Outcome<MediaProbe, CreateStreamSessionRejection> requestAndAwaitOutcome(
       UUID mediaFileId, Instant requestedAt) {
+    // The wait counts elapsed time, so a step of the system clock cannot lengthen the wait or
+    // distort its timing.
+    var waitStarted = nanoClock.nanoTime();
     eventPublisher.publishEvent(new MediaFileProbeTaskRequested(mediaFileId));
     if (!probeWorkers.hasCompatibleWorker(ProbeVersion.CURRENT)) {
       return notReady();
     }
 
-    var outcome = awaitOutcome(mediaFileId, requestedAt);
+    var outcome = awaitOutcome(mediaFileId, requestedAt, waitStarted);
     Timer.builder(WAIT_METRIC)
         .description("How long a playback request waited for its media file's probe")
         .tag("outcome", waitOutcome(outcome))
         .register(meterRegistry)
-        .record(Duration.between(requestedAt, clock.instant()));
+        .record(Duration.ofNanos(nanoClock.nanoTime() - waitStarted));
     return outcome;
   }
 
@@ -93,8 +98,7 @@ public class PlaybackProbeService {
   }
 
   private Outcome<MediaProbe, CreateStreamSessionRejection> awaitOutcome(
-      UUID mediaFileId, Instant requestedAt) {
-    var deadline = requestedAt.plus(properties.probeWaitLimit());
+      UUID mediaFileId, Instant requestedAt, long waitStarted) {
     while (true) {
       try (var nextEnd = attemptEnds.next(mediaFileId)) {
         var stored = reader.find(mediaFileId);
@@ -106,12 +110,29 @@ public class PlaybackProbeService {
           return notReady();
         }
 
-        var remaining = Duration.between(clock.instant(), deadline);
-        if (!remaining.isPositive() || !tryAwait(nextEnd, remaining)) {
+        var remaining = properties.probeWaitLimit().minusNanos(nanoClock.nanoTime() - waitStarted);
+        if (!remaining.isPositive()) {
+          return storedOrNotReady(mediaFileId);
+        }
+
+        var waited = awaitEnd(nextEnd, remaining);
+        if (waited == AttemptWait.INTERRUPTED) {
           return notReady();
+        }
+
+        if (waited == AttemptWait.TIMED_OUT) {
+          return storedOrNotReady(mediaFileId);
         }
       }
     }
+  }
+
+  // The limit has passed. An outcome stored since the last read still starts playback.
+  private Outcome<MediaProbe, CreateStreamSessionRejection> storedOrNotReady(UUID mediaFileId) {
+    return reader
+        .find(mediaFileId)
+        .map(PlaybackProbeService::playable)
+        .orElseGet(PlaybackProbeService::notReady);
   }
 
   // A failure saved before the request belongs to an earlier attempt, so the wait continues.
@@ -128,14 +149,23 @@ public class PlaybackProbeService {
         .orElse(true);
   }
 
-  // Returns false when the thread is interrupted, after restoring its interrupt status.
-  private static boolean tryAwait(ProbeAttemptEnds.NextEnd nextEnd, Duration remaining) {
+  private enum AttemptWait {
+    ENDED,
+    TIMED_OUT,
+    INTERRUPTED
+  }
+
+  // Restores the thread's interrupt status when the wait is interrupted.
+  private static AttemptWait awaitEnd(ProbeAttemptEnds.NextEnd nextEnd, Duration remaining) {
     try {
-      nextEnd.await(remaining);
-      return true;
+      if (nextEnd.await(remaining)) {
+        return AttemptWait.ENDED;
+      }
+
+      return AttemptWait.TIMED_OUT;
     } catch (InterruptedException _) {
       Thread.currentThread().interrupt();
-      return false;
+      return AttemptWait.INTERRUPTED;
     }
   }
 

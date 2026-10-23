@@ -19,7 +19,6 @@ import com.streamarr.server.services.streaming.FfprobeService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
-import java.time.Clock;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -101,7 +100,7 @@ class SchedulerProbeCapacityIT extends AbstractProbeSchedulerIntegrationTest {
             .packetScans(new CapturingKeyframePacketScanRequests())
             .transactionManager(transactionManager)
             .playbackProbeClaims(
-                new PlaybackProbeClaims(Clock.systemUTC(), new SimpleMeterRegistry()))
+                new PlaybackProbeClaims(System::nanoTime, new SimpleMeterRegistry()))
             .build();
     var client = startScheduler(execution, listener);
 
