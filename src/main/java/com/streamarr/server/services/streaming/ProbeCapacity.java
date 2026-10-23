@@ -57,7 +57,8 @@ public record ProbeCapacity(
   public ProbeClaim probesToClaim(ProbeExecutionsInProgress inProgress) {
     var awaitingDispatch = Math.max(0, inProgress.executions() - runningProbes);
     var playbackAwaitingDispatch =
-        Math.clamp(inProgress.playbackExecutions() - runningPlaybackProbes, 0, awaitingDispatch);
+        Math.clamp(
+            (long) inProgress.playbackExecutions() - runningPlaybackProbes, 0, awaitingDispatch);
     var backgroundAwaitingDispatch = awaitingDispatch - playbackAwaitingDispatch;
     var playbackBeyondFreeUnits = Math.max(0, playbackAwaitingDispatch - freePlaybackProbeUnits);
     return ProbeClaim.builder()
