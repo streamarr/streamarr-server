@@ -111,7 +111,7 @@ only applies a boundary when its edge still exists. Keep retained navigation anc
 from a live connection's `pageInfo` cursors, which describe its current first and last edges.
 Whole-library counts cannot be derived from a loaded window. Apply the separate count
 payload even when a change affects a title outside that window. See
-[library-counts.md](library-counts.md) for the recount schedule and top-level semantics.
+[library-counts.md](library-counts.md) for when counts change and top-level semantics.
 
 ## Publication and delivery
 

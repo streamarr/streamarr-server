@@ -65,7 +65,6 @@ import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.concurrency.AdaptiveAdmissions;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
-import com.streamarr.server.services.events.library.ItemProcessedEvent;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.events.library.LibraryStatusChangedEvent;
@@ -568,7 +567,6 @@ class LibraryManagementServiceTest {
             otherLibraryId, "About Time (2013) old name.mkv", MediaFileStatus.METADATA_UNAVAILABLE);
     assertThat(fakeMovieRepository.findAll()).isEmpty();
     assertThat(probeTaskRequests.requests()).isEmpty();
-    assertThat(capturingEventPublisher.getEventsOfType(ItemProcessedEvent.class)).isEmpty();
   }
 
   @Test
@@ -734,13 +732,11 @@ class LibraryManagementServiceTest {
         .singleElement()
         .extracting(request -> request.libraryId())
         .isEqualTo(savedLibraryId);
-    assertThat(capturingEventPublisher.getEventsOfType(ItemProcessedEvent.class))
-        .containsExactly(new ItemProcessedEvent(savedLibraryId));
   }
 
   @Test
-  @DisplayName("Should not publish item processed event when file is already matched")
-  void shouldNotPublishItemProcessedEventWhenFileAlreadyMatched() throws IOException {
+  @DisplayName("Should leave a matched file as it is when the file watcher discovers it again")
+  void shouldLeaveAMatchedFileAsItIsWhenTheFileWatcherDiscoversItAgain() throws IOException {
     var rootPath = createRootLibraryDirectory();
     var moviePath = createMovieFile(rootPath, "Already Matched", "Already Matched (2024).mkv");
 
@@ -754,8 +750,11 @@ class LibraryManagementServiceTest {
 
     libraryManagementService.processDiscoveredFile(savedLibraryId, moviePath);
 
-    var events = capturingEventPublisher.getEventsOfType(ItemProcessedEvent.class);
-    assertThat(events).isEmpty();
+    assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath)))
+        .get()
+        .extracting(MediaFile::getStatus)
+        .isEqualTo(MediaFileStatus.MATCHED);
+    assertThat(fakeMovieRepository.findAll()).isEmpty();
   }
 
   @Test

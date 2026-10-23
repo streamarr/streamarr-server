@@ -16,7 +16,6 @@ import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.Intent;
-import com.streamarr.server.services.events.library.ItemProcessedEvent;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
@@ -215,8 +214,6 @@ public class LibraryManagementService {
             .findById(libraryId)
             .orElseThrow(() -> new LibraryNotFoundException(libraryId));
 
-    if (libraryFileWalk.tryProcessDiscoveredFile(library, path)) {
-      eventPublisher.publishEvent(new ItemProcessedEvent(libraryId));
-    }
+    libraryFileWalk.processDiscoveredFile(library, path);
   }
 }

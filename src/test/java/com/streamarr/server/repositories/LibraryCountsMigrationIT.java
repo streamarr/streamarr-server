@@ -133,6 +133,61 @@ class LibraryCountsMigrationIT extends AbstractIntegrationTest {
     }
   }
 
+  @Test
+  @DisplayName("Should rebuild the letter index and count later titles when the schema is upgraded")
+  void shouldRebuildTheLetterIndexAndCountLaterTitlesWhenTheSchemaIsUpgraded() throws SQLException {
+    var schema = "letter_index_" + UUID.randomUUID().toString().replace("-", "");
+    dsl.createSchema(schema).execute();
+    try (var connection = dataSource.getConnection();
+        var statement = connection.createStatement()) {
+      statement.execute("SET search_path = " + schema + ", public");
+      statement.execute(
+          """
+          CREATE TABLE base_collectable (id INT PRIMARY KEY, library_id UUID, title_sort TEXT);
+          CREATE TABLE movie (id INT PRIMARY KEY REFERENCES base_collectable ON DELETE CASCADE);
+          CREATE TABLE series (id INT PRIMARY KEY REFERENCES base_collectable ON DELETE CASCADE);
+          CREATE TABLE library_metadata (
+            id UUID DEFAULT gen_random_uuid(), library_id UUID, letter public.alphabet_letter,
+            item_count INT, UNIQUE(library_id, letter));
+          INSERT INTO base_collectable VALUES
+            (1, '00000000-0000-0000-0000-00000000000a', 'Alpha'),
+            (2, '00000000-0000-0000-0000-00000000000a', 'Season One');
+          INSERT INTO movie VALUES (1);
+          INSERT INTO library_metadata (library_id, letter, item_count) VALUES
+            ('00000000-0000-0000-0000-00000000000a', 'A', 3),
+            ('00000000-0000-0000-0000-00000000000a', 'Z', 2);
+          """);
+      Flyway.configure()
+          .configuration(flyway.getConfiguration())
+          .schemas(schema)
+          .defaultSchema(schema)
+          .baselineVersion("104")
+          .baselineOnMigrate(true)
+          .target("105")
+          .load()
+          .migrate();
+      statement.execute(
+          """
+          INSERT INTO base_collectable VALUES (3, '00000000-0000-0000-0000-00000000000a', 'Bravo');
+          INSERT INTO series VALUES (3);
+          """);
+
+      try (var rows =
+          statement.executeQuery(
+              "SELECT letter, item_count FROM library_metadata ORDER BY letter")) {
+        assertThat(rows.next()).isTrue();
+        assertThat(rows.getString("letter")).isEqualTo("A");
+        assertThat(rows.getInt("item_count")).isOne();
+        assertThat(rows.next()).isTrue();
+        assertThat(rows.getString("letter")).isEqualTo("B");
+        assertThat(rows.getInt("item_count")).isOne();
+        assertThat(rows.next()).isFalse();
+      }
+    } finally {
+      dsl.dropSchema(schema).cascade().execute();
+    }
+  }
+
   private void seedLegacyCounts(String schema, String collation) throws SQLException {
     try (var connection = dataSource.getConnection();
         var statement = connection.createStatement()) {
