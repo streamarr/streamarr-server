@@ -257,7 +257,8 @@ class RemoteFfprobeServiceIT {
           worker.reply(
               answer(started).setFailure(ProbeFailure.PROBE_FAILURE_NO_FREE_CAPACITY).build());
 
-          assertThatThrownBy(() -> probe.await(Duration.ofSeconds(5)))
+          var deadline = Duration.ofSeconds(5);
+          assertThatThrownBy(() -> probe.await(deadline))
               .isExactlyInstanceOf(ProbeWorkersBusyException.class);
         }
       }

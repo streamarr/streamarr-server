@@ -59,7 +59,7 @@ class WorkerProbeCapacityTest {
 
     var dispatches = dispatchProbes(4);
 
-    assertThat(dispatches).allSatisfy(this::assertDispatched);
+    assertThat(dispatches).hasSize(4).allSatisfy(this::assertDispatched);
     assertThat(startProbeCount(responses)).isEqualTo(4);
     assertThat(registry.dispatchProbe(probe().build()))
         .isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.WORKERS_BUSY));
@@ -106,7 +106,7 @@ class WorkerProbeCapacityTest {
 
     var dispatches = dispatchProbes(8);
 
-    assertThat(dispatches).allSatisfy(this::assertDispatched);
+    assertThat(dispatches).hasSize(8).allSatisfy(this::assertDispatched);
     assertThat(startProbeCount(first)).isEqualTo(3);
     assertThat(startProbeCount(second)).isEqualTo(5);
     assertThat(registry.dispatchProbe(probe().build()))
