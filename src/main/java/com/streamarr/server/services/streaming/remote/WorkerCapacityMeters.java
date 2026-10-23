@@ -92,7 +92,13 @@ final class WorkerCapacityMeters {
             .tag("worker", workerId.toString())
             .tag("control", controlTag(session.backgroundProbeCapacityControl()))
             .register(meterRegistry));
-    registered.put(workerId, new Registered(session, meters));
+    var productionSpeed =
+        DistributionSummary.builder(PRODUCTION_SPEED_METRIC)
+            .description("Media seconds that the worker produced per second of production time")
+            .tag("worker", workerId.toString())
+            .register(meterRegistry);
+    meters.add(productionSpeed);
+    registered.put(workerId, new Registered(session, meters, productionSpeed));
   }
 
   /** Removes the worker's meters when they still belong to the session that left. */
@@ -107,9 +113,16 @@ final class WorkerCapacityMeters {
 
   /**
    * Reports the media segment's production speed: the media seconds that the worker produced in
-   * each second of production time. An initialization segment carries no timing.
+   * each second of production time. An initialization segment carries no timing, and a segment
+   * whose session no longer owns the worker's meters is not reported.
    */
-  void segmentPublished(@NonNull UUID workerId, @NonNull SegmentUploadMetadata metadata) {
+  synchronized void segmentPublished(
+      @NonNull UUID workerId, @NonNull Session session, @NonNull SegmentUploadMetadata metadata) {
+    var current = registered.get(workerId);
+    if (current == null || current.session() != session) {
+      return;
+    }
+
     if (!metadata.hasMediaDuration() || !metadata.hasProductionTime()) {
       return;
     }
@@ -119,11 +132,7 @@ final class WorkerCapacityMeters {
       return;
     }
 
-    DistributionSummary.builder(PRODUCTION_SPEED_METRIC)
-        .description("Media seconds that the worker produced per second of production time")
-        .tag("worker", workerId.toString())
-        .register(meterRegistry)
-        .record(seconds(metadata.getMediaDuration()) / productionSeconds);
+    current.productionSpeed().record(seconds(metadata.getMediaDuration()) / productionSeconds);
   }
 
   private static double seconds(Duration duration) {
@@ -144,5 +153,6 @@ final class WorkerCapacityMeters {
     return control.name().replace(CONTROL_PREFIX, "").toLowerCase(Locale.ROOT);
   }
 
-  private record Registered(Session session, List<Meter> meters) {}
+  private record Registered(
+      Session session, List<Meter> meters, DistributionSummary productionSpeed) {}
 }
