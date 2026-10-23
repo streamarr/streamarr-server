@@ -72,21 +72,10 @@ record ProbeSchedulerStarter(
     var listeners = new ArrayList<SchedulerListener>(applicationListeners);
     listeners.add(listener);
     var serializer = customizer.serializer().orElseThrow();
-    var pickingCustomizer =
-        new ProbeSchedulingConfiguration()
-            .dbSchedulerCustomizer(
-                serializer,
-                dataSource,
-                ProbeCapacityJdbcCustomization.builder()
-                    .capacitySource(probeCapacity)
-                    .playbackProbeClaims(playbackProbeClaims)
-                    .probeSchedulerUpperLimit(threads)
-                    .scanSchedulerUpperLimit(KeyframePacketScanScheduler.THREADS)
-                    .build());
     var scheduler =
         DbSchedulerConfigurationSupport.buildScheduler(
             properties,
-            pickingCustomizer,
+            pickingCustomizer(),
             StatsRegistry.NOOP,
             clock::instant,
             dataSource,
@@ -96,5 +85,22 @@ record ProbeSchedulerStarter(
     var client = SchedulerClient.Builder.create(dataSource, task).serializer(serializer).build();
     scheduler.start();
     return new StartedProbeScheduler(scheduler, client);
+  }
+
+  /**
+   * The application's scheduler customization, claiming probes and keyframe packet scans up to the
+   * probe capacity that this starter reads.
+   */
+  DbSchedulerCustomizer pickingCustomizer() {
+    return new ProbeSchedulingConfiguration()
+        .dbSchedulerCustomizer(
+            customizer.serializer().orElseThrow(),
+            dataSource,
+            ProbeCapacityJdbcCustomization.builder()
+                .capacitySource(probeCapacity)
+                .playbackProbeClaims(playbackProbeClaims)
+                .probeSchedulerUpperLimit(threads)
+                .scanSchedulerUpperLimit(KeyframePacketScanScheduler.THREADS)
+                .build());
   }
 }
