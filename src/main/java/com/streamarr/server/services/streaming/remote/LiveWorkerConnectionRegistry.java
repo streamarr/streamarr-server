@@ -556,7 +556,8 @@ final class LiveWorkerConnectionRegistry {
                 fromProto(metadata.getStreamSessionId()), metadata.getVariantLabel()));
     outcome
         .filter(SegmentPublication.PUBLISHED::equals)
-        .ifPresent(_ -> capacityMeters.segmentPublished(authenticatedWorkerId, metadata));
+        .ifPresent(
+            _ -> capacityMeters.segmentPublished(authenticatedWorkerId, connection, metadata));
     return outcome;
   }
 
