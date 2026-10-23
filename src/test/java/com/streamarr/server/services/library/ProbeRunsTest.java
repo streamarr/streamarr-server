@@ -21,6 +21,8 @@ import com.streamarr.server.fakes.FakeProbeTaskRequests;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
+import com.streamarr.server.services.streaming.ProbeCapacity;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
@@ -28,17 +30,21 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Probe runs")
 class ProbeRunsTest {
 
   private static final Duration CHECK_INTERVAL = Duration.ofSeconds(2);
+  private static final String RUN_DESCRIPTION = "scan of library 'Probes'";
 
   private final FakeMediaFileRepository mediaFiles = new FakeMediaFileRepository();
   private final FakeMediaFileContainerInfoRepository outcomes =
@@ -46,6 +52,9 @@ class ProbeRunsTest {
   private final FakeProbeTaskRequests requests = new FakeProbeTaskRequests(outcomes);
   private final MutableClock clock = new MutableClock();
   private final CountingSleeper sleeper = new CountingSleeper(clock);
+  private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+  private final AtomicReference<ProbeCapacity> capacity =
+      new AtomicReference<>(ProbeCapacity.builder().build());
   private FileSystem fileSystem;
   private ProbeRuns probeRuns;
 
@@ -66,7 +75,13 @@ class ProbeRunsTest {
             .sleeper(sleeper)
             .clock(clock)
             .properties(new ProbeSchedulingProperties(null, CHECK_INTERVAL, null))
+            .capacitySource(capacity::get)
+            .scanProbesWaiting(new ScanProbesWaiting(meterRegistry))
             .build();
+  }
+
+  private double waitingGauge() {
+    return meterRegistry.get("streamarr.probes.waiting").gauge().value();
   }
 
   @AfterEach
@@ -81,10 +96,55 @@ class ProbeRunsTest {
     run.request(mediaFile("movie.mkv").getId());
     sleeper.onSleep(_ -> requests.succeed(onlyRequest()));
 
-    var summary = probeRuns.awaitResults(run, neverReached());
+    var summary = probeRuns.awaitResults(run, RUN_DESCRIPTION, neverReached());
 
     assertThat(summary.count(RequestedProbeResult.READY)).isOne();
     assertThat(sleeper.sleeps()).containsExactly(CHECK_INTERVAL);
+  }
+
+  @Test
+  @DisplayName(
+      "Should report the probes that the scan still waits for until the scan stops waiting when a"
+          + " scan waits for its probes")
+  void shouldReportTheProbesThatTheScanStillWaitsForUntilItStopsWaitingWhenAScanWaits()
+      throws Exception {
+    var run = probeRuns.open();
+    run.request(mediaFile("first.mkv").getId());
+    run.request(mediaFile("second.mkv").getId());
+    var waitingDuringSleep = new AtomicReference<Double>();
+    var reached = new AtomicBoolean();
+    sleeper.onSleep(
+        _ -> {
+          waitingDuringSleep.set(waitingGauge());
+          reached.set(true);
+        });
+
+    probeRuns.awaitResults(run, RUN_DESCRIPTION, reached::get);
+
+    assertThat(waitingDuringSleep.get()).isEqualTo(2);
+    assertThat(waitingGauge()).isZero();
+  }
+
+  @ParameterizedTest(name = "background probe capacity {0}")
+  @ValueSource(ints = {0, 4})
+  @DisplayName(
+      "Should keep waiting for the probe when the probe outlasts the progress report interval")
+  void shouldKeepWaitingForTheProbeWhenTheProbeOutlastsTheProgressReportInterval(
+      int backgroundProbeCapacity) throws Exception {
+    capacity.set(ProbeCapacity.builder().backgroundProbeCapacity(backgroundProbeCapacity).build());
+    var run = probeRuns.open();
+    run.request(mediaFile("movie.mkv").getId());
+    sleeper.onSleep(
+        sleeps -> {
+          if (sleeps == 20) {
+            requests.succeed(onlyRequest());
+          }
+        });
+
+    var summary = probeRuns.awaitResults(run, RUN_DESCRIPTION, neverReached());
+
+    assertThat(summary.count(RequestedProbeResult.READY)).isOne();
+    assertThat(sleeper.sleeps()).hasSize(20);
   }
 
   @Test
@@ -95,7 +155,7 @@ class ProbeRunsTest {
     var reached = new AtomicBoolean();
     sleeper.onSleep(_ -> reached.set(true));
 
-    var summary = probeRuns.awaitResults(run, reached::get);
+    var summary = probeRuns.awaitResults(run, RUN_DESCRIPTION, reached::get);
 
     assertThat(summary.count(RequestedProbeResult.READY)).isZero();
     assertThat(sleeper.sleeps()).containsExactly(CHECK_INTERVAL);
@@ -113,7 +173,7 @@ class ProbeRunsTest {
     var run = probeRuns.open();
 
     run.request(mediaFileId);
-    var summary = probeRuns.awaitResults(run, neverReached());
+    var summary = probeRuns.awaitResults(run, RUN_DESCRIPTION, neverReached());
 
     assertThat(requests.requests()).hasSize(1);
     assertThat(summary.count(RequestedProbeResult.READY)).isOne();
@@ -128,7 +188,7 @@ class ProbeRunsTest {
     sleeper.onSleep(
         _ -> requests.fail(onlyRequest(), ItemFailureReason.SOURCE_INACCESSIBLE, clock.instant()));
 
-    var summary = probeRuns.awaitResults(run, neverReached());
+    var summary = probeRuns.awaitResults(run, RUN_DESCRIPTION, neverReached());
 
     assertThat(summary.count(RequestedProbeResult.FAILED)).isOne();
     assertThat(sleeper.sleeps()).hasSize(1);
@@ -145,7 +205,7 @@ class ProbeRunsTest {
     run.request(mediaFileId);
     sleeper.onSleep(_ -> requests.succeed(requests.requests().getLast()));
 
-    var summary = probeRuns.awaitResults(run, neverReached());
+    var summary = probeRuns.awaitResults(run, RUN_DESCRIPTION, neverReached());
 
     assertThat(summary.count(RequestedProbeResult.READY)).isOne();
     assertThat(sleeper.sleeps()).hasSize(1);
@@ -163,7 +223,7 @@ class ProbeRunsTest {
           }
         });
 
-    var summary = probeRuns.awaitResults(run, neverReached());
+    var summary = probeRuns.awaitResults(run, RUN_DESCRIPTION, neverReached());
 
     assertThat(summary.count(RequestedProbeResult.READY)).isOne();
     assertThat(sleeper.sleeps()).hasSize(3);
@@ -176,7 +236,7 @@ class ProbeRunsTest {
     run.request(mediaFile("movie.mkv").getId());
     sleeper.onSleep(_ -> requests.request(changed(onlyRequest())));
 
-    var summary = probeRuns.awaitResults(run, neverReached());
+    var summary = probeRuns.awaitResults(run, RUN_DESCRIPTION, neverReached());
 
     assertThat(summary.count(RequestedProbeResult.SUPERSEDED)).isOne();
   }
@@ -189,7 +249,7 @@ class ProbeRunsTest {
     run.request(mediaFileId);
     sleeper.onSleep(_ -> outcomes.deleteMediaFile(mediaFileId));
 
-    var summary = probeRuns.awaitResults(run, neverReached());
+    var summary = probeRuns.awaitResults(run, RUN_DESCRIPTION, neverReached());
 
     assertThat(summary.count(RequestedProbeResult.REMOVED)).isOne();
   }
@@ -202,7 +262,7 @@ class ProbeRunsTest {
     var run = probeRuns.open();
 
     run.request(mediaFile.getId());
-    var summary = probeRuns.awaitResults(run, neverReached());
+    var summary = probeRuns.awaitResults(run, RUN_DESCRIPTION, neverReached());
 
     assertThat(requests.requests()).isEmpty();
     assertThat(summary.counts()).isEmpty();
@@ -218,7 +278,7 @@ class ProbeRunsTest {
     run.request(mediaFile("movie.mkv").getId());
     requests.succeed(requests.requests().getLast());
 
-    var summary = probeRuns.awaitResults(run, neverReached());
+    var summary = probeRuns.awaitResults(run, RUN_DESCRIPTION, neverReached());
 
     assertThat(summary.counts()).isEqualTo(Map.of(RequestedProbeResult.READY, 1));
     assertThat(sleeper.sleeps()).isEmpty();
@@ -237,7 +297,7 @@ class ProbeRunsTest {
           }
         });
 
-    var summary = probeRuns.awaitResults(run, neverReached());
+    var summary = probeRuns.awaitResults(run, RUN_DESCRIPTION, neverReached());
 
     assertThat(summary.elapsed()).isEqualTo(CHECK_INTERVAL.multipliedBy(2));
   }

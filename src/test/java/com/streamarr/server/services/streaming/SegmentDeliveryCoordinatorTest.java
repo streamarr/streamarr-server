@@ -133,6 +133,7 @@ class SegmentDeliveryCoordinatorTest {
   // replacement in flight cannot save the destroyed session back into the registry.
   private void destroy(UUID sessionId) {
     HlsStreamingService.builder()
+        .meterRegistry(new SimpleMeterRegistry())
         .segmentStore(segmentStore)
         .runtimeRegistry(runtimeRegistry)
         .producerLifecycle(lifecycle)
@@ -1062,6 +1063,7 @@ class SegmentDeliveryCoordinatorTest {
     gatingExecutor.markDead(sessionId);
     var streamingService =
         HlsStreamingService.builder()
+            .meterRegistry(new SimpleMeterRegistry())
             .transcodeExecutor(gatingExecutor)
             .segmentStore(segmentStore)
             .properties(properties)

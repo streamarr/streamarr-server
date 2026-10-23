@@ -3,7 +3,6 @@ package com.streamarr.server.services.library;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 
-import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.streamarr.server.config.KeyframePacketScanScheduler;
@@ -18,6 +17,7 @@ import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeTimedOutException;
@@ -55,8 +55,10 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
 
+@TestPropertySource(properties = "PROBE_KEYFRAME_PACKET_SCAN_SCHEDULER_THREADS=1")
 @Tag("IntegrationTest")
 @DisplayName("Keyframe packet scan scheduling")
 class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTest {
@@ -78,7 +80,6 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
   @Autowired private MediaFileContainerInfoRepository outcomes;
   @Autowired private ProbeSchedulingProperties probeScheduling;
   @Autowired private PlatformTransactionManager transactionManager;
-  @Autowired private DbSchedulerCustomizer schedulerCustomizer;
   @Autowired private DataSource dataSource;
   @Autowired private Environment environment;
   @Autowired private DSLContext dsl;
@@ -86,6 +87,41 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
 
   private final BlockingQueue<ExecutionComplete> scanCompletions = new LinkedBlockingQueue<>();
   private KeyframePacketScanScheduler scanScheduler;
+
+  @Test
+  @DisplayName(
+      "Should leave further scans pending when the configured scheduler ceiling is reached")
+  void shouldLeaveFurtherScansPendingWhenConfiguredSchedulerCeilingIsReached() throws Exception {
+    var requests = requestUnchangedFiles(3);
+    for (var request : requests) {
+      packetScanRequiredProbe().execute(request, ProbePriority.BACKGROUND);
+    }
+
+    var started = new LinkedBlockingQueue<ProbeExecutionRequest>();
+    var release = new CountDownLatch(1);
+    startScanScheduler(
+        request -> {
+          started.add(request);
+          awaitRelease(release);
+          return success(SCANNED);
+        },
+        Clock.systemUTC());
+
+    try {
+      assertThat(started.poll(10, TimeUnit.SECONDS)).isNotNull();
+      assertThat(started.poll(2, TimeUnit.SECONDS)).isNull();
+    } finally {
+      release.countDown();
+    }
+
+    for (var _ : requests) {
+      assertThat(scanCompletions.poll(30, TimeUnit.SECONDS)).isNotNull();
+    }
+
+    assertThat(requests)
+        .allSatisfy(request -> assertThat(storedKeyframes(request)).isEqualTo(SCANNED));
+    assertThat(scheduledScans()).isZero();
+  }
 
   @Test
   @DisplayName("Should keep the scan scheduled when the server restarts")
@@ -108,7 +144,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
   @DisplayName("Should scan the newer outcome again when the source changes during a scan")
   void shouldScanTheNewerOutcomeAgainWhenTheSourceChangesDuringAScan() throws Exception {
     var request = requestUnchangedFiles(1).getFirst();
-    packetScanRequiredProbe().execute(request);
+    packetScanRequiredProbe().execute(request, ProbePriority.BACKGROUND);
     var scanning = new CountDownLatch(1);
     var release = new CountDownLatch(1);
     var scans = new AtomicInteger();
@@ -126,7 +162,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
 
     var changed = changeSource(request);
     scheduling.request(changed);
-    packetScanRequiredProbe().execute(changed);
+    packetScanRequiredProbe().execute(changed, ProbePriority.BACKGROUND);
     release.countDown();
 
     assertThat(scanCompletions.poll(30, TimeUnit.SECONDS)).isNotNull();
@@ -145,7 +181,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
   @DisplayName("Should end the scan without storing positions when the source changes during it")
   void shouldEndTheScanWithoutStoringPositionsWhenTheSourceChangesDuringIt() throws Exception {
     var request = requestUnchangedFiles(1).getFirst();
-    packetScanRequiredProbe().execute(request);
+    packetScanRequiredProbe().execute(request, ProbePriority.BACKGROUND);
 
     startScanScheduler(
         _ -> {
@@ -165,14 +201,14 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
   @DisplayName("Should keep the scan pending for the retry delay when every worker is busy")
   void shouldKeepTheScanPendingForTheRetryDelayWhenEveryWorkerIsBusy() throws Exception {
     var request = requestUnchangedFiles(1).getFirst();
-    packetScanRequiredProbe().execute(request);
+    packetScanRequiredProbe().execute(request, ProbePriority.BACKGROUND);
     var clock =
         new MutableClock(
             new AtomicReference<>(Instant.now().truncatedTo(ChronoUnit.SECONDS).plusSeconds(1)));
 
     startScanScheduler(
         _ -> {
-          throw new ProbeWorkersBusyException();
+          throw new ProbeWorkersBusyException("All compatible workers are busy");
         },
         clock);
 
@@ -188,7 +224,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
   @DisplayName("Should keep probing on every probe thread while a keyframe packet scan runs")
   void shouldKeepProbingOnEveryProbeThreadWhileAKeyframePacketScanRuns() throws Exception {
     var files = createUnchangedFiles(3);
-    packetScanRequiredProbe().execute(files.getFirst());
+    packetScanRequiredProbe().execute(files.getFirst(), ProbePriority.BACKGROUND);
     var scanning = new CountDownLatch(1);
     var release = new CountDownLatch(1);
     KeyframePacketScanner blockedScanner =
@@ -233,7 +269,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
   @DisplayName("Should store unavailable keyframes and stop scanning when every scan times out")
   void shouldStoreUnavailableKeyframesAndStopScanningWhenEveryScanTimesOut() throws Exception {
     var request = requestUnchangedFiles(1).getFirst();
-    packetScanRequiredProbe().execute(request);
+    packetScanRequiredProbe().execute(request, ProbePriority.BACKGROUND);
     var scans = new AtomicInteger();
     startScanScheduler(
         _ -> {
@@ -259,7 +295,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
       "Should scan a source again when it returns unchanged after its scan found it missing")
   void shouldScanASourceAgainWhenItReturnsUnchangedAfterItsScanFoundItMissing() throws Exception {
     var request = requestUnchangedFiles(1).getFirst();
-    packetScanRequiredProbe().execute(request);
+    packetScanRequiredProbe().execute(request, ProbePriority.BACKGROUND);
     var source = FilepathCodec.decode(request.filepathUri());
     var away = Files.move(source, source.resolveSibling(source.getFileName() + ".away"));
     startScanScheduler(_ -> success(SCANNED), Clock.systemUTC());
@@ -285,7 +321,8 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
                 })
             .build();
 
-    assertThatIllegalStateException().isThrownBy(() -> probe.execute(request));
+    assertThatIllegalStateException()
+        .isThrownBy(() -> probe.execute(request, ProbePriority.BACKGROUND));
 
     assertThat(reader.find(request.mediaFileId())).isEmpty();
     assertThat(outcomes.findKeyframeKnowledge(request.mediaFileId())).isEmpty();
@@ -308,7 +345,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
     scanScheduler =
         KeyframePacketScanScheduler.builder()
             .schedulerProperties(UnstartedSchedulerConfiguration.schedulerProperties(environment))
-            .customizer(schedulerCustomizer)
+            .customizer(probeSchedulerStarter().pickingCustomizer())
             .dataSource(dataSource)
             .transactionManager(transactionManager)
             .execution(execution)

@@ -5,6 +5,7 @@ import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
@@ -14,6 +15,7 @@ import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
+import com.streamarr.server.services.probe.PlaybackProbeClaims;
 import com.streamarr.server.services.streaming.FfprobeService;
 import java.io.IOException;
 import java.nio.file.FileSystem;
@@ -46,8 +48,20 @@ public class ProbeExecution {
   private final MediaFileContainerInfoRepository outcomes;
   private final KeyframePacketScanRequests packetScans;
   private final PlatformTransactionManager transactionManager;
+  private final PlaybackProbeClaims playbackProbeClaims;
 
-  public ProbeExecutionResult execute(ProbeTaskRequest request) {
+  /** Runs the probe at {@code priority}, which decides the worker capacity that it uses. */
+  public ProbeExecutionResult execute(ProbeTaskRequest request, ProbePriority priority) {
+    if (priority == ProbePriority.BACKGROUND) {
+      return executeAtPriority(request, priority);
+    }
+
+    try (var _ = playbackProbeClaims.claimed(request.mediaFileId())) {
+      return executeAtPriority(request, priority);
+    }
+  }
+
+  private ProbeExecutionResult executeAtPriority(ProbeTaskRequest request, ProbePriority priority) {
     if (request.probeVersion() > ProbeVersion.CURRENT) {
       log.warn(
           "Removing probe request for media file {} at unsupported version {}",
@@ -92,11 +106,11 @@ public class ProbeExecution {
                   .sourcePath(path)
                   .attemptId(UUID.randomUUID())
                   .probeVersion(request.probeVersion())
+                  .priority(priority)
                   .build());
-    } catch (ProbeWorkersBusyException _) {
+    } catch (ProbeWorkersBusyException deferral) {
       log.debug(
-          "Deferring probe for media file {}: all compatible workers are busy",
-          request.mediaFileId());
+          "Deferring probe for media file {}: {}", request.mediaFileId(), deferral.getMessage());
       return new ProbeExecutionResult.Deferred(request);
     }
 

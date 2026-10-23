@@ -39,9 +39,7 @@ public class FileDiscoveryRuns {
   public FileDiscovery openScan(Library library, UUID libraryOperationId) {
     var artworkRun =
         artworkRequestService.openLibraryOperationRun(
-            "scan of library '" + library.getName() + "'",
-            ImageRefreshMode.PRESERVE,
-            libraryOperationId);
+            scanDescription(library), ImageRefreshMode.PRESERVE, libraryOperationId);
     return new FileDiscovery(library, artworkRun, probeRuns.open());
   }
 
@@ -73,7 +71,10 @@ public class FileDiscoveryRuns {
       throws InterruptedException, ExecutionException {
     try (var executor = SystemWork.newExecutorRunningAsSystemActor("library-scan-probes-")) {
       var probes =
-          executor.submit(() -> probeRuns.awaitResults(discovery.probeRun(), admissionEnd));
+          executor.submit(
+              () ->
+                  probeRuns.awaitResults(
+                      discovery.probeRun(), scanDescription(discovery.library()), admissionEnd));
       try {
         var artwork = artworkRunWaiter.awaitLibraryOperationResults(discovery.artworkRun());
         return ScanResults.builder()
@@ -86,5 +87,9 @@ public class FileDiscoveryRuns {
         probes.cancel(true);
       }
     }
+  }
+
+  private static String scanDescription(Library library) {
+    return "scan of library '" + library.getName() + "'";
   }
 }

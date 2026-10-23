@@ -89,35 +89,39 @@ class ProbeSchedulingPropertiesTest {
   }
 
   @Test
-  @DisplayName("Should run one keyframe packet scan at a time when no maximum is configured")
-  void shouldRunOneKeyframePacketScanAtATimeWhenNoMaximumIsConfigured() {
-    var properties = new ProbeSchedulingProperties(null, null, null);
-
-    assertThat(properties.maxConcurrentKeyframePacketScans()).isOne();
+  @DisplayName("Should default to sixteen scan executions when no scheduler ceiling is configured")
+  void shouldDefaultToSixteenScanExecutionsWhenNoSchedulerCeilingIsConfigured() {
+    assertThat(new ProbeSchedulingProperties(null, null, null).keyframePacketScanSchedulerThreads())
+        .isEqualTo(16);
+    PACKAGED_CONFIGURATION.run(
+        context ->
+            assertThat(
+                    context
+                        .getBean(ProbeSchedulingProperties.class)
+                        .keyframePacketScanSchedulerThreads())
+                .isEqualTo(16));
   }
 
   @Test
-  @DisplayName(
-      "Should run the environment's number of keyframe packet scans when"
-          + " PROBE_MAX_CONCURRENT_KEYFRAME_PACKET_SCANS is set")
-  void shouldRunTheEnvironmentsNumberOfKeyframePacketScansWhenTheMaximumIsSet() {
+  @DisplayName("Should bind the scan scheduler ceiling when its environment variable is set")
+  void shouldBindScanSchedulerCeilingWhenItsEnvironmentVariableIsSet() {
     PACKAGED_CONFIGURATION
-        .withPropertyValues("PROBE_MAX_CONCURRENT_KEYFRAME_PACKET_SCANS=3")
+        .withPropertyValues("PROBE_KEYFRAME_PACKET_SCAN_SCHEDULER_THREADS=1")
         .run(
             context ->
                 assertThat(
                         context
                             .getBean(ProbeSchedulingProperties.class)
-                            .maxConcurrentKeyframePacketScans())
-                    .isEqualTo(3));
+                            .keyframePacketScanSchedulerThreads())
+                    .isOne());
   }
 
   @ParameterizedTest
   @ValueSource(ints = {0, -1})
-  @DisplayName("Should reject the keyframe packet scan maximum when it is not positive")
-  void shouldRejectTheKeyframePacketScanMaximumWhenItIsNotPositive(int maximum) {
-    assertThatThrownBy(() -> new ProbeSchedulingProperties(null, null, maximum))
+  @DisplayName("Should reject the scan scheduler ceiling when it is not positive")
+  void shouldRejectScanSchedulerCeilingWhenItIsNotPositive(int threads) {
+    assertThatThrownBy(() -> new ProbeSchedulingProperties(null, null, threads))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("The keyframe packet scan maximum must be positive");
+        .hasMessage("Keyframe packet scan scheduler threads must be positive");
   }
 }

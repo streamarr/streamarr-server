@@ -199,7 +199,11 @@ class WorkerSessionServerIT {
         TranscodeWorkerServiceGrpc.newStub(channel)
             .establishWorkerSession(new QueuedResponseObserver(responses, closed));
     var registration = registration(identity).toBuilder();
-    registration.getRegistrationBuilder().setAvailableSlots(2);
+    registration
+        .getRegistrationBuilder()
+        .setAvailableSlots(2)
+        .setBackgroundProbeCapacity(1)
+        .setKeyframePacketScanCapacity(1);
     registration.getRegistrationBuilder().getCapabilitiesBuilder().addProbeVersions(1);
     requests.onNext(registration.build());
     return new TestWorkerConnection(requests, responses, closed);
@@ -311,6 +315,10 @@ class WorkerSessionServerIT {
             TranscodeWorkerServiceGrpc.newStub(channel)
                 .establishWorkerSession(new QueuedResponseObserver(responses, closed));
         var registration = registration(AUTHENTICATED_WORKER_ID).toBuilder();
+        registration
+            .getRegistrationBuilder()
+            .setBackgroundProbeCapacity(1)
+            .setKeyframePacketScanCapacity(1);
         registration.getRegistrationBuilder().getCapabilitiesBuilder().addProbeVersions(2);
         session.onNext(registration.build());
         assertThat(responses.poll(5, TimeUnit.SECONDS))

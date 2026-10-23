@@ -213,7 +213,8 @@ spec:
               type: RuntimeDefault
           resources:
             requests:
-              cpu: "1"
+              # At one CPU, the JVM would run virtual threads on a single carrier thread.
+              cpu: "2"
               memory: 512Mi
             limits:
               memory: 1Gi
@@ -253,6 +254,17 @@ spec:
               value: /media
             - name: TRANSCODE_WORKER_SLOTS
               value: "1"
+            # The background probe capacity adapts to the processors available to the worker's
+            # JVM. Set TRANSCODE_WORKER_PROBE_CAPACITY to a positive number to fix it.
+            # Without a CPU limit, the JVM counts every core on the node. The next two entries set
+            # its processor count to the CPU request, rounded up to a whole core.
+            - name: CPU_REQUEST
+              valueFrom:
+                resourceFieldRef:
+                  resource: requests.cpu
+                  divisor: "1"
+            - name: JAVA_TOOL_OPTIONS
+              value: -XX:ActiveProcessorCount=$(CPU_REQUEST)
             - name: LANG
               value: C.UTF-8
           volumeMounts:

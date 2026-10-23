@@ -99,6 +99,40 @@ class KubernetesManifestContractTest {
   }
 
   @Test
+  @DisplayName("Should size the worker JVM's processor count from its CPU request when deployed")
+  void shouldSizeWorkerJvmProcessorCountFromItsCpuRequestWhenDeployed() {
+    var env =
+        ((List<?>) container(workerDeployment).get("env"))
+            .stream().map(KubernetesManifestContractTest::asMap).toList();
+    var names = env.stream().map(value -> value.get("name")).toList();
+
+    assertThat(names).containsSubsequence("CPU_REQUEST", "JAVA_TOOL_OPTIONS");
+    var cpuRequestSource = asMap(env.get(names.indexOf("CPU_REQUEST")).get("valueFrom"));
+    assertThat(asMap(cpuRequestSource.get("resourceFieldRef")))
+        .containsEntry("resource", "requests.cpu")
+        .containsEntry("divisor", "1");
+    assertThat(env.get(names.indexOf("JAVA_TOOL_OPTIONS")))
+        .containsEntry("value", "-XX:ActiveProcessorCount=$(CPU_REQUEST)");
+  }
+
+  @Test
+  @DisplayName("Should request at least two CPUs for the worker when deployed")
+  void shouldRequestAtLeastTwoCpusForWorkerWhenDeployed() {
+    var requests = asMap(asMap(container(workerDeployment).get("resources")).get("requests"));
+
+    assertThat(millicores(requests.get("cpu"))).isGreaterThanOrEqualTo(2000);
+  }
+
+  private static long millicores(Object quantity) {
+    var text = String.valueOf(quantity);
+    if (text.endsWith("m")) {
+      return Long.parseLong(text.substring(0, text.length() - 1));
+    }
+
+    return Math.round(Double.parseDouble(text) * 1000);
+  }
+
+  @Test
   @DisplayName("Should harden both containers to the restricted pod security profile when deployed")
   void shouldHardenBothContainersToRestrictedPodSecurityProfileWhenDeployed() {
     for (var deployment : List.of(serverDeployment, workerDeployment)) {

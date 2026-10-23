@@ -11,6 +11,7 @@ import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fixtures.Fmp4Fixture;
@@ -78,6 +79,7 @@ class HlsRecoveryContinuitySmokeTest {
                     .sourcePath(testVideo)
                     .attemptId(UUID.randomUUID())
                     .probeVersion(ProbeVersion.CURRENT)
+                    .priority(ProbePriority.BACKGROUND)
                     .build())) {
           case ProbeOutcome.Success success -> success.mediaProbe();
           case ProbeOutcome.Failure failure -> throw new AssertionError(failure);

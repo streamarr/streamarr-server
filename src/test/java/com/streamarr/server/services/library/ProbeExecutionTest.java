@@ -20,6 +20,7 @@ import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
 import com.streamarr.server.domain.task.ProbeInputs;
@@ -33,6 +34,8 @@ import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
+import com.streamarr.server.services.probe.PlaybackProbeClaims;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.FileSystems;
@@ -40,8 +43,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -62,6 +67,8 @@ class ProbeExecutionTest {
   private final FakeMediaFileContainerInfoRepository outcomes =
       new FakeMediaFileContainerInfoRepository();
   private final FakeFfprobeService producer = new FakeFfprobeService();
+  private final PlaybackProbeClaims playbackProbeClaims =
+      new PlaybackProbeClaims(Clock.systemUTC(), new SimpleMeterRegistry());
   private final CapturingKeyframePacketScanRequests packetScans =
       new CapturingKeyframePacketScanRequests();
   private final FakeTransactionManager transactionManager = new FakeTransactionManager();
@@ -88,7 +95,7 @@ class ProbeExecutionTest {
   void shouldPublishTheOutcomeAndCompleteWhenTheSourceIsUnchanged() {
     var request = request(ProbeVersion.CURRENT);
 
-    var result = execution().execute(request);
+    var result = execution().execute(request, ProbePriority.BACKGROUND);
 
     assertThat(result).isEqualTo(new ProbeExecutionResult.Completed());
     assertThat(outcomes.publications())
@@ -110,7 +117,7 @@ class ProbeExecutionTest {
         success(
             new KeyframeKnowledge.PacketScanRequired(KeyframePacketScanReason.NO_CONTAINER_INDEX)));
 
-    var result = execution().execute(request);
+    var result = execution().execute(request, ProbePriority.BACKGROUND);
 
     assertThat(result).isEqualTo(new ProbeExecutionResult.Completed());
     assertThat(packetScans.requests())
@@ -123,13 +130,40 @@ class ProbeExecutionTest {
                 .build());
   }
 
+  @Test
+  @DisplayName(
+      "Should count the probe as in progress and send it at playback priority when a"
+          + " playback probe runs")
+  void shouldCountTheProbeAsInProgressAndSendItAtPlaybackPriorityWhenAPlaybackProbeRuns() {
+    var inProgressDuringProbe = new AtomicInteger(-1);
+    producer.runDuringProbe(() -> inProgressDuringProbe.set(playbackProbeClaims.inProgress()));
+
+    execution().execute(request(ProbeVersion.CURRENT), ProbePriority.PLAYBACK);
+
+    assertThat(inProgressDuringProbe).hasValue(1);
+    assertThat(playbackProbeClaims.inProgress()).isZero();
+    assertThat(producer.lastRequest().orElseThrow().priority()).isEqualTo(ProbePriority.PLAYBACK);
+  }
+
+  @Test
+  @DisplayName("Should count no playback probe in progress when a background probe runs")
+  void shouldCountNoPlaybackProbeInProgressWhenABackgroundProbeRuns() {
+    var inProgressDuringProbe = new AtomicInteger(-1);
+    producer.runDuringProbe(() -> inProgressDuringProbe.set(playbackProbeClaims.inProgress()));
+
+    execution().execute(request(ProbeVersion.CURRENT), ProbePriority.BACKGROUND);
+
+    assertThat(inProgressDuringProbe).hasValue(0);
+    assertThat(producer.lastRequest().orElseThrow().priority()).isEqualTo(ProbePriority.BACKGROUND);
+  }
+
   @ParameterizedTest
   @MethodSource("outcomesThatNeedNoPacketScan")
   @DisplayName("Should request no packet scan when the published outcome needs none")
   void shouldRequestNoPacketScanWhenThePublishedOutcomeNeedsNone(ProbeOutcome outcome) {
     producer.answerWith(outcome);
 
-    execution().execute(request(ProbeVersion.CURRENT));
+    execution().execute(request(ProbeVersion.CURRENT), ProbePriority.BACKGROUND);
 
     assertThat(outcomes.publications()).singleElement();
     assertThat(packetScans.requests()).isEmpty();
@@ -150,7 +184,7 @@ class ProbeExecutionTest {
                     new SourceFileSnapshot(99, request.snapshot().modifiedAt()),
                     ProbeVersion.CURRENT)));
 
-    execution().execute(request);
+    execution().execute(request, ProbePriority.BACKGROUND);
 
     assertThat(outcomes.publications()).isEmpty();
     assertThat(packetScans.requests()).isEmpty();
@@ -189,14 +223,14 @@ class ProbeExecutionTest {
           throw new ProbeExecutionException(ItemFailureReason.TEMPORARY, "worker disconnected");
         });
 
-    assertThatThrownBy(() -> execution.execute(request))
+    assertThatThrownBy(() -> execution.execute(request, ProbePriority.BACKGROUND))
         .isInstanceOf(ProbeExecutionException.class)
         .hasMessage("worker disconnected");
     assertThat(outcomes.findByMediaFileId(mediaFile.getId())).isEmpty();
     var failedAttempt = producer.lastRequest().orElseThrow().attemptId();
 
     producer.runDuringProbe(() -> {});
-    var result = execution.execute(request);
+    var result = execution.execute(request, ProbePriority.BACKGROUND);
 
     assertThat(result).isEqualTo(new ProbeExecutionResult.Completed());
     assertThat(producer.lastRequest())
@@ -234,7 +268,7 @@ class ProbeExecutionTest {
             .probeError(terminalFailure ? ProbeError.INVALID_MEDIA : null)
             .build());
 
-    var result = execution().execute(request);
+    var result = execution().execute(request, ProbePriority.BACKGROUND);
 
     assertThat(result).isEqualTo(new ProbeExecutionResult.Completed());
     assertThat(producer.probeCount()).isZero();
@@ -246,7 +280,7 @@ class ProbeExecutionTest {
   void shouldCompleteWithoutProbingWhenTheMediaFileNoLongerExists() {
     var request = request(ProbeVersion.CURRENT).toBuilder().mediaFileId(UUID.randomUUID()).build();
 
-    var result = execution().execute(request);
+    var result = execution().execute(request, ProbePriority.BACKGROUND);
 
     assertThat(result).isEqualTo(new ProbeExecutionResult.Completed());
     assertThat(producer.probeCount()).isZero();
@@ -258,7 +292,7 @@ class ProbeExecutionTest {
     var request = request(ProbeVersion.CURRENT);
     Files.delete(source);
 
-    var result = execution().execute(request);
+    var result = execution().execute(request, ProbePriority.BACKGROUND);
 
     assertThat(result).isEqualTo(new ProbeExecutionResult.SourceRemoved());
     assertThat(producer.probeCount()).isZero();
@@ -271,7 +305,7 @@ class ProbeExecutionTest {
     var request = request(ProbeVersion.CURRENT);
     producer.runDuringProbe(() -> delete(source));
 
-    var result = execution().execute(request);
+    var result = execution().execute(request, ProbePriority.BACKGROUND);
 
     assertThat(result).isEqualTo(new ProbeExecutionResult.SourceRemoved());
     assertThat(outcomes.publications()).isEmpty();
@@ -280,7 +314,7 @@ class ProbeExecutionTest {
   @Test
   @DisplayName("Should complete without probing when the requested version is newer than supported")
   void shouldCompleteWithoutProbingWhenTheRequestedVersionIsNewerThanSupported() {
-    var result = execution().execute(request(ProbeVersion.CURRENT + 1));
+    var result = execution().execute(request(ProbeVersion.CURRENT + 1), ProbePriority.BACKGROUND);
 
     assertThat(result).isEqualTo(new ProbeExecutionResult.Completed());
     assertThat(producer.probeCount()).isZero();
@@ -294,7 +328,7 @@ class ProbeExecutionTest {
     var request = request(ProbeVersion.CURRENT);
     Files.write(source, new byte[] {4, 5}, StandardOpenOption.APPEND);
 
-    var result = execution().execute(request);
+    var result = execution().execute(request, ProbePriority.BACKGROUND);
 
     assertThat(result)
         .isEqualTo(
@@ -308,7 +342,7 @@ class ProbeExecutionTest {
   void shouldRescheduleAtTheCurrentVersionWhenTheRequestIsOlder() {
     var request = request(ProbeVersion.CURRENT - 1);
 
-    var result = execution().execute(request);
+    var result = execution().execute(request, ProbePriority.BACKGROUND);
 
     assertThat(result)
         .isEqualTo(
@@ -323,7 +357,7 @@ class ProbeExecutionTest {
     var request = request(ProbeVersion.CURRENT);
     producer.runDuringProbe(() -> append(source));
 
-    var result = execution().execute(request);
+    var result = execution().execute(request, ProbePriority.BACKGROUND);
 
     assertThat(result)
         .isEqualTo(
@@ -339,9 +373,9 @@ class ProbeExecutionTest {
     append(source);
     var currentRequest = request(ProbeVersion.CURRENT);
     var execution = execution();
-    execution.execute(currentRequest);
+    execution.execute(currentRequest, ProbePriority.BACKGROUND);
 
-    var result = execution.execute(staleRequest);
+    var result = execution.execute(staleRequest, ProbePriority.BACKGROUND);
 
     assertThat(result).isEqualTo(new ProbeExecutionResult.SourceChanged(currentRequest));
     assertThat(producer.probeCount()).isOne();
@@ -359,7 +393,7 @@ class ProbeExecutionTest {
     var execution = execution();
     var request = request(ProbeVersion.CURRENT);
 
-    assertThatThrownBy(() -> execution.execute(request))
+    assertThatThrownBy(() -> execution.execute(request, ProbePriority.BACKGROUND))
         .isInstanceOf(ProbeExecutionException.class);
     assertThat(outcomes.publications()).isEmpty();
   }
@@ -367,11 +401,11 @@ class ProbeExecutionTest {
   @Test
   @DisplayName("Should defer without publishing when every compatible worker is busy")
   void shouldDeferWithoutPublishingWhenEveryCompatibleWorkerIsBusy() {
-    producer.failWith(new ProbeWorkersBusyException());
+    producer.failWith(new ProbeWorkersBusyException("All compatible workers are busy"));
     var execution = execution();
     var request = request(ProbeVersion.CURRENT);
 
-    var result = execution.execute(request);
+    var result = execution.execute(request, ProbePriority.BACKGROUND);
 
     assertThat(result).isEqualTo(new ProbeExecutionResult.Deferred(request));
     assertThat(outcomes.publications()).isEmpty();
@@ -386,6 +420,7 @@ class ProbeExecutionTest {
         .outcomes(outcomes)
         .packetScans(packetScans)
         .transactionManager(transactionManager)
+        .playbackProbeClaims(playbackProbeClaims)
         .build();
   }
 
@@ -404,6 +439,7 @@ class ProbeExecutionTest {
         .sourcePath(path)
         .attemptId(UUID.randomUUID())
         .probeVersion(ProbeVersion.CURRENT)
+        .priority(ProbePriority.BACKGROUND)
         .build();
   }
 

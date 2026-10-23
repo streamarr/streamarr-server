@@ -2,13 +2,12 @@ package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
-import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.domain.streaming.ProbePriority;
+import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
@@ -19,9 +18,9 @@ import java.nio.file.Path;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
@@ -49,6 +48,7 @@ class RemoteFfprobeServiceTest {
               .attemptId(UUID.randomUUID())
               .probeVersion(ProbeVersion.CURRENT)
               .sourcePath(sourceRoot.resolve(relativePath))
+              .priority(ProbePriority.BACKGROUND)
               .build();
 
       assertThatThrownBy(() -> service.probe(request))
@@ -57,9 +57,11 @@ class RemoteFfprobeServiceTest {
     }
   }
 
-  @Test
-  @DisplayName("Should report a temporary failure when no worker is connected")
-  void shouldReportTemporaryFailureWhenNoWorkerIsConnected() throws IOException {
+  @ParameterizedTest
+  @EnumSource(ProbePriority.class)
+  @DisplayName("Should defer the probe without a failure when no worker is connected")
+  void shouldDeferTheProbeWithoutAFailureWhenNoWorkerIsConnected(ProbePriority priority)
+      throws IOException {
     var sourceRoot = Files.createDirectories(tempDir.resolve("movies"));
     try (var server =
         WorkerSessionServer.builder()
@@ -75,12 +77,11 @@ class RemoteFfprobeServiceTest {
               .attemptId(UUID.randomUUID())
               .probeVersion(ProbeVersion.CURRENT)
               .sourcePath(Files.createFile(sourceRoot.resolve("film.mkv")))
+              .priority(priority)
               .build();
 
       assertThatThrownBy(() -> service.probe(request))
-          .isInstanceOfSatisfying(
-              ProbeExecutionException.class,
-              exception -> assertThat(exception.reason()).isEqualTo(ItemFailureReason.TEMPORARY))
+          .isExactlyInstanceOf(ProbeWorkersBusyException.class)
           .hasMessage(ProbeRefusal.NO_CONNECTED_WORKER.description());
     }
   }

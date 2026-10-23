@@ -16,6 +16,7 @@ import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -134,6 +135,7 @@ class HlsCopySeekSmokeTest {
     probeRepository = new FakeMediaFileContainerInfoRepository();
     streamingService =
         HlsStreamingService.builder()
+            .meterRegistry(new SimpleMeterRegistry())
             .mediaFileRepository(mediaFileRepository)
             .transcodeExecutor(transcodeExecutor)
             .segmentStore(segmentStore)
@@ -268,6 +270,7 @@ class HlsCopySeekSmokeTest {
             .sourcePath(source)
             .attemptId(UUID.randomUUID())
             .probeVersion(ProbeVersion.CURRENT)
+            .priority(ProbePriority.BACKGROUND)
             .build();
     var outcome = probes.probe(request);
     if (outcome instanceof ProbeOutcome.Success success

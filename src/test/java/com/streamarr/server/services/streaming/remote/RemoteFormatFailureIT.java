@@ -142,6 +142,7 @@ class RemoteFormatFailureIT {
       rig.awaitStopped();
       var service =
           HlsStreamingService.builder()
+              .meterRegistry(new SimpleMeterRegistry())
               .runtimeRegistry(rig.registry)
               .producerLifecycle(rig.streaming.lifecycle())
               .deliveryCoordinator(rig.streaming.coordinator())
@@ -382,8 +383,8 @@ class RemoteFormatFailureIT {
       server =
           WorkerSessionServer.builder()
               .configuration(serverConfigurationBuilder().build())
-              .segmentStore(segments)
               .meterRegistry(new SimpleMeterRegistry())
+              .segmentStore(segments)
               .eventPublisher(events)
               .build();
       server.start();
@@ -490,7 +491,9 @@ class RemoteFormatFailureIT {
                               .addVideoEncoders(
                                   softwareEncoder(
                                       VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264")))
-                      .setAvailableSlots(2))
+                      .setAvailableSlots(2)
+                      .setBackgroundProbeCapacity(1)
+                      .setKeyframePacketScanCapacity(1))
               .build());
       accepted.get(5, TimeUnit.SECONDS);
     }

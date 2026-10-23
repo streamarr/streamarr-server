@@ -9,6 +9,7 @@ import static org.awaitility.Awaitility.await;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
@@ -101,6 +102,7 @@ class RemoteProbeDeadlineIT {
         .sourcePath(mediaRoot.resolve(filename))
         .attemptId(UUID.randomUUID())
         .probeVersion(ProbeVersion.CURRENT)
+        .priority(ProbePriority.BACKGROUND)
         .build();
   }
 }

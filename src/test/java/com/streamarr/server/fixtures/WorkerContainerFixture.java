@@ -31,6 +31,7 @@ public final class WorkerContainerFixture implements AutoCloseable {
   private final String ffmpegScript;
   private final String ffprobeScript;
   private final int availableSlots;
+  private final Integer backgroundProbeCapacity;
   private final String filenameLocale;
   private final UUID workerId = UUID.randomUUID();
   private GenericContainer<?> container;
@@ -43,6 +44,7 @@ public final class WorkerContainerFixture implements AutoCloseable {
       String ffmpegScript,
       String ffprobeScript,
       int availableSlots,
+      Integer backgroundProbeCapacity,
       String filenameLocale) {
     this.workerSessions = workerSessions;
     this.sourceNamespaceId = sourceNamespaceId;
@@ -50,6 +52,7 @@ public final class WorkerContainerFixture implements AutoCloseable {
     this.ffmpegScript = ffmpegScript;
     this.ffprobeScript = ffprobeScript;
     this.availableSlots = availableSlots == 0 ? 1 : availableSlots;
+    this.backgroundProbeCapacity = backgroundProbeCapacity;
     this.filenameLocale = filenameLocale;
   }
 
@@ -122,6 +125,10 @@ public final class WorkerContainerFixture implements AutoCloseable {
               Transferable.of("#!/bin/bash\n" + ffprobeScript + "\nexec ffprobe \"$@\"\n", 0755),
               "/tmp/scripted-ffprobe")
           .withEnv("TRANSCODE_WORKER_FFPROBE_PATH", "/tmp/scripted-ffprobe");
+    }
+
+    if (backgroundProbeCapacity != null) {
+      container.withEnv("TRANSCODE_WORKER_PROBE_CAPACITY", String.valueOf(backgroundProbeCapacity));
     }
 
     if (filenameLocale != null) {
