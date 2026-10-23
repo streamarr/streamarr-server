@@ -108,9 +108,9 @@ public class ProbeExecution {
                   .probeVersion(request.probeVersion())
                   .priority(priority)
                   .build());
-    } catch (ProbeWorkersBusyException waiting) {
+    } catch (ProbeWorkersBusyException deferral) {
       log.debug(
-          "Deferring probe for media file {}: {}", request.mediaFileId(), waiting.getMessage());
+          "Deferring probe for media file {}: {}", request.mediaFileId(), deferral.getMessage());
       return new ProbeExecutionResult.Deferred(request);
     }
 

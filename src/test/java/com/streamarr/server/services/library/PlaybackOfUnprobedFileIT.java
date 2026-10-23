@@ -171,7 +171,7 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
         attempt -> {
           if (attempt == 1) {
             clock.advance(streamingProperties.probeWaitLimit());
-            throw new ProbeWorkersBusyException();
+            throw new ProbeWorkersBusyException("All compatible workers are busy");
           }
 
           return null;
@@ -300,7 +300,7 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
         attempt -> {
           if (attempt == 1) {
             findWorkersBusy.orTimeout(BOUND_SECONDS, TimeUnit.SECONDS).join();
-            throw new ProbeWorkersBusyException();
+            throw new ProbeWorkersBusyException("All compatible workers are busy");
           }
 
           return null;

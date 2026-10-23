@@ -132,9 +132,9 @@ class ProbeExecutionTest {
 
   @Test
   @DisplayName(
-      "Should count a playback probe as in progress while it runs and send it at playback"
-          + " priority")
-  void shouldCountAPlaybackProbeAsInProgressWhileItRunsAndSendItAtPlaybackPriority() {
+      "Should count the probe as in progress and send it at playback priority when a"
+          + " playback probe runs")
+  void shouldCountTheProbeAsInProgressAndSendItAtPlaybackPriorityWhenAPlaybackProbeRuns() {
     var inProgressDuringProbe = new AtomicInteger(-1);
     producer.runDuringProbe(() -> inProgressDuringProbe.set(playbackProbeClaims.inProgress()));
 
@@ -401,7 +401,7 @@ class ProbeExecutionTest {
   @Test
   @DisplayName("Should defer without publishing when every compatible worker is busy")
   void shouldDeferWithoutPublishingWhenEveryCompatibleWorkerIsBusy() {
-    producer.failWith(new ProbeWorkersBusyException());
+    producer.failWith(new ProbeWorkersBusyException("All compatible workers are busy"));
     var execution = execution();
     var request = request(ProbeVersion.CURRENT);
 

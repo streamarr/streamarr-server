@@ -187,7 +187,7 @@ class KeyframePacketScanExecutionTest {
     var request = storePacketScanRequired();
     scanner =
         _ -> {
-          throw new ProbeWorkersBusyException();
+          throw new ProbeWorkersBusyException("All compatible workers are busy");
         };
 
     var result = execution().execute(request);

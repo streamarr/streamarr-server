@@ -200,8 +200,8 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should record both probes when the held probe releases the only unit of probe capacity")
-  void shouldRecordBothProbesWhenHeldProbeReleasesTheOnlyUnitOfProbeCapacity() throws Exception {
+      "Should store both probes when the held probe releases the only unit of probe capacity")
+  void shouldStoreBothProbesWhenHeldProbeReleasesTheOnlyUnitOfProbeCapacity() throws Exception {
     whenOneUnitOfProbeCapacityServesTwoProbes(
         busy -> {
           busy.worker().reply(success(busy.held()));
@@ -237,7 +237,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
     FfprobeService producer =
         _ -> {
           if (attempts.incrementAndGet() == 1) {
-            throw new ProbeWorkersBusyException();
+            throw new ProbeWorkersBusyException("All compatible workers are busy");
           }
 
           throw new ProbeExecutionException(ItemFailureReason.TEMPORARY, "Worker lost the probe");
@@ -411,8 +411,9 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should start a probe while a keyframe packet scan uses the only keyframe packet scan unit")
-  void shouldStartAProbeWhileAKeyframePacketScanUsesTheOnlyKeyframePacketScanUnit()
+      "Should start a probe when a keyframe packet scan uses the only keyframe packet"
+          + " scan unit")
+  void shouldStartAProbeWhenAKeyframePacketScanUsesTheOnlyKeyframePacketScanUnit()
       throws Exception {
     var requests =
         List.of(request(createMediaFile("first.mkv")), request(createMediaFile("second.mkv")));
@@ -542,9 +543,9 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should claim a playback probe ahead of older background probes and no more background"
-          + " probes than the free background units")
-  void shouldClaimAPlaybackProbeAheadOfOlderBackgroundProbesAndNoMoreThanTheFreeBackgroundUnits()
+      "Should claim a playback probe ahead of older background probes, and one"
+          + " background probe, when one background unit is free")
+  void shouldClaimAPlaybackProbeAheadOfOlderBackgroundProbesWhenOneBackgroundUnitIsFree()
       throws Exception {
     for (var index = 0; index < 3; index++) {
       scheduling.request(request(createMediaFile("background-" + index + ".mkv")));
@@ -577,9 +578,9 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should keep a probe pending without a failure until a worker that can run probes connects")
-  void shouldKeepAProbePendingWithoutAFailureUntilAWorkerThatCanRunProbesConnects()
-      throws Exception {
+      "Should keep a probe pending without a failure when no connected worker can run"
+          + " probes, until one connects")
+  void shouldKeepAProbePendingWithoutAFailureWhenNoConnectedWorkerCanRunProbes() throws Exception {
     var request = request(createMediaFile("waiting.mkv"));
     scheduling.request(request);
     var meterRegistry = new SimpleMeterRegistry();
@@ -608,9 +609,9 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should keep a probe pending without a failure until a worker raises its probe capacity from"
-          + " zero")
-  void shouldKeepAProbePendingWithoutAFailureUntilAWorkerRaisesItsProbeCapacityFromZero()
+      "Should keep a probe pending without a failure when the worker grants no"
+          + " background probe unit, until it raises its capacity")
+  void shouldKeepAProbePendingWithoutAFailureWhenTheWorkerGrantsNoBackgroundProbeUnit()
       throws Exception {
     var request = request(createMediaFile("waiting.mkv"));
     scheduling.request(request);

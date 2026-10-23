@@ -138,9 +138,9 @@ class WorkerProbeCapacityTest {
 
   @Test
   @DisplayName(
-      "Should count a playback probe beyond the playback probe capacity as a background unit in"
-          + " use")
-  void shouldCountAPlaybackProbeBeyondThePlaybackProbeCapacityAsABackgroundUnitInUse() {
+      "Should count a playback probe as a background unit in use when every playback"
+          + " probe unit is in use")
+  void shouldCountAPlaybackProbeAsABackgroundUnitInUseWhenEveryPlaybackProbeUnitIsInUse() {
     register(Worker.builder().backgroundProbeCapacity(1).playbackSlots(1).build());
     assertDispatched(registry.dispatchProbe(playbackProbe().build()));
     assertDispatched(registry.dispatchProbe(playbackProbe().build()));
@@ -157,7 +157,8 @@ class WorkerProbeCapacityTest {
   @DisplayName(
       "Should send a playback probe to a worker with a free playback unit when another worker has"
           + " only a background unit free")
-  void shouldSendAPlaybackProbeToAWorkerWithAFreePlaybackUnitBeforeABackgroundUnit() {
+  void
+      shouldSendAPlaybackProbeToAWorkerWithAFreePlaybackUnitWhenAnotherHasOnlyABackgroundUnitFree() {
     var backgroundOnly =
         register(
             Worker.builder()
@@ -249,8 +250,9 @@ class WorkerProbeCapacityTest {
 
   @Test
   @DisplayName(
-      "Should send no new probe until the running probes fall below the lowered capacities")
-  void shouldSendNoNewProbeUntilTheRunningProbesFallBelowTheLoweredCapacities() {
+      "Should send no new probe until the running probes fall below the capacities when"
+          + " the worker lowers them")
+  void shouldSendNoNewProbeUntilTheRunningProbesFallBelowTheCapacitiesWhenTheWorkerLowersThem() {
     var sessionId =
         registerSession(Worker.builder().backgroundProbeCapacity(3).playbackSlots(1).build());
     var running = IntStream.range(0, 3).mapToObj(_ -> probe().build()).toList();
@@ -306,7 +308,7 @@ class WorkerProbeCapacityTest {
   @DisplayName(
       "Should report the capacities and free units of compatible workers only when asked for the"
           + " probe capacity")
-  void shouldReportTheCapacitiesAndFreeUnitsOfCompatibleWorkersOnly() {
+  void shouldReportTheCapacitiesAndFreeUnitsOfCompatibleWorkersOnlyWhenAskedForTheProbeCapacity() {
     register(Worker.builder().backgroundProbeCapacity(3).playbackSlots(1).build());
     register(
         Worker.builder()

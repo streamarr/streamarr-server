@@ -68,7 +68,7 @@ class ProbeRunsTest {
             .sleeper(sleeper)
             .clock(clock)
             .properties(new ProbeSchedulingProperties(null, CHECK_INTERVAL))
-            .probeCapacity(() -> ProbeCapacity.builder().build())
+            .capacitySource(() -> ProbeCapacity.builder().build())
             .build();
   }
 

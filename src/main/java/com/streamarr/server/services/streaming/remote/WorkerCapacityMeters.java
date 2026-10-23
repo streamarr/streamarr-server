@@ -20,7 +20,7 @@ import lombok.RequiredArgsConstructor;
  * it replaces, and leave when that session leaves.
  */
 @RequiredArgsConstructor
-final class WorkerProbeMeters {
+final class WorkerCapacityMeters {
 
   private static final String CAPACITY_METRIC = "streamarr.probes.capacity";
   private static final String RUNNING_METRIC = "streamarr.probes.running";

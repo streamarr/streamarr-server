@@ -181,7 +181,7 @@ class SchedulerProbeQuietPeriodIT extends AbstractProbeSchedulerIntegrationTest 
         _ -> {
           probing.countDown();
           awaitSignal(scanned);
-          throw new ProbeWorkersBusyException();
+          throw new ProbeWorkersBusyException("All compatible workers are busy");
         };
     var deferred = new CountDownLatch(1);
     var client =

@@ -39,7 +39,7 @@ public class ProbeRuns {
   private final Sleeper sleeper;
   private final Clock clock;
   private final ProbeSchedulingProperties properties;
-  private final ProbeCapacitySource probeCapacity;
+  private final ProbeCapacitySource capacitySource;
 
   public ProbeRun open() {
     return new ProbeRun(scheduler, clock);
@@ -75,7 +75,7 @@ public class ProbeRuns {
                 .finished(requested.size() - pending.size())
                 .pending(pending.size())
                 .elapsed(elapsed(run))
-                .probeCapacity(probeCapacity.probeCapacity().backgroundProbeCapacity())
+                .probeCapacity(capacitySource.probeCapacity().backgroundProbeCapacity())
                 .build());
       }
 
