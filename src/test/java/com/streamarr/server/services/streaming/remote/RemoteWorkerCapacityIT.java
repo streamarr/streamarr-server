@@ -29,8 +29,8 @@ class RemoteWorkerCapacityIT {
   @TempDir Path mediaRoot;
 
   @Test
-  @DisplayName("Should hold the execution slot until a cancelled probe stops in the worker")
-  void shouldHoldTheExecutionSlotUntilACancelledProbeStopsInTheWorker() throws Exception {
+  @DisplayName("Should hold the background probe unit until a cancelled probe stops in the worker")
+  void shouldHoldTheBackgroundProbeUnitUntilACancelledProbeStopsInTheWorker() throws Exception {
     Files.writeString(mediaRoot.resolve("held.mkv"), "held media");
     var source = getClass().getResource("/BigBuckBunny_320x180_10s.mp4");
     assertThat(source).isNotNull();
@@ -50,6 +50,7 @@ class RemoteWorkerCapacityIT {
                 .workerSessions(server)
                 .sourceNamespaceId(SOURCE_NAMESPACE_ID)
                 .sourceRoot(mediaRoot)
+                .backgroundProbeCapacity(1)
                 .ffprobeScript(
                     """
                 for argument in "$@"; do
@@ -70,7 +71,7 @@ class RemoteWorkerCapacityIT {
       try {
         assertThat(pending.cancel(true)).isTrue();
         assertThat(server.dispatchProbe(nextRequest))
-            .as("The cancelled probe still runs in the frozen worker, so it keeps the only slot")
+            .as("The cancelled probe still runs in the frozen worker, so it keeps the only unit")
             .isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.WORKERS_BUSY));
       } finally {
         worker.unpause();
@@ -86,10 +87,10 @@ class RemoteWorkerCapacityIT {
       var result = next.get(10, TimeUnit.SECONDS).result();
 
       assertThat(worker.probeRunning())
-          .as("The slot returns only after the cancelled probe stops")
+          .as("The unit returns only after the cancelled probe stops")
           .isFalse();
       assertThat(result.getProbeAttemptId()).isEqualTo(nextRequest.getProbeAttemptId());
-      assertThat(result.hasMedia()).as("The next probe must run in the released slot").isTrue();
+      assertThat(result.hasMedia()).as("The next probe must run in the released unit").isTrue();
       assertThat(result.getMedia().getStreamsList())
           .anySatisfy(stream -> assertThat(stream.getCodec()).isEqualTo("h264"));
     }
