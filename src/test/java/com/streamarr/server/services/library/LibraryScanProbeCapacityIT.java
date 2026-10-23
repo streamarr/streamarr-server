@@ -211,6 +211,7 @@ class LibraryScanProbeCapacityIT extends AbstractScanningIntegrationTest {
     probeResults.setDefaultProbe(defaultProbeBuilder().build());
     var streamingService =
         HlsStreamingService.builder()
+            .meterRegistry(new SimpleMeterRegistry())
             .mediaFileRepository(mediaFiles)
             .transcodeExecutor(transcodeExecutor)
             .segmentStore(segmentStore)

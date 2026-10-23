@@ -135,6 +135,7 @@ class HlsCopySeekSmokeTest {
     probeRepository = new FakeMediaFileContainerInfoRepository();
     streamingService =
         HlsStreamingService.builder()
+            .meterRegistry(new SimpleMeterRegistry())
             .mediaFileRepository(mediaFileRepository)
             .transcodeExecutor(transcodeExecutor)
             .segmentStore(segmentStore)

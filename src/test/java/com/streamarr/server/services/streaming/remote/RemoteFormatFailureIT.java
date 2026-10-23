@@ -142,6 +142,7 @@ class RemoteFormatFailureIT {
       rig.awaitStopped();
       var service =
           HlsStreamingService.builder()
+              .meterRegistry(new SimpleMeterRegistry())
               .runtimeRegistry(rig.registry)
               .producerLifecycle(rig.streaming.lifecycle())
               .deliveryCoordinator(rig.streaming.coordinator())

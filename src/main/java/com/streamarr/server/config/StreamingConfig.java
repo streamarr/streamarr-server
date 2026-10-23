@@ -18,6 +18,7 @@ import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.nio.file.Path;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -90,7 +91,8 @@ public class StreamingConfig {
       PlaybackAuthorityGate authorityGate,
       RuntimeStreamSessionRegistry runtimeRegistry,
       ProducerLifecycleService producerLifecycleService,
-      SegmentDeliveryCoordinator segmentDeliveryCoordinator) {
+      SegmentDeliveryCoordinator segmentDeliveryCoordinator,
+      MeterRegistry meterRegistry) {
     return HlsStreamingService.builder()
         .mediaFileRepository(mediaFileRepository)
         .transcodeExecutor(transcodeExecutor)
@@ -103,6 +105,7 @@ public class StreamingConfig {
         .runtimeRegistry(runtimeRegistry)
         .producerLifecycle(producerLifecycleService)
         .deliveryCoordinator(segmentDeliveryCoordinator)
+        .meterRegistry(meterRegistry)
         .build();
   }
 }

@@ -112,6 +112,7 @@ class OnDemandVariantsIT {
             .build());
     streamingService =
         HlsStreamingService.builder()
+            .meterRegistry(new SimpleMeterRegistry())
             .mediaFileRepository(mediaFiles)
             .transcodeExecutor(transcodeExecutor)
             .segmentStore(segmentStore)
