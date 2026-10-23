@@ -1,6 +1,7 @@
 package com.streamarr.server.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import com.github.kagkarlsson.scheduler.jdbc.JdbcTaskRepository;
 import com.github.kagkarlsson.scheduler.jdbc.PostgreSqlJdbcCustomization;
@@ -125,6 +126,25 @@ class ProbeCapacityJdbcCustomizationTest {
         .isEqualTo(
             genericLockAndFetch.createGenericSelectForUpdateQuery(
                 "artwork_tasks", 4, CONDITION, true));
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject the customization when its capacity source or playback claims are missing")
+  void shouldRejectTheCustomizationWhenItsCapacitySourceOrPlaybackClaimsAreMissing() {
+    var capacity = ProbeCapacity.builder().build();
+
+    assertThatNullPointerException()
+        .isThrownBy(
+            () ->
+                ProbeCapacityJdbcCustomization.builder()
+                    .playbackProbeClaims(playbackProbeClaims)
+                    .build())
+        .withMessageContaining("capacitySource");
+    assertThatNullPointerException()
+        .isThrownBy(
+            () -> ProbeCapacityJdbcCustomization.builder().capacitySource(() -> capacity).build())
+        .withMessageContaining("playbackProbeClaims");
   }
 
   @Test
