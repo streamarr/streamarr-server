@@ -8,7 +8,10 @@ import com.streamarr.server.config.persistence.SecurityAuditActorSource;
 import com.streamarr.server.domain.audit.AuditActor;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
+import com.streamarr.server.services.probe.PlaybackProbeClaims;
 import com.streamarr.server.services.streaming.ProbeCapacity;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
@@ -110,6 +113,7 @@ class ProbeSchedulingConfigurationTest {
                     .freeBackgroundProbeUnits(3)
                     .freeKeyframePacketScanUnits(1)
                     .build(),
+            new PlaybackProbeClaims(Clock.systemUTC(), new SimpleMeterRegistry()),
             environment);
 
     // Two of the eight threads run probe executions, so db-scheduler asks for at most six probes.
@@ -146,6 +150,7 @@ class ProbeSchedulingConfigurationTest {
   private static ProbeCapacityJdbcCustomization jdbcCustomization() {
     return ProbeCapacityJdbcCustomization.builder()
         .capacitySource(() -> ProbeCapacity.NONE)
+        .playbackProbeClaims(new PlaybackProbeClaims(Clock.systemUTC(), new SimpleMeterRegistry()))
         .probeSchedulerUpperLimit(1)
         .scanSchedulerUpperLimit(1)
         .build();

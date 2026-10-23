@@ -62,12 +62,15 @@ record GrantedProbeCapacities(
   ProbeCapacity capacity(Collection<ProbeKind> running) {
     var inUse = InUse.of(running);
     return ProbeCapacity.builder()
+        .playbackProbeCapacity(playbackProbeCapacity)
         .backgroundProbeCapacity(backgroundProbeCapacity)
+        .keyframePacketScanCapacity(keyframePacketScanCapacity)
         .freePlaybackProbeUnits(Math.max(0, playbackProbeCapacity - inUse.playback()))
         .freeBackgroundProbeUnits(freeBackgroundUnits(inUse))
         .freeKeyframePacketScanUnits(
             Math.max(0, keyframePacketScanCapacity - inUse.keyframePacketScans()))
         .runningProbes(inUse.playback() + inUse.background())
+        .runningPlaybackProbes(inUse.playback())
         .runningKeyframePacketScans(inUse.keyframePacketScans())
         .build();
   }

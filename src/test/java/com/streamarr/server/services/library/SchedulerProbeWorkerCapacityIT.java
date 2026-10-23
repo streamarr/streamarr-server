@@ -46,6 +46,7 @@ import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
+import com.streamarr.server.services.probe.PlaybackProbeClaims;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.ProbeCapacity;
@@ -118,6 +119,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
   @Autowired private LibraryWatcherProperties watcherProperties;
   @Autowired private DbSchedulerCustomizer schedulerCustomizer;
   @Autowired private Environment environment;
+  @Autowired private PlaybackProbeClaims playbackProbeClaims;
 
   private final List<MediaFile> createdFiles = new ArrayList<>();
   private final BlockingQueue<ExecutionComplete> completions = new LinkedBlockingQueue<>();
@@ -819,6 +821,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
             dataSource,
             ProbeCapacityJdbcCustomization.builder()
                 .capacitySource(capacity)
+                .playbackProbeClaims(playbackProbeClaims)
                 .probeSchedulerUpperLimit(threads)
                 .scanSchedulerUpperLimit(KeyframePacketScanScheduler.THREADS)
                 .build());
@@ -840,6 +843,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
             .outcomes(outcomes)
             .packetScans(new CapturingKeyframePacketScanRequests())
             .transactionManager(transactionManager)
+            .playbackProbeClaims(playbackProbeClaims)
             .build();
     var completion =
         ProbeTaskCompletion.builder()

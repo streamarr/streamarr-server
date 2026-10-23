@@ -9,6 +9,7 @@ import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.events.library.MediaFileProbeTaskRequested;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.probe.PersistedProbeReader;
+import com.streamarr.server.services.probe.PlaybackProbeClaims;
 import com.streamarr.server.services.probe.ProbeAttemptEnds;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -39,6 +40,7 @@ public class PlaybackProbeService {
   private final Clock clock;
   private final StreamingProperties properties;
   private final MeterRegistry meterRegistry;
+  private final PlaybackProbeClaims playbackProbeClaims;
 
   /**
    * Reads the media file's stored probe outcome. When the file has none, requests its probe ahead
@@ -56,6 +58,17 @@ public class PlaybackProbeService {
     // A saved failure time keeps only microseconds, rounded to the nearest one. Truncating the
     // request time keeps a failure after the request from reading back as earlier.
     var requestedAt = clock.instant().truncatedTo(ChronoUnit.MICROS);
+    // The wait starts before the request, so a claim that follows the request at once finds it.
+    playbackProbeClaims.waitStarted(mediaFileId, requestedAt);
+    try {
+      return requestAndAwaitOutcome(mediaFileId, requestedAt);
+    } finally {
+      playbackProbeClaims.waitEnded(mediaFileId);
+    }
+  }
+
+  private Outcome<MediaProbe, CreateStreamSessionRejection> requestAndAwaitOutcome(
+      UUID mediaFileId, Instant requestedAt) {
     eventPublisher.publishEvent(new MediaFileProbeTaskRequested(mediaFileId));
     if (!probeWorkers.hasCompatibleWorker(ProbeVersion.CURRENT)) {
       return notReady();

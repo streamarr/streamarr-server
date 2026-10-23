@@ -34,6 +34,8 @@ import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
+import com.streamarr.server.services.probe.PlaybackProbeClaims;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.FileSystems;
@@ -41,8 +43,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -63,6 +67,8 @@ class ProbeExecutionTest {
   private final FakeMediaFileContainerInfoRepository outcomes =
       new FakeMediaFileContainerInfoRepository();
   private final FakeFfprobeService producer = new FakeFfprobeService();
+  private final PlaybackProbeClaims playbackProbeClaims =
+      new PlaybackProbeClaims(Clock.systemUTC(), new SimpleMeterRegistry());
   private final CapturingKeyframePacketScanRequests packetScans =
       new CapturingKeyframePacketScanRequests();
   private final FakeTransactionManager transactionManager = new FakeTransactionManager();
@@ -122,6 +128,33 @@ class ProbeExecutionTest {
                 .snapshot(request.snapshot())
                 .probeVersion(ProbeVersion.CURRENT)
                 .build());
+  }
+
+  @Test
+  @DisplayName(
+      "Should count a playback probe as in progress while it runs and send it at playback"
+          + " priority")
+  void shouldCountAPlaybackProbeAsInProgressWhileItRunsAndSendItAtPlaybackPriority() {
+    var inProgressDuringProbe = new AtomicInteger(-1);
+    producer.runDuringProbe(() -> inProgressDuringProbe.set(playbackProbeClaims.inProgress()));
+
+    execution().execute(request(ProbeVersion.CURRENT), ProbePriority.PLAYBACK);
+
+    assertThat(inProgressDuringProbe).hasValue(1);
+    assertThat(playbackProbeClaims.inProgress()).isZero();
+    assertThat(producer.lastRequest().orElseThrow().priority()).isEqualTo(ProbePriority.PLAYBACK);
+  }
+
+  @Test
+  @DisplayName("Should count no playback probe in progress when a background probe runs")
+  void shouldCountNoPlaybackProbeInProgressWhenABackgroundProbeRuns() {
+    var inProgressDuringProbe = new AtomicInteger(-1);
+    producer.runDuringProbe(() -> inProgressDuringProbe.set(playbackProbeClaims.inProgress()));
+
+    execution().execute(request(ProbeVersion.CURRENT), ProbePriority.BACKGROUND);
+
+    assertThat(inProgressDuringProbe).hasValue(0);
+    assertThat(producer.lastRequest().orElseThrow().priority()).isEqualTo(ProbePriority.BACKGROUND);
   }
 
   @ParameterizedTest
@@ -387,6 +420,7 @@ class ProbeExecutionTest {
         .outcomes(outcomes)
         .packetScans(packetScans)
         .transactionManager(transactionManager)
+        .playbackProbeClaims(playbackProbeClaims)
         .build();
   }
 
