@@ -4,7 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
-import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.domain.streaming.ProbePriority;
+import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.KeyframePacketScanner;
@@ -49,14 +50,16 @@ class FfprobeConfigurationTest {
                   .sourcePath(Path.of("/media/movie.mkv"))
                   .attemptId(UUID.randomUUID())
                   .probeVersion(1)
+                  .priority(ProbePriority.BACKGROUND)
                   .build();
 
           assertThatThrownBy(() -> service.probe(request))
-              .isInstanceOf(ProbeExecutionException.class);
+              .as("No worker is connected to probe the source")
+              .isInstanceOf(ProbeWorkersBusyException.class);
           var scanner = context.getBean(KeyframePacketScanner.class);
           assertThatThrownBy(() -> scanner.scanKeyframePackets(request))
               .as("No worker is connected to scan the source")
-              .isInstanceOf(ProbeExecutionException.class);
+              .isInstanceOf(ProbeWorkersBusyException.class);
         });
   }
 }

@@ -6,9 +6,11 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChanne
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.transcode.v1.BackgroundProbeCapacityControl;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeCapacityChanged;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
@@ -33,9 +35,39 @@ public final class LoopbackProbeWorker implements AutoCloseable {
       new LinkedBlockingQueue<>();
   private final CompletableFuture<Status> terminated = new CompletableFuture<>();
 
+  /**
+   * Registers a worker session that advertises the probe version, the playback slots and the probe
+   * capacities. The worker is {@code WORKER_ID} unless the test names another worker. Unset, the
+   * playback probe capacity is 2 and the keyframe packet scan capacity is 1, as a worker grants
+   * them while it runs no job attempt.
+   */
   @Builder
-  private LoopbackProbeWorker(int port, int probeVersion, int availableSlots) throws Exception {
-    channel = plaintextChannelBuilder(port, WORKER_ID).build();
+  @SuppressWarnings("java:S107") // The builder names each argument at the call site.
+  private LoopbackProbeWorker(
+      int port,
+      int probeVersion,
+      int availableSlots,
+      int backgroundProbeCapacity,
+      Integer playbackProbeCapacity,
+      Integer keyframePacketScanCapacity,
+      UUID workerId)
+      throws Exception {
+    var worker = WORKER_ID;
+    if (workerId != null) {
+      worker = workerId;
+    }
+
+    var playbackProbes = 2;
+    if (playbackProbeCapacity != null) {
+      playbackProbes = playbackProbeCapacity;
+    }
+
+    var keyframePacketScans = 1;
+    if (keyframePacketScanCapacity != null) {
+      keyframePacketScans = keyframePacketScanCapacity;
+    }
+
+    channel = plaintextChannelBuilder(port, worker).build();
     requests =
         TranscodeWorkerServiceGrpc.newStub(channel)
             .establishWorkerSession(
@@ -60,9 +92,14 @@ public final class LoopbackProbeWorker implements AutoCloseable {
             .setRegistration(
                 WorkerRegistration.newBuilder()
                     .setAvailableSlots(availableSlots)
+                    .setBackgroundProbeCapacity(backgroundProbeCapacity)
+                    .setPlaybackProbeCapacity(playbackProbes)
+                    .setKeyframePacketScanCapacity(keyframePacketScans)
+                    .setBackgroundProbeCapacityControl(
+                        BackgroundProbeCapacityControl.BACKGROUND_PROBE_CAPACITY_CONTROL_FIXED)
                     .setWorker(
                         WorkerIdentity.newBuilder()
-                            .setWorkerId(toProto(WORKER_ID))
+                            .setWorkerId(toProto(worker))
                             .setBootId(toProto(UUID.randomUUID())))
                     .setCapabilities(
                         WorkerCapabilities.newBuilder()
@@ -80,6 +117,21 @@ public final class LoopbackProbeWorker implements AutoCloseable {
     var response = responses.poll(timeout.toNanos(), TimeUnit.NANOSECONDS);
     assertThat(response).isNotNull();
     return response;
+  }
+
+  /** Whether every command that the server sent so far was taken by {@link #nextResponse}. */
+  public boolean hasNoResponse() {
+    return responses.isEmpty();
+  }
+
+  public void changeProbeCapacities(int backgroundProbeCapacity, int keyframePacketScanCapacity) {
+    requests.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setProbeCapacityChanged(
+                ProbeCapacityChanged.newBuilder()
+                    .setBackgroundProbeCapacity(backgroundProbeCapacity)
+                    .setKeyframePacketScanCapacity(keyframePacketScanCapacity))
+            .build());
   }
 
   public void reply(ProbeAttemptResult result) {

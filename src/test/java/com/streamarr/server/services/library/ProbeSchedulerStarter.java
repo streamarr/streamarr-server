@@ -7,6 +7,11 @@ import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.event.SchedulerListener;
 import com.github.kagkarlsson.scheduler.stats.StatsRegistry;
+import com.streamarr.server.config.KeyframePacketScanScheduler;
+import com.streamarr.server.config.ProbeCapacityJdbcCustomization;
+import com.streamarr.server.config.ProbeSchedulingConfiguration;
+import com.streamarr.server.services.streaming.ProbeCapacity;
+import com.streamarr.server.services.streaming.ProbeCapacitySource;
 import com.streamarr.server.support.UnstartedSchedulerConfiguration;
 import java.time.Clock;
 import java.util.ArrayList;
@@ -16,17 +21,30 @@ import lombok.Builder;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.env.Environment;
 
-// Starts a probe scheduler against the test database from the application's scheduler customizer
+// Starts a probe scheduler against the test database from the application's scheduler customization
 // and scheduler listeners, as the db-scheduler starter would. The test profile turns the starter
-// off.
+// off. The scheduler picks probes up to the probe capacity it reads and its own thread count. A
+// test
+// whose fake producer stands in for the workers reads the capacity of FAKE_WORKERS; a test with a
+// real worker session reads the context's ProbeCapacitySource.
 @Builder(toBuilder = true)
 record ProbeSchedulerStarter(
     DbSchedulerCustomizer customizer,
+    ProbeCapacitySource probeCapacity,
     ProbeTaskCompletion completion,
     DataSource dataSource,
     Environment environment,
     List<SchedulerListener> applicationListeners,
     int threads) {
+
+  static final ProbeCapacitySource FAKE_WORKERS =
+      () ->
+          ProbeCapacity.builder()
+              .backgroundProbeCapacity(1_000)
+              .freePlaybackProbeUnits(1_000)
+              .freeBackgroundProbeUnits(1_000)
+              .freeKeyframePacketScanUnits(1_000)
+              .build();
 
   static final int THREADS = 2;
 
@@ -35,6 +53,7 @@ record ProbeSchedulerStarter(
   static ProbeSchedulerStarter fromContext(ApplicationContext context) {
     return ProbeSchedulerStarter.builder()
         .customizer(context.getBean(DbSchedulerCustomizer.class))
+        .probeCapacity(FAKE_WORKERS)
         .completion(context.getBean(ProbeTaskCompletion.class))
         .dataSource(context.getBean(DataSource.class))
         .environment(context.getEnvironment())
@@ -50,20 +69,28 @@ record ProbeSchedulerStarter(
     properties.setThreads(threads);
     var listeners = new ArrayList<SchedulerListener>(applicationListeners);
     listeners.add(listener);
+    var serializer = customizer.serializer().orElseThrow();
+    var pickingCustomizer =
+        new ProbeSchedulingConfiguration()
+            .dbSchedulerCustomizer(
+                serializer,
+                dataSource,
+                ProbeCapacityJdbcCustomization.builder()
+                    .capacity(probeCapacity)
+                    .probeSchedulerUpperLimit(threads)
+                    .scanSchedulerUpperLimit(KeyframePacketScanScheduler.THREADS)
+                    .build());
     var scheduler =
         DbSchedulerConfigurationSupport.buildScheduler(
             properties,
-            customizer,
+            pickingCustomizer,
             StatsRegistry.NOOP,
             clock::instant,
             dataSource,
             List.of(task),
             listeners,
             List.of());
-    var client =
-        SchedulerClient.Builder.create(dataSource, task)
-            .serializer(customizer.serializer().orElseThrow())
-            .build();
+    var client = SchedulerClient.Builder.create(dataSource, task).serializer(serializer).build();
     scheduler.start();
     return new StartedProbeScheduler(scheduler, client);
   }

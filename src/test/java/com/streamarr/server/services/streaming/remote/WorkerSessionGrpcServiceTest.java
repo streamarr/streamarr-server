@@ -27,6 +27,7 @@ import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.JobAttemptStopped;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeCapacityChanged;
 import com.streamarr.transcode.v1.ProbeFailure;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeRequest;
@@ -95,7 +96,11 @@ class WorkerSessionGrpcServiceTest {
     var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
     var session = workerSession(service, workerId, new IgnoringResponseObserver());
     var registration = registration(worker(workerId), sourceNamespaceId).toBuilder();
-    registration.getCapabilitiesBuilder().addProbeVersions(1);
+    registration
+        .setBackgroundProbeCapacity(1)
+        .setKeyframePacketScanCapacity(1)
+        .getCapabilitiesBuilder()
+        .addProbeVersions(1);
     session.onNext(
         EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build());
     var request =
@@ -115,6 +120,37 @@ class WorkerSessionGrpcServiceTest {
     session.onNext(EstablishWorkerSessionRequest.newBuilder().setProbeResult(result).build());
 
     assertThat(attempt.get(1, TimeUnit.SECONDS).result()).isEqualTo(result);
+  }
+
+  @Test
+  @DisplayName(
+      "Should dispatch probes against the changed probe capacity when the worker session reports a"
+          + " new capacity")
+  void shouldDispatchProbesAgainstTheChangedProbeCapacityWhenTheWorkerSessionReportsANewCapacity()
+      throws Exception {
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var session = workerSession(service, workerId, new IgnoringResponseObserver());
+    var registration = registration(worker(workerId), sourceNamespaceId).toBuilder();
+    registration
+        .setBackgroundProbeCapacity(1)
+        .setKeyframePacketScanCapacity(1)
+        .getCapabilitiesBuilder()
+        .addProbeVersions(1);
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build());
+
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setProbeCapacityChanged(
+                ProbeCapacityChanged.newBuilder()
+                    .setBackgroundProbeCapacity(3)
+                    .setKeyframePacketScanCapacity(1))
+            .build());
+
+    assertThat(registry.probeCapacity(sourceNamespaceId, 1).backgroundProbeCapacity()).isEqualTo(3);
   }
 
   @Test
@@ -282,7 +318,11 @@ class WorkerSessionGrpcServiceTest {
       var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
       var session = workerSession(service, workerId, new IgnoringResponseObserver());
       var registration = registration(worker(workerId), sourceNamespaceId).toBuilder();
-      registration.getCapabilitiesBuilder().addProbeVersions(1);
+      registration
+          .setBackgroundProbeCapacity(1)
+          .setKeyframePacketScanCapacity(1)
+          .getCapabilitiesBuilder()
+          .addProbeVersions(1);
       session.onNext(
           EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build());
       var request =

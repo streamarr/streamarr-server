@@ -18,6 +18,7 @@ import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeTimedOutException;
@@ -108,7 +109,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
   @DisplayName("Should scan the newer outcome again when the source changes during a scan")
   void shouldScanTheNewerOutcomeAgainWhenTheSourceChangesDuringAScan() throws Exception {
     var request = requestUnchangedFiles(1).getFirst();
-    packetScanRequiredProbe().execute(request);
+    packetScanRequiredProbe().execute(request, ProbePriority.BACKGROUND);
     var scanning = new CountDownLatch(1);
     var release = new CountDownLatch(1);
     var scans = new AtomicInteger();
@@ -126,7 +127,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
 
     var changed = changeSource(request);
     scheduling.request(changed);
-    packetScanRequiredProbe().execute(changed);
+    packetScanRequiredProbe().execute(changed, ProbePriority.BACKGROUND);
     release.countDown();
 
     assertThat(scanCompletions.poll(30, TimeUnit.SECONDS)).isNotNull();
@@ -145,7 +146,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
   @DisplayName("Should end the scan without storing positions when the source changes during it")
   void shouldEndTheScanWithoutStoringPositionsWhenTheSourceChangesDuringIt() throws Exception {
     var request = requestUnchangedFiles(1).getFirst();
-    packetScanRequiredProbe().execute(request);
+    packetScanRequiredProbe().execute(request, ProbePriority.BACKGROUND);
 
     startScanScheduler(
         _ -> {
@@ -165,7 +166,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
   @DisplayName("Should keep the scan pending for the retry delay when every worker is busy")
   void shouldKeepTheScanPendingForTheRetryDelayWhenEveryWorkerIsBusy() throws Exception {
     var request = requestUnchangedFiles(1).getFirst();
-    packetScanRequiredProbe().execute(request);
+    packetScanRequiredProbe().execute(request, ProbePriority.BACKGROUND);
     var clock =
         new MutableClock(
             new AtomicReference<>(Instant.now().truncatedTo(ChronoUnit.SECONDS).plusSeconds(1)));
@@ -188,7 +189,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
   @DisplayName("Should keep probing on every probe thread while a keyframe packet scan runs")
   void shouldKeepProbingOnEveryProbeThreadWhileAKeyframePacketScanRuns() throws Exception {
     var files = createUnchangedFiles(3);
-    packetScanRequiredProbe().execute(files.getFirst());
+    packetScanRequiredProbe().execute(files.getFirst(), ProbePriority.BACKGROUND);
     var scanning = new CountDownLatch(1);
     var release = new CountDownLatch(1);
     KeyframePacketScanner blockedScanner =
@@ -233,7 +234,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
   @DisplayName("Should store unavailable keyframes and stop scanning when every scan times out")
   void shouldStoreUnavailableKeyframesAndStopScanningWhenEveryScanTimesOut() throws Exception {
     var request = requestUnchangedFiles(1).getFirst();
-    packetScanRequiredProbe().execute(request);
+    packetScanRequiredProbe().execute(request, ProbePriority.BACKGROUND);
     var scans = new AtomicInteger();
     startScanScheduler(
         _ -> {
@@ -259,7 +260,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
       "Should scan a source again when it returns unchanged after its scan found it missing")
   void shouldScanASourceAgainWhenItReturnsUnchangedAfterItsScanFoundItMissing() throws Exception {
     var request = requestUnchangedFiles(1).getFirst();
-    packetScanRequiredProbe().execute(request);
+    packetScanRequiredProbe().execute(request, ProbePriority.BACKGROUND);
     var source = FilepathCodec.decode(request.filepathUri());
     var away = Files.move(source, source.resolveSibling(source.getFileName() + ".away"));
     startScanScheduler(_ -> success(SCANNED), Clock.systemUTC());
@@ -285,7 +286,8 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
                 })
             .build();
 
-    assertThatIllegalStateException().isThrownBy(() -> probe.execute(request));
+    assertThatIllegalStateException()
+        .isThrownBy(() -> probe.execute(request, ProbePriority.BACKGROUND));
 
     assertThat(reader.find(request.mediaFileId())).isEmpty();
     assertThat(outcomes.findKeyframeKnowledge(request.mediaFileId())).isEmpty();

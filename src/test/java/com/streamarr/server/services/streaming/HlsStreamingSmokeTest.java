@@ -12,6 +12,7 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -101,6 +102,7 @@ class HlsStreamingSmokeTest {
                     .sourcePath(testVideo)
                     .attemptId(UUID.randomUUID())
                     .probeVersion(ProbeVersion.CURRENT)
+                    .priority(ProbePriority.BACKGROUND)
                     .build());
     assertThat(outcome).isInstanceOf(ProbeOutcome.Success.class);
     var completeProbe = (ProbeOutcome.Success) outcome;

@@ -5,6 +5,7 @@ import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeTimedOutException;
@@ -31,7 +32,7 @@ public final class RemoteFfprobeService implements FfprobeService {
 
   @Override
   public ProbeOutcome probe(ProbeExecutionRequest request) {
-    return dispatch(probeRequest(request).build());
+    return dispatch(probeRequest(request).setPriority(priorityOf(request.priority())).build());
   }
 
   /** Serves {@link com.streamarr.server.services.streaming.ProbeWorkers}. */
@@ -39,9 +40,25 @@ public final class RemoteFfprobeService implements FfprobeService {
     return server.hasProbeWorker(sourceNamespaceId, probeVersion);
   }
 
-  /** Serves {@link com.streamarr.server.services.streaming.KeyframePacketScanner}. */
+  /**
+   * Serves {@link com.streamarr.server.services.streaming.KeyframePacketScanner}. A scan is never a
+   * playback probe, so it always goes as a background probe.
+   */
   public ProbeOutcome scanKeyframePackets(ProbeExecutionRequest request) {
-    return dispatch(probeRequest(request).setScanKeyframePackets(true).build());
+    return dispatch(
+        probeRequest(request)
+            .setScanKeyframePackets(true)
+            .setPriority(priorityOf(ProbePriority.BACKGROUND))
+            .build());
+  }
+
+  // The domain and the worker contract both name a probe's priority ProbePriority.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static com.streamarr.transcode.v1.ProbePriority priorityOf(ProbePriority priority) {
+    return switch (priority) {
+      case PLAYBACK -> com.streamarr.transcode.v1.ProbePriority.PROBE_PRIORITY_PLAYBACK;
+      case BACKGROUND -> com.streamarr.transcode.v1.ProbePriority.PROBE_PRIORITY_BACKGROUND;
+    };
   }
 
   private ProbeRequest.Builder probeRequest(ProbeExecutionRequest request) {
@@ -80,10 +97,10 @@ public final class RemoteFfprobeService implements FfprobeService {
 
   private static RuntimeException refusal(ProbeRefusal reason) {
     return switch (reason) {
-      case WORKERS_BUSY -> new ProbeWorkersBusyException();
-      case NO_COMPATIBLE_WORKER ->
-          new ProbeExecutionException(ItemFailureReason.MISCONFIGURED, reason.description());
-      case INVALID_REQUEST, NO_CONNECTED_WORKER, WORKER_UNREACHABLE, ATTEMPT_IN_PROGRESS ->
+      // The probe waits for a worker without a failure, so it runs once a worker can take it.
+      case WORKERS_BUSY, NO_COMPATIBLE_WORKER, NO_CONNECTED_WORKER ->
+          new ProbeWorkersBusyException(reason.description());
+      case INVALID_REQUEST, WORKER_UNREACHABLE, ATTEMPT_IN_PROGRESS ->
           new ProbeExecutionException(ItemFailureReason.TEMPORARY, reason.description());
     };
   }

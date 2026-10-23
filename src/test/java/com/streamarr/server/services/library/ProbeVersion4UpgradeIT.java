@@ -32,6 +32,7 @@ import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.PlaybackAuthorityGate;
+import com.streamarr.server.services.streaming.ProbeCapacitySource;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
@@ -82,6 +83,7 @@ class ProbeVersion4UpgradeIT extends AbstractIntegrationTest {
   @Autowired private HlsPlaylistService playlists;
 
   @TestBean FfprobeService ffprobeService;
+  @TestBean ProbeCapacitySource probeCapacitySource;
   @TestBean TranscodeExecutor transcodeExecutor;
   @TestBean SegmentStore segmentStore;
   @TestBean PlaybackAuthorityGate authorityGate;
@@ -89,6 +91,10 @@ class ProbeVersion4UpgradeIT extends AbstractIntegrationTest {
   static FfprobeService ffprobeService() {
     PROBE.answerWith(retainedProbe());
     return PROBE;
+  }
+
+  static ProbeCapacitySource probeCapacitySource() {
+    return ProbeSchedulerStarter.FAKE_WORKERS;
   }
 
   private static ProbeOutcome.Success retainedProbe() {

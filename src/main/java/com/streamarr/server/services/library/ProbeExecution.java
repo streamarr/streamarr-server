@@ -5,6 +5,7 @@ import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
@@ -47,7 +48,8 @@ public class ProbeExecution {
   private final KeyframePacketScanRequests packetScans;
   private final PlatformTransactionManager transactionManager;
 
-  public ProbeExecutionResult execute(ProbeTaskRequest request) {
+  /** Runs the probe at {@code priority}, which decides the worker capacity that it uses. */
+  public ProbeExecutionResult execute(ProbeTaskRequest request, ProbePriority priority) {
     if (request.probeVersion() > ProbeVersion.CURRENT) {
       log.warn(
           "Removing probe request for media file {} at unsupported version {}",
@@ -92,11 +94,11 @@ public class ProbeExecution {
                   .sourcePath(path)
                   .attemptId(UUID.randomUUID())
                   .probeVersion(request.probeVersion())
+                  .priority(priority)
                   .build());
-    } catch (ProbeWorkersBusyException _) {
+    } catch (ProbeWorkersBusyException waiting) {
       log.debug(
-          "Deferring probe for media file {}: all compatible workers are busy",
-          request.mediaFileId());
+          "Deferring probe for media file {}: {}", request.mediaFileId(), waiting.getMessage());
       return new ProbeExecutionResult.Deferred(request);
     }
 

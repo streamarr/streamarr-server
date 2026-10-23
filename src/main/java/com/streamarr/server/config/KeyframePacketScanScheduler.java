@@ -40,6 +40,9 @@ public final class KeyframePacketScanScheduler
     implements KeyframePacketScanRequests, SmartLifecycle {
 
   public static final String TABLE_NAME = "keyframe_scan_scheduled_tasks";
+  // Claims follow the workers' free keyframe packet scan units, so the threads only cap the scans
+  // that one server runs at once.
+  public static final int THREADS = 16;
 
   private final Task<KeyframePacketScanTaskRequest> task;
   private final SchedulerClient client;
@@ -63,7 +66,7 @@ public final class KeyframePacketScanScheduler
 
   /**
    * Builds the scan scheduler from the application's db-scheduler settings, overriding the table
-   * and the thread cap. Executions run on the customizer's executor.
+   * and the threads. Executions run on the customizer's executor.
    */
   @Builder
   @SuppressWarnings("java:S107") // The builder names each argument at the call site.
@@ -106,7 +109,7 @@ public final class KeyframePacketScanScheduler
             .serializer(serializer)
             .build();
     schedulerProperties.setTableName(TABLE_NAME);
-    schedulerProperties.setThreads(properties.maxConcurrentKeyframePacketScans());
+    schedulerProperties.setThreads(THREADS);
     var schedulerListeners = listenersOrNone(listeners);
     Supplier<Scheduler> newScheduler =
         () ->
