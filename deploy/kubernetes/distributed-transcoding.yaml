@@ -253,6 +253,8 @@ spec:
               value: /media
             - name: TRANSCODE_WORKER_SLOTS
               value: "1"
+            # The background probe capacity adapts to the processors available to the worker's
+            # JVM. Set TRANSCODE_WORKER_PROBE_CAPACITY to a positive number to fix it.
             - name: LANG
               value: C.UTF-8
           volumeMounts:

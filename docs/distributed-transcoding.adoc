@@ -12,7 +12,7 @@ The standalone worker's inbound management port serves health checks. The server
 
 The server exposes one plaintext gRPC listener.
 `STREAMING_WORKER_SESSION_ADDRESS` defaults to `127.0.0.1` and `STREAMING_WORKER_SESSION_PORT` defaults to `9090`.
-The server can start without connected workers. Probe tasks retain their retry schedule until a capable worker connects.
+The server can start without connected workers. Probes stay pending until a capable worker connects.
 
 For colocated workers, keep the loopback address and share the server's network namespace.
 Every process that can reach this listener is trusted.
@@ -31,6 +31,81 @@ Plaintext traffic to the Pod IP must also be rejected.
 The mesh authenticates the worker ServiceAccount. The worker UUID remains a claimed instance identifier.
 An authorized worker can claim another worker's UUID. Workers in that role therefore share trust.
 ====
+
+== Probe capacity and playback slots
+
+Each worker grants four separate capacities when it connects, as https://github.com/streamarr/streamarr-adr/blob/main/adr/0032-media-file-probe-results-are-persisted.adoc[ADR 0032] decides:
+
+[cols="1,2,2"]
+|===
+|Capacity |Work |Value
+
+|Playback slots
+|Job attempts
+|`TRANSCODE_WORKER_SLOTS` on the worker. The default is `1`.
+
+|Playback probe capacity
+|Probes that a playback request waits for
+|`2`
+
+|Background probe capacity
+|Every other probe, such as the probes of a library scan
+|Adaptive. It starts at `4` and stays between `1` and the processors available to the worker's JVM.
+
+|Keyframe packet scan capacity
+|Keyframe packet scans
+|`0` while the worker runs a job attempt, and `1` once no job attempt has run for 30 seconds.
+|===
+
+A probe never takes a playback slot, and a job attempt never takes a probe unit.
+A stream session can therefore start on a worker while a library scan probes many files on the same worker.
+A playback probe can also use a free background unit, but a background probe never uses a playback probe unit.
+A playback probe therefore starts even while a scan uses every background unit.
+
+The worker adapts its background probe capacity to the host.
+The capacity grows by one when a probe ends while at least half of the capacity was in use.
+It halves when a job attempt starts.
+It also halves when a job attempt produces media slower than 2.10 times real time, and again every 15 seconds while the attempt stays slow.
+After it halves, the capacity does not grow for 30 seconds.
+Background probes and keyframe packet scans run at the lowest CPU priority, so playback keeps the processors that it needs.
+
+Set `TRANSCODE_WORKER_PROBE_CAPACITY` on the worker to fix the background probe capacity at a positive number.
+A fixed capacity never grows or halves.
+Fix it when the worker shares its host with other work that the worker cannot see, or when the worker should use fewer processors than its JVM reports.
+The other probe capacities have no setting.
+
+A worker reports a new capacity during its session, and the server sends new probes against the latest values.
+Probes that already run keep running when a capacity drops.
+When a probe reaches a worker that has just lowered the probe's capacity, the worker refuses the probe before it starts.
+The probe then stays pending without a failure, and any worker with a free unit can take it.
+
+The server claims a due probe only when a compatible worker has a free unit of the probe's capacity.
+Playback probes are claimed ahead of every other probe.
+The server sends a playback probe to a worker with a free playback probe unit first.
+A probe that waits for capacity stays pending without a failure.
+When a probe finishes, the next due probe starts within `PROBE_POLLING_INTERVAL`, which defaults to `1s`.
+One server runs at most 128 probes and 16 keyframe packet scans at once, whatever the workers grant.
+
+A worker that grants a background probe capacity of `0` receives no background probes, and the server logs a warning when that worker connects.
+When no connected worker can run probes, due probes stay pending without a failure.
+They start at the first poll after a worker that can run them connects.
+A scan waits for its probes until then.
+
+The server logs each capacity and the playback slots of each worker that connects.
+While a scan waits for its probes, the server logs the scan's progress every 30 seconds: the probes saved, the probes waiting, the files probed per second, and the background probe capacity of the connected workers.
+The progress line becomes a warning while no connected worker can run probes.
+When the server defers probes because every compatible worker is busy or no compatible worker is connected, it logs a warning with the reason and the number of deferred probes.
+The server logs that warning at most once a minute for each reason.
+
+These metrics report the same facts:
+
+* `streamarr.probes.capacity` reports the units of each capacity that a worker grants. It carries the `worker` and `kind` tags. The kind is `playback`, `background`, or `keyframe_packet_scan`.
+* `streamarr.probes.running` reports the probes of each kind that run on a worker. It carries the same tags.
+* `streamarr.probes.background_capacity_control` is `1` for each worker. Its `control` tag is `adaptive`, or `fixed` when `TRANSCODE_WORKER_PROBE_CAPACITY` sets the capacity.
+* `streamarr.probes.deferred` counts the probes that the server deferred. It carries a `reason` tag.
+* `streamarr.playback.probe_wait` times how long a playback request waited for its file's probe. Its `outcome` tag is `ready`, `probe_failed`, or `not_ready`.
+* `streamarr.playback.probe_waits` reports the playback requests that wait for a probe now.
+* `streamarr.streaming.capacity_refusals` counts the stream sessions refused for lack of capacity. Its `cause` tag is `no_connected_worker`, `no_free_worker_slot`, `no_free_configured_transcode_slot`, or `no_encoder_with_free_slot`.
 
 == Media and health
 
@@ -57,9 +132,8 @@ A packet scan reads every packet of the source's video stream, which takes longe
 A timeout requests worker cancellation and lets the scheduler retry.
 After three packet scans of a source time out or report no keyframes, the server stores its keyframes as unavailable, so playback encodes the source.
 Packet scans run on a scheduler of their own, so they never take the threads that run probes.
-`PROBE_MAX_CONCURRENT_KEYFRAME_PACKET_SCANS` sets how many scans each server runs at once. It defaults to `1`.
 `STREAMING_WORKER_SESSION_PROBE_CANCELLATION_TIMEOUT` allows `5s` for the worker to acknowledge termination.
-Until then, the probe retains its execution slot.
+Until then, the probe keeps its unit of the worker's probe capacity.
 A worker that misses this deadline is disconnected and fenced. Its other active jobs are abandoned and recover through the existing playback recovery path.
 Closing a worker connection cancels its probes and waits for their native processes to terminate.
 The server publishes no segment of an encode until the worker's start report names the encoder backend that the worker advertised.
@@ -67,14 +141,14 @@ The server publishes no segment of an encode until the worker's start report nam
 When the report names another backend, or does not arrive in time, the server refuses the upload.
 An unresponsive filesystem can delay worker shutdown.
 The server pings a worker after `STREAMING_WORKER_SESSION_KEEPALIVE_TIME` without hearing from it, and closes the connection when no acknowledgement arrives within `STREAMING_WORKER_SESSION_KEEPALIVE_TIMEOUT`.
-Closing a dead worker's connection releases its execution slots and upload reservations.
+Closing a dead worker's connection releases its playback slots, its probe capacity, and its upload reservations.
 The time defaults to `30s` and must be at least `10s`, the shortest that gRPC allows. The timeout defaults to `10s`.
 
 The server exposes Spring Boot probe groups at `/actuator/health/liveness` and `/actuator/health/readiness` on port `8080`.
 The standalone Spring Boot worker exposes the same paths on port `9091`.
 Worker readiness requires successful initialization and an accepted server session.
 A busy worker stays ready. Losing its server session changes readiness without failing liveness.
-The server still dispatches through the worker session using advertised capabilities and available slots.
+The server still dispatches through the worker session using the advertised capabilities, playback slots, and probe capacity.
 
 Keep worker availability out of the server's liveness and readiness groups.
 A server with zero workers must remain reachable so workers can connect.
