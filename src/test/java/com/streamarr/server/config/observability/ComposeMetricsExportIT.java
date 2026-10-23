@@ -108,6 +108,7 @@ class ComposeMetricsExportIT extends AbstractIntegrationTest {
             openTelemetry.put(variable.getKey(), variable.getValue().asString());
           }
         }
+
         return openTelemetry;
       } catch (IOException e) {
         throw new UncheckedIOException(e);
