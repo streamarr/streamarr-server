@@ -87,7 +87,7 @@ final class LiveWorkerConnectionRegistry {
   private final HeldSegmentRequests heldRequests;
   private final ApplicationEventPublisher eventPublisher;
   private final MeterRegistry meterRegistry;
-  private final WorkerProbeMeters probeMeters;
+  private final WorkerCapacityMeters capacityMeters;
   private final ProbeDeferralWarnings deferralWarnings =
       new ProbeDeferralWarnings(DEFERRAL_WARNING_INTERVAL);
 
@@ -116,7 +116,7 @@ final class LiveWorkerConnectionRegistry {
                 "Job attempts stopped because the worker reported an encoder backend other than"
                     + " the one pinned for the variant")
             .register(meterRegistry);
-    probeMeters = new WorkerProbeMeters(meterRegistry);
+    capacityMeters = new WorkerCapacityMeters(meterRegistry);
   }
 
   private final ConcurrentHashMap<UUID, WorkerConnection> connections = new ConcurrentHashMap<>();
@@ -143,7 +143,7 @@ final class LiveWorkerConnectionRegistry {
       abandonedJobs = replaced == null ? List.of() : replaced.abandonAllJobsWithoutWaiting();
     }
     warnIfNoBackgroundProbeCapacity(workerId, registration.getBackgroundProbeCapacity());
-    probeMeters.connected(workerId, connection);
+    capacityMeters.connected(workerId, connection);
     if (replaced == null) {
       log.info(
           "Worker {} connected with {} playback slots, {} playback probes, {} background probes"
@@ -182,12 +182,12 @@ final class LiveWorkerConnectionRegistry {
    */
   boolean tryChangeProbeCapacity(
       UUID workerId, UUID workerSessionId, ProbeCapacityChanged changed) {
-    var connection = connections.get(workerId);
-    if (connection == null || !connection.workerSessionId().equals(workerSessionId)) {
+    var connection = currentConnection(workerId, workerSessionId);
+    if (connection.isEmpty()) {
       return false;
     }
 
-    connection.changeProbeCapacity(changed);
+    connection.get().changeProbeCapacity(changed);
     log.debug(
         "Worker {} changed its background probe capacity to {} and its keyframe packet scan"
             + " capacity to {}",
@@ -212,7 +212,7 @@ final class LiveWorkerConnectionRegistry {
     if (connection != null
         && connection.workerSessionId().equals(workerSessionId)
         && connections.remove(workerId, connection)) {
-      probeMeters.disconnected(workerId, connection);
+      capacityMeters.disconnected(workerId, connection);
       connection
           .abandonAllJobsWithoutWaiting()
           .forEach(job -> logAbandonedJob(job, "disconnected"));
@@ -310,22 +310,16 @@ final class LiveWorkerConnectionRegistry {
   }
 
   boolean completeProbe(UUID workerId, UUID workerSessionId, ProbeAttemptResult result) {
-    var connection = connections.get(workerId);
-    if (connection == null || !connection.workerSessionId().equals(workerSessionId)) {
-      return false;
-    }
-
-    return connection.completeProbe(result);
+    return currentConnection(workerId, workerSessionId)
+        .map(connection -> connection.completeProbe(result))
+        .orElse(false);
   }
 
   boolean acceptKeyframePositionsPart(
       UUID workerId, UUID workerSessionId, ProbeKeyframePositionsPart part) {
-    var connection = connections.get(workerId);
-    if (connection == null || !connection.workerSessionId().equals(workerSessionId)) {
-      return false;
-    }
-
-    return connection.acceptKeyframePositionsPart(part);
+    return currentConnection(workerId, workerSessionId)
+        .map(connection -> connection.acceptKeyframePositionsPart(part))
+        .orElse(false);
   }
 
   Optional<VariantDispatch> dispatchTo(ExecutionTargetId target, VariantJob job) {
@@ -505,29 +499,23 @@ final class LiveWorkerConnectionRegistry {
 
   private synchronized Optional<VariantJob> acceptJobAttemptFailure(
       UUID workerId, UUID workerSessionId, JobAttemptFailed failed) {
-    var connection = connections.get(workerId);
-    if (connection == null || !connection.workerSessionId().equals(workerSessionId)) {
-      return Optional.empty();
-    }
-
-    return connection.failJobAttempt(failed);
+    return currentConnection(workerId, workerSessionId)
+        .flatMap(connection -> connection.failJobAttempt(failed));
   }
 
   Optional<VariantJob> releaseJobAttempt(UUID workerId, UUID workerSessionId, UUID jobAttemptId) {
-    var connection = connections.get(workerId);
-    if (connection == null || !connection.workerSessionId().equals(workerSessionId)) {
-      return Optional.empty();
-    }
-    return connection.releaseJobAttempt(jobAttemptId);
+    return currentConnection(workerId, workerSessionId)
+        .flatMap(connection -> connection.releaseJobAttempt(jobAttemptId));
   }
 
   void checkReportedEncoderBackend(UUID workerId, UUID workerSessionId, JobAttemptStarted started) {
-    var connection = connections.get(workerId);
-    if (connection == null || !connection.workerSessionId().equals(workerSessionId)) {
-      return;
-    }
+    currentConnection(workerId, workerSessionId)
+        .ifPresent(connection -> connection.checkReportedEncoderBackend(started));
+  }
 
-    connection.checkReportedEncoderBackend(started);
+  private Optional<WorkerConnection> currentConnection(UUID workerId, UUID workerSessionId) {
+    return Optional.ofNullable(connections.get(workerId))
+        .filter(connection -> connection.workerSessionId().equals(workerSessionId));
   }
 
   boolean authorizesUpload(UUID authenticatedWorkerId, SegmentUploadMetadata metadata) {
@@ -556,7 +544,7 @@ final class LiveWorkerConnectionRegistry {
     return outcome;
   }
 
-  private final class WorkerConnection implements WorkerProbeMeters.Session {
+  private final class WorkerConnection implements WorkerCapacityMeters.Session {
 
     private final UUID workerSessionId;
     private final WorkerIdentity worker;
@@ -727,7 +715,7 @@ final class LiveWorkerConnectionRegistry {
         return;
       }
 
-      probeMeters.disconnected(workerId, this);
+      capacityMeters.disconnected(workerId, this);
 
       log.warn("Worker session {} ignored cancellation of probe {}", workerSessionId, attemptId);
       abandonAllJobsWithoutWaiting()
@@ -947,7 +935,7 @@ final class LiveWorkerConnectionRegistry {
 
     @Override
     public int runningProbes(ProbeKind kind) {
-      return (int) runningProbeKinds().stream().filter(kind::equals).count();
+      return kind.countIn(runningProbeKinds());
     }
 
     @Override

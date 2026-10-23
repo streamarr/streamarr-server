@@ -18,8 +18,9 @@ class ProgressReportIntervalTest {
   private final ProgressReportInterval interval = new ProgressReportInterval(INTERVAL, START);
 
   @Test
-  @DisplayName("Should hold the first report until one interval has passed since the start")
-  void shouldHoldTheFirstReportUntilOneIntervalHasPassedSinceTheStart() {
+  @DisplayName(
+      "Should hold the first report when less than one interval has passed since the start")
+  void shouldHoldTheFirstReportWhenLessThanOneIntervalHasPassedSinceTheStart() {
     assertThat(interval.tryTakeReport(START)).isFalse();
     assertThat(interval.tryTakeReport(START.plus(INTERVAL).minusMillis(1))).isFalse();
     assertThat(interval.tryTakeReport(START.plus(INTERVAL))).isTrue();

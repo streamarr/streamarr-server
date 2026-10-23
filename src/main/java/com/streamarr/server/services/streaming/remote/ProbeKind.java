@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.remote;
 
 import com.streamarr.transcode.v1.ProbePriority;
 import com.streamarr.transcode.v1.ProbeRequest;
+import java.util.Collection;
 
 /** The kind of a probe, which decides the worker capacity that the probe uses. */
 enum ProbeKind {
@@ -20,5 +21,9 @@ enum ProbeKind {
     }
 
     return BACKGROUND;
+  }
+
+  int countIn(Collection<ProbeKind> kinds) {
+    return (int) kinds.stream().filter(this::equals).count();
   }
 }

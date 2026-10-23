@@ -64,11 +64,11 @@ public class KeyframePacketScanExecution {
                   .probeVersion(request.probeVersion())
                   .priority(ProbePriority.BACKGROUND)
                   .build());
-    } catch (ProbeWorkersBusyException waiting) {
+    } catch (ProbeWorkersBusyException deferral) {
       log.debug(
           "Deferring keyframe packet scan for media file {}: {}",
           request.mediaFileId(),
-          waiting.getMessage());
+          deferral.getMessage());
       return new KeyframePacketScanResult.Deferred();
     } catch (ProbeTimedOutException _) {
       log.warn("Keyframe packet scan for media file {} timed out", request.mediaFileId());

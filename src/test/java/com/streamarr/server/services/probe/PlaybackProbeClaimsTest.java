@@ -76,8 +76,10 @@ class PlaybackProbeClaimsTest {
   }
 
   @Test
-  @DisplayName("Should count each claimed playback probe as in progress until its execution ends")
-  void shouldCountEachClaimedPlaybackProbeAsInProgressUntilItsExecutionEnds() {
+  @DisplayName(
+      "Should count each claimed playback probe as in progress when its execution has"
+          + " not ended")
+  void shouldCountEachClaimedPlaybackProbeAsInProgressWhenItsExecutionHasNotEnded() {
     var first = claims.claimed(mediaFileId);
     var second = claims.claimed(UUID.randomUUID());
     assertThat(claims.inProgress()).isEqualTo(2);

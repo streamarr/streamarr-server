@@ -102,7 +102,7 @@ public class HlsStreamingService implements StreamingService {
 
     var refusal = capacityRefusalFor(decision);
     if (refusal.isPresent()) {
-      return Outcome.rejected(capacityUnavailable(refusal.get()));
+      return Outcome.rejected(refuseForLackOfCapacity(refusal.get()));
     }
 
     var sessionId = command.streamSessionId();
@@ -150,7 +150,7 @@ public class HlsStreamingService implements StreamingService {
 
   private CreateStreamSessionRejection unavailableVideoFormat(TranscodeDecisionRequest request) {
     if (!transcodeExecutor.isHealthy()) {
-      return capacityUnavailable(CapacityRefusal.NO_CONNECTED_WORKER);
+      return refuseForLackOfCapacity(CapacityRefusal.NO_CONNECTED_WORKER);
     }
 
     if (request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
@@ -164,13 +164,13 @@ public class HlsStreamingService implements StreamingService {
                 .encodableVideoCodecFamilies(transcodeExecutor.verifiedVideoCodecFamilies())
                 .build());
     if (verifiedCandidate.isPresent()) {
-      return capacityUnavailable(CapacityRefusal.NO_ENCODER_WITH_FREE_SLOT);
+      return refuseForLackOfCapacity(CapacityRefusal.NO_ENCODER_WITH_FREE_SLOT);
     }
 
     return new CreateStreamSessionRejection.NoEligibleVideoFormat();
   }
 
-  private CreateStreamSessionRejection capacityUnavailable(CapacityRefusal refusal) {
+  private CreateStreamSessionRejection refuseForLackOfCapacity(CapacityRefusal refusal) {
     meterRegistry
         .counter(CAPACITY_REFUSALS_METRIC, "cause", refusal.name().toLowerCase(Locale.ROOT))
         .increment();
@@ -296,7 +296,7 @@ public class HlsStreamingService implements StreamingService {
     return Optional.empty();
   }
 
-  /** Why a stream session could not start now, as the capacity refusal metric names it. */
+  // Why a stream session could not start now, as the capacity refusal metric names it.
   private enum CapacityRefusal {
     NO_CONNECTED_WORKER,
     NO_ENCODER_WITH_FREE_SLOT,

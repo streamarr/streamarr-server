@@ -90,7 +90,7 @@ class ProbeRunConcurrentRequestsTest {
             })
         .clock(clock)
         .properties(new ProbeSchedulingProperties(null, Duration.ofSeconds(2)))
-        .probeCapacity(() -> ProbeCapacity.builder().build())
+        .capacitySource(() -> ProbeCapacity.builder().build())
         .build();
   }
 

@@ -173,7 +173,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
 
     startScanScheduler(
         _ -> {
-          throw new ProbeWorkersBusyException();
+          throw new ProbeWorkersBusyException("All compatible workers are busy");
         },
         clock);
 

@@ -263,7 +263,7 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
     }
 
     if (operation == NativeCompletion.DEFER) {
-      producer.failWith(new ProbeWorkersBusyException());
+      producer.failWith(new ProbeWorkersBusyException("All compatible workers are busy"));
     }
 
     var originalTask =
@@ -309,7 +309,7 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
             changed.set(changeSource(file));
           }
         });
-    producer.failWith(new ProbeWorkersBusyException());
+    producer.failWith(new ProbeWorkersBusyException("All compatible workers are busy"));
 
     startScheduler();
 
@@ -325,7 +325,7 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
     var file = createMediaFile();
     scheduling.request(request(file));
     producer.runDuringProbe(() -> mediaFiles.deleteById(file.getId()));
-    producer.failWith(new ProbeWorkersBusyException());
+    producer.failWith(new ProbeWorkersBusyException("All compatible workers are busy"));
 
     startScheduler();
 

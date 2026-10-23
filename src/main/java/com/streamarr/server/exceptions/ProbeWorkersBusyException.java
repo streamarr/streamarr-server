@@ -6,10 +6,6 @@ package com.streamarr.server.exceptions;
  */
 public class ProbeWorkersBusyException extends RuntimeException {
 
-  public ProbeWorkersBusyException() {
-    this("All compatible workers are busy");
-  }
-
   public ProbeWorkersBusyException(String reason) {
     super(reason);
   }

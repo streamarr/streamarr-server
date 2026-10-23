@@ -84,13 +84,9 @@ record GrantedProbeCapacities(
 
     private static InUse of(Collection<ProbeKind> running) {
       return new InUse(
-          count(running, ProbeKind.PLAYBACK),
-          count(running, ProbeKind.BACKGROUND),
-          count(running, ProbeKind.KEYFRAME_PACKET_SCAN));
-    }
-
-    private static int count(Collection<ProbeKind> running, ProbeKind kind) {
-      return (int) running.stream().filter(kind::equals).count();
+          ProbeKind.PLAYBACK.countIn(running),
+          ProbeKind.BACKGROUND.countIn(running),
+          ProbeKind.KEYFRAME_PACKET_SCAN.countIn(running));
     }
   }
 }
