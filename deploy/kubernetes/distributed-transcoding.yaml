@@ -213,7 +213,8 @@ spec:
               type: RuntimeDefault
           resources:
             requests:
-              cpu: "1"
+              # At one CPU, the JVM would run virtual threads on a single carrier thread.
+              cpu: "2"
               memory: 512Mi
             limits:
               memory: 1Gi

@@ -234,7 +234,8 @@ Do not add exclusions for the worker port to the sidecar annotations.
 Keep one server replica and `Recreate` replacement. Its worker and playback session registries are in memory.
 Worker replicas may scale horizontally as long as each can read the configured media namespace.
 
-Each worker requests one CPU and sets no CPU limit, so it can use idle cores on its node.
+Each worker requests two CPUs and sets no CPU limit, so it can use idle cores on its node.
+Keep the request at two CPUs or more. At one CPU, the JVM runs virtual threads on a single carrier thread.
 Without a CPU limit, the JVM counts every core on the node. JDK 19 and later ignore CPU shares, which carry the CPU request, when they count processors.
 The manifest therefore passes the CPU request to the JVM as `-XX:ActiveProcessorCount` in `JAVA_TOOL_OPTIONS`.
 Kubernetes rounds the request up to a whole core, so a request of `1500m` gives the JVM two processors.

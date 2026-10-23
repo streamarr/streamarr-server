@@ -116,6 +116,23 @@ class KubernetesManifestContractTest {
   }
 
   @Test
+  @DisplayName("Should request at least two CPUs for the worker when deployed")
+  void shouldRequestAtLeastTwoCpusForWorkerWhenDeployed() {
+    var requests = asMap(asMap(container(workerDeployment).get("resources")).get("requests"));
+
+    assertThat(millicores(requests.get("cpu"))).isGreaterThanOrEqualTo(2000);
+  }
+
+  private static long millicores(Object quantity) {
+    var text = String.valueOf(quantity);
+    if (text.endsWith("m")) {
+      return Long.parseLong(text.substring(0, text.length() - 1));
+    }
+
+    return Math.round(Double.parseDouble(text) * 1000);
+  }
+
+  @Test
   @DisplayName("Should harden both containers to the restricted pod security profile when deployed")
   void shouldHardenBothContainersToRestrictedPodSecurityProfileWhenDeployed() {
     for (var deployment : List.of(serverDeployment, workerDeployment)) {
