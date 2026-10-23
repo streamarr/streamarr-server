@@ -642,8 +642,11 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
   }
 
   // The scheduler reads the probe capacity at the start of each poll, and one thread runs the
-  // polls, so a second read shows that the first poll has finished.
+  // polls. A trigger during a poll starts the next poll as soon as it ends, so the second poll that
+  // this wait triggers shows that a poll started after the wait began has finished.
   private void awaitCompletedPoll(Semaphore polls) throws InterruptedException {
+    polls.drainPermits();
+    scheduler.triggerCheckForDueExecutions();
     assertThat(polls.tryAcquire(WORKER_WAIT.toSeconds(), TimeUnit.SECONDS)).isTrue();
     scheduler.triggerCheckForDueExecutions();
     assertThat(polls.tryAcquire(WORKER_WAIT.toSeconds(), TimeUnit.SECONDS)).isTrue();

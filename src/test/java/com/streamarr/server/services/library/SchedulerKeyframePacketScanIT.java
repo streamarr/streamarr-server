@@ -3,7 +3,6 @@ package com.streamarr.server.services.library;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 
-import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.streamarr.server.config.KeyframePacketScanScheduler;
@@ -79,7 +78,6 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
   @Autowired private MediaFileContainerInfoRepository outcomes;
   @Autowired private ProbeSchedulingProperties probeScheduling;
   @Autowired private PlatformTransactionManager transactionManager;
-  @Autowired private DbSchedulerCustomizer schedulerCustomizer;
   @Autowired private DataSource dataSource;
   @Autowired private Environment environment;
   @Autowired private DSLContext dsl;
@@ -310,7 +308,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
     scanScheduler =
         KeyframePacketScanScheduler.builder()
             .schedulerProperties(UnstartedSchedulerConfiguration.schedulerProperties(environment))
-            .customizer(schedulerCustomizer)
+            .customizer(probeSchedulerStarter().pickingCustomizer())
             .dataSource(dataSource)
             .transactionManager(transactionManager)
             .execution(execution)
