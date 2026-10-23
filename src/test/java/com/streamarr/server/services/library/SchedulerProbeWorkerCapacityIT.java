@@ -122,7 +122,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
   @Autowired private PlaybackProbeClaims playbackProbeClaims;
 
   private final List<MediaFile> createdFiles = new ArrayList<>();
-  private final BlockingQueue<ExecutionComplete> completions = new LinkedBlockingQueue<>();
+  private final BlockingQueue<FinishedExecution> completions = new LinkedBlockingQueue<>();
   private MutableClock clock;
   private UUID libraryId;
   private Scheduler scheduler;
@@ -868,7 +868,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
         new AbstractSchedulerListener() {
           @Override
           public void onExecutionComplete(ExecutionComplete executionComplete) {
-            completions.add(executionComplete);
+            completions.add(new FinishedExecution(executionComplete, Thread.currentThread()));
           }
         };
     scheduler =
@@ -901,21 +901,20 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
     scheduler.triggerCheckForDueExecutions();
   }
 
-  // db-scheduler notifies listeners after the completion handler's transaction commits, but before
-  // it stops counting the execution as running. A claim in that gap counts the finished execution
-  // as one that still waits for a probe unit, so the test waits for the count to drop.
+  // db-scheduler notifies listeners on the execution's thread after the completion handler's
+  // transaction commits, but before it stops counting the execution for its next claim. A claim in
+  // that gap counts the finished execution as one that still waits for a probe unit. Each execution
+  // runs on its own thread, which ends only after the count drops.
   private ExecutionComplete nextCompletion() throws InterruptedException {
-    var complete = completions.poll(WORKER_WAIT.toSeconds(), TimeUnit.SECONDS);
-    assertThat(complete).as("The scheduler must finish a probe execution").isNotNull();
-    var finished = complete.getExecution().taskInstance;
-    await()
-        .atMost(WORKER_WAIT)
-        .until(
-            () ->
-                scheduler.getCurrentlyExecuting().stream()
-                    .noneMatch(running -> running.getTaskInstance().equals(finished)));
-    return complete;
+    var finished = completions.poll(WORKER_WAIT.toSeconds(), TimeUnit.SECONDS);
+    assertThat(finished).as("The scheduler must finish a probe execution").isNotNull();
+    assertThat(finished.thread().join(WORKER_WAIT))
+        .as("The scheduler must stop counting the finished execution")
+        .isTrue();
+    return finished.complete();
   }
+
+  private record FinishedExecution(ExecutionComplete complete, Thread thread) {}
 
   private static ProbeAttemptResult invalidMedia(ProbeRequest request) {
     return ProbeAttemptResult.newBuilder()
