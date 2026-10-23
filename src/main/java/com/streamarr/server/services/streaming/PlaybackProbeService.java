@@ -61,7 +61,7 @@ public class PlaybackProbeService {
     // request time keeps a failure after the request from reading back as earlier.
     var requestedAt = clock.instant().truncatedTo(ChronoUnit.MICROS);
     // The wait starts before the request, so a claim that follows the request at once finds it.
-    try (var _ = playbackProbeClaims.waitStarted(mediaFileId, requestedAt)) {
+    try (var _ = playbackProbeClaims.waitStarted(mediaFileId)) {
       return requestAndAwaitOutcome(mediaFileId, requestedAt);
     }
   }

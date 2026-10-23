@@ -1,11 +1,9 @@
 package com.streamarr.server.services.probe;
 
+import com.streamarr.server.services.concurrency.NanoClock;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -19,20 +17,21 @@ import org.springframework.stereotype.Component;
  * The probes that playback requests wait for, from the request until the scheduler claims the probe
  * and then until the probe's execution ends. Queue latency runs from the earliest still-waiting
  * playback request until the probe's execution starts. It includes scheduling delays and capacity
- * waits. Requests that stop waiting before execution starts contribute no sample.
+ * waits. Requests that stop waiting before execution starts contribute no sample. Queue latency
+ * counts elapsed time, so a step of the system clock cannot distort or drop a sample.
  */
 @Component
 public class PlaybackProbeClaims {
 
   private static final String QUEUE_LATENCY_METRIC = "streamarr.playback.probe_queue_latency";
 
-  private final Clock clock;
+  private final NanoClock nanoClock;
   private final Timer queueLatency;
   private final AtomicInteger inProgress = new AtomicInteger();
   private final ConcurrentHashMap<UUID, Set<PlaybackProbeWait>> waiting = new ConcurrentHashMap<>();
 
-  public PlaybackProbeClaims(@NonNull Clock clock, @NonNull MeterRegistry meterRegistry) {
-    this.clock = clock;
+  public PlaybackProbeClaims(@NonNull NanoClock nanoClock, @NonNull MeterRegistry meterRegistry) {
+    this.nanoClock = nanoClock;
     queueLatency =
         Timer.builder(QUEUE_LATENCY_METRIC)
             .description(
@@ -46,8 +45,8 @@ public class PlaybackProbeClaims {
    * the scheduler claims the probe or when the returned wait closes, whichever comes first, and
    * closing one request's wait never ends another's.
    */
-  public PlaybackProbeWait waitStarted(@NonNull UUID mediaFileId, @NonNull Instant requestedAt) {
-    var wait = new PlaybackProbeWait(mediaFileId, requestedAt);
+  public PlaybackProbeWait waitStarted(@NonNull UUID mediaFileId) {
+    var wait = new PlaybackProbeWait(mediaFileId, nanoClock.nanoTime());
     waiting.merge(mediaFileId, Set.of(wait), PlaybackProbeClaims::union);
     return wait;
   }
@@ -59,10 +58,11 @@ public class PlaybackProbeClaims {
   public ClaimedPlaybackProbe claimed(@NonNull UUID mediaFileId) {
     var waits = waiting.remove(mediaFileId);
     if (waits != null) {
+      var now = nanoClock.nanoTime();
       waits.stream()
-          .map(wait -> wait.since)
-          .min(Comparator.naturalOrder())
-          .ifPresent(since -> queueLatency.record(Duration.between(since, clock.instant())));
+          .mapToLong(wait -> now - wait.startedNanos)
+          .max()
+          .ifPresent(longest -> queueLatency.record(Duration.ofNanos(longest)));
     }
 
     inProgress.incrementAndGet();
@@ -99,11 +99,11 @@ public class PlaybackProbeClaims {
   public final class PlaybackProbeWait implements AutoCloseable {
 
     private final UUID mediaFileId;
-    private final Instant since;
+    private final long startedNanos;
 
-    private PlaybackProbeWait(UUID mediaFileId, Instant since) {
+    private PlaybackProbeWait(UUID mediaFileId, long startedNanos) {
       this.mediaFileId = mediaFileId;
-      this.since = since;
+      this.startedNanos = startedNanos;
     }
 
     @Override

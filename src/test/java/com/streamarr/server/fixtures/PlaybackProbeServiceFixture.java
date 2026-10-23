@@ -29,7 +29,7 @@ public final class PlaybackProbeServiceFixture {
         .clock(Clock.systemUTC())
         .nanoClock(System::nanoTime)
         .meterRegistry(new SimpleMeterRegistry())
-        .playbackProbeClaims(new PlaybackProbeClaims(Clock.systemUTC(), new SimpleMeterRegistry()))
+        .playbackProbeClaims(new PlaybackProbeClaims(System::nanoTime, new SimpleMeterRegistry()))
         .properties(StreamingProperties.builder().build());
   }
 }

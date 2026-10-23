@@ -76,7 +76,7 @@ class PlaybackProbeServiceTest {
       };
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
   private final ProbeAttemptEnds attemptEnds = new ProbeAttemptEnds(meterRegistry);
-  private final PlaybackProbeClaims claims = new PlaybackProbeClaims(clock, meterRegistry);
+  private final PlaybackProbeClaims claims = new PlaybackProbeClaims(nanoClock, meterRegistry);
   private final CapturingEventPublisher events = new CapturingEventPublisher();
   private final CompletableFuture<Void> probeRequested = new CompletableFuture<>();
   private final ExecutorService playbackThreads = Executors.newVirtualThreadPerTaskExecutor();
@@ -179,6 +179,28 @@ class PlaybackProbeServiceTest {
       assertThat(waitTimer("ready"))
           .returns(1L, Timer::count)
           .returns(3.0, timer -> timer.totalTime(TimeUnit.SECONDS));
+    }
+
+    @Test
+    @DisplayName(
+        "Should time queue latency in elapsed time when the system clock steps back before the"
+            + " claim")
+    void shouldTimeQueueLatencyInElapsedTimeWhenTheSystemClockStepsBackBeforeTheClaim()
+        throws Exception {
+      var playback = readInBackground(service());
+      probeRequested.get(10, TimeUnit.SECONDS);
+
+      clock.advance(Duration.ofHours(-1));
+      nanoClock.advance(Duration.ofSeconds(2));
+      try (var _ = claims.claimed(mediaFileId)) {
+        outcomes.store(success());
+        attemptEnds.signalEnd(mediaFileId);
+        playback.get(10, TimeUnit.SECONDS);
+      }
+
+      assertThat(meterRegistry.get("streamarr.playback.probe_queue_latency").timer())
+          .returns(1L, Timer::count)
+          .returns(2.0, timer -> timer.totalTime(TimeUnit.SECONDS));
     }
 
     @Test
