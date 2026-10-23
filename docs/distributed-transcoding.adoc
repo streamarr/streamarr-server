@@ -198,6 +198,13 @@ STREAMARR_MEDIA_PATH=/absolute/path/to/media docker compose \
 The worker uses its own Spring Boot image and normal entrypoint.
 The server image contains neither the worker application nor FFmpeg.
 
+Compose also runs Prometheus, which stores the server's metrics.
+The server sends its metrics to Prometheus over OTLP every 10 seconds.
+Prometheus keeps the metrics for 15 days in the `prometheus-data` volume. `STREAMARR_METRICS_RETENTION` changes how long.
+The Prometheus UI and query API have no authentication, so Compose publishes them on the host's loopback port `9090` only. `STREAMARR_PROMETHEUS_PORT` changes the port.
+To open the UI from another machine, forward the port over SSH with `ssh -L 9090:localhost:9090 <user>@<media-server>`, then open `http://localhost:9090`.
+Prometheus replaces each dot in a metric name with an underscore, so `streamarr.probes.capacity` becomes `streamarr_probes_capacity`.
+
 Hardware transcoding is a separate opt-in overlay.
 Find the numeric group ID that owns the host's `/dev/dri/render*` device and set `STREAMARR_RENDER_GID`:
 
