@@ -20,6 +20,7 @@ import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
+import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.exceptions.ProbeTimedOutException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.FakeFfprobeService;
@@ -275,6 +276,35 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
         _ -> {
           scans.incrementAndGet();
           throw new ProbeTimedOutException(new TimeoutException());
+        },
+        Clock.systemUTC());
+
+    for (var attempt = 1; attempt <= 3; attempt++) {
+      assertThat(scanCompletions.poll(30, TimeUnit.SECONDS)).isNotNull();
+      retryPendingScansNow();
+    }
+
+    assertThat(scans).hasValue(3);
+    assertThat(storedKeyframes(request))
+        .isEqualTo(
+            new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_FAILED));
+    assertThat(scheduledScans()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should store unavailable keyframes and stop scanning when every worker reply breaks the"
+          + " worker contract")
+  void shouldStoreUnavailableKeyframesAndStopScanningWhenEveryWorkerReplyBreaksTheWorkerContract()
+      throws Exception {
+    var request = requestUnchangedFiles(1).getFirst();
+    packetScanRequiredProbe().execute(request, ProbePriority.BACKGROUND);
+    var scans = new AtomicInteger();
+    startScanScheduler(
+        _ -> {
+          scans.incrementAndGet();
+          throw new ProbeContractViolationException(
+              "Worker probe keyframe decode times do not increase");
         },
         Clock.systemUTC());
 

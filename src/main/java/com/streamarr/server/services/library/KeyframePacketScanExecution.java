@@ -10,6 +10,7 @@ import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
+import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeTimedOutException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
@@ -30,8 +31,9 @@ import org.springframework.stereotype.Service;
 /**
  * One keyframe packet scan execution, independent of the scheduler that runs it. Transient failures
  * escape as {@link ProbeExecutionException} so the scheduler retries them with backoff. Busy
- * workers defer the scan without a failure. A scan that times out or reports no keyframe result
- * ends as {@link KeyframePacketScanResult.Failed}, which its completion counts.
+ * workers defer the scan without a failure. A scan that times out, gets a worker reply that breaks
+ * the worker contract or reports no keyframe result ends as {@link
+ * KeyframePacketScanResult.Failed}, which its completion counts.
  */
 @Service
 @Builder
@@ -72,6 +74,13 @@ public class KeyframePacketScanExecution {
       return new KeyframePacketScanResult.Deferred();
     } catch (ProbeTimedOutException _) {
       log.warn("Keyframe packet scan for media file {} timed out", request.mediaFileId());
+      return new KeyframePacketScanResult.Failed();
+    } catch (ProbeContractViolationException violation) {
+      log.warn(
+          "Keyframe packet scan for media file {} got a worker reply that breaks the worker"
+              + " contract: {}",
+          request.mediaFileId(),
+          violation.getMessage());
       return new KeyframePacketScanResult.Failed();
     }
 

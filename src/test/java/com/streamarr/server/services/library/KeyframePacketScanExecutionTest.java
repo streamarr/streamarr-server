@@ -23,6 +23,7 @@ import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
+import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeTimedOutException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
@@ -241,6 +242,22 @@ class KeyframePacketScanExecutionTest {
     scanner =
         _ -> {
           throw new ProbeTimedOutException(new TimeoutException());
+        };
+
+    var result = execution().execute(request);
+
+    assertThat(result).isEqualTo(new KeyframePacketScanResult.Failed());
+    assertThat(storedKeyframes()).isEqualTo(packetScanRequired());
+  }
+
+  @Test
+  @DisplayName("Should end the scan as failed when the worker reply breaks the worker contract")
+  void shouldEndTheScanAsFailedWhenTheWorkerReplyBreaksTheWorkerContract() {
+    var request = storePacketScanRequired();
+    scanner =
+        _ -> {
+          throw new ProbeContractViolationException(
+              "Worker probe keyframe decode times do not increase");
         };
 
     var result = execution().execute(request);
