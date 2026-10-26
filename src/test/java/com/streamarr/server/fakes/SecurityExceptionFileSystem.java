@@ -34,20 +34,25 @@ public class SecurityExceptionFileSystem extends FileSystem {
 
   private final FileSystem delegate;
   private final SecurityExceptionProvider provider;
-  private final boolean reportUnreadable;
+  private final Denial denial;
 
-  public SecurityExceptionFileSystem(FileSystem delegate) {
-    this(delegate, false);
+  private enum Denial {
+    SECURITY_MANAGER,
+    UNREADABLE
   }
 
-  private SecurityExceptionFileSystem(FileSystem delegate, boolean reportUnreadable) {
+  public SecurityExceptionFileSystem(FileSystem delegate) {
+    this(delegate, Denial.SECURITY_MANAGER);
+  }
+
+  private SecurityExceptionFileSystem(FileSystem delegate, Denial denial) {
     this.delegate = delegate;
-    this.reportUnreadable = reportUnreadable;
+    this.denial = denial;
     this.provider = new SecurityExceptionProvider(delegate.provider(), this);
   }
 
   public static SecurityExceptionFileSystem reportingUnreadable(FileSystem delegate) {
-    return new SecurityExceptionFileSystem(delegate, true);
+    return new SecurityExceptionFileSystem(delegate, Denial.UNREADABLE);
   }
 
   @Override
@@ -268,12 +273,12 @@ public class SecurityExceptionFileSystem extends FileSystem {
 
     @Override
     public void checkAccess(Path path, AccessMode... modes) throws IOException {
-      if (fileSystem.reportUnreadable && modes.length == 0) {
+      if (fileSystem.denial == Denial.UNREADABLE && modes.length == 0) {
         delegate.checkAccess(unwrap(path), modes);
         return;
       }
 
-      if (fileSystem.reportUnreadable) {
+      if (fileSystem.denial == Denial.UNREADABLE) {
         throw new AccessDeniedException(path.toString());
       }
 
