@@ -38,9 +38,9 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import tools.jackson.databind.JsonNode;
 
 @Tag("IntegrationTest")
-@DisplayName("Library Administration Subscription Integration Tests")
+@DisplayName("Library Subscription Integration Tests")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
+class LibrarySubscriptionIT extends AbstractIntegrationTest {
 
   private static final String STATUS_FIELD = "libraryStatusChanged";
   private static final String STATUS_SUBSCRIPTION =
