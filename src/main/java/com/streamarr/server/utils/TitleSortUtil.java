@@ -20,20 +20,50 @@ public class TitleSortUtil {
 
   private static final Pattern ONLY_DECORATION = Pattern.compile(DECORATION + "*");
 
+  private static final Pattern SYMBOL_OR_OTHER_NUMBER = Pattern.compile("[\\p{S}\\p{No}]");
+
+  private static final Pattern ASCII_LETTERS_OR_DIGITS = Pattern.compile("[A-Za-z0-9]+");
+
   /**
-   * Encodes a display title as its stored sort title. Latin diacritics and compatibility characters
-   * fold to their base letters; leading punctuation, symbols other than currency signs, and
-   * invisible characters are removed unless nothing else remains; and a leading article moves to
-   * the end. An article is recognized as written, so a first word that only folds to one, such as
-   * the French preposition "À", stays in place.
+   * Encodes a display title as its stored sort title. A symbol that stands for letters or digits,
+   * such as "Ⓢ" or "①", becomes them; Latin diacritics and compatibility characters fold to their
+   * base letters; leading punctuation, other symbols except currency signs, and invisible
+   * characters are removed unless nothing else remains; and a leading article moves to the end. An
+   * article is recognized as written, so a first word that only folds to one, such as the French
+   * preposition "À", stays in place.
    */
   public static String computeTitleSort(String title) {
     if (title == null) {
       return null;
     }
 
-    var withArticleMoved = moveLeadingArticle(stripLeadingDecoration(title));
+    var spelled = spellOutSymbols(title);
+    var withArticleMoved = moveLeadingArticle(stripLeadingDecoration(spelled));
     return stripLeadingDecoration(foldLatin(withArticleMoved));
+  }
+
+  // Runs before the strip, which would otherwise remove a symbol such as "Ⓢ" as decoration. Only a
+  // compatibility form of plain ASCII letters or digits counts, so non-Latin text is untouched.
+  private static String spellOutSymbols(String title) {
+    var spelled = new StringBuilder(title.length());
+    for (var codePoint : title.codePoints().toArray()) {
+      spelled.append(spellOutSymbol(Character.toString(codePoint)));
+    }
+
+    return spelled.toString();
+  }
+
+  private static String spellOutSymbol(String character) {
+    if (!SYMBOL_OR_OTHER_NUMBER.matcher(character).matches()) {
+      return character;
+    }
+
+    var compatibilityForm = Normalizer.normalize(character, Normalizer.Form.NFKD);
+    if (!ASCII_LETTERS_OR_DIGITS.matcher(compatibilityForm).matches()) {
+      return character;
+    }
+
+    return compatibilityForm;
   }
 
   // Folds code point by code point: a compatibility mapping applied to the whole title would

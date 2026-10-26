@@ -179,6 +179,25 @@ class TitleSortUtilTest {
   }
 
   @ParameterizedTest
+  @CsvSource(
+      delimiterString = " -> ",
+      quoteCharacter = '%',
+      value = {
+        "Ⓢilver Harbor -> Silver Harbor",
+        "ⓢilver Harbor -> silver Harbor",
+        "“Ⓢilver Harbor” -> Silver Harbor”",
+        "\uFEFFⓈilver Harbor -> Silver Harbor",
+        "The Ⓢilver Harbor -> Silver Harbor, The",
+        "① Harbor -> 1 Harbor",
+        "™Brand Night -> TMBrand Night",
+        "Harbor ② -> Harbor 2"
+      })
+  @DisplayName("Should fold a symbol to the letters or digits it stands for when it has them")
+  void shouldFoldSymbolToTheLettersOrDigitsItStandsForWhenItHasThem(String title, String expected) {
+    assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
+  }
+
+  @ParameterizedTest
   @ValueSource(
       strings = {"~~~", "{ }", "|", "“”", "...", "!?!", "🦈", "\u200B", "\u0301", "\uFEFF“”"})
   @DisplayName("Should keep the title when no letter or digit remains")
