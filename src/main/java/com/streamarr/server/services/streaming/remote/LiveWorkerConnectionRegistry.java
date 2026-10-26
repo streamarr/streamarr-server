@@ -773,7 +773,7 @@ final class LiveWorkerConnectionRegistry {
         pending
             .result()
             .completeExceptionally(
-                new ProbeExecutionException(
+                new ProbeContractViolationException(
                     ItemFailureReason.MISCONFIGURED,
                     "Worker probe reply version mismatch: expected %s, received %s"
                         .formatted(

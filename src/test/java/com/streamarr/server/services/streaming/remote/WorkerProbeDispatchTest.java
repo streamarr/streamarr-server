@@ -10,6 +10,8 @@ import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.junit.jupiter.api.Named.named;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 
+import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.services.streaming.SegmentPublication;
@@ -532,8 +534,11 @@ class WorkerProbeDispatchTest {
 
     assertThatThrownBy(() -> attempt.get(1, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
-        .hasCauseInstanceOf(ProbeExecutionException.class)
-        .hasRootCauseMessage(diagnostic);
+        .hasRootCauseMessage(diagnostic)
+        .cause()
+        .isInstanceOfSatisfying(
+            ProbeContractViolationException.class,
+            failure -> assertThat(failure.reason()).isEqualTo(ItemFailureReason.MISCONFIGURED));
     assertThat(runningProbes(registry, requestedVersion)).isZero();
   }
 
