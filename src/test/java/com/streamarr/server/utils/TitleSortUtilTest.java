@@ -281,7 +281,10 @@ class TitleSortUtilTest {
     "\u0102n Tr\u01B0a, An Trua",
     "\u00C2n Harbor, An Harbor",
     "Th\u00E9 au harem, The au harem",
-    "The\u0301 au harem, The au harem"
+    "The\u0301 au harem, The au harem",
+    "T\u24D7e Harbor, The Harbor",
+    "\u24C9\u24D7\u24D4 Harbor, The Harbor",
+    "\u24B6 Harbor, A Harbor"
   })
   @DisplayName("Should keep the first word in place when only its folded form is an article")
   void shouldKeepFirstWordInPlaceWhenOnlyItsFoldedFormIsAnArticle(String title, String expected) {
