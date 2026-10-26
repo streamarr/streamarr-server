@@ -72,10 +72,27 @@ class RemoteMediaSourceMapperTest {
   void shouldKeySourceRelativeToRootWhenRootIsConfiguredInOtherLetterCase() throws IOException {
     try (var caseIgnoring = Jimfs.newFileSystem(Configuration.osX())) {
       var movies = Files.createDirectories(caseIgnoring.getPath("/media/Movies"));
-      var caseMapper =
+      var caseIgnoringMapper =
           new RemoteMediaSourceMapper(SOURCE_NAMESPACE_ID, caseIgnoring.getPath("/MEDIA/movies"));
 
-      var source = caseMapper.map(movies.resolve("Feature (2020).mkv"));
+      var source = caseIgnoringMapper.map(movies.resolve("Feature (2020).mkv"));
+
+      assertThat(source.getRelativeKey()).isEqualTo("Feature (2020).mkv");
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should key the source relative to the root when the root appears in other letter case after"
+          + " the mapper starts")
+  void shouldKeySourceRelativeToRootWhenRootAppearsInOtherLetterCaseAfterMapperStarts()
+      throws IOException {
+    try (var caseIgnoring = Jimfs.newFileSystem(Configuration.osX())) {
+      var lateMapper =
+          new RemoteMediaSourceMapper(SOURCE_NAMESPACE_ID, caseIgnoring.getPath("/MEDIA/movies"));
+      var movies = Files.createDirectories(caseIgnoring.getPath("/media/Movies"));
+
+      var source = lateMapper.map(movies.resolve("Feature (2020).mkv"));
 
       assertThat(source.getRelativeKey()).isEqualTo("Feature (2020).mkv");
     }

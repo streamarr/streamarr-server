@@ -13,39 +13,49 @@ import java.util.UUID;
 final class RemoteMediaSourceMapper {
 
   private final UUID sourceNamespaceId;
-  private final Path sourceRoot;
+  private final Path configuredRoot;
+  private volatile Path spelledRoot;
 
   RemoteMediaSourceMapper(UUID sourceNamespaceId, Path sourceRoot) {
     this.sourceNamespaceId = sourceNamespaceId;
-    this.sourceRoot = onDiskSpellingOf(sourceRoot.toAbsolutePath().normalize());
-  }
-
-  // Libraries store their paths as the file system spells them, so the root is spelled the same
-  // way. A root that does not exist or cannot be listed holds no library, so it stays as
-  // configured.
-  private static Path onDiskSpellingOf(Path root) {
-    try {
-      return OnDiskSpelling.of(root);
-    } catch (IOException _) {
-      return root;
-    }
+    this.configuredRoot = sourceRoot.toAbsolutePath().normalize();
   }
 
   MediaSourceRef map(Path sourcePath) {
+    var root = sourceRoot();
     var normalized = sourcePath.toAbsolutePath().normalize();
-    if (!normalized.startsWith(sourceRoot) || normalized.equals(sourceRoot)) {
+    if (!normalized.startsWith(root) || normalized.equals(root)) {
       throw new TranscodeException("Media source is outside the configured source namespace");
     }
 
     return MediaSourceRef.newBuilder()
         .setSourceNamespaceId(toProto(sourceNamespaceId))
-        .setRelativeKey(relativeKey(normalized))
+        .setRelativeKey(relativeKey(root, normalized))
         .build();
   }
 
-  private String relativeKey(Path normalized) {
+  // Libraries store their paths as the file system spells them, so the root is spelled the same
+  // way. A root that is not mounted yet, or cannot be listed, holds no library. It keeps its
+  // configured spelling until its stored spelling can be read.
+  private Path sourceRoot() {
+    var root = spelledRoot;
+    if (root != null) {
+      return root;
+    }
+
     try {
-      return FilepathCodec.relativePathOf(sourceRoot, normalized);
+      root = OnDiskSpelling.of(configuredRoot);
+    } catch (IOException _) {
+      return configuredRoot;
+    }
+
+    spelledRoot = root;
+    return root;
+  }
+
+  private static String relativeKey(Path root, Path normalized) {
+    try {
+      return FilepathCodec.relativePathOf(root, normalized);
     } catch (IllegalArgumentException exception) {
       throw new TranscodeException("Media source name is not valid UTF-8", exception);
     }
