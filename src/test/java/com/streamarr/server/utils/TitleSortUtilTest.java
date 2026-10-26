@@ -51,6 +51,23 @@ class TitleSortUtilTest {
   }
 
   @ParameterizedTest
+  @CsvSource(
+      delimiterString = " -> ",
+      quoteCharacter = '%',
+      value = {
+        "The … -> The …",
+        "A ... -> A ...",
+        "The ! -> The !",
+        "An “” -> An “”",
+        "The ​ -> The ​",
+        "“The …” -> The …”"
+      })
+  @DisplayName("Should keep the article in place when no letter or digit follows it")
+  void shouldKeepArticleInPlaceWhenNoLetterOrDigitFollowsIt(String title, String expected) {
+    assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
+  }
+
+  @ParameterizedTest
   @CsvSource({
     "Élite Harbor, Elite Harbor",
     "Ōkura Nights, Okura Nights",

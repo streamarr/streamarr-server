@@ -71,11 +71,15 @@ public class TitleSortUtil {
 
   private static String moveLeadingArticle(String title) {
     for (var article : ARTICLES) {
-      if (title.length() > article.length() && title.startsWith(article)) {
+      if (title.startsWith(article) && hasLetterOrDigit(title.substring(article.length()))) {
         return title.substring(article.length()) + ", " + article.trim();
       }
     }
 
     return title;
+  }
+
+  private static boolean hasLetterOrDigit(String text) {
+    return text.codePoints().anyMatch(Character::isLetterOrDigit);
   }
 }
