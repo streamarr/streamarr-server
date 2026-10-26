@@ -250,24 +250,40 @@ class RemoteProbeResultMapperTest {
   }
 
   @ParameterizedTest
-  @MethodSource("unknownOutcomes")
-  @DisplayName("Should report a temporary failure when the worker outcome is unknown or missing")
-  void shouldReportATemporaryFailureWhenTheWorkerOutcomeIsUnknownOrMissing(
+  @MethodSource("unspecifiedOutcomes")
+  @DisplayName(
+      "Should reject the result as a contract violation when the worker outcome is unspecified or"
+          + " missing")
+  void shouldRejectTheResultAsAContractViolationWhenTheWorkerOutcomeIsUnspecifiedOrMissing(
       ProbeAttemptResult result) {
     var mapper = new RemoteProbeResultMapper();
     var report = reportOf(result);
 
     assertThatThrownBy(() -> mapper.map(report))
         .isInstanceOfSatisfying(
-            ProbeExecutionException.class,
+            ProbeContractViolationException.class,
             exception -> assertThat(exception.reason()).isEqualTo(ItemFailureReason.TEMPORARY));
   }
 
-  private static Stream<ProbeAttemptResult> unknownOutcomes() {
+  private static Stream<ProbeAttemptResult> unspecifiedOutcomes() {
     return Stream.of(
         ProbeAttemptResult.getDefaultInstance(),
-        ProbeAttemptResult.newBuilder().setFailureValue(0).build(),
-        ProbeAttemptResult.newBuilder().setFailureValue(999).build());
+        ProbeAttemptResult.newBuilder().setFailureValue(0).build());
+  }
+
+  // A newer worker may report a failure that this server does not know yet.
+  @Test
+  @DisplayName(
+      "Should report a retryable temporary failure when the worker failure is unrecognized")
+  void shouldReportARetryableTemporaryFailureWhenTheWorkerFailureIsUnrecognized() {
+    var mapper = new RemoteProbeResultMapper();
+    var report = reportOf(ProbeAttemptResult.newBuilder().setFailureValue(999).build());
+
+    assertThatThrownBy(() -> mapper.map(report))
+        .isNotInstanceOf(ProbeContractViolationException.class)
+        .isInstanceOfSatisfying(
+            ProbeExecutionException.class,
+            exception -> assertThat(exception.reason()).isEqualTo(ItemFailureReason.TEMPORARY));
   }
 
   @Test

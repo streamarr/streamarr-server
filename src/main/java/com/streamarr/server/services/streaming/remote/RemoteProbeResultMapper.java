@@ -58,7 +58,10 @@ final class RemoteProbeResultMapper {
           throw retryable(ItemFailureReason.SOURCE_INACCESSIBLE, result);
       case PROBE_FAILURE_UNSUPPORTED_VERSION ->
           throw retryable(ItemFailureReason.MISCONFIGURED, result);
-      default -> throw retryable(ItemFailureReason.TEMPORARY, result);
+      case PROBE_FAILURE_UNSPECIFIED ->
+          throw contractViolation("Worker probe result reports no outcome");
+      case PROBE_FAILURE_EXECUTION_FAILED, UNRECOGNIZED ->
+          throw retryable(ItemFailureReason.TEMPORARY, result);
     };
   }
 
