@@ -497,14 +497,6 @@ final class LiveWorkerConnectionRegistry {
     shuttingDown = true;
   }
 
-  private ProbeCancelReason reasonForCancelledProbe() {
-    if (shuttingDown) {
-      return ProbeCancelReason.PROBE_CANCEL_REASON_SERVER_SHUTDOWN;
-    }
-
-    return ProbeCancelReason.PROBE_CANCEL_REASON_OTHER;
-  }
-
   synchronized void close() {
     var closed = List.copyOf(connections.values());
     connections.clear();
@@ -713,6 +705,14 @@ final class LiveWorkerConnectionRegistry {
       }
 
       return probeTimeoutNanos;
+    }
+
+    private ProbeCancelReason reasonForCancelledProbe() {
+      if (shuttingDown) {
+        return ProbeCancelReason.PROBE_CANCEL_REASON_SERVER_SHUTDOWN;
+      }
+
+      return ProbeCancelReason.PROBE_CANCEL_REASON_OTHER;
     }
 
     private void cancelProbeIfRequested(PendingProbe pending, ProbeCancelReason reason) {
