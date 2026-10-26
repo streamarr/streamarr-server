@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import com.github.kagkarlsson.scheduler.jdbc.JdbcTaskRepository;
 import com.github.kagkarlsson.scheduler.jdbc.PostgreSqlJdbcCustomization;
-import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fakes.MutableNanoClock;
 import com.streamarr.server.services.probe.PlaybackProbeClaims;
 import com.streamarr.server.services.streaming.ProbeCapacity;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -37,7 +37,7 @@ class ProbeCapacityJdbcCustomizationTest {
   private final PostgreSqlJdbcCustomization genericLockAndFetch =
       new PostgreSqlJdbcCustomization(true, false);
   private final PlaybackProbeClaims playbackProbeClaims =
-      new PlaybackProbeClaims(new MutableClock(), new SimpleMeterRegistry());
+      new PlaybackProbeClaims(new MutableNanoClock(), new SimpleMeterRegistry());
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("probeClaims")

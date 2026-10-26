@@ -25,7 +25,9 @@ import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fakes.MutableNanoClock;
 import com.streamarr.server.services.concurrency.CappedExponentialBackoff;
+import com.streamarr.server.services.concurrency.NanoClock;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
@@ -70,6 +72,7 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
   private static final int QUEUED_BY_SCAN = 20;
   private static final long BOUND_SECONDS = 30;
   private static final ConnectedProbeWorkers PROBE_WORKERS = new ConnectedProbeWorkers();
+  private static final MutableNanoClock ELAPSED = new MutableNanoClock();
 
   @Autowired private StreamingService streamingService;
   @Autowired private ProbeTaskRequests scheduling;
@@ -81,6 +84,7 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
   @TestBean SegmentStore segmentStore;
   @TestBean PlaybackAuthorityGate authorityGate;
   @TestBean ProbeWorkers probeWorkers;
+  @TestBean NanoClock nanoClock;
 
   static TranscodeExecutor transcodeExecutor() {
     return new FakeTranscodeExecutor();
@@ -96,6 +100,10 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
 
   static ProbeWorkers probeWorkers() {
     return PROBE_WORKERS;
+  }
+
+  static NanoClock nanoClock() {
+    return ELAPSED;
   }
 
   private final HeldWorker worker = new HeldWorker();
@@ -170,7 +178,7 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
         file,
         attempt -> {
           if (attempt == 1) {
-            clock.advance(streamingProperties.probeWaitLimit());
+            ELAPSED.advance(streamingProperties.probeWaitLimit());
             throw new ProbeWorkersBusyException("All compatible workers are busy");
           }
 

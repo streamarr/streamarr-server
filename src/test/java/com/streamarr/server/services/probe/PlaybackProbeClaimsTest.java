@@ -3,7 +3,7 @@ package com.streamarr.server.services.probe;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
-import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fakes.MutableNanoClock;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
@@ -22,9 +22,9 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("Playback Probe Claims Tests")
 class PlaybackProbeClaimsTest {
 
-  private final MutableClock clock = new MutableClock();
+  private final MutableNanoClock nanoClock = new MutableNanoClock();
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
-  private final PlaybackProbeClaims claims = new PlaybackProbeClaims(clock, meterRegistry);
+  private final PlaybackProbeClaims claims = new PlaybackProbeClaims(nanoClock, meterRegistry);
   private final UUID mediaFileId = UUID.randomUUID();
 
   @Test
@@ -32,8 +32,8 @@ class PlaybackProbeClaimsTest {
       "Should time the wait from the playback request to the claim when the scheduler claims the"
           + " probe that playback waits for")
   void shouldTimeTheWaitFromThePlaybackRequestToTheClaimWhenTheSchedulerClaimsTheProbe() {
-    claims.waitStarted(mediaFileId, clock.instant());
-    clock.advance(Duration.ofSeconds(4));
+    claims.waitStarted(mediaFileId);
+    nanoClock.advance(Duration.ofSeconds(4));
 
     try (var _ = claims.claimed(mediaFileId)) {
       assertThat(queueLatency().count()).isOne();
@@ -45,10 +45,10 @@ class PlaybackProbeClaimsTest {
   @DisplayName(
       "Should time one wait from the earliest request when two viewers wait for the same probe")
   void shouldTimeOneWaitFromTheEarliestRequestWhenTwoViewersWaitForTheSameProbe() {
-    claims.waitStarted(mediaFileId, clock.instant());
-    clock.advance(Duration.ofSeconds(1));
-    claims.waitStarted(mediaFileId, clock.instant());
-    clock.advance(Duration.ofSeconds(2));
+    claims.waitStarted(mediaFileId);
+    nanoClock.advance(Duration.ofSeconds(1));
+    claims.waitStarted(mediaFileId);
+    nanoClock.advance(Duration.ofSeconds(2));
 
     try (var _ = claims.claimed(mediaFileId)) {
       assertThat(queueLatency().count()).isOne();
@@ -59,8 +59,8 @@ class PlaybackProbeClaimsTest {
   @Test
   @DisplayName("Should time no wait when the scheduler claims a probe that no playback waits for")
   void shouldTimeNoWaitWhenTheSchedulerClaimsAProbeThatNoPlaybackWaitsFor() {
-    claims.waitStarted(mediaFileId, clock.instant()).close();
-    claims.waitStarted(mediaFileId, clock.instant()).close();
+    claims.waitStarted(mediaFileId).close();
+    claims.waitStarted(mediaFileId).close();
 
     try (var _ = claims.claimed(mediaFileId)) {
       assertThat(queueLatency().count()).isZero();
@@ -70,8 +70,8 @@ class PlaybackProbeClaimsTest {
   @Test
   @DisplayName("Should keep timing the wait when one of two viewers stops waiting")
   void shouldKeepTimingTheWaitWhenOneOfTwoViewersStopsWaiting() {
-    claims.waitStarted(mediaFileId, clock.instant()).close();
-    claims.waitStarted(mediaFileId, clock.instant());
+    claims.waitStarted(mediaFileId).close();
+    claims.waitStarted(mediaFileId);
 
     try (var _ = claims.claimed(mediaFileId)) {
       assertThat(queueLatency().count()).isOne();
@@ -82,13 +82,13 @@ class PlaybackProbeClaimsTest {
   @DisplayName(
       "Should time a later viewer's wait when an earlier viewer of a deferred probe stops waiting")
   void shouldTimeALaterViewersWaitWhenAnEarlierViewerOfADeferredProbeStopsWaiting() {
-    var earlier = claims.waitStarted(mediaFileId, clock.instant());
+    var earlier = claims.waitStarted(mediaFileId);
     claims.claimed(mediaFileId).close();
-    clock.advance(Duration.ofSeconds(5));
-    claims.waitStarted(mediaFileId, clock.instant());
-    clock.advance(Duration.ofSeconds(1));
+    nanoClock.advance(Duration.ofSeconds(5));
+    claims.waitStarted(mediaFileId);
+    nanoClock.advance(Duration.ofSeconds(1));
     earlier.close();
-    clock.advance(Duration.ofSeconds(2));
+    nanoClock.advance(Duration.ofSeconds(2));
 
     try (var _ = claims.claimed(mediaFileId)) {
       assertThat(queueLatency().count()).isEqualTo(2);
@@ -124,14 +124,12 @@ class PlaybackProbeClaimsTest {
   }
 
   static Stream<Arguments> missingArguments() {
-    var clock = new MutableClock();
+    var nanoClock = new MutableNanoClock();
     var meterRegistry = new SimpleMeterRegistry();
-    var mediaFileId = UUID.randomUUID();
     return Stream.of(
-        missing("clock", _ -> new PlaybackProbeClaims(null, meterRegistry)),
-        missing("meterRegistry", _ -> new PlaybackProbeClaims(clock, null)),
-        missing("mediaFileId", claims -> claims.waitStarted(null, clock.instant())),
-        missing("requestedAt", claims -> claims.waitStarted(mediaFileId, null)),
+        missing("nanoClock", _ -> new PlaybackProbeClaims(null, meterRegistry)),
+        missing("meterRegistry", _ -> new PlaybackProbeClaims(nanoClock, null)),
+        missing("mediaFileId", claims -> claims.waitStarted(null)),
         missing("mediaFileId", claims -> claims.claimed(null)));
   }
 

@@ -23,6 +23,7 @@ import com.streamarr.server.domain.task.ProbeState;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fakes.MutableNanoClock;
 import com.streamarr.server.services.events.library.MediaFileProbeTaskRequested;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.probe.PersistedProbeReader;
@@ -30,9 +31,9 @@ import com.streamarr.server.services.probe.PlaybackProbeClaims;
 import com.streamarr.server.services.probe.ProbeAttemptEnds;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -43,6 +44,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -62,11 +64,19 @@ class PlaybackProbeServiceTest {
 
   private final UUID mediaFileId = UUID.randomUUID();
   private final MutableClock clock = new MutableClock();
+  private final MutableNanoClock nanoClock = new MutableNanoClock();
+  private final AtomicReference<Runnable> onNextProbeStateRead = new AtomicReference<>(() -> {});
   private final FakeMediaFileContainerInfoRepository outcomes =
-      new FakeMediaFileContainerInfoRepository();
+      new FakeMediaFileContainerInfoRepository() {
+        @Override
+        public synchronized List<ProbeState> findProbeStates(Collection<UUID> mediaFileIds) {
+          onNextProbeStateRead.getAndSet(() -> {}).run();
+          return super.findProbeStates(mediaFileIds);
+        }
+      };
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
   private final ProbeAttemptEnds attemptEnds = new ProbeAttemptEnds(meterRegistry);
-  private final PlaybackProbeClaims claims = new PlaybackProbeClaims(clock, meterRegistry);
+  private final PlaybackProbeClaims claims = new PlaybackProbeClaims(nanoClock, meterRegistry);
   private final CapturingEventPublisher events = new CapturingEventPublisher();
   private final CompletableFuture<Void> probeRequested = new CompletableFuture<>();
   private final ExecutorService playbackThreads = Executors.newVirtualThreadPerTaskExecutor();
@@ -158,7 +168,7 @@ class PlaybackProbeServiceTest {
       var playback = readInBackground(service());
       probeRequested.get(10, TimeUnit.SECONDS);
 
-      clock.advance(Duration.ofSeconds(3));
+      elapse(Duration.ofSeconds(3));
       outcomes.store(success());
       attemptEnds.signalEnd(mediaFileId);
 
@@ -173,15 +183,37 @@ class PlaybackProbeServiceTest {
 
     @Test
     @DisplayName(
+        "Should time queue latency in elapsed time when the system clock steps back before the"
+            + " claim")
+    void shouldTimeQueueLatencyInElapsedTimeWhenTheSystemClockStepsBackBeforeTheClaim()
+        throws Exception {
+      var playback = readInBackground(service());
+      probeRequested.get(10, TimeUnit.SECONDS);
+
+      clock.advance(Duration.ofHours(-1));
+      nanoClock.advance(Duration.ofSeconds(2));
+      try (var _ = claims.claimed(mediaFileId)) {
+        outcomes.store(success());
+        attemptEnds.signalEnd(mediaFileId);
+        playback.get(10, TimeUnit.SECONDS);
+      }
+
+      assertThat(meterRegistry.get("streamarr.playback.probe_queue_latency").timer())
+          .returns(1L, Timer::count)
+          .returns(2.0, timer -> timer.totalTime(TimeUnit.SECONDS));
+    }
+
+    @Test
+    @DisplayName(
         "Should time queue latency from the playback request when the scheduler claims the probe")
     void shouldTimeQueueLatencyFromThePlaybackRequestWhenTheSchedulerClaimsTheProbe()
         throws Exception {
       var playback = readInBackground(service());
       probeRequested.get(10, TimeUnit.SECONDS);
 
-      clock.advance(Duration.ofSeconds(2));
+      elapse(Duration.ofSeconds(2));
       try (var _ = claims.claimed(mediaFileId)) {
-        clock.advance(Duration.ofSeconds(5));
+        elapse(Duration.ofSeconds(5));
         outcomes.store(success());
         attemptEnds.signalEnd(mediaFileId);
         playback.get(10, TimeUnit.SECONDS);
@@ -215,7 +247,7 @@ class PlaybackProbeServiceTest {
       var playback = readInBackground(service());
       probeRequested.get(10, TimeUnit.SECONDS);
 
-      clock.advance(WAIT_LIMIT);
+      nanoClock.advance(WAIT_LIMIT);
       attemptEnds.signalEnd(mediaFileId);
 
       assertThat(playback.get(10, TimeUnit.SECONDS)).isEqualTo(notReady());
@@ -227,11 +259,67 @@ class PlaybackProbeServiceTest {
     }
 
     @Test
-    @DisplayName("Should refuse as not ready when no attempt ends before the limit")
-    void shouldRefuseAsNotReadyWhenNoAttemptEndsBeforeTheLimit() throws Exception {
+    @DisplayName(
+        "Should refuse as not ready at the limit when the system clock steps back during the wait")
+    void shouldRefuseAsNotReadyAtTheLimitWhenTheSystemClockStepsBackDuringTheWait()
+        throws Exception {
+      var playback = readInBackground(service());
+      probeRequested.get(10, TimeUnit.SECONDS);
+
+      clock.advance(Duration.ofHours(-1));
+      nanoClock.advance(WAIT_LIMIT);
+      attemptEnds.signalEnd(mediaFileId);
+
+      assertThat(playback.get(10, TimeUnit.SECONDS)).isEqualTo(notReady());
+      assertThat(waitTimer("not_ready").totalTime(TimeUnit.SECONDS))
+          .isEqualTo(WAIT_LIMIT.toSeconds());
+    }
+
+    @Test
+    @DisplayName(
+        "Should start playback from the outcome read at the limit when the limit passes before the"
+            + " wait")
+    void shouldStartPlaybackFromTheOutcomeReadAtTheLimitWhenTheLimitPassesBeforeTheWait()
+        throws Exception {
+      // The outcome arrives and the limit passes after the wait first reads the stored outcome.
+      onNextProbeStateRead.set(
+          () -> {
+            outcomes.store(success());
+            nanoClock.advance(WAIT_LIMIT);
+          });
+
+      var playback = readInBackground(service()).get(10, TimeUnit.SECONDS);
+
+      assertThat(probeOf(playback).videoCodec()).isEqualTo("h264");
+      assertThat(probeWaits()).isZero();
+    }
+
+    @Test
+    @DisplayName(
+        "Should start playback from the outcome read at the limit when no attempt end arrives")
+    void shouldStartPlaybackFromTheOutcomeReadAtTheLimitWhenNoAttemptEndArrives() throws Exception {
       var service =
           serviceBuilder()
-              .clock(Clock.systemUTC())
+              .properties(
+                  StreamingProperties.builder().probeWaitLimit(Duration.ofMillis(1)).build())
+              .build();
+      // The outcome arrives after the wait first reads the stored outcome, and no end follows.
+      onNextProbeStateRead.set(() -> outcomes.store(success()));
+
+      var playback = readInBackground(service).get(10, TimeUnit.SECONDS);
+
+      assertThat(probeOf(playback).videoCodec()).isEqualTo("h264");
+      assertThat(probeWaits()).isZero();
+    }
+
+    @Test
+    @DisplayName(
+        "Should refuse as not ready at the limit when no attempt ends and the system clock stands"
+            + " still")
+    void shouldRefuseAsNotReadyAtTheLimitWhenNoAttemptEndsAndTheSystemClockStandsStill()
+        throws Exception {
+      var service =
+          serviceBuilder()
               .properties(
                   StreamingProperties.builder().probeWaitLimit(Duration.ofMillis(1)).build())
               .build();
@@ -409,9 +497,15 @@ class PlaybackProbeServiceTest {
         .probeWorkers(_ -> true)
         .attemptEnds(attemptEnds)
         .clock(clock)
+        .nanoClock(nanoClock)
         .meterRegistry(meterRegistry)
         .playbackProbeClaims(claims)
         .properties(StreamingProperties.builder().probeWaitLimit(WAIT_LIMIT).build());
+  }
+
+  private void elapse(Duration duration) {
+    clock.advance(duration);
+    nanoClock.advance(duration);
   }
 
   private Timer waitTimer(String outcome) {

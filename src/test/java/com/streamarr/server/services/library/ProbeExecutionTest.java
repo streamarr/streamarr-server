@@ -43,7 +43,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -68,7 +67,7 @@ class ProbeExecutionTest {
       new FakeMediaFileContainerInfoRepository();
   private final FakeFfprobeService producer = new FakeFfprobeService();
   private final PlaybackProbeClaims playbackProbeClaims =
-      new PlaybackProbeClaims(Clock.systemUTC(), new SimpleMeterRegistry());
+      new PlaybackProbeClaims(System::nanoTime, new SimpleMeterRegistry());
   private final CapturingKeyframePacketScanRequests packetScans =
       new CapturingKeyframePacketScanRequests();
   private final FakeTransactionManager transactionManager = new FakeTransactionManager();

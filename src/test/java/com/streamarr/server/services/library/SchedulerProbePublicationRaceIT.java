@@ -112,7 +112,7 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
             .packetScans(new CapturingKeyframePacketScanRequests())
             .transactionManager(transactionManager)
             .playbackProbeClaims(
-                new PlaybackProbeClaims(Clock.systemUTC(), new SimpleMeterRegistry()))
+                new PlaybackProbeClaims(System::nanoTime, new SimpleMeterRegistry()))
             .build();
     task = MediaProbeTask.create(probeExecution, probeTaskCompletion);
     client =
