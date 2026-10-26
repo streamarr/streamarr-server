@@ -18,6 +18,7 @@ import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeCancelReason;
 import com.streamarr.transcode.v1.ProbeFailure;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
@@ -603,6 +604,7 @@ class WorkerProbeDispatchTest {
         CancelProbeCommand.newBuilder()
             .setTarget(registration.getWorker())
             .setProbeAttemptId(request.getProbeAttemptId())
+            .setReason(ProbeCancelReason.PROBE_CANCEL_REASON_OTHER)
             .build();
     assertThat(responses.values.getLast().getCancelProbe()).isEqualTo(expected);
     assertThat(runningProbes(registry, 1)).isEqualTo(1);

@@ -20,6 +20,7 @@ import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeCancelReason;
 import com.streamarr.transcode.v1.ProbeCapacityChanged;
 import com.streamarr.transcode.v1.ProbeFailure;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
@@ -669,13 +670,16 @@ final class LiveWorkerConnectionRegistry {
           .whenComplete(
               (_, failure) -> {
                 if (pending.result().isCancelled()) {
-                  cancelProbeIfRequested(pending);
+                  cancelProbeIfRequested(pending, ProbeCancelReason.PROBE_CANCEL_REASON_OTHER);
                   return;
                 }
 
                 if (failure instanceof TimeoutException) {
                   // Never run transport callbacks on CompletableFuture's shared timeout thread.
-                  PROBE_DEADLINE_CALLBACKS.execute(() -> cancelProbeIfRequested(pending));
+                  PROBE_DEADLINE_CALLBACKS.execute(
+                      () ->
+                          cancelProbeIfRequested(
+                              pending, ProbeCancelReason.PROBE_CANCEL_REASON_TIMEOUT));
                 }
               });
       var command = StartProbeCommand.newBuilder().setTarget(worker).setRequest(request).build();
@@ -697,7 +701,7 @@ final class LiveWorkerConnectionRegistry {
       return probeTimeoutNanos;
     }
 
-    private void cancelProbeIfRequested(PendingProbe pending) {
+    private void cancelProbeIfRequested(PendingProbe pending, ProbeCancelReason reason) {
       // Publication may hold the connection monitor. The recovery deadline must not wait for it.
       pending
           .terminated()
@@ -717,6 +721,7 @@ final class LiveWorkerConnectionRegistry {
             CancelProbeCommand.newBuilder()
                 .setTarget(worker)
                 .setProbeAttemptId(pending.request().getProbeAttemptId())
+                .setReason(reason)
                 .build();
         trySend(EstablishWorkerSessionResponse.newBuilder().setCancelProbe(command).build());
       }
