@@ -94,6 +94,7 @@ final class LiveWorkerConnectionRegistry {
   private final WorkerCapacityMeters capacityMeters;
   private final ProbeDeferralWarnings deferralWarnings =
       new ProbeDeferralWarnings(DEFERRAL_WARNING_INTERVAL);
+  private volatile boolean shuttingDown;
 
   @Builder
   LiveWorkerConnectionRegistry(
@@ -491,6 +492,19 @@ final class LiveWorkerConnectionRegistry {
     return Optional.ofNullable(terminalFailures.get(streamSessionId));
   }
 
+  /** From this call on, a probe cancelled before its timeout tells its worker of the shutdown. */
+  void beginShutdown() {
+    shuttingDown = true;
+  }
+
+  private ProbeCancelReason reasonForCancelledProbe() {
+    if (shuttingDown) {
+      return ProbeCancelReason.PROBE_CANCEL_REASON_SERVER_SHUTDOWN;
+    }
+
+    return ProbeCancelReason.PROBE_CANCEL_REASON_OTHER;
+  }
+
   synchronized void close() {
     var closed = List.copyOf(connections.values());
     connections.clear();
@@ -670,7 +684,7 @@ final class LiveWorkerConnectionRegistry {
           .whenComplete(
               (_, failure) -> {
                 if (pending.result().isCancelled()) {
-                  cancelProbeIfRequested(pending, ProbeCancelReason.PROBE_CANCEL_REASON_OTHER);
+                  cancelProbeIfRequested(pending, reasonForCancelledProbe());
                   return;
                 }
 

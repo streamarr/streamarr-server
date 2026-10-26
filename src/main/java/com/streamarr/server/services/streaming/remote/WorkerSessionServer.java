@@ -22,9 +22,12 @@ import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.ApplicationListener;
+import org.springframework.context.event.ContextClosedEvent;
 
 @Slf4j
-public final class WorkerSessionServer implements AutoCloseable {
+public final class WorkerSessionServer
+    implements AutoCloseable, ApplicationListener<ContextClosedEvent> {
 
   private static final int MAXIMUM_CONCURRENT_CALLS_PER_CONNECTION = 33;
   private static final int MAXIMUM_INBOUND_MESSAGE_BYTES = 128 * 1024;
@@ -228,6 +231,16 @@ public final class WorkerSessionServer implements AutoCloseable {
     if (!started) {
       throw new IllegalStateException("Worker session server is not started");
     }
+  }
+
+  /**
+   * Starts the server's shutdown. Spring publishes the event before it stops the schedulers whose
+   * probe threads then stop waiting, so each probe that they cancel tells its worker that the
+   * server is shutting down. A probe that reaches its timeout still carries the timeout reason.
+   */
+  @Override
+  public void onApplicationEvent(@NonNull ContextClosedEvent event) {
+    workerConnections.beginShutdown();
   }
 
   @Override

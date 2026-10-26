@@ -26,6 +26,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -33,6 +35,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.context.support.GenericApplicationContext;
 
 @Tag("UnitTest")
 @DisplayName("Remote Ffprobe Service Tests")
@@ -172,6 +175,61 @@ class RemoteFfprobeServiceTest {
               .isEqualTo(cancel(request, ProbeCancelReason.PROBE_CANCEL_REASON_OTHER));
         }
       }
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell the worker that the server is shutting down when the application stops a probe during shutdown")
+  void shouldTellWorkerServerIsShuttingDownWhenApplicationStopsProbeDuringShutdown()
+      throws Exception {
+    try (var server = server(serverConfigurationBuilder().build())) {
+      server.start();
+      try (var worker = worker(server)) {
+        var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, sourceRoot());
+        var request = request(ProbePriority.BACKGROUND);
+
+        try (var probe = BoundedTask.start(() -> service.probe(request))) {
+          assertThat(worker.nextResponse().hasStartProbe()).isTrue();
+          var stopping = new ProbeStoppedAtShutdown(probe, worker);
+
+          try (var context = new GenericApplicationContext()) {
+            context.registerBean("workerSessionServer", WorkerSessionServer.class, () -> server);
+            context.registerBean(
+                ProbeStoppedAtShutdown.class,
+                () -> stopping,
+                definition -> definition.setDependsOn("workerSessionServer"));
+            context.refresh();
+          }
+
+          assertThatThrownBy(() -> probe.await(BOUND)).isInstanceOf(ProbeCancelledException.class);
+          assertThat(
+                  withoutTarget(
+                      stopping.commandSentAtShutdown().get(BOUND.toNanos(), TimeUnit.NANOSECONDS)))
+              .isEqualTo(cancel(request, ProbeCancelReason.PROBE_CANCEL_REASON_SERVER_SHUTDOWN));
+        }
+      }
+    }
+  }
+
+  /**
+   * Stops a probe as a stopping scheduler does. The context destroys this bean before the server
+   * that it depends on, so the probe stops while the worker's session is still open.
+   */
+  private record ProbeStoppedAtShutdown(
+      BoundedTask<?> probe,
+      LoopbackProbeWorker worker,
+      CompletableFuture<CancelProbeCommand> commandSentAtShutdown)
+      implements AutoCloseable {
+
+    private ProbeStoppedAtShutdown(BoundedTask<?> probe, LoopbackProbeWorker worker) {
+      this(probe, worker, new CompletableFuture<>());
+    }
+
+    @Override
+    public void close() throws InterruptedException {
+      probe.interrupt();
+      commandSentAtShutdown.complete(worker.nextResponse().getCancelProbe());
     }
   }
 
