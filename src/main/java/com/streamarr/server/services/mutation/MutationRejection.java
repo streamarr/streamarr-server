@@ -10,7 +10,7 @@ import java.util.stream.Collectors;
  */
 public class MutationRejection extends RuntimeException {
 
-  private final transient List<?> rejections;
+  private final transient List<Object> rejections;
 
   public MutationRejection(Object rejection) {
     this(List.of(rejection));
@@ -29,7 +29,7 @@ public class MutationRejection extends RuntimeException {
     return new MutationRejection(rejections);
   }
 
-  List<?> rejections() {
+  List<Object> rejections() {
     return rejections;
   }
 }
