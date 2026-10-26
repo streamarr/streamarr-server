@@ -38,7 +38,8 @@ public class SecurityExceptionFileSystem extends FileSystem {
 
   private enum Denial {
     SECURITY_MANAGER,
-    UNREADABLE
+    UNREADABLE,
+    UNLISTABLE_FOLDERS
   }
 
   public SecurityExceptionFileSystem(FileSystem delegate) {
@@ -53,6 +54,14 @@ public class SecurityExceptionFileSystem extends FileSystem {
 
   public static SecurityExceptionFileSystem reportingUnreadable(FileSystem delegate) {
     return new SecurityExceptionFileSystem(delegate, Denial.UNREADABLE);
+  }
+
+  /**
+   * Fails {@link Path#toRealPath}, as macOS does when a folder above the path can be searched but
+   * not listed. Access checks pass.
+   */
+  public static SecurityExceptionFileSystem unlistingFolders(FileSystem delegate) {
+    return new SecurityExceptionFileSystem(delegate, Denial.UNLISTABLE_FOLDERS);
   }
 
   @Override
@@ -209,6 +218,10 @@ public class SecurityExceptionFileSystem extends FileSystem {
 
     @Override
     public Path toRealPath(LinkOption... options) throws IOException {
+      if (fileSystem.denial == Denial.UNLISTABLE_FOLDERS) {
+        throw new AccessDeniedException(toString());
+      }
+
       return new WrappedPath(delegate.toRealPath(options), fileSystem);
     }
 
@@ -273,6 +286,11 @@ public class SecurityExceptionFileSystem extends FileSystem {
 
     @Override
     public void checkAccess(Path path, AccessMode... modes) throws IOException {
+      if (fileSystem.denial == Denial.UNLISTABLE_FOLDERS) {
+        delegate.checkAccess(unwrap(path), modes);
+        return;
+      }
+
       if (fileSystem.denial == Denial.UNREADABLE && modes.length == 0) {
         delegate.checkAccess(unwrap(path), modes);
         return;
