@@ -1086,7 +1086,9 @@ class LibraryManagementServiceTest {
     @DisplayName(
         "Should store the path as the file system spells it when the given path differs in letter"
             + " case on a file system that ignores letter case")
-    void shouldStorePathAsFileSystemSpellsItWhenGivenPathDiffersInLetterCase() throws IOException {
+    void
+        shouldStorePathAsFileSystemSpellsItWhenGivenPathDiffersInLetterCaseOnFileSystemThatIgnoresLetterCase()
+            throws IOException {
       // The shared fixture library has a path on another file system.
       fakeLibraryRepository.deleteById(savedLibraryId);
       try (var caseIgnoring = Jimfs.newFileSystem(Configuration.osX())) {
@@ -1107,8 +1109,9 @@ class LibraryManagementServiceTest {
     @DisplayName(
         "Should reject with PathAlreadyRegistered when the path names another library's folder in"
             + " other letter case on a file system that ignores letter case")
-    void shouldRejectWithPathAlreadyRegisteredWhenPathNamesAnotherLibrarysFolderInOtherLetterCase(
-        @TempDir Path media) throws IOException {
+    void
+        shouldRejectWithPathAlreadyRegisteredWhenPathNamesAnotherLibrarysFolderInOtherLetterCaseOnFileSystemThatIgnoresLetterCase(
+            @TempDir Path media) throws IOException {
       var folder = Files.createDirectory(media.resolve("Movies"));
       assumeIgnoresLetterCase(media);
       var service = serviceWith(FileSystems.getDefault());
@@ -1128,7 +1131,7 @@ class LibraryManagementServiceTest {
         "Should reject with an INSIDE overlap when the path names a folder inside another library's"
             + " folder in other letter case on a file system that ignores letter case")
     void
-        shouldRejectWithInsideOverlapWhenPathNamesFolderInsideAnotherLibrarysFolderInOtherLetterCase(
+        shouldRejectWithInsideOverlapWhenPathNamesFolderInsideAnotherLibrarysFolderInOtherLetterCaseOnFileSystemThatIgnoresLetterCase(
             @TempDir Path media) throws IOException {
       var folder = Files.createDirectory(media.resolve("Movies"));
       Files.createDirectory(folder.resolve("Action"));
@@ -1152,7 +1155,7 @@ class LibraryManagementServiceTest {
         "Should reject with a CONTAINS overlap when the path names a folder around another"
             + " library's folder in other letter case on a file system that ignores letter case")
     void
-        shouldRejectWithContainsOverlapWhenPathNamesFolderAroundAnotherLibrarysFolderInOtherLetterCase(
+        shouldRejectWithContainsOverlapWhenPathNamesFolderAroundAnotherLibrarysFolderInOtherLetterCaseOnFileSystemThatIgnoresLetterCase(
             @TempDir Path media) throws IOException {
       var folder = Files.createDirectories(media.resolve("Movies/Action"));
       assumeIgnoresLetterCase(media);
