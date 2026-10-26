@@ -1,7 +1,7 @@
 package com.streamarr.server.graphql.subscriptions;
 
 import com.streamarr.server.domain.Library;
-import com.streamarr.server.graphql.dto.LibraryRemoval;
+import com.streamarr.server.graphql.dto.RemovedLibrary;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
@@ -19,10 +19,10 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Turns committed library changes into Library status, addition and removal payloads. Each event
- * reads the library once, for every subscriber, in a transaction of its own, so the payload carries
- * the library's latest committed row. A write inside a transaction is delivered only after commit;
- * a write without one is delivered at once.
+ * Turns committed library changes into libraryStatusChanged, libraryAdded and libraryRemoved
+ * payloads. Each event reads the library once, for every subscriber, in a transaction of its own,
+ * so the payload carries the library's latest committed row. A write inside a transaction is
+ * delivered only after commit; a write without one is delivered at once.
  *
  * <p>Publication never fails the scan, refresh or commit that triggered it. A failure is counted on
  * {@value #PUBLICATION_FAILURES_METRIC} instead, and subscribers recover current state through
@@ -69,8 +69,9 @@ public class LibraryEventListener {
 
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
   public void onLibraryRemoved(LibraryRemovedEvent event) {
-    var removals = broadcasters.getRemovals();
-    publish(removals, () -> removals.broadcast(new LibraryRemoval(event.libraryId())));
+    var removedLibraries = broadcasters.getRemovedLibraries();
+    publish(
+        removedLibraries, () -> removedLibraries.broadcast(new RemovedLibrary(event.libraryId())));
   }
 
   // Writers on different threads can save one library's status back to back. Reading and

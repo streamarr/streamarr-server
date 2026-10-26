@@ -37,7 +37,7 @@ type LibraryAdministration {
 }
 
 "The receipt for a removed library: the id of the library that no longer exists."
-type LibraryRemoval {
+type RemovedLibrary {
     libraryId: ID!
 }
 
