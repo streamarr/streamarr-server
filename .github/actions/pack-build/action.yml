@@ -41,6 +41,9 @@ runs:
           --env "BP_OCI_REVISION=${image_revision}"
           --env "BP_OCI_VERSION=${INPUT_IMAGE_VERSION}"
           --env "BPE_DEFAULT_BPL_JVM_CLASS_ADJUSTMENT=${metaspace_class_adjustment}%"
+          # Java converts filenames through the locale. Applies only when LANG is unset, so an
+          # operator's LANG, LC_CTYPE or LC_ALL still wins.
+          --env BPE_DEFAULT_LANG=C.UTF-8
           --path .
         )
 
