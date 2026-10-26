@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -95,6 +96,34 @@ class RemoteMediaSourceMapperTest {
       var source = lateMapper.map(movies.resolve("Feature (2020).mkv"));
 
       assertThat(source.getRelativeKey()).isEqualTo("Feature (2020).mkv");
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"/media/movies", "/media/movies2/Feature.mkv", "/media/Feature.mkv"})
+  @DisplayName("Should reject the source when it is the root or lies outside the root")
+  void shouldRejectSourceWhenItIsRootOrLiesOutsideRoot(String sourcePath) {
+    assertThatThrownBy(() -> mapper.map(Path.of(sourcePath)))
+        .isExactlyInstanceOf(TranscodeException.class)
+        .hasMessage("Media source is outside the configured source namespace");
+  }
+
+  @Test
+  @DisplayName(
+      "Should key every source relative to the root when one mapper maps several sources from a"
+          + " root in other letter case")
+  void shouldKeyEverySourceRelativeToRootWhenOneMapperMapsSeveralSourcesFromRootInOtherLetterCase()
+      throws IOException {
+    try (var caseIgnoring = Jimfs.newFileSystem(Configuration.osX())) {
+      var movies = Files.createDirectories(caseIgnoring.getPath("/media/Movies"));
+      var caseIgnoringMapper =
+          new RemoteMediaSourceMapper(SOURCE_NAMESPACE_ID, caseIgnoring.getPath("/MEDIA/movies"));
+
+      var first = caseIgnoringMapper.map(movies.resolve("First.mkv"));
+      var second = caseIgnoringMapper.map(movies.resolve("Second.mkv"));
+
+      assertThat(List.of(first.getRelativeKey(), second.getRelativeKey()))
+          .containsExactly("First.mkv", "Second.mkv");
     }
   }
 }

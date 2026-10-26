@@ -1109,6 +1109,9 @@ class LibraryManagementServiceTest {
       fakeLibraryRepository.deleteById(savedLibraryId);
       try (var caseIgnoring = Jimfs.newFileSystem(configuration)) {
         var folder = Files.createDirectories(caseIgnoring.getPath("/media/Movies"));
+        for (var sibling : List.of("/Archive", "/media/Anime", "/media/Films", "/media/TV")) {
+          Files.createDirectories(caseIgnoring.getPath(sibling));
+        }
 
         var library =
             accepted(
