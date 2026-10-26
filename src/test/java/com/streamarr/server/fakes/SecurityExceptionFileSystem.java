@@ -281,21 +281,18 @@ public class SecurityExceptionFileSystem extends FileSystem {
 
     @Override
     public void checkAccess(Path path, AccessMode... modes) throws IOException {
-      if (fileSystem.denial == Denial.UNLISTABLE_FOLDERS) {
-        delegate.checkAccess(unwrap(path), modes);
-        return;
-      }
+      switch (fileSystem.denial) {
+        case SECURITY_MANAGER ->
+            throw new SecurityException("Simulated security manager denial for path: " + path);
+        case UNREADABLE -> {
+          if (modes.length > 0) {
+            throw new AccessDeniedException(path.toString());
+          }
 
-      if (fileSystem.denial == Denial.UNREADABLE && modes.length == 0) {
-        delegate.checkAccess(unwrap(path), modes);
-        return;
+          delegate.checkAccess(unwrap(path), modes);
+        }
+        case UNLISTABLE_FOLDERS -> delegate.checkAccess(unwrap(path), modes);
       }
-
-      if (fileSystem.denial == Denial.UNREADABLE) {
-        throw new AccessDeniedException(path.toString());
-      }
-
-      throw new SecurityException("Simulated security manager denial for path: " + path);
     }
 
     @Override
