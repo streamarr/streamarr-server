@@ -1,13 +1,12 @@
 package com.streamarr.server.services.streaming.remote;
 
-import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
-import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.transcode.v1.KeyframesUnavailable;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeKeyframes;
@@ -133,7 +132,7 @@ final class RemoteKeyframeKnowledgeMapper {
     };
   }
 
-  private static ProbeExecutionException violation(String message) {
-    return new ProbeExecutionException(ItemFailureReason.TEMPORARY, message);
+  private static ProbeContractViolationException violation(String message) {
+    return new ProbeContractViolationException(message);
   }
 }

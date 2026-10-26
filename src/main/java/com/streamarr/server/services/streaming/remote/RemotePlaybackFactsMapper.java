@@ -1,7 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
 import com.google.protobuf.DurationOrBuilder;
-import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.streaming.ChosenVideoStream;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ChromaticityCoordinates;
@@ -20,7 +19,7 @@ import com.streamarr.server.domain.streaming.OutputFrameRateBasis;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
-import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.transcode.v1.FrameRateRuleResult;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
@@ -426,7 +425,7 @@ final class RemotePlaybackFactsMapper {
     return value;
   }
 
-  private static ProbeExecutionException contractViolation(String message) {
-    return new ProbeExecutionException(ItemFailureReason.TEMPORARY, message);
+  private static ProbeContractViolationException contractViolation(String message) {
+    return new ProbeContractViolationException(message);
   }
 }

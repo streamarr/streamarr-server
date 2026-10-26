@@ -7,7 +7,7 @@ import static org.junit.jupiter.params.provider.Arguments.arguments;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
-import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.transcode.v1.KeyframePacketScanReason;
 import com.streamarr.transcode.v1.KeyframePositionSource;
 import com.streamarr.transcode.v1.KeyframePositions;
@@ -125,7 +125,8 @@ class RemoteProbeResultKeyframesMapperTest {
       String violation, ProbeAttemptReport report) {
     var mapper = new RemoteProbeResultMapper();
 
-    assertThatThrownBy(() -> mapper.map(report)).isInstanceOf(ProbeExecutionException.class);
+    assertThatThrownBy(() -> mapper.map(report))
+        .isInstanceOf(ProbeContractViolationException.class);
   }
 
   private static Stream<Arguments> contractViolations() {

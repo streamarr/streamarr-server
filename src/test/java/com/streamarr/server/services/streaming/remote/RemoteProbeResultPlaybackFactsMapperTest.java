@@ -20,7 +20,7 @@ import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
-import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.fixtures.WorkerProbeResultFixture;
 import com.streamarr.transcode.v1.DolbyVisionAbsent;
 import com.streamarr.transcode.v1.DolbyVisionPresent;
@@ -365,7 +365,8 @@ class RemoteProbeResultPlaybackFactsMapperTest {
     void shouldRejectTheResultWhenItsKeyframesBelongToAnotherVideoStream() {
       var report = keyframesReport(0);
 
-      assertThatThrownBy(() -> mapper.map(report)).isInstanceOf(ProbeExecutionException.class);
+      assertThatThrownBy(() -> mapper.map(report))
+          .isInstanceOf(ProbeContractViolationException.class);
     }
 
     @Test
@@ -435,7 +436,8 @@ class RemoteProbeResultPlaybackFactsMapperTest {
         String violation, UnaryOperator<ProbeMediaInfo.Builder> breakContract) {
       var report = report(result(breakContract));
 
-      assertThatThrownBy(() -> mapper.map(report)).isInstanceOf(ProbeExecutionException.class);
+      assertThatThrownBy(() -> mapper.map(report))
+          .isInstanceOf(ProbeContractViolationException.class);
     }
 
     @SuppressWarnings("checkstyle:fullyQualifiedName")

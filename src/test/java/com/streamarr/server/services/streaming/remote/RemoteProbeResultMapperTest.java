@@ -10,6 +10,7 @@ import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.exceptions.ProbeCancelledException;
+import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
@@ -49,7 +50,8 @@ class RemoteProbeResultMapperTest {
     var result = resultWithStream(ProbeStreamInfo.newBuilder().setIndex(index));
     var report = reportOf(result);
 
-    assertThatThrownBy(() -> mapper.map(report)).isInstanceOf(ProbeExecutionException.class);
+    assertThatThrownBy(() -> mapper.map(report))
+        .isInstanceOf(ProbeContractViolationException.class);
   }
 
   @ParameterizedTest
@@ -105,7 +107,8 @@ class RemoteProbeResultMapperTest {
     var result = resultWithDuration(seconds, nanos);
     var report = reportOf(result);
 
-    assertThatThrownBy(() -> mapper.map(report)).isInstanceOf(ProbeExecutionException.class);
+    assertThatThrownBy(() -> mapper.map(report))
+        .isInstanceOf(ProbeContractViolationException.class);
   }
 
   private ProbeAttemptResult resultWithDuration(long seconds, int nanos) throws Exception {
@@ -279,7 +282,8 @@ class RemoteProbeResultMapperTest {
             .build();
     var report = reportOf(result);
 
-    assertThatThrownBy(() -> mapper.map(report)).isInstanceOf(ProbeExecutionException.class);
+    assertThatThrownBy(() -> mapper.map(report))
+        .isInstanceOf(ProbeContractViolationException.class);
   }
 
   @Test
@@ -295,7 +299,8 @@ class RemoteProbeResultMapperTest {
             .build();
     var report = reportOf(result);
 
-    assertThatThrownBy(() -> mapper.map(report)).isInstanceOf(ProbeExecutionException.class);
+    assertThatThrownBy(() -> mapper.map(report))
+        .isInstanceOf(ProbeContractViolationException.class);
   }
 
   @Test

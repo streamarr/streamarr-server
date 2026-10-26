@@ -7,6 +7,7 @@ import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
+import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
@@ -785,8 +786,7 @@ final class LiveWorkerConnectionRegistry {
         pending
             .result()
             .completeExceptionally(
-                new ProbeExecutionException(
-                    ItemFailureReason.TEMPORARY,
+                new ProbeContractViolationException(
                     "Worker probe sent keyframe positions parts that break the contract"));
         return false;
       }

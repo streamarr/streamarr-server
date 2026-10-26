@@ -12,6 +12,7 @@ import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.exceptions.ProbeCancelledException;
+import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
@@ -67,8 +68,8 @@ final class RemoteProbeResultMapper {
         reason, "Worker probe reported a retryable failure: " + result.getFailure());
   }
 
-  private static ProbeExecutionException contractViolation(String message) {
-    return new ProbeExecutionException(ItemFailureReason.TEMPORARY, message);
+  private static ProbeContractViolationException contractViolation(String message) {
+    return new ProbeContractViolationException(message);
   }
 
   private ProbeOutcome.Success success(

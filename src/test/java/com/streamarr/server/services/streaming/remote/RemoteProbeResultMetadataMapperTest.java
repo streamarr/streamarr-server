@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.streaming.ProbeOutcome;
-import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.fixtures.WorkerProbeResultFixture;
 import com.streamarr.transcode.v1.ChromaticityCoordinates;
 import com.streamarr.transcode.v1.ContentLightLevel;
@@ -37,7 +37,8 @@ class RemoteProbeResultMetadataMapperTest {
     change.accept(media);
     var report = report(media, 4);
 
-    assertThatThrownBy(() -> mapper.map(report)).isInstanceOf(ProbeExecutionException.class);
+    assertThatThrownBy(() -> mapper.map(report))
+        .isInstanceOf(ProbeContractViolationException.class);
   }
 
   static Stream<Arguments> malformedMetadata() {
