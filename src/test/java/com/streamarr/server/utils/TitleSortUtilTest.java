@@ -85,11 +85,127 @@ class TitleSortUtilTest {
     assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
   }
 
+  // '%' quotes CSV fields because the cases themselves start with the default quote characters.
   @ParameterizedTest
-  @ValueSource(strings = {"~~~", "{ }", "|"})
-  @DisplayName("Should keep the title when only characters above z remain")
-  void shouldKeepTitleWhenOnlyCharactersAboveZRemain(String title) {
+  @CsvSource(
+      delimiterString = " -> ",
+      quoteCharacter = '%',
+      value = {
+        "“Quiet Harbor” -> Quiet Harbor”",
+        "”Reversed Quotes“ -> Reversed Quotes“",
+        "„Low Quote“ -> Low Quote“",
+        "‘Single Harbor’ -> Single Harbor’",
+        "'Til Morning -> Til Morning",
+        "\"Echo Valley\" -> Echo Valley\"",
+        "«Guillemet Road» -> Guillemet Road»",
+        "‹Single Guillemet› -> Single Guillemet›",
+        "「Corner Bracket」 -> Corner Bracket」",
+        "＂Wide Quote＂ -> Wide Quote＂",
+        "¡Hola Harbor! -> Hola Harbor!",
+        "¿Qué Pasa? -> Que Pasa?",
+        "…And Then Rain -> And Then Rain",
+        "...And Then Rain -> And Then Rain",
+        "#Hashtag Summer -> Hashtag Summer",
+        "(12) Steps North -> 12) Steps North",
+        "[Bracketed] Night -> Bracketed] Night",
+        "*Asterisk Island -> Asterisk Island",
+        "$Dollar Days -> Dollar Days",
+        "@Home Again -> Home Again",
+        "_Underscore Lane -> Underscore Lane",
+        "-Minus Harbor -> Minus Harbor",
+        "+Plus Harbor -> Plus Harbor",
+        "^Caret Harbor -> Caret Harbor",
+        "`Backtick Harbor -> Backtick Harbor",
+        "©Copyright Harbor -> Copyright Harbor",
+        "♥Heart Harbor -> Heart Harbor",
+        "🦈 Shark Bay -> Shark Bay",
+        "“¡«Nested Openers -> Nested Openers"
+      })
+  @DisplayName("Should strip leading punctuation and symbols when the title starts with them")
+  void shouldStripLeadingPunctuationAndSymbolsWhenTitleStartsWithThem(
+      String title, String expected) {
+    assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
+  }
+
+  @ParameterizedTest
+  @CsvSource(
+      delimiterString = " -> ",
+      quoteCharacter = '%',
+      value = {
+        "% Echo Bay% -> Echo Bay",
+        "%\tEcho Bay% -> Echo Bay",
+        " Echo Bay -> Echo Bay",
+        "　Echo Bay -> Echo Bay",
+        "​Echo Bay -> Echo Bay",
+        "﻿Echo Bay -> Echo Bay",
+        "‎Echo Bay -> Echo Bay",
+        "́Echo Bay -> Echo Bay",
+        "﻿“Quiet Harbor” -> Quiet Harbor”",
+        "“ Quiet Harbor” -> Quiet Harbor”"
+      })
+  @DisplayName("Should strip leading invisible characters when the title starts with them")
+  void shouldStripLeadingInvisibleCharactersWhenTitleStartsWithThem(String title, String expected) {
+    assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"~~~", "{ }", "|", "“”", "...", "!?!", "🦈", "​", "́", "﻿“”"})
+  @DisplayName("Should keep the title when no letter or digit remains")
+  void shouldKeepTitleWhenNoLetterOrDigitRemains(String title) {
     assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(title);
+  }
+
+  @ParameterizedTest
+  @CsvSource(
+      delimiterString = " -> ",
+      quoteCharacter = '%',
+      value = {
+        "Echo: Valley! -> Echo: Valley!",
+        "Harbor (Director’s Cut) -> Harbor (Director’s Cut)",
+        "Quiet—Harbor -> Quiet—Harbor",
+        "2 Fast Harbor -> 2 Fast Harbor",
+        "1917 Echo -> 1917 Echo",
+        "#1 Fan Club -> 1 Fan Club",
+        "$9.99 Harbor -> 9.99 Harbor",
+        "(12) Steps -> 12) Steps"
+      })
+  @DisplayName("Should keep every character from the first letter or digit when stripping")
+  void shouldKeepEveryCharacterFromTheFirstLetterOrDigitWhenStripping(
+      String title, String expected) {
+    assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
+  }
+
+  @ParameterizedTest
+  @CsvSource(
+      delimiterString = " -> ",
+      quoteCharacter = '%',
+      value = {
+        "“The Harbor” -> Harbor”, The",
+        "¡A Quiet Night! -> Quiet Night!, A",
+        "«An Echo» -> Echo», An",
+        "﻿The Harbor -> Harbor, The",
+        "The “Harbor” -> Harbor”, The",
+        "“The” Harbor -> The” Harbor"
+      })
+  @DisplayName("Should move the article when it follows leading punctuation")
+  void shouldMoveArticleWhenItFollowsLeadingPunctuation(String title, String expected) {
+    assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
+  }
+
+  @ParameterizedTest
+  @CsvSource(
+      delimiterString = " -> ",
+      quoteCharacter = '%',
+      value = {
+        "「東京の空」 -> 東京の空」",
+        "«Жёлтый Дом» -> Жёлтый Дом»",
+        "¿Ώρα Μηδέν? -> Ώρα Μηδέν?",
+        "“한강의 밤” -> 한강의 밤”"
+      })
+  @DisplayName("Should leave a non-Latin title intact when stripping its leading punctuation")
+  void shouldLeaveNonLatinTitleIntactWhenStrippingItsLeadingPunctuation(
+      String title, String expected) {
+    assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
   }
 
   @ParameterizedTest
