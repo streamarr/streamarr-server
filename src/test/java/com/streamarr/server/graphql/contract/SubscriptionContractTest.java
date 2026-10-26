@@ -51,10 +51,20 @@ class SubscriptionContractTest {
   }
 
   @Test
+  @DisplayName("Should require a ServerAdmin when the library status field is documented")
+  void shouldRequireServerAdminWhenLibraryStatusFieldIsDocumented() {
+    assertThat(descriptionOf(subscriptionField("libraryStatusChanged")))
+        .contains("ServerAdmin")
+        .doesNotContain("ViewProfileActivity");
+  }
+
+  @Test
   @DisplayName(
-      "Should require a selected Profile and ViewProfileActivity when each subscription field is documented")
-  void shouldRequireSelectedProfileAndViewProfileActivityWhenEachSubscriptionFieldIsDocumented() {
+      "Should require a selected Profile and ViewProfileActivity when each other subscription field is documented")
+  void
+      shouldRequireSelectedProfileAndViewProfileActivityWhenEachOtherSubscriptionFieldIsDocumented() {
     assertThat(subscriptionFields())
+        .filteredOn(field -> !field.getName().equals("libraryStatusChanged"))
         .isNotEmpty()
         .allSatisfy(
             field ->

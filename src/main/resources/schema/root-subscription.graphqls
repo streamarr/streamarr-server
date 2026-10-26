@@ -28,9 +28,8 @@ After SUBSCRIPTION_OVERFLOW, subscribe again and run the field's queries again.
 type Subscription {
     """
     A library's status or scan times changed. Delivers the library after each change, or null with
-    errors when a selected field fails to resolve. Requires a selected Profile and
-    ViewProfileActivity permission for that Profile. That Profile receives every library's changes,
-    just as the libraries query returns every library.
+    errors when a selected field fails to resolve. Requires a ServerAdmin. Every other caller gets
+    FORBIDDEN, and so does a ServerAdmin's device-bound session.
 
     Each of libraryStatusChanged, libraryAdded and libraryRemoved delivers one library's changes in
     the order they were committed. There is no order across libraries or across fields:
@@ -42,15 +41,16 @@ type Subscription {
 
     """
     A library was added. Delivers the new library, or null with errors when a selected field fails
-    to resolve. Requires a selected Profile and ViewProfileActivity permission for that Profile, as
-    libraryStatusChanged does.
+    to resolve. Requires a selected Profile and ViewProfileActivity permission for that Profile.
+    That Profile receives every library's additions, just as the libraries query returns every
+    library.
     """
     libraryAdded: Library
 
     """
     A library was removed. Delivers the removed library's id, or null with errors when a selected
     field fails to resolve. Requires a selected Profile and ViewProfileActivity permission for that
-    Profile, as libraryStatusChanged does.
+    Profile, as libraryAdded does.
     """
     libraryRemoved: LibraryRemoval
 

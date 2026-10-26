@@ -47,8 +47,9 @@ A browser client that sees 1006 before `connection_ack` refreshes its token befo
 
 Each operation is authorized when the client subscribes.
 A refused caller gets a `next` message with an error code, then `complete`.
-Every field refuses a token without a selected Profile with `PROFILE_REQUIRED`.
-Every field refuses a caller without the ViewProfileActivity permission for that Profile with `FORBIDDEN`.
+`libraryStatusChanged` refuses a caller who is not a ServerAdmin with `FORBIDDEN`.
+Every other field refuses a token without a selected Profile with `PROFILE_REQUIRED`.
+It refuses a caller without the ViewProfileActivity permission for that Profile with `FORBIDDEN`.
 `AUTHORIZATION_UNAVAILABLE` means the server could not decide; retry later.
 
 == Access token expiry
