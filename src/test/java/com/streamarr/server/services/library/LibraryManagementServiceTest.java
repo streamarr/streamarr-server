@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
+import com.google.common.jimfs.PathNormalization;
 import com.streamarr.server.config.LibraryScanProperties;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.ExternalIdentifier;
@@ -116,18 +117,22 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
 import lombok.Builder;
 import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 
@@ -1082,25 +1087,109 @@ class LibraryManagementServiceTest {
       assertThat(transactionManager.rollbacks()).isEqualTo(1);
     }
 
-    // Paths compare as the JDK's paths compare them, like the unique index on the library path and
-    // the file watcher. Jimfs's osX configuration folds letter case in Path.startsWith, unlike the
-    // JDK, so this test uses the real temporary directory and runs only where it ignores letter
-    // case.
+    static Stream<Arguments> fileSystemsThatIgnoreLetterCase() {
+      var caseFoldingUnix =
+          Configuration.unix().toBuilder()
+              .setNameCanonicalNormalization(PathNormalization.CASE_FOLD_ASCII)
+              .build();
+      return Stream.of(
+          Arguments.of(Named.of("macOS", Configuration.osX())),
+          Arguments.of(Named.of("Linux with case folding", caseFoldingUnix)));
+    }
+
+    @ParameterizedTest
+    @MethodSource("fileSystemsThatIgnoreLetterCase")
+    @DisplayName(
+        "Should store the path with the names the file system stores when the given path differs in"
+            + " letter case on a file system that ignores letter case")
+    void
+        shouldStorePathWithNamesFileSystemStoresWhenGivenPathDiffersInLetterCaseOnFileSystemThatIgnoresLetterCase(
+            Configuration configuration) throws IOException {
+      // The shared fixture library has a path on another file system.
+      fakeLibraryRepository.deleteById(savedLibraryId);
+      try (var caseIgnoring = Jimfs.newFileSystem(configuration)) {
+        var folder = Files.createDirectories(caseIgnoring.getPath("/media/Movies"));
+        for (var sibling : List.of("/Archive", "/media/Anime", "/media/Films", "/media/TV")) {
+          Files.createDirectories(caseIgnoring.getPath(sibling));
+        }
+
+        var library =
+            accepted(
+                serviceWith(caseIgnoring)
+                    .addLibrary(identity, libraryNamed("Movies", "/MEDIA/movies")));
+
+        assertThat(library.getFilepathUri()).isEqualTo(FilepathCodec.encode(folder));
+      }
+    }
+
+    // Jimfs folds letter case in Path.startsWith, unlike the JDK, so these tests use the real
+    // temporary directory and run only where it ignores letter case.
     @Test
     @DisplayName(
-        "Should accept a path when it differs only in letter case from another library's path on a"
-            + " file system that ignores letter case")
-    void shouldAcceptPathWhenItDiffersOnlyInLetterCaseOnFileSystemThatIgnoresLetterCase(
-        @TempDir Path media) throws IOException {
+        "Should reject with PathAlreadyRegistered when the path names another library's folder in"
+            + " other letter case on a file system that ignores letter case")
+    void
+        shouldRejectWithPathAlreadyRegisteredWhenPathNamesAnotherLibrarysFolderInOtherLetterCaseOnFileSystemThatIgnoresLetterCase(
+            @TempDir Path media) throws IOException {
       var folder = Files.createDirectory(media.resolve("Movies"));
-      var otherSpelling = media.resolve("MOVIES");
-      assumeTrue(Files.isDirectory(otherSpelling), "the temporary directory ignores letter case");
+      assumeIgnoresLetterCase(media);
       var service = serviceWith(FileSystems.getDefault());
-      accepted(service.addLibrary(identity, libraryNamed("Movies", folder.toString())));
+      var movies =
+          accepted(service.addLibrary(identity, libraryNamed("Movies", folder.toString())));
 
-      var outcome = service.addLibrary(identity, libraryNamed("Films", otherSpelling.toString()));
+      var outcome =
+          service.addLibrary(identity, libraryNamed("Films", media.resolve("MOVIES").toString()));
 
-      assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+      assertThat(outcome)
+          .isEqualTo(
+              Outcome.rejected(new AddLibraryRejection.PathAlreadyRegistered(movies, folder)));
+    }
+
+    @Test
+    @DisplayName(
+        "Should reject with an INSIDE overlap when the path names a folder inside another library's"
+            + " folder in other letter case on a file system that ignores letter case")
+    void
+        shouldRejectWithInsideOverlapWhenPathNamesFolderInsideAnotherLibrarysFolderInOtherLetterCaseOnFileSystemThatIgnoresLetterCase(
+            @TempDir Path media) throws IOException {
+      var folder = Files.createDirectory(media.resolve("Movies"));
+      Files.createDirectory(folder.resolve("Action"));
+      assumeIgnoresLetterCase(media);
+      var service = serviceWith(FileSystems.getDefault());
+      var movies =
+          accepted(service.addLibrary(identity, libraryNamed("Movies", folder.toString())));
+
+      var outcome =
+          service.addLibrary(
+              identity, libraryNamed("Action", media.resolve("MOVIES/ACTION").toString()));
+
+      assertThat(outcome)
+          .isEqualTo(
+              Outcome.rejected(
+                  new AddLibraryRejection.PathOverlap(LibraryPathOverlap.INSIDE, movies, folder)));
+    }
+
+    @Test
+    @DisplayName(
+        "Should reject with a CONTAINS overlap when the path names a folder around another"
+            + " library's folder in other letter case on a file system that ignores letter case")
+    void
+        shouldRejectWithContainsOverlapWhenPathNamesFolderAroundAnotherLibrarysFolderInOtherLetterCaseOnFileSystemThatIgnoresLetterCase(
+            @TempDir Path media) throws IOException {
+      var folder = Files.createDirectories(media.resolve("Movies/Action"));
+      assumeIgnoresLetterCase(media);
+      var service = serviceWith(FileSystems.getDefault());
+      var action =
+          accepted(service.addLibrary(identity, libraryNamed("Action", folder.toString())));
+
+      var outcome =
+          service.addLibrary(identity, libraryNamed("Movies", media.resolve("MOVIES").toString()));
+
+      assertThat(outcome)
+          .isEqualTo(
+              Outcome.rejected(
+                  new AddLibraryRejection.PathOverlap(
+                      LibraryPathOverlap.CONTAINS, action, folder)));
     }
 
     @Test
@@ -1174,6 +1263,19 @@ class LibraryManagementServiceTest {
 
       assertThat(deniedService.addLibrary(identity, library))
           .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathNotReadable()));
+    }
+
+    @Test
+    @DisplayName("Should reject with PathNotReadable when a folder above the path cannot be listed")
+    void shouldRejectWithPathNotReadableWhenFolderAbovePathCannotBeListed() throws IOException {
+      Files.createDirectories(fileSystem.getPath("/media/movies"));
+      var unlistableFileSystem = SecurityExceptionFileSystem.unlistingFolders(fileSystem);
+
+      var outcome =
+          serviceWith(unlistableFileSystem)
+              .addLibrary(identity, libraryNamed("Movies", "/media/movies"));
+
+      assertThat(outcome).isEqualTo(Outcome.rejected(new AddLibraryRejection.PathNotReadable()));
     }
 
     @Test
@@ -1372,6 +1474,11 @@ class LibraryManagementServiceTest {
                   .name(name)
                   .filepathUri(path.toString())
                   .build()));
+    }
+
+    private static void assumeIgnoresLetterCase(Path folder) {
+      var otherLetterCase = folder.resolveSibling(folder.getFileName().toString().toUpperCase());
+      assumeTrue(Files.isDirectory(otherLetterCase), "the temporary directory ignores letter case");
     }
 
     private static Library libraryNamed(String name, String filepath) {

@@ -19,9 +19,11 @@ import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.filepath.FilepathNameNormalizer;
 import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
+import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
@@ -132,11 +134,16 @@ public class LibraryManagementService {
 
     try {
       var path = fileSystem.getPath(rawFilepath).toAbsolutePath().normalize();
-      pathRejection(path).ifPresent(rejections::add);
-      return Optional.of(path);
+      var rejection = pathRejection(path);
+      if (rejection.isPresent()) {
+        rejections.add(rejection.get());
+        return Optional.empty();
+      }
+
+      return Optional.of(FilepathNameNormalizer.normalizeToFileSystemNames(path));
     } catch (InvalidPathException _) {
       rejections.add(new AddLibraryRejection.PathNotFound());
-    } catch (SecurityException _) {
+    } catch (SecurityException | IOException _) {
       rejections.add(new AddLibraryRejection.PathNotReadable());
     }
 

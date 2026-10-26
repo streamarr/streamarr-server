@@ -5,9 +5,14 @@ import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.google.common.jimfs.Configuration;
+import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.exceptions.TranscodeException;
+import java.io.IOException;
 import java.net.URI;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -59,5 +64,68 @@ class RemoteMediaSourceMapperTest {
     assertThatThrownBy(() -> mapper.map(source))
         .isExactlyInstanceOf(TranscodeException.class)
         .hasMessage("Media source name is not valid UTF-8");
+  }
+
+  @Test
+  @DisplayName(
+      "Should key the source relative to the root when the root is configured in other letter case"
+          + " on a file system that ignores letter case")
+  void shouldKeySourceRelativeToRootWhenRootIsConfiguredInOtherLetterCase() throws IOException {
+    try (var caseIgnoring = Jimfs.newFileSystem(Configuration.osX())) {
+      var movies = Files.createDirectories(caseIgnoring.getPath("/media/Movies"));
+      var caseIgnoringMapper =
+          new RemoteMediaSourceMapper(SOURCE_NAMESPACE_ID, caseIgnoring.getPath("/MEDIA/movies"));
+
+      var source = caseIgnoringMapper.map(movies.resolve("Feature (2020).mkv"));
+
+      assertThat(source.getRelativeKey()).isEqualTo("Feature (2020).mkv");
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should key the source relative to the root when the root appears in other letter case after"
+          + " the mapper starts")
+  void shouldKeySourceRelativeToRootWhenRootAppearsInOtherLetterCaseAfterMapperStarts()
+      throws IOException {
+    try (var caseIgnoring = Jimfs.newFileSystem(Configuration.osX())) {
+      var lateMapper =
+          new RemoteMediaSourceMapper(SOURCE_NAMESPACE_ID, caseIgnoring.getPath("/MEDIA/movies"));
+      var movies = Files.createDirectories(caseIgnoring.getPath("/media/Movies"));
+
+      var source = lateMapper.map(movies.resolve("Feature (2020).mkv"));
+
+      assertThat(source.getRelativeKey()).isEqualTo("Feature (2020).mkv");
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"/media/movies", "/media/movies2/Feature.mkv", "/media/Feature.mkv"})
+  @DisplayName("Should reject the source when it is the root or lies outside the root")
+  void shouldRejectSourceWhenItIsRootOrLiesOutsideRoot(String sourcePath) {
+    var source = Path.of(sourcePath);
+
+    assertThatThrownBy(() -> mapper.map(source))
+        .isExactlyInstanceOf(TranscodeException.class)
+        .hasMessage("Media source is outside the configured source namespace");
+  }
+
+  @Test
+  @DisplayName(
+      "Should key every source relative to the root when one mapper maps several sources from a"
+          + " root in other letter case")
+  void shouldKeyEverySourceRelativeToRootWhenOneMapperMapsSeveralSourcesFromRootInOtherLetterCase()
+      throws IOException {
+    try (var caseIgnoring = Jimfs.newFileSystem(Configuration.osX())) {
+      var movies = Files.createDirectories(caseIgnoring.getPath("/media/Movies"));
+      var caseIgnoringMapper =
+          new RemoteMediaSourceMapper(SOURCE_NAMESPACE_ID, caseIgnoring.getPath("/MEDIA/movies"));
+
+      var first = caseIgnoringMapper.map(movies.resolve("First.mkv"));
+      var second = caseIgnoringMapper.map(movies.resolve("Second.mkv"));
+
+      assertThat(List.of(first.getRelativeKey(), second.getRelativeKey()))
+          .containsExactly("First.mkv", "Second.mkv");
+    }
   }
 }

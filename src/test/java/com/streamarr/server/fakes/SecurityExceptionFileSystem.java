@@ -34,20 +34,49 @@ public class SecurityExceptionFileSystem extends FileSystem {
 
   private final FileSystem delegate;
   private final SecurityExceptionProvider provider;
-  private final boolean reportUnreadable;
+  private final Denial denial;
+  private final String unreadableName;
 
-  public SecurityExceptionFileSystem(FileSystem delegate) {
-    this(delegate, false);
+  private enum Denial {
+    SECURITY_MANAGER,
+    UNREADABLE,
+    UNLISTABLE_FOLDERS,
+    UNREADABLE_ATTRIBUTES
   }
 
-  private SecurityExceptionFileSystem(FileSystem delegate, boolean reportUnreadable) {
+  public SecurityExceptionFileSystem(FileSystem delegate) {
+    this(delegate, Denial.SECURITY_MANAGER);
+  }
+
+  private SecurityExceptionFileSystem(FileSystem delegate, Denial denial) {
+    this(delegate, denial, null);
+  }
+
+  private SecurityExceptionFileSystem(FileSystem delegate, Denial denial, String unreadableName) {
     this.delegate = delegate;
-    this.reportUnreadable = reportUnreadable;
+    this.denial = denial;
+    this.unreadableName = unreadableName;
     this.provider = new SecurityExceptionProvider(delegate.provider(), this);
   }
 
   public static SecurityExceptionFileSystem reportingUnreadable(FileSystem delegate) {
-    return new SecurityExceptionFileSystem(delegate, true);
+    return new SecurityExceptionFileSystem(delegate, Denial.UNREADABLE);
+  }
+
+  /**
+   * Refuses to list any folder, while access checks pass, like folders that are searchable only.
+   */
+  public static SecurityExceptionFileSystem unlistingFolders(FileSystem delegate) {
+    return new SecurityExceptionFileSystem(delegate, Denial.UNLISTABLE_FOLDERS);
+  }
+
+  /**
+   * Fails to read the attributes of every entry with this exact name, as a network mount can while
+   * it reconnects. Other paths and access checks pass.
+   */
+  public static SecurityExceptionFileSystem failingAttributesOf(
+      FileSystem delegate, String unreadableName) {
+    return new SecurityExceptionFileSystem(delegate, Denial.UNREADABLE_ATTRIBUTES, unreadableName);
   }
 
   @Override
@@ -268,16 +297,18 @@ public class SecurityExceptionFileSystem extends FileSystem {
 
     @Override
     public void checkAccess(Path path, AccessMode... modes) throws IOException {
-      if (fileSystem.reportUnreadable && modes.length == 0) {
-        delegate.checkAccess(unwrap(path), modes);
-        return;
-      }
+      switch (fileSystem.denial) {
+        case SECURITY_MANAGER ->
+            throw new SecurityException("Simulated security manager denial for path: " + path);
+        case UNREADABLE -> {
+          if (modes.length > 0) {
+            throw new AccessDeniedException(path.toString());
+          }
 
-      if (fileSystem.reportUnreadable) {
-        throw new AccessDeniedException(path.toString());
+          delegate.checkAccess(unwrap(path), modes);
+        }
+        case UNLISTABLE_FOLDERS, UNREADABLE_ATTRIBUTES -> delegate.checkAccess(unwrap(path), modes);
       }
-
-      throw new SecurityException("Simulated security manager denial for path: " + path);
     }
 
     @Override
@@ -310,7 +341,33 @@ public class SecurityExceptionFileSystem extends FileSystem {
     @Override
     public DirectoryStream<Path> newDirectoryStream(
         Path dir, DirectoryStream.Filter<? super Path> filter) throws IOException {
-      return delegate.newDirectoryStream(unwrap(dir), filter);
+      if (fileSystem.denial == Denial.UNLISTABLE_FOLDERS) {
+        throw new AccessDeniedException(dir.toString());
+      }
+
+      var entries = delegate.newDirectoryStream(unwrap(dir), filter);
+      return new DirectoryStream<>() {
+        @Override
+        public Iterator<Path> iterator() {
+          var delegateEntries = entries.iterator();
+          return new Iterator<>() {
+            @Override
+            public boolean hasNext() {
+              return delegateEntries.hasNext();
+            }
+
+            @Override
+            public Path next() {
+              return new WrappedPath(delegateEntries.next(), fileSystem);
+            }
+          };
+        }
+
+        @Override
+        public void close() throws IOException {
+          entries.close();
+        }
+      };
     }
 
     @Override
@@ -357,7 +414,16 @@ public class SecurityExceptionFileSystem extends FileSystem {
     @Override
     public <A extends BasicFileAttributes> A readAttributes(
         Path path, Class<A> type, LinkOption... options) throws IOException {
+      if (fileSystem.denial == Denial.UNREADABLE_ATTRIBUTES && hasUnreadableName(path)) {
+        throw new IOException("Simulated attribute read failure for path: " + path);
+      }
+
       return delegate.readAttributes(unwrap(path), type, options);
+    }
+
+    private boolean hasUnreadableName(Path path) {
+      var name = path.getFileName();
+      return name != null && name.toString().equals(fileSystem.unreadableName);
     }
 
     @Override
