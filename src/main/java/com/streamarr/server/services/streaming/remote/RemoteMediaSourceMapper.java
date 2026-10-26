@@ -9,12 +9,13 @@ import com.streamarr.transcode.v1.MediaSourceRef;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 final class RemoteMediaSourceMapper {
 
   private final UUID sourceNamespaceId;
   private final Path configuredRoot;
-  private volatile Path rootWithFileSystemNames;
+  private final AtomicReference<Path> rootWithFileSystemNames = new AtomicReference<>();
 
   RemoteMediaSourceMapper(UUID sourceNamespaceId, Path sourceRoot) {
     this.sourceNamespaceId = sourceNamespaceId;
@@ -38,7 +39,7 @@ final class RemoteMediaSourceMapper {
   // those names too. A root that is not mounted yet, or cannot be listed, holds no library. It
   // keeps its configured names until the stored names can be read.
   private Path sourceRoot() {
-    var root = rootWithFileSystemNames;
+    var root = rootWithFileSystemNames.get();
     if (root != null) {
       return root;
     }
@@ -49,7 +50,7 @@ final class RemoteMediaSourceMapper {
       return configuredRoot;
     }
 
-    rootWithFileSystemNames = root;
+    rootWithFileSystemNames.set(root);
     return root;
   }
 
