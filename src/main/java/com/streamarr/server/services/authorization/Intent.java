@@ -27,6 +27,9 @@ public sealed interface Intent {
 
   record StopLibraryRefresh(UUID libraryId) implements UnitIntent {}
 
+  /** View library administration: server-wide library status, additions and removals. */
+  record ViewLibraryAdministration() implements UnitIntent {}
+
   /** See the Profiles available in the session's context Household. */
   record ViewProfilePicker() implements UnitIntent {}
 

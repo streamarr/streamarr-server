@@ -34,6 +34,8 @@ final class IntentPlanner {
           unitPlan(AuthorizationCheck.onServer(Action.STOP_LIBRARY_SCAN));
       case Intent.StopLibraryRefresh _ ->
           unitPlan(AuthorizationCheck.onServer(Action.STOP_LIBRARY_REFRESH));
+      case Intent.ViewLibraryAdministration _ ->
+          unitPlan(AuthorizationCheck.onServer(Action.VIEW_LIBRARY_ADMINISTRATION));
       case Intent.ViewProfilePicker _ ->
           unitPlan(
               AuthorizationCheck.onHousehold(

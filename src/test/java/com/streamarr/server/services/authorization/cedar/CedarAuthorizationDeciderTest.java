@@ -73,7 +73,8 @@ class CedarAuthorizationDeciderTest {
         Arguments.of(new Intent.ScanLibrary(libraryId)),
         Arguments.of(new Intent.RefreshLibrary(libraryId)),
         Arguments.of(new Intent.StopLibraryScan(libraryId)),
-        Arguments.of(new Intent.StopLibraryRefresh(libraryId)));
+        Arguments.of(new Intent.StopLibraryRefresh(libraryId)),
+        Arguments.of(new Intent.ViewLibraryAdministration()));
   }
 
   @ParameterizedTest
