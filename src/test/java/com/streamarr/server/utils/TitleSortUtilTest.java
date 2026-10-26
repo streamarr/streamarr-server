@@ -51,13 +51,30 @@ class TitleSortUtilTest {
   }
 
   @ParameterizedTest
+  @CsvSource(
+      delimiterString = " -> ",
+      quoteCharacter = '%',
+      value = {
+        "The … -> The …",
+        "A ... -> A ...",
+        "The ! -> The !",
+        "An “” -> An “”",
+        "The ​ -> The ​",
+        "“The …” -> The …”"
+      })
+  @DisplayName("Should keep the article in place when no letter or digit follows it")
+  void shouldKeepArticleInPlaceWhenNoLetterOrDigitFollowsIt(String title, String expected) {
+    assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
+  }
+
+  @ParameterizedTest
   @CsvSource({
     "Élite Harbor, Elite Harbor",
     "Ōkura Nights, Okura Nights",
     "Çelik Günler, Celik Gunler",
     "İnci Bay, Inci Bay",
     "Naïve Crossing, Naive Crossing",
-    "Écho Bay, Echo Bay"
+    "E\u0301cho Bay, Echo Bay"
   })
   @DisplayName("Should fold Latin diacritics when the title contains accented letters")
   void shouldFoldLatinDiacriticsWhenTitleContainsAccentedLetters(String title, String expected) {
@@ -72,24 +89,170 @@ class TitleSortUtilTest {
     assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
   }
 
+  // '%' quotes CSV fields because the cases themselves start with the default quote characters.
   @ParameterizedTest
-  @CsvSource({
-    "~Tilde Tales, Tilde Tales",
-    "{Brace} Yourself, Brace} Yourself",
-    "| Pipe Dreams, Pipe Dreams",
-    "~ {Spaced} Out, Spaced} Out",
-    "}}~ Closing Time, Closing Time"
-  })
-  @DisplayName("Should strip leading characters above z when the title starts with them")
-  void shouldStripLeadingCharactersAboveZWhenTitleStartsWithThem(String title, String expected) {
+  @CsvSource(
+      delimiterString = " -> ",
+      quoteCharacter = '%',
+      value = {
+        "“Quiet Harbor” -> Quiet Harbor”",
+        "”Reversed Quotes“ -> Reversed Quotes“",
+        "„Low Quote“ -> Low Quote“",
+        "‘Single Harbor’ -> Single Harbor’",
+        "'Til Morning -> Til Morning",
+        "\"Echo Valley\" -> Echo Valley\"",
+        "«Guillemet Road» -> Guillemet Road»",
+        "‹Single Guillemet› -> Single Guillemet›",
+        "「Corner Bracket」 -> Corner Bracket」",
+        "＂Wide Quote＂ -> Wide Quote＂",
+        "¡Hola Harbor! -> Hola Harbor!",
+        "¿Qué Pasa? -> Que Pasa?",
+        "…And Then Rain -> And Then Rain",
+        "...And Then Rain -> And Then Rain",
+        "#Hashtag Summer -> Hashtag Summer",
+        "(12) Steps North -> 12) Steps North",
+        "[Bracketed] Night -> Bracketed] Night",
+        "*Asterisk Island -> Asterisk Island",
+        "@Home Again -> Home Again",
+        "_Underscore Lane -> Underscore Lane",
+        "-Minus Harbor -> Minus Harbor",
+        "+Plus Harbor -> Plus Harbor",
+        "^Caret Harbor -> Caret Harbor",
+        "`Backtick Harbor -> Backtick Harbor",
+        "©Copyright Harbor -> Copyright Harbor",
+        "♥Heart Harbor -> Heart Harbor",
+        "🦈 Shark Bay -> Shark Bay",
+        "\u2764\uFE0F Heart Harbor -> Heart Harbor",
+        "\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67 Family Harbor -> Family Harbor",
+        "\uD83C\uDDEF\uD83C\uDDF5 Flag Harbor -> Flag Harbor",
+        "\uD83D\uDC4D\uD83C\uDFFD Thumbs Harbor -> Thumbs Harbor",
+        "“¡«Nested Openers -> Nested Openers",
+        "~Tilde Tales -> Tilde Tales",
+        "{Brace} Yourself -> Brace} Yourself",
+        "| Pipe Dreams -> Pipe Dreams",
+        "~ {Spaced} Out -> Spaced} Out",
+        "}}~ Closing Time -> Closing Time"
+      })
+  @DisplayName("Should strip leading punctuation and symbols when the title starts with them")
+  void shouldStripLeadingPunctuationAndSymbolsWhenTitleStartsWithThem(
+      String title, String expected) {
     assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"~~~", "{ }", "|"})
-  @DisplayName("Should keep the title when only characters above z remain")
-  void shouldKeepTitleWhenOnlyCharactersAboveZRemain(String title) {
+  @CsvSource(
+      delimiterString = " -> ",
+      quoteCharacter = '%',
+      value = {
+        "% Echo Bay% -> Echo Bay",
+        "%\tEcho Bay% -> Echo Bay",
+        "\u00A0Echo Bay -> Echo Bay",
+        "\u3000Echo Bay -> Echo Bay",
+        "\u200BEcho Bay -> Echo Bay",
+        "\uFEFFEcho Bay -> Echo Bay",
+        "\u200EEcho Bay -> Echo Bay",
+        "\u0301Echo Bay -> Echo Bay",
+        "\uFEFF“Quiet Harbor” -> Quiet Harbor”",
+        "“\u00A0Quiet Harbor” -> Quiet Harbor”"
+      })
+  @DisplayName("Should strip leading invisible characters when the title starts with them")
+  void shouldStripLeadingInvisibleCharactersWhenTitleStartsWithThem(String title, String expected) {
+    assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
+  }
+
+  @ParameterizedTest
+  @CsvSource(
+      delimiterString = " -> ",
+      quoteCharacter = '%',
+      value = {
+        "$ilver Harbor -> $ilver Harbor",
+        "€cho Valley -> €cho Valley",
+        "¢ent Street -> ¢ent Street",
+        "$Dollar Days -> $Dollar Days",
+        "$9.99 Harbor -> $9.99 Harbor",
+        "“$ilver Harbor” -> $ilver Harbor”",
+        "\uFEFF$ilver Harbor -> $ilver Harbor"
+      })
+  @DisplayName("Should keep a leading currency sign when the title starts with one")
+  void shouldKeepLeadingCurrencySignWhenTitleStartsWithOne(String title, String expected) {
+    assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
+  }
+
+  @ParameterizedTest
+  @CsvSource(
+      delimiterString = " -> ",
+      quoteCharacter = '%',
+      value = {
+        "Ⓢilver Harbor -> Silver Harbor",
+        "ⓢilver Harbor -> silver Harbor",
+        "“Ⓢilver Harbor” -> Silver Harbor”",
+        "\uFEFFⓈilver Harbor -> Silver Harbor",
+        "The Ⓢilver Harbor -> Silver Harbor, The",
+        "① Harbor -> 1 Harbor",
+        "™Brand Night -> TMBrand Night",
+        "Harbor ② -> Harbor 2"
+      })
+  @DisplayName("Should fold a symbol to the letters or digits it stands for when it has them")
+  void shouldFoldSymbolToTheLettersOrDigitsItStandsForWhenItHasThem(String title, String expected) {
+    assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {"~~~", "{ }", "|", "“”", "...", "!?!", "🦈", "\u200B", "\u0301", "\uFEFF“”"})
+  @DisplayName("Should keep the title when no letter or digit remains")
+  void shouldKeepTitleWhenNoLetterOrDigitRemains(String title) {
     assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(title);
+  }
+
+  @ParameterizedTest
+  @CsvSource(
+      delimiterString = " -> ",
+      quoteCharacter = '%',
+      value = {
+        "Echo: Valley! -> Echo: Valley!",
+        "Harbor (Director’s Cut) -> Harbor (Director’s Cut)",
+        "Quiet—Harbor -> Quiet—Harbor",
+        "2 Fast Harbor -> 2 Fast Harbor",
+        "1917 Echo -> 1917 Echo",
+        "#1 Fan Club -> 1 Fan Club",
+        "“The” Harbor -> The” Harbor"
+      })
+  @DisplayName("Should keep every character from the first letter or digit when stripping")
+  void shouldKeepEveryCharacterFromTheFirstLetterOrDigitWhenStripping(
+      String title, String expected) {
+    assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
+  }
+
+  @ParameterizedTest
+  @CsvSource(
+      delimiterString = " -> ",
+      quoteCharacter = '%',
+      value = {
+        "“The Harbor” -> Harbor”, The",
+        "¡A Quiet Night! -> Quiet Night!, A",
+        "«An Echo» -> Echo», An",
+        "\uFEFFThe Harbor -> Harbor, The"
+      })
+  @DisplayName("Should move the article when it follows leading punctuation")
+  void shouldMoveArticleWhenItFollowsLeadingPunctuation(String title, String expected) {
+    assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
+  }
+
+  @ParameterizedTest
+  @CsvSource(
+      delimiterString = " -> ",
+      quoteCharacter = '%',
+      value = {
+        "「東京の空」 -> 東京の空」",
+        "«Жёлтый Дом» -> Жёлтый Дом»",
+        "¿Ώρα Μηδέν? -> Ώρα Μηδέν?",
+        "“한강의 밤” -> 한강의 밤”"
+      })
+  @DisplayName("Should strip only the leading punctuation when a non-Latin title starts with it")
+  void shouldStripOnlyTheLeadingPunctuationWhenNonLatinTitleStartsWithIt(
+      String title, String expected) {
+    assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
   }
 
   @ParameterizedTest
@@ -97,7 +260,11 @@ class TitleSortUtilTest {
     "The Élite, 'Elite, The'",
     "An Ōkura Night, 'Okura Night, An'",
     "~The Harbor, 'Harbor, The'",
-    "The ~Harbor, 'Harbor, The'"
+    "The ~Harbor, 'Harbor, The'",
+    "The “Harbor”, 'Harbor”, The'",
+    "The Ⅻ, 'XII, The'",
+    "The $, '$, The'",
+    "The “$ilver”, '$ilver”, The'"
   })
   @DisplayName("Should move the article after normalizing when the title starts with an article")
   void shouldMoveArticleAfterNormalizingWhenTitleStartsWithArticle(String title, String expected) {
@@ -114,7 +281,10 @@ class TitleSortUtilTest {
     "\u0102n Tr\u01B0a, An Trua",
     "\u00C2n Harbor, An Harbor",
     "Th\u00E9 au harem, The au harem",
-    "The\u0301 au harem, The au harem"
+    "The\u0301 au harem, The au harem",
+    "T\u24D7e Harbor, The Harbor",
+    "\u24C9\u24D7\u24D4 Harbor, The Harbor",
+    "\u24B6 Harbor, A Harbor"
   })
   @DisplayName("Should keep the first word in place when only its folded form is an article")
   void shouldKeepFirstWordInPlaceWhenOnlyItsFoldedFormIsAnArticle(String title, String expected) {

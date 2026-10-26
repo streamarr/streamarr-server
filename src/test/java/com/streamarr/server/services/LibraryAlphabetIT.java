@@ -264,6 +264,29 @@ class LibraryAlphabetIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should order and count a title by its first letter when it starts with quotes")
+  void shouldOrderAndCountTitleByItsFirstLetterWhenItStartsWithQuotes() {
+    var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    saveEncodedMovies(library, List.of("Zulu", "“Quiet Harbor”", "\"Echo Valley\"", "Alpha"));
+
+    var totals = counts.getItemCounts(List.of(library.getId())).get(library.getId());
+    var page =
+        movieService.getMoviesWithFilter(
+            MediaFilter.builder().libraryId(library.getId()).build(), firstRows(10));
+
+    assertThat(totals.alphabetIndex())
+        .extracting(LibraryMetadata::getLetter, LibraryMetadata::getItemCount)
+        .containsExactlyInAnyOrder(
+            tuple(AlphabetLetter.A, 1),
+            tuple(AlphabetLetter.E, 1),
+            tuple(AlphabetLetter.Q, 1),
+            tuple(AlphabetLetter.Z, 1));
+    assertThat(page.rows())
+        .extracting(item -> item.item().getTitle())
+        .containsExactly("Alpha", "\"Echo Valley\"", "“Quiet Harbor”", "Zulu");
+  }
+
+  @Test
   @DisplayName("Should sum letter counts to the total when HASH holds only non-Latin titles")
   void shouldSumLetterCountsToTotalWhenHashHoldsOnlyNonLatinTitles() {
     var library = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
