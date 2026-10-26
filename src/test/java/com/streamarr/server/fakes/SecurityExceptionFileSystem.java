@@ -329,7 +329,29 @@ public class SecurityExceptionFileSystem extends FileSystem {
         throw new AccessDeniedException(dir.toString());
       }
 
-      return delegate.newDirectoryStream(unwrap(dir), filter);
+      var entries = delegate.newDirectoryStream(unwrap(dir), filter);
+      return new DirectoryStream<>() {
+        @Override
+        public Iterator<Path> iterator() {
+          var delegateEntries = entries.iterator();
+          return new Iterator<>() {
+            @Override
+            public boolean hasNext() {
+              return delegateEntries.hasNext();
+            }
+
+            @Override
+            public Path next() {
+              return new WrappedPath(delegateEntries.next(), fileSystem);
+            }
+          };
+        }
+
+        @Override
+        public void close() throws IOException {
+          entries.close();
+        }
+      };
     }
 
     @Override
