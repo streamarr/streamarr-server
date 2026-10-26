@@ -103,7 +103,9 @@ class RemoteMediaSourceMapperTest {
   @ValueSource(strings = {"/media/movies", "/media/movies2/Feature.mkv", "/media/Feature.mkv"})
   @DisplayName("Should reject the source when it is the root or lies outside the root")
   void shouldRejectSourceWhenItIsRootOrLiesOutsideRoot(String sourcePath) {
-    assertThatThrownBy(() -> mapper.map(Path.of(sourcePath)))
+    var source = Path.of(sourcePath);
+
+    assertThatThrownBy(() -> mapper.map(source))
         .isExactlyInstanceOf(TranscodeException.class)
         .hasMessage("Media source is outside the configured source namespace");
   }
