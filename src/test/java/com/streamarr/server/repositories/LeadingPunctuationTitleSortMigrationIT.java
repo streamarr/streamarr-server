@@ -33,8 +33,7 @@ class LeadingPunctuationTitleSortMigrationIT extends AbstractIntegrationTest {
     schema = "leading_punctuation_" + UUID.randomUUID().toString().replace("-", "");
     dsl.createSchema(schema).execute();
     seedStoredTitles();
-    migrateTo("105");
-    migrateTo("106");
+    migrateThroughV106();
   }
 
   @AfterEach
@@ -71,14 +70,14 @@ class LeadingPunctuationTitleSortMigrationIT extends AbstractIntegrationTest {
             tuple("00000000-0000-0000-0000-00000000000b", "Q", "1"));
   }
 
-  private void migrateTo(String version) {
+  private void migrateThroughV106() {
     Flyway.configure()
         .configuration(flyway.getConfiguration())
         .schemas(schema)
         .defaultSchema(schema)
         .baselineVersion("104")
         .baselineOnMigrate(true)
-        .target(version)
+        .target("106")
         .load()
         .migrate();
   }

@@ -57,7 +57,7 @@ class TitleSortUtilTest {
     "Çelik Günler, Celik Gunler",
     "İnci Bay, Inci Bay",
     "Naïve Crossing, Naive Crossing",
-    "Écho Bay, Echo Bay"
+    "E\u0301cho Bay, Echo Bay"
   })
   @DisplayName("Should fold Latin diacritics when the title contains accented letters")
   void shouldFoldLatinDiacriticsWhenTitleContainsAccentedLetters(String title, String expected) {
@@ -69,19 +69,6 @@ class TitleSortUtilTest {
   @DisplayName("Should decompose compatibility characters when the title contains ligatures")
   void shouldDecomposeCompatibilityCharactersWhenTitleContainsLigatures(
       String title, String expected) {
-    assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
-  }
-
-  @ParameterizedTest
-  @CsvSource({
-    "~Tilde Tales, Tilde Tales",
-    "{Brace} Yourself, Brace} Yourself",
-    "| Pipe Dreams, Pipe Dreams",
-    "~ {Spaced} Out, Spaced} Out",
-    "}}~ Closing Time, Closing Time"
-  })
-  @DisplayName("Should strip leading characters above z when the title starts with them")
-  void shouldStripLeadingCharactersAboveZWhenTitleStartsWithThem(String title, String expected) {
     assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
   }
 
@@ -119,7 +106,12 @@ class TitleSortUtilTest {
         "©Copyright Harbor -> Copyright Harbor",
         "♥Heart Harbor -> Heart Harbor",
         "🦈 Shark Bay -> Shark Bay",
-        "“¡«Nested Openers -> Nested Openers"
+        "“¡«Nested Openers -> Nested Openers",
+        "~Tilde Tales -> Tilde Tales",
+        "{Brace} Yourself -> Brace} Yourself",
+        "| Pipe Dreams -> Pipe Dreams",
+        "~ {Spaced} Out -> Spaced} Out",
+        "}}~ Closing Time -> Closing Time"
       })
   @DisplayName("Should strip leading punctuation and symbols when the title starts with them")
   void shouldStripLeadingPunctuationAndSymbolsWhenTitleStartsWithThem(
@@ -134,14 +126,14 @@ class TitleSortUtilTest {
       value = {
         "% Echo Bay% -> Echo Bay",
         "%\tEcho Bay% -> Echo Bay",
-        " Echo Bay -> Echo Bay",
-        "　Echo Bay -> Echo Bay",
-        "​Echo Bay -> Echo Bay",
-        "﻿Echo Bay -> Echo Bay",
-        "‎Echo Bay -> Echo Bay",
-        "́Echo Bay -> Echo Bay",
-        "﻿“Quiet Harbor” -> Quiet Harbor”",
-        "“ Quiet Harbor” -> Quiet Harbor”"
+        "\u00A0Echo Bay -> Echo Bay",
+        "\u3000Echo Bay -> Echo Bay",
+        "\u200BEcho Bay -> Echo Bay",
+        "\uFEFFEcho Bay -> Echo Bay",
+        "\u200EEcho Bay -> Echo Bay",
+        "\u0301Echo Bay -> Echo Bay",
+        "\uFEFF“Quiet Harbor” -> Quiet Harbor”",
+        "“\u00A0Quiet Harbor” -> Quiet Harbor”"
       })
   @DisplayName("Should strip leading invisible characters when the title starts with them")
   void shouldStripLeadingInvisibleCharactersWhenTitleStartsWithThem(String title, String expected) {
@@ -149,7 +141,8 @@ class TitleSortUtilTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"~~~", "{ }", "|", "“”", "...", "!?!", "🦈", "​", "́", "﻿“”"})
+  @ValueSource(
+      strings = {"~~~", "{ }", "|", "“”", "...", "!?!", "🦈", "\u200B", "\u0301", "\uFEFF“”"})
   @DisplayName("Should keep the title when no letter or digit remains")
   void shouldKeepTitleWhenNoLetterOrDigitRemains(String title) {
     assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(title);
@@ -167,7 +160,7 @@ class TitleSortUtilTest {
         "1917 Echo -> 1917 Echo",
         "#1 Fan Club -> 1 Fan Club",
         "$9.99 Harbor -> 9.99 Harbor",
-        "(12) Steps -> 12) Steps"
+        "“The” Harbor -> The” Harbor"
       })
   @DisplayName("Should keep every character from the first letter or digit when stripping")
   void shouldKeepEveryCharacterFromTheFirstLetterOrDigitWhenStripping(
@@ -183,9 +176,7 @@ class TitleSortUtilTest {
         "“The Harbor” -> Harbor”, The",
         "¡A Quiet Night! -> Quiet Night!, A",
         "«An Echo» -> Echo», An",
-        "﻿The Harbor -> Harbor, The",
-        "The “Harbor” -> Harbor”, The",
-        "“The” Harbor -> The” Harbor"
+        "\uFEFFThe Harbor -> Harbor, The"
       })
   @DisplayName("Should move the article when it follows leading punctuation")
   void shouldMoveArticleWhenItFollowsLeadingPunctuation(String title, String expected) {
@@ -202,8 +193,8 @@ class TitleSortUtilTest {
         "¿Ώρα Μηδέν? -> Ώρα Μηδέν?",
         "“한강의 밤” -> 한강의 밤”"
       })
-  @DisplayName("Should leave a non-Latin title intact when stripping its leading punctuation")
-  void shouldLeaveNonLatinTitleIntactWhenStrippingItsLeadingPunctuation(
+  @DisplayName("Should strip only the leading punctuation when a non-Latin title starts with it")
+  void shouldStripOnlyTheLeadingPunctuationWhenNonLatinTitleStartsWithIt(
       String title, String expected) {
     assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
   }
@@ -213,7 +204,8 @@ class TitleSortUtilTest {
     "The Élite, 'Elite, The'",
     "An Ōkura Night, 'Okura Night, An'",
     "~The Harbor, 'Harbor, The'",
-    "The ~Harbor, 'Harbor, The'"
+    "The ~Harbor, 'Harbor, The'",
+    "The “Harbor”, 'Harbor”, The'"
   })
   @DisplayName("Should move the article after normalizing when the title starts with an article")
   void shouldMoveArticleAfterNormalizingWhenTitleStartsWithArticle(String title, String expected) {
