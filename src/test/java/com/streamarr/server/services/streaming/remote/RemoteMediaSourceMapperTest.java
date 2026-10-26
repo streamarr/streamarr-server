@@ -5,8 +5,12 @@ import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.google.common.jimfs.Configuration;
+import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.exceptions.TranscodeException;
+import java.io.IOException;
 import java.net.URI;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -59,5 +63,21 @@ class RemoteMediaSourceMapperTest {
     assertThatThrownBy(() -> mapper.map(source))
         .isExactlyInstanceOf(TranscodeException.class)
         .hasMessage("Media source name is not valid UTF-8");
+  }
+
+  @Test
+  @DisplayName(
+      "Should key the source relative to the root when the root is configured in other letter case"
+          + " on a file system that ignores letter case")
+  void shouldKeySourceRelativeToRootWhenRootIsConfiguredInOtherLetterCase() throws IOException {
+    try (var caseIgnoring = Jimfs.newFileSystem(Configuration.osX())) {
+      var movies = Files.createDirectories(caseIgnoring.getPath("/media/Movies"));
+      var caseMapper =
+          new RemoteMediaSourceMapper(SOURCE_NAMESPACE_ID, caseIgnoring.getPath("/MEDIA/movies"));
+
+      var source = caseMapper.map(movies.resolve("Feature (2020).mkv"));
+
+      assertThat(source.getRelativeKey()).isEqualTo("Feature (2020).mkv");
+    }
   }
 }

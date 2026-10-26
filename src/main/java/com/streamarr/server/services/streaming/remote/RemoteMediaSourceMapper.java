@@ -4,7 +4,9 @@ import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.
 
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.filepath.OnDiskSpelling;
 import com.streamarr.transcode.v1.MediaSourceRef;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.UUID;
 
@@ -15,7 +17,18 @@ final class RemoteMediaSourceMapper {
 
   RemoteMediaSourceMapper(UUID sourceNamespaceId, Path sourceRoot) {
     this.sourceNamespaceId = sourceNamespaceId;
-    this.sourceRoot = sourceRoot.toAbsolutePath().normalize();
+    this.sourceRoot = onDiskSpellingOf(sourceRoot.toAbsolutePath().normalize());
+  }
+
+  // Libraries store their paths as the file system spells them, so the root is spelled the same
+  // way. A root that does not exist or cannot be listed holds no library, so it stays as
+  // configured.
+  private static Path onDiskSpellingOf(Path root) {
+    try {
+      return OnDiskSpelling.of(root);
+    } catch (IOException _) {
+      return root;
+    }
   }
 
   MediaSourceRef map(Path sourcePath) {
