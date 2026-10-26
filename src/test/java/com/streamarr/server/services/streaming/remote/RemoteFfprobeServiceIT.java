@@ -346,7 +346,8 @@ class RemoteFfprobeServiceIT {
                                           .setKeyframeCount(2))))
                   .build());
 
-          assertThatThrownBy(() -> scan.await(Duration.ofSeconds(5)))
+          var bound = Duration.ofSeconds(5);
+          assertThatThrownBy(() -> scan.await(bound))
               .isInstanceOf(ProbeContractViolationException.class)
               .hasMessage("Worker probe keyframe decode times do not increase");
         }
