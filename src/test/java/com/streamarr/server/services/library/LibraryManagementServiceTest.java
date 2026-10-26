@@ -1100,10 +1100,10 @@ class LibraryManagementServiceTest {
     @ParameterizedTest
     @MethodSource("fileSystemsThatIgnoreLetterCase")
     @DisplayName(
-        "Should store the path as the file system spells it when the given path differs in letter"
-            + " case on a file system that ignores letter case")
+        "Should store the path with the names the file system stores when the given path differs in"
+            + " letter case on a file system that ignores letter case")
     void
-        shouldStorePathAsFileSystemSpellsItWhenGivenPathDiffersInLetterCaseOnFileSystemThatIgnoresLetterCase(
+        shouldStorePathWithNamesFileSystemStoresWhenGivenPathDiffersInLetterCaseOnFileSystemThatIgnoresLetterCase(
             Configuration configuration) throws IOException {
       // The shared fixture library has a path on another file system.
       fakeLibraryRepository.deleteById(savedLibraryId);
@@ -1477,8 +1477,8 @@ class LibraryManagementServiceTest {
     }
 
     private static void assumeIgnoresLetterCase(Path folder) {
-      var otherSpelling = folder.resolveSibling(folder.getFileName().toString().toUpperCase());
-      assumeTrue(Files.isDirectory(otherSpelling), "the temporary directory ignores letter case");
+      var otherLetterCase = folder.resolveSibling(folder.getFileName().toString().toUpperCase());
+      assumeTrue(Files.isDirectory(otherLetterCase), "the temporary directory ignores letter case");
     }
 
     private static Library libraryNamed(String name, String filepath) {

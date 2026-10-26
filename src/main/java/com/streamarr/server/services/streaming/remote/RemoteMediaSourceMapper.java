@@ -4,7 +4,7 @@ import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.
 
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.filepath.FilepathCodec;
-import com.streamarr.server.services.filepath.OnDiskSpelling;
+import com.streamarr.server.services.filepath.FilepathNameNormalizer;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -14,7 +14,7 @@ final class RemoteMediaSourceMapper {
 
   private final UUID sourceNamespaceId;
   private final Path configuredRoot;
-  private volatile Path spelledRoot;
+  private volatile Path rootWithFileSystemNames;
 
   RemoteMediaSourceMapper(UUID sourceNamespaceId, Path sourceRoot) {
     this.sourceNamespaceId = sourceNamespaceId;
@@ -34,22 +34,22 @@ final class RemoteMediaSourceMapper {
         .build();
   }
 
-  // Libraries store their paths as the file system spells them, so the root is spelled the same
-  // way. A root that is not mounted yet, or cannot be listed, holds no library. It keeps its
-  // configured spelling until its stored spelling can be read.
+  // Libraries store their paths with the names that the file system stores, so the root uses
+  // those names too. A root that is not mounted yet, or cannot be listed, holds no library. It
+  // keeps its configured names until the stored names can be read.
   private Path sourceRoot() {
-    var root = spelledRoot;
+    var root = rootWithFileSystemNames;
     if (root != null) {
       return root;
     }
 
     try {
-      root = OnDiskSpelling.of(configuredRoot);
+      root = FilepathNameNormalizer.normalizeToFileSystemNames(configuredRoot);
     } catch (IOException _) {
       return configuredRoot;
     }
 
-    spelledRoot = root;
+    rootWithFileSystemNames = root;
     return root;
   }
 

@@ -19,7 +19,7 @@ import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
-import com.streamarr.server.services.filepath.OnDiskSpelling;
+import com.streamarr.server.services.filepath.FilepathNameNormalizer;
 import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
@@ -140,7 +140,7 @@ public class LibraryManagementService {
         return Optional.empty();
       }
 
-      return Optional.of(OnDiskSpelling.of(path));
+      return Optional.of(FilepathNameNormalizer.normalizeToFileSystemNames(path));
     } catch (InvalidPathException _) {
       rejections.add(new AddLibraryRejection.PathNotFound());
     } catch (SecurityException | IOException _) {
