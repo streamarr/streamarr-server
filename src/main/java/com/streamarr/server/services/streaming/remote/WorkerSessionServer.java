@@ -239,7 +239,7 @@ public final class WorkerSessionServer
    * server is shutting down. A probe that reaches its timeout still carries the timeout reason.
    */
   @Override
-  public void onApplicationEvent(@NonNull ContextClosedEvent event) {
+  public void onApplicationEvent(ContextClosedEvent event) {
     workerConnections.beginShutdown();
   }
 
