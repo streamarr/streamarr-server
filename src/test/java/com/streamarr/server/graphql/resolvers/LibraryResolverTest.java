@@ -34,6 +34,7 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
@@ -171,8 +172,7 @@ class LibraryResolverTest {
 
       String name =
           dgsQueryExecutor.executeAndExtractJsonPath(
-              String.format("{ library(id: \"%s\") { name filepathUri } }", libraryId),
-              "data.library.name");
+              String.format("{ library(id: \"%s\") { name } }", libraryId), "data.library.name");
 
       assertThat(name).isEqualTo("Movies");
     }
@@ -220,12 +220,56 @@ class LibraryResolverTest {
 
       var result =
           dgsQueryExecutor.execute(
-              String.format("{ library(id: \"%s\") { name createdBy } }", libraryId));
+              String.format(
+                  "{ library(id: \"%s\") { name administration { createdBy } } }", libraryId));
 
       assertThat(result.getErrors()).isEmpty();
       var data = result.<Map<String, Object>>getData();
       var libraryData = (Map<String, Object>) data.get("library");
-      assertThat(libraryData).containsEntry("name", "Movies").containsEntry("createdBy", null);
+      assertThat(libraryData).containsEntry("name", "Movies");
+      assertThat((Map<String, Object>) libraryData.get("administration"))
+          .containsEntry("createdBy", null);
+    }
+
+    @Test
+    @DisplayName(
+        "Should return the library with a null administration and FORBIDDEN when the caller may not"
+            + " view library administration")
+    @SuppressWarnings("unchecked")
+    void shouldReturnLibraryWithNullAdministrationAndForbiddenWhenCallerMayNotViewIt() {
+      var libraryId = UUID.randomUUID();
+      when(libraryRepository.findById(libraryId))
+          .thenReturn(Optional.of(buildMovieLibrary(libraryId)));
+      authorizationDecider.decideUnitWith(
+          intent -> {
+            if (intent instanceof Intent.ViewLibraryAdministration) {
+              return new Decision.Denied<>(Decision.DenialReason.POLICY);
+            }
+
+            return new Decision.Allowed<>(AuthorizationUnit.INSTANCE);
+          });
+
+      try {
+        var result =
+            dgsQueryExecutor.execute(
+                String.format(
+                    "{ library(id: \"%s\") { name administration { status } } }", libraryId));
+
+        var libraryData =
+            (Map<String, Object>) result.<Map<String, Object>>getData().get("library");
+        assertThat(libraryData)
+            .containsEntry("name", "Movies")
+            .containsEntry("administration", null);
+        assertThat(result.getErrors())
+            .singleElement()
+            .satisfies(
+                error -> {
+                  assertThat(error.getExtensions()).containsEntry("code", "FORBIDDEN");
+                  assertThat(error.getPath()).containsExactly("library", "administration");
+                });
+      } finally {
+        authorizationDecider.allowAll();
+      }
     }
   }
 
@@ -248,7 +292,9 @@ class LibraryResolverTest {
       var payload = payloadOf(LibraryOperationMutation.START_LIBRARY_SCAN, libraryId.toString());
 
       assertThat(payload)
-          .containsEntry("library", Map.of("id", libraryId.toString(), "status", "SCANNING"))
+          .containsEntry(
+              "library",
+              Map.of("id", libraryId.toString(), "administration", Map.of("status", "SCANNING")))
           .containsEntry("userErrors", List.of());
       assertThat(FAKE_LIBRARY_OPERATION_SERVICE.startedLibraryIds()).containsExactly(libraryId);
       assertThat(authorizationDecider.recordedIntents())
@@ -264,7 +310,9 @@ class LibraryResolverTest {
       var payload = payloadOf(LibraryOperationMutation.START_LIBRARY_REFRESH, libraryId.toString());
 
       assertThat(payload)
-          .containsEntry("library", Map.of("id", libraryId.toString(), "status", "REFRESHING"))
+          .containsEntry(
+              "library",
+              Map.of("id", libraryId.toString(), "administration", Map.of("status", "REFRESHING")))
           .containsEntry("userErrors", List.of());
       assertThat(FAKE_LIBRARY_OPERATION_SERVICE.refreshRequest())
           .isEqualTo(new RefreshRequest(libraryId, ImageRefreshMode.PRESERVE));
@@ -284,12 +332,12 @@ class LibraryResolverTest {
                 startLibraryRefresh(
                   input: { libraryId: "%s", imageRefreshMode: REFRESH_IF_CHANGED }
                 ) {
-                  library { status }
+                  library { administration { status } }
                 }
               }
               """
                   .formatted(libraryId),
-              "data.startLibraryRefresh.library.status");
+              "data.startLibraryRefresh.library.administration.status");
 
       assertThat(status).isEqualTo("REFRESHING");
       assertThat(FAKE_LIBRARY_OPERATION_SERVICE.refreshRequest())
@@ -305,7 +353,7 @@ class LibraryResolverTest {
               """
               mutation {
                 startLibraryRefresh(input: { libraryId: "%s", imageRefreshMode: null }) {
-                  library { status }
+                  library { administration { status } }
                 }
               }
               """
@@ -353,7 +401,9 @@ class LibraryResolverTest {
       var payload = payloadOf(mutation, libraryId.toString());
 
       assertThat(payload)
-          .containsEntry("library", Map.of("id", libraryId.toString(), "status", "STOPPING"))
+          .containsEntry(
+              "library",
+              Map.of("id", libraryId.toString(), "administration", Map.of("status", "STOPPING")))
           .containsEntry("userErrors", List.of());
       assertThat(FAKE_LIBRARY_OPERATION_SERVICE.stopRequests())
           .containsExactly(new StopRequest(libraryId, kind));
@@ -545,7 +595,12 @@ class LibraryResolverTest {
       var payload = (Map<String, Object>) data.get("addLibrary");
       assertThat(payload)
           .containsEntry(
-              "library", Map.of("name", "Movies", "filepathUri", "file:///mpool/media/movies"))
+              "library",
+              Map.of(
+                  "name",
+                  "Movies",
+                  "administration",
+                  Map.of("filepathUri", "file:///mpool/media/movies")))
           .containsEntry("userErrors", List.of());
       assertThat(FAKE_LIBRARY_MANAGEMENT_SERVICE.addedIdentity()).isEqualTo(expectedIdentity);
       assertThat(FAKE_LIBRARY_MANAGEMENT_SERVICE.addedLibrary())
@@ -699,7 +754,7 @@ class LibraryResolverTest {
           backend: LOCAL
           externalAgentStrategy: TMDB
         }) {
-          library { name filepathUri }
+          library { name administration { filepathUri } }
           userErrors {
             __typename
             ... on MutationError { message }
@@ -866,11 +921,18 @@ class LibraryResolverTest {
 
   /** The three library operation mutations, each selecting its result and its user errors. */
   enum LibraryOperationMutation {
-    START_LIBRARY_SCAN("startLibraryScan", "library { id status }", "LibraryBusyError"),
-    START_LIBRARY_REFRESH("startLibraryRefresh", "library { id status }", "LibraryBusyError"),
-    STOP_LIBRARY_SCAN("stopLibraryScan", "library { id status }", "LibraryScanNotInProgressError"),
+    START_LIBRARY_SCAN(
+        "startLibraryScan", "library { id administration { status } }", "LibraryBusyError"),
+    START_LIBRARY_REFRESH(
+        "startLibraryRefresh", "library { id administration { status } }", "LibraryBusyError"),
+    STOP_LIBRARY_SCAN(
+        "stopLibraryScan",
+        "library { id administration { status } }",
+        "LibraryScanNotInProgressError"),
     STOP_LIBRARY_REFRESH(
-        "stopLibraryRefresh", "library { id status }", "LibraryRefreshNotInProgressError"),
+        "stopLibraryRefresh",
+        "library { id administration { status } }",
+        "LibraryRefreshNotInProgressError"),
     REMOVE_LIBRARY("removeLibrary", "removedLibraryId", "LibraryBusyError");
 
     private final String fieldName;

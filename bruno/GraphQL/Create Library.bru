@@ -16,7 +16,9 @@ body:graphql {
       library {
         id
         name
-        status
+        administration {
+          status
+        }
       }
       userErrors {
         __typename
@@ -52,6 +54,6 @@ tests {
     expect(res.body).to.not.have.property("errors");
     expect(res.body.data.addLibrary.userErrors).to.deep.equal([]);
     expect(res.body.data.addLibrary.library.id).to.be.a("string");
-    expect(res.body.data.addLibrary.library.status).to.equal("SCANNING");
+    expect(res.body.data.addLibrary.library.administration.status).to.equal("SCANNING");
   });
 }

@@ -217,6 +217,14 @@ public class LibraryResolver {
                     .toList());
   }
 
+  /** LibraryAdministration reads its fields from the library itself. */
+  @DgsData(parentType = "Library")
+  public Library administration(DataFetchingEnvironment dfe) {
+    libraryAdministrationService.requireViewLibraryAdministration(
+        authorizationService.currentIdentity());
+    return dfe.getSource();
+  }
+
   @DgsTypeResolver(name = "Media")
   public String resolveMedia(Object media) {
     if (media instanceof Movie) {

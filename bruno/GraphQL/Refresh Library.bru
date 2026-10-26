@@ -15,7 +15,9 @@ body:graphql {
     startLibraryRefresh(input: $input) {
       library {
         id
-        status
+        administration {
+          status
+        }
       }
       userErrors {
         __typename
@@ -45,7 +47,7 @@ tests {
     expect(res.body).to.not.have.property("errors");
     const payload = res.body.data.startLibraryRefresh;
     if (payload.userErrors.length === 0) {
-      expect(payload.library.status).to.equal("REFRESHING");
+      expect(payload.library.administration.status).to.equal("REFRESHING");
       return;
     }
     expect(payload.library).to.equal(null);

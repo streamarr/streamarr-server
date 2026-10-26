@@ -3,6 +3,7 @@ package com.streamarr.server.graphql.resolvers;
 import static com.streamarr.server.support.AuthTestSupport.bearer;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -238,6 +239,49 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should return the library's administration when a ServerAdmin reads the library")
+  void shouldReturnLibrarysAdministrationWhenServerAdminReadsLibrary() throws Exception {
+    identity = authTestSupport.createAdminIdentity();
+    var library = saveLibraryNamed("Administered", libraryDirectory);
+
+    try {
+      postGraphQl(
+              libraryAdministrationQuery(library.getId()), authTestSupport.profileBearer(identity))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(jsonPath("$.data.library.name").value("Administered"))
+          .andExpect(
+              jsonPath("$.data.library.administration.filepathUri").value(library.getFilepathUri()))
+          .andExpect(jsonPath("$.data.library.administration.status").value("HEALTHY"));
+    } finally {
+      libraryRepository.deleteById(library.getId());
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should return the library without its administration and with FORBIDDEN when the Profile is"
+          + " not a ServerAdmin")
+  void shouldReturnLibraryWithoutAdministrationAndWithForbiddenWhenProfileIsNotServerAdmin()
+      throws Exception {
+    identity = authTestSupport.createIdentity();
+
+    assertAdministrationRefused(authTestSupport.profileBearer(identity));
+  }
+
+  @Test
+  @DisplayName(
+      "Should return the library without its administration and with FORBIDDEN when the"
+          + " ServerAdmin's session is device-bound")
+  void
+      shouldReturnLibraryWithoutAdministrationAndWithForbiddenWhenServerAdminsSessionIsDeviceBound()
+          throws Exception {
+    identity = authTestSupport.createAdminIdentity();
+
+    assertAdministrationRefused(authTestSupport.deviceBoundProfileBearer(identity));
+  }
+
+  @Test
   @DisplayName("Should preserve library when remove is denied")
   void shouldPreserveLibraryWhenRemoveDeniedForUserRole() throws Exception {
     identity = authTestSupport.createIdentity();
@@ -290,13 +334,15 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
     libraryOperationScheduler.stop();
     try {
       postGraphQl(startLibraryScanMutation(library.getId()), adminToken)
-          .andExpect(jsonPath("$.data.startLibraryScan.library.status").value("SCANNING"));
+          .andExpect(
+              jsonPath("$.data.startLibraryScan.library.administration.status").value("SCANNING"));
 
       for (var attempt = 0; attempt < 2; attempt++) {
         postGraphQl(stopLibraryMutation("stopLibraryScan", library.getId()), adminToken)
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.errors").doesNotExist())
-            .andExpect(jsonPath("$.data.stopLibraryScan.library.status").value("STOPPING"))
+            .andExpect(
+                jsonPath("$.data.stopLibraryScan.library.administration.status").value("STOPPING"))
             .andExpect(jsonPath("$.data.stopLibraryScan.userErrors").isEmpty());
       }
 
@@ -354,7 +400,8 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
       postGraphQl(startLibraryScanMutation(library.getId()), adminToken)
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.errors").doesNotExist())
-          .andExpect(jsonPath("$.data.startLibraryScan.library.status").value("SCANNING"))
+          .andExpect(
+              jsonPath("$.data.startLibraryScan.library.administration.status").value("SCANNING"))
           .andExpect(jsonPath("$.data.startLibraryScan.userErrors").isEmpty());
 
       postGraphQl(startLibraryRefreshMutation(library.getId()), adminToken)
@@ -429,7 +476,8 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
           postGraphQl(addLibraryWithAuditTimestampsMutation(libraryDirectory), adminToken)
               .andExpect(status().isOk())
               .andExpect(jsonPath("$.errors").doesNotExist())
-              .andExpect(jsonPath("$.data.addLibrary.library.status").value("SCANNING"))
+              .andExpect(
+                  jsonPath("$.data.addLibrary.library.administration.status").value("SCANNING"))
               .andReturn()
               .getResponse()
               .getContentAsString();
@@ -662,6 +710,29 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
     }
   }
 
+  private void assertAdministrationRefused(String bearer) throws Exception {
+    var library = saveLibraryNamed("Shared", libraryDirectory);
+
+    try {
+      postGraphQl(libraryAdministrationQuery(library.getId()), bearer)
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.data.library.name").value("Shared"))
+          .andExpect(jsonPath("$.data.library.administration").value(nullValue()))
+          .andExpect(jsonPath("$.errors.length()").value(1))
+          .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"))
+          .andExpect(jsonPath("$.errors[0].path[0]").value("library"))
+          .andExpect(jsonPath("$.errors[0].path[1]").value("administration"));
+    } finally {
+      libraryRepository.deleteById(library.getId());
+    }
+  }
+
+  private static String libraryAdministrationQuery(UUID libraryId) {
+    return ("query { library(id: \\\"%s\\\") { name administration { filepathUri status"
+            + " scanStartedOn scanCompletedOn createdBy lastModifiedBy } } }")
+        .formatted(libraryId);
+  }
+
   private Library saveLibraryNamed(String name, Path directory) {
     return libraryRepository.saveAndFlush(
         LibraryFixtureCreator.unsavedLibraryBuilder()
@@ -735,7 +806,8 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
 
   private static String addLibraryWithAuditTimestampsMutation(Path directory) {
     return ("mutation { addLibrary(input: {name: \\\"Audited\\\", filepath: \\\"%s\\\","
-            + " type: MOVIE, backend: LOCAL}) { library { id status createdOn lastModifiedOn } } }")
+            + " type: MOVIE, backend: LOCAL}) { library { id administration { status } createdOn"
+            + " lastModifiedOn } } }")
         .formatted(directory.toAbsolutePath());
   }
 
@@ -766,8 +838,8 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
   private record AuditTimestamps(Instant createdOn, Instant lastModifiedOn) {}
 
   private static String startLibraryScanMutation(UUID libraryId) {
-    return ("mutation { startLibraryScan(input: {libraryId: \\\"%s\\\"}) { library { status }"
-            + " userErrors { __typename } } }")
+    return ("mutation { startLibraryScan(input: {libraryId: \\\"%s\\\"}) { library {"
+            + " administration { status } } userErrors { __typename } } }")
         .formatted(libraryId);
   }
 
@@ -777,14 +849,14 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
       notInProgressError = "LibraryRefreshNotInProgressError";
     }
 
-    return ("mutation { %s(input: {libraryId: \\\"%s\\\"}) { library { status } userErrors {"
-            + " __typename ... on MutationError { message } ... on %s { status } } } }")
+    return ("mutation { %s(input: {libraryId: \\\"%s\\\"}) { library { administration { status } }"
+            + " userErrors { __typename ... on MutationError { message } ... on %s { status } } } }")
         .formatted(mutationName, libraryId, notInProgressError);
   }
 
   private static String startLibraryRefreshMutation(UUID libraryId) {
-    return ("mutation { startLibraryRefresh(input: {libraryId: \\\"%s\\\"}) { library { status }"
-            + " userErrors { __typename ... on MutationError { message }"
+    return ("mutation { startLibraryRefresh(input: {libraryId: \\\"%s\\\"}) { library {"
+            + " administration { status } } userErrors { __typename ... on MutationError { message }"
             + " ... on LibraryBusyError { status } } } }")
         .formatted(libraryId);
   }

@@ -45,11 +45,14 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
 
   private static final String STATUS_FIELD = "libraryStatusChanged";
   private static final String STATUS_SUBSCRIPTION =
-      "subscription { libraryStatusChanged { id name status scanStartedOn scanCompletedOn } }";
+      "subscription { libraryStatusChanged { id name administration { status scanStartedOn"
+          + " scanCompletedOn } } }";
   private static final String AUDITED_STATUS_SUBSCRIPTION =
-      "subscription { libraryStatusChanged { id status createdOn lastModifiedOn } }";
+      "subscription { libraryStatusChanged { id administration { status } createdOn lastModifiedOn"
+          + " } }";
   private static final String ADDED_SUBSCRIPTION =
-      "subscription { libraryAdded { id name status scanStartedOn scanCompletedOn } }";
+      "subscription { libraryAdded { id name administration { status scanStartedOn scanCompletedOn"
+          + " } } }";
   private static final String REMOVED_SUBSCRIPTION =
       "subscription { libraryRemoved { libraryId } }";
   private static final RefusedSubscription STATUS_REFUSAL =
@@ -63,7 +66,7 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
       subscription {
         libraryStatusChanged {
           id
-          status
+          administration { status }
           items(first: 1) { edges { node { __typename ... on Movie { id watchStatus } } } }
           alphabetIndex { letter count }
         }
@@ -109,7 +112,7 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
     var bearer = adminBearer();
     var library = saveLibrary(libraryDirectory);
     var queried =
-        http.execute(bearer, "query { libraries { id status scanCompletedOn } }")
+        http.execute(bearer, "query { libraries { id administration { status scanCompletedOn } } }")
             .path("data")
             .path("libraries");
     assertThat(queried.valueStream())
@@ -117,8 +120,9 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
         .singleElement()
         .satisfies(
             node -> {
-              assertThat(node.path("status").asString()).isEqualTo("HEALTHY");
-              assertThat(node.path("scanCompletedOn").isNull()).isTrue();
+              assertThat(node.path("administration").path("status").asString())
+                  .isEqualTo("HEALTHY");
+              assertThat(node.path("administration").path("scanCompletedOn").isNull()).isTrue();
             });
     var socket = statusSubscribedSocket(bearer);
 
@@ -127,18 +131,20 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
             () -> {
               var accepted = http.execute(bearer, scanMutation(library.getId()));
               var payload = accepted.path("data").path("startLibraryScan");
-              assertThat(payload.path("library").path("status").asString()).isEqualTo("SCANNING");
+              assertThat(payload.path("library").path("administration").path("status").asString())
+                  .isEqualTo("SCANNING");
               assertThat(payload.path("userErrors").isEmpty()).isTrue();
               return nextStatusChange(socket, library.getId());
             });
 
-    assertThat(scanning.path("status").asString()).isEqualTo("SCANNING");
+    assertThat(scanning.path("administration").path("status").asString()).isEqualTo("SCANNING");
     assertThat(scanning.path("name").asString()).isEqualTo(library.getName());
-    assertThat(scanning.path("scanStartedOn").isNull()).isFalse();
+    assertThat(scanning.path("administration").path("scanStartedOn").isNull()).isFalse();
     var healthy = nextStatusChange(socket, library.getId());
-    assertThat(healthy.path("status").asString()).isEqualTo("HEALTHY");
-    assertThat(Instant.parse(healthy.path("scanCompletedOn").asString()))
-        .isAfterOrEqualTo(Instant.parse(scanning.path("scanStartedOn").asString()));
+    assertThat(healthy.path("administration").path("status").asString()).isEqualTo("HEALTHY");
+    assertThat(Instant.parse(healthy.path("administration").path("scanCompletedOn").asString()))
+        .isAfterOrEqualTo(
+            Instant.parse(scanning.path("administration").path("scanStartedOn").asString()));
   }
 
   @Test
@@ -157,7 +163,7 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
 
       var scanning = nextStatusChange(socket, library.getId());
       var stored = libraryRepository.findById(library.getId()).orElseThrow();
-      assertThat(scanning.path("status").asString()).isEqualTo("SCANNING");
+      assertThat(scanning.path("administration").path("status").asString()).isEqualTo("SCANNING");
       assertThat(Instant.parse(scanning.path("createdOn").asString()))
           .isEqualTo(stored.getCreatedOn());
       assertThat(Instant.parse(scanning.path("lastModifiedOn").asString()))
@@ -250,21 +256,34 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
     libraryOperationScheduler.stop();
     try {
       http.execute(bearer, scanMutation(library.getId()));
-      assertThat(nextStatusChange(socket, library.getId()).path("status").asString())
+      assertThat(
+              nextStatusChange(socket, library.getId())
+                  .path("administration")
+                  .path("status")
+                  .asString())
           .isEqualTo("SCANNING");
 
       var stopped = http.execute(bearer, stopScanMutation(library.getId()));
 
       var payload = stopped.path("data").path("stopLibraryScan");
-      assertThat(payload.path("library").path("status").asString()).isEqualTo("STOPPING");
+      assertThat(payload.path("library").path("administration").path("status").asString())
+          .isEqualTo("STOPPING");
       assertThat(payload.path("userErrors").isEmpty()).isTrue();
-      assertThat(nextStatusChange(socket, library.getId()).path("status").asString())
+      assertThat(
+              nextStatusChange(socket, library.getId())
+                  .path("administration")
+                  .path("status")
+                  .asString())
           .isEqualTo("STOPPING");
     } finally {
       libraryOperationScheduler.start();
     }
 
-    assertThat(nextStatusChange(socket, library.getId()).path("status").asString())
+    assertThat(
+            nextStatusChange(socket, library.getId())
+                .path("administration")
+                .path("status")
+                .asString())
         .isEqualTo("HEALTHY");
   }
 
@@ -277,11 +296,15 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
 
     http.execute(bearer, scanMutation(library.getId()));
 
-    assertThat(nextStatusChange(socket, library.getId()).path("status").asString())
+    assertThat(
+            nextStatusChange(socket, library.getId())
+                .path("administration")
+                .path("status")
+                .asString())
         .isEqualTo("SCANNING");
     var unhealthy = nextStatusChange(socket, library.getId());
-    assertThat(unhealthy.path("status").asString()).isEqualTo("UNHEALTHY");
-    assertThat(unhealthy.path("scanCompletedOn").isNull()).isFalse();
+    assertThat(unhealthy.path("administration").path("status").asString()).isEqualTo("UNHEALTHY");
+    assertThat(unhealthy.path("administration").path("scanCompletedOn").isNull()).isFalse();
   }
 
   @Test
@@ -294,11 +317,20 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
     var accepted = http.execute(bearer, refreshMutation(library.getId()));
 
     var payload = accepted.path("data").path("startLibraryRefresh");
-    assertThat(payload.path("library").path("status").asString()).isEqualTo("REFRESHING");
-    assertThat(payload.path("userErrors").isEmpty()).isTrue();
-    assertThat(nextStatusChange(socket, library.getId()).path("status").asString())
+    assertThat(payload.path("library").path("administration").path("status").asString())
         .isEqualTo("REFRESHING");
-    assertThat(nextStatusChange(socket, library.getId()).path("status").asString())
+    assertThat(payload.path("userErrors").isEmpty()).isTrue();
+    assertThat(
+            nextStatusChange(socket, library.getId())
+                .path("administration")
+                .path("status")
+                .asString())
+        .isEqualTo("REFRESHING");
+    assertThat(
+            nextStatusChange(socket, library.getId())
+                .path("administration")
+                .path("status")
+                .asString())
         .isEqualTo("HEALTHY");
   }
 
@@ -315,7 +347,7 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
     var added = nextAddedLibrary(socket);
     assertThat(added.path("id").asString()).isEqualTo(libraryId.toString());
     assertThat(added.path("name").asString()).isEqualTo("Added Library");
-    assertThat(added.path("status").asString()).isEqualTo("SCANNING");
+    assertThat(added.path("administration").path("status").asString()).isEqualTo("SCANNING");
     awaitStatus(socket, libraryId, "HEALTHY");
 
     var removed = http.execute(otherSession, removeMutation(libraryId));
@@ -405,8 +437,9 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should deliver the added library and the removal's library id when a Profile that is not a ServerAdmin subscribes")
-  void shouldDeliverAddedLibraryAndRemovalIdWhenProfileThatIsNotServerAdminSubscribes()
+      "Should deliver the added library without its administration and the removal's library id"
+          + " when a Profile that is not a ServerAdmin subscribes")
+  void shouldDeliverAddedLibraryWithoutAdministrationAndRemovalIdWhenProfileIsNotServerAdmin()
       throws IOException {
     var socket = additionsAndRemovalsSocket(ordinaryProfileBearer());
     var admin = adminBearer();
@@ -414,9 +447,12 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
 
     var libraryId = addLibrary(admin, "Family Library", directory("family"));
 
-    var added = nextAddedLibrary(socket);
+    var payload = socket.nextMessageFor("added").path("payload");
+    var added = payload.path("data").path("libraryAdded");
     assertThat(added.path("id").asString()).isEqualTo(libraryId.toString());
     assertThat(added.path("name").asString()).isEqualTo("Family Library");
+    assertThat(added.path("administration").isNull()).isTrue();
+    assertThat(firstErrorCode(payload)).isEqualTo("FORBIDDEN");
     awaitStatus(adminStatus, libraryId, "HEALTHY");
 
     http.execute(admin, removeMutation(libraryId));
@@ -532,7 +568,8 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
 
   private static void awaitStatus(
       GraphQlTransportWsTestClient socket, UUID libraryId, String status) {
-    while (!status.equals(nextStatusChange(socket, libraryId).path("status").asString())) {
+    while (!status.equals(
+        nextStatusChange(socket, libraryId).path("administration").path("status").asString())) {
       // Earlier transitions of the same library are skipped.
     }
   }
@@ -541,7 +578,7 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
     return """
         mutation {
           addLibrary(input: {name: "%s", filepath: "%s", type: MOVIE, backend: LOCAL}) {
-            library { id name status }
+            library { id name administration { status } }
             userErrors { __typename }
           }
         }
@@ -656,7 +693,7 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
     return """
         mutation {
           startLibraryScan(input: { libraryId: "%s" }) {
-            library { status }
+            library { administration { status } }
             userErrors { __typename }
           }
         }
@@ -668,7 +705,7 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
     return """
         mutation {
           stopLibraryScan(input: { libraryId: "%s" }) {
-            library { status }
+            library { administration { status } }
             userErrors { __typename }
           }
         }
@@ -680,7 +717,7 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
     return """
         mutation {
           startLibraryRefresh(input: { libraryId: "%s" }) {
-            library { status }
+            library { administration { status } }
             userErrors { __typename }
           }
         }

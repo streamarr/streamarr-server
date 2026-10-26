@@ -42,7 +42,7 @@ class WebSocketAccessExpiryIT extends AbstractIntegrationTest {
 
   private static final String STATUS_FIELD = "libraryStatusChanged";
   private static final String STATUS_SUBSCRIPTION =
-      "subscription { libraryStatusChanged { id status } }";
+      "subscription { libraryStatusChanged { id administration { status } } }";
 
   @LocalServerPort private int port;
 
@@ -116,7 +116,7 @@ class WebSocketAccessExpiryIT extends AbstractIntegrationTest {
 
       var change = renewed.nextMessageFor("status").path("payload").path("data").path(STATUS_FIELD);
       assertThat(change.path("id").asString()).isEqualTo(library.getId().toString());
-      assertThat(change.path("status").asString()).isEqualTo("HEALTHY");
+      assertThat(change.path("administration").path("status").asString()).isEqualTo("HEALTHY");
     }
   }
 

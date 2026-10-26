@@ -157,7 +157,8 @@ The subscription stays open while those queries run.
 
 == Client lifecycle
 
-A library status client subscribes first and then queries `libraries { id name status scanStartedOn scanCompletedOn }`.
+A Library list client subscribes to `libraryAdded` and `libraryRemoved` first and then queries `libraries { id name }`.
+A ServerAdmin client that also shows status subscribes to `libraryStatusChanged` and queries `libraries { id name administration { status scanStartedOn scanCompletedOn } }`.
 It applies each change by library id.
 The server sends no snapshot and replays nothing missed.
 After every reconnect, the client subscribes and queries again.

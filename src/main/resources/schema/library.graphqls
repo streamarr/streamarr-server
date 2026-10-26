@@ -1,14 +1,8 @@
 type Library {
     id: ID!
-    createdBy: String
     createdOn: String!
-    lastModifiedBy: String
     lastModifiedOn: String!
     name: String
-    filepathUri: String!
-    scanStartedOn: String
-    scanCompletedOn: String
-    status: LibraryStatus!
     backend: LibraryBackend!
     type: MediaType!
     items(first: Int
@@ -24,6 +18,22 @@ type Library {
     transaction that adds or removes a title, so it grows while a scan runs. This is not scan progress.
     """
     itemCount: Int!
+    """
+    The library's folder, scan status and editors. Requires a ServerAdmin. For every other caller,
+    and for a ServerAdmin's device-bound session, this field is null with FORBIDDEN, and the other
+    fields of the library still arrive.
+    """
+    administration: LibraryAdministration
+}
+
+"What a ServerAdmin sees about a library besides what every Profile sees."
+type LibraryAdministration {
+    filepathUri: String!
+    status: LibraryStatus!
+    scanStartedOn: String
+    scanCompletedOn: String
+    createdBy: String
+    lastModifiedBy: String
 }
 
 "The receipt for a removed library: the id of the library that no longer exists."
@@ -154,7 +164,7 @@ input StartLibraryScanInput {
     libraryId: ID!
 }
 
-"The library after its scan started. The library's status already reads SCANNING."
+"The library after its scan started. Its administration status already reads SCANNING."
 type StartLibraryScanPayload {
     library: Library
     userErrors: [StartLibraryScanError!]!
@@ -167,7 +177,7 @@ input StartLibraryRefreshInput {
     imageRefreshMode: ImageRefreshMode! = PRESERVE
 }
 
-"The library after its refresh started. The library's status already reads REFRESHING."
+"The library after its refresh started. Its administration status already reads REFRESHING."
 type StartLibraryRefreshPayload {
     library: Library
     userErrors: [StartLibraryRefreshError!]!
@@ -179,7 +189,7 @@ input StopLibraryScanInput {
     libraryId: ID!
 }
 
-"The library after the stop of its scan was stored. The library's status reads STOPPING until the scan's admitted tasks finish."
+"The library after the stop of its scan was stored. Its administration status reads STOPPING until the scan's admitted tasks finish."
 type StopLibraryScanPayload {
     library: Library
     userErrors: [StopLibraryScanError!]!
@@ -191,7 +201,7 @@ input StopLibraryRefreshInput {
     libraryId: ID!
 }
 
-"The library after the stop of its refresh was stored. The library's status reads STOPPING until the refresh's admitted tasks finish."
+"The library after the stop of its refresh was stored. Its administration status reads STOPPING until the refresh's admitted tasks finish."
 type StopLibraryRefreshPayload {
     library: Library
     userErrors: [StopLibraryRefreshError!]!

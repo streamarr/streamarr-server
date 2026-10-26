@@ -6,6 +6,7 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Movie;
@@ -100,14 +101,14 @@ class SubscriptionFieldErrorIT extends AbstractIntegrationTest {
         subscribe(
             authTestSupport.createAdminIdentity(),
             STATUS_OPERATION,
-            "subscription { libraryStatusChanged { id name filepathUri status } }");
+            "subscription { libraryStatusChanged { id name backend } }");
     activeSubscriptions.awaitCount(STATUS_FIELD, 1);
     var resolvable = saveLibrary("Resolvable Library");
     var unresolvable = saveLibrary(UNRESOLVABLE_LIBRARY_NAME);
 
     publishStatusChange(resolvable);
-    assertThat(nextStatusChange(socket, resolvable.getId()).path("filepathUri").asString())
-        .isEqualTo(resolvable.getFilepathUri());
+    assertThat(nextStatusChange(socket, resolvable.getId()).path("backend").asString())
+        .isEqualTo(resolvable.getBackend().name());
 
     publishStatusChange(unresolvable);
 
@@ -118,12 +119,12 @@ class SubscriptionFieldErrorIT extends AbstractIntegrationTest {
     assertThat(payload.path("data").path(STATUS_FIELD).isNull()).isTrue();
     assertThat(payload.path("errors").path(0).path("path").valueStream())
         .map(JsonNode::asString)
-        .containsExactly(STATUS_FIELD, "filepathUri");
+        .containsExactly(STATUS_FIELD, "backend");
 
     publishStatusChange(resolvable);
 
-    assertThat(nextStatusChange(socket, resolvable.getId()).path("filepathUri").asString())
-        .isEqualTo(resolvable.getFilepathUri());
+    assertThat(nextStatusChange(socket, resolvable.getId()).path("backend").asString())
+        .isEqualTo(resolvable.getBackend().name());
   }
 
   @Test
@@ -259,20 +260,20 @@ class SubscriptionFieldErrorIT extends AbstractIntegrationTest {
   }
 
   /**
-   * Fails the non-null filepathUri of the library named {@value #UNRESOLVABLE_LIBRARY_NAME} and the
+   * Fails the non-null backend of the library named {@value #UNRESOLVABLE_LIBRARY_NAME} and the
    * non-null seasonNumber of the season titled {@value #UNRESOLVABLE_SEASON_TITLE}.
    */
   @DgsComponent
   static class UnresolvableFieldResolvers {
 
-    @DgsData(parentType = "Library", field = "filepathUri")
-    public String filepathUri(DataFetchingEnvironment dfe) {
+    @DgsData(parentType = "Library", field = "backend")
+    public LibraryBackend backend(DataFetchingEnvironment dfe) {
       Library library = dfe.getSource();
       if (UNRESOLVABLE_LIBRARY_NAME.equals(library.getName())) {
-        throw new UnresolvableFieldException("filepathUri");
+        throw new UnresolvableFieldException("backend");
       }
 
-      return library.getFilepathUri();
+      return library.getBackend();
     }
 
     @DgsData(parentType = "Season", field = "seasonNumber")
