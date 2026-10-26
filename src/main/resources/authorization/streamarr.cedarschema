@@ -101,11 +101,6 @@ namespace Streamarr {
     resource: Server,
     context: {},
   };
-  action viewLibraryAdministration in libraryAdministration appliesTo {
-    principal: Account,
-    resource: Server,
-    context: {},
-  };
 
   action viewProfilePicker appliesTo {
     principal: Account,

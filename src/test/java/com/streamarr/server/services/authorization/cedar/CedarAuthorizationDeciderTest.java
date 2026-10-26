@@ -73,8 +73,7 @@ class CedarAuthorizationDeciderTest {
         Arguments.of(new Intent.ScanLibrary(libraryId)),
         Arguments.of(new Intent.RefreshLibrary(libraryId)),
         Arguments.of(new Intent.StopLibraryScan(libraryId)),
-        Arguments.of(new Intent.StopLibraryRefresh(libraryId)),
-        Arguments.of(new Intent.ViewLibraryAdministration()));
+        Arguments.of(new Intent.StopLibraryRefresh(libraryId)));
   }
 
   @ParameterizedTest
@@ -127,12 +126,13 @@ class CedarAuthorizationDeciderTest {
         .isEqualTo(new Decision.Denied<>(Decision.DenialReason.POLICY));
   }
 
-  @Test
-  @DisplayName("Should deny viewing library administration when the ServerAdmin is disabled")
-  void shouldDenyLibraryAdministrationViewWhenAccountIsDisabled() {
+  @ParameterizedTest
+  @MethodSource("libraryAdministrationIntents")
+  @DisplayName("Should deny library administration when the ServerAdmin is disabled")
+  void shouldDenyLibraryAdministrationWhenServerAdminIsDisabled(Intent.UnitIntent intent) {
     var identity = identityFor(liveAccount(true, false));
 
-    assertThat(decider.decide(identity, new Intent.ViewLibraryAdministration()))
+    assertThat(decider.decide(identity, intent))
         .isEqualTo(new Decision.Denied<>(Decision.DenialReason.POLICY));
   }
 

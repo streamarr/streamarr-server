@@ -190,25 +190,6 @@ class LibraryAdministrationServiceTest {
         .isEqualTo(LibraryStatus.SCANNING);
   }
 
-  @Test
-  @DisplayName("Should authorize through the typed intent when library administration is viewed")
-  void shouldAuthorizeThroughTypedIntentWhenLibraryAdministrationIsViewed() {
-    libraryAdministrationService.requireViewLibraryAdministration(identity);
-
-    assertThat(authorizationService.recordedIntents())
-        .containsExactly(new Intent.ViewLibraryAdministration());
-  }
-
-  @Test
-  @DisplayName("Should refuse viewing library administration when authorization denies")
-  void shouldRefuseViewingLibraryAdministrationWhenAuthorizationDenies() {
-    authorizationService.denyAll();
-
-    assertThatThrownBy(
-            () -> libraryAdministrationService.requireViewLibraryAdministration(identity))
-        .isInstanceOf(AccessDeniedException.class);
-  }
-
   private static final class RecordingLibraryManagementService extends LibraryManagementService {
 
     private AuthenticatedIdentity addedIdentity;

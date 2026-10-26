@@ -14,8 +14,6 @@ enum Action {
       "stopLibraryScan", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
   STOP_LIBRARY_REFRESH(
       "stopLibraryRefresh", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
-  VIEW_LIBRARY_ADMINISTRATION(
-      "viewLibraryAdministration", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
   VIEW_PROFILE_PICKER(
       "viewProfilePicker",
       ResourceKind.HOUSEHOLD,

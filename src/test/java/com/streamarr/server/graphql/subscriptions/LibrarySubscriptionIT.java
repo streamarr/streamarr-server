@@ -296,7 +296,7 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
       "Should deliver the added library and the removal's library id when another session adds and removes a library")
   void shouldDeliverAddedLibraryAndRemovalIdWhenAnotherSessionAddsAndRemovesLibrary()
       throws IOException {
-    var socket = libraryAdministrationSocket(adminBearer());
+    var socket = allLibrarySubscriptionsSocket(adminBearer());
     var otherSession = adminBearer();
 
     var libraryId = addLibrary(otherSession, "Added Library", directory("added"));
@@ -317,7 +317,7 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
   @DisplayName("Should deliver only the later addition when a refused addition comes first")
   void shouldDeliverOnlyLaterAdditionWhenRefusedAdditionComesFirst() throws IOException {
     var admin = adminBearer();
-    var socket = libraryAdministrationSocket(admin);
+    var socket = allLibrarySubscriptionsSocket(admin);
     var member = authTestSupport.createIdentity();
     identities.add(member);
 
@@ -337,7 +337,7 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
   void shouldDeliverOnlyLaterAdditionWhenRolledBackAdditionComesFirst() throws IOException {
     var admin = adminBearer();
     var registered = saveLibrary(directory("registered"));
-    var socket = libraryAdministrationSocket(admin);
+    var socket = allLibrarySubscriptionsSocket(admin);
 
     var rolledBack =
         http.execute(admin, addLibraryMutation("Duplicate Library", directory("registered")));
@@ -363,7 +363,7 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
     var admin = adminBearer();
     var busy = saveLibrary(directory("busy"));
     var sentinel = saveLibrary(directory("sentinel"));
-    var socket = libraryAdministrationSocket(admin);
+    var socket = allLibrarySubscriptionsSocket(admin);
     // The stopped scheduler keeps the scan stored and the library SCANNING.
     libraryOperationScheduler.stop();
     try {
@@ -407,7 +407,7 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
   void shouldDeliverAddedLibraryAndRemovalIdWhenSessionIsDeviceBound() throws IOException {
     var identity = authTestSupport.createIdentity();
     identities.add(identity);
-    var socket = libraryAdministrationSocket(authTestSupport.deviceBoundProfileBearer(identity));
+    var socket = allLibrarySubscriptionsSocket(authTestSupport.deviceBoundProfileBearer(identity));
     var admin = adminBearer();
 
     var libraryId = addLibrary(admin, "Living Room Library", directory("living-room"));
@@ -475,7 +475,7 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
     return socket;
   }
 
-  private GraphQlTransportWsTestClient libraryAdministrationSocket(String bearer) {
+  private GraphQlTransportWsTestClient allLibrarySubscriptionsSocket(String bearer) {
     var socket = connect(bearer);
     socket.subscribe("added", ADDED_SUBSCRIPTION);
     socket.subscribe("removed", REMOVED_SUBSCRIPTION);

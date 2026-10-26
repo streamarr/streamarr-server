@@ -30,14 +30,6 @@ public class LibraryAdministrationService {
     return libraryManagementService.removeLibrary(identity, libraryId);
   }
 
-  /**
-   * Refuses unless the identity may view library administration. Subscriptions call this once, when
-   * they register; access-token expiry bounds the authority afterwards (ADR 0016).
-   */
-  public void requireViewLibraryAdministration(AuthenticatedIdentity identity) {
-    authorizationService.requireAllowed(identity, new Intent.ViewLibraryAdministration());
-  }
-
   public Outcome<Library, LibraryOperationRejection> startLibraryScan(
       AuthenticatedIdentity identity, UUID libraryId) {
     authorizationService.requireAllowed(identity, new Intent.ScanLibrary(libraryId));
