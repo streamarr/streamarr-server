@@ -4,6 +4,7 @@ import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.account
 import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.profileScopedBuilder;
 import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.media.MediaType;
@@ -13,6 +14,8 @@ import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.services.LibraryMoviesList;
 import com.streamarr.server.services.MovieService;
+import com.streamarr.server.services.authorization.AuthorizationUnit;
+import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.pagination.MediaFilter;
 import java.util.UUID;
@@ -77,12 +80,14 @@ class LibraryQueryAuthorizationTest {
   void shouldAllowLibrarySubscriptionWhenSelectedProfileMayViewItsOwnActivity() {
     var identity = profileScopedBuilder().build();
     var authorization = new FakeAuthorizationService(identity);
+    authorization.decideUnitWith(
+        intent ->
+            intent.equals(new Intent.ViewProfileActivity(identity.profileId()))
+                ? new Decision.Allowed<>(AuthorizationUnit.INSTANCE)
+                : new Decision.Denied<>(Decision.DenialReason.POLICY));
     var service = LibraryQueryService.builder().authorization(authorization).build();
 
-    service.requireSubscriptionProfile(identity);
-
-    assertThat(authorization.recordedIntents())
-        .containsExactly(new Intent.ViewProfileActivity(identity.profileId()));
+    assertThatCode(() -> service.requireSubscriptionProfile(identity)).doesNotThrowAnyException();
   }
 
   @Test

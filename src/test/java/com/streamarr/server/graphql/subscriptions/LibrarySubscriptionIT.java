@@ -403,23 +403,38 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should deliver the added library and the removal's library id when the session is device-bound")
-  void shouldDeliverAddedLibraryAndRemovalIdWhenSessionIsDeviceBound() throws IOException {
-    var identity = authTestSupport.createIdentity();
-    identities.add(identity);
-    var socket = allLibrarySubscriptionsSocket(authTestSupport.deviceBoundProfileBearer(identity));
+      "Should deliver the added library and the removal's library id when a Profile that is not a ServerAdmin subscribes")
+  void shouldDeliverAddedLibraryAndRemovalIdWhenProfileThatIsNotServerAdminSubscribes()
+      throws IOException {
+    var socket = allLibrarySubscriptionsSocket(ordinaryProfileBearer());
     var admin = adminBearer();
 
-    var libraryId = addLibrary(admin, "Living Room Library", directory("living-room"));
+    var libraryId = addLibrary(admin, "Family Library", directory("family"));
 
     var added = nextAddedLibrary(socket);
     assertThat(added.path("id").asString()).isEqualTo(libraryId.toString());
-    assertThat(added.path("name").asString()).isEqualTo("Living Room Library");
+    assertThat(added.path("name").asString()).isEqualTo("Family Library");
     awaitStatus(socket, libraryId, "HEALTHY");
 
     http.execute(admin, removeMutation(libraryId));
 
     assertThat(removedLibraryId(socket)).isEqualTo(libraryId.toString());
+  }
+
+  @Test
+  @DisplayName("Should deliver SCANNING then HEALTHY when the session is device-bound")
+  void shouldDeliverScanningThenHealthyWhenSessionIsDeviceBound() {
+    var identity = authTestSupport.createIdentity();
+    identities.add(identity);
+    var library = saveLibrary(libraryDirectory);
+    var socket = statusSubscribedSocket(authTestSupport.deviceBoundProfileBearer(identity));
+
+    http.execute(adminBearer(), scanMutation(library.getId()));
+
+    assertThat(nextStatusChangeWithoutErrors(socket, library.getId()).path("status").asString())
+        .isEqualTo("SCANNING");
+    assertThat(nextStatusChangeWithoutErrors(socket, library.getId()).path("status").asString())
+        .isEqualTo("HEALTHY");
   }
 
   @Test
