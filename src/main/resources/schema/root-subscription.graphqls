@@ -4,7 +4,7 @@ and mutations run only over HTTP POST on /graphql.
 
 A subscription delivers changes from the moment it registers. It sends no snapshot and replays
 nothing missed. To build current state, subscribe first, then run the queries the field names,
-and apply each later change by id. For library administration, query
+and apply each later change by id. For Library status, additions and removals, query
 `libraries { id name status scanStartedOn scanCompletedOn }`. Library-content subscriptions complete
 when their library is removed, or if it is already absent when they register. Other subscriptions
 do not normally complete while the server runs.
@@ -28,10 +28,12 @@ After SUBSCRIPTION_OVERFLOW, subscribe again and run the field's queries again.
 type Subscription {
     """
     A library's status or scan times changed. Delivers the library after each change, or null with
-    errors when a selected field fails to resolve. ServerAdmin only.
+    errors when a selected field fails to resolve. Requires a selected Profile and
+    ViewProfileActivity permission for that Profile; every such Profile receives every library's
+    changes, as the libraries query shows it every library.
 
-    Each library administration field delivers one library's changes in the order they were
-    committed. There is no order across libraries or across fields: `libraryAdded` and
+    Each of libraryStatusChanged, libraryAdded and libraryRemoved delivers one library's changes in
+    the order they were committed. There is no order across libraries or across fields: `libraryAdded` and
     `libraryStatusChanged` for one library may arrive in either order. This field delivers the
     library as the server reads it after the change, so a client may miss an intermediate status,
     but the last change it receives carries the latest status.
@@ -40,13 +42,15 @@ type Subscription {
 
     """
     A library was added. Delivers the new library, or null with errors when a selected field fails
-    to resolve. ServerAdmin only.
+    to resolve. Requires a selected Profile and ViewProfileActivity permission for that Profile, as
+    libraryStatusChanged does.
     """
     libraryAdded: Library
 
     """
     A library was removed. Delivers the removed library's id, or null with errors when a selected
-    field fails to resolve. ServerAdmin only.
+    field fails to resolve. Requires a selected Profile and ViewProfileActivity permission for that
+    Profile, as libraryStatusChanged does.
     """
     libraryRemoved: LibraryRemoval
 

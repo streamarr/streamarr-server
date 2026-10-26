@@ -13,11 +13,13 @@ import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.services.LibraryMoviesList;
 import com.streamarr.server.services.MovieService;
+import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.pagination.MediaFilter;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.access.AccessDeniedException;
 
 @Tag("UnitTest")
 class LibraryQueryAuthorizationTest {
@@ -65,5 +67,33 @@ class LibraryQueryAuthorizationTest {
         .isInstanceOf(ProfileRequiredException.class);
     assertThatThrownBy(() -> service.getItems(identity, MediaType.MOVIE, ANY_LIBRARY, firstPage))
         .isInstanceOf(ProfileRequiredException.class);
+    assertThatThrownBy(() -> service.requireSubscriptionProfile(identity))
+        .isInstanceOf(ProfileRequiredException.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should allow a Library subscription when the selected Profile may view its own activity")
+  void shouldAllowLibrarySubscriptionWhenSelectedProfileMayViewItsOwnActivity() {
+    var identity = profileScopedBuilder().build();
+    var authorization = new FakeAuthorizationService(identity);
+    var service = LibraryQueryService.builder().authorization(authorization).build();
+
+    service.requireSubscriptionProfile(identity);
+
+    assertThat(authorization.recordedIntents())
+        .containsExactly(new Intent.ViewProfileActivity(identity.profileId()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse a Library subscription when the selected Profile may not view its activity")
+  void shouldRefuseLibrarySubscriptionWhenSelectedProfileMayNotViewItsActivity() {
+    var identity = profileScopedBuilder().build();
+    var authorization = new FakeAuthorizationService(identity).denyAll();
+    var service = LibraryQueryService.builder().authorization(authorization).build();
+
+    assertThatThrownBy(() -> service.requireSubscriptionProfile(identity))
+        .isInstanceOf(AccessDeniedException.class);
   }
 }

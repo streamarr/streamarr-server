@@ -1,7 +1,7 @@
 = GraphQL Subscriptions
 
 Streamarr delivers live changes over GraphQL subscriptions.
-Library administration clients receive library changes.
+Every client with a selected Profile receives library status, additions and removals.
 Every client of a Profile receives that Profile's watch-state changes.
 https://github.com/streamarr/streamarr-adr/blob/main/adr/0042-graphql-subscriptions-run-over-websocket-until-token-expiry.adoc[ADR 0042] records the decision.
 The schema descriptions in `src/main/resources/schema/root-subscription.graphqls` define each field.
@@ -47,9 +47,8 @@ A browser client that sees 1006 before `connection_ack` refreshes its token befo
 
 Each operation is authorized when the client subscribes.
 A refused caller gets a `next` message with an error code, then `complete`.
-The library administration fields refuse a caller who is not a ServerAdmin with `FORBIDDEN`.
-`watchStateChanged` refuses a token without a selected Profile with `PROFILE_REQUIRED`.
-It refuses a caller without the ViewProfileActivity permission for that Profile with `FORBIDDEN`.
+Every field refuses a token without a selected Profile with `PROFILE_REQUIRED`.
+Every field refuses a caller without the ViewProfileActivity permission for that Profile with `FORBIDDEN`.
 `AUTHORIZATION_UNAVAILABLE` means the server could not decide; retry later.
 
 == Access token expiry
@@ -151,13 +150,13 @@ It skips a `null` subscription field and each `null` item, and keeps its previou
 
 A later change may not repeat a value that failed, so the client's state can stay stale until that value changes again.
 After a message that carries `errors`, the client runs its queries again through the same recovery path it uses after a reconnect.
-A library administration client queries `libraries` again.
+A library status client queries `libraries` again.
 A watch-state client runs the queries from <<Building current state>> again.
 The subscription stays open while those queries run.
 
 == Client lifecycle
 
-A library administration client subscribes first and then queries `libraries { id name status scanStartedOn scanCompletedOn }`.
+A library status client subscribes first and then queries `libraries { id name status scanStartedOn scanCompletedOn }`.
 It applies each change by library id.
 The server sends no snapshot and replays nothing missed.
 After every reconnect, the client subscribes and queries again.

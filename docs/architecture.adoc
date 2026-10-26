@@ -53,7 +53,7 @@ Netflix DGS with Relay-style cursor-based pagination:
 
 * `MediaConnection` / `MediaEdge` / `PageInfo`
 * Keyset (seek) pagination via jOOQ for performant infinite scroll
-* Subscriptions over the `graphql-transport-ws` WebSocket on `/graphql` for live library-administration changes; queries and mutations stay on HTTP. See link:graphql-subscriptions.adoc[GraphQL Subscriptions].
+* Subscriptions over the `graphql-transport-ws` WebSocket on `/graphql` for live library status, library contents and watch-state changes; queries and mutations stay on HTTP. See link:graphql-subscriptions.adoc[GraphQL Subscriptions].
 
 == Metadata Pipeline
 

@@ -387,47 +387,86 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should refuse the subscription with FORBIDDEN when the Account is not a ServerAdmin")
-  void shouldRefuseSubscriptionWithForbiddenWhenAccountIsNotServerAdmin() {
+      "Should deliver SCANNING then HEALTHY when a Profile that is not a ServerAdmin subscribes before a scan")
+  void shouldDeliverScanningThenHealthyWhenProfileThatIsNotServerAdminSubscribesBeforeScan() {
+    var library = saveLibrary(libraryDirectory);
+    var socket = statusSubscribedSocket(ordinaryProfileBearer());
+
+    http.execute(adminBearer(), scanMutation(library.getId()));
+
+    assertThat(nextStatusChangeWithoutErrors(socket, library.getId()).path("status").asString())
+        .isEqualTo("SCANNING");
+    var healthy = nextStatusChangeWithoutErrors(socket, library.getId());
+    assertThat(healthy.path("status").asString()).isEqualTo("HEALTHY");
+    assertThat(healthy.path("scanCompletedOn").isNull()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the added library and the removal's library id when the session is device-bound")
+  void shouldDeliverAddedLibraryAndRemovalIdWhenSessionIsDeviceBound() throws IOException {
+    var identity = authTestSupport.createIdentity();
+    identities.add(identity);
+    var socket = libraryAdministrationSocket(authTestSupport.deviceBoundProfileBearer(identity));
+    var admin = adminBearer();
+
+    var libraryId = addLibrary(admin, "Living Room Library", directory("living-room"));
+
+    var added = nextAddedLibrary(socket);
+    assertThat(added.path("id").asString()).isEqualTo(libraryId.toString());
+    assertThat(added.path("name").asString()).isEqualTo("Living Room Library");
+    awaitStatus(socket, libraryId, "HEALTHY");
+
+    http.execute(admin, removeMutation(libraryId));
+
+    assertThat(removedLibraryId(socket)).isEqualTo(libraryId.toString());
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse each library subscription with PROFILE_REQUIRED when no Profile is selected")
+  void shouldRefuseEachLibrarySubscriptionWithProfileRequiredWhenNoProfileIsSelected() {
     var identity = authTestSupport.createIdentity();
     identities.add(identity);
 
-    assertRefusedWithForbidden(authTestSupport.profileBearer(identity));
+    assertEachSubscriptionRefusedWith(authTestSupport.accountBearer(identity), "PROFILE_REQUIRED");
   }
 
   @Test
-  @DisplayName("Should refuse the subscription with FORBIDDEN when the session is device-bound")
-  void shouldRefuseSubscriptionWithForbiddenWhenSessionIsDeviceBound() {
-    var identity = authTestSupport.createAdminIdentity();
-    identities.add(identity);
-
-    assertRefusedWithForbidden(authTestSupport.deviceBoundProfileBearer(identity));
-  }
-
-  @Test
-  @DisplayName("Should refuse the subscription with FORBIDDEN when the Account is disabled")
-  void shouldRefuseSubscriptionWithForbiddenWhenAccountIsDisabled() {
-    var identity = authTestSupport.createAdminIdentity();
+  @DisplayName(
+      "Should refuse each library subscription with FORBIDDEN when the Account is disabled")
+  void shouldRefuseEachLibrarySubscriptionWithForbiddenWhenAccountIsDisabled() {
+    var identity = authTestSupport.createIdentity();
     identities.add(identity);
     var bearer = authTestSupport.profileBearer(identity);
     var account = userAccountRepository.findById(identity.account().getId()).orElseThrow();
     account.setEnabled(false);
     userAccountRepository.saveAndFlush(account);
 
-    assertRefusedWithForbidden(bearer);
+    assertEachSubscriptionRefusedWith(bearer, "FORBIDDEN");
   }
 
-  private void assertRefusedWithForbidden(String bearer) {
+  private void assertEachSubscriptionRefusedWith(String bearer, String code) {
     var socket = connect(bearer);
+    var subscriptions =
+        List.of(
+            new RefusedSubscription("status", STATUS_FIELD, STATUS_SUBSCRIPTION),
+            new RefusedSubscription("added", "libraryAdded", ADDED_SUBSCRIPTION),
+            new RefusedSubscription("removed", "libraryRemoved", REMOVED_SUBSCRIPTION));
 
-    socket.subscribe("refused", STATUS_SUBSCRIPTION);
+    for (var subscription : subscriptions) {
+      socket.subscribe(subscription.operationId(), subscription.document());
 
-    var refusal = socket.nextMessageFor("refused");
-    assertThat(refusal.path("type").asString()).isEqualTo("next");
-    assertThat(firstErrorCode(refusal.path("payload"))).isEqualTo("FORBIDDEN");
-    assertThat(socket.nextMessageFor("refused").path("type").asString()).isEqualTo("complete");
-    assertThat(activeSubscriptions.count(STATUS_FIELD)).isZero();
+      var refusal = socket.nextMessageFor(subscription.operationId());
+      assertThat(refusal.path("type").asString()).isEqualTo("next");
+      assertThat(firstErrorCode(refusal.path("payload"))).isEqualTo(code);
+      assertThat(socket.nextMessageFor(subscription.operationId()).path("type").asString())
+          .isEqualTo("complete");
+      assertThat(activeSubscriptions.count(subscription.field())).isZero();
+    }
   }
+
+  private record RefusedSubscription(String operationId, String field, String document) {}
 
   private GraphQlTransportWsTestClient statusSubscribedSocket(String bearer) {
     var socket = connect(bearer);
@@ -511,6 +550,12 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
 
   private String adminBearer() {
     var identity = authTestSupport.createAdminIdentity();
+    identities.add(identity);
+    return authTestSupport.profileBearer(identity);
+  }
+
+  private String ordinaryProfileBearer() {
+    var identity = authTestSupport.createIdentity();
     identities.add(identity);
     return authTestSupport.profileBearer(identity);
   }
