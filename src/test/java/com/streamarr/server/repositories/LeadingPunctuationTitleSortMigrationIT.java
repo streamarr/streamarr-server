@@ -53,7 +53,8 @@ class LeadingPunctuationTitleSortMigrationIT extends AbstractIntegrationTest {
             tuple("2", "Harbor, The", SystemActor.ID.toString()),
             tuple("3", "Alpha", null),
             tuple("4", null, null),
-            tuple("5", "Quiet Night!, A", SystemActor.ID.toString()));
+            tuple("5", "Quiet Night!, A", SystemActor.ID.toString()),
+            tuple("6", "$ilver Harbor", null));
   }
 
   @Test
@@ -67,7 +68,8 @@ class LeadingPunctuationTitleSortMigrationIT extends AbstractIntegrationTest {
             tuple("00000000-0000-0000-0000-00000000000a", "A", "1"),
             tuple("00000000-0000-0000-0000-00000000000a", "H", "1"),
             tuple("00000000-0000-0000-0000-00000000000a", "Q", "1"),
-            tuple("00000000-0000-0000-0000-00000000000b", "Q", "1"));
+            tuple("00000000-0000-0000-0000-00000000000b", "Q", "1"),
+            tuple("00000000-0000-0000-0000-00000000000b", "HASH", "1"));
   }
 
   private void migrateThroughV106() {
@@ -103,8 +105,9 @@ class LeadingPunctuationTitleSortMigrationIT extends AbstractIntegrationTest {
                 E'\\uFEFFThe Harbor', E'\\uFEFFThe Harbor'),
             (3, '00000000-0000-0000-0000-00000000000a', 'Alpha', 'Alpha'),
             (4, '00000000-0000-0000-0000-00000000000a', '“Season 1”', NULL),
-            (5, '00000000-0000-0000-0000-00000000000b', '¡A Quiet Night!', '¡A Quiet Night!');
-          INSERT INTO movie VALUES (1), (3), (5);
+            (5, '00000000-0000-0000-0000-00000000000b', '¡A Quiet Night!', '¡A Quiet Night!'),
+            (6, '00000000-0000-0000-0000-00000000000b', '$ilver Harbor', '$ilver Harbor');
+          INSERT INTO movie VALUES (1), (3), (5), (6);
           INSERT INTO series VALUES (2);
           CREATE TRIGGER fill_audit_columns BEFORE INSERT OR UPDATE ON base_collectable
             FOR EACH ROW EXECUTE FUNCTION public.fill_audit_columns();

@@ -96,7 +96,6 @@ class TitleSortUtilTest {
         "(12) Steps North -> 12) Steps North",
         "[Bracketed] Night -> Bracketed] Night",
         "*Asterisk Island -> Asterisk Island",
-        "$Dollar Days -> Dollar Days",
         "@Home Again -> Home Again",
         "_Underscore Lane -> Underscore Lane",
         "-Minus Harbor -> Minus Harbor",
@@ -106,6 +105,10 @@ class TitleSortUtilTest {
         "©Copyright Harbor -> Copyright Harbor",
         "♥Heart Harbor -> Heart Harbor",
         "🦈 Shark Bay -> Shark Bay",
+        "\u2764\uFE0F Heart Harbor -> Heart Harbor",
+        "\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67 Family Harbor -> Family Harbor",
+        "\uD83C\uDDEF\uD83C\uDDF5 Flag Harbor -> Flag Harbor",
+        "\uD83D\uDC4D\uD83C\uDFFD Thumbs Harbor -> Thumbs Harbor",
         "“¡«Nested Openers -> Nested Openers",
         "~Tilde Tales -> Tilde Tales",
         "{Brace} Yourself -> Brace} Yourself",
@@ -141,6 +144,24 @@ class TitleSortUtilTest {
   }
 
   @ParameterizedTest
+  @CsvSource(
+      delimiterString = " -> ",
+      quoteCharacter = '%',
+      value = {
+        "$ilver Harbor -> $ilver Harbor",
+        "€cho Valley -> €cho Valley",
+        "¢ent Street -> ¢ent Street",
+        "$Dollar Days -> $Dollar Days",
+        "$9.99 Harbor -> $9.99 Harbor",
+        "“$ilver Harbor” -> $ilver Harbor”",
+        "\uFEFF$ilver Harbor -> $ilver Harbor"
+      })
+  @DisplayName("Should keep a leading currency sign when the title starts with one")
+  void shouldKeepLeadingCurrencySignWhenTitleStartsWithOne(String title, String expected) {
+    assertThat(TitleSortUtil.computeTitleSort(title)).isEqualTo(expected);
+  }
+
+  @ParameterizedTest
   @ValueSource(
       strings = {"~~~", "{ }", "|", "“”", "...", "!?!", "🦈", "\u200B", "\u0301", "\uFEFF“”"})
   @DisplayName("Should keep the title when no letter or digit remains")
@@ -159,7 +180,6 @@ class TitleSortUtilTest {
         "2 Fast Harbor -> 2 Fast Harbor",
         "1917 Echo -> 1917 Echo",
         "#1 Fan Club -> 1 Fan Club",
-        "$9.99 Harbor -> 9.99 Harbor",
         "“The” Harbor -> The” Harbor"
       })
   @DisplayName("Should keep every character from the first letter or digit when stripping")

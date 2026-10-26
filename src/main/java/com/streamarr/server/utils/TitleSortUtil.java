@@ -12,24 +12,25 @@ public class TitleSortUtil {
 
   private static final Pattern COMBINING_MARKS = Pattern.compile("\\p{M}+");
 
-  // Punctuation, symbols, separators, control and format characters, and marks with no base letter.
-  private static final Pattern LEADING_NON_ALPHANUMERIC =
-      Pattern.compile("^[\\p{P}\\p{S}\\p{Z}\\p{C}\\p{M}]+");
+  // Every symbol class except currency (Sc): a title can spell a letter with a currency sign, as
+  // "$" stands for "S", and stripping it would file the title under the wrong letter.
+  private static final Pattern LEADING_DECORATION =
+      Pattern.compile("^[\\p{P}\\p{Sm}\\p{Sk}\\p{So}\\p{Z}\\p{C}\\p{M}]+");
 
   /**
    * Encodes a display title as its stored sort title. Latin diacritics and compatibility characters
-   * fold to their base letters, leading characters other than letters and digits are removed unless
-   * nothing else remains, and a leading article moves to the end. An article is recognized as
-   * written, so a first word that only folds to one, such as the French preposition "À", stays in
-   * place.
+   * fold to their base letters; leading punctuation, symbols other than currency signs, and
+   * invisible characters are removed unless nothing else remains; and a leading article moves to
+   * the end. An article is recognized as written, so a first word that only folds to one, such as
+   * the French preposition "À", stays in place.
    */
   public static String computeTitleSort(String title) {
     if (title == null) {
       return null;
     }
 
-    var withArticleMoved = moveLeadingArticle(stripLeadingNonAlphanumeric(title));
-    return stripLeadingNonAlphanumeric(foldLatin(withArticleMoved));
+    var withArticleMoved = moveLeadingArticle(stripLeadingDecoration(title));
+    return stripLeadingDecoration(foldLatin(withArticleMoved));
   }
 
   // Folds code point by code point: a compatibility mapping applied to the whole title would
@@ -59,8 +60,8 @@ public class TitleSortUtil {
     return COMBINING_MARKS.matcher(decomposed).replaceAll("");
   }
 
-  private static String stripLeadingNonAlphanumeric(String title) {
-    var stripped = LEADING_NON_ALPHANUMERIC.matcher(title).replaceFirst("");
+  private static String stripLeadingDecoration(String title) {
+    var stripped = LEADING_DECORATION.matcher(title).replaceFirst("");
     if (stripped.isEmpty()) {
       return title;
     }
