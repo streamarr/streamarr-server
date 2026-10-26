@@ -232,6 +232,22 @@ class LibraryResolverTest {
     }
 
     @Test
+    @DisplayName("Should reject the query when it selects a library's modification time directly")
+    void shouldRejectQueryWhenItSelectsLibrarysModificationTimeDirectly() {
+      var result =
+          dgsQueryExecutor.execute(
+              String.format("{ library(id: \"%s\") { name lastModifiedOn } }", UUID.randomUUID()));
+
+      assertThat(result.getErrors())
+          .singleElement()
+          .satisfies(
+              error -> {
+                assertThat(error.getErrorType()).hasToString("FIELD_NOT_FOUND");
+                assertThat(error.getMessage()).contains("lastModifiedOn");
+              });
+    }
+
+    @Test
     @DisplayName(
         "Should return the library with a null administration and FORBIDDEN when the caller may not"
             + " view library administration")

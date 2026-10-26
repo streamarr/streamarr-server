@@ -1,7 +1,5 @@
 type Library {
     id: ID!
-    createdOn: String!
-    lastModifiedOn: String!
     name: String
     backend: LibraryBackend!
     type: MediaType!
@@ -19,7 +17,7 @@ type Library {
     """
     itemCount: Int!
     """
-    The library's folder, scan status and editors. Requires a ServerAdmin. For every other caller,
+    The library's folder, scan status, editors and edit times. Requires a ServerAdmin. For every other caller,
     and for a ServerAdmin's device-bound session, this field is null with FORBIDDEN, and the other
     fields of the library still arrive.
     """
@@ -33,7 +31,9 @@ type LibraryAdministration {
     scanStartedOn: String
     scanCompletedOn: String
     createdBy: String
+    createdOn: String!
     lastModifiedBy: String
+    lastModifiedOn: String!
 }
 
 "The receipt for a removed library: the id of the library that no longer exists."

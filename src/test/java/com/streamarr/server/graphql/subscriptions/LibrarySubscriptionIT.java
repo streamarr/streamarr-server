@@ -48,8 +48,8 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
       "subscription { libraryStatusChanged { id name administration { status scanStartedOn"
           + " scanCompletedOn } } }";
   private static final String AUDITED_STATUS_SUBSCRIPTION =
-      "subscription { libraryStatusChanged { id administration { status } createdOn lastModifiedOn"
-          + " } }";
+      "subscription { libraryStatusChanged { id administration { status createdOn"
+          + " lastModifiedOn } } }";
   private static final String ADDED_SUBSCRIPTION =
       "subscription { libraryAdded { id name administration { status scanStartedOn scanCompletedOn"
           + " } } }";
@@ -164,9 +164,9 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
       var scanning = nextStatusChange(socket, library.getId());
       var stored = libraryRepository.findById(library.getId()).orElseThrow();
       assertThat(scanning.path("administration").path("status").asString()).isEqualTo("SCANNING");
-      assertThat(Instant.parse(scanning.path("createdOn").asString()))
+      assertThat(Instant.parse(scanning.path("administration").path("createdOn").asString()))
           .isEqualTo(stored.getCreatedOn());
-      assertThat(Instant.parse(scanning.path("lastModifiedOn").asString()))
+      assertThat(Instant.parse(scanning.path("administration").path("lastModifiedOn").asString()))
           .isEqualTo(stored.getLastModifiedOn());
     } finally {
       libraryOperationScheduler.start();

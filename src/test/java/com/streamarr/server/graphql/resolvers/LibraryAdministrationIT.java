@@ -446,7 +446,7 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
       var response =
           postGraphQl(startLibraryScanWithAuditTimestampsMutation(library.getId()), adminToken);
 
-      var returned = auditTimestampsOf(response, "$.data.startLibraryScan.library");
+      var returned = auditTimestampsOf(response, "$.data.startLibraryScan.library.administration");
       var stored = libraryRepository.findById(library.getId()).orElseThrow();
       assertThat(returned.createdOn()).isEqualTo(stored.getCreatedOn());
       assertThat(returned.lastModifiedOn()).isEqualTo(stored.getLastModifiedOn());
@@ -483,7 +483,7 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
               .getContentAsString();
       libraryId = UUID.fromString(JsonPath.read(content, "$.data.addLibrary.library.id"));
 
-      var returned = auditTimestampsOf(content, "$.data.addLibrary.library");
+      var returned = auditTimestampsOf(content, "$.data.addLibrary.library.administration");
       var stored = libraryRepository.findById(libraryId).orElseThrow();
       assertThat(returned.createdOn()).isEqualTo(stored.getCreatedOn());
       assertThat(returned.lastModifiedOn()).isEqualTo(stored.getLastModifiedOn());
@@ -729,7 +729,8 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
 
   private static String libraryAdministrationQuery(UUID libraryId) {
     return ("query { library(id: \\\"%s\\\") { name administration { filepathUri status"
-            + " scanStartedOn scanCompletedOn createdBy lastModifiedBy } } }")
+            + " scanStartedOn scanCompletedOn createdBy createdOn lastModifiedBy lastModifiedOn } }"
+            + " }")
         .formatted(libraryId);
   }
 
@@ -806,14 +807,14 @@ class LibraryAdministrationIT extends AbstractIntegrationTest {
 
   private static String addLibraryWithAuditTimestampsMutation(Path directory) {
     return ("mutation { addLibrary(input: {name: \\\"Audited\\\", filepath: \\\"%s\\\","
-            + " type: MOVIE, backend: LOCAL}) { library { id administration { status } createdOn"
-            + " lastModifiedOn } } }")
+            + " type: MOVIE, backend: LOCAL}) { library { id administration { status"
+            + " createdOn lastModifiedOn } } } }")
         .formatted(directory.toAbsolutePath());
   }
 
   private static String startLibraryScanWithAuditTimestampsMutation(UUID libraryId) {
-    return ("mutation { startLibraryScan(input: {libraryId: \\\"%s\\\"}) { library { createdOn"
-            + " lastModifiedOn } } }")
+    return ("mutation { startLibraryScan(input: {libraryId: \\\"%s\\\"}) { library {"
+            + " administration { createdOn lastModifiedOn } } } }")
         .formatted(libraryId);
   }
 
