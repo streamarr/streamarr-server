@@ -14,8 +14,11 @@ public class TitleSortUtil {
 
   // Every symbol class except currency (Sc): a title can spell a letter with a currency sign, as
   // "$" stands for "S", and stripping it would file the title under the wrong letter.
-  private static final Pattern LEADING_DECORATION =
-      Pattern.compile("^[\\p{P}\\p{Sm}\\p{Sk}\\p{So}\\p{Z}\\p{C}\\p{M}]+");
+  private static final String DECORATION = "[\\p{P}\\p{Sm}\\p{Sk}\\p{So}\\p{Z}\\p{C}\\p{M}]";
+
+  private static final Pattern LEADING_DECORATION = Pattern.compile("^" + DECORATION + "+");
+
+  private static final Pattern ONLY_DECORATION = Pattern.compile(DECORATION + "*");
 
   /**
    * Encodes a display title as its stored sort title. Latin diacritics and compatibility characters
@@ -71,7 +74,7 @@ public class TitleSortUtil {
 
   private static String moveLeadingArticle(String title) {
     for (var article : ARTICLES) {
-      if (title.startsWith(article) && hasLetterOrDigit(title.substring(article.length()))) {
+      if (title.startsWith(article) && !isOnlyDecoration(title.substring(article.length()))) {
         return title.substring(article.length()) + ", " + article.trim();
       }
     }
@@ -79,7 +82,7 @@ public class TitleSortUtil {
     return title;
   }
 
-  private static boolean hasLetterOrDigit(String text) {
-    return text.codePoints().anyMatch(Character::isLetterOrDigit);
+  private static boolean isOnlyDecoration(String text) {
+    return ONLY_DECORATION.matcher(text).matches();
   }
 }

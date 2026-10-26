@@ -242,7 +242,10 @@ class TitleSortUtilTest {
     "An Ōkura Night, 'Okura Night, An'",
     "~The Harbor, 'Harbor, The'",
     "The ~Harbor, 'Harbor, The'",
-    "The “Harbor”, 'Harbor”, The'"
+    "The “Harbor”, 'Harbor”, The'",
+    "The Ⅻ, 'XII, The'",
+    "The $, '$, The'",
+    "The “$ilver”, '$ilver”, The'"
   })
   @DisplayName("Should move the article after normalizing when the title starts with an article")
   void shouldMoveArticleAfterNormalizingWhenTitleStartsWithArticle(String title, String expected) {
