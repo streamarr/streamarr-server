@@ -51,6 +51,26 @@ class ServerImageVerificationTest {
   }
 
   @Test
+  @DisplayName("Should reject an image when it starts without UTF-8 filename encoding")
+  void shouldRejectImageWhenItStartsWithoutUtf8FilenameEncoding() throws Exception {
+    var result = verifyImage(Map.of("DEFAULT_ENCODING", "ANSI_X3.4-1968"));
+
+    assertThat(result.exitCode()).as(result.output()).isEqualTo(1);
+    assertThat(result.output())
+        .contains("Expected sun.jnu.encoding=UTF-8 with no locale set but found ANSI_X3.4-1968");
+  }
+
+  @Test
+  @DisplayName("Should reject an image when LC_ALL does not override its default locale")
+  void shouldRejectImageWhenLcAllDoesNotOverrideItsDefaultLocale() throws Exception {
+    var result = verifyImage(Map.of("POSIX_ENCODING", "UTF-8"));
+
+    assertThat(result.exitCode()).as(result.output()).isEqualTo(1);
+    assertThat(result.output())
+        .contains("Expected sun.jnu.encoding=ANSI_X3.4-1968 under LC_ALL=POSIX but found UTF-8");
+  }
+
+  @Test
   @DisplayName("Should pull an image when verification starts without a local copy")
   void shouldPullImageWhenVerificationStartsWithoutLocalCopy() throws Exception {
     var result = verifyImage(Map.of("IMAGE_PRESENT", "false"));
@@ -83,6 +103,14 @@ class ServerImageVerificationTest {
           touch "$AVAILABLE_IMAGE"
           exit
         fi
+        if [[ "$1" == run && "$*" == *' java -XshowSettings:properties -version'* ]]; then
+          encoding="$DEFAULT_ENCODING"
+          if [[ "$*" == *' --env LC_ALL=POSIX '* ]]; then
+            encoding="$POSIX_ENCODING"
+          fi
+          printf '    sun.jnu.encoding = %s\\n' "$encoding" >&2
+          exit
+        fi
         if [[ "$1" == run ]]; then
           while [[ "$1" != /bin/bash ]]; do
             shift
@@ -99,7 +127,9 @@ class ServerImageVerificationTest {
                 "SOURCE", "https://github.com/streamarr/streamarr-server",
                 "REVISION", "abc123",
                 "MEDIA_EXECUTABLE", "",
-                "IMAGE_PRESENT", "true"));
+                "IMAGE_PRESENT", "true",
+                "DEFAULT_ENCODING", "UTF-8",
+                "POSIX_ENCODING", "ANSI_X3.4-1968"));
     settings.putAll(overrides);
     var imageBin = Files.createDirectory(temporaryDirectory.resolve("image-bin"));
     if (!settings.get("MEDIA_EXECUTABLE").isEmpty()) {
