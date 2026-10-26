@@ -5,6 +5,7 @@ import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.default
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -97,6 +98,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -123,6 +125,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -886,16 +889,20 @@ class LibraryManagementServiceTest {
 
     @Test
     @DisplayName(
-        "Should reject with PathAlreadyRegistered when the unique index rejects the insert")
-    void shouldRejectWithPathAlreadyRegisteredWhenUniqueIndexRejectsInsert() throws IOException {
+        "Should reject with PathAlreadyRegistered naming the library when another library uses"
+            + " the path")
+    void shouldRejectWithPathAlreadyRegisteredNamingLibraryWhenAnotherLibraryUsesPath()
+        throws IOException {
       var libraryPath = fileSystem.getPath("/duplicate-library");
       Files.createDirectories(libraryPath);
       var firstLibrary =
-          LibraryFixtureCreator.unsavedLibraryBuilder()
-              .name("First Library")
-              .filepathUri(libraryPath.toString())
-              .build();
-      libraryManagementService.addLibrary(identity, firstLibrary);
+          accepted(
+              libraryManagementService.addLibrary(
+                  identity,
+                  LibraryFixtureCreator.unsavedLibraryBuilder()
+                      .name("First Library")
+                      .filepathUri(libraryPath.toString())
+                      .build()));
       var duplicateLibrary =
           LibraryFixtureCreator.unsavedLibraryBuilder()
               .name("Duplicate Library")
@@ -907,13 +914,15 @@ class LibraryManagementServiceTest {
       var outcome = libraryManagementService.addLibrary(identity, duplicateLibrary);
 
       assertThat(outcome)
-          .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathAlreadyRegistered()));
-      // Translated only after the losing unit rolled back: one commit (the winner), one rollback.
+          .isEqualTo(
+              Outcome.rejected(
+                  new AddLibraryRejection.PathAlreadyRegistered(firstLibrary, libraryPath)));
+      // Refused inside the unit, which rolls back: one commit (the first add), one rollback.
       assertThat(transactionManager.commits()).isEqualTo(1);
       assertThat(transactionManager.rollbacks()).isEqualTo(1);
       assertThat(fakeLibraryRepository.count()).isEqualTo(librariesBefore);
       assertThat(capturingEventPublisher.getEventsOfType(LibraryAddedEvent.class))
-          .as("the loser never reaches its publish; the unique index rejects the insert first")
+          .as("the refused add never reaches its publish")
           .hasSize(eventsBefore);
     }
 
@@ -932,10 +941,183 @@ class LibraryManagementServiceTest {
               .name("Duplicate Library")
               .filepathUri(libraryPath.resolve(".").toString())
               .build();
-      accepted(libraryManagementService.addLibrary(identity, firstLibrary));
+      var registered = accepted(libraryManagementService.addLibrary(identity, firstLibrary));
 
       assertThat(libraryManagementService.addLibrary(identity, duplicateLibrary))
-          .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathAlreadyRegistered()));
+          .isEqualTo(
+              Outcome.rejected(
+                  new AddLibraryRejection.PathAlreadyRegistered(registered, libraryPath)));
+    }
+
+    @Test
+    @DisplayName(
+        "Should reject with an INSIDE overlap when the path is inside another library's path")
+    void shouldRejectWithInsideOverlapWhenPathIsInsideAnotherLibrarysPath() throws IOException {
+      var movies = registeredLibrary("Movies", "/media/movies");
+      var action = Files.createDirectories(fileSystem.getPath("/media/movies/action"));
+
+      var outcome = libraryManagementService.addLibrary(identity, unsavedLibraryAt(action));
+
+      assertThat(outcome)
+          .isEqualTo(
+              Outcome.rejected(
+                  new AddLibraryRejection.PathOverlap(
+                      LibraryPathOverlap.INSIDE, movies, fileSystem.getPath("/media/movies"))));
+    }
+
+    @Test
+    @DisplayName(
+        "Should reject with a CONTAINS overlap when the path contains another library's path")
+    void shouldRejectWithContainsOverlapWhenPathContainsAnotherLibrarysPath() throws IOException {
+      var movies = registeredLibrary("Movies", "/media/movies");
+
+      var outcome =
+          libraryManagementService.addLibrary(
+              identity, unsavedLibraryAt(fileSystem.getPath("/media")));
+
+      assertThat(outcome)
+          .isEqualTo(
+              Outcome.rejected(
+                  new AddLibraryRejection.PathOverlap(
+                      LibraryPathOverlap.CONTAINS, movies, fileSystem.getPath("/media/movies"))));
+    }
+
+    @Test
+    @DisplayName(
+        "Should name every contained library in name order when the path contains several"
+            + " libraries' paths")
+    void shouldNameEveryContainedLibraryInNameOrderWhenPathContainsSeveralLibrariesPaths()
+        throws IOException {
+      var television = registeredLibrary("Television", "/media/tv");
+      var movies = registeredLibrary("Movies", "/media/movies");
+
+      var outcome =
+          libraryManagementService.addLibrary(
+              identity, unsavedLibraryAt(fileSystem.getPath("/media")));
+
+      assertThat(outcome)
+          .isEqualTo(
+              Outcome.rejected(
+                  List.of(
+                      new AddLibraryRejection.PathOverlap(
+                          LibraryPathOverlap.CONTAINS, movies, fileSystem.getPath("/media/movies")),
+                      new AddLibraryRejection.PathOverlap(
+                          LibraryPathOverlap.CONTAINS,
+                          television,
+                          fileSystem.getPath("/media/tv")))));
+    }
+
+    @Test
+    @DisplayName(
+        "Should accept a path when it shares only a name prefix with another library's path")
+    void shouldAcceptPathWhenItSharesOnlyNamePrefixWithAnotherLibrarysPath() throws IOException {
+      registeredLibrary("Movies", "/media/movies");
+      var movies2 = Files.createDirectories(fileSystem.getPath("/media/movies2"));
+
+      var outcome = libraryManagementService.addLibrary(identity, unsavedLibraryAt(movies2));
+
+      assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    }
+
+    @Test
+    @DisplayName("Should accept a path when it names the same folders under another root")
+    void shouldAcceptPathWhenItNamesSameFoldersUnderAnotherRoot() throws IOException {
+      // The shared fixture library has a Unix path, which a Windows file system cannot read.
+      fakeLibraryRepository.deleteById(savedLibraryId);
+      var twoDrives = Configuration.windows().toBuilder().setRoots("C:\\", "D:\\").build();
+      try (var twoDriveFileSystem = Jimfs.newFileSystem(twoDrives)) {
+        Files.createDirectories(twoDriveFileSystem.getPath("C:\\media\\movies"));
+        Files.createDirectories(twoDriveFileSystem.getPath("D:\\media\\movies"));
+        var service = serviceWith(twoDriveFileSystem);
+        accepted(service.addLibrary(identity, libraryNamed("Movies", "C:\\media\\movies")));
+
+        var outcome = service.addLibrary(identity, libraryNamed("Films", "D:\\media\\movies"));
+
+        assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+      }
+    }
+
+    @Test
+    @DisplayName(
+        "Should reject with an INSIDE overlap when the path reaches the library through dot"
+            + " segments and a trailing separator")
+    void shouldRejectWithInsideOverlapWhenPathReachesLibraryThroughDotSegmentsAndTrailingSeparator()
+        throws IOException {
+      var movies = registeredLibrary("Movies", "/media/movies");
+      Files.createDirectories(fileSystem.getPath("/media/tv"));
+      Files.createDirectories(fileSystem.getPath("/media/movies/action"));
+      var library =
+          LibraryFixtureCreator.unsavedLibraryBuilder()
+              .name("Action")
+              .filepathUri("/media/tv/.././movies/action/")
+              .build();
+
+      var outcome = libraryManagementService.addLibrary(identity, library);
+
+      assertThat(outcome)
+          .isEqualTo(
+              Outcome.rejected(
+                  new AddLibraryRejection.PathOverlap(
+                      LibraryPathOverlap.INSIDE, movies, fileSystem.getPath("/media/movies"))));
+    }
+
+    @Test
+    @DisplayName(
+        "Should store no library, publish no event and schedule no scan when the path overlaps"
+            + " another library's path")
+    void shouldStoreNoLibraryPublishNoEventAndScheduleNoScanWhenPathOverlapsAnotherLibrarysPath()
+        throws IOException {
+      registeredLibrary("Movies", "/media/movies");
+      var action = Files.createDirectories(fileSystem.getPath("/media/movies/action"));
+      var librariesBefore = fakeLibraryRepository.count();
+      var eventsBefore = capturingEventPublisher.getEventsOfType(LibraryAddedEvent.class).size();
+      var scansBefore = libraryOperationScheduling.scheduledExecutions().size();
+
+      libraryManagementService.addLibrary(identity, unsavedLibraryAt(action));
+
+      assertThat(fakeLibraryRepository.count()).isEqualTo(librariesBefore);
+      assertThat(capturingEventPublisher.getEventsOfType(LibraryAddedEvent.class))
+          .hasSize(eventsBefore);
+      assertThat(libraryOperationScheduling.scheduledExecutions()).hasSize(scansBefore);
+      assertThat(transactionManager.rollbacks()).isEqualTo(1);
+    }
+
+    // Paths compare as the JDK's paths compare them, like the unique index on the library path and
+    // the file watcher. Jimfs's osX configuration folds letter case in Path.startsWith, unlike the
+    // JDK, so this test uses the real temporary directory and runs only where it ignores letter
+    // case.
+    @Test
+    @DisplayName(
+        "Should accept a path when it differs only in letter case from another library's path on a"
+            + " file system that ignores letter case")
+    void shouldAcceptPathWhenItDiffersOnlyInLetterCaseOnFileSystemThatIgnoresLetterCase(
+        @TempDir Path media) throws IOException {
+      var folder = Files.createDirectory(media.resolve("Movies"));
+      var otherSpelling = media.resolve("MOVIES");
+      assumeTrue(Files.isDirectory(otherSpelling), "the temporary directory ignores letter case");
+      var service = serviceWith(FileSystems.getDefault());
+      accepted(service.addLibrary(identity, libraryNamed("Movies", folder.toString())));
+
+      var outcome = service.addLibrary(identity, libraryNamed("Films", otherSpelling.toString()));
+
+      assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    }
+
+    @Test
+    @DisplayName(
+        "Should accept a path that differs only in letter case when the file system respects"
+            + " letter case")
+    void shouldAcceptPathThatDiffersOnlyInLetterCaseWhenFileSystemRespectsLetterCase()
+        throws IOException {
+      Files.createDirectories(fileSystem.getPath("/media/Movies"));
+      Files.createDirectories(fileSystem.getPath("/media/movies"));
+      accepted(
+          libraryManagementService.addLibrary(identity, libraryNamed("Movies", "/media/Movies")));
+
+      var outcome =
+          libraryManagementService.addLibrary(identity, libraryNamed("Films", "/media/movies"));
+
+      assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
     }
 
     @Test
@@ -1127,13 +1309,15 @@ class LibraryManagementServiceTest {
               .name("Registered Library")
               .filepathUri(libraryPath.toString())
               .build();
-      accepted(libraryManagementService.addLibrary(identity, library));
+      var registered = accepted(libraryManagementService.addLibrary(identity, library));
 
       var duplicate =
           libraryManagementService.addLibrary(identity, library.toBuilder().name("Twin").build());
 
       assertThat(duplicate)
-          .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathAlreadyRegistered()));
+          .isEqualTo(
+              Outcome.rejected(
+                  new AddLibraryRejection.PathAlreadyRegistered(registered, libraryPath)));
       assertThat(libraryOperationScheduling.scheduledExecutions()).hasSize(1);
     }
 
@@ -1177,6 +1361,28 @@ class LibraryManagementServiceTest {
     private Library accepted(Outcome<Library, AddLibraryRejection> outcome) {
       assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
       return ((Outcome.Accepted<Library, AddLibraryRejection>) outcome).result();
+    }
+
+    private Library registeredLibrary(String name, String folder) throws IOException {
+      var path = Files.createDirectories(fileSystem.getPath(folder));
+      return accepted(
+          libraryManagementService.addLibrary(
+              identity,
+              LibraryFixtureCreator.unsavedLibraryBuilder()
+                  .name(name)
+                  .filepathUri(path.toString())
+                  .build()));
+    }
+
+    private static Library libraryNamed(String name, String filepath) {
+      return LibraryFixtureCreator.unsavedLibraryBuilder().name(name).filepathUri(filepath).build();
+    }
+
+    private static Library unsavedLibraryAt(Path folder) {
+      return LibraryFixtureCreator.unsavedLibraryBuilder()
+          .name("Added")
+          .filepathUri(folder.toString())
+          .build();
     }
   }
 

@@ -1,6 +1,8 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mockingDetails;
@@ -17,32 +19,44 @@ import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.PostgresLockProbe;
+import com.streamarr.server.support.PostgresLockTestSupport;
 import com.streamarr.server.support.TestFixtureWork;
+import jakarta.persistence.EntityManager;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.Future;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiFunction;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.util.AopTestUtils;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
- * The addLibrary write unit against real PostgreSQL: the unique index decides a duplicate-path
- * race, the loser is translated after rollback into a typed rejection with no side effect, and
- * Spring invokes the AFTER_COMMIT listener exactly once for the winner and never for a rollback.
+ * The addLibrary write unit against real PostgreSQL: concurrent adds wait on one lock before they
+ * read the libraries, so the second add sees the first add's library and is refused with no side
+ * effect. Spring invokes the AFTER_COMMIT listener exactly once, for the first add.
  */
 @Tag("IntegrationTest")
 @DisplayName("Add Library Integration Tests")
@@ -55,6 +69,8 @@ class AddLibraryIT extends AbstractIntegrationTest {
   @MockitoSpyBean private LibraryRepository libraryRepository;
   @Autowired private CommittedLibraryRecorder committed;
   @Autowired private AuthTestSupport authTestSupport;
+  @Autowired private EntityManager entityManager;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   private final List<UUID> createdLibraryIds = new ArrayList<>();
   private AuthTestSupport.TestIdentity testIdentity;
@@ -68,65 +84,141 @@ class AddLibraryIT extends AbstractIntegrationTest {
     }
   }
 
-  @Test
-  @DisplayName("Should accept one and reject one when concurrent adds use the same path")
-  void shouldAcceptOneAndRejectOneWhenConcurrentAddsUseSamePath() throws Exception {
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("concurrentAdds")
+  @DisplayName(
+      "Should refuse the second add naming the first library when two adds of conflicting paths"
+          + " run at once")
+  void shouldRefuseSecondAddNamingFirstLibraryWhenTwoAddsOfConflictingPathsRunAtOnce(
+      String description, ConcurrentAdds adds) throws Exception {
     testIdentity = authTestSupport.createAdminIdentity();
     var identity = authenticatedIdentity(testIdentity);
-    var bothAtInsert = new CyclicBarrier(2);
+    var firstFolder = Files.createDirectories(tempDir.resolve(adds.firstFolder()));
+    var secondFolder = Files.createDirectories(tempDir.resolve(adds.secondFolder()));
+    var firstAdd = parkFirstAddBeforeItsInsert();
+    Library first;
+    Outcome<Library, AddLibraryRejection> second;
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
+      try {
+        var firstOutcome =
+            executor.submit(
+                () ->
+                    libraryManagementService.addLibrary(
+                        identity, unsavedLibrary("First", firstFolder)));
+        awaitLatch(firstAdd.parked());
+        var secondOutcome =
+            executor.submit(
+                () ->
+                    libraryManagementService.addLibrary(
+                        identity, unsavedLibrary("Second", secondFolder)));
+        await()
+            .atMost(Duration.ofSeconds(10))
+            .untilAsserted(
+                () ->
+                    assertThat(
+                            PostgresLockTestSupport.waitersBehind(
+                                jdbcTemplate,
+                                firstAdd.backendPid().get(),
+                                "%pg_advisory_xact_lock%"))
+                        .as("the second add waits for the first add's lock")
+                        .isOne());
+        firstAdd.release().countDown();
+        first = accepted(firstOutcome.get(30, TimeUnit.SECONDS));
+        second = secondOutcome.get(30, TimeUnit.SECONDS);
+      } finally {
+        firstAdd.release().countDown();
+      }
+    }
+
+    assertThat(second)
+        .isEqualTo(
+            Outcome.rejected(adds.expectedRejection().apply(first, normalized(firstFolder))));
+    assertThat(librariesAt(firstFolder, secondFolder)).containsExactly(first.getId());
+    assertThat(committed.events)
+        .as("AFTER_COMMIT ran once, for the first add, never for the refused add")
+        .singleElement()
+        .extracting(LibraryAddedEvent::libraryId)
+        .isEqualTo(first.getId());
+  }
+
+  static Stream<Arguments> concurrentAdds() {
+    return Stream.of(
+        Arguments.of(
+            "the same path",
+            new ConcurrentAdds("movies", "movies", AddLibraryRejection.PathAlreadyRegistered::new)),
+        Arguments.of(
+            "a path inside the first library's path",
+            new ConcurrentAdds(
+                "",
+                "movies",
+                (first, path) ->
+                    new AddLibraryRejection.PathOverlap(LibraryPathOverlap.INSIDE, first, path))),
+        Arguments.of(
+            "a path that contains the first library's path",
+            new ConcurrentAdds(
+                "movies",
+                "",
+                (first, path) ->
+                    new AddLibraryRejection.PathOverlap(
+                        LibraryPathOverlap.CONTAINS, first, path))));
+  }
+
+  /** Two folders below the test's directory, and the refusal the second add expects. */
+  record ConcurrentAdds(
+      String firstFolder,
+      String secondFolder,
+      BiFunction<Library, Path, AddLibraryRejection> expectedRejection) {}
+
+  private record ParkedAdd(
+      CountDownLatch parked, CountDownLatch release, AtomicInteger backendPid) {}
+
+  /** Parks the first add inside its transaction, after its path check and before its insert. */
+  private ParkedAdd parkFirstAddBeforeItsInsert() {
+    var parkedAdd =
+        new ParkedAdd(new CountDownLatch(1), new CountDownLatch(1), new AtomicInteger());
+    var lockProbe = new PostgresLockProbe(entityManager, jdbcTemplate);
+    var parkedOnce = new AtomicBoolean();
     var repositorySpy = AopTestUtils.<LibraryRepository>getUltimateTargetObject(libraryRepository);
     var repositoryAnswer =
         mockingDetails(repositorySpy).getMockCreationSettings().getDefaultAnswer();
     doAnswer(
             invocation -> {
-              bothAtInsert.await(10, TimeUnit.SECONDS);
+              if (parkedOnce.compareAndSet(false, true)) {
+                parkedAdd.backendPid().set(lockProbe.currentBackendPid());
+                parkedAdd.parked().countDown();
+                awaitLatch(parkedAdd.release());
+              }
+
               return repositoryAnswer.answer(invocation);
             })
         .when(repositorySpy)
-        .save(any(Library.class));
-    List<Future<Outcome<Library, AddLibraryRejection>>> attempts;
-    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
-      attempts =
-          List.of(
-              executor.submit(
-                  () -> libraryManagementService.addLibrary(identity, unsavedLibrary("First"))),
-              executor.submit(
-                  () -> libraryManagementService.addLibrary(identity, unsavedLibrary("Second"))));
-      for (var attempt : attempts) {
-        attempt.get(30, TimeUnit.SECONDS);
-      }
-    }
-
-    var accepted = new ArrayList<Library>();
-    var rejections = new ArrayList<AddLibraryRejection>();
-    for (var attempt : attempts) {
-      switch (attempt.get()) {
-        case Outcome.Accepted<Library, AddLibraryRejection>(var library) -> {
-          accepted.add(library);
-          createdLibraryIds.add(library.getId());
-        }
-
-        case Outcome.Rejected<Library, AddLibraryRejection>(var reasons) ->
-            rejections.addAll(reasons);
-      }
-    }
-
-    assertThat(accepted).hasSize(1);
-    assertThat(rejections).containsExactly(new AddLibraryRejection.PathAlreadyRegistered());
-    assertThat(libraryRepository.findAll())
-        .filteredOn(library -> library.getFilepathUri().equals(FilepathCodec.encode(tempDir)))
-        .hasSize(1);
-    assertThat(committed.events)
-        .as("AFTER_COMMIT ran once, for the winner, never for the rolled-back loser")
-        .singleElement()
-        .extracting(LibraryAddedEvent::libraryId)
-        .isEqualTo(accepted.getFirst().getId());
+        .saveAndFlush(any(Library.class));
+    return parkedAdd;
   }
 
-  private Library unsavedLibrary(String name) {
+  private List<UUID> librariesAt(Path... folders) {
+    var filepathUris = Arrays.stream(folders).map(FilepathCodec::encode).distinct().toList();
+    return libraryRepository.findAll().stream()
+        .filter(library -> filepathUris.contains(library.getFilepathUri()))
+        .map(Library::getId)
+        .toList();
+  }
+
+  private Library accepted(Outcome<Library, AddLibraryRejection> outcome) {
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    var library = ((Outcome.Accepted<Library, AddLibraryRejection>) outcome).result();
+    createdLibraryIds.add(library.getId());
+    return library;
+  }
+
+  private static Path normalized(Path folder) {
+    return folder.toAbsolutePath().normalize();
+  }
+
+  private static Library unsavedLibrary(String name, Path folder) {
     return Library.builder()
         .name(name)
-        .filepathUri(tempDir.toString())
+        .filepathUri(folder.toString())
         .backend(LibraryBackend.LOCAL)
         .type(MediaType.MOVIE)
         .externalAgentStrategy(ExternalAgentStrategy.TMDB)

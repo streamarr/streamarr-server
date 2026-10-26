@@ -1,6 +1,8 @@
 package com.streamarr.server.graphql.mutation.library;
 
+import com.streamarr.server.domain.Library;
 import com.streamarr.server.graphql.mutation.InputMutationError;
+import com.streamarr.server.services.library.LibraryPathOverlap;
 import java.util.List;
 
 /** The {@code AddLibraryError} union; record names are the schema type names DGS resolves by. */
@@ -21,6 +23,15 @@ public sealed interface AddLibraryError extends InputMutationError {
   record LibraryPathNotReadableError(String message, List<String> inputPath)
       implements AddLibraryError {}
 
-  record LibraryPathAlreadyRegisteredError(String message, List<String> inputPath)
+  record LibraryPathAlreadyRegisteredError(
+      String message, List<String> inputPath, Library conflictingLibrary, String conflictingPath)
+      implements AddLibraryError {}
+
+  record LibraryPathOverlapError(
+      String message,
+      List<String> inputPath,
+      Library conflictingLibrary,
+      String conflictingPath,
+      LibraryPathOverlap relation)
       implements AddLibraryError {}
 }

@@ -105,9 +105,34 @@ type LibraryPathNotReadableError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
+"Another library already uses the path."
 type LibraryPathAlreadyRegisteredError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
+    "The library that already uses the path."
+    conflictingLibrary: Library!
+    "The path of the conflicting library."
+    conflictingPath: String!
+}
+
+"The path is inside, or contains, another library's path."
+type LibraryPathOverlapError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+    "The library whose path overlaps the path."
+    conflictingLibrary: Library!
+    "The path of the conflicting library."
+    conflictingPath: String!
+    "How the path overlaps the path of the conflicting library."
+    relation: LibraryPathOverlap!
+}
+
+"How a path overlaps another library's path."
+enum LibraryPathOverlap {
+    "The path is inside the other library's path."
+    INSIDE
+    "The path contains the other library's path."
+    CONTAINS
 }
 
 "Not the shape of an email address."
