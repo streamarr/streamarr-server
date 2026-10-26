@@ -39,8 +39,8 @@ public class LibraryQueryService {
   }
 
   /**
-   * Refuses a Library status, addition or removal subscription unless the selected Profile may view
-   * its own activity. Decided from live facts once, when the subscription registers.
+   * Refuses a Library status, addition or removal subscription unless a Profile is selected and its
+   * live authorization facts allow it to view its own activity.
    */
   public void requireSubscriptionProfile(AuthenticatedIdentity identity) {
     authorization.requireViewProfileActivity(identity);

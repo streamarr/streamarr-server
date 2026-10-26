@@ -29,12 +29,12 @@ type Subscription {
     """
     A library's status or scan times changed. Delivers the library after each change, or null with
     errors when a selected field fails to resolve. Requires a selected Profile and
-    ViewProfileActivity permission for that Profile; every such Profile receives every library's
-    changes, as the libraries query shows it every library.
+    ViewProfileActivity permission for that Profile. That Profile receives every library's changes,
+    just as the libraries query returns every library.
 
     Each of libraryStatusChanged, libraryAdded and libraryRemoved delivers one library's changes in
-    the order they were committed. There is no order across libraries or across fields: `libraryAdded` and
-    `libraryStatusChanged` for one library may arrive in either order. This field delivers the
+    the order they were committed. There is no order across libraries or across fields:
+    `libraryAdded` and `libraryStatusChanged` for one library may arrive in either order. This field delivers the
     library as the server reads it after the change, so a client may miss an intermediate status,
     but the last change it receives carries the latest status.
     """
