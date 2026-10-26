@@ -2,6 +2,7 @@ package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
+import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
@@ -48,6 +49,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
 import javax.sql.DataSource;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
@@ -55,6 +58,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.test.context.TestPropertySource;
@@ -268,45 +274,18 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
     }
   }
 
-  @Test
-  @DisplayName("Should store unavailable keyframes and stop scanning when every scan times out")
-  void shouldStoreUnavailableKeyframesAndStopScanningWhenEveryScanTimesOut() throws Exception {
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("scanFailures")
+  @DisplayName("Should store unavailable keyframes and stop scanning when every scan fails")
+  void shouldStoreUnavailableKeyframesAndStopScanningWhenEveryScanFails(
+      String reason, Supplier<RuntimeException> failure) throws Exception {
     var request = requestUnchangedFiles(1).getFirst();
     packetScanRequiredProbe().execute(request, ProbePriority.BACKGROUND);
     var scans = new AtomicInteger();
     startScanScheduler(
         _ -> {
           scans.incrementAndGet();
-          throw new ProbeTimedOutException(new TimeoutException());
-        },
-        Clock.systemUTC());
-
-    for (var attempt = 1; attempt <= 3; attempt++) {
-      assertThat(scanCompletions.poll(30, TimeUnit.SECONDS)).isNotNull();
-      retryPendingScansNow();
-    }
-
-    assertThat(scans).hasValue(3);
-    assertThat(storedKeyframes(request))
-        .isEqualTo(
-            new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_FAILED));
-    assertThat(scheduledScans()).isZero();
-  }
-
-  @Test
-  @DisplayName(
-      "Should store unavailable keyframes and stop scanning when every worker reply breaks the"
-          + " worker contract")
-  void shouldStoreUnavailableKeyframesAndStopScanningWhenEveryWorkerReplyBreaksTheWorkerContract()
-      throws Exception {
-    var request = requestUnchangedFiles(1).getFirst();
-    packetScanRequiredProbe().execute(request, ProbePriority.BACKGROUND);
-    var scans = new AtomicInteger();
-    startScanScheduler(
-        _ -> {
-          scans.incrementAndGet();
-          throw new ProbeContractViolationException(
-              "Worker probe keyframe decode times do not increase");
+          throw failure.get();
         },
         Clock.systemUTC());
 
@@ -323,10 +302,23 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
     assertThat(
             meterRegistry
                 .get("streamarr.probes.keyframe_packet_scan_failures")
-                .tag("reason", "contract_violation")
+                .tag("reason", reason)
                 .counter()
                 .count())
         .isEqualTo(3);
+  }
+
+  private static Stream<Arguments> scanFailures() {
+    return Stream.of(
+        arguments(
+            "timed_out",
+            (Supplier<RuntimeException>) () -> new ProbeTimedOutException(new TimeoutException())),
+        arguments(
+            "contract_violation",
+            (Supplier<RuntimeException>)
+                () ->
+                    new ProbeContractViolationException(
+                        "Worker probe keyframe decode times do not increase")));
   }
 
   @Test
