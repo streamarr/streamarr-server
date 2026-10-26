@@ -121,12 +121,28 @@ class SeriesResolverTest {
     when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
     when(seriesService.findMediaFiles(seriesId)).thenReturn(List.of(mediaFile));
 
-    String filepathUri =
+    String filename =
         dgsQueryExecutor.executeAndExtractJsonPath(
-            String.format("{ series(id: \"%s\") { files { filepathUri } } }", seriesId),
-            "data.series.files[0].filepathUri");
+            String.format("{ series(id: \"%s\") { files { filename } } }", seriesId),
+            "data.series.files[0].filename");
 
-    assertThat(filepathUri).isEqualTo("/media/shows/Breaking Bad/Season 1/breaking.bad.s01e01.mkv");
+    assertThat(filename).isEqualTo("breaking.bad.s01e01.mkv");
+  }
+
+  @Test
+  @DisplayName("Should reject the query when it selects a media file's path")
+  void shouldRejectQueryWhenItSelectsMediaFilesPath() {
+    var result =
+        dgsQueryExecutor.execute(
+            String.format("{ series(id: \"%s\") { files { filepathUri } } }", UUID.randomUUID()));
+
+    assertThat(result.getErrors())
+        .singleElement()
+        .satisfies(
+            error -> {
+              assertThat(error.getErrorType()).hasToString("FIELD_NOT_FOUND");
+              assertThat(error.getMessage()).contains("filepathUri");
+            });
   }
 
   @Test

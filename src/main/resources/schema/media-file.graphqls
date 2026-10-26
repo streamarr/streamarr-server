@@ -1,7 +1,6 @@
 type MediaFile {
     id: ID!
     filename: String!
-    filepathUri: String!
     size: String!
     "The chapters that the file's container defines, in the order that the probe reported them. Empty unless chapterStatus is KNOWN."
     chapters: [Chapter!]!

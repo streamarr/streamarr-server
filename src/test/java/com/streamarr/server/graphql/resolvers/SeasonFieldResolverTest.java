@@ -100,14 +100,13 @@ class SeasonFieldResolverTest {
     when(seriesService.findEpisodes(seasonId)).thenReturn(List.of(episode));
     when(seriesService.findMediaFiles(episodeId)).thenReturn(List.of(mediaFile));
 
-    String filepathUri =
+    String filename =
         dgsQueryExecutor.executeAndExtractJsonPath(
             String.format(
-                "{ series(id: \"%s\") { seasons { episodes { files { filepathUri } } } } }",
-                seriesId),
-            "data.series.seasons[0].episodes[0].files[0].filepathUri");
+                "{ series(id: \"%s\") { seasons { episodes { files { filename } } } } }", seriesId),
+            "data.series.seasons[0].episodes[0].files[0].filename");
 
-    assertThat(filepathUri).isEqualTo("/media/shows/Breaking Bad/Season 1/breaking.bad.s01e01.mkv");
+    assertThat(filename).isEqualTo("breaking.bad.s01e01.mkv");
   }
 
   @Test
