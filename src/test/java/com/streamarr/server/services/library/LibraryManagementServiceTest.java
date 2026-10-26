@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
+import com.google.common.jimfs.PathNormalization;
 import com.streamarr.server.config.LibraryScanProperties;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.ExternalIdentifier;
@@ -116,18 +117,22 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
 import lombok.Builder;
 import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 
@@ -1082,16 +1087,27 @@ class LibraryManagementServiceTest {
       assertThat(transactionManager.rollbacks()).isEqualTo(1);
     }
 
-    @Test
+    static Stream<Arguments> fileSystemsThatIgnoreLetterCase() {
+      var caseFoldingUnix =
+          Configuration.unix().toBuilder()
+              .setNameCanonicalNormalization(PathNormalization.CASE_FOLD_ASCII)
+              .build();
+      return Stream.of(
+          Arguments.of(Named.of("macOS", Configuration.osX())),
+          Arguments.of(Named.of("Linux with case folding", caseFoldingUnix)));
+    }
+
+    @ParameterizedTest
+    @MethodSource("fileSystemsThatIgnoreLetterCase")
     @DisplayName(
         "Should store the path as the file system spells it when the given path differs in letter"
             + " case on a file system that ignores letter case")
     void
-        shouldStorePathAsFileSystemSpellsItWhenGivenPathDiffersInLetterCaseOnFileSystemThatIgnoresLetterCase()
-            throws IOException {
+        shouldStorePathAsFileSystemSpellsItWhenGivenPathDiffersInLetterCaseOnFileSystemThatIgnoresLetterCase(
+            Configuration configuration) throws IOException {
       // The shared fixture library has a path on another file system.
       fakeLibraryRepository.deleteById(savedLibraryId);
-      try (var caseIgnoring = Jimfs.newFileSystem(Configuration.osX())) {
+      try (var caseIgnoring = Jimfs.newFileSystem(configuration)) {
         var folder = Files.createDirectories(caseIgnoring.getPath("/media/Movies"));
 
         var library =

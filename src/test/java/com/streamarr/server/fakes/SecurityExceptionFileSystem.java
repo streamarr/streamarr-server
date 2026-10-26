@@ -57,8 +57,7 @@ public class SecurityExceptionFileSystem extends FileSystem {
   }
 
   /**
-   * Fails {@link Path#toRealPath}, as macOS does when a folder above the path can be searched but
-   * not listed. Access checks pass.
+   * Refuses to list any folder, while access checks pass, like folders that are searchable only.
    */
   public static SecurityExceptionFileSystem unlistingFolders(FileSystem delegate) {
     return new SecurityExceptionFileSystem(delegate, Denial.UNLISTABLE_FOLDERS);
@@ -218,10 +217,6 @@ public class SecurityExceptionFileSystem extends FileSystem {
 
     @Override
     public Path toRealPath(LinkOption... options) throws IOException {
-      if (fileSystem.denial == Denial.UNLISTABLE_FOLDERS) {
-        throw new AccessDeniedException(toString());
-      }
-
       return new WrappedPath(delegate.toRealPath(options), fileSystem);
     }
 
@@ -333,6 +328,10 @@ public class SecurityExceptionFileSystem extends FileSystem {
     @Override
     public DirectoryStream<Path> newDirectoryStream(
         Path dir, DirectoryStream.Filter<? super Path> filter) throws IOException {
+      if (fileSystem.denial == Denial.UNLISTABLE_FOLDERS) {
+        throw new AccessDeniedException(dir.toString());
+      }
+
       return delegate.newDirectoryStream(unwrap(dir), filter);
     }
 
