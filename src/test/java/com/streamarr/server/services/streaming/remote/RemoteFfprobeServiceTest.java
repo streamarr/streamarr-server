@@ -42,8 +42,8 @@ import org.springframework.context.support.GenericApplicationContext;
 class RemoteFfprobeServiceTest {
 
   private static final Duration BOUND = Duration.ofSeconds(5);
-  // Shorter than any wait for the worker's start command, so the timeout has passed by the time
-  // the test reads the next command. The outcome never depends on when the timeout fires.
+  // The server starts the timeout only after it sends the start command, and the test worker never
+  // answers, so the probe always ends at the timeout. Only the moment it fires varies.
   private static final Duration ELAPSED_TIMEOUT = Duration.ofNanos(1);
 
   @TempDir Path tempDir;

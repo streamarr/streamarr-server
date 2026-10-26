@@ -964,8 +964,8 @@ enum ProbeCancelReason {
   // A server older than this field sends no reason. The worker reads this value as
   // PROBE_CANCEL_REASON_OTHER.
   PROBE_CANCEL_REASON_UNSPECIFIED = 0;
-  // The probe reached its timeout on the server. A probe reaches the probe timeout, and a keyframe
-  // packet scan reaches the keyframe packet scan timeout.
+  // The probe reached its timeout on the server. For a keyframe packet scan, the timeout is the
+  // keyframe packet scan timeout, and the worker applies no brake for the scan.
   PROBE_CANCEL_REASON_TIMEOUT = 1;
   // The server is shutting down.
   PROBE_CANCEL_REASON_SERVER_SHUTDOWN = 2;
