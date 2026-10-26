@@ -1,10 +1,14 @@
 package com.streamarr.server.services.filepath;
 
 import java.io.IOException;
+import java.nio.file.DirectoryIteratorException;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Normalizes a path to the names that its file system stores, so a folder that the server stores
@@ -17,7 +21,8 @@ public final class FilepathNameNormalizer {
   private FilepathNameNormalizer() {}
 
   /**
-   * @throws IOException when the path does not exist, or a folder on the path cannot be listed
+   * @throws IOException when the path does not exist, a folder on the path cannot be listed or an
+   *     entry's attributes cannot be read, or no single stored name has a name's file key
    */
   public static Path normalizeToFileSystemNames(Path path) throws IOException {
     var absolute = path.toAbsolutePath().normalize();
@@ -30,33 +35,40 @@ public final class FilepathNameNormalizer {
   }
 
   // The JDK replaces names with the stored names only on macOS and Windows, and a Linux file system
-  // that ignores letter
-  // case answers to any spelling. So each name is found among its folder's entries by file key.
+  // that ignores letter case answers to any spelling. So the given name is looked up among its
+  // folder's entries, and otherwise the one entry with the same file key is taken. A file key that
+  // several names share, as hard links do, names no single entry.
   private static Path storedEntry(Path folder, Path name) throws IOException {
     var given = folder.resolve(name);
     var key = fileKeyOf(given);
-    try (var entries = Files.newDirectoryStream(folder)) {
-      for (var entry : entries) {
-        if (entry.getFileName().equals(name) || hasFileKey(entry, key)) {
-          return entry;
-        }
+    var entries = entriesOf(folder);
+    if (key == null || entries.stream().anyMatch(entry -> entry.getFileName().equals(name))) {
+      return given;
+    }
+
+    var sameKey = new ArrayList<Path>();
+    for (var entry : entries) {
+      if (key.equals(fileKeyOf(entry))) {
+        sameKey.add(entry);
       }
     }
 
-    return given;
+    if (sameKey.size() != 1) {
+      throw new FileSystemException(given.toString(), null, "No single stored name for this path");
+    }
+
+    return sameKey.getFirst();
   }
 
-  private static boolean hasFileKey(Path entry, Object key) {
-    if (key == null) {
-      return false;
+  private static List<Path> entriesOf(Path folder) throws IOException {
+    var entries = new ArrayList<Path>();
+    try (var stream = Files.newDirectoryStream(folder)) {
+      stream.forEach(entries::add);
+    } catch (DirectoryIteratorException exception) {
+      throw exception.getCause();
     }
 
-    try {
-      return key.equals(fileKeyOf(entry));
-    } catch (IOException _) {
-      // The entry went away while the folder was listed.
-      return false;
-    }
+    return entries;
   }
 
   private static Object fileKeyOf(Path path) throws IOException {

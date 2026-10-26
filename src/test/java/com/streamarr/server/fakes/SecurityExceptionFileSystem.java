@@ -35,11 +35,13 @@ public class SecurityExceptionFileSystem extends FileSystem {
   private final FileSystem delegate;
   private final SecurityExceptionProvider provider;
   private final Denial denial;
+  private final String unreadableName;
 
   private enum Denial {
     SECURITY_MANAGER,
     UNREADABLE,
-    UNLISTABLE_FOLDERS
+    UNLISTABLE_FOLDERS,
+    UNREADABLE_ATTRIBUTES
   }
 
   public SecurityExceptionFileSystem(FileSystem delegate) {
@@ -47,8 +49,13 @@ public class SecurityExceptionFileSystem extends FileSystem {
   }
 
   private SecurityExceptionFileSystem(FileSystem delegate, Denial denial) {
+    this(delegate, denial, null);
+  }
+
+  private SecurityExceptionFileSystem(FileSystem delegate, Denial denial, String unreadableName) {
     this.delegate = delegate;
     this.denial = denial;
+    this.unreadableName = unreadableName;
     this.provider = new SecurityExceptionProvider(delegate.provider(), this);
   }
 
@@ -61,6 +68,15 @@ public class SecurityExceptionFileSystem extends FileSystem {
    */
   public static SecurityExceptionFileSystem unlistingFolders(FileSystem delegate) {
     return new SecurityExceptionFileSystem(delegate, Denial.UNLISTABLE_FOLDERS);
+  }
+
+  /**
+   * Fails to read the attributes of every entry with this exact name, as a network mount can while
+   * it reconnects. Other paths and access checks pass.
+   */
+  public static SecurityExceptionFileSystem failingAttributesOf(
+      FileSystem delegate, String unreadableName) {
+    return new SecurityExceptionFileSystem(delegate, Denial.UNREADABLE_ATTRIBUTES, unreadableName);
   }
 
   @Override
@@ -291,7 +307,7 @@ public class SecurityExceptionFileSystem extends FileSystem {
 
           delegate.checkAccess(unwrap(path), modes);
         }
-        case UNLISTABLE_FOLDERS -> delegate.checkAccess(unwrap(path), modes);
+        case UNLISTABLE_FOLDERS, UNREADABLE_ATTRIBUTES -> delegate.checkAccess(unwrap(path), modes);
       }
     }
 
@@ -398,7 +414,16 @@ public class SecurityExceptionFileSystem extends FileSystem {
     @Override
     public <A extends BasicFileAttributes> A readAttributes(
         Path path, Class<A> type, LinkOption... options) throws IOException {
+      if (fileSystem.denial == Denial.UNREADABLE_ATTRIBUTES && hasUnreadableName(path)) {
+        throw new IOException("Simulated attribute read failure for path: " + path);
+      }
+
       return delegate.readAttributes(unwrap(path), type, options);
+    }
+
+    private boolean hasUnreadableName(Path path) {
+      var name = path.getFileName();
+      return name != null && name.toString().equals(fileSystem.unreadableName);
     }
 
     @Override
