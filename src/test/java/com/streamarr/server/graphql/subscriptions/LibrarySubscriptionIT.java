@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -115,12 +116,16 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
             });
     var socket = statusSubscribedSocket(bearer);
 
-    var accepted = http.execute(bearer, scanMutation(library.getId()));
+    var scanning =
+        firstChangeWhileSchedulerStopped(
+            () -> {
+              var accepted = http.execute(bearer, scanMutation(library.getId()));
+              var payload = accepted.path("data").path("startLibraryScan");
+              assertThat(payload.path("library").path("status").asString()).isEqualTo("SCANNING");
+              assertThat(payload.path("userErrors").isEmpty()).isTrue();
+              return nextStatusChange(socket, library.getId());
+            });
 
-    var payload = accepted.path("data").path("startLibraryScan");
-    assertThat(payload.path("library").path("status").asString()).isEqualTo("SCANNING");
-    assertThat(payload.path("userErrors").isEmpty()).isTrue();
-    var scanning = nextStatusChange(socket, library.getId());
     assertThat(scanning.path("status").asString()).isEqualTo("SCANNING");
     assertThat(scanning.path("name").asString()).isEqualTo(library.getName());
     assertThat(scanning.path("scanStartedOn").isNull()).isFalse();
@@ -391,11 +396,16 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
   void shouldDeliverScanningThenHealthyWhenProfileThatIsNotServerAdminSubscribesBeforeScan() {
     var library = saveLibrary(libraryDirectory);
     var socket = statusSubscribedSocket(ordinaryProfileBearer());
+    var admin = adminBearer();
 
-    http.execute(adminBearer(), scanMutation(library.getId()));
+    var scanning =
+        firstChangeWhileSchedulerStopped(
+            () -> {
+              http.execute(admin, scanMutation(library.getId()));
+              return nextStatusChangeWithoutErrors(socket, library.getId());
+            });
 
-    assertThat(nextStatusChangeWithoutErrors(socket, library.getId()).path("status").asString())
-        .isEqualTo("SCANNING");
+    assertThat(scanning.path("status").asString()).isEqualTo("SCANNING");
     var healthy = nextStatusChangeWithoutErrors(socket, library.getId());
     assertThat(healthy.path("status").asString()).isEqualTo("HEALTHY");
     assertThat(healthy.path("scanCompletedOn").isNull()).isFalse();
@@ -428,11 +438,16 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
     identities.add(identity);
     var library = saveLibrary(libraryDirectory);
     var socket = statusSubscribedSocket(authTestSupport.deviceBoundProfileBearer(identity));
+    var admin = adminBearer();
 
-    http.execute(adminBearer(), scanMutation(library.getId()));
+    var scanning =
+        firstChangeWhileSchedulerStopped(
+            () -> {
+              http.execute(admin, scanMutation(library.getId()));
+              return nextStatusChangeWithoutErrors(socket, library.getId());
+            });
 
-    assertThat(nextStatusChangeWithoutErrors(socket, library.getId()).path("status").asString())
-        .isEqualTo("SCANNING");
+    assertThat(scanning.path("status").asString()).isEqualTo("SCANNING");
     assertThat(nextStatusChangeWithoutErrors(socket, library.getId()).path("status").asString())
         .isEqualTo("HEALTHY");
   }
@@ -567,6 +582,17 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
     var identity = authTestSupport.createAdminIdentity();
     identities.add(identity);
     return authTestSupport.profileBearer(identity);
+  }
+
+  // A scan of an empty directory can finish before the status listener reads the library, so its
+  // first delivery could already be HEALTHY. The stopped scheduler holds the scan at SCANNING.
+  private JsonNode firstChangeWhileSchedulerStopped(Supplier<JsonNode> scanAndTakeFirstChange) {
+    libraryOperationScheduler.stop();
+    try {
+      return scanAndTakeFirstChange.get();
+    } finally {
+      libraryOperationScheduler.start();
+    }
   }
 
   private String ordinaryProfileBearer() {
