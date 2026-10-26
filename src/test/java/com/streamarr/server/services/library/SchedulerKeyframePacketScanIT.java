@@ -30,6 +30,7 @@ import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import com.streamarr.server.services.streaming.KeyframePacketScanner;
 import com.streamarr.server.support.UnstartedSchedulerConfiguration;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.FileSystems;
@@ -87,6 +88,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
   @Autowired private MediaFileProbeTaskScheduler probeTaskScheduler;
 
   private final BlockingQueue<ExecutionComplete> scanCompletions = new LinkedBlockingQueue<>();
+  private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
   private KeyframePacketScanScheduler scanScheduler;
 
   @Test
@@ -318,6 +320,13 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
         .isEqualTo(
             new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_FAILED));
     assertThat(scheduledScans()).isZero();
+    assertThat(
+            meterRegistry
+                .get("streamarr.probes.keyframe_packet_scan_failures")
+                .tag("reason", "contract_violation")
+                .counter()
+                .count())
+        .isEqualTo(3);
   }
 
   @Test
@@ -371,6 +380,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
             .scanner(scanner)
             .fileSystem(FileSystems.getDefault())
             .outcomes(outcomes)
+            .meterRegistry(meterRegistry)
             .build();
     scanScheduler =
         KeyframePacketScanScheduler.builder()

@@ -18,12 +18,14 @@ import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.streaming.KeyframePacketScanner;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Path;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -41,10 +43,14 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class KeyframePacketScanExecution {
 
+  private static final String FAILED_SCANS_METRIC =
+      "streamarr.probes.keyframe_packet_scan_failures";
+
   private final PersistedProbeReader reader;
   private final KeyframePacketScanner scanner;
   private final FileSystem fileSystem;
   private final MediaFileContainerInfoRepository outcomes;
+  @NonNull private final MeterRegistry meterRegistry;
 
   public KeyframePacketScanResult execute(KeyframePacketScanTaskRequest request) {
     if (request.probeVersion() != ProbeVersion.CURRENT || !storedOutcomeNeedsScan(request)) {
@@ -74,14 +80,14 @@ public class KeyframePacketScanExecution {
       return new KeyframePacketScanResult.Deferred();
     } catch (ProbeTimedOutException _) {
       log.warn("Keyframe packet scan for media file {} timed out", request.mediaFileId());
-      return new KeyframePacketScanResult.Failed();
+      return failed("timed_out");
     } catch (ProbeContractViolationException violation) {
       log.warn(
           "Keyframe packet scan for media file {} got a worker reply that breaks the worker"
               + " contract: {}",
           request.mediaFileId(),
           violation.getMessage());
-      return new KeyframePacketScanResult.Failed();
+      return failed("contract_violation");
     }
 
     // A source that changed during the scan gets a new probe when the server observes the change.
@@ -99,7 +105,7 @@ public class KeyframePacketScanExecution {
       log.warn(
           "Keyframe packet scan for media file {} reported no keyframe result",
           request.mediaFileId());
-      return new KeyframePacketScanResult.Failed();
+      return failed("no_keyframe_result");
     }
 
     outcomes.publishKeyframePacketScan(
@@ -110,6 +116,11 @@ public class KeyframePacketScanExecution {
             .keyframes(keyframes.get())
             .build());
     return new KeyframePacketScanResult.Completed();
+  }
+
+  private KeyframePacketScanResult failed(String reason) {
+    meterRegistry.counter(FAILED_SCANS_METRIC, "reason", reason).increment();
+    return new KeyframePacketScanResult.Failed();
   }
 
   private boolean storedOutcomeNeedsScan(KeyframePacketScanTaskRequest request) {

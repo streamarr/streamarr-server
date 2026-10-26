@@ -77,6 +77,7 @@ class KeyframePacketScanExecutionTest {
   private final FakeMediaFileContainerInfoRepository outcomes =
       new FakeMediaFileContainerInfoRepository();
   private final List<ProbeExecutionRequest> scanRequests = new ArrayList<>();
+  private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
   private KeyframePacketScanner scanner = scanAnswering(success(known()));
   private Path source;
   private MediaFile mediaFile;
@@ -233,6 +234,7 @@ class KeyframePacketScanExecutionTest {
 
     assertThat(result).isEqualTo(new KeyframePacketScanResult.Failed());
     assertThat(storedKeyframes()).isEqualTo(packetScanRequired());
+    assertThat(failedScans("no_keyframe_result")).isOne();
   }
 
   @Test
@@ -248,6 +250,7 @@ class KeyframePacketScanExecutionTest {
 
     assertThat(result).isEqualTo(new KeyframePacketScanResult.Failed());
     assertThat(storedKeyframes()).isEqualTo(packetScanRequired());
+    assertThat(failedScans("timed_out")).isOne();
   }
 
   @Test
@@ -264,6 +267,7 @@ class KeyframePacketScanExecutionTest {
 
     assertThat(result).isEqualTo(new KeyframePacketScanResult.Failed());
     assertThat(storedKeyframes()).isEqualTo(packetScanRequired());
+    assertThat(failedScans("contract_violation")).isOne();
   }
 
   @Test
@@ -297,7 +301,17 @@ class KeyframePacketScanExecutionTest {
             })
         .fileSystem(FileSystems.getDefault())
         .outcomes(outcomes)
+        .meterRegistry(meterRegistry)
         .build();
+  }
+
+  private long failedScans(String reason) {
+    return (long)
+        meterRegistry
+            .get("streamarr.probes.keyframe_packet_scan_failures")
+            .tag("reason", reason)
+            .counter()
+            .count();
   }
 
   private ProbeExecution probeExecution(
