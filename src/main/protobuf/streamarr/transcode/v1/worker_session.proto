@@ -280,13 +280,22 @@ message DolbyVisionPresent {
 }
 
 // The fields of a Dolby Vision RPU header that tell the Dolby Vision profile when no configuration
-// record names it. vdr_rpu_profile 0 with bl_video_full_range_flag 1 means profile 5.
-// vdr_rpu_profile 1 means profile 8, or profile 7 when the stream signals an enhancement layer.
+// record names it, as FFmpeg 8.1 guesses the profile. vdr_rpu_profile 0 with
+// bl_video_full_range_flag 1 means profile 5. vdr_rpu_profile 1 with
+// el_spatial_resampling_filter_flag 1 and disable_residual_flag 0 means an enhancement layer:
+// profile 7 when vdr_bit_depth is 12, and profile 4 otherwise. Any other vdr_rpu_profile 1 header
+// means profile 8.
 message DolbyVisionRpuHeader {
   // The RPU's vdr_rpu_profile.
   uint32 vdr_rpu_profile = 1;
   // The RPU's bl_video_full_range_flag.
   bool base_layer_full_range = 2;
+  // The RPU's el_spatial_resampling_filter_flag.
+  bool enhancement_layer_spatial_resampling_filter = 3;
+  // The RPU's disable_residual_flag.
+  bool disable_residual = 4;
+  // The RPU's vdr_bit_depth_minus8 + 8.
+  uint32 vdr_bit_depth = 5;
 }
 
 // The dynamic range of one video stream, as ADR 0036 defines it. A source video stream can hold
@@ -836,9 +845,18 @@ message ProbeStreamInfo {
   // Video streams only: true when the probe read the first frames of the stream. The probe reads
   // the first 3 frames of the chosen video stream, or fewer when the stream holds fewer, and no
   // frame of any other stream. A Presence on the stream is ABSENT only when this is true. An
-  // absent mastering_display or content_light_level on a stream with this set means that neither
-  // the container nor the first frame carries the value.
+  // absent mastering_display or content_light_level on a stream with this set, and with the
+  // matching omitted flag clear, means that neither the container nor the first frame carries the
+  // value.
   bool first_frames_read = 33;
+  // Video streams only: true when the container or the first frame carries a mastering display
+  // color volume, but the worker left mastering_display absent because ffprobe reported only part
+  // of it or a value does not fit its SEI field. The stream then carries static HDR metadata that
+  // the probe could not read.
+  bool mastering_display_omitted = 34;
+  // Video streams only: true when the container or the first frame carries a content light level,
+  // but the worker left content_light_level absent because a value does not fit its SEI field.
+  bool content_light_level_omitted = 35;
 }
 
 // The number of pixels that a container crop removes from each edge of the picture. width and
@@ -874,8 +892,9 @@ message ContainerCropping {
 // lacks static HDR metadata. So the server must not treat an absent value as proof of PQ10.
 // Probe version 5 reads the first frame of the chosen video stream. ffprobe reports a value that
 // only the bitstream carries as side data of that frame, and the worker converts it the same way.
-// For the chosen video stream, absent then means that neither the container nor the first frame
-// carries the value, and an absent value on a PQ stream proves PQ10.
+// For the chosen video stream, absent with mastering_display_omitted clear then means that neither
+// the container nor the first frame carries the value. A PQ stream whose mastering display and
+// content light level are both absent that way is PQ10.
 //
 // ffprobe prints each value as a fraction. The worker multiplies the fraction by the number of
 // units in one whole: 50000 for a chromaticity coordinate, and 10000 for a luminance. The worker
