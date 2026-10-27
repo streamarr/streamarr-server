@@ -316,6 +316,96 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
      */
     public final TableField<MediaFileStreamInfoRecord, Boolean> HEARING_IMPAIRED = createField(DSL.name("hearing_impaired"), SQLDataType.BOOLEAN, this, "");
 
+    /**
+     * The column <code>public.media_file_stream_info.codec_profile</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, String> CODEC_PROFILE = createField(DSL.name("codec_profile"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.codec_level</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> CODEC_LEVEL = createField(DSL.name("codec_level"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.codec_tier</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, String> CODEC_TIER = createField(DSL.name("codec_tier"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.color_primaries</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, String> COLOR_PRIMARIES = createField(DSL.name("color_primaries"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.transfer_characteristics</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, String> TRANSFER_CHARACTERISTICS = createField(DSL.name("transfer_characteristics"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.matrix_coefficients</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, String> MATRIX_COEFFICIENTS = createField(DSL.name("matrix_coefficients"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.color_range</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, String> COLOR_RANGE = createField(DSL.name("color_range"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.first_frames_read</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Boolean> FIRST_FRAMES_READ = createField(DSL.name("first_frames_read"), SQLDataType.BOOLEAN, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.mastering_display_omitted</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Boolean> MASTERING_DISPLAY_OMITTED = createField(DSL.name("mastering_display_omitted"), SQLDataType.BOOLEAN, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.content_light_level_omitted</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Boolean> CONTENT_LIGHT_LEVEL_OMITTED = createField(DSL.name("content_light_level_omitted"), SQLDataType.BOOLEAN, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.dolby_vision_rpu_starts_sample</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, String> DOLBY_VISION_RPU_STARTS_SAMPLE = createField(DSL.name("dolby_vision_rpu_starts_sample"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.first_rpu_vdr_rpu_profile</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> FIRST_RPU_VDR_RPU_PROFILE = createField(DSL.name("first_rpu_vdr_rpu_profile"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.first_rpu_base_layer_full_range</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Boolean> FIRST_RPU_BASE_LAYER_FULL_RANGE = createField(DSL.name("first_rpu_base_layer_full_range"), SQLDataType.BOOLEAN, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.first_rpu_enhancement_layer_spatial_resampling_filter</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Boolean> FIRST_RPU_ENHANCEMENT_LAYER_SPATIAL_RESAMPLING_FILTER = createField(DSL.name("first_rpu_enhancement_layer_spatial_resampling_filter"), SQLDataType.BOOLEAN, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.first_rpu_disable_residual</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Boolean> FIRST_RPU_DISABLE_RESIDUAL = createField(DSL.name("first_rpu_disable_residual"), SQLDataType.BOOLEAN, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.first_rpu_vdr_bit_depth</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> FIRST_RPU_VDR_BIT_DEPTH = createField(DSL.name("first_rpu_vdr_bit_depth"), SQLDataType.INTEGER, this, "");
+
     private MediaFileStreamInfo(Name alias, Table<MediaFileStreamInfoRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -411,18 +501,26 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
     @Override
     public List<Check<MediaFileStreamInfoRecord>> getChecks() {
         return Arrays.asList(
+            Internal.createCheck(this, DSL.name("codec_level_and_tier_require_codec_profile"), "(((codec_profile IS NOT NULL) OR ((codec_level IS NULL) AND (codec_tier IS NULL))))", true),
             Internal.createCheck(this, DSL.name("complete_container_cropping"), "((((crop_top IS NULL) = (crop_bottom IS NULL)) AND ((crop_top IS NULL) = (crop_left IS NULL)) AND ((crop_top IS NULL) = (crop_right IS NULL))))", true),
             Internal.createCheck(this, DSL.name("complete_content_light_level"), "(((max_content_light_level IS NULL) = (max_frame_average_light_level IS NULL)))", true),
             Internal.createCheck(this, DSL.name("complete_dolby_vision_record"), "((((dolby_vision_base_layer IS NULL) = (dolby_vision_enhancement_layer IS NULL)) AND ((dolby_vision_base_layer IS NULL) = (dolby_vision_rpu IS NULL))))", true),
             Internal.createCheck(this, DSL.name("complete_dynamic_range"), "((((dynamic_range_compatible_base IS NULL) = (hdr10_plus IS NULL)) AND ((dynamic_range_compatible_base IS NULL) = (dolby_vision IS NULL))))", true),
+            Internal.createCheck(this, DSL.name("complete_first_rpu_header"), "((num_nonnulls(first_rpu_vdr_rpu_profile, first_rpu_base_layer_full_range, first_rpu_enhancement_layer_spatial_resampling_filter, first_rpu_disable_residual, first_rpu_vdr_bit_depth) = ANY (ARRAY[0, 5])))", true),
             Internal.createCheck(this, DSL.name("complete_mastering_display"), "((num_nonnulls(mastering_red_x, mastering_red_y, mastering_green_x, mastering_green_y, mastering_blue_x, mastering_blue_y, mastering_white_point_x, mastering_white_point_y, mastering_max_luminance, mastering_min_luminance) = ANY (ARRAY[0, 10])))", true),
             Internal.createCheck(this, DSL.name("complete_stream_end_time"), "(((end_time_seconds IS NULL) = (end_time_nanos IS NULL)))", true),
+            Internal.createCheck(this, DSL.name("complete_video_stream_properties"), "((((first_frames_read IS NULL) = (mastering_display_omitted IS NULL)) AND ((first_frames_read IS NULL) = (content_light_level_omitted IS NULL)) AND ((first_frames_read IS NOT NULL) OR (num_nonnulls(codec_profile, codec_level, codec_tier, color_primaries, transfer_characteristics, matrix_coefficients, color_range) = 0))))", true),
             Internal.createCheck(this, DSL.name("dolby_vision_claims_require_record"), "(((dolby_vision_base_layer IS NOT NULL) OR ((dolby_vision_profile IS NULL) AND (dolby_vision_level IS NULL) AND (dolby_vision_base_layer_compatibility_id IS NULL))))", true),
             Internal.createCheck(this, DSL.name("dolby_vision_details_require_presence"), "(((dolby_vision_observed_rpu IS NOT NULL) = (NOT (dolby_vision IS DISTINCT FROM 'PRESENT'::text))))", true),
             Internal.createCheck(this, DSL.name("dolby_vision_record_requires_presence"), "(((dolby_vision_base_layer IS NULL) OR (dolby_vision = 'PRESENT'::text)))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_bit_depth_check"), "((bit_depth > 0))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_chroma_subsampling_check"), "((chroma_subsampling = ANY (ARRAY['CHROMA_420'::text, 'CHROMA_422'::text, 'CHROMA_444'::text, 'MONOCHROME'::text])))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_codec_level_check"), "((codec_level > 0))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_codec_profile_check"), "((codec_profile = ANY (ARRAY['H264_CONSTRAINED_BASELINE'::text, 'H264_BASELINE'::text, 'H264_MAIN'::text, 'H264_EXTENDED'::text, 'H264_HIGH'::text, 'H264_HIGH_10'::text, 'H264_HIGH_422'::text, 'H264_HIGH_444_PREDICTIVE'::text, 'HEVC_MAIN'::text, 'HEVC_MAIN_10'::text, 'HEVC_MAIN_STILL_PICTURE'::text, 'HEVC_FORMAT_RANGE_EXTENSIONS'::text, 'AV1_MAIN'::text, 'AV1_HIGH'::text, 'AV1_PROFESSIONAL'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_codec_string_check"), "((codec_string <> ''::text))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_codec_tier_check"), "((codec_tier = ANY (ARRAY['MAIN'::text, 'HIGH'::text])))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_color_primaries_check"), "((color_primaries = ANY (ARRAY['BT709'::text, 'BT470M'::text, 'BT470BG'::text, 'SMPTE170M'::text, 'SMPTE240M'::text, 'FILM'::text, 'BT2020'::text, 'SMPTE428'::text, 'SMPTE431'::text, 'SMPTE432'::text, 'EBU3213'::text])))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_color_range_check"), "((color_range = ANY (ARRAY['LIMITED'::text, 'FULL'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_crop_bottom_check"), "((crop_bottom >= 0))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_crop_left_check"), "((crop_left >= 0))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_crop_right_check"), "((crop_right >= 0))", true),
@@ -432,8 +530,11 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
             Internal.createCheck(this, DSL.name("media_file_stream_info_dolby_vision_level_check"), "((dolby_vision_level >= 0))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_dolby_vision_observed_rpu_check"), "((dolby_vision_observed_rpu = ANY (ARRAY['UNSPECIFIED'::text, 'ABSENT'::text, 'PRESENT'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_dolby_vision_profile_check"), "((dolby_vision_profile >= 0))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_dolby_vision_rpu_starts_sample_check"), "((dolby_vision_rpu_starts_sample = ANY (ARRAY['ABSENT'::text, 'PRESENT'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_dynamic_range_compatible_base_check"), "((dynamic_range_compatible_base = ANY (ARRAY['UNSPECIFIED'::text, 'NONE'::text, 'SDR'::text, 'PQ'::text, 'HLG'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_end_time_nanos_check"), "(((end_time_nanos >= 0) AND (end_time_nanos <= 999999999)))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_first_rpu_vdr_bit_depth_check"), "((first_rpu_vdr_bit_depth >= 8))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_first_rpu_vdr_rpu_profile_check"), "((first_rpu_vdr_rpu_profile >= 0))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_handler_name_check"), "((octet_length(handler_name) <= 512))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_hdr10_plus_check"), "((hdr10_plus = ANY (ARRAY['UNSPECIFIED'::text, 'ABSENT'::text, 'PRESENT'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_mastering_blue_x_check"), "(((mastering_blue_x >= 0) AND (mastering_blue_x <= 50000)))", true),
@@ -446,12 +547,17 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
             Internal.createCheck(this, DSL.name("media_file_stream_info_mastering_red_y_check"), "(((mastering_red_y >= 0) AND (mastering_red_y <= 50000)))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_mastering_white_point_x_check"), "(((mastering_white_point_x >= 0) AND (mastering_white_point_x <= 50000)))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_mastering_white_point_y_check"), "(((mastering_white_point_y >= 0) AND (mastering_white_point_y <= 50000)))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_matrix_coefficients_check"), "((matrix_coefficients = ANY (ARRAY['IDENTITY'::text, 'BT709'::text, 'FCC'::text, 'BT470BG'::text, 'SMPTE170M'::text, 'SMPTE240M'::text, 'YCGCO'::text, 'BT2020_NCL'::text, 'BT2020_CL'::text, 'SMPTE2085'::text, 'CHROMA_DERIVED_NCL'::text, 'CHROMA_DERIVED_CL'::text, 'ICTCP'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_max_content_light_level_check"), "(((max_content_light_level >= 0) AND (max_content_light_level <= 65535)))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_max_frame_average_light_level_check"), "(((max_frame_average_light_level >= 0) AND (max_frame_average_light_level <= 65535)))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_rotation_degrees_check"), "(((rotation_degrees >= '-180'::integer) AND (rotation_degrees <= 180)))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_sample_rate_hz_check"), "((sample_rate_hz > 0))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_stream_index_check"), "((stream_index >= 0))", true),
-            Internal.createCheck(this, DSL.name("media_file_stream_info_title_check"), "((octet_length(title) <= 512))", true)
+            Internal.createCheck(this, DSL.name("media_file_stream_info_title_check"), "((octet_length(title) <= 512))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_transfer_characteristics_check"), "((transfer_characteristics = ANY (ARRAY['BT709'::text, 'BT470M'::text, 'BT470BG'::text, 'SMPTE170M'::text, 'SMPTE240M'::text, 'LINEAR'::text, 'LOG100'::text, 'LOG316'::text, 'IEC61966_2_4'::text, 'BT1361'::text, 'IEC61966_2_1'::text, 'BT2020_10'::text, 'BT2020_12'::text, 'SMPTE2084'::text, 'SMPTE428'::text, 'ARIB_STD_B67'::text])))", true),
+            Internal.createCheck(this, DSL.name("omitted_content_light_level_is_not_listed"), "(((content_light_level_omitted IS NOT TRUE) OR (max_content_light_level IS NULL)))", true),
+            Internal.createCheck(this, DSL.name("omitted_mastering_display_is_not_listed"), "(((mastering_display_omitted IS NOT TRUE) OR (mastering_red_x IS NULL)))", true),
+            Internal.createCheck(this, DSL.name("rpu_details_require_observed_rpu"), "((((first_rpu_vdr_rpu_profile IS NULL) AND (dolby_vision_rpu_starts_sample IS NULL)) OR (dolby_vision_observed_rpu = 'PRESENT'::text)))", true)
         );
     }
 
