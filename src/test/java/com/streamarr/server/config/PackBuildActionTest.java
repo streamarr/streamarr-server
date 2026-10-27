@@ -35,6 +35,18 @@ class PackBuildActionTest {
         .isEqualTo("image=index.docker.io/streamarr/streamarr-server:build-10-1-x86_64\n");
   }
 
+  @Test
+  @DisplayName("Should default the runtime locale to UTF-8 when building the server image")
+  void shouldDefaultRuntimeLocaleToUtf8WhenBuildingServerImage() throws Exception {
+    var command = build();
+
+    var result = run(command);
+
+    assertThat(result.exitCode()).as(result.output()).isZero();
+    assertThat(Files.readAllLines(directory.resolve("pack-arguments")))
+        .containsSequence("--env", "BPE_DEFAULT_LANG=C.UTF-8");
+  }
+
   @ParameterizedTest
   @ValueSource(strings = {"server", "cedar", "metaspace"})
   @DisplayName("Should leave the registry untouched when a native image check fails")
@@ -53,6 +65,7 @@ class PackBuildActionTest {
     stub(
         "pack",
         """
+        printf '%s\\n' "$@" > pack-arguments
         for argument in "$@"; do
           if [ "$argument" = --publish ]; then touch registry-image; fi
         done
