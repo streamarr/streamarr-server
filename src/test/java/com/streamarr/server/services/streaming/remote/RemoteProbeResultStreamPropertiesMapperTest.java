@@ -407,8 +407,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         violation(
             "an H.264 codec profile on an AV1 stream",
             stream ->
-                stream
-                    .setCodec("av1")
+                asAv1(stream)
                     .setCodecProfile(
                         com.streamarr.transcode.v1.VideoCodecProfile
                             .VIDEO_CODEC_PROFILE_H264_HIGH)),
@@ -588,8 +587,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         violation(
             "a record-less AV1 profile 10.0 stream with an SDR compatible base",
             stream -> {
-              stream
-                  .setCodec("av1")
+              asAv1(stream)
                   .setFirstFramesRead(true)
                   .getDynamicRangeBuilder()
                   .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
@@ -602,8 +600,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         violation(
             "a declared profile 10.0 stream with a PQ compatible base",
             stream -> {
-              stream
-                  .setCodec("av1")
+              asAv1(stream)
                   .getDynamicRangeBuilder()
                   .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
                   .setDolbyVisionPresent(
@@ -614,8 +611,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         violation(
             "Dolby Vision absent on an AV1 stream",
             stream -> {
-              stream
-                  .setCodec("av1")
+              asAv1(stream)
                   .setFirstFramesRead(true)
                   .getDynamicRangeBuilder()
                   .setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance());
@@ -624,8 +620,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         violation(
             "an observed RPU absent on an AV1 stream",
             stream -> {
-              stream
-                  .setCodec("av1")
+              asAv1(stream)
                   .setFirstFramesRead(true)
                   .getDynamicRangeBuilder()
                   .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
@@ -638,8 +633,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         violation(
             "a sample layout on an AV1 stream",
             stream -> {
-              stream
-                  .setCodec("av1")
+              asAv1(stream)
                   .setFirstFramesRead(true)
                   .getDynamicRangeBuilder()
                   .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
@@ -653,11 +647,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         violation(
             "HDR10+ absent on an AV1 stream",
             stream -> {
-              stream
-                  .setCodec("av1")
-                  .setFirstFramesRead(true)
-                  .getDynamicRangeBuilder()
-                  .setHdr10Plus(absent);
+              asAv1(stream).setFirstFramesRead(true).getDynamicRangeBuilder().setHdr10Plus(absent);
               return stream;
             }));
   }
@@ -762,7 +752,15 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   }
 
   private static ProbeStreamInfo.Builder av1() {
-    return ProbeStreamInfo.newBuilder().setIndex(0).setCodecType("video").setCodec("av1");
+    return asAv1(hevc());
+  }
+
+  // The worker flags each static HDR value that the chosen AV1 stream lacks.
+  private static ProbeStreamInfo.Builder asAv1(ProbeStreamInfo.Builder stream) {
+    return stream
+        .setCodec("av1")
+        .setMasteringDisplayOmitted(true)
+        .setContentLightLevelOmitted(true);
   }
 
   private static DolbyVisionConfiguration.Builder profile10Record() {
