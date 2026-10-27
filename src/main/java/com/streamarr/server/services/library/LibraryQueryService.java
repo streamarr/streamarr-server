@@ -38,6 +38,14 @@ public class LibraryQueryService {
     return libraries.findById(libraryId);
   }
 
+  /**
+   * Refuses a Library addition or removal subscription unless a Profile is selected and its live
+   * authorization facts allow it to view its own activity.
+   */
+  public void requireSubscriptionProfile(AuthenticatedIdentity identity) {
+    authorization.requireViewProfileActivity(identity);
+  }
+
   /** A page of the Library's items of {@code kind}, in the filter's sort order. */
   public ListPage<BaseCollectable<?>> getItems(
       AuthenticatedIdentity identity, MediaType kind, MediaFilter filter, PageRequest request) {

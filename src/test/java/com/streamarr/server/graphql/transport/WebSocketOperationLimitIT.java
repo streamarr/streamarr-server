@@ -30,7 +30,7 @@ class WebSocketOperationLimitIT extends AbstractIntegrationTest {
   private static final int MAX_OPERATIONS_PER_CONNECTION = 32;
   private static final String STATUS_FIELD = "libraryStatusChanged";
   private static final String STATUS_SUBSCRIPTION =
-      "subscription { libraryStatusChanged { id status } }";
+      "subscription { libraryStatusChanged { id administration { status } } }";
 
   @LocalServerPort private int port;
 

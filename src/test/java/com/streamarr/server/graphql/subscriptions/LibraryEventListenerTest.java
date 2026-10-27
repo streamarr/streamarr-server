@@ -31,20 +31,20 @@ import org.springframework.util.unit.DataSize;
 import reactor.core.scheduler.Schedulers;
 
 @Tag("UnitTest")
-@DisplayName("Library Administration Event Listener Tests")
-class LibraryAdministrationEventListenerTest {
+@DisplayName("Library Event Listener Tests")
+class LibraryEventListenerTest {
 
   private static final Duration BOUND = Duration.ofSeconds(5);
 
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
   private final FakeLibraryRepository libraryRepository = new FakeLibraryRepository();
-  private final LibraryAdministrationBroadcasters broadcasters =
-      new LibraryAdministrationBroadcasters(
+  private final LibraryBroadcasters broadcasters =
+      new LibraryBroadcasters(
           meterRegistry,
           Schedulers.immediate(),
           new SubscriptionProperties(64, 32, DataSize.ofMegabytes(1), Duration.ofSeconds(10)));
-  private final LibraryAdministrationEventListener listener =
-      new LibraryAdministrationEventListener(
+  private final LibraryEventListener listener =
+      new LibraryEventListener(
           libraryRepository, broadcasters, meterRegistry, new FakeTransactionManager());
 
   @Test
@@ -92,7 +92,7 @@ class LibraryAdministrationEventListenerTest {
       throws Exception {
     var pausingRepository = new FirstReadPausingLibraryRepository();
     var orderedListener =
-        new LibraryAdministrationEventListener(
+        new LibraryEventListener(
             pausingRepository, broadcasters, meterRegistry, new FakeTransactionManager());
     var library = pausingRepository.save(LibraryFixtureCreator.buildFakeLibrary());
     var delivered = collect(broadcasters.getStatusChanges());
@@ -159,7 +159,7 @@ class LibraryAdministrationEventListenerTest {
   @DisplayName("Should count a publication failure without throwing when the library cannot load")
   void shouldCountPublicationFailureWithoutThrowingWhenLibraryCannotBeLoaded() {
     var failingListener =
-        new LibraryAdministrationEventListener(
+        new LibraryEventListener(
             new UnavailableLibraryRepository(),
             broadcasters,
             meterRegistry,
@@ -173,7 +173,7 @@ class LibraryAdministrationEventListenerTest {
 
     assertThat(
             meterRegistry
-                .get(LibraryAdministrationEventListener.PUBLICATION_FAILURES_METRIC)
+                .get(LibraryEventListener.PUBLICATION_FAILURES_METRIC)
                 .tag("field", "libraryStatusChanged")
                 .counter()
                 .count())

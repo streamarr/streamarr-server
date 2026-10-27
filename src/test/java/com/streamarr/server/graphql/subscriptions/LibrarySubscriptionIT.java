@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -38,25 +39,34 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import tools.jackson.databind.JsonNode;
 
 @Tag("IntegrationTest")
-@DisplayName("Library Administration Subscription Integration Tests")
+@DisplayName("Library Subscription Integration Tests")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
+class LibrarySubscriptionIT extends AbstractIntegrationTest {
 
   private static final String STATUS_FIELD = "libraryStatusChanged";
   private static final String STATUS_SUBSCRIPTION =
-      "subscription { libraryStatusChanged { id name status scanStartedOn scanCompletedOn } }";
+      "subscription { libraryStatusChanged { id name administration { status scanStartedOn"
+          + " scanCompletedOn } } }";
   private static final String AUDITED_STATUS_SUBSCRIPTION =
-      "subscription { libraryStatusChanged { id status createdOn lastModifiedOn } }";
+      "subscription { libraryStatusChanged { id administration { status createdOn"
+          + " lastModifiedOn } } }";
   private static final String ADDED_SUBSCRIPTION =
-      "subscription { libraryAdded { id name status scanStartedOn scanCompletedOn } }";
+      "subscription { libraryAdded { id name administration { status scanStartedOn scanCompletedOn"
+          + " } } }";
   private static final String REMOVED_SUBSCRIPTION =
       "subscription { libraryRemoved { libraryId } }";
+  private static final RefusedSubscription STATUS_REFUSAL =
+      new RefusedSubscription("status", STATUS_FIELD, STATUS_SUBSCRIPTION);
+  private static final RefusedSubscription ADDED_REFUSAL =
+      new RefusedSubscription("added", "libraryAdded", ADDED_SUBSCRIPTION);
+  private static final RefusedSubscription REMOVED_REFUSAL =
+      new RefusedSubscription("removed", "libraryRemoved", REMOVED_SUBSCRIPTION);
   private static final String PROFILE_FIELDS_SUBSCRIPTION =
       """
       subscription {
         libraryStatusChanged {
           id
-          status
+          administration { status }
           items(first: 1) { edges { node { __typename ... on Movie { id watchStatus } } } }
           alphabetIndex { letter count }
         }
@@ -102,7 +112,7 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     var bearer = adminBearer();
     var library = saveLibrary(libraryDirectory);
     var queried =
-        http.execute(bearer, "query { libraries { id status scanCompletedOn } }")
+        http.execute(bearer, "query { libraries { id administration { status scanCompletedOn } } }")
             .path("data")
             .path("libraries");
     assertThat(queried.valueStream())
@@ -110,24 +120,31 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
         .singleElement()
         .satisfies(
             node -> {
-              assertThat(node.path("status").asString()).isEqualTo("HEALTHY");
-              assertThat(node.path("scanCompletedOn").isNull()).isTrue();
+              assertThat(node.path("administration").path("status").asString())
+                  .isEqualTo("HEALTHY");
+              assertThat(node.path("administration").path("scanCompletedOn").isNull()).isTrue();
             });
     var socket = statusSubscribedSocket(bearer);
 
-    var accepted = http.execute(bearer, scanMutation(library.getId()));
+    var scanning =
+        firstChangeWhileSchedulerStopped(
+            () -> {
+              var accepted = http.execute(bearer, scanMutation(library.getId()));
+              var payload = accepted.path("data").path("startLibraryScan");
+              assertThat(payload.path("library").path("administration").path("status").asString())
+                  .isEqualTo("SCANNING");
+              assertThat(payload.path("userErrors").isEmpty()).isTrue();
+              return nextStatusChange(socket, library.getId());
+            });
 
-    var payload = accepted.path("data").path("startLibraryScan");
-    assertThat(payload.path("library").path("status").asString()).isEqualTo("SCANNING");
-    assertThat(payload.path("userErrors").isEmpty()).isTrue();
-    var scanning = nextStatusChange(socket, library.getId());
-    assertThat(scanning.path("status").asString()).isEqualTo("SCANNING");
+    assertThat(scanning.path("administration").path("status").asString()).isEqualTo("SCANNING");
     assertThat(scanning.path("name").asString()).isEqualTo(library.getName());
-    assertThat(scanning.path("scanStartedOn").isNull()).isFalse();
+    assertThat(scanning.path("administration").path("scanStartedOn").isNull()).isFalse();
     var healthy = nextStatusChange(socket, library.getId());
-    assertThat(healthy.path("status").asString()).isEqualTo("HEALTHY");
-    assertThat(Instant.parse(healthy.path("scanCompletedOn").asString()))
-        .isAfterOrEqualTo(Instant.parse(scanning.path("scanStartedOn").asString()));
+    assertThat(healthy.path("administration").path("status").asString()).isEqualTo("HEALTHY");
+    assertThat(Instant.parse(healthy.path("administration").path("scanCompletedOn").asString()))
+        .isAfterOrEqualTo(
+            Instant.parse(scanning.path("administration").path("scanStartedOn").asString()));
   }
 
   @Test
@@ -146,10 +163,10 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
 
       var scanning = nextStatusChange(socket, library.getId());
       var stored = libraryRepository.findById(library.getId()).orElseThrow();
-      assertThat(scanning.path("status").asString()).isEqualTo("SCANNING");
-      assertThat(Instant.parse(scanning.path("createdOn").asString()))
+      assertThat(scanning.path("administration").path("status").asString()).isEqualTo("SCANNING");
+      assertThat(Instant.parse(scanning.path("administration").path("createdOn").asString()))
           .isEqualTo(stored.getCreatedOn());
-      assertThat(Instant.parse(scanning.path("lastModifiedOn").asString()))
+      assertThat(Instant.parse(scanning.path("administration").path("lastModifiedOn").asString()))
           .isEqualTo(stored.getLastModifiedOn());
     } finally {
       libraryOperationScheduler.start();
@@ -239,21 +256,34 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     libraryOperationScheduler.stop();
     try {
       http.execute(bearer, scanMutation(library.getId()));
-      assertThat(nextStatusChange(socket, library.getId()).path("status").asString())
+      assertThat(
+              nextStatusChange(socket, library.getId())
+                  .path("administration")
+                  .path("status")
+                  .asString())
           .isEqualTo("SCANNING");
 
       var stopped = http.execute(bearer, stopScanMutation(library.getId()));
 
       var payload = stopped.path("data").path("stopLibraryScan");
-      assertThat(payload.path("library").path("status").asString()).isEqualTo("STOPPING");
+      assertThat(payload.path("library").path("administration").path("status").asString())
+          .isEqualTo("STOPPING");
       assertThat(payload.path("userErrors").isEmpty()).isTrue();
-      assertThat(nextStatusChange(socket, library.getId()).path("status").asString())
+      assertThat(
+              nextStatusChange(socket, library.getId())
+                  .path("administration")
+                  .path("status")
+                  .asString())
           .isEqualTo("STOPPING");
     } finally {
       libraryOperationScheduler.start();
     }
 
-    assertThat(nextStatusChange(socket, library.getId()).path("status").asString())
+    assertThat(
+            nextStatusChange(socket, library.getId())
+                .path("administration")
+                .path("status")
+                .asString())
         .isEqualTo("HEALTHY");
   }
 
@@ -266,11 +296,15 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
 
     http.execute(bearer, scanMutation(library.getId()));
 
-    assertThat(nextStatusChange(socket, library.getId()).path("status").asString())
+    assertThat(
+            nextStatusChange(socket, library.getId())
+                .path("administration")
+                .path("status")
+                .asString())
         .isEqualTo("SCANNING");
     var unhealthy = nextStatusChange(socket, library.getId());
-    assertThat(unhealthy.path("status").asString()).isEqualTo("UNHEALTHY");
-    assertThat(unhealthy.path("scanCompletedOn").isNull()).isFalse();
+    assertThat(unhealthy.path("administration").path("status").asString()).isEqualTo("UNHEALTHY");
+    assertThat(unhealthy.path("administration").path("scanCompletedOn").isNull()).isFalse();
   }
 
   @Test
@@ -283,11 +317,20 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     var accepted = http.execute(bearer, refreshMutation(library.getId()));
 
     var payload = accepted.path("data").path("startLibraryRefresh");
-    assertThat(payload.path("library").path("status").asString()).isEqualTo("REFRESHING");
-    assertThat(payload.path("userErrors").isEmpty()).isTrue();
-    assertThat(nextStatusChange(socket, library.getId()).path("status").asString())
+    assertThat(payload.path("library").path("administration").path("status").asString())
         .isEqualTo("REFRESHING");
-    assertThat(nextStatusChange(socket, library.getId()).path("status").asString())
+    assertThat(payload.path("userErrors").isEmpty()).isTrue();
+    assertThat(
+            nextStatusChange(socket, library.getId())
+                .path("administration")
+                .path("status")
+                .asString())
+        .isEqualTo("REFRESHING");
+    assertThat(
+            nextStatusChange(socket, library.getId())
+                .path("administration")
+                .path("status")
+                .asString())
         .isEqualTo("HEALTHY");
   }
 
@@ -296,7 +339,7 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
       "Should deliver the added library and the removal's library id when another session adds and removes a library")
   void shouldDeliverAddedLibraryAndRemovalIdWhenAnotherSessionAddsAndRemovesLibrary()
       throws IOException {
-    var socket = libraryAdministrationSocket(adminBearer());
+    var socket = allLibrarySubscriptionsSocket(adminBearer());
     var otherSession = adminBearer();
 
     var libraryId = addLibrary(otherSession, "Added Library", directory("added"));
@@ -304,7 +347,7 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     var added = nextAddedLibrary(socket);
     assertThat(added.path("id").asString()).isEqualTo(libraryId.toString());
     assertThat(added.path("name").asString()).isEqualTo("Added Library");
-    assertThat(added.path("status").asString()).isEqualTo("SCANNING");
+    assertThat(added.path("administration").path("status").asString()).isEqualTo("SCANNING");
     awaitStatus(socket, libraryId, "HEALTHY");
 
     var removed = http.execute(otherSession, removeMutation(libraryId));
@@ -317,7 +360,7 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
   @DisplayName("Should deliver only the later addition when a refused addition comes first")
   void shouldDeliverOnlyLaterAdditionWhenRefusedAdditionComesFirst() throws IOException {
     var admin = adminBearer();
-    var socket = libraryAdministrationSocket(admin);
+    var socket = allLibrarySubscriptionsSocket(admin);
     var member = authTestSupport.createIdentity();
     identities.add(member);
 
@@ -337,7 +380,7 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
   void shouldDeliverOnlyLaterAdditionWhenRolledBackAdditionComesFirst() throws IOException {
     var admin = adminBearer();
     var registered = saveLibrary(directory("registered"));
-    var socket = libraryAdministrationSocket(admin);
+    var socket = allLibrarySubscriptionsSocket(admin);
 
     var rolledBack =
         http.execute(admin, addLibraryMutation("Duplicate Library", directory("registered")));
@@ -363,7 +406,7 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     var admin = adminBearer();
     var busy = saveLibrary(directory("busy"));
     var sentinel = saveLibrary(directory("sentinel"));
-    var socket = libraryAdministrationSocket(admin);
+    var socket = allLibrarySubscriptionsSocket(admin);
     // The stopped scheduler keeps the scan stored and the library SCANNING.
     libraryOperationScheduler.stop();
     try {
@@ -387,26 +430,64 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should refuse the subscription with FORBIDDEN when the Account is not a ServerAdmin")
-  void shouldRefuseSubscriptionWithForbiddenWhenAccountIsNotServerAdmin() {
-    var identity = authTestSupport.createIdentity();
-    identities.add(identity);
-
-    assertRefusedWithForbidden(authTestSupport.profileBearer(identity));
+      "Should refuse libraryStatusChanged with FORBIDDEN when the Profile is not a ServerAdmin")
+  void shouldRefuseLibraryStatusChangedWithForbiddenWhenProfileIsNotServerAdmin() {
+    assertRefusedWith(ordinaryProfileBearer(), "FORBIDDEN", List.of(STATUS_REFUSAL));
   }
 
   @Test
-  @DisplayName("Should refuse the subscription with FORBIDDEN when the session is device-bound")
-  void shouldRefuseSubscriptionWithForbiddenWhenSessionIsDeviceBound() {
+  @DisplayName(
+      "Should deliver the added library without its administration and the removal's library id"
+          + " when a Profile that is not a ServerAdmin subscribes")
+  void shouldDeliverAddedLibraryWithoutAdministrationAndRemovalIdWhenProfileIsNotServerAdmin()
+      throws IOException {
+    var socket = additionsAndRemovalsSocket(ordinaryProfileBearer());
+    var admin = adminBearer();
+    var adminStatus = statusSubscribedSocket(admin);
+
+    var libraryId = addLibrary(admin, "Family Library", directory("family"));
+
+    var payload = socket.nextMessageFor("added").path("payload");
+    var added = payload.path("data").path("libraryAdded");
+    assertThat(added.path("id").asString()).isEqualTo(libraryId.toString());
+    assertThat(added.path("name").asString()).isEqualTo("Family Library");
+    assertThat(added.path("administration").isNull()).isTrue();
+    assertThat(firstErrorCode(payload)).isEqualTo("FORBIDDEN");
+    awaitStatus(adminStatus, libraryId, "HEALTHY");
+
+    http.execute(admin, removeMutation(libraryId));
+
+    assertThat(removedLibraryId(socket)).isEqualTo(libraryId.toString());
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse libraryStatusChanged with FORBIDDEN when a ServerAdmin's session is device-bound")
+  void shouldRefuseLibraryStatusChangedWithForbiddenWhenServerAdminsSessionIsDeviceBound() {
     var identity = authTestSupport.createAdminIdentity();
     identities.add(identity);
 
-    assertRefusedWithForbidden(authTestSupport.deviceBoundProfileBearer(identity));
+    assertRefusedWith(
+        authTestSupport.deviceBoundProfileBearer(identity), "FORBIDDEN", List.of(STATUS_REFUSAL));
   }
 
   @Test
-  @DisplayName("Should refuse the subscription with FORBIDDEN when the Account is disabled")
-  void shouldRefuseSubscriptionWithForbiddenWhenAccountIsDisabled() {
+  @DisplayName(
+      "Should refuse libraryAdded and libraryRemoved with PROFILE_REQUIRED when no Profile is selected")
+  void shouldRefuseAdditionsAndRemovalsWithProfileRequiredWhenNoProfileIsSelected() {
+    var identity = authTestSupport.createIdentity();
+    identities.add(identity);
+
+    assertRefusedWith(
+        authTestSupport.accountBearer(identity),
+        "PROFILE_REQUIRED",
+        List.of(ADDED_REFUSAL, REMOVED_REFUSAL));
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse each library subscription with FORBIDDEN when the Account is disabled")
+  void shouldRefuseEachLibrarySubscriptionWithForbiddenWhenAccountIsDisabled() {
     var identity = authTestSupport.createAdminIdentity();
     identities.add(identity);
     var bearer = authTestSupport.profileBearer(identity);
@@ -414,20 +495,26 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     account.setEnabled(false);
     userAccountRepository.saveAndFlush(account);
 
-    assertRefusedWithForbidden(bearer);
+    assertRefusedWith(bearer, "FORBIDDEN", List.of(STATUS_REFUSAL, ADDED_REFUSAL, REMOVED_REFUSAL));
   }
 
-  private void assertRefusedWithForbidden(String bearer) {
+  private void assertRefusedWith(
+      String bearer, String code, List<RefusedSubscription> subscriptions) {
     var socket = connect(bearer);
 
-    socket.subscribe("refused", STATUS_SUBSCRIPTION);
+    for (var subscription : subscriptions) {
+      socket.subscribe(subscription.operationId(), subscription.document());
 
-    var refusal = socket.nextMessageFor("refused");
-    assertThat(refusal.path("type").asString()).isEqualTo("next");
-    assertThat(firstErrorCode(refusal.path("payload"))).isEqualTo("FORBIDDEN");
-    assertThat(socket.nextMessageFor("refused").path("type").asString()).isEqualTo("complete");
-    assertThat(activeSubscriptions.count(STATUS_FIELD)).isZero();
+      var refusal = socket.nextMessageFor(subscription.operationId());
+      assertThat(refusal.path("type").asString()).isEqualTo("next");
+      assertThat(firstErrorCode(refusal.path("payload"))).isEqualTo(code);
+      assertThat(socket.nextMessageFor(subscription.operationId()).path("type").asString())
+          .isEqualTo("complete");
+      assertThat(activeSubscriptions.count(subscription.field())).isZero();
+    }
   }
+
+  private record RefusedSubscription(String operationId, String field, String document) {}
 
   private GraphQlTransportWsTestClient statusSubscribedSocket(String bearer) {
     var socket = connect(bearer);
@@ -436,14 +523,19 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     return socket;
   }
 
-  private GraphQlTransportWsTestClient libraryAdministrationSocket(String bearer) {
+  private GraphQlTransportWsTestClient allLibrarySubscriptionsSocket(String bearer) {
+    var socket = additionsAndRemovalsSocket(bearer);
+    socket.subscribe("status", STATUS_SUBSCRIPTION);
+    activeSubscriptions.awaitCount(STATUS_FIELD, 1);
+    return socket;
+  }
+
+  private GraphQlTransportWsTestClient additionsAndRemovalsSocket(String bearer) {
     var socket = connect(bearer);
     socket.subscribe("added", ADDED_SUBSCRIPTION);
     socket.subscribe("removed", REMOVED_SUBSCRIPTION);
-    socket.subscribe("status", STATUS_SUBSCRIPTION);
     activeSubscriptions.awaitCount("libraryAdded", 1);
     activeSubscriptions.awaitCount("libraryRemoved", 1);
-    activeSubscriptions.awaitCount(STATUS_FIELD, 1);
     return socket;
   }
 
@@ -476,7 +568,8 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
 
   private static void awaitStatus(
       GraphQlTransportWsTestClient socket, UUID libraryId, String status) {
-    while (!status.equals(nextStatusChange(socket, libraryId).path("status").asString())) {
+    while (!status.equals(
+        nextStatusChange(socket, libraryId).path("administration").path("status").asString())) {
       // Earlier transitions of the same library are skipped.
     }
   }
@@ -485,7 +578,7 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     return """
         mutation {
           addLibrary(input: {name: "%s", filepath: "%s", type: MOVIE, backend: LOCAL}) {
-            library { id name status }
+            library { id name administration { status } }
             userErrors { __typename }
           }
         }
@@ -511,6 +604,23 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
 
   private String adminBearer() {
     var identity = authTestSupport.createAdminIdentity();
+    identities.add(identity);
+    return authTestSupport.profileBearer(identity);
+  }
+
+  // A scan of an empty directory can finish before the status listener reads the library, so its
+  // first delivery could already be HEALTHY. The stopped scheduler holds the scan at SCANNING.
+  private JsonNode firstChangeWhileSchedulerStopped(Supplier<JsonNode> scanAndTakeFirstChange) {
+    libraryOperationScheduler.stop();
+    try {
+      return scanAndTakeFirstChange.get();
+    } finally {
+      libraryOperationScheduler.start();
+    }
+  }
+
+  private String ordinaryProfileBearer() {
+    var identity = authTestSupport.createIdentity();
     identities.add(identity);
     return authTestSupport.profileBearer(identity);
   }
@@ -583,7 +693,7 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     return """
         mutation {
           startLibraryScan(input: { libraryId: "%s" }) {
-            library { status }
+            library { administration { status } }
             userErrors { __typename }
           }
         }
@@ -595,7 +705,7 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     return """
         mutation {
           stopLibraryScan(input: { libraryId: "%s" }) {
-            library { status }
+            library { administration { status } }
             userErrors { __typename }
           }
         }
@@ -607,7 +717,7 @@ class LibraryAdministrationSubscriptionIT extends AbstractIntegrationTest {
     return """
         mutation {
           startLibraryRefresh(input: { libraryId: "%s" }) {
-            library { status }
+            library { administration { status } }
             userErrors { __typename }
           }
         }

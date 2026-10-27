@@ -19,7 +19,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Turns committed library changes into library-administration subscription payloads. Each event
+ * Turns committed library changes into Library status, addition and removal payloads. Each event
  * reads the library once, for every subscriber, in a transaction of its own, so the payload carries
  * the library's latest committed row. A write inside a transaction is delivered only after commit;
  * a write without one is delivered at once.
@@ -30,20 +30,20 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @Slf4j
 @Component
-public class LibraryAdministrationEventListener {
+public class LibraryEventListener {
 
   static final String PUBLICATION_FAILURES_METRIC =
       "streamarr.graphql.subscriptions.publication_failures";
 
   private final LibraryRepository libraryRepository;
-  private final LibraryAdministrationBroadcasters broadcasters;
+  private final LibraryBroadcasters broadcasters;
   private final MeterRegistry meterRegistry;
   private final TransactionTemplate committedReads;
   private final MutexFactory<UUID> statusPublicationLocks = new MutexFactory<>();
 
-  public LibraryAdministrationEventListener(
+  public LibraryEventListener(
       LibraryRepository libraryRepository,
-      LibraryAdministrationBroadcasters broadcasters,
+      LibraryBroadcasters broadcasters,
       MeterRegistry meterRegistry,
       PlatformTransactionManager transactionManager) {
     this.libraryRepository = libraryRepository;

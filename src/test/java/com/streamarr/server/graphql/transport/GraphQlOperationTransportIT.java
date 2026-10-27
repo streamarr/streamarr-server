@@ -39,7 +39,7 @@ class GraphQlOperationTransportIT extends AbstractIntegrationTest {
 
   private static final ObjectMapper JSON = new ObjectMapper();
   private static final String STATUS_SUBSCRIPTION =
-      "subscription { libraryStatusChanged { id status } }";
+      "subscription { libraryStatusChanged { id administration { status } } }";
 
   @LocalServerPort private int port;
 

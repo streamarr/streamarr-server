@@ -20,10 +20,10 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * The subscription schema contract from ADR 0042: every field documents who may subscribe and is
- * nullable so a field error never ends the operation, a removed library is identified by id alone,
- * and a watch-state change lists its items, each nullable so a failed item leaves the others
- * intact.
+ * The subscription schema contract from ADR 0042: every field requires a selected Profile with
+ * ViewProfileActivity and is nullable so a field error never ends the operation, a removed library
+ * is identified by id alone, and a watch-state change lists its items, each nullable so a failed
+ * item leaves the others intact.
  */
 @Tag("UnitTest")
 @DisplayName("Subscription Contract Tests")
@@ -51,14 +51,27 @@ class SubscriptionContractTest {
   }
 
   @Test
-  @DisplayName("Should state who may subscribe when each subscription field is documented")
-  void shouldStateWhoMaySubscribeWhenEachSubscriptionFieldIsDocumented() {
+  @DisplayName("Should require a ServerAdmin when the library status field is documented")
+  void shouldRequireServerAdminWhenLibraryStatusFieldIsDocumented() {
+    assertThat(descriptionOf(subscriptionField("libraryStatusChanged")))
+        .contains("ServerAdmin")
+        .doesNotContain("ViewProfileActivity");
+  }
+
+  @Test
+  @DisplayName(
+      "Should require a selected Profile and ViewProfileActivity when each other subscription field is documented")
+  void
+      shouldRequireSelectedProfileAndViewProfileActivityWhenEachOtherSubscriptionFieldIsDocumented() {
     assertThat(subscriptionFields())
+        .filteredOn(field -> !field.getName().equals("libraryStatusChanged"))
         .isNotEmpty()
         .allSatisfy(
             field ->
                 assertThat(descriptionOf(field))
-                    .containsAnyOf("ServerAdmin", "ViewProfileActivity"));
+                    .contains("selected Profile")
+                    .contains("ViewProfileActivity")
+                    .doesNotContain("ServerAdmin"));
   }
 
   @Test

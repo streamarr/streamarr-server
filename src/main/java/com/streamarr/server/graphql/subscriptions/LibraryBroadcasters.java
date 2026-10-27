@@ -7,16 +7,16 @@ import lombok.Getter;
 import org.springframework.stereotype.Component;
 import reactor.core.scheduler.Scheduler;
 
-/** One broadcaster per library-administration subscription field. */
+/** One broadcaster per Library status, addition and removal subscription field. */
 @Getter
 @Component
-public class LibraryAdministrationBroadcasters {
+public class LibraryBroadcasters {
 
   private final SubscriptionBroadcaster<Library> statusChanges;
   private final SubscriptionBroadcaster<Library> additions;
   private final SubscriptionBroadcaster<LibraryRemoval> removals;
 
-  public LibraryAdministrationBroadcasters(
+  public LibraryBroadcasters(
       MeterRegistry meterRegistry, Scheduler deliveryScheduler, SubscriptionProperties properties) {
     var shared = new SharedSettings(meterRegistry, deliveryScheduler, properties.operationBuffer());
     this.statusChanges = shared.broadcaster("libraryStatusChanged");

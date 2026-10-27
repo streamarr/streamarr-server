@@ -53,7 +53,7 @@ class WebSocketSlowClientIT extends AbstractIntegrationTest {
   private static final int MAX_LARGE_CHANGES = 2_000;
   private static final String STATUS_FIELD = "libraryStatusChanged";
   private static final String STATUS_SUBSCRIPTION =
-      "subscription { libraryStatusChanged { id name status } }";
+      "subscription { libraryStatusChanged { id name administration { status } } }";
 
   @LocalServerPort private int port;
 
@@ -136,9 +136,17 @@ class WebSocketSlowClientIT extends AbstractIntegrationTest {
               .formatted(scanned.getId()));
 
       assertThat(fellBehindClosures()).isEqualTo(closuresBefore + 1);
-      assertThat(nextStatusChange(keepingUp, scanned.getId()).path("status").asString())
+      assertThat(
+              nextStatusChange(keepingUp, scanned.getId())
+                  .path("administration")
+                  .path("status")
+                  .asString())
           .isEqualTo("SCANNING");
-      assertThat(nextStatusChange(keepingUp, scanned.getId()).path("status").asString())
+      assertThat(
+              nextStatusChange(keepingUp, scanned.getId())
+                  .path("administration")
+                  .path("status")
+                  .asString())
           .isEqualTo("HEALTHY");
       stalled.resumeReading();
       assertThat(stalled.awaitClosure().statusCode()).isEqualTo(4101);
@@ -146,7 +154,8 @@ class WebSocketSlowClientIT extends AbstractIntegrationTest {
       try (var recovered = GraphQlTransportWsTestClient.connectWithBearer(port, bearer)) {
         recovered.subscribe("status", STATUS_SUBSCRIPTION);
         var current =
-            http.execute(bearer, "query { libraries { id status scanCompletedOn } }")
+            http.execute(
+                    bearer, "query { libraries { id administration { status scanCompletedOn } } }")
                 .path("data")
                 .path("libraries");
         assertThat(current.valueStream())
@@ -154,8 +163,10 @@ class WebSocketSlowClientIT extends AbstractIntegrationTest {
             .singleElement()
             .satisfies(
                 node -> {
-                  assertThat(node.path("status").asString()).isEqualTo("HEALTHY");
-                  assertThat(node.path("scanCompletedOn").isNull()).isFalse();
+                  assertThat(node.path("administration").path("status").asString())
+                      .isEqualTo("HEALTHY");
+                  assertThat(node.path("administration").path("scanCompletedOn").isNull())
+                      .isFalse();
                 });
       }
     }

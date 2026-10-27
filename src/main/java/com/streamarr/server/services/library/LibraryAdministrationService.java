@@ -31,8 +31,9 @@ public class LibraryAdministrationService {
   }
 
   /**
-   * Refuses unless the identity may view library administration. Subscriptions call this once, when
-   * they register; access-token expiry bounds the authority afterwards (ADR 0016).
+   * Refuses unless the identity may view library administration. A Library's administration field
+   * checks it each time it resolves. libraryStatusChanged checks it once, when it registers, and
+   * access-token expiry bounds the authority afterwards (ADR 0016).
    */
   public void requireViewLibraryAdministration(AuthenticatedIdentity identity) {
     authorizationService.requireAllowed(identity, new Intent.ViewLibraryAdministration());
