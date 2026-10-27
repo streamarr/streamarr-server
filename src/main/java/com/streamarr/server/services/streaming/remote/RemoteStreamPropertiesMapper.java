@@ -145,11 +145,12 @@ final class RemoteStreamPropertiesMapper {
   }
 
   private static boolean isBaselessProfile(ProbeStreamInfo stream, DolbyVisionPresent present) {
-    if (present.hasDeclared()) {
+    if (present.getDeclared().hasProfile()) {
       return isBaselessRecord(present.getDeclared());
     }
 
-    // The same header tells profile 5 in HEVC and profile 10.0 in AV1.
+    // The header tells the profile when no record names one: the same header means profile 5 in
+    // HEVC and profile 10.0 in AV1.
     var header = present.getFirstRpuHeader();
     return RECORD_LESS_BASELESS_CODECS.contains(stream.getCodec())
         && present.hasFirstRpuHeader()
@@ -158,10 +159,6 @@ final class RemoteStreamPropertiesMapper {
   }
 
   private static boolean isBaselessRecord(DolbyVisionConfiguration configuration) {
-    if (!configuration.hasProfile()) {
-      return false;
-    }
-
     return switch (configuration.getProfile()) {
       case DOLBY_VISION_PROFILE_5 -> true;
       case DOLBY_VISION_PROFILE_10 ->

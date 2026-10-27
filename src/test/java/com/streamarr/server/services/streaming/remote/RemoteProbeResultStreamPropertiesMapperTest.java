@@ -577,6 +577,34 @@ class RemoteProbeResultStreamPropertiesMapperTest {
               return stream;
             }),
         violation(
+            "a profile 5 RPU header beside a record without a profile and with an SDR base",
+            stream -> {
+              stream
+                  .setFirstFramesRead(true)
+                  .getDynamicRangeBuilder()
+                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
+                  .setDolbyVisionPresent(
+                      DolbyVisionPresent.newBuilder()
+                          .setDeclared(profilelessRecord())
+                          .setObservedRpu(present)
+                          .setFirstRpuHeader(profile5RpuHeader()));
+              return stream;
+            }),
+        violation(
+            "an AV1 profile 10.0 RPU header beside a record without a profile and with an SDR base",
+            stream -> {
+              asAv1(stream)
+                  .setFirstFramesRead(true)
+                  .getDynamicRangeBuilder()
+                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
+                  .setDolbyVisionPresent(
+                      DolbyVisionPresent.newBuilder()
+                          .setDeclared(profilelessRecord())
+                          .setObservedRpu(present)
+                          .setFirstRpuHeader(profile5RpuHeader()));
+              return stream;
+            }),
+        violation(
             "a declared profile 5 stream with an SDR compatible base",
             stream -> {
               stream
@@ -869,6 +897,10 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         .setCodec("av1")
         .setMasteringDisplayOmitted(true)
         .setContentLightLevelOmitted(true);
+  }
+
+  private static DolbyVisionConfiguration.Builder profilelessRecord() {
+    return DolbyVisionConfiguration.newBuilder().setBaseLayer(true).setRpu(true);
   }
 
   private static DolbyVisionConfiguration.Builder profile10Record() {
