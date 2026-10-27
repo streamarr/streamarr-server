@@ -25,6 +25,7 @@ import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.ProbeFixture;
+import com.streamarr.server.fixtures.UpgradeDatabase;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.mutation.Outcome;
@@ -36,13 +37,10 @@ import com.streamarr.server.services.streaming.ProbeCapacitySource;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
-import com.zaxxer.hikari.HikariConfig;
-import com.zaxxer.hikari.HikariDataSource;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -263,6 +261,8 @@ class ProbeVersion4UpgradeIT extends AbstractIntegrationTest {
   @TestConfiguration(proxyBeanMethods = false)
   static class UpgradeConfiguration {
 
+    // A database of its own gives this startup the real V096 schema without relying on hand-built
+    // copies of historical tables.
     @Bean
     UpgradeDatabase upgradeDatabase(JdbcConnectionDetails connectionDetails) throws SQLException {
       return UpgradeDatabase.create(connectionDetails);
@@ -402,47 +402,6 @@ class ProbeVersion4UpgradeIT extends AbstractIntegrationTest {
     @Override
     public void close() throws IOException {
       FileSystemUtils.deleteRecursively(root);
-    }
-  }
-
-  // A separate database gives this startup the real V096 schema without changing the shared
-  // container's other test databases or relying on hand-built copies of historical tables.
-  private record UpgradeDatabase(
-      JdbcConnectionDetails connectionDetails, String name, HikariDataSource dataSource)
-      implements AutoCloseable {
-
-    private static UpgradeDatabase create(JdbcConnectionDetails connectionDetails)
-        throws SQLException {
-      var name = "probe_upgrade_" + UUID.randomUUID().toString().replace("-", "");
-      try (var connection = connect(connectionDetails);
-          var statement = connection.createStatement()) {
-        statement.execute("CREATE DATABASE " + name);
-      }
-
-      var config = new HikariConfig();
-      var url = connectionDetails.getJdbcUrl();
-      var query = url.indexOf('?');
-      var suffix = query < 0 ? "" : url.substring(query);
-      config.setJdbcUrl(url.substring(0, url.lastIndexOf('/') + 1) + name + suffix);
-      config.setUsername(connectionDetails.getUsername());
-      config.setPassword(connectionDetails.getPassword());
-      config.setMaximumPoolSize(10);
-      config.setMinimumIdle(0);
-      return new UpgradeDatabase(connectionDetails, name, new HikariDataSource(config));
-    }
-
-    private static Connection connect(JdbcConnectionDetails details) throws SQLException {
-      return DriverManager.getConnection(
-          details.getJdbcUrl(), details.getUsername(), details.getPassword());
-    }
-
-    @Override
-    public void close() throws SQLException {
-      dataSource.close();
-      try (var connection = connect(connectionDetails);
-          var statement = connection.createStatement()) {
-        statement.execute("DROP DATABASE " + name + " WITH (FORCE)");
-      }
     }
   }
 }
