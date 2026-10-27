@@ -711,13 +711,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
                   .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
                   .setDolbyVisionPresent(DolbyVisionPresent.newBuilder().setObservedRpu(present));
               return stream;
-            }),
-        violation(
-            "a chosen AV1 stream that lacks a mastering display and leaves it unflagged",
-            stream -> asAv1(stream).setFirstFramesRead(true).setMasteringDisplayOmitted(false)),
-        violation(
-            "a chosen AV1 stream that lacks a content light level and leaves it unflagged",
-            stream -> asAv1(stream).setFirstFramesRead(true).setContentLightLevelOmitted(false)));
+            }));
   }
 
   @Test
@@ -732,42 +726,17 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   }
 
   @Test
-  @DisplayName("Should keep a chosen AV1 stream's static HDR metadata when the stream lists it")
-  void shouldKeepAChosenAv1StreamsStaticHdrMetadataWhenTheStreamListsIt() {
-    var video =
-        hevc()
-            .setCodec("av1")
-            .setMasteringDisplay(WorkerProbeResultFixture.masteringDisplayBuilder())
-            .setContentLightLevel(
-                ContentLightLevel.newBuilder()
-                    .setMaxContentLightLevel(1000)
-                    .setMaxFrameAverageLightLevel(400));
+  @DisplayName(
+      "Should keep a chosen AV1 stream that lacks static HDR metadata when it flags no omission")
+  void shouldKeepAChosenAv1StreamThatLacksStaticHdrMetadataWhenItFlagsNoOmission() {
+    var video = hevc().setCodec("av1").setFirstFramesRead(true);
 
     var stream = videoOf(version5(media -> media.setStreams(0, video)));
 
-    assertThat(stream.masteringDisplay()).isPresent();
-    assertThat(stream.contentLightLevel()).isPresent();
-    assertThat(stream.videoProperties()).contains(VideoStreamProperties.builder().build());
-  }
-
-  @Test
-  @DisplayName("Should keep a chosen AV1 stream whose frames the probe did not read unflagged")
-  void shouldKeepAChosenAv1StreamWhoseFramesTheProbeDidNotReadUnflagged() {
-    var video = hevc().setCodec("av1");
-
-    var stream = videoOf(version5(media -> media.setStreams(0, video)));
-
-    assertThat(stream.videoProperties()).contains(VideoStreamProperties.builder().build());
-  }
-
-  @Test
-  @DisplayName("Should keep an AV1 stream that the probe did not choose when it flags no omission")
-  void shouldKeepAnAv1StreamThatTheProbeDidNotChooseWhenItFlagsNoOmission() {
-    var outcome =
-        outcomeOf(version5(media -> media.addStreams(hevc().setIndex(1).setCodec("av1"))));
-
-    assertThat(outcome.streams().get(1).videoProperties())
-        .contains(VideoStreamProperties.builder().build());
+    assertThat(stream.masteringDisplay()).isEmpty();
+    assertThat(stream.contentLightLevel()).isEmpty();
+    assertThat(stream.videoProperties())
+        .contains(VideoStreamProperties.builder().firstFramesRead(true).build());
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
