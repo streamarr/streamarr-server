@@ -61,9 +61,9 @@ message WorkerCapabilities {
   // rate and profile of each audio stream, the chosen video stream, the output frame rate and the
   // container's chapters. Version 5 adds each video stream's codec profile, level, tier and color
   // signaling, and what the probe observes in the first frames and packets of the chosen video
-  // stream: HDR10+, Dolby Vision RPUs, the first RPU header, the RPU sample layout and the static
-  // HDR metadata that only the bitstream carries. Each version reports every fact of the versions
-  // before it. Version 2 is unused: no server requests it and no worker advertises it.
+  // stream: HDR10+, Dolby Vision RPUs, the first RPU header, the placement of the RPUs and the
+  // static HDR metadata that only the bitstream carries. Each version reports every fact of the
+  // versions before it. Version 2 is unused: no server requests it and no worker advertises it.
   repeated uint32 probe_versions = 2;
   // One entry for each codec family the worker can encode: the encoder backend that the worker
   // runs for every job of that codec family. Every entry, hardware or software, passed the worker's
@@ -282,17 +282,41 @@ message DolbyVisionPresent {
   // when observed_rpu is not PRESENT, and when the probe found RPUs but could not parse a header.
   // Only probe version 5 and later report it.
   DolbyVisionRpuHeader first_rpu_header = 3;
-  // Whether a sample that the probe read starts with an RPU, ahead of the picture of the sample.
-  // The RPU of a picture belongs after that picture, in the same sample. A muxer that starts a new
-  // sample at each RPU moves each RPU into the next picture's sample, and the last sample then
-  // holds an RPU and no picture. PRESENT when the probe read such a sample, and ABSENT when every
-  // RPU that the probe read follows its picture. UNSPECIFIED when observed_rpu is not PRESENT, or
-  // when the probe could not delimit the samples that hold the RPUs. The probe reads the layout
-  // from the NAL units of the packets for H.264 and HEVC. AV1 reports UNSPECIFIED: FFmpeg's AV1
-  // decoders attach an RPU to the next shown frame whose OBUs follow it, so an AV1 RPU belongs
-  // ahead of its frame, and a sample that starts with one has the expected layout. Only probe
+  // Where the samples place each picture's RPU, as DolbyVisionRpuPlacement says. Only probe
   // version 5 and later report it.
-  Presence rpu_starts_sample = 4;
+  DolbyVisionRpuPlacement rpu_placement = 4;
+}
+
+// Where the samples of an H.264 or HEVC Dolby Vision stream place each picture's RPU. The RPU of a
+// picture belongs after the slices of that picture, in the same sample. A sample is one packet as
+// FFmpeg's demuxer passes it. The probe decides the placement from the NAL units of the packets
+// that ProbeStreamInfo.dynamic_range's walk covers, in their order. A slice is a NAL unit of type
+// 1 to 5 for H.264, or of type 0 to 31 for HEVC. An RPU is a NAL unit of type 28 for H.264, or of
+// type 62 for HEVC, whose payload starts with rpu_nal_prefix 25. A packet starts with an RPU when
+// an RPU comes ahead of its first slice, or when it holds an RPU and no slice. The first picture
+// packet is the first of those packets that holds a slice.
+//
+// The probe reports UNSPECIFIED unless observed_rpu is PRESENT, the probe delimited every NAL unit
+// of every one of those packets, no packet holds more than one RPU, and no packet ahead of the
+// first picture packet holds an RPU. Otherwise it reports the one value whose rule those packets
+// meet, or UNSPECIFIED when they meet none. AV1 always reports UNSPECIFIED: FFmpeg's AV1 decoders
+// attach an RPU to the next shown frame whose OBUs follow it, so an RPU ahead of its frame is the
+// layout that AV1 expects.
+enum DolbyVisionRpuPlacement {
+  // The probe could not decide, the stream is AV1, or the packets match none of the other values.
+  DOLBY_VISION_RPU_PLACEMENT_UNSPECIFIED = 0;
+  // Each RPU follows the slices of its own picture, as Dolby Vision requires. At least one packet
+  // holds an RPU, and every RPU follows a slice of its own packet.
+  DOLBY_VISION_RPU_PLACEMENT_AFTER_OWN_PICTURE = 1;
+  // Each picture's RPU starts the sample of the next picture, and the last sample holds an RPU and
+  // no picture. mkvmerge wrote this layout before version 57, released in 2021. The first picture
+  // packet holds no RPU, at least one later packet holds an RPU, and every packet that holds an RPU
+  // starts with it.
+  DOLBY_VISION_RPU_PLACEMENT_BEFORE_NEXT_PICTURE = 2;
+  // Each picture's RPU starts the sample of its own picture. This layout does not conform, and no
+  // known muxer writes it, but FFmpeg's remuxing keeps it. The first picture packet starts with an
+  // RPU ahead of its first slice, and every packet that holds an RPU starts with it.
+  DOLBY_VISION_RPU_PLACEMENT_BEFORE_OWN_PICTURE = 3;
 }
 
 // The fields of a Dolby Vision RPU header that tell the Dolby Vision profile when no configuration
