@@ -54,13 +54,16 @@ message WorkerVerifiedVideoEncoder {
 message WorkerCapabilities {
   repeated Uuid source_namespace_ids = 1;
   // Supported nonzero versions of Streamarr's retained probe fields and their interpretation.
-  // These are independent of the installed FFmpeg and ffprobe versions. The probe versions are 1, 3
-  // and 4. Version 3 adds keyframe positions. Version 4 adds the dynamic range, bit depth, chroma
-  // subsampling, rotation, container cropping and codec string of each stream, the HDR10 static
-  // metadata of each video stream, the end time of each audio and video stream, the sample rate
-  // and profile of each audio stream, the chosen video stream, the output frame rate and the
-  // container's chapters. Each version reports every fact of
-  // the versions before it. Version 2 is unused: no server requests it and no worker advertises it.
+  // These are independent of the installed FFmpeg and ffprobe versions. The probe versions are 1,
+  // 3, 4 and 5. Version 3 adds keyframe positions. Version 4 adds the dynamic range, bit depth,
+  // chroma subsampling, rotation, container cropping and codec string of each stream, the HDR10
+  // static metadata of each video stream, the end time of each audio and video stream, the sample
+  // rate and profile of each audio stream, the chosen video stream, the output frame rate and the
+  // container's chapters. Version 5 adds each video stream's codec profile, level, tier and color
+  // signaling, and what the probe observes in the first frames and packets of the chosen video
+  // stream: HDR10+, Dolby Vision RPUs, the first RPU header, the RPU sample layout and the static
+  // HDR metadata that only the bitstream carries. Each version reports every fact of the versions
+  // before it. Version 2 is unused: no server requests it and no worker advertises it.
   repeated uint32 probe_versions = 2;
   // One entry for each codec family the worker can encode: the encoder backend that the worker
   // runs for every job of that codec family. Every entry, hardware or software, passed the worker's
@@ -220,10 +223,12 @@ enum Presence {
 // The standard picture format that a player could use without the advanced HDR information. The
 // probe derives it from the signaled transfer and the Dolby Vision claim. When a Dolby Vision
 // compatibility identifier disagrees with the signaled transfer, the signaled transfer decides.
-// Dolby Vision profile 5 is the exception from probe version 5 on: profile 5 has no compatible
-// base, so the base is NONE whatever the signaled transfer says. The probe knows profile 5 from the
-// configuration record's profile, or, without a record, from the first RPU header that
-// DolbyVisionRpuHeader describes for HEVC.
+// Dolby Vision profiles 5 and 10.0 are the exception from probe version 5 on: they have no
+// compatible base, so the base is NONE whatever the signaled transfer says. The probe knows
+// profile 5 from the configuration record's profile, or, without a record, from the first RPU
+// header of an HEVC stream, as DolbyVisionRpuHeader describes. The probe knows profile 10.0 from a
+// record with profile 10 and base_layer_compatibility_id 0, or, without a record, from the first
+// RPU header of an AV1 stream that holds vdr_rpu_profile 0 and bl_video_full_range_flag 1.
 enum CompatibleBase {
   // The probe could not read the transfer and found no Dolby Vision claim.
   COMPATIBLE_BASE_UNSPECIFIED = 0;
@@ -266,16 +271,18 @@ message DolbyVisionPresent {
   DolbyVisionConfiguration declared = 1;
   // Whether the samples hold Dolby Vision RPUs. UNSPECIFIED when the probe read no samples.
   Presence observed_rpu = 2;
-  // The header of the first RPU that the probe read. Absent when observed_rpu is not PRESENT. Only
-  // probe version 5 and later report it.
+  // The header of the first RPU that the probe read, from the frames or, when the frames show no
+  // RPU, from the packets. Absent when observed_rpu is not PRESENT, and when the probe found RPUs
+  // but could not parse a header. Only probe version 5 and later report it.
   DolbyVisionRpuHeader first_rpu_header = 3;
   // Whether a sample that the probe read starts with an RPU, ahead of the picture of the sample.
   // The RPU of a picture belongs after that picture, in the same sample. A muxer that starts a new
   // sample at each RPU moves each RPU into the next picture's sample, and the last sample then
   // holds an RPU and no picture. PRESENT when the probe read such a sample, and ABSENT when every
-  // RPU that the probe read follows its picture. UNSPECIFIED when the probe could not see where
-  // the RPUs sit: observed_rpu is not PRESENT, or the probe read the frames through a decoder that
-  // hides the sample layout. Only probe version 5 and later report it.
+  // RPU that the probe read follows its picture. UNSPECIFIED when observed_rpu is not PRESENT, or
+  // when the probe could not delimit the samples that hold the RPUs. The probe reads the layout
+  // from the NAL units of the packets for H.264 and HEVC. AV1 reports UNSPECIFIED. Only probe
+  // version 5 and later report it.
   Presence rpu_starts_sample = 4;
 }
 
@@ -584,8 +591,8 @@ enum ChromaSubsampling {
 }
 
 // A video stream's color primaries, as ITU-T H.273 numbers them. Each value names its H.273 code
-// point. UNSPECIFIED covers H.273's unspecified value 2, the reserved values, and a stream for
-// which ffprobe reports no primaries.
+// point. UNSPECIFIED covers H.273's unspecified value 2, every value that this enum does not name,
+// and a stream for which ffprobe reports no primaries.
 enum ColorPrimaries {
   COLOR_PRIMARIES_UNSPECIFIED = 0;
   // Code point 1.
@@ -613,8 +620,8 @@ enum ColorPrimaries {
 }
 
 // A video stream's transfer characteristics, as ITU-T H.273 numbers them. UNSPECIFIED covers
-// H.273's unspecified value 2, the reserved values, and a stream for which ffprobe reports no
-// transfer. CompatibleBase derives from this transfer.
+// H.273's unspecified value 2, every value that this enum does not name, and a stream for which
+// ffprobe reports no transfer. CompatibleBase derives from this transfer.
 enum TransferCharacteristics {
   TRANSFER_CHARACTERISTICS_UNSPECIFIED = 0;
   // Code point 1.
@@ -652,7 +659,8 @@ enum TransferCharacteristics {
 }
 
 // A video stream's matrix coefficients, as ITU-T H.273 numbers them. UNSPECIFIED covers H.273's
-// unspecified value 2, the reserved values, and a stream for which ffprobe reports no matrix.
+// unspecified value 2, every value that this enum does not name, and a stream for which ffprobe
+// reports no matrix.
 enum MatrixCoefficients {
   MATRIX_COEFFICIENTS_UNSPECIFIED = 0;
   // Code point 0: the identity matrix, as for RGB and GBR.
@@ -693,7 +701,8 @@ enum ColorRange {
 }
 
 // Only probe version 4 and later report the fields from dynamic_range to is_hearing_impaired.
-// Only probe version 5 and later report the fields from codec_profile to first_frames_read.
+// Only probe version 5 and later report the fields from codec_profile to
+// content_light_level_omitted.
 message ProbeStreamInfo {
   uint32 index = 1;
   string codec_type = 2;
@@ -713,11 +722,15 @@ message ProbeStreamInfo {
   //
   // Probe version 5 also reads the first frames of the chosen video stream, as first_frames_read
   // describes. For that stream, hdr10_plus and observed_rpu are PRESENT or ABSENT when the probe
-  // can see the feature in the frames that it read, and Dolby Vision is ABSENT when the probe found
-  // no record, no Dolby Vision sample entry and no RPU. FFmpeg's H.264 decoder drops the NAL units
-  // that carry RPUs, so for H.264 the worker parses the NAL units of the packets itself. A feature
-  // that the probe cannot see in a codec stays UNSPECIFIED. Every other video stream keeps the
-  // facts of probe version 4.
+  // can see the feature in what it read, and Dolby Vision is ABSENT when the probe found no record,
+  // no Dolby Vision sample entry and no RPU. FFmpeg's H.264 decoder drops the NAL units that carry
+  // RPUs. FFmpeg's HEVC decoder ignores an RPU that is not the last NAL unit of its sample, and an
+  // RPU that it cannot parse. So for H.264 and HEVC the worker also parses the NAL units of the
+  // packets that hold those frames, and observed_rpu is PRESENT when either the frames or the
+  // packets hold an RPU. observed_rpu is ABSENT only when the probe could delimit every NAL unit of
+  // those packets. FFmpeg's H.264 decoder also drops HDR10+ messages, so hdr10_plus stays
+  // UNSPECIFIED for H.264. A feature that the probe cannot see in a codec stays UNSPECIFIED. Every
+  // other video stream keeps the facts of probe version 4.
   VideoDynamicRange dynamic_range = 12;
   // Video streams only: the bit depth of a luma sample, from the pixel format. For example, 8 for
   // yuv420p and 10 for yuv420p10le. Absent when ffprobe reports no pixel format.
@@ -853,8 +866,11 @@ message ProbeStreamInfo {
   bool first_frames_read = 33;
   // Video streams only: true when the container or the first frame carries a mastering display
   // color volume, but the worker left mastering_display absent because ffprobe reported only part
-  // of it or a value does not fit its SEI field. The stream then carries static HDR metadata that
-  // the probe could not read.
+  // or none of its values, or a value does not fit its SEI field. FFmpeg's Matroska demuxer drops a
+  // MasteringMetadata element whose primaries or luminance are incomplete. So when ffprobe reports
+  // no mastering display for the chosen video stream of a Matroska file, the worker checks the
+  // track's Colour element itself, and sets this flag when the track holds a MasteringMetadata
+  // element. The stream then carries static HDR metadata that the probe could not read.
   bool mastering_display_omitted = 34;
   // Video streams only: true when the container or the first frame carries a content light level,
   // but the worker left content_light_level absent because a value does not fit its SEI field.
