@@ -101,21 +101,17 @@ final class RemoteStreamPropertiesMapper {
       case "h264", "hevc" -> {
         // The worker reads every frame feature of these codecs from the frames or the packets.
       }
-      case "av1" -> checkAv1Visibility(stream.getDynamicRange());
+      case "av1" -> checkAv1SampleLayout(stream.getDynamicRange());
       default -> checkInvisibleFrameFeatures(stream.getDynamicRange());
     }
   }
 
-  // FFmpeg's AV1 decoders drop an RPU that they cannot parse, and a whole frame whose HDR10+
-  // message they cannot parse. The worker parses no AV1 OBU, so it reads no AV1 sample layout.
+  // An AV1 RPU belongs ahead of the frame that FFmpeg attaches it to, so a sample that starts
+  // with one has the expected layout, and the contract reports no AV1 sample layout.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static void checkAv1Visibility(com.streamarr.transcode.v1.VideoDynamicRange range) {
-    var present = range.getDolbyVisionPresent();
-    if (range.getHdr10Plus() == Presence.PRESENCE_ABSENT
-        || range.hasDolbyVisionAbsent()
-        || present.getObservedRpu() == Presence.PRESENCE_ABSENT
-        || present.getRpuStartsSample() != Presence.PRESENCE_UNSPECIFIED) {
-      throw contractViolation("Worker probe reported an AV1 fact that it cannot see");
+  private static void checkAv1SampleLayout(com.streamarr.transcode.v1.VideoDynamicRange range) {
+    if (range.getDolbyVisionPresent().getRpuStartsSample() != Presence.PRESENCE_UNSPECIFIED) {
+      throw contractViolation("Worker probe reported a sample layout of an AV1 stream");
     }
   }
 

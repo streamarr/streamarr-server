@@ -644,28 +644,6 @@ class RemoteProbeResultStreamPropertiesMapperTest {
               return stream;
             }),
         violation(
-            "Dolby Vision absent on an AV1 stream",
-            stream -> {
-              asAv1(stream)
-                  .setFirstFramesRead(true)
-                  .getDynamicRangeBuilder()
-                  .setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance());
-              return stream;
-            }),
-        violation(
-            "an observed RPU absent on an AV1 stream",
-            stream -> {
-              asAv1(stream)
-                  .setFirstFramesRead(true)
-                  .getDynamicRangeBuilder()
-                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
-                  .setDolbyVisionPresent(
-                      DolbyVisionPresent.newBuilder()
-                          .setDeclared(profile10Record().setBaseLayerCompatibilityId(1))
-                          .setObservedRpu(absent));
-              return stream;
-            }),
-        violation(
             "a sample layout on an AV1 stream",
             stream -> {
               asAv1(stream)
@@ -677,12 +655,6 @@ class RemoteProbeResultStreamPropertiesMapperTest {
                           .setDeclared(profile10Record().setBaseLayerCompatibilityId(1))
                           .setObservedRpu(present)
                           .setRpuStartsSample(absent));
-              return stream;
-            }),
-        violation(
-            "HDR10+ absent on an AV1 stream",
-            stream -> {
-              asAv1(stream).setFirstFramesRead(true).getDynamicRangeBuilder().setHdr10Plus(absent);
               return stream;
             }),
         violation(
@@ -848,6 +820,19 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         .getDynamicRangeBuilder()
         .setHdr10Plus(absent)
         .setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance());
+    var av1WithoutRpus = av1().setFirstFramesRead(true);
+    av1WithoutRpus
+        .getDynamicRangeBuilder()
+        .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
+        .setDolbyVisionPresent(
+            DolbyVisionPresent.newBuilder()
+                .setDeclared(DolbyVisionConfiguration.newBuilder().setProfile(10))
+                .setObservedRpu(absent));
+    var av1WithoutEither = av1().setFirstFramesRead(true);
+    av1WithoutEither
+        .getDynamicRangeBuilder()
+        .setHdr10Plus(absent)
+        .setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance());
     return Stream.of(
         Arguments.of(
             "Dolby Vision absent on an H.264 stream",
@@ -867,6 +852,21 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         Arguments.of(
             "HDR10+ and Dolby Vision absent on an HEVC stream",
             hevcWithoutEither,
+            new DolbyVision.Absent(),
+            Presence.ABSENT),
+        Arguments.of(
+            "an observed RPU absent on an AV1 stream",
+            av1WithoutRpus,
+            new DolbyVision.Present(
+                Optional.of(
+                    com.streamarr.server.domain.streaming.DolbyVisionConfiguration.builder()
+                        .profile(OptionalInt.of(10))
+                        .build()),
+                Presence.ABSENT),
+            Presence.UNSPECIFIED),
+        Arguments.of(
+            "HDR10+ and Dolby Vision absent on an AV1 stream",
+            av1WithoutEither,
             new DolbyVision.Absent(),
             Presence.ABSENT));
   }
