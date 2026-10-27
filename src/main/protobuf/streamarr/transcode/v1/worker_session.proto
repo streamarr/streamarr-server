@@ -373,6 +373,15 @@ message VideoDynamicRange {
 // - output_dynamic_range holds an UNSPECIFIED compatible base, an UNSPECIFIED hdr10_plus, or no
 //   Dolby Vision arm;
 // - a copy carries output_dynamic_range.
+//
+// FFmpeg's HEVC decoder ignores an RPU that is not the last NAL unit of its sample, so it does not
+// reshape the picture of a sample that starts with an RPU. So the worker moves the RPUs of an
+// encode whose source_codec_family is HEVC and whose source_dynamic_range has compatible base NONE
+// and a Dolby Vision present arm whose rpu_placement is not AFTER_OWN_PICTURE. It moves only an
+// RPU that starts a sample, as DolbyVisionRpuPlacement defines it. For BEFORE_OWN_PICTURE it moves
+// the RPU to the end of its own sample. For BEFORE_NEXT_PICTURE and UNSPECIFIED it moves the RPU to
+// the end of the previous picture's sample, and drops an RPU that has no previous picture, such as
+// the first one after a seek. Every other job reads the source's samples unchanged.
 message VideoDecision {
   VideoMode mode = 6;
   VideoCodecFamily codec_family = 1;
@@ -390,6 +399,10 @@ message VideoDecision {
   // The required ProbeStreamInfo.index of the chosen video stream: its index in the container.
   // The worker maps exactly that stream and refuses a job whose chosen stream has no index.
   optional uint32 stream_index = 9;
+  // The codec family of the chosen video stream, from ProbeStreamInfo.codec as the probe stored it:
+  // h264, hevc or av1. UNSPECIFIED for any other codec. codec_family is the output's codec family,
+  // which an encode can change. The server sets it on every job, whether it copies or encodes.
+  VideoCodecFamily source_codec_family = 10;
 }
 
 message TranscodeDecision {
