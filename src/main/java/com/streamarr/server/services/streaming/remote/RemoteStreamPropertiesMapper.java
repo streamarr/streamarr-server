@@ -154,6 +154,11 @@ final class RemoteStreamPropertiesMapper {
       throw contractViolation("Worker probe reported a codec level or tier without a profile");
     }
 
+    // The worker reads the profile from the record or sequence header of the stream's own codec.
+    if (profile.isPresent() && !codecOf(profile.get()).equals(stream.getCodec())) {
+      throw contractViolation("Worker probe gave a stream a codec profile of another codec");
+    }
+
     if (tier.isPresent() && profile.map(RemoteStreamPropertiesMapper::isH264).orElse(false)) {
       throw contractViolation("Worker probe gave an H.264 codec profile a tier");
     }
@@ -186,6 +191,23 @@ final class RemoteStreamPropertiesMapper {
 
   private static boolean isH264(VideoCodecProfile profile) {
     return H264_PROFILES.contains(profile);
+  }
+
+  // The codec as ffprobe names it.
+  private static String codecOf(VideoCodecProfile profile) {
+    return switch (profile) {
+      case H264_CONSTRAINED_BASELINE,
+          H264_BASELINE,
+          H264_MAIN,
+          H264_EXTENDED,
+          H264_HIGH,
+          H264_HIGH_10,
+          H264_HIGH_422,
+          H264_HIGH_444_PREDICTIVE ->
+          "h264";
+      case HEVC_MAIN, HEVC_MAIN_10, HEVC_MAIN_STILL_PICTURE, HEVC_FORMAT_RANGE_EXTENSIONS -> "hevc";
+      case AV1_MAIN, AV1_HIGH, AV1_PROFESSIONAL -> "av1";
+    };
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")

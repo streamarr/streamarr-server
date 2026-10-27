@@ -27,6 +27,7 @@ import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.function.UnaryOperator;
@@ -116,10 +117,10 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   @DisplayName("Should keep the codec profile when the contract names it")
   void shouldKeepTheCodecProfileWhenTheContractNamesIt(
       com.streamarr.transcode.v1.VideoCodecProfile reported) {
-    var stream =
-        videoOf(
-            version5(
-                media -> media.setStreams(0, hevc().setCodecProfile(reported).setCodecLevel(40))));
+    var codec = reported.name().split("_")[3].toLowerCase(Locale.ROOT);
+    var video = hevc().setCodec(codec).setCodecProfile(reported).setCodecLevel(40);
+
+    var stream = videoOf(version5(media -> media.setStreams(0, video)));
 
     assertThat(stream.videoProperties().flatMap(VideoStreamProperties::codecProfile))
         .map(Enum::name)
@@ -391,9 +392,46 @@ class RemoteProbeResultStreamPropertiesMapperTest {
             "a codec tier on an H.264 codec profile",
             stream ->
                 stream
+                    .setCodec("h264")
                     .setCodecProfile(
                         com.streamarr.transcode.v1.VideoCodecProfile.VIDEO_CODEC_PROFILE_H264_HIGH)
                     .setCodecTier(com.streamarr.transcode.v1.VideoCodecTier.VIDEO_CODEC_TIER_MAIN)),
+        violation(
+            "an HEVC codec profile on an H.264 stream",
+            stream ->
+                stream
+                    .setCodec("h264")
+                    .setCodecProfile(
+                        com.streamarr.transcode.v1.VideoCodecProfile
+                            .VIDEO_CODEC_PROFILE_HEVC_MAIN_10)),
+        violation(
+            "an H.264 codec profile on an AV1 stream",
+            stream ->
+                stream
+                    .setCodec("av1")
+                    .setCodecProfile(
+                        com.streamarr.transcode.v1.VideoCodecProfile
+                            .VIDEO_CODEC_PROFILE_H264_HIGH)),
+        violation(
+            "an AV1 codec profile on an HEVC stream",
+            stream ->
+                stream.setCodecProfile(
+                    com.streamarr.transcode.v1.VideoCodecProfile.VIDEO_CODEC_PROFILE_AV1_MAIN)),
+        violation(
+            "a codec profile on a VP9 stream",
+            stream ->
+                stream
+                    .setCodec("vp9")
+                    .setCodecProfile(
+                        com.streamarr.transcode.v1.VideoCodecProfile.VIDEO_CODEC_PROFILE_AV1_MAIN)),
+        violation(
+            "a codec profile on a stream without a codec",
+            stream ->
+                stream
+                    .clearCodec()
+                    .setCodecProfile(
+                        com.streamarr.transcode.v1.VideoCodecProfile
+                            .VIDEO_CODEC_PROFILE_HEVC_MAIN)),
         violation(
             "a codec level of 0",
             stream ->
