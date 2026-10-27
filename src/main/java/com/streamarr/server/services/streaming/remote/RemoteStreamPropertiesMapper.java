@@ -47,7 +47,7 @@ final class RemoteStreamPropertiesMapper {
 
     checkStaticHdrMetadataOmission(stream);
     checkFrameEvidence(stream);
-    checkProfile5CompatibleBase(stream);
+    checkBaselessProfileCompatibleBase(stream);
     return builder.videoProperties(Optional.of(properties(stream)));
   }
 
@@ -104,9 +104,10 @@ final class RemoteStreamPropertiesMapper {
   }
 
   // From probe version 5 on, profile 5 has no compatible base whatever the signaled transfer says.
-  private static void checkProfile5CompatibleBase(ProbeStreamInfo stream) {
+  private static void checkBaselessProfileCompatibleBase(ProbeStreamInfo stream) {
     var range = stream.getDynamicRange();
-    if (!range.hasDolbyVisionPresent() || !isProfile5(stream, range.getDolbyVisionPresent())) {
+    if (!range.hasDolbyVisionPresent()
+        || !isBaselessProfile(stream, range.getDolbyVisionPresent())) {
       return;
     }
 
@@ -115,7 +116,7 @@ final class RemoteStreamPropertiesMapper {
     }
   }
 
-  private static boolean isProfile5(ProbeStreamInfo stream, DolbyVisionPresent present) {
+  private static boolean isBaselessProfile(ProbeStreamInfo stream, DolbyVisionPresent present) {
     if (present.hasDeclared()) {
       return present.getDeclared().hasProfile()
           && present.getDeclared().getProfile() == DOLBY_VISION_PROFILE_5;
