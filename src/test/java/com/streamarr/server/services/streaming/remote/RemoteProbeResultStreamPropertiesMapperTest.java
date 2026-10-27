@@ -387,6 +387,33 @@ class RemoteProbeResultStreamPropertiesMapperTest {
               return stream;
             }),
         violation(
+            "a sample layout absent without reading frames",
+            stream -> {
+              stream
+                  .getDynamicRangeBuilder()
+                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
+                  .setDolbyVisionPresent(
+                      DolbyVisionPresent.newBuilder()
+                          .setObservedRpu(present)
+                          .setRpuStartsSample(absent));
+              return stream;
+            }),
+        violation(
+            "HDR10+ present without reading frames",
+            stream -> {
+              stream.getDynamicRangeBuilder().setHdr10Plus(present);
+              return stream;
+            }),
+        violation(
+            "an observed RPU present without reading frames",
+            stream -> {
+              stream
+                  .getDynamicRangeBuilder()
+                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
+                  .setDolbyVisionPresent(DolbyVisionPresent.newBuilder().setObservedRpu(present));
+              return stream;
+            }),
+        violation(
             "a first RPU header without an observed RPU",
             stream -> {
               stream

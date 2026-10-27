@@ -83,13 +83,13 @@ final class RemoteStreamPropertiesMapper {
 
   private static void checkFrameEvidence(ProbeStreamInfo stream) {
     var range = stream.getDynamicRange();
-    var reportsAbsence =
-        range.getHdr10Plus() == Presence.PRESENCE_ABSENT
+    // A sample layout needs an observed RPU, which the next check enforces, so it needs frames too.
+    var reportsFrameFeature =
+        range.getHdr10Plus() != Presence.PRESENCE_UNSPECIFIED
             || range.hasDolbyVisionAbsent()
-            || range.getDolbyVisionPresent().getObservedRpu() == Presence.PRESENCE_ABSENT;
-    if (reportsAbsence && !stream.getFirstFramesRead()) {
-      throw contractViolation(
-          "Worker probe reported a frame feature absent without reading frames");
+            || range.getDolbyVisionPresent().getObservedRpu() != Presence.PRESENCE_UNSPECIFIED;
+    if (reportsFrameFeature && !stream.getFirstFramesRead()) {
+      throw contractViolation("Worker probe reported a frame feature without reading frames");
     }
 
     var present = range.getDolbyVisionPresent();
