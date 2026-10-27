@@ -47,6 +47,10 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   private static final int PROBE_VERSION_4 = 4;
   private static final int PROBE_VERSION_5 = 5;
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static final com.streamarr.transcode.v1.TransferCharacteristics PQ_TRANSFER =
+      com.streamarr.transcode.v1.TransferCharacteristics.TRANSFER_CHARACTERISTICS_SMPTE2084;
+
   private final RemoteProbeResultMapper mapper = new RemoteProbeResultMapper();
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
@@ -69,6 +73,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
             .setFirstFramesRead(true)
             .setMasteringDisplayOmitted(true)
             .setContentLightLevelOmitted(true);
+    hdr10.getDynamicRangeBuilder().setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ);
 
     var stream = videoOf(version5(media -> media.setStreams(0, hdr10)));
 
@@ -153,9 +158,10 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   @DisplayName("Should keep the transfer characteristics when the contract names them")
   void shouldKeepTheTransferCharacteristicsWhenTheContractNamesThem(
       com.streamarr.transcode.v1.TransferCharacteristics reported) {
-    var stream =
-        videoOf(
-            version5(media -> media.setStreams(0, hevc().setTransferCharacteristics(reported))));
+    var video = hevc().setTransferCharacteristics(reported);
+    video.getDynamicRangeBuilder().setCompatibleBase(signaledBase(reported));
+
+    var stream = videoOf(version5(media -> media.setStreams(0, video)));
 
     assertThat(stream.videoProperties().flatMap(VideoStreamProperties::transferCharacteristics))
         .map(Enum::name)
@@ -335,8 +341,11 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   @MethodSource("declaredProfile10Bases")
   @DisplayName("Should keep a declared profile 10 stream when its record names a compatible base")
   void shouldKeepADeclaredProfile10StreamWhenItsRecordNamesACompatibleBase(
-      String record, DolbyVisionConfiguration.Builder declared, CompatibleBase base) {
-    var video = av1();
+      String record,
+      DolbyVisionConfiguration.Builder declared,
+      com.streamarr.transcode.v1.TransferCharacteristics transfer,
+      CompatibleBase base) {
+    var video = av1().setTransferCharacteristics(transfer);
     video
         .getDynamicRangeBuilder()
         .setCompatibleBase(base)
@@ -350,19 +359,24 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         .contains(base.name().substring("COMPATIBLE_BASE_".length()));
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   static Stream<Arguments> declaredProfile10Bases() {
     return Stream.of(
         Arguments.of(
             "profile 10.1 with a PQ base",
             profile10Record().setBaseLayerCompatibilityId(1),
+            PQ_TRANSFER,
             CompatibleBase.COMPATIBLE_BASE_PQ),
         Arguments.of(
             "profile 10.4 with an HLG base",
             profile10Record().setBaseLayerCompatibilityId(4),
+            com.streamarr.transcode.v1.TransferCharacteristics
+                .TRANSFER_CHARACTERISTICS_ARIB_STD_B67,
             CompatibleBase.COMPATIBLE_BASE_HLG),
         Arguments.of(
             "profile 10 without a compatibility identifier and with an SDR base",
             profile10Record(),
+            com.streamarr.transcode.v1.TransferCharacteristics.TRANSFER_CHARACTERISTICS_BT709,
             CompatibleBase.COMPATIBLE_BASE_SDR));
   }
 
@@ -484,6 +498,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
             "a sample layout absent without reading frames",
             stream -> {
               stream
+                  .setTransferCharacteristics(PQ_TRANSFER)
                   .getDynamicRangeBuilder()
                   .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
                   .setDolbyVisionPresent(
@@ -502,6 +517,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
             "an observed RPU present without reading frames",
             stream -> {
               stream
+                  .setTransferCharacteristics(PQ_TRANSFER)
                   .getDynamicRangeBuilder()
                   .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
                   .setDolbyVisionPresent(DolbyVisionPresent.newBuilder().setObservedRpu(present));
@@ -536,6 +552,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
             stream -> {
               stream
                   .setFirstFramesRead(true)
+                  .setTransferCharacteristics(PQ_TRANSFER)
                   .getDynamicRangeBuilder()
                   .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
                   .setDolbyVisionPresent(
@@ -549,6 +566,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
             stream -> {
               stream
                   .setFirstFramesRead(true)
+                  .setTransferCharacteristics(PQ_TRANSFER)
                   .getDynamicRangeBuilder()
                   .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
                   .setDolbyVisionPresent(
@@ -633,6 +651,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
             stream -> {
               stream
                   .setCodec("av1")
+                  .setTransferCharacteristics(PQ_TRANSFER)
                   .getDynamicRangeBuilder()
                   .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
                   .setDolbyVisionPresent(
@@ -646,6 +665,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
               stream
                   .setCodec("av1")
                   .setFirstFramesRead(true)
+                  .setTransferCharacteristics(PQ_TRANSFER)
                   .getDynamicRangeBuilder()
                   .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
                   .setDolbyVisionPresent(
@@ -691,6 +711,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
               stream
                   .setCodec("vp9")
                   .setFirstFramesRead(true)
+                  .setTransferCharacteristics(PQ_TRANSFER)
                   .getDynamicRangeBuilder()
                   .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
                   .setDolbyVisionPresent(
@@ -705,6 +726,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
               stream
                   .clearCodec()
                   .setFirstFramesRead(true)
+                  .setTransferCharacteristics(PQ_TRANSFER)
                   .getDynamicRangeBuilder()
                   .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
                   .setDolbyVisionPresent(DolbyVisionPresent.newBuilder().setObservedRpu(present));
@@ -789,6 +811,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         .setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance());
     var av1WithoutRpus = av1().setFirstFramesRead(true);
     av1WithoutRpus
+        .setTransferCharacteristics(PQ_TRANSFER)
         .getDynamicRangeBuilder()
         .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
         .setDolbyVisionPresent(
@@ -866,6 +889,18 @@ class RemoteProbeResultStreamPropertiesMapperTest {
 
   private static ProbeStreamInfo.Builder av1() {
     return hevc().setCodec("av1");
+  }
+
+  // The compatible base that the signaled transfer decides when no Dolby Vision profile 5 or 10.0
+  // overrides it.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static CompatibleBase signaledBase(
+      com.streamarr.transcode.v1.TransferCharacteristics transfer) {
+    return switch (transfer) {
+      case TRANSFER_CHARACTERISTICS_SMPTE2084 -> CompatibleBase.COMPATIBLE_BASE_PQ;
+      case TRANSFER_CHARACTERISTICS_ARIB_STD_B67 -> CompatibleBase.COMPATIBLE_BASE_HLG;
+      default -> CompatibleBase.COMPATIBLE_BASE_UNSPECIFIED;
+    };
   }
 
   private static DolbyVisionConfiguration.Builder profilelessRecord() {
