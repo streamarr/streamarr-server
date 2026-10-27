@@ -658,11 +658,77 @@ class RemoteProbeResultStreamPropertiesMapperTest {
               return stream;
             }),
         violation(
+            "HDR10+ absent on a VP9 stream",
+            stream -> {
+              stream
+                  .setCodec("vp9")
+                  .setFirstFramesRead(true)
+                  .getDynamicRangeBuilder()
+                  .setHdr10Plus(absent);
+              return stream;
+            }),
+        violation(
+            "HDR10+ present on a VP9 stream",
+            stream -> {
+              stream
+                  .setCodec("vp9")
+                  .setFirstFramesRead(true)
+                  .getDynamicRangeBuilder()
+                  .setHdr10Plus(present);
+              return stream;
+            }),
+        violation(
+            "Dolby Vision absent on an MPEG-2 stream",
+            stream -> {
+              stream
+                  .setCodec("mpeg2video")
+                  .setFirstFramesRead(true)
+                  .getDynamicRangeBuilder()
+                  .setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance());
+              return stream;
+            }),
+        violation(
+            "an observed RPU absent on a VP9 stream",
+            stream -> {
+              stream
+                  .setCodec("vp9")
+                  .setFirstFramesRead(true)
+                  .getDynamicRangeBuilder()
+                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
+                  .setDolbyVisionPresent(
+                      DolbyVisionPresent.newBuilder()
+                          .setDeclared(profile10Record().setBaseLayerCompatibilityId(1))
+                          .setObservedRpu(absent));
+              return stream;
+            }),
+        violation(
+            "an observed RPU present on a stream without a codec",
+            stream -> {
+              stream
+                  .clearCodec()
+                  .setFirstFramesRead(true)
+                  .getDynamicRangeBuilder()
+                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
+                  .setDolbyVisionPresent(DolbyVisionPresent.newBuilder().setObservedRpu(present));
+              return stream;
+            }),
+        violation(
             "a chosen AV1 stream that lacks a mastering display and leaves it unflagged",
             stream -> asAv1(stream).setMasteringDisplayOmitted(false)),
         violation(
             "a chosen AV1 stream that lacks a content light level and leaves it unflagged",
             stream -> asAv1(stream).setContentLightLevelOmitted(false)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a VP9 stream whose frames the probe read when it names no frame feature")
+  void shouldKeepAVp9StreamWhoseFramesTheProbeReadWhenItNamesNoFrameFeature() {
+    var video = hevc().setCodec("vp9").setFirstFramesRead(true);
+
+    var stream = videoOf(version5(media -> media.setStreams(0, video)));
+
+    assertThat(stream.videoProperties()).map(VideoStreamProperties::firstFramesRead).contains(true);
   }
 
   @Test

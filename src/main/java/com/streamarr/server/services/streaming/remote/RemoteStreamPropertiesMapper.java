@@ -96,20 +96,37 @@ final class RemoteStreamPropertiesMapper {
     }
   }
 
+  private static void checkCodecVisibility(ProbeStreamInfo stream) {
+    switch (stream.getCodec()) {
+      case "h264", "hevc" -> {
+        // The worker reads every frame feature of these codecs from the frames or the packets.
+      }
+      case "av1" -> checkAv1Visibility(stream.getDynamicRange());
+      default -> checkInvisibleFrameFeatures(stream.getDynamicRange());
+    }
+  }
+
   // FFmpeg's AV1 decoders drop an RPU that they cannot parse, and a whole frame whose HDR10+
   // message they cannot parse. The worker parses no AV1 OBU, so it reads no AV1 sample layout.
-  private static void checkCodecVisibility(ProbeStreamInfo stream) {
-    if (!"av1".equals(stream.getCodec())) {
-      return;
-    }
-
-    var range = stream.getDynamicRange();
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static void checkAv1Visibility(com.streamarr.transcode.v1.VideoDynamicRange range) {
     var present = range.getDolbyVisionPresent();
     if (range.getHdr10Plus() == Presence.PRESENCE_ABSENT
         || range.hasDolbyVisionAbsent()
         || present.getObservedRpu() == Presence.PRESENCE_ABSENT
         || present.getRpuStartsSample() != Presence.PRESENCE_UNSPECIFIED) {
       throw contractViolation("Worker probe reported an AV1 fact that it cannot see");
+    }
+  }
+
+  // The worker reads no frame feature of any other codec, which keeps the facts of probe version 4.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static void checkInvisibleFrameFeatures(
+      com.streamarr.transcode.v1.VideoDynamicRange range) {
+    if (range.getHdr10Plus() != Presence.PRESENCE_UNSPECIFIED
+        || range.hasDolbyVisionAbsent()
+        || range.getDolbyVisionPresent().getObservedRpu() != Presence.PRESENCE_UNSPECIFIED) {
+      throw contractViolation("Worker probe reported a frame feature that it cannot see");
     }
   }
 
