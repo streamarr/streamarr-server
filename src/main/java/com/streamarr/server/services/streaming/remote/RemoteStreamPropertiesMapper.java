@@ -153,7 +153,8 @@ final class RemoteStreamPropertiesMapper {
       case TRANSFER_CHARACTERISTICS_SMPTE2084 -> Set.of(CompatibleBase.COMPATIBLE_BASE_PQ);
       case TRANSFER_CHARACTERISTICS_ARIB_STD_B67 -> Set.of(CompatibleBase.COMPATIBLE_BASE_HLG);
       // An unspecified transfer leaves no base: NONE beside a Dolby Vision claim, else UNSPECIFIED.
-      case TRANSFER_CHARACTERISTICS_UNSPECIFIED ->
+      // A value that this contract does not name reads as unspecified, as the stored transfer does.
+      case TRANSFER_CHARACTERISTICS_UNSPECIFIED, UNRECOGNIZED ->
           stream.getDynamicRange().hasDolbyVisionPresent()
               ? Set.of(CompatibleBase.COMPATIBLE_BASE_NONE)
               : Set.of(CompatibleBase.COMPATIBLE_BASE_UNSPECIFIED);

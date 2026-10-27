@@ -463,6 +463,11 @@ class RemoteProbeResultStreamPropertiesMapperTest {
             stream ->
                 profile8RpusWithoutTransfer(stream, CompatibleBase.COMPATIBLE_BASE_UNSPECIFIED)),
         violation(
+            "an SDR base beside Dolby Vision with a transfer that the contract does not name",
+            stream ->
+                profile8RpusWithoutTransfer(stream, CompatibleBase.COMPATIBLE_BASE_SDR)
+                    .setTransferCharacteristicsValue(999)),
+        violation(
             "an SDR base without a signaled transfer or Dolby Vision",
             stream -> {
               stream.getDynamicRangeBuilder().setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR);
