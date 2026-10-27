@@ -39,6 +39,7 @@ final class RemoteStreamPropertiesMapper {
 
     checkStaticHdrMetadataOmission(stream);
     checkFrameEvidence(stream);
+    checkCodecVisibility(stream);
     checkBaselessProfileCompatibleBase(stream);
     return builder.videoProperties(Optional.of(properties(stream)));
   }
@@ -92,6 +93,26 @@ final class RemoteStreamPropertiesMapper {
     if (present.hasFirstRpuHeader()
         || present.getRpuStartsSample() != Presence.PRESENCE_UNSPECIFIED) {
       throw contractViolation("Worker probe described RPUs that it did not observe");
+    }
+  }
+
+  // FFmpeg's H.264 decoder drops HDR10+ messages. FFmpeg's AV1 decoders drop an RPU that they
+  // cannot parse, and the worker reads no AV1 sample layout.
+  private static void checkCodecVisibility(ProbeStreamInfo stream) {
+    var range = stream.getDynamicRange();
+    if ("h264".equals(stream.getCodec()) && range.getHdr10Plus() != Presence.PRESENCE_UNSPECIFIED) {
+      throw contractViolation("Worker probe reported HDR10+ for an H.264 stream");
+    }
+
+    if (!"av1".equals(stream.getCodec())) {
+      return;
+    }
+
+    var present = range.getDolbyVisionPresent();
+    if (range.hasDolbyVisionAbsent()
+        || present.getObservedRpu() == Presence.PRESENCE_ABSENT
+        || present.getRpuStartsSample() != Presence.PRESENCE_UNSPECIFIED) {
+      throw contractViolation("Worker probe reported an AV1 RPU fact that it cannot see");
     }
   }
 
