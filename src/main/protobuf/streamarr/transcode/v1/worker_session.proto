@@ -1060,7 +1060,12 @@ message ProbeStreamInfo {
   // this flag already covers. So when no other source gives a mastering display for the chosen
   // video stream of a Matroska file, the worker checks the track's Colour element itself, and sets
   // this flag when the track holds a MasteringMetadata element. The stream then carries static HDR
-  // metadata that the probe could not read.
+  // metadata that the probe could not read. The worker cannot read the Colour element when it
+  // cannot read the file, cannot find the Tracks element or the stream's track entry, or cannot
+  // parse an element on the way to the Colour element. The track may then hold a MasteringMetadata
+  // element, so the worker sets this flag too. A track entry without a Video element or a Colour
+  // element holds neither value. The Matroska checks apply to the chosen video stream of every
+  // codec, whether or not the probe read its first frames.
   //
   // The worker also sets this flag on the chosen video stream when first_frames_read is true, no
   // source gives a mastering display and the probe cannot rule one out. For H.264 and HEVC, that is
@@ -1074,8 +1079,11 @@ message ProbeStreamInfo {
   // dynamic_range's walks find carries one, but a value does not fit its SEI field, or the message
   // or the OBU is too short. The worker also sets this flag on the chosen video stream when
   // first_frames_read is true, no source gives a content light level and the probe cannot rule one
-  // out, under the same rule as mastering_display_omitted. A stream with this flag set is never
-  // PQ10.
+  // out, under the same rule as mastering_display_omitted. It also sets this flag when no source
+  // gives a content light level for the chosen video stream of a Matroska file and the worker
+  // cannot read the track's Colour element, as mastering_display_omitted says, because the element
+  // can hold MaxCLL and MaxFALL. That rule applies to every codec, whether or not the probe read
+  // the first frames. A stream with this flag set is never PQ10.
   bool content_light_level_omitted = 35;
 }
 
@@ -1162,10 +1170,11 @@ message ChromaticityCoordinates {
 // with MasteringDisplayColorVolume, absent means that the container declares no light level. A
 // declared 0 means that the mastering process did not compute that value. 0 is still a declared
 // value, so the message is present. ffprobe reports a Matroska light level only when MaxCLL and
-// MaxFALL are both nonzero. So from probe version 5 on, when ffprobe reports no light level for
-// the chosen video stream of a Matroska file, the worker reads the MaxCLL and MaxFALL elements of
-// the track's Colour element itself. A track that holds either element then reports both values,
-// with 0 for an element that the track does not hold.
+// MaxFALL are both nonzero. So from probe version 5 on, when ffprobe reports no light level for the
+// chosen video stream of a Matroska file, the worker reads the MaxCLL and MaxFALL elements of the
+// track's Colour element itself. A track that holds either element then reports both values, with 0
+// for an element that the track does not hold. When the worker cannot read the Colour element, it
+// sets ProbeStreamInfo.content_light_level_omitted instead.
 message ContentLightLevel {
   // MaxCLL: the maximum content light level.
   uint32 max_content_light_level = 1;
