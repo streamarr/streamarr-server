@@ -71,6 +71,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 @DisplayName("Keyframe packet scan scheduling")
 class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTest {
 
+  private static final String FAILED_SCANS_METRIC =
+      "streamarr.probes.keyframe_packet_scan_failures";
   private static final ProbeOutcome.Success PACKET_SCAN_REQUIRED =
       success(
           new KeyframeKnowledge.PacketScanRequired(KeyframePacketScanReason.NO_CONTAINER_INDEX));
@@ -299,12 +301,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
         .isEqualTo(
             new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_FAILED));
     assertThat(scheduledScans()).isZero();
-    assertThat(
-            meterRegistry
-                .get("streamarr.probes.keyframe_packet_scan_failures")
-                .tag("reason", reason)
-                .counter()
-                .count())
+    assertThat(meterRegistry.get(FAILED_SCANS_METRIC).tag("reason", reason).counter().count())
         .isEqualTo(3);
   }
 
