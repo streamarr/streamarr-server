@@ -118,7 +118,14 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   void shouldKeepTheCodecProfileWhenTheContractNamesIt(
       com.streamarr.transcode.v1.VideoCodecProfile reported) {
     var codec = reported.name().split("_")[3].toLowerCase(Locale.ROOT);
-    var video = hevc().setCodec(codec).setCodecProfile(reported).setCodecLevel(40);
+    // Both flags let the chosen stream be AV1, whose lacking static HDR values the worker flags.
+    var video =
+        hevc()
+            .setCodec(codec)
+            .setCodecProfile(reported)
+            .setCodecLevel(40)
+            .setMasteringDisplayOmitted(true)
+            .setContentLightLevelOmitted(true);
 
     var stream = videoOf(version5(media -> media.setStreams(0, video)));
 
@@ -649,7 +656,42 @@ class RemoteProbeResultStreamPropertiesMapperTest {
             stream -> {
               asAv1(stream).setFirstFramesRead(true).getDynamicRangeBuilder().setHdr10Plus(absent);
               return stream;
-            }));
+            }),
+        violation(
+            "a chosen AV1 stream that lacks a mastering display and leaves it unflagged",
+            stream -> asAv1(stream).setMasteringDisplayOmitted(false)),
+        violation(
+            "a chosen AV1 stream that lacks a content light level and leaves it unflagged",
+            stream -> asAv1(stream).setContentLightLevelOmitted(false)));
+  }
+
+  @Test
+  @DisplayName("Should keep a chosen AV1 stream's static HDR metadata when the stream lists it")
+  void shouldKeepAChosenAv1StreamsStaticHdrMetadataWhenTheStreamListsIt() {
+    var video =
+        hevc()
+            .setCodec("av1")
+            .setMasteringDisplay(WorkerProbeResultFixture.masteringDisplayBuilder())
+            .setContentLightLevel(
+                ContentLightLevel.newBuilder()
+                    .setMaxContentLightLevel(1000)
+                    .setMaxFrameAverageLightLevel(400));
+
+    var stream = videoOf(version5(media -> media.setStreams(0, video)));
+
+    assertThat(stream.masteringDisplay()).isPresent();
+    assertThat(stream.contentLightLevel()).isPresent();
+    assertThat(stream.videoProperties()).contains(VideoStreamProperties.builder().build());
+  }
+
+  @Test
+  @DisplayName("Should keep an AV1 stream that the probe did not choose when it flags no omission")
+  void shouldKeepAnAv1StreamThatTheProbeDidNotChooseWhenItFlagsNoOmission() {
+    var outcome =
+        outcomeOf(version5(media -> media.addStreams(hevc().setIndex(1).setCodec("av1"))));
+
+    assertThat(outcome.streams().get(1).videoProperties())
+        .contains(VideoStreamProperties.builder().build());
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")

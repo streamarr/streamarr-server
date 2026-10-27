@@ -106,6 +106,11 @@ final class RemoteProbeResultMapper {
       throw contractViolation("Worker probe read the frames of a stream other than the chosen one");
     }
 
+    if (reportsFrameFacts && leavesAv1StaticHdrValueUnflagged(streams, chosenVideoStream.get())) {
+      throw contractViolation(
+          "Worker probe left a missing static HDR value of an AV1 stream unflagged");
+    }
+
     return ProbeOutcome.Success.builder()
         .container(container(media.getContainer(), result.getProbeVersion()))
         .streams(streams)
@@ -144,6 +149,22 @@ final class RemoteProbeResultMapper {
         .filter(stream -> stream.index() != chosen.streamIndex())
         .flatMap(stream -> stream.videoProperties().stream())
         .anyMatch(VideoStreamProperties::firstFramesRead);
+  }
+
+  // The worker parses no AV1 OBU, so it cannot rule out a static HDR value that FFmpeg dropped
+  // with a frame it failed to decode, and flags each value that the chosen AV1 stream lacks.
+  private static boolean leavesAv1StaticHdrValueUnflagged(
+      List<StreamInfo> streams, ChosenVideoStream chosen) {
+    return streams.stream()
+        .filter(stream -> stream.index() == chosen.streamIndex())
+        .filter(stream -> stream.codec().filter("av1"::equals).isPresent())
+        .anyMatch(RemoteProbeResultMapper::leavesStaticHdrValueUnflagged);
+  }
+
+  private static boolean leavesStaticHdrValueUnflagged(StreamInfo stream) {
+    var properties = stream.videoProperties().orElseThrow();
+    return (stream.masteringDisplay().isEmpty() && !properties.masteringDisplayOmitted())
+        || (stream.contentLightLevel().isEmpty() && !properties.contentLightLevelOmitted());
   }
 
   private ProbeContainer container(ProbeContainerInfo container, int probeVersion) {
