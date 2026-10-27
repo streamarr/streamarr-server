@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.CompatibleBase;
+import com.streamarr.server.domain.streaming.MediaFileProbePropertyIssue;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -22,7 +23,8 @@ final class InterimVideoCopyRule {
   static boolean permitsCopy(String videoCodec, VideoPlaybackFacts facts) {
     var range = facts.dynamicRange();
     return isSdrOrUnspecified(range.compatibleBase())
-        && !range.hasDisagreeingDolbyVisionCompatibility()
+        && MediaFileProbePropertyIssue.foundIn(range).stream()
+            .noneMatch(MediaFileProbePropertyIssue::rulesOutCopy)
         && isCopyableBitDepthAndChroma(videoCodec, facts)
         && hasDescribableCodecString(facts.codecString());
   }
