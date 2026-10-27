@@ -173,8 +173,9 @@ The Istio policy restricts only the worker port. HTTP and Kubernetes health prob
 
 The server and every worker must run under a UTF-8 locale.
 Java converts filenames through the process locale, so an ASCII locale such as `POSIX` cannot open media whose names contain non-ASCII characters.
-The official Compose and Kubernetes settings set `LANG=C.UTF-8` on both processes.
-`LC_ALL` and `LC_CTYPE` override `LANG`; if you set either, give it a UTF-8 value such as `C.UTF-8`.
+The server and worker images both default `LANG` to `C.UTF-8`, so neither the official Compose and Kubernetes settings nor a hand-written `docker run` needs to set a locale.
+The default applies only when `LANG` is unset.
+`LC_ALL` and `LC_CTYPE` override the default; if you set either, give it a UTF-8 value such as `C.UTF-8`.
 
 The server logs a warning at startup when it does not read filenames as UTF-8.
 On an affected worker, probes of non-ASCII names fail as `PROBE_FAILURE_SOURCE_UNAVAILABLE` and the worker log shows an `InvalidPathException`.
