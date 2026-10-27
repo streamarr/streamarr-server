@@ -10,8 +10,9 @@ import lombok.NonNull;
  * whether the probe read the stream's first frames. An empty value is one that the probe could not
  * name: an empty {@code codecProfile} is the contract's UNSPECIFIED codec profile. {@code
  * codecLevel} is major × 10 + minor. A Presence on the stream is ABSENT only when {@code
- * firstFramesRead} holds. An omitted flag says that the stream carries that half of its static HDR
- * metadata although the probe left it empty.
+ * firstFramesRead} holds. An omitted flag says that the stream carries, or may carry, that half of
+ * its static HDR metadata although the probe left it empty, so a stream with either flag set is
+ * never PQ10.
  */
 @Builder
 public record VideoStreamProperties(
