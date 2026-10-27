@@ -273,7 +273,7 @@ message DolbyVisionPresent {
   // Whether the samples hold Dolby Vision RPUs. UNSPECIFIED when the probe read no samples.
   Presence observed_rpu = 2;
   // The header of the first RPU that the probe read, from the frames or, when the frames show no
-  // RPU, from the packets, and for AV1 from the av1C record's configOBUs and then the packets, as
+  // RPU, from the packets, and for AV1 from the OBUs of the extradata and then the packets, as
   // ProbeStreamInfo.dynamic_range's walks read them. For AV1 the worker reads the header from the
   // RPU inside the EMDF container that dynamic_range describes, whatever the Dolby Vision
   // configuration record says, and an RPU OBU with an extension byte gives no header. FFmpeg opens
@@ -792,29 +792,30 @@ message ProbeStreamInfo {
   // FFmpeg's H.264 decoder also drops HDR10+ messages. FFmpeg stops parsing an SEI NAL unit at the
   // first message that it rejects, such as a user_data_unregistered message shorter than 16 bytes,
   // so the messages after that one never reach the frames. FFmpeg's HEVC decoder also applies the
-  // SEI NAL units of the HEVC configuration record (hvcC) to the frames, and ignores its errors
-  // there too. So the worker also walks every SEI NAL unit of those packets and, for HEVC, of the
-  // configuration record when the stream has one: type 6 for H.264, and the prefix type 39 and the
-  // suffix type 40 for HEVC. It removes the emulation prevention bytes, and steps from message to
-  // message by payloadType and payloadSize, whatever each message holds. It also reads inside the
-  // nesting messages, whose messages FFmpeg ignores: scalable nesting (payloadType 30), MVC
-  // scalable nesting (payloadType 37) and MVCD scalable nesting (payloadType 48) for H.264, and
-  // scalable nesting (payloadType 133) for HEVC. Other nesting messages can also hold messages that
-  // FFmpeg ignores: regional nesting (payloadType 157), MCTS extraction information nesting
-  // (payloadType 159) and bitstream partition nesting (payloadType 162) for HEVC, and SEI
-  // processing order nesting (payloadType 214), which ITU-T H.274 defines, for H.264 and HEVC. The
-  // worker does not read inside them, so an SEI NAL unit that holds one is not delimited. An SEI
-  // NAL unit is delimited when the payload of every message ends within the NAL unit, every nested
-  // message ends within the payload of its nesting message, no nesting message holds another
-  // nesting message, and only the RBSP trailing bits follow the last message. The worker read all
-  // of the SEI when it delimited every NAL unit that the walk covers, and every SEI NAL unit among
-  // them. An HDR10+ message is an ITU-T T.35 message (payloadType 4) with country code 0xB5,
-  // provider code 0x003C, provider-oriented code 0x0001 and application identifier 4. hdr10_plus is
-  // PRESENT when the frames, the configuration record or the packets hold an HDR10+ message that is
-  // not nested. hdr10_plus is ABSENT only when the frames show none, the worker read all of the
-  // SEI, and no nesting message holds an HDR10+ message. Otherwise hdr10_plus is UNSPECIFIED. A
-  // nested message can apply only to a layer or a view that FFmpeg does not decode, so it neither
-  // proves nor rules out a feature of the decoded picture.
+  // SEI NAL units of its extradata to the frames, whether an HEVC configuration record (hvcC) or
+  // Annex B extradata holds them, and ignores its errors there too. So the worker also walks every
+  // SEI NAL unit of the stream's extradata, as the last paragraph of this comment says, and then of
+  // those packets: type 6 for H.264, and the prefix type 39 and the suffix type 40 for HEVC. It
+  // removes the emulation prevention bytes, and steps from message to message by payloadType and
+  // payloadSize, whatever each message holds. It also reads inside the nesting messages, whose
+  // messages FFmpeg ignores: scalable nesting (payloadType 30), MVC scalable nesting (payloadType
+  // 37) and MVCD scalable nesting (payloadType 48) for H.264, and scalable nesting (payloadType
+  // 133) for HEVC. Other nesting messages can also hold messages that FFmpeg ignores: regional
+  // nesting (payloadType 157), MCTS extraction information nesting (payloadType 159) and bitstream
+  // partition nesting (payloadType 162) for HEVC, and SEI processing order nesting (payloadType
+  // 214), which ITU-T H.274 defines, for H.264 and HEVC. The worker does not read inside them, so
+  // an SEI NAL unit that holds one is not delimited. An SEI NAL unit is delimited when the payload
+  // of every message ends within the NAL unit, every nested message ends within the payload of its
+  // nesting message, no nesting message holds another nesting message, and only the RBSP trailing
+  // bits follow the last message. The worker read all of the SEI when it delimited every NAL unit
+  // that the walk covers, and every SEI NAL unit among them. An HDR10+ message is an ITU-T T.35
+  // message (payloadType 4) with country code 0xB5, provider code 0x003C, provider-oriented code
+  // 0x0001 and application identifier 4. hdr10_plus is PRESENT when the frames, the extradata or
+  // the packets hold an HDR10+ message that is not nested. hdr10_plus is ABSENT only when the
+  // frames show none, the worker read all of the SEI, and no nesting message holds an HDR10+
+  // message. Otherwise hdr10_plus is UNSPECIFIED. A nested message can apply only to a layer or a
+  // view that FFmpeg does not decode, so it neither proves nor rules out a feature of the decoded
+  // picture.
   //
   // FFmpeg's AV1 decoders drop an RPU that they cannot parse, and a whole frame whose HDR10+
   // message they cannot parse. When they cannot parse an OBU, such as an HDR_CLL or HDR_MDCV
@@ -822,21 +823,21 @@ message ProbeStreamInfo {
   // frame without failing. The decoders attach a metadata OBU to the next shown frame whose OBUs
   // follow it, wherever the metadata OBU lies in its temporal unit, so a metadata OBU after the
   // OBUs of the last frame that the probe keeps reaches no frame. They never apply the metadata
-  // OBUs of the AV1 configuration record (av1C) to the frames. So for AV1 the worker walks every
-  // OBU of the record's configOBUs when the stream has a record, then every OBU of every packet of
-  // the read that produced the kept frames, in their order. FFmpeg's demuxers pass the packets in
+  // OBUs of the stream's extradata to the frames. So for AV1 the worker walks every OBU of the
+  // extradata, as the last paragraph of this comment says, then every OBU of every packet of the
+  // read that produced the kept frames, in their order. FFmpeg's demuxers pass the packets in
   // the low-overhead bitstream format of AV1 section 5, and the walk steps from OBU to OBU by their
   // sizes, whatever each OBU holds.
   //
   // Each OBU starts with its obu_header, then its extension byte when obu_extension_flag is set.
   // When obu_has_size_field is set, a leb128 obu_size of at most 8 bytes follows, and the OBU ends
-  // obu_size bytes after it. Otherwise the OBU runs to the end of its packet or record, so it is
+  // obu_size bytes after it. Otherwise the OBU runs to the end of its packet or extradata, so it is
   // the last OBU there. An OBU is delimited when its header, its extension byte, its obu_size and
-  // its payload end within its packet or record. A metadata OBU (obu_type 5) is delimited when its
-  // metadata_type also ends within the OBU and, for a type that the walk reads, its last nonzero
-  // byte is 0x80: the trailing bits that end the OBU. The walk reads the metadata types HDR_CLL
-  // (1), HDR_MDCV (2) and ITUT_T35 (4). The worker read all of the OBUs when it delimited every OBU
-  // that the walk covers.
+  // its payload end within its packet or extradata. A metadata OBU (obu_type 5) is delimited when
+  // its metadata_type also ends within the OBU and, for a type that the walk reads, its last
+  // nonzero byte is 0x80: the trailing bits that end the OBU. The walk reads the metadata types
+  // HDR_CLL (1), HDR_MDCV (2) and ITUT_T35 (4). The worker read all of the OBUs when it delimited
+  // every OBU that the walk covers.
   //
   // An HDR10+ OBU is an ITU-T T.35 metadata OBU whose payload starts with country code 0xB5,
   // provider code 0x003C, provider-oriented code 0x0001 and application identifier 4. An RPU is an
@@ -847,25 +848,36 @@ message ProbeStreamInfo {
   // bits that must equal 0x400. A metadata OBU with an extension byte names a temporal and a
   // spatial layer, and FFmpeg's AV1 decoders skip it when the operating point that they decode
   // leaves out that layer. So such an OBU counts as a nested SEI message does: it neither proves
-  // nor rules out a feature. hdr10_plus is PRESENT when the frames, the configuration record or the
-  // packets hold an HDR10+ OBU without an extension byte, and observed_rpu likewise for an RPU.
+  // nor rules out a feature. hdr10_plus is PRESENT when the frames, the extradata or the packets
+  // hold an HDR10+ OBU without an extension byte, and observed_rpu likewise for an RPU.
   // Each is ABSENT only when the frames show none, the worker read all of the OBUs, and no OBU with
   // an extension byte holds one. Otherwise each is UNSPECIFIED. Dolby Vision is ABSENT on the same
   // evidence as for H.264 and HEVC: no record, no Dolby Vision sample entry, and observed_rpu
   // ABSENT.
   //
-  // The parsing of the NAL units and the walks of the SEI and of the OBUs cover no extradata other
-  // than an hvcC or an av1C configuration record. An avcC record holds only parameter sets. Any
-  // other extradata, such as Annex B extradata, or the bare OBUs that FFmpeg gives an AV1 stream in
-  // IVF, can hold units that the probe does not read, and FFmpeg's HEVC decoder applies the SEI NAL
-  // units of Annex B extradata to the frames. So a stream with such extradata counts as one whose
-  // units the probe could not all delimit: the worker has not read all of its SEI or all of its
-  // OBUs. A packet can also carry a replacement record as new extradata side data, which FFmpeg's
-  // MP4 demuxer attaches when a sample switches to another sample description. ffprobe prints that
-  // side data's type but not its bytes, and FFmpeg's H.264 and HEVC decoders apply the replacement.
-  // So a read in which a packet carries new extradata side data counts the same way. A feature that
-  // the probe cannot see in a codec stays UNSPECIFIED. Every other video stream keeps the facts of
-  // probe version 4.
+  // The walks read the stream's extradata as a configuration record:
+  // - H.264 and HEVC: extradata whose first byte is 1 is an avcC or an hvcC record. An avcC record
+  //   holds only parameter sets, so the walk reads none of its NAL units. The walk reads the NAL
+  //   units of every array of an hvcC record, each after its 2-byte length. An hvcC record is
+  //   delimited when every array and every NAL unit that the record counts ends within the record,
+  //   and no NAL unit holds a start code. Any other extradata is Annex B extradata, as MPEG-TS and
+  //   raw H.264 and HEVC files give, and start codes delimit its NAL units, as they delimit those
+  //   of a packet. Annex B extradata is delimited when it starts with a start code, after any zero
+  //   bytes, and holds at least one NAL unit.
+  // - AV1: extradata of at least 4 bytes whose first byte is 0x81, the marker and version 1 of an
+  //   av1C record, is an av1C record, and the walk reads the OBUs of its configOBUs, after those 4
+  //   bytes. Extradata whose first byte has its high bit clear holds bare OBUs, as FFmpeg gives an
+  //   AV1 stream in IVF or in a raw .obu file, and the walk reads its OBUs from its first byte.
+  //   Either is delimited when the walk delimits every OBU in it. An AV1 stream without extradata
+  //   leaves the walk only its packets.
+  // Any other extradata, and extradata that the walk cannot delimit, can hold units that the probe
+  // does not read. So a stream with such extradata counts as one whose units the probe could not
+  // all delimit: the worker has not read all of its SEI or all of its OBUs. A packet can also carry
+  // a replacement record as new extradata side data, which FFmpeg's MP4 demuxer attaches when a
+  // sample switches to another sample description. ffprobe prints that side data's type but not its
+  // bytes, and FFmpeg's H.264 and HEVC decoders apply the replacement. So a read in which a packet
+  // carries new extradata side data counts the same way. A feature that the probe cannot see in a
+  // codec stays UNSPECIFIED. Every other video stream keeps the facts of probe version 4.
   VideoDynamicRange dynamic_range = 12;
   // Video streams only: the bit depth of a luma sample, from the pixel format. For example, 8 for
   // yuv420p and 10 for yuv420p10le. Absent when ffprobe reports no pixel format.
@@ -912,13 +924,13 @@ message ProbeStreamInfo {
   // From probe version 5 on, the probe takes the value from the first frame of the chosen video
   // stream when the container declares none. When the first frame carries none either, the probe
   // takes the value for H.264 and HEVC from the first mastering display color volume SEI message
-  // (payloadType 137) that is not nested and that dynamic_range's walk finds: in the configuration
-  // record first, then in the packets in their order. The message's values are already in SEI
-  // units. The worker reports them when the payload holds every field and every value lies in the
-  // range that MasteringDisplayColorVolume states. Otherwise it sets mastering_display_omitted. For
-  // AV1 the probe takes the value, in the same order, from the first HDR_MDCV metadata OBU without
-  // an extension byte that dynamic_range's walk finds. FFmpeg's AV1 decoders read the OBU's values
-  // as fractions: each chromaticity coordinate over 65536, the maximum luminance over 256 and the
+  // (payloadType 137) that is not nested and that dynamic_range's walk finds: in the extradata
+  // first, then in the packets in their order. The message's values are already in SEI units. The
+  // worker reports them when the payload holds every field and every value lies in the range that
+  // MasteringDisplayColorVolume states. Otherwise it sets mastering_display_omitted. For AV1 the
+  // probe takes the value, in the same order, from the first HDR_MDCV metadata OBU without an
+  // extension byte that dynamic_range's walk finds. FFmpeg's AV1 decoders read the OBU's values as
+  // fractions: each chromaticity coordinate over 65536, the maximum luminance over 256 and the
   // minimum luminance over 16384, with the primaries in the order red, green, blue. The worker
   // converts those fractions as MasteringDisplayColorVolume says. It reports them when the bytes
   // ahead of the OBU's trailing bits hold every field and every value fits its SEI field. Otherwise
@@ -1085,23 +1097,23 @@ message ContainerCropping {
 // The worker reads the values from the stream side data that ffprobe's -show_streams reports. That
 // is the same ffprobe run that reports the stream's other facts. The side data comes from the
 // container: an MP4 mdcv box or the Matroska MasteringMetadata element. Some streams carry the
-// values only in their HEVC bitstream: in the SEI messages of the hvcC record or of the samples.
+// values only in their HEVC bitstream: in the SEI messages of the extradata or of the samples.
 // MPEG-TS and raw HEVC files always work this way. Those streams have no such side data. Probe
 // version 4 reads no frames, so it reports their mastering display as absent. Absent therefore
 // means that the container declares no mastering display. Absent does not mean that the stream
-// lacks static HDR metadata. So the server must not treat an absent value as proof of PQ10.
-// Probe version 5 reads the first frame of the chosen video stream. ffprobe reports a value that
-// only the bitstream carries as side data of that frame, and the worker converts it the same way.
-// FFmpeg drops the messages of an SEI NAL unit that follow a message it rejects, so for H.264 and
-// HEVC the worker also reads the SEI messages of the configuration record and of the packets, as
+// lacks static HDR metadata. So the server must not treat an absent value as proof of PQ10. Probe
+// version 5 reads the first frame of the chosen video stream. ffprobe reports a value that only the
+// bitstream carries as side data of that frame, and the worker converts it the same way. FFmpeg
+// drops the messages of an SEI NAL unit that follow a message it rejects, so for H.264 and HEVC the
+// worker also reads the SEI messages of the extradata and of the packets, as
 // ProbeStreamInfo.mastering_display says. FFmpeg's AV1 decoders drop the rest of a packet from a
-// metadata OBU that they cannot parse, and never apply the configuration record's metadata OBUs,
-// so for AV1 the worker also reads the metadata OBUs of the configuration record and of the
-// packets. For the chosen video stream, absent with mastering_display_omitted clear then means
-// that neither the container, nor the first frame, nor for H.264, HEVC and AV1 any of those SEI
-// messages or metadata OBUs carries the value. A PQ stream whose mastering display and content
-// light level are both absent that way is PQ10. A set omitted flag rules PQ10 out, including one
-// that the worker sets because the probe cannot rule a value out.
+// metadata OBU that they cannot parse, and never apply the extradata's metadata OBUs, so for AV1
+// the worker also reads the metadata OBUs of the extradata and of the packets. For the chosen video
+// stream, absent with mastering_display_omitted clear then means that neither the container, nor
+// the first frame, nor for H.264, HEVC and AV1 any of those SEI messages or metadata OBUs carries
+// the value. A PQ stream whose mastering display and content light level are both absent that way
+// is PQ10. A set omitted flag rules PQ10 out, including one that the worker sets because the probe
+// cannot rule a value out.
 //
 // ffprobe prints each value as a fraction. The worker multiplies the fraction by the number of
 // units in one whole: 50000 for a chromaticity coordinate, and 10000 for a luminance. The worker
