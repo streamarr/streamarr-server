@@ -10,7 +10,8 @@ import lombok.NonNull;
 
 /**
  * One stream of a probed source. The facts from {@code dynamicRange} to {@code hearingImpaired}
- * come from probe version 4 and later. An earlier probe version leaves them empty.
+ * come from probe version 4 and later. An earlier probe version leaves them empty. {@code
+ * videoProperties} comes from probe version 5 and later, for video streams only.
  */
 @Builder
 public record StreamInfo(
@@ -38,7 +39,8 @@ public record StreamInfo(
     @NonNull Optional<ContentLightLevel> contentLightLevel,
     @NonNull Optional<String> title,
     @NonNull Optional<String> handlerName,
-    @NonNull Optional<Boolean> hearingImpaired) {
+    @NonNull Optional<Boolean> hearingImpaired,
+    @NonNull Optional<VideoStreamProperties> videoProperties) {
 
   @SuppressWarnings("java:S1068") // Lombok builder defaults — fields are used by generated code
   public static class StreamInfoBuilder {
@@ -63,5 +65,6 @@ public record StreamInfo(
     private Optional<String> title = Optional.empty();
     private Optional<String> handlerName = Optional.empty();
     private Optional<Boolean> hearingImpaired = Optional.empty();
+    private Optional<VideoStreamProperties> videoProperties = Optional.empty();
   }
 }

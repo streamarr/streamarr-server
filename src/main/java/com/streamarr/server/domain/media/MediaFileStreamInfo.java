@@ -289,7 +289,7 @@ public class MediaFileStreamInfo {
       switch (range.dolbyVision()) {
         case DolbyVision.Unspecified _ -> dolbyVision = Presence.UNSPECIFIED;
         case DolbyVision.Absent _ -> dolbyVision = Presence.ABSENT;
-        case DolbyVision.Present(var declared, var observedRpu) -> {
+        case DolbyVision.Present(var declared, var observedRpu, _, _) -> {
           dolbyVision = Presence.PRESENT;
           dolbyVisionObservedRpu = observedRpu;
           declared.ifPresent(this::dolbyVisionRecord);

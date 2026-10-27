@@ -11,6 +11,7 @@ import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
@@ -84,9 +85,10 @@ final class RemoteProbeResultMapper {
     }
 
     var reportsPlaybackFacts = reportsPlaybackFacts(result.getProbeVersion());
+    var reportsFrameFacts = reportsFrameFacts(result.getProbeVersion());
     var streams =
         media.getStreamsList().stream()
-            .map(stream -> stream(stream, reportsPlaybackFacts))
+            .map(stream -> stream(stream, result.getProbeVersion()))
             .toList();
     var keyframes = keyframeMapper.map(media, keyframePositionsParts);
     var chosenVideoStream =
@@ -98,6 +100,10 @@ final class RemoteProbeResultMapper {
         && positions.streamIndex() != chosenVideoStream.get().streamIndex()) {
       throw contractViolation(
           "Worker probe keyframes belong to another stream than the chosen one");
+    }
+
+    if (reportsFrameFacts && readsFramesOfAnotherStream(streams, chosenVideoStream.orElseThrow())) {
+      throw contractViolation("Worker probe read the frames of a stream other than the chosen one");
     }
 
     return ProbeOutcome.Success.builder()
@@ -126,6 +132,18 @@ final class RemoteProbeResultMapper {
 
   private static boolean reportsPlaybackFacts(int probeVersion) {
     return Integer.compareUnsigned(probeVersion, ProbeVersion.FIRST_TO_REPORT_PLAYBACK_FACTS) >= 0;
+  }
+
+  private static boolean reportsFrameFacts(int probeVersion) {
+    return Integer.compareUnsigned(probeVersion, ProbeVersion.FIRST_TO_REPORT_FRAME_FACTS) >= 0;
+  }
+
+  private static boolean readsFramesOfAnotherStream(
+      List<StreamInfo> streams, ChosenVideoStream chosen) {
+    return streams.stream()
+        .filter(stream -> stream.index() != chosen.streamIndex())
+        .flatMap(stream -> stream.videoProperties().stream())
+        .anyMatch(VideoStreamProperties::firstFramesRead);
   }
 
   private ProbeContainer container(ProbeContainerInfo container, int probeVersion) {
@@ -203,7 +221,7 @@ final class RemoteProbeResultMapper {
     return Duration.ofSeconds(seconds, nanos);
   }
 
-  private StreamInfo stream(ProbeStreamInfo stream, boolean reportsPlaybackFacts) {
+  private StreamInfo stream(ProbeStreamInfo stream, int probeVersion) {
     if (stream.getIndex() < 0) {
       throw contractViolation("Worker probe stream index exceeds the supported integer range");
     }
@@ -231,8 +249,13 @@ final class RemoteProbeResultMapper {
                     : OptionalDouble.empty())
             .isDefault(stream.getIsDefault())
             .isForced(stream.getIsForced());
-    if (reportsPlaybackFacts) {
-      playbackFactsMapper.addStreamFacts(builder, stream);
+    var reportsFrameFacts = reportsFrameFacts(probeVersion);
+    if (reportsPlaybackFacts(probeVersion)) {
+      playbackFactsMapper.addStreamFacts(builder, stream, reportsFrameFacts);
+    }
+
+    if (reportsFrameFacts) {
+      RemoteStreamPropertiesMapper.addStreamProperties(builder, stream);
     }
 
     return builder.build();

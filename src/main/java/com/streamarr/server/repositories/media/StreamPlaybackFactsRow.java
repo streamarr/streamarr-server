@@ -65,7 +65,7 @@ final class StreamPlaybackFactsRow {
     switch (range.dolbyVision()) {
       case DolbyVision.Unspecified _ -> row.setDolbyVision(Presence.UNSPECIFIED.name());
       case DolbyVision.Absent _ -> row.setDolbyVision(Presence.ABSENT.name());
-      case DolbyVision.Present(var declared, var observedRpu) -> {
+      case DolbyVision.Present(var declared, var observedRpu, _, _) -> {
         row.setDolbyVision(Presence.PRESENT.name());
         row.setDolbyVisionObservedRpu(observedRpu.name());
         declared.ifPresent(configuration -> setDolbyVisionRecord(row, configuration));

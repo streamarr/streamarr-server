@@ -24,7 +24,7 @@ final class RemoteDynamicRangeMapper {
       case DolbyVision.Unspecified _ -> proto.clearDolbyVision();
       case DolbyVision.Absent _ ->
           proto.setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance());
-      case DolbyVision.Present(var declared, var observedRpu) -> {
+      case DolbyVision.Present(var declared, var observedRpu, _, _) -> {
         var present = DolbyVisionPresent.newBuilder().setObservedRpu(presence(observedRpu));
         declared.map(RemoteDynamicRangeMapper::configuration).ifPresent(present::setDeclared);
         proto.setDolbyVisionPresent(present);

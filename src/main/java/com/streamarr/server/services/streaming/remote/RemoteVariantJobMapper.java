@@ -251,6 +251,7 @@ final class RemoteVariantJobMapper {
     return switch (profile) {
       case H264_HIGH -> VideoCodecFamily.VIDEO_CODEC_FAMILY_H264;
       case AV1_MAIN -> VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1;
+      default -> throw unforcedCodecProfile(profile);
     };
   }
 
@@ -260,13 +261,19 @@ final class RemoteVariantJobMapper {
     return switch (profile) {
       case H264_HIGH -> com.streamarr.transcode.v1.VideoCodecProfile.VIDEO_CODEC_PROFILE_H264_HIGH;
       case AV1_MAIN -> com.streamarr.transcode.v1.VideoCodecProfile.VIDEO_CODEC_PROFILE_AV1_MAIN;
+      default -> throw unforcedCodecProfile(profile);
     };
+  }
+
+  private static IllegalArgumentException unforcedCodecProfile(VideoCodecProfile profile) {
+    return new IllegalArgumentException("An encode never forces the codec profile " + profile);
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.transcode.v1.VideoCodecTier tier(VideoCodecTier tier) {
     return switch (tier) {
       case MAIN -> com.streamarr.transcode.v1.VideoCodecTier.VIDEO_CODEC_TIER_MAIN;
+      case HIGH -> com.streamarr.transcode.v1.VideoCodecTier.VIDEO_CODEC_TIER_HIGH;
     };
   }
 

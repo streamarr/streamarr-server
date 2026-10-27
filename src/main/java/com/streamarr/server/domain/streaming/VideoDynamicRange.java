@@ -31,7 +31,7 @@ public record VideoDynamicRange(
    * known base disagrees with every compatible base.
    */
   public boolean hasDisagreeingDolbyVisionCompatibility() {
-    if (!(dolbyVision instanceof DolbyVision.Present(var declared, _))) {
+    if (!(dolbyVision instanceof DolbyVision.Present(var declared, _, _, _))) {
       return false;
     }
 
