@@ -742,10 +742,10 @@ class RemoteProbeResultStreamPropertiesMapperTest {
             }),
         violation(
             "a chosen AV1 stream that lacks a mastering display and leaves it unflagged",
-            stream -> asAv1(stream).setMasteringDisplayOmitted(false)),
+            stream -> asAv1(stream).setFirstFramesRead(true).setMasteringDisplayOmitted(false)),
         violation(
             "a chosen AV1 stream that lacks a content light level and leaves it unflagged",
-            stream -> asAv1(stream).setContentLightLevelOmitted(false)));
+            stream -> asAv1(stream).setFirstFramesRead(true).setContentLightLevelOmitted(false)));
   }
 
   @Test
@@ -775,6 +775,16 @@ class RemoteProbeResultStreamPropertiesMapperTest {
 
     assertThat(stream.masteringDisplay()).isPresent();
     assertThat(stream.contentLightLevel()).isPresent();
+    assertThat(stream.videoProperties()).contains(VideoStreamProperties.builder().build());
+  }
+
+  @Test
+  @DisplayName("Should keep a chosen AV1 stream whose frames the probe did not read unflagged")
+  void shouldKeepAChosenAv1StreamWhoseFramesTheProbeDidNotReadUnflagged() {
+    var video = hevc().setCodec("av1");
+
+    var stream = videoOf(version5(media -> media.setStreams(0, video)));
+
     assertThat(stream.videoProperties()).contains(VideoStreamProperties.builder().build());
   }
 

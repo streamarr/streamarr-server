@@ -152,7 +152,8 @@ final class RemoteProbeResultMapper {
   }
 
   // The worker parses no AV1 OBU, so it cannot rule out a static HDR value that FFmpeg dropped
-  // with a frame it failed to decode, and flags each value that the chosen AV1 stream lacks.
+  // with a frame it failed to decode, and flags each value that the chosen AV1 stream lacks. Only
+  // a stream whose first frames the probe read can claim through a clear flag that it lacks one.
   private static boolean leavesAv1StaticHdrValueUnflagged(
       List<StreamInfo> streams, ChosenVideoStream chosen) {
     return streams.stream()
@@ -163,6 +164,10 @@ final class RemoteProbeResultMapper {
 
   private static boolean leavesStaticHdrValueUnflagged(StreamInfo stream) {
     var properties = stream.videoProperties().orElseThrow();
+    if (!properties.firstFramesRead()) {
+      return false;
+    }
+
     return (stream.masteringDisplay().isEmpty() && !properties.masteringDisplayOmitted())
         || (stream.contentLightLevel().isEmpty() && !properties.contentLightLevelOmitted());
   }
