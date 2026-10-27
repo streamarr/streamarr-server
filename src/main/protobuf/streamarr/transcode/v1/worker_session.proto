@@ -393,9 +393,10 @@ message VideoDynamicRange {
 // sample, as DolbyVisionRpuPlacement defines it, moves to the end of its own sample for
 // BEFORE_OWN_PICTURE. For BEFORE_NEXT_PICTURE and UNSPECIFIED it moves to the end of the previous
 // picture's sample, and the worker drops one that has no previous picture, such as the first one
-// after a seek. An RPU that follows a slice of its sample but is not the sample's last NAL unit
-// moves to the end of that sample, whatever the placement. Every other job reads the source's
-// samples unchanged.
+// after a seek. In the same jobs, an RPU that follows a slice of its sample but is not the sample's
+// last NAL unit moves to the end of that sample. Every other job, AFTER_OWN_PICTURE included, reads
+// the source's samples unchanged: the placement rests on the packets that the probe read, and the
+// worker assumes that the rest of the stream keeps that layout.
 message VideoDecision {
   VideoMode mode = 6;
   VideoCodecFamily codec_family = 1;
