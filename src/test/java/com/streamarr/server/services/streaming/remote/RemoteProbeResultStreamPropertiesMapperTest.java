@@ -309,6 +309,62 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         .contains(com.streamarr.server.domain.streaming.CompatibleBase.NONE);
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @Test
+  @DisplayName("Should keep a record-less AV1 profile 10.0 stream when its compatible base is none")
+  void shouldKeepARecordLessAv1Profile10Point0StreamWhenItsCompatibleBaseIsNone() {
+    var video = av1().setFirstFramesRead(true);
+    video
+        .getDynamicRangeBuilder()
+        .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_NONE)
+        .setDolbyVisionPresent(
+            DolbyVisionPresent.newBuilder()
+                .setObservedRpu(com.streamarr.transcode.v1.Presence.PRESENCE_PRESENT)
+                .setFirstRpuHeader(profile5RpuHeader()));
+
+    var stream = videoOf(version5(media -> media.setStreams(0, video)));
+
+    assertThat(stream.dynamicRange())
+        .map(VideoDynamicRange::compatibleBase)
+        .contains(com.streamarr.server.domain.streaming.CompatibleBase.NONE);
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("declaredProfile10Bases")
+  @DisplayName("Should keep a declared profile 10 stream when its record names a compatible base")
+  void shouldKeepADeclaredProfile10StreamWhenItsRecordNamesACompatibleBase(
+      String record, DolbyVisionConfiguration.Builder declared, CompatibleBase base) {
+    var video = av1();
+    video
+        .getDynamicRangeBuilder()
+        .setCompatibleBase(base)
+        .setDolbyVisionPresent(DolbyVisionPresent.newBuilder().setDeclared(declared));
+
+    var stream = videoOf(version5(media -> media.setStreams(0, video)));
+
+    assertThat(stream.dynamicRange())
+        .map(VideoDynamicRange::compatibleBase)
+        .map(Enum::name)
+        .contains(base.name().substring("COMPATIBLE_BASE_".length()));
+  }
+
+  static Stream<Arguments> declaredProfile10Bases() {
+    return Stream.of(
+        Arguments.of(
+            "profile 10.1 with a PQ base",
+            profile10Record().setBaseLayerCompatibilityId(1),
+            CompatibleBase.COMPATIBLE_BASE_PQ),
+        Arguments.of(
+            "profile 10.4 with an HLG base",
+            profile10Record().setBaseLayerCompatibilityId(4),
+            CompatibleBase.COMPATIBLE_BASE_HLG),
+        Arguments.of(
+            "profile 10 without a compatibility identifier and with an SDR base",
+            profile10Record(),
+            CompatibleBase.COMPATIBLE_BASE_SDR));
+  }
+
   @ParameterizedTest(name = "{0}")
   @MethodSource("violations")
   @DisplayName("Should reject the result when it breaks the probe version 5 contract")
@@ -490,6 +546,32 @@ class RemoteProbeResultStreamPropertiesMapperTest {
                                   .setBaseLayer(true)
                                   .setRpu(true)));
               return stream;
+            }),
+        violation(
+            "a record-less AV1 profile 10.0 stream with an SDR compatible base",
+            stream -> {
+              stream
+                  .setCodec("av1")
+                  .setFirstFramesRead(true)
+                  .getDynamicRangeBuilder()
+                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
+                  .setDolbyVisionPresent(
+                      DolbyVisionPresent.newBuilder()
+                          .setObservedRpu(present)
+                          .setFirstRpuHeader(profile5RpuHeader()));
+              return stream;
+            }),
+        violation(
+            "a declared profile 10.0 stream with a PQ compatible base",
+            stream -> {
+              stream
+                  .setCodec("av1")
+                  .getDynamicRangeBuilder()
+                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
+                  .setDolbyVisionPresent(
+                      DolbyVisionPresent.newBuilder()
+                          .setDeclared(profile10Record().setBaseLayerCompatibilityId(0)));
+              return stream;
             }));
   }
 
@@ -517,6 +599,14 @@ class RemoteProbeResultStreamPropertiesMapperTest {
 
   private static ProbeStreamInfo.Builder hevc() {
     return ProbeStreamInfo.newBuilder().setIndex(0).setCodecType("video").setCodec("hevc");
+  }
+
+  private static ProbeStreamInfo.Builder av1() {
+    return ProbeStreamInfo.newBuilder().setIndex(0).setCodecType("video").setCodec("av1");
+  }
+
+  private static DolbyVisionConfiguration.Builder profile10Record() {
+    return DolbyVisionConfiguration.newBuilder().setProfile(10).setBaseLayer(true).setRpu(true);
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")

@@ -11,6 +11,7 @@ import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.transcode.v1.CompatibleBase;
+import com.streamarr.transcode.v1.DolbyVisionConfiguration;
 import com.streamarr.transcode.v1.DolbyVisionPresent;
 import com.streamarr.transcode.v1.Presence;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
@@ -24,6 +25,8 @@ import java.util.Set;
 final class RemoteStreamPropertiesMapper {
 
   private static final int DOLBY_VISION_PROFILE_5 = 5;
+  private static final int DOLBY_VISION_PROFILE_10 = 10;
+  private static final Set<String> RECORD_LESS_BASELESS_CODECS = Set.of("hevc", "av1");
   // vdr_bit_depth_minus8 + 8, and a uint32 above Integer.MAX_VALUE arrives as a negative int.
   private static final int MINIMUM_VDR_BIT_DEPTH = 8;
   private static final Set<VideoCodecProfile> H264_PROFILES =
@@ -103,7 +106,8 @@ final class RemoteStreamPropertiesMapper {
     }
   }
 
-  // From probe version 5 on, profile 5 has no compatible base whatever the signaled transfer says.
+  // From probe version 5 on, profiles 5 and 10.0 have no compatible base whatever the signaled
+  // transfer says.
   private static void checkBaselessProfileCompatibleBase(ProbeStreamInfo stream) {
     var range = stream.getDynamicRange();
     if (!range.hasDolbyVisionPresent()
@@ -112,21 +116,35 @@ final class RemoteStreamPropertiesMapper {
     }
 
     if (range.getCompatibleBase() != CompatibleBase.COMPATIBLE_BASE_NONE) {
-      throw contractViolation("Worker probe gave Dolby Vision profile 5 a compatible base");
+      throw contractViolation("Worker probe gave Dolby Vision profile 5 or 10.0 a compatible base");
     }
   }
 
   private static boolean isBaselessProfile(ProbeStreamInfo stream, DolbyVisionPresent present) {
     if (present.hasDeclared()) {
-      return present.getDeclared().hasProfile()
-          && present.getDeclared().getProfile() == DOLBY_VISION_PROFILE_5;
+      return isBaselessRecord(present.getDeclared());
     }
 
+    // The same header tells profile 5 in HEVC and profile 10.0 in AV1.
     var header = present.getFirstRpuHeader();
-    return "hevc".equals(stream.getCodec())
+    return RECORD_LESS_BASELESS_CODECS.contains(stream.getCodec())
         && present.hasFirstRpuHeader()
         && header.getVdrRpuProfile() == 0
         && header.getBaseLayerFullRange();
+  }
+
+  private static boolean isBaselessRecord(DolbyVisionConfiguration configuration) {
+    if (!configuration.hasProfile()) {
+      return false;
+    }
+
+    return switch (configuration.getProfile()) {
+      case DOLBY_VISION_PROFILE_5 -> true;
+      case DOLBY_VISION_PROFILE_10 ->
+          configuration.hasBaseLayerCompatibilityId()
+              && configuration.getBaseLayerCompatibilityId() == 0;
+      default -> false;
+    };
   }
 
   private static VideoStreamProperties properties(ProbeStreamInfo stream) {
