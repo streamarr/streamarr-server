@@ -728,7 +728,9 @@ message ProbeStreamInfo {
   // RPU that it cannot parse. So for H.264 and HEVC the worker also parses the NAL units of the
   // packets that hold those frames, and observed_rpu is PRESENT when either the frames or the
   // packets hold an RPU. observed_rpu is ABSENT only when the probe could delimit every NAL unit of
-  // those packets. FFmpeg's H.264 decoder also drops HDR10+ messages, so hdr10_plus stays
+  // those packets. FFmpeg's AV1 decoders drop an RPU that they cannot parse, and the worker does
+  // not parse AV1 OBUs, so for AV1 observed_rpu is PRESENT or UNSPECIFIED, never ABSENT, and Dolby
+  // Vision is never ABSENT. FFmpeg's H.264 decoder also drops HDR10+ messages, so hdr10_plus stays
   // UNSPECIFIED for H.264. A feature that the probe cannot see in a codec stays UNSPECIFIED. Every
   // other video stream keeps the facts of probe version 4.
   VideoDynamicRange dynamic_range = 12;
