@@ -132,8 +132,7 @@ final class RemoteStreamPropertiesMapper {
 
   // From probe version 5 on, profiles 5 and 10.0 have no compatible base whatever the signaled
   // transfer says. Otherwise the signaled transfer, which transfer_characteristics names, decides
-  // the base. The contract leaves the base of a transfer other than PQ, HLG and an unspecified one
-  // to the worker's reading of SDR, so such a transfer allows SDR or UNSPECIFIED.
+  // the base.
   private static void checkCompatibleBase(ProbeStreamInfo stream) {
     var range = stream.getDynamicRange();
     if (range.hasDolbyVisionPresent() && isBaselessProfile(stream, range.getDolbyVisionPresent())) {
@@ -141,7 +140,7 @@ final class RemoteStreamPropertiesMapper {
       return;
     }
 
-    if (!signaledTransferBases(stream).contains(range.getCompatibleBase())) {
+    if (range.getCompatibleBase() != signaledTransferBase(stream)) {
       throw contractViolation("Worker probe gave a compatible base that the transfer contradicts");
     }
   }
@@ -152,18 +151,33 @@ final class RemoteStreamPropertiesMapper {
     }
   }
 
-  private static Set<CompatibleBase> signaledTransferBases(ProbeStreamInfo stream) {
+  private static CompatibleBase signaledTransferBase(ProbeStreamInfo stream) {
     return switch (stream.getTransferCharacteristics()) {
-      case TRANSFER_CHARACTERISTICS_SMPTE2084 -> Set.of(CompatibleBase.COMPATIBLE_BASE_PQ);
-      case TRANSFER_CHARACTERISTICS_ARIB_STD_B67 -> Set.of(CompatibleBase.COMPATIBLE_BASE_HLG);
-      // An unspecified transfer leaves no base: NONE beside a Dolby Vision claim, else UNSPECIFIED.
-      // A value that this contract does not name reads as unspecified, as the stored transfer does.
-      case TRANSFER_CHARACTERISTICS_UNSPECIFIED, UNRECOGNIZED ->
+      case TRANSFER_CHARACTERISTICS_BT709,
+          TRANSFER_CHARACTERISTICS_BT470M,
+          TRANSFER_CHARACTERISTICS_BT470BG,
+          TRANSFER_CHARACTERISTICS_SMPTE170M,
+          TRANSFER_CHARACTERISTICS_SMPTE240M,
+          TRANSFER_CHARACTERISTICS_IEC61966_2_4,
+          TRANSFER_CHARACTERISTICS_BT1361,
+          TRANSFER_CHARACTERISTICS_IEC61966_2_1,
+          TRANSFER_CHARACTERISTICS_BT2020_10,
+          TRANSFER_CHARACTERISTICS_BT2020_12 ->
+          CompatibleBase.COMPATIBLE_BASE_SDR;
+      case TRANSFER_CHARACTERISTICS_SMPTE2084 -> CompatibleBase.COMPATIBLE_BASE_PQ;
+      case TRANSFER_CHARACTERISTICS_ARIB_STD_B67 -> CompatibleBase.COMPATIBLE_BASE_HLG;
+      // A transfer that names none of SDR, PQ and HLG leaves no base: NONE beside Dolby Vision,
+      // else UNSPECIFIED. A value that this contract does not name reads as unspecified, as the
+      // stored transfer does.
+      case TRANSFER_CHARACTERISTICS_UNSPECIFIED,
+          TRANSFER_CHARACTERISTICS_LINEAR,
+          TRANSFER_CHARACTERISTICS_LOG100,
+          TRANSFER_CHARACTERISTICS_LOG316,
+          TRANSFER_CHARACTERISTICS_SMPTE428,
+          UNRECOGNIZED ->
           stream.getDynamicRange().hasDolbyVisionPresent()
-              ? Set.of(CompatibleBase.COMPATIBLE_BASE_NONE)
-              : Set.of(CompatibleBase.COMPATIBLE_BASE_UNSPECIFIED);
-      default ->
-          Set.of(CompatibleBase.COMPATIBLE_BASE_SDR, CompatibleBase.COMPATIBLE_BASE_UNSPECIFIED);
+              ? CompatibleBase.COMPATIBLE_BASE_NONE
+              : CompatibleBase.COMPATIBLE_BASE_UNSPECIFIED;
     };
   }
 

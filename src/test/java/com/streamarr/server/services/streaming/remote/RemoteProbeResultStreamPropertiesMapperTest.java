@@ -379,6 +379,60 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @ParameterizedTest
+  @EnumSource(
+      value = com.streamarr.transcode.v1.TransferCharacteristics.class,
+      names = {
+        "TRANSFER_CHARACTERISTICS_UNSPECIFIED",
+        "TRANSFER_CHARACTERISTICS_LINEAR",
+        "TRANSFER_CHARACTERISTICS_LOG100",
+        "TRANSFER_CHARACTERISTICS_LOG316",
+        "TRANSFER_CHARACTERISTICS_SMPTE428"
+      })
+  @DisplayName(
+      "Should keep a Dolby Vision stream whose transfer names no standard format when its"
+          + " compatible base is none")
+  void shouldKeepADolbyVisionStreamWhoseTransferNamesNoStandardFormatWhenItsCompatibleBaseIsNone(
+      com.streamarr.transcode.v1.TransferCharacteristics transfer) {
+    var video =
+        profile8RpusWithoutTransfer(hevc(), CompatibleBase.COMPATIBLE_BASE_NONE)
+            .setTransferCharacteristics(transfer);
+
+    var stream = videoOf(version5(media -> media.setStreams(0, video)));
+
+    assertThat(stream.dynamicRange())
+        .map(VideoDynamicRange::compatibleBase)
+        .contains(com.streamarr.server.domain.streaming.CompatibleBase.NONE);
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @ParameterizedTest
+  @EnumSource(
+      value = com.streamarr.transcode.v1.TransferCharacteristics.class,
+      names = {
+        "TRANSFER_CHARACTERISTICS_UNSPECIFIED",
+        "TRANSFER_CHARACTERISTICS_LINEAR",
+        "TRANSFER_CHARACTERISTICS_LOG100",
+        "TRANSFER_CHARACTERISTICS_LOG316",
+        "TRANSFER_CHARACTERISTICS_SMPTE428"
+      })
+  @DisplayName(
+      "Should keep a stream without Dolby Vision whose transfer names no standard format when its"
+          + " compatible base is unspecified")
+  void
+      shouldKeepAStreamWithoutDolbyVisionWhoseTransferNamesNoStandardFormatWhenItsBaseIsUnspecified(
+          com.streamarr.transcode.v1.TransferCharacteristics transfer) {
+    var video = hevc().setTransferCharacteristics(transfer);
+    video.getDynamicRangeBuilder().setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_UNSPECIFIED);
+
+    var stream = videoOf(version5(media -> media.setStreams(0, video)));
+
+    assertThat(stream.dynamicRange())
+        .map(VideoDynamicRange::compatibleBase)
+        .contains(com.streamarr.server.domain.streaming.CompatibleBase.UNSPECIFIED);
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   @ParameterizedTest(name = "{0}")
   @MethodSource("declaredProfile10Bases")
   @DisplayName("Should keep a declared profile 10 stream when its record names a compatible base")
@@ -497,6 +551,52 @@ class RemoteProbeResultStreamPropertiesMapperTest {
             stream ->
                 profile8RpusWithoutTransfer(stream, CompatibleBase.COMPATIBLE_BASE_SDR)
                     .setTransferCharacteristicsValue(999)),
+        violation(
+            "an unspecified base with a BT.709 transfer",
+            stream -> stream.setTransferCharacteristics(SDR_TRANSFER)),
+        violation(
+            "an unspecified base with a BT.2020 10-bit transfer beside Dolby Vision",
+            stream ->
+                profile8RpusWithoutTransfer(stream, CompatibleBase.COMPATIBLE_BASE_UNSPECIFIED)
+                    .setTransferCharacteristics(
+                        com.streamarr.transcode.v1.TransferCharacteristics
+                            .TRANSFER_CHARACTERISTICS_BT2020_10)),
+        violation(
+            "an SDR base with a linear transfer",
+            stream -> {
+              stream
+                  .setTransferCharacteristics(
+                      com.streamarr.transcode.v1.TransferCharacteristics
+                          .TRANSFER_CHARACTERISTICS_LINEAR)
+                  .getDynamicRangeBuilder()
+                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR);
+              return stream;
+            }),
+        violation(
+            "no compatible base with a logarithmic transfer and without Dolby Vision",
+            stream -> {
+              stream
+                  .setTransferCharacteristics(
+                      com.streamarr.transcode.v1.TransferCharacteristics
+                          .TRANSFER_CHARACTERISTICS_LOG100)
+                  .getDynamicRangeBuilder()
+                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_NONE);
+              return stream;
+            }),
+        violation(
+            "an SDR base beside Dolby Vision with a logarithmic transfer",
+            stream ->
+                profile8RpusWithoutTransfer(stream, CompatibleBase.COMPATIBLE_BASE_SDR)
+                    .setTransferCharacteristics(
+                        com.streamarr.transcode.v1.TransferCharacteristics
+                            .TRANSFER_CHARACTERISTICS_LOG316)),
+        violation(
+            "an unspecified base beside Dolby Vision with an SMPTE ST 428 transfer",
+            stream ->
+                profile8RpusWithoutTransfer(stream, CompatibleBase.COMPATIBLE_BASE_UNSPECIFIED)
+                    .setTransferCharacteristics(
+                        com.streamarr.transcode.v1.TransferCharacteristics
+                            .TRANSFER_CHARACTERISTICS_SMPTE428)),
         violation(
             "an SDR base without a signaled transfer or Dolby Vision",
             stream -> {
@@ -1042,15 +1142,21 @@ class RemoteProbeResultStreamPropertiesMapperTest {
     return hevc().setCodec("av1");
   }
 
-  // The compatible base that the signaled transfer decides when no Dolby Vision profile 5 or 10.0
-  // overrides it.
+  // The compatible base that the signaled transfer decides for a stream without Dolby Vision.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static CompatibleBase signaledBase(
       com.streamarr.transcode.v1.TransferCharacteristics transfer) {
     return switch (transfer) {
       case TRANSFER_CHARACTERISTICS_SMPTE2084 -> CompatibleBase.COMPATIBLE_BASE_PQ;
       case TRANSFER_CHARACTERISTICS_ARIB_STD_B67 -> CompatibleBase.COMPATIBLE_BASE_HLG;
-      default -> CompatibleBase.COMPATIBLE_BASE_UNSPECIFIED;
+      case TRANSFER_CHARACTERISTICS_UNSPECIFIED,
+          TRANSFER_CHARACTERISTICS_LINEAR,
+          TRANSFER_CHARACTERISTICS_LOG100,
+          TRANSFER_CHARACTERISTICS_LOG316,
+          TRANSFER_CHARACTERISTICS_SMPTE428,
+          UNRECOGNIZED ->
+          CompatibleBase.COMPATIBLE_BASE_UNSPECIFIED;
+      default -> CompatibleBase.COMPATIBLE_BASE_SDR;
     };
   }
 
