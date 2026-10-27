@@ -164,8 +164,6 @@ spec:
               value: cccccccc-cccc-cccc-cccc-cccccccccccc
             - name: STREAMING_REMOTE_SOURCE_ROOT
               value: /media
-            - name: LANG
-              value: C.UTF-8
           volumeMounts:
             - name: media
               mountPath: /media
@@ -265,8 +263,6 @@ spec:
                   divisor: "1"
             - name: JAVA_TOOL_OPTIONS
               value: -XX:ActiveProcessorCount=$(CPU_REQUEST)
-            - name: LANG
-              value: C.UTF-8
           volumeMounts:
             - name: media
               mountPath: /media
