@@ -14,7 +14,12 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.ChapterKnowledge;
+import com.streamarr.server.domain.streaming.ColorPrimaries;
+import com.streamarr.server.domain.streaming.ColorRange;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.MatrixCoefficients;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
@@ -25,6 +30,9 @@ import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
+import com.streamarr.server.domain.streaming.TransferCharacteristics;
+import com.streamarr.server.domain.streaming.VideoCodecProfile;
+import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fixtures.Fmp4Fixture;
@@ -47,6 +55,8 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
@@ -156,6 +166,45 @@ class ProbeVersion5WorkerIT extends AbstractIntegrationTest {
           .as("the worker keeps its session")
           .isTrue();
       executor.stop(sessionId);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should store the codec profile, color signaling and first frames of a video stream when the worker probes it")
+  void shouldStoreTheCodecProfileColorSignalingAndFirstFramesOfAVideoStreamWhenTheWorkerProbesIt()
+      throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+
+    try (var server = server(new LocalSegmentStore(tempDir.resolve("server-segments")));
+        var worker = workerBuilder(server, mediaRoot).build()) {
+      server.start();
+      worker.start();
+      var source = worker.generateMedia(mediaRoot.resolve("bt709.mkv"), bt709Media());
+      var file = createMediaFile("bt709.mkv");
+      publish(file, probe(server, mediaRoot, source));
+
+      var stored =
+          containerInfoRepository
+              .findByMediaFileId(file.getId())
+              .orElseThrow()
+              .getOutcome(KeyframeKnowledge.NotReported::new, ChapterKnowledge.NotReported::new);
+
+      assertThat(stored)
+          .isInstanceOfSatisfying(
+              ProbeOutcome.Success.class,
+              success ->
+                  assertThat(success.streams().getFirst().videoProperties())
+                      .contains(
+                          VideoStreamProperties.builder()
+                              .codecProfile(Optional.of(VideoCodecProfile.H264_HIGH))
+                              .codecLevel(OptionalInt.of(40))
+                              .colorPrimaries(Optional.of(ColorPrimaries.BT709))
+                              .transferCharacteristics(Optional.of(TransferCharacteristics.BT709))
+                              .matrixCoefficients(Optional.of(MatrixCoefficients.BT709))
+                              .colorRange(Optional.of(ColorRange.LIMITED))
+                              .firstFramesRead(true)
+                              .build()));
     }
   }
 
@@ -275,6 +324,26 @@ class ProbeVersion5WorkerIT extends AbstractIntegrationTest {
         "yuv420p",
         "-g",
         "24");
+  }
+
+  // H.264 High at level 4.0, tagged BT.709 in limited range. The encoder takes the color tags from
+  // the frames, so the filter sets them there.
+  private static List<String> bt709Media() {
+    return List.of(
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc=size=320x180:rate=24:duration=2",
+        "-vf",
+        "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv",
+        "-c:v",
+        "libx264",
+        "-profile:v",
+        "high",
+        "-level:v",
+        "4.0",
+        "-pix_fmt",
+        "yuv420p");
   }
 
   // Thirty minutes, so the job attempt still runs after the oversized probe ends.
