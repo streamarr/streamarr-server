@@ -740,14 +740,20 @@ message ProbeStreamInfo {
   // there too. So the worker also walks every SEI NAL unit of those packets and, for HEVC, of the
   // configuration record when the stream has one: type 6 for H.264, and the prefix type 39 and the
   // suffix type 40 for HEVC. It removes the emulation prevention bytes, and steps from message to
-  // message by payloadType and payloadSize, whatever each message holds. An SEI NAL unit is
-  // delimited when the payload of every message ends within the NAL unit and only the RBSP trailing
-  // bits follow the last message. The worker read all of the SEI when it delimited every NAL unit
-  // that the walk covers, and every SEI NAL unit among them. An HDR10+ message is an ITU-T T.35
-  // message (payloadType 4) with country code 0xB5, provider code 0x003C, provider-oriented code
-  // 0x0001 and application identifier 4. hdr10_plus is PRESENT when the frames, the configuration
-  // record or the packets hold an HDR10+ message. hdr10_plus is ABSENT only when the frames show
-  // none and the worker read all of the SEI. Otherwise hdr10_plus is UNSPECIFIED.
+  // message by payloadType and payloadSize, whatever each message holds. It also reads inside the
+  // nesting messages, whose messages FFmpeg ignores: scalable nesting (payloadType 30) and MVC
+  // scalable nesting (payloadType 37) for H.264, and scalable nesting (payloadType 133) for HEVC.
+  // An SEI NAL unit is delimited when the payload of every message ends within the NAL unit, every
+  // nested message ends within the payload of its nesting message, and only the RBSP trailing bits
+  // follow the last message. The worker read all of the SEI when it delimited every NAL unit that
+  // the walk covers, and every SEI NAL unit among them. An HDR10+ message is an ITU-T T.35 message
+  // (payloadType 4) with country code 0xB5, provider code 0x003C, provider-oriented code 0x0001 and
+  // application identifier 4. hdr10_plus is PRESENT when the frames, the configuration record or
+  // the packets hold an HDR10+ message that is not nested. hdr10_plus is ABSENT only when the
+  // frames show none, the worker read all of the SEI, and no nesting message holds an HDR10+
+  // message. Otherwise hdr10_plus is UNSPECIFIED. A nested message can apply only to a layer or a
+  // view that FFmpeg does not decode, so it neither proves nor rules out a feature of the decoded
+  // picture.
   //
   // FFmpeg's AV1 decoders drop an RPU that they cannot parse. They also drop a whole frame whose
   // HDR10+ message they cannot parse, and ffprobe goes on to the next frame without failing. The
@@ -801,19 +807,19 @@ message ProbeStreamInfo {
   // From probe version 5 on, the probe takes the value from the first frame of the chosen video
   // stream when the container declares none. When the first frame carries none either, the probe
   // takes the value for H.264 and HEVC from the first mastering display color volume SEI message
-  // (payloadType 137) that dynamic_range's walk finds: in the configuration record first, then in
-  // the packets in their order. The message's values are already in SEI units. The worker reports
-  // them when the payload holds every field and every value lies in the range that
-  // MasteringDisplayColorVolume states. Otherwise it sets mastering_display_omitted.
+  // (payloadType 137) that is not nested and that dynamic_range's walk finds: in the configuration
+  // record first, then in the packets in their order. The message's values are already in SEI
+  // units. The worker reports them when the payload holds every field and every value lies in the
+  // range that MasteringDisplayColorVolume states. Otherwise it sets mastering_display_omitted.
   MasteringDisplayColorVolume mastering_display = 21;
   // Video streams only: the content light level that the container declares, from ffprobe's
   // Content light level metadata stream side data. Absent when the stream has no such side data.
   // From probe version 5 on, the probe takes the value from the first frame of the chosen video
   // stream when the container declares none. When the first frame carries none either, the probe
   // takes the value for H.264 and HEVC from the first content light level information SEI message
-  // (payloadType 144) that dynamic_range's walk finds, in the same order as for mastering_display.
-  // The worker reports the message's values unchanged when the payload holds both fields. Otherwise
-  // it sets content_light_level_omitted.
+  // (payloadType 144) that is not nested and that dynamic_range's walk finds, in the same order as
+  // for mastering_display. The worker reports the message's values unchanged when the payload holds
+  // both fields. Otherwise it sets content_light_level_omitted.
   ContentLightLevel content_light_level = 22;
   // Audio and subtitle streams only: the stream's title, which a menu shows to name the track. The
   // worker reads two stream tags in this order. It takes the first tag whose value is not empty and
@@ -918,11 +924,12 @@ message ProbeStreamInfo {
   //
   // The worker also sets this flag on the chosen video stream when no source gives a mastering
   // display and the probe cannot rule one out. For H.264 and HEVC, that is when the worker did not
-  // read all of the SEI, as dynamic_range describes: the part that it could not delimit can hold
-  // the message. For AV1, that is always: FFmpeg's AV1 decoders fail a frame whose metadata OBU
-  // they cannot parse, and the frames that depend on it, and ffprobe goes on without failing. The
-  // first frame that the probe keeps can then lack a value that the stream carries, and the worker
-  // does not parse AV1 OBUs. A stream with this flag set is never PQ10.
+  // read all of the SEI, as dynamic_range describes, because the part that it could not delimit can
+  // hold the message, or when a nesting message holds a mastering display color volume. For AV1,
+  // that is always: FFmpeg's AV1 decoders fail a frame whose metadata OBU they cannot parse, and
+  // the frames that depend on it, and ffprobe goes on without failing. The first frame that the
+  // probe keeps can then lack a value that the stream carries, and the worker does not parse AV1
+  // OBUs. A stream with this flag set is never PQ10.
   bool mastering_display_omitted = 34;
   // Video streams only: true when the stream carries, or may carry, a content light level that the
   // worker left absent. The container, the first frame or an SEI message that dynamic_range's walk
