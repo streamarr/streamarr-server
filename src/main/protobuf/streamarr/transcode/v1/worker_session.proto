@@ -818,15 +818,16 @@ message ProbeStreamInfo {
   // an SEI NAL unit that holds one is not delimited. An SEI NAL unit is delimited when the payload
   // of every message ends within the NAL unit, every nested message ends within the payload of its
   // nesting message, no nesting message holds another nesting message, and only the RBSP trailing
-  // bits follow the last message. The worker read all of the SEI when it delimited every NAL unit
-  // that the walk covers, and every SEI NAL unit among them. An HDR10+ message is an ITU-T T.35
-  // message (payloadType 4) with country code 0xB5, provider code 0x003C, provider-oriented code
-  // 0x0001 and application identifier 4. hdr10_plus is PRESENT when the frames, the extradata or
-  // the packets hold an HDR10+ message that is not nested. hdr10_plus is ABSENT only when the
-  // frames show none, the worker read all of the SEI, and no nesting message holds an HDR10+
-  // message. Otherwise hdr10_plus is UNSPECIFIED. A nested message can apply only to a layer or a
-  // view that FFmpeg does not decode, so it neither proves nor rules out a feature of the decoded
-  // picture.
+  // bits follow the last message. The worker read all of the SEI when the first-frames read is not
+  // cut short, as first_frames_read describes, and the worker delimited every NAL unit that the
+  // walk covers, and every SEI NAL unit among them. A cut-short read leaves packets past the walk
+  // that can hold any message. An HDR10+ message is an ITU-T T.35 message (payloadType 4) with
+  // country code 0xB5, provider code 0x003C, provider-oriented code 0x0001 and application
+  // identifier 4. hdr10_plus is PRESENT when the frames, the extradata or the packets hold an
+  // HDR10+ message that is not nested. hdr10_plus is ABSENT only when the frames show none, the
+  // worker read all of the SEI, and no nesting message holds an HDR10+ message. Otherwise
+  // hdr10_plus is UNSPECIFIED. A nested message can apply only to a layer or a view that FFmpeg
+  // does not decode, so it neither proves nor rules out a feature of the decoded picture.
   //
   // FFmpeg's AV1 decoders drop an RPU that they cannot parse, and a whole frame whose HDR10+
   // message they cannot parse. When they cannot parse an OBU, such as an HDR_CLL or HDR_MDCV
@@ -847,8 +848,8 @@ message ProbeStreamInfo {
   // its payload end within its packet or extradata. A metadata OBU (obu_type 5) is delimited when
   // its metadata_type also ends within the OBU and, for a type that the walk reads, its last
   // nonzero byte is 0x80: the trailing bits that end the OBU. The walk reads the metadata types
-  // HDR_CLL (1), HDR_MDCV (2) and ITUT_T35 (4). The worker read all of the OBUs when it delimited
-  // every OBU that the walk covers.
+  // HDR_CLL (1), HDR_MDCV (2) and ITUT_T35 (4). The worker read all of the OBUs when the
+  // first-frames read is not cut short and the worker delimited every OBU that the walk covers.
   //
   // An HDR10+ OBU is an ITU-T T.35 metadata OBU whose payload starts with country code 0xB5,
   // provider code 0x003C, provider-oriented code 0x0001 and application identifier 4. An RPU is an
@@ -1054,7 +1055,9 @@ message ProbeStreamInfo {
   // cut short. The stream can then hold frames that the probe did not read, so hdr10_plus,
   // observed_rpu and Dolby Vision are never ABSENT on such a stream: a feature that neither the
   // frames nor the packets show is UNSPECIFIED, and one that they show is PRESENT. The probe
-  // reports the first frame's static metadata as for any other read.
+  // reports the first frame's static metadata as for any other read. For H.264, HEVC and AV1, a
+  // cut-short read leaves the walks short of reading all of the SEI or all of the OBUs, so the
+  // worker sets each omitted flag whose value no source gives.
   bool first_frames_read = 33;
   // Video streams only: true when the stream carries, or may carry, a mastering display color
   // volume that the worker left absent. The container, the first frame, or an SEI message or a
