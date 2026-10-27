@@ -40,7 +40,7 @@ final class RemoteStreamPropertiesMapper {
     checkStaticHdrMetadataOmission(stream);
     checkFrameEvidence(stream);
     checkCodecVisibility(stream);
-    checkBaselessProfileCompatibleBase(stream);
+    checkCompatibleBase(stream);
     return builder.videoProperties(Optional.of(properties(stream)));
   }
 
@@ -127,16 +127,39 @@ final class RemoteStreamPropertiesMapper {
   }
 
   // From probe version 5 on, profiles 5 and 10.0 have no compatible base whatever the signaled
-  // transfer says.
-  private static void checkBaselessProfileCompatibleBase(ProbeStreamInfo stream) {
+  // transfer says. Otherwise the signaled transfer, which transfer_characteristics names, decides
+  // a PQ or an HLG base.
+  private static void checkCompatibleBase(ProbeStreamInfo stream) {
     var range = stream.getDynamicRange();
-    if (!range.hasDolbyVisionPresent()
-        || !isBaselessProfile(stream, range.getDolbyVisionPresent())) {
+    if (range.hasDolbyVisionPresent() && isBaselessProfile(stream, range.getDolbyVisionPresent())) {
+      checkBaselessProfileCompatibleBase(range.getCompatibleBase());
       return;
     }
 
-    if (range.getCompatibleBase() != CompatibleBase.COMPATIBLE_BASE_NONE) {
+    checkSignaledTransferCompatibleBase(
+        stream.getTransferCharacteristics(), range.getCompatibleBase());
+  }
+
+  private static void checkBaselessProfileCompatibleBase(CompatibleBase base) {
+    if (base != CompatibleBase.COMPATIBLE_BASE_NONE) {
       throw contractViolation("Worker probe gave Dolby Vision profile 5 or 10.0 a compatible base");
+    }
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static void checkSignaledTransferCompatibleBase(
+      com.streamarr.transcode.v1.TransferCharacteristics transfer, CompatibleBase base) {
+    var isPqTransfer =
+        transfer
+            == com.streamarr.transcode.v1.TransferCharacteristics
+                .TRANSFER_CHARACTERISTICS_SMPTE2084;
+    var isHlgTransfer =
+        transfer
+            == com.streamarr.transcode.v1.TransferCharacteristics
+                .TRANSFER_CHARACTERISTICS_ARIB_STD_B67;
+    if (isPqTransfer != (base == CompatibleBase.COMPATIBLE_BASE_PQ)
+        || isHlgTransfer != (base == CompatibleBase.COMPATIBLE_BASE_HLG)) {
+      throw contractViolation("Worker probe gave a compatible base that the transfer contradicts");
     }
   }
 

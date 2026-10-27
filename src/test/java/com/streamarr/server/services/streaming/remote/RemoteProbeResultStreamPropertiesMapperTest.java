@@ -298,9 +298,11 @@ class RemoteProbeResultStreamPropertiesMapperTest {
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   @Test
-  @DisplayName("Should keep a record-less profile 5 stream when its compatible base is none")
-  void shouldKeepARecordLessProfile5StreamWhenItsCompatibleBaseIsNone() {
-    var video = hevc().setFirstFramesRead(true);
+  @DisplayName(
+      "Should keep a record-less profile 5 stream with a PQ transfer when its compatible base is"
+          + " none")
+  void shouldKeepARecordLessProfile5StreamWithAPqTransferWhenItsCompatibleBaseIsNone() {
+    var video = hevc().setTransferCharacteristics(PQ_TRANSFER).setFirstFramesRead(true);
     video
         .getDynamicRangeBuilder()
         .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_NONE)
@@ -395,8 +397,62 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   static Stream<Arguments> violations() {
     var present = com.streamarr.transcode.v1.Presence.PRESENCE_PRESENT;
     var absent = com.streamarr.transcode.v1.Presence.PRESENCE_ABSENT;
+    var hlgTransfer =
+        com.streamarr.transcode.v1.TransferCharacteristics.TRANSFER_CHARACTERISTICS_ARIB_STD_B67;
     return Stream.of(
         violation("a codec level without a codec profile", stream -> stream.setCodecLevel(41)),
+        violation(
+            "a PQ transfer with an SDR compatible base",
+            stream -> {
+              stream
+                  .setTransferCharacteristics(PQ_TRANSFER)
+                  .getDynamicRangeBuilder()
+                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR);
+              return stream;
+            }),
+        violation(
+            "an HLG transfer with a PQ compatible base",
+            stream -> {
+              stream
+                  .setTransferCharacteristics(hlgTransfer)
+                  .getDynamicRangeBuilder()
+                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ);
+              return stream;
+            }),
+        violation(
+            "a PQ compatible base with a BT.709 transfer",
+            stream -> {
+              stream
+                  .setTransferCharacteristics(
+                      com.streamarr.transcode.v1.TransferCharacteristics
+                          .TRANSFER_CHARACTERISTICS_BT709)
+                  .getDynamicRangeBuilder()
+                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ);
+              return stream;
+            }),
+        violation(
+            "an HLG compatible base without a signaled transfer",
+            stream -> {
+              stream.getDynamicRangeBuilder().setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_HLG);
+              return stream;
+            }),
+        violation(
+            "a PQ transfer with the SDR base that a Dolby Vision profile 8.2 record names",
+            stream -> {
+              stream
+                  .setTransferCharacteristics(PQ_TRANSFER)
+                  .getDynamicRangeBuilder()
+                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
+                  .setDolbyVisionPresent(
+                      DolbyVisionPresent.newBuilder()
+                          .setDeclared(
+                              DolbyVisionConfiguration.newBuilder()
+                                  .setProfile(8)
+                                  .setBaseLayerCompatibilityId(2)
+                                  .setBaseLayer(true)
+                                  .setRpu(true)));
+              return stream;
+            }),
         violation(
             "a codec tier without a codec profile",
             stream ->
