@@ -315,9 +315,10 @@ enum DolbyVisionRpuPlacement {
   DOLBY_VISION_RPU_PLACEMENT_UNSPECIFIED = 0;
   // Each RPU is the last NAL unit of its own picture's sample, as Dolby Vision requires. At least
   // one packet holds an RPU, and every RPU follows a slice of its own packet and is the last NAL
-  // unit of that packet. A packet in which another NAL unit, such as a suffix SEI NAL unit, follows
-  // the RPU matches no value, because FFmpeg's HEVC decoder ignores an RPU that is not the last NAL
-  // unit of its sample.
+  // unit of that packet. A packet whose RPU follows a slice but is followed by another NAL unit,
+  // such as a suffix SEI NAL unit, matches no value, because FFmpeg's HEVC decoder ignores an RPU
+  // that is not the last NAL unit of its sample. An RPU that starts its packet is left to the two
+  // BEFORE values, whatever NAL units follow it.
   DOLBY_VISION_RPU_PLACEMENT_AFTER_OWN_PICTURE = 1;
   // Each picture's RPU starts the sample of the next picture, and the last sample holds an RPU and
   // no picture. mkvmerge wrote this layout before version 57, released in 2021. The first picture
