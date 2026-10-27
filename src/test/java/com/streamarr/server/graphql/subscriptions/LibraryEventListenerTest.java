@@ -9,7 +9,7 @@ import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
-import com.streamarr.server.graphql.dto.LibraryRemoval;
+import com.streamarr.server.graphql.dto.RemovedLibrary;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.events.library.LibraryStatusChangedEvent;
@@ -145,14 +145,14 @@ class LibraryEventListenerTest {
   }
 
   @Test
-  @DisplayName("Should broadcast a removal receipt with the library id when a library is removed")
-  void shouldBroadcastRemovalReceiptWithLibraryIdWhenLibraryIsRemoved() {
+  @DisplayName("Should broadcast the removed library's id when a library is removed")
+  void shouldBroadcastRemovedLibraryIdWhenLibraryIsRemoved() {
     var libraryId = UUID.randomUUID();
-    var delivered = collect(broadcasters.getRemovals());
+    var delivered = collect(broadcasters.getRemovedLibraries());
 
     listener.onLibraryRemoved(new LibraryRemovedEvent(libraryId, "file:///removed", Set.of()));
 
-    assertThat(delivered).containsExactly(new LibraryRemoval(libraryId));
+    assertThat(delivered).containsExactly(new RemovedLibrary(libraryId));
   }
 
   @Test

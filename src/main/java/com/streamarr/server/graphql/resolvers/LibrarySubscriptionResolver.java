@@ -3,7 +3,7 @@ package com.streamarr.server.graphql.resolvers;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsSubscription;
 import com.streamarr.server.domain.Library;
-import com.streamarr.server.graphql.dto.LibraryRemoval;
+import com.streamarr.server.graphql.dto.RemovedLibrary;
 import com.streamarr.server.graphql.subscriptions.LibraryBroadcasters;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.library.LibraryAdministrationService;
@@ -33,9 +33,9 @@ public class LibrarySubscriptionResolver {
   }
 
   @DgsSubscription
-  public Publisher<LibraryRemoval> libraryRemoved() {
+  public Publisher<RemovedLibrary> libraryRemoved() {
     requireSubscriptionProfile();
-    return broadcasters.getRemovals().register();
+    return broadcasters.getRemovedLibraries().register();
   }
 
   private void requireSubscriptionProfile() {

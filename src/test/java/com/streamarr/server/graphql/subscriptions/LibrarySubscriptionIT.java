@@ -336,8 +336,8 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should deliver the added library and the removal's library id when another session adds and removes a library")
-  void shouldDeliverAddedLibraryAndRemovalIdWhenAnotherSessionAddsAndRemovesLibrary()
+      "Should deliver the added library and the removed library's id when another session adds and removes a library")
+  void shouldDeliverAddedLibraryAndRemovedLibraryIdWhenAnotherSessionAddsAndRemovesLibrary()
       throws IOException {
     var socket = allLibrarySubscriptionsSocket(adminBearer());
     var otherSession = adminBearer();
@@ -401,8 +401,9 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should deliver only the later removal when a refused removal comes first")
-  void shouldDeliverOnlyLaterRemovalWhenRefusedRemovalComesFirst() throws IOException {
+  @DisplayName(
+      "Should deliver only the later removed library when removing the first library is refused")
+  void shouldDeliverOnlyLaterRemovedLibraryWhenRemovingFirstLibraryIsRefused() throws IOException {
     var admin = adminBearer();
     var busy = saveLibrary(directory("busy"));
     var sentinel = saveLibrary(directory("sentinel"));
@@ -437,10 +438,11 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should deliver the added library without its administration and the removal's library id"
+      "Should deliver the added library without its administration and the removed library's id"
           + " when a Profile that is not a ServerAdmin subscribes")
-  void shouldDeliverAddedLibraryWithoutAdministrationAndRemovalIdWhenProfileIsNotServerAdmin()
-      throws IOException {
+  void
+      shouldDeliverAddedLibraryWithoutAdministrationAndRemovedLibraryIdWhenProfileIsNotServerAdmin()
+          throws IOException {
     var socket = additionsAndRemovalsSocket(ordinaryProfileBearer());
     var admin = adminBearer();
     var adminStatus = statusSubscribedSocket(admin);

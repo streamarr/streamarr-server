@@ -103,11 +103,11 @@ class SubscriptionContractTest {
   }
 
   @Test
-  @DisplayName("Should identify the removed library by id alone when a removal is delivered")
-  void shouldIdentifyRemovedLibraryByIdAloneWhenRemovalIsDelivered() {
-    var removal = objectType("LibraryRemoval");
+  @DisplayName("Should identify the removed library by its id alone")
+  void shouldIdentifyRemovedLibraryByItsIdAlone() {
+    var removedLibrary = objectType("RemovedLibrary");
 
-    assertThat(removal.getFieldDefinitions())
+    assertThat(removedLibrary.getFieldDefinitions())
         .singleElement()
         .satisfies(
             field -> {

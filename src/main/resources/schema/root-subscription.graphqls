@@ -53,7 +53,7 @@ type Subscription {
     field fails to resolve. Requires a selected Profile and ViewProfileActivity permission for that
     Profile, as libraryAdded does.
     """
-    libraryRemoved: LibraryRemoval
+    libraryRemoved: RemovedLibrary
 
     """
     The selected Profile's watch state changed. The Profile comes from the access token that opened

@@ -57,7 +57,7 @@ extend type Subscription {
     visibility as libraryItemAdded, requires ViewProfileActivity for the selected Profile,
     and follows Subscription's common delivery/recovery rules.
     """
-    libraryItemRemoved(libraryId: ID!): LibraryItemRemoval
+    libraryItemRemoved(libraryId: ID!): RemovedLibraryItem
     """
     Authoritative itemCount and alphabetIndex after committed title changes, including
     changes outside the loaded window. Delivered at most once every two seconds per
@@ -71,7 +71,7 @@ extend type Subscription {
 }
 
 "The identity and scope of an item that no longer exists."
-type LibraryItemRemoval {
+type RemovedLibraryItem {
     libraryId: ID!
     itemId: ID!
     kind: MediaType!

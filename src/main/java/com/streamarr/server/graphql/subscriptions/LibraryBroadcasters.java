@@ -1,27 +1,27 @@
 package com.streamarr.server.graphql.subscriptions;
 
 import com.streamarr.server.domain.Library;
-import com.streamarr.server.graphql.dto.LibraryRemoval;
+import com.streamarr.server.graphql.dto.RemovedLibrary;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.Getter;
 import org.springframework.stereotype.Component;
 import reactor.core.scheduler.Scheduler;
 
-/** One broadcaster per Library status, addition and removal subscription field. */
+/** One broadcaster for each of libraryStatusChanged, libraryAdded and libraryRemoved. */
 @Getter
 @Component
 public class LibraryBroadcasters {
 
   private final SubscriptionBroadcaster<Library> statusChanges;
   private final SubscriptionBroadcaster<Library> additions;
-  private final SubscriptionBroadcaster<LibraryRemoval> removals;
+  private final SubscriptionBroadcaster<RemovedLibrary> removedLibraries;
 
   public LibraryBroadcasters(
       MeterRegistry meterRegistry, Scheduler deliveryScheduler, SubscriptionProperties properties) {
     var shared = new SharedSettings(meterRegistry, deliveryScheduler, properties.operationBuffer());
     this.statusChanges = shared.broadcaster("libraryStatusChanged");
     this.additions = shared.broadcaster("libraryAdded");
-    this.removals = shared.broadcaster("libraryRemoved");
+    this.removedLibraries = shared.broadcaster("libraryRemoved");
   }
 
   private record SharedSettings(
