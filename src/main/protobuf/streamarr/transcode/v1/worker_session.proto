@@ -223,7 +223,7 @@ enum Presence {
 // Dolby Vision profile 5 is the exception from probe version 5 on: profile 5 has no compatible
 // base, so the base is NONE whatever the signaled transfer says. The probe knows profile 5 from the
 // configuration record's profile, or, without a record, from the first RPU header that
-// DolbyVisionRpuHeader describes.
+// DolbyVisionRpuHeader describes for HEVC.
 enum CompatibleBase {
   // The probe could not read the transfer and found no Dolby Vision claim.
   COMPATIBLE_BASE_UNSPECIFIED = 0;
@@ -280,11 +280,13 @@ message DolbyVisionPresent {
 }
 
 // The fields of a Dolby Vision RPU header that tell the Dolby Vision profile when no configuration
-// record names it, as FFmpeg 8.1 guesses the profile. vdr_rpu_profile 0 with
-// bl_video_full_range_flag 1 means profile 5. vdr_rpu_profile 1 with
-// el_spatial_resampling_filter_flag 1 and disable_residual_flag 0 means an enhancement layer:
-// profile 7 when vdr_bit_depth is 12, and profile 4 otherwise. Any other vdr_rpu_profile 1 header
-// means profile 8.
+// record names it. The rule depends on the codec, as FFmpeg 8.1 guesses the profile:
+// - HEVC: vdr_rpu_profile 0 with bl_video_full_range_flag 1 means profile 5. vdr_rpu_profile 1
+//   with el_spatial_resampling_filter_flag 1 and disable_residual_flag 0 means an enhancement
+//   layer: profile 7 when vdr_bit_depth is 12, and profile 4 otherwise. Any other
+//   vdr_rpu_profile 1 header means profile 8. Any other header names no profile.
+// - AV1: every RPU means profile 10, whatever its header holds.
+// - H.264: every RPU means profile 9, whatever its header holds.
 message DolbyVisionRpuHeader {
   // The RPU's vdr_rpu_profile.
   uint32 vdr_rpu_profile = 1;
@@ -935,7 +937,10 @@ message ChromaticityCoordinates {
 // with MasteringDisplayColorVolume, absent means that the container declares no light level. A
 // declared 0 means that the mastering process did not compute that value. 0 is still a declared
 // value, so the message is present. ffprobe reports a Matroska light level only when MaxCLL and
-// MaxFALL are both nonzero.
+// MaxFALL are both nonzero. So from probe version 5 on, when ffprobe reports no light level for
+// the chosen video stream of a Matroska file, the worker reads the MaxCLL and MaxFALL elements of
+// the track's Colour element itself. A track that holds either element then reports both values,
+// with 0 for an element that the track does not hold.
 message ContentLightLevel {
   // MaxCLL: the maximum content light level.
   uint32 max_content_light_level = 1;
