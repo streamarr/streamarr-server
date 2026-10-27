@@ -93,7 +93,11 @@ final class RemoteVariantJobMapper {
                         .orElse(
                             com.streamarr.server.domain.streaming.VideoDynamicRange.UNSPECIFIED)))
             .setOutputDynamicRange(SDR_OUTPUT_DYNAMIC_RANGE);
-    source.ifPresent(facts -> video.setStreamIndex(facts.streamIndex()));
+    source.ifPresent(
+        facts ->
+            video
+                .setStreamIndex(facts.streamIndex())
+                .setSourceCodecFamily(sourceCodecFamily(facts)));
     encode.tier().map(RemoteVariantJobMapper::tier).ifPresent(video::setTier);
     return video.build();
   }
@@ -109,6 +113,7 @@ final class RemoteVariantJobMapper {
         .setCodecString(source.codecString().orElseThrow())
         .setSourceDynamicRange(RemoteDynamicRangeMapper.toProto(source.dynamicRange()))
         .setStreamIndex(source.streamIndex())
+        .setSourceCodecFamily(sourceCodecFamily(source))
         .build();
   }
 
@@ -244,6 +249,16 @@ final class RemoteVariantJobMapper {
       default ->
           throw new IllegalArgumentException(
               "The job contract has no video codec family " + codecFamily);
+    };
+  }
+
+  // The contract names no other source codec family.
+  private static VideoCodecFamily sourceCodecFamily(VideoPlaybackFacts source) {
+    return switch (source.codec().orElse("")) {
+      case "h264" -> VideoCodecFamily.VIDEO_CODEC_FAMILY_H264;
+      case "hevc" -> VideoCodecFamily.VIDEO_CODEC_FAMILY_HEVC;
+      case "av1" -> VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1;
+      default -> VideoCodecFamily.VIDEO_CODEC_FAMILY_UNSPECIFIED;
     };
   }
 

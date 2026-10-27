@@ -195,6 +195,8 @@ class RemoteVariantJobMapperTest {
 
     assertThat(video.hasSourceDynamicRange()).isTrue();
     assertThat(video.getSourceDynamicRange()).isEqualTo(VideoDynamicRange.getDefaultInstance());
+    assertThat(video.getSourceCodecFamily())
+        .isEqualTo(VideoCodecFamily.VIDEO_CODEC_FAMILY_UNSPECIFIED);
     assertThat(video.getOutputDynamicRange())
         .isEqualTo(
             VideoDynamicRange.newBuilder()
@@ -204,6 +206,90 @@ class RemoteVariantJobMapperTest {
                 .build());
     assertThat(video.hasStreamIndex()).isTrue();
     assertThat(video.getStreamIndex()).isZero();
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "h264, VIDEO_CODEC_FAMILY_H264",
+    "hevc, VIDEO_CODEC_FAMILY_HEVC",
+    "av1, VIDEO_CODEC_FAMILY_AV1",
+    "vp9, VIDEO_CODEC_FAMILY_UNSPECIFIED"
+  })
+  @DisplayName("Should send the source's codec family when the job encodes the video")
+  void shouldSendTheSourcesCodecFamilyWhenTheJobEncodesTheVideo(
+      String sourceCodec, VideoCodecFamily sourceCodecFamily) {
+    var request =
+        encodeAttempt("h264")
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                    .videoCodecFamily("h264")
+                    .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
+                    .videoSource(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                                .codec(Optional.of(sourceCodec))
+                                .build()))
+                    .build())
+            .build();
+
+    var video = mapper.map(request).getDecision().getVideo();
+
+    assertThat(video.getSourceCodecFamily()).isEqualTo(sourceCodecFamily);
+    assertThat(video.getCodecFamily()).isEqualTo(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264);
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "h264, VIDEO_CODEC_FAMILY_H264",
+    "hevc, VIDEO_CODEC_FAMILY_HEVC",
+    "av1, VIDEO_CODEC_FAMILY_AV1"
+  })
+  @DisplayName("Should send the source's codec family when the job copies the video")
+  void shouldSendTheSourcesCodecFamilyWhenTheJobCopiesTheVideo(
+      String sourceCodec, VideoCodecFamily sourceCodecFamily) {
+    var request =
+        copyAttempt()
+            .transcodeDecision(
+                copyDecisionBuilder()
+                    .videoCodecFamily(sourceCodec)
+                    .videoSource(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                                .codec(Optional.of(sourceCodec))
+                                .build()))
+                    .build())
+            .build();
+
+    var video = mapper.map(request).getDecision().getVideo();
+
+    assertThat(video.getSourceCodecFamily()).isEqualTo(sourceCodecFamily);
+  }
+
+  @Test
+  @DisplayName("Should send no source codec family when the probe stored no codec")
+  void shouldSendNoSourceCodecFamilyWhenTheProbeStoredNoCodec() {
+    var request =
+        encodeAttempt("av1")
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                    .videoCodecFamily("av1")
+                    .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
+                    .videoSource(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                                .codec(Optional.empty())
+                                .build()))
+                    .build())
+            .build();
+
+    var video = mapper.map(request).getDecision().getVideo();
+
+    assertThat(video.getSourceCodecFamily())
+        .isEqualTo(VideoCodecFamily.VIDEO_CODEC_FAMILY_UNSPECIFIED);
   }
 
   @ParameterizedTest

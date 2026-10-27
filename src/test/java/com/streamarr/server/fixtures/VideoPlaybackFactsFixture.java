@@ -35,6 +35,7 @@ public class VideoPlaybackFactsFixture {
   public static VideoPlaybackFacts.VideoPlaybackFactsBuilder sdrH264FactsBuilder() {
     return VideoPlaybackFacts.builder()
         .streamIndex(1)
+        .codec(Optional.of("h264"))
         .dynamicRange(SDR)
         .bitDepth(OptionalInt.of(8))
         .chromaSubsampling(Optional.of(ChromaSubsampling.CHROMA_420))

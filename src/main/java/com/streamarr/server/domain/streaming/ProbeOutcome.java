@@ -65,6 +65,7 @@ public sealed interface ProbeOutcome {
                   chosen ->
                       VideoPlaybackFacts.builder()
                           .streamIndex(chosen.streamIndex())
+                          .codec(video.codec())
                           .dynamicRange(video.dynamicRange().orElse(VideoDynamicRange.UNSPECIFIED))
                           .bitDepth(video.bitDepth())
                           .chromaSubsampling(video.chromaSubsampling())
