@@ -296,13 +296,13 @@ message DolbyVisionPresent {
 }
 
 // Where the samples of an H.264 or HEVC Dolby Vision stream place each picture's RPU. The RPU of a
-// picture belongs after the slices of that picture, in the same sample. A sample is one packet as
-// FFmpeg's demuxer passes it. The probe decides the placement from the NAL units of the packets
-// that ProbeStreamInfo.dynamic_range's walk covers, in their order. A slice is a NAL unit of type
-// 1 to 5 for H.264, or of type 0 to 31 for HEVC. An RPU is a NAL unit of type 28 for H.264, or of
-// type 62 for HEVC, whose payload starts with rpu_nal_prefix 25. A packet starts with an RPU when
-// an RPU comes ahead of its first slice, or when it holds an RPU and no slice. The first picture
-// packet is the first of those packets that holds a slice.
+// picture belongs after the slices of that picture, as the last NAL unit of the same sample. A
+// sample is one packet as FFmpeg's demuxer passes it. The probe decides the placement from the NAL
+// units of the packets that ProbeStreamInfo.dynamic_range's walk covers, in their order. A slice is
+// a NAL unit of type 1 to 5 for H.264, or of type 0 to 31 for HEVC. An RPU is a NAL unit of type 28
+// for H.264, or of type 62 for HEVC, whose payload starts with rpu_nal_prefix 25. A packet starts
+// with an RPU when an RPU comes ahead of its first slice, or when it holds an RPU and no slice. The
+// first picture packet is the first of those packets that holds a slice.
 //
 // The probe reports UNSPECIFIED unless observed_rpu is PRESENT, the probe delimited every NAL unit
 // of every one of those packets, no packet holds more than one RPU, and no packet ahead of the
@@ -313,8 +313,11 @@ message DolbyVisionPresent {
 enum DolbyVisionRpuPlacement {
   // The probe could not decide, the stream is AV1, or the packets match none of the other values.
   DOLBY_VISION_RPU_PLACEMENT_UNSPECIFIED = 0;
-  // Each RPU follows the slices of its own picture, as Dolby Vision requires. At least one packet
-  // holds an RPU, and every RPU follows a slice of its own packet.
+  // Each RPU is the last NAL unit of its own picture's sample, as Dolby Vision requires. At least
+  // one packet holds an RPU, and every RPU follows a slice of its own packet and is the last NAL
+  // unit of that packet. A packet in which another NAL unit, such as a suffix SEI NAL unit, follows
+  // the RPU matches no value, because FFmpeg's HEVC decoder ignores an RPU that is not the last NAL
+  // unit of its sample.
   DOLBY_VISION_RPU_PLACEMENT_AFTER_OWN_PICTURE = 1;
   // Each picture's RPU starts the sample of the next picture, and the last sample holds an RPU and
   // no picture. mkvmerge wrote this layout before version 57, released in 2021. The first picture
@@ -385,11 +388,13 @@ message VideoDynamicRange {
 // FFmpeg's HEVC decoder ignores an RPU that is not the last NAL unit of its sample, so it does not
 // reshape the picture of a sample that starts with an RPU. So the worker moves the RPUs of an
 // encode whose source_codec_family is HEVC and whose source_dynamic_range has compatible base NONE
-// and a Dolby Vision present arm whose rpu_placement is not AFTER_OWN_PICTURE. It moves only an
-// RPU that starts a sample, as DolbyVisionRpuPlacement defines it. For BEFORE_OWN_PICTURE it moves
-// the RPU to the end of its own sample. For BEFORE_NEXT_PICTURE and UNSPECIFIED it moves the RPU to
-// the end of the previous picture's sample, and drops an RPU that has no previous picture, such as
-// the first one after a seek. Every other job reads the source's samples unchanged.
+// and a Dolby Vision present arm whose rpu_placement is not AFTER_OWN_PICTURE. An RPU that starts a
+// sample, as DolbyVisionRpuPlacement defines it, moves to the end of its own sample for
+// BEFORE_OWN_PICTURE. For BEFORE_NEXT_PICTURE and UNSPECIFIED it moves to the end of the previous
+// picture's sample, and the worker drops one that has no previous picture, such as the first one
+// after a seek. An RPU that follows a slice of its sample but is not the sample's last NAL unit
+// moves to the end of that sample, whatever the placement. Every other job reads the source's
+// samples unchanged.
 message VideoDecision {
   VideoMode mode = 6;
   VideoCodecFamily codec_family = 1;
