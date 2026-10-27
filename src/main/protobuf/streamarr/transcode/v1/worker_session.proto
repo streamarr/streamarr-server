@@ -752,21 +752,22 @@ message ProbeStreamInfo {
   // message by payloadType and payloadSize, whatever each message holds. It also reads inside the
   // nesting messages, whose messages FFmpeg ignores: scalable nesting (payloadType 30), MVC
   // scalable nesting (payloadType 37) and MVCD scalable nesting (payloadType 48) for H.264, and
-  // scalable nesting (payloadType 133) for HEVC. HEVC's other nesting messages, regional nesting
-  // (payloadType 157), MCTS extraction information nesting (payloadType 159) and bitstream
-  // partition nesting (payloadType 162), can also hold messages that FFmpeg ignores. The worker
-  // does not read inside them, so an SEI NAL unit that holds one is not delimited. An SEI NAL unit
-  // is delimited when the payload of every message ends within the NAL unit, every nested message
-  // ends within the payload of its nesting message, no nesting message holds another nesting
-  // message, and only the RBSP trailing bits follow the last message. The worker read all of the
-  // SEI when it delimited every NAL unit that the walk covers, and every SEI NAL unit among them.
-  // An HDR10+ message is an ITU-T T.35 message (payloadType 4) with country code 0xB5, provider
-  // code 0x003C, provider-oriented code 0x0001 and application identifier 4. hdr10_plus is PRESENT
-  // when the frames, the configuration record or the packets hold an HDR10+ message that is not
-  // nested. hdr10_plus is ABSENT only when the frames show none, the worker read all of the SEI,
-  // and no nesting message holds an HDR10+ message. Otherwise hdr10_plus is UNSPECIFIED. A nested
-  // message can apply only to a layer or a view that FFmpeg does not decode, so it neither proves
-  // nor rules out a feature of the decoded picture.
+  // scalable nesting (payloadType 133) for HEVC. Other nesting messages can also hold messages that
+  // FFmpeg ignores: regional nesting (payloadType 157), MCTS extraction information nesting
+  // (payloadType 159) and bitstream partition nesting (payloadType 162) for HEVC, and SEI
+  // processing order nesting (payloadType 214), which ITU-T H.274 defines, for H.264 and HEVC. The
+  // worker does not read inside them, so an SEI NAL unit that holds one is not delimited. An SEI
+  // NAL unit is delimited when the payload of every message ends within the NAL unit, every nested
+  // message ends within the payload of its nesting message, no nesting message holds another
+  // nesting message, and only the RBSP trailing bits follow the last message. The worker read all
+  // of the SEI when it delimited every NAL unit that the walk covers, and every SEI NAL unit among
+  // them. An HDR10+ message is an ITU-T T.35 message (payloadType 4) with country code 0xB5,
+  // provider code 0x003C, provider-oriented code 0x0001 and application identifier 4. hdr10_plus is
+  // PRESENT when the frames, the configuration record or the packets hold an HDR10+ message that is
+  // not nested. hdr10_plus is ABSENT only when the frames show none, the worker read all of the
+  // SEI, and no nesting message holds an HDR10+ message. Otherwise hdr10_plus is UNSPECIFIED. A
+  // nested message can apply only to a layer or a view that FFmpeg does not decode, so it neither
+  // proves nor rules out a feature of the decoded picture.
   //
   // FFmpeg's AV1 decoders drop an RPU that they cannot parse, and a whole frame whose HDR10+
   // message they cannot parse. When they cannot parse an OBU, such as an HDR_CLL or HDR_MDCV
