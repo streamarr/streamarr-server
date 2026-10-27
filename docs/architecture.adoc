@@ -295,6 +295,12 @@ Version 4 also adds the HDR10 static metadata that the container declares for ea
 Version 4 also adds the title, the handler name and the hearing-impaired flag of each audio and subtitle stream.
 Version 5 adds the codec profile, level, tier and color signaling of each video stream.
 Version 5 also reads the first frames of the chosen video stream for HDR10+, Dolby Vision RPUs and their sample layout, and the static HDR metadata that only the bitstream carries.
+For H.264 and HEVC the worker also walks the SEI messages of the configuration record and of the packets that it read, and for AV1 the metadata OBUs of the configuration record and of those packets.
+The probe reports HDR10+ or an RPU as absent only when the frames show none, the walk read every unit that could hold one, and no nested SEI message or layer-specific metadata OBU holds one; otherwise the feature stays unknown.
+It reports the sample layout of the RPUs for H.264 and HEVC only, because an AV1 RPU belongs ahead of its frame.
+Every other video codec keeps the frame facts of version 4: the probe reports neither HDR10+ nor an RPU, and never reports Dolby Vision as absent.
+An omitted flag on a mastering display or a content light level means that the stream carries, or may carry, that value although the probe left it empty, either because the probe could not read the value or because it could not rule the value out.
+A stream with either flag set is never PQ10.
 Version 2 is unused.
 The server requests version 5.
 After the version rises, the server scans each library that holds a result of an earlier version at startup.
