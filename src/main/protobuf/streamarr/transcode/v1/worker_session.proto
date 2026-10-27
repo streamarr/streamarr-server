@@ -292,7 +292,9 @@ message DolbyVisionPresent {
 //   with el_spatial_resampling_filter_flag 1 and disable_residual_flag 0 means an enhancement
 //   layer: profile 7 when vdr_bit_depth is 12, and profile 4 otherwise. Any other
 //   vdr_rpu_profile 1 header means profile 8. Any other header names no profile.
-// - AV1: every RPU means profile 10, whatever its header holds.
+// - AV1: FFmpeg takes every RPU as profile 10, whatever its header holds. The worker itself reads
+//   vdr_rpu_profile 0 with bl_video_full_range_flag 1 as profile 10.0, which has no compatible
+//   base, as CompatibleBase says.
 // - H.264: every RPU means profile 9, whatever its header holds.
 message DolbyVisionRpuHeader {
   // The RPU's vdr_rpu_profile.
@@ -725,14 +727,16 @@ message ProbeStreamInfo {
   // can see the feature in what it read, and Dolby Vision is ABSENT when the probe found no record,
   // no Dolby Vision sample entry and no RPU. FFmpeg's H.264 decoder drops the NAL units that carry
   // RPUs. FFmpeg's HEVC decoder ignores an RPU that is not the last NAL unit of its sample, and an
-  // RPU that it cannot parse. So for H.264 and HEVC the worker also parses the NAL units of the
-  // packets that hold those frames, and observed_rpu is PRESENT when either the frames or the
-  // packets hold an RPU. observed_rpu is ABSENT only when the probe could delimit every NAL unit of
-  // those packets. FFmpeg's AV1 decoders drop an RPU that they cannot parse, and the worker does
-  // not parse AV1 OBUs, so for AV1 observed_rpu is PRESENT or UNSPECIFIED, never ABSENT, and Dolby
-  // Vision is never ABSENT. FFmpeg's H.264 decoder also drops HDR10+ messages, so hdr10_plus stays
-  // UNSPECIFIED for H.264. A feature that the probe cannot see in a codec stays UNSPECIFIED. Every
-  // other video stream keeps the facts of probe version 4.
+  // RPU that it cannot parse. So for H.264 and HEVC the worker also parses the NAL units of every
+  // packet of the read that produced the kept frames. An edit list's preroll widens that read, so
+  // the worker also parses the packets that the decoder discards. observed_rpu is PRESENT when
+  // either the frames or the packets hold an RPU. observed_rpu is ABSENT only when the probe could
+  // delimit every NAL unit of every one of those packets. FFmpeg's AV1 decoders drop an RPU that
+  // they cannot parse, and the worker does not parse AV1 OBUs, so for AV1 observed_rpu is PRESENT
+  // or UNSPECIFIED, never ABSENT, and Dolby Vision is never ABSENT. FFmpeg's H.264 decoder also
+  // drops HDR10+ messages, so hdr10_plus stays UNSPECIFIED for H.264. A feature that the probe
+  // cannot see in a codec stays UNSPECIFIED. Every other video stream keeps the facts of probe
+  // version 4.
   VideoDynamicRange dynamic_range = 12;
   // Video streams only: the bit depth of a luma sample, from the pixel format. For example, 8 for
   // yuv420p and 10 for yuv420p10le. Absent when ffprobe reports no pixel format.
@@ -865,14 +869,23 @@ message ProbeStreamInfo {
   // absent mastering_display or content_light_level on a stream with this set, and with the
   // matching omitted flag clear, means that neither the container nor the first frame carries the
   // value.
+  //
+  // The probe widens its read past packets that decode to no frame, and keeps the frames of a
+  // narrower read when a wider read fails. first_frames_read stays true when such a failure cuts
+  // the frames short of 3. The stream can then hold frames that the probe did not read, so
+  // hdr10_plus, observed_rpu and Dolby Vision are never ABSENT on such a stream: a feature that
+  // neither the frames nor the packets show is UNSPECIFIED, and one that they show is PRESENT. The
+  // probe reports the first frame's static metadata as for any other read.
   bool first_frames_read = 33;
   // Video streams only: true when the container or the first frame carries a mastering display
   // color volume, but the worker left mastering_display absent because ffprobe reported only part
   // or none of its values, or a value does not fit its SEI field. FFmpeg's Matroska demuxer drops a
-  // MasteringMetadata element whose primaries or luminance are incomplete. So when ffprobe reports
-  // no mastering display for the chosen video stream of a Matroska file, the worker checks the
-  // track's Colour element itself, and sets this flag when the track holds a MasteringMetadata
-  // element. The stream then carries static HDR metadata that the probe could not read.
+  // MasteringMetadata element only when neither its primaries nor its luminance are complete. When
+  // one half is complete, ffprobe reports a partial value, which this flag already covers. So when
+  // ffprobe reports no mastering display for the chosen video stream of a Matroska file, the worker
+  // checks the track's Colour element itself, and sets this flag when the track holds a
+  // MasteringMetadata element. The stream then carries static HDR metadata that the probe could not
+  // read.
   bool mastering_display_omitted = 34;
   // Video streams only: true when the container or the first frame carries a content light level,
   // but the worker left content_light_level absent because a value does not fit its SEI field.
