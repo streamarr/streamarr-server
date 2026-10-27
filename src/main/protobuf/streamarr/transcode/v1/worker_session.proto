@@ -162,12 +162,37 @@ enum VideoCodecFamily {
 
 // Each codec profile belongs to one codec family. The worker fails the job attempt with
 // JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION when codec_profile belongs to a codec family other than
-// codec_family.
+// codec_family. An encode forces only H264_HIGH, HEVC_MAIN or AV1_MAIN. The probe reports every
+// value: ProbeStreamInfo.codec_profile says how the worker reads it.
 enum VideoCodecProfile {
   VIDEO_CODEC_PROFILE_UNSPECIFIED = 0;
   VIDEO_CODEC_PROFILE_H264_HIGH = 1;
   VIDEO_CODEC_PROFILE_HEVC_MAIN = 2;
   VIDEO_CODEC_PROFILE_AV1_MAIN = 3;
+  // H.264 profile_idc 66 with constraint_set1_flag set.
+  VIDEO_CODEC_PROFILE_H264_CONSTRAINED_BASELINE = 4;
+  // H.264 profile_idc 66 with constraint_set1_flag clear.
+  VIDEO_CODEC_PROFILE_H264_BASELINE = 5;
+  // H.264 profile_idc 77.
+  VIDEO_CODEC_PROFILE_H264_MAIN = 6;
+  // H.264 profile_idc 88.
+  VIDEO_CODEC_PROFILE_H264_EXTENDED = 7;
+  // H.264 profile_idc 110, including High 10 Intra.
+  VIDEO_CODEC_PROFILE_H264_HIGH_10 = 8;
+  // H.264 profile_idc 122, including High 4:2:2 Intra.
+  VIDEO_CODEC_PROFILE_H264_HIGH_422 = 9;
+  // H.264 profile_idc 244, including High 4:4:4 Intra.
+  VIDEO_CODEC_PROFILE_H264_HIGH_444_PREDICTIVE = 10;
+  // HEVC general_profile_idc 2.
+  VIDEO_CODEC_PROFILE_HEVC_MAIN_10 = 11;
+  // HEVC general_profile_idc 3.
+  VIDEO_CODEC_PROFILE_HEVC_MAIN_STILL_PICTURE = 12;
+  // HEVC general_profile_idc 4: every format range extensions profile, such as Main 4:2:2 10.
+  VIDEO_CODEC_PROFILE_HEVC_FORMAT_RANGE_EXTENSIONS = 13;
+  // AV1 seq_profile 1.
+  VIDEO_CODEC_PROFILE_AV1_HIGH = 14;
+  // AV1 seq_profile 2.
+  VIDEO_CODEC_PROFILE_AV1_PROFESSIONAL = 15;
 }
 
 // A copy carries VIDEO_CODEC_TIER_UNSPECIFIED. H.264 has no tier, so an H.264 encode also carries
@@ -195,6 +220,10 @@ enum Presence {
 // The standard picture format that a player could use without the advanced HDR information. The
 // probe derives it from the signaled transfer and the Dolby Vision claim. When a Dolby Vision
 // compatibility identifier disagrees with the signaled transfer, the signaled transfer decides.
+// Dolby Vision profile 5 is the exception from probe version 5 on: profile 5 has no compatible
+// base, so the base is NONE whatever the signaled transfer says. The probe knows profile 5 from the
+// configuration record's profile, or, without a record, from the first RPU header that
+// DolbyVisionRpuHeader describes.
 enum CompatibleBase {
   // The probe could not read the transfer and found no Dolby Vision claim.
   COMPATIBLE_BASE_UNSPECIFIED = 0;
@@ -237,6 +266,27 @@ message DolbyVisionPresent {
   DolbyVisionConfiguration declared = 1;
   // Whether the samples hold Dolby Vision RPUs. UNSPECIFIED when the probe read no samples.
   Presence observed_rpu = 2;
+  // The header of the first RPU that the probe read. Absent when observed_rpu is not PRESENT. Only
+  // probe version 5 and later report it.
+  DolbyVisionRpuHeader first_rpu_header = 3;
+  // Whether a sample that the probe read starts with an RPU, ahead of the picture of the sample.
+  // The RPU of a picture belongs after that picture, in the same sample. A muxer that starts a new
+  // sample at each RPU moves each RPU into the next picture's sample, and the last sample then
+  // holds an RPU and no picture. PRESENT when the probe read such a sample, and ABSENT when every
+  // RPU that the probe read follows its picture. UNSPECIFIED when the probe could not see where
+  // the RPUs sit: observed_rpu is not PRESENT, or the probe read the frames through a decoder that
+  // hides the sample layout. Only probe version 5 and later report it.
+  Presence rpu_starts_sample = 4;
+}
+
+// The fields of a Dolby Vision RPU header that tell the Dolby Vision profile when no configuration
+// record names it. vdr_rpu_profile 0 with bl_video_full_range_flag 1 means profile 5.
+// vdr_rpu_profile 1 means profile 8, or profile 7 when the stream signals an enhancement layer.
+message DolbyVisionRpuHeader {
+  // The RPU's vdr_rpu_profile.
+  uint32 vdr_rpu_profile = 1;
+  // The RPU's bl_video_full_range_flag.
+  bool base_layer_full_range = 2;
 }
 
 // The dynamic range of one video stream, as ADR 0036 defines it. A source video stream can hold
@@ -522,7 +572,117 @@ enum ChromaSubsampling {
   CHROMA_SUBSAMPLING_MONOCHROME = 4;
 }
 
+// A video stream's color primaries, as ITU-T H.273 numbers them. Each value names its H.273 code
+// point. UNSPECIFIED covers H.273's unspecified value 2, the reserved values, and a stream for
+// which ffprobe reports no primaries.
+enum ColorPrimaries {
+  COLOR_PRIMARIES_UNSPECIFIED = 0;
+  // Code point 1.
+  COLOR_PRIMARIES_BT709 = 1;
+  // Code point 4.
+  COLOR_PRIMARIES_BT470M = 2;
+  // Code point 5.
+  COLOR_PRIMARIES_BT470BG = 3;
+  // Code point 6.
+  COLOR_PRIMARIES_SMPTE170M = 4;
+  // Code point 7.
+  COLOR_PRIMARIES_SMPTE240M = 5;
+  // Code point 8: generic film.
+  COLOR_PRIMARIES_FILM = 6;
+  // Code point 9: BT.2020 and BT.2100.
+  COLOR_PRIMARIES_BT2020 = 7;
+  // Code point 10: SMPTE ST 428-1, CIE 1931 XYZ.
+  COLOR_PRIMARIES_SMPTE428 = 8;
+  // Code point 11: SMPTE RP 431-2, DCI-P3.
+  COLOR_PRIMARIES_SMPTE431 = 9;
+  // Code point 12: SMPTE EG 432-1, Display P3.
+  COLOR_PRIMARIES_SMPTE432 = 10;
+  // Code point 22: EBU Tech. 3213-E.
+  COLOR_PRIMARIES_EBU3213 = 11;
+}
+
+// A video stream's transfer characteristics, as ITU-T H.273 numbers them. UNSPECIFIED covers
+// H.273's unspecified value 2, the reserved values, and a stream for which ffprobe reports no
+// transfer. CompatibleBase derives from this transfer.
+enum TransferCharacteristics {
+  TRANSFER_CHARACTERISTICS_UNSPECIFIED = 0;
+  // Code point 1.
+  TRANSFER_CHARACTERISTICS_BT709 = 1;
+  // Code point 4: an assumed gamma of 2.2.
+  TRANSFER_CHARACTERISTICS_BT470M = 2;
+  // Code point 5: an assumed gamma of 2.8.
+  TRANSFER_CHARACTERISTICS_BT470BG = 3;
+  // Code point 6.
+  TRANSFER_CHARACTERISTICS_SMPTE170M = 4;
+  // Code point 7.
+  TRANSFER_CHARACTERISTICS_SMPTE240M = 5;
+  // Code point 8.
+  TRANSFER_CHARACTERISTICS_LINEAR = 6;
+  // Code point 9.
+  TRANSFER_CHARACTERISTICS_LOG100 = 7;
+  // Code point 10.
+  TRANSFER_CHARACTERISTICS_LOG316 = 8;
+  // Code point 11: xvYCC.
+  TRANSFER_CHARACTERISTICS_IEC61966_2_4 = 9;
+  // Code point 12.
+  TRANSFER_CHARACTERISTICS_BT1361 = 10;
+  // Code point 13: sRGB.
+  TRANSFER_CHARACTERISTICS_IEC61966_2_1 = 11;
+  // Code point 14.
+  TRANSFER_CHARACTERISTICS_BT2020_10 = 12;
+  // Code point 15.
+  TRANSFER_CHARACTERISTICS_BT2020_12 = 13;
+  // Code point 16: SMPTE ST 2084, the perceptual quantizer.
+  TRANSFER_CHARACTERISTICS_SMPTE2084 = 14;
+  // Code point 17: SMPTE ST 428-1.
+  TRANSFER_CHARACTERISTICS_SMPTE428 = 15;
+  // Code point 18: ARIB STD-B67, hybrid log-gamma.
+  TRANSFER_CHARACTERISTICS_ARIB_STD_B67 = 16;
+}
+
+// A video stream's matrix coefficients, as ITU-T H.273 numbers them. UNSPECIFIED covers H.273's
+// unspecified value 2, the reserved values, and a stream for which ffprobe reports no matrix.
+enum MatrixCoefficients {
+  MATRIX_COEFFICIENTS_UNSPECIFIED = 0;
+  // Code point 0: the identity matrix, as for RGB and GBR.
+  MATRIX_COEFFICIENTS_IDENTITY = 1;
+  // Code point 1.
+  MATRIX_COEFFICIENTS_BT709 = 2;
+  // Code point 4.
+  MATRIX_COEFFICIENTS_FCC = 3;
+  // Code point 5.
+  MATRIX_COEFFICIENTS_BT470BG = 4;
+  // Code point 6.
+  MATRIX_COEFFICIENTS_SMPTE170M = 5;
+  // Code point 7.
+  MATRIX_COEFFICIENTS_SMPTE240M = 6;
+  // Code point 8.
+  MATRIX_COEFFICIENTS_YCGCO = 7;
+  // Code point 9: BT.2020 non-constant luminance.
+  MATRIX_COEFFICIENTS_BT2020_NCL = 8;
+  // Code point 10: BT.2020 constant luminance.
+  MATRIX_COEFFICIENTS_BT2020_CL = 9;
+  // Code point 11.
+  MATRIX_COEFFICIENTS_SMPTE2085 = 10;
+  // Code point 12.
+  MATRIX_COEFFICIENTS_CHROMA_DERIVED_NCL = 11;
+  // Code point 13.
+  MATRIX_COEFFICIENTS_CHROMA_DERIVED_CL = 12;
+  // Code point 14.
+  MATRIX_COEFFICIENTS_ICTCP = 13;
+}
+
+// A video stream's sample range. UNSPECIFIED when ffprobe reports no range.
+enum ColorRange {
+  COLOR_RANGE_UNSPECIFIED = 0;
+  // Limited range, which ffprobe calls tv.
+  COLOR_RANGE_LIMITED = 1;
+  // Full range, which ffprobe calls pc.
+  COLOR_RANGE_FULL = 2;
+}
+
 // Only probe version 4 and later report the fields from dynamic_range to is_hearing_impaired.
+// Only probe version 5 and later report the fields from codec_profile to first_frames_read.
 message ProbeStreamInfo {
   uint32 index = 1;
   string codec_type = 2;
@@ -535,10 +695,18 @@ message ProbeStreamInfo {
   optional double framerate = 9;
   bool is_default = 10;
   bool is_forced = 11;
-  // Video streams only. The probe reads the dynamic range from the stream's headers and
+  // Video streams only. Probe version 4 reads the dynamic range from the stream's headers and
   // configuration records and never reads the samples. So Dolby Vision is never ABSENT, and
   // observed_rpu and hdr10_plus are UNSPECIFIED. Dolby Vision is unspecified when the probe finds
   // neither a configuration record nor a Dolby Vision sample entry.
+  //
+  // Probe version 5 also reads the first frames of the chosen video stream, as first_frames_read
+  // describes. For that stream, hdr10_plus and observed_rpu are PRESENT or ABSENT when the probe
+  // can see the feature in the frames that it read, and Dolby Vision is ABSENT when the probe found
+  // no record, no Dolby Vision sample entry and no RPU. FFmpeg's H.264 decoder drops the NAL units
+  // that carry RPUs, so for H.264 the worker parses the NAL units of the packets itself. A feature
+  // that the probe cannot see in a codec stays UNSPECIFIED. Every other video stream keeps the
+  // facts of probe version 4.
   VideoDynamicRange dynamic_range = 12;
   // Video streams only: the bit depth of a luma sample, from the pixel format. For example, 8 for
   // yuv420p and 10 for yuv420p10le. Absent when ffprobe reports no pixel format.
@@ -582,9 +750,13 @@ message ProbeStreamInfo {
   // Video streams only: the mastering display color volume that the container declares, from
   // ffprobe's Mastering display metadata stream side data. Absent when the stream has no such side
   // data. MasteringDisplayColorVolume says where the side data comes from and what absent means.
+  // From probe version 5 on, the probe takes the value from the first frame of the chosen video
+  // stream when the container declares none.
   MasteringDisplayColorVolume mastering_display = 21;
   // Video streams only: the content light level that the container declares, from ffprobe's
   // Content light level metadata stream side data. Absent when the stream has no such side data.
+  // From probe version 5 on, the probe takes the value from the first frame of the chosen video
+  // stream when the container declares none.
   ContentLightLevel content_light_level = 22;
   // Audio and subtitle streams only: the stream's title, which a menu shows to name the track. The
   // worker reads two stream tags in this order. It takes the first tag whose value is not empty and
@@ -640,6 +812,33 @@ message ProbeStreamInfo {
   // flag marked only 25 of the 78 text subtitle tracks whose flag or title said SDH. So the server
   // also reads the title (streamarr/streamarr-server#60).
   optional bool is_hearing_impaired = 25;
+  // Video streams only: the codec profile. The worker reads the profile from the stream's decoder
+  // configuration record or sequence header: profile_idc and constraint_set1_flag for H.264,
+  // general_profile_idc for HEVC and seq_profile for AV1. The worker never maps ffprobe's profile
+  // name. UNSPECIFIED for any other codec, for a profile that VideoCodecProfile does not name, and
+  // when the worker finds no record or sequence header.
+  VideoCodecProfile codec_profile = 26;
+  // Video streams only: the codec level as major x 10 + minor, as VideoDecision.level spells it,
+  // for example 41 for level 4.1. H.264 takes level_idc, HEVC takes general_level_idc divided by
+  // 3, and AV1 takes seq_level_idx[0] as 2 + seq_level_idx / 4 for the major and seq_level_idx % 4
+  // for the minor. Absent when codec_profile is UNSPECIFIED, for H.264 level 1b, and for AV1's
+  // seq_level_idx 31, which places no limit.
+  optional uint32 codec_level = 27;
+  // Video streams only: HEVC's general_tier_flag, or AV1's seq_tier[0]. UNSPECIFIED for H.264,
+  // which has no tier, and when codec_profile is UNSPECIFIED.
+  VideoCodecTier codec_tier = 28;
+  // Video streams only: the stream's color signaling, from ffprobe's color_primaries,
+  // color_transfer, color_space and color_range.
+  ColorPrimaries color_primaries = 29;
+  TransferCharacteristics transfer_characteristics = 30;
+  MatrixCoefficients matrix_coefficients = 31;
+  ColorRange color_range = 32;
+  // Video streams only: true when the probe read the first frames of the stream. The probe reads
+  // the first 3 frames of the chosen video stream, or fewer when the stream holds fewer, and no
+  // frame of any other stream. A Presence on the stream is ABSENT only when this is true. An
+  // absent mastering_display or content_light_level on a stream with this set means that neither
+  // the container nor the first frame carries the value.
+  bool first_frames_read = 33;
 }
 
 // The number of pixels that a container crop removes from each edge of the picture. width and
@@ -658,8 +857,8 @@ message ContainerCropping {
 
 // The mastering display color volume of SMPTE ST 2086: one half of a stream's HDR10 static
 // metadata. ContentLightLevel holds the other half. Both are static values for the whole stream.
-// Neither is the raw color signaling. The transfer, primaries, matrix and range of the stream stay
-// out of probe version 4.
+// Neither is the raw color signaling. From probe version 5 on, ProbeStreamInfo reports the
+// transfer, primaries, matrix and range separately.
 //
 // Every value uses the unit of the HEVC mastering display color volume SEI message (payload type
 // 137), and every value fits its SEI field. So streamarr/streamarr-server#396 can write the values
@@ -673,6 +872,10 @@ message ContainerCropping {
 // version 4 reads no frames, so it reports their mastering display as absent. Absent therefore
 // means that the container declares no mastering display. Absent does not mean that the stream
 // lacks static HDR metadata. So the server must not treat an absent value as proof of PQ10.
+// Probe version 5 reads the first frame of the chosen video stream. ffprobe reports a value that
+// only the bitstream carries as side data of that frame, and the worker converts it the same way.
+// For the chosen video stream, absent then means that neither the container nor the first frame
+// carries the value, and an absent value on a PQ stream proves PQ10.
 //
 // ffprobe prints each value as a fraction. The worker multiplies the fraction by the number of
 // units in one whole: 50000 for a chromaticity coordinate, and 10000 for a luminance. The worker
