@@ -1,5 +1,7 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
@@ -8,6 +10,7 @@ import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.streamarr.server.config.KeyframePacketScanScheduler;
 import com.streamarr.server.config.ProbeSchedulingProperties;
+import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
@@ -24,13 +27,20 @@ import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.exceptions.ProbeTimedOutException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeFfprobeService;
+import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fixtures.LoopbackProbeWorker;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import com.streamarr.server.services.streaming.KeyframePacketScanner;
+import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
+import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.server.support.UnstartedSchedulerConfiguration;
+import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeFailure;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -39,6 +49,7 @@ import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -73,6 +84,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
 
   private static final String FAILED_SCANS_METRIC =
       "streamarr.probes.keyframe_packet_scan_failures";
+  private static final Duration WORKER_WAIT = Duration.ofSeconds(20);
   private static final ProbeOutcome.Success PACKET_SCAN_REQUIRED =
       success(
           new KeyframeKnowledge.PacketScanRequired(KeyframePacketScanReason.NO_CONTAINER_INDEX));
@@ -316,6 +328,59 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
                 () ->
                     new ProbeContractViolationException(
                         "Worker probe keyframe decode times do not increase")));
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep rescheduling the scan without counting a failed scan when every worker reply is"
+          + " for another probe version")
+  void shouldKeepReschedulingTheScanWithoutCountingAFailedScanWhenEveryReplyIsForAnotherVersion()
+      throws Exception {
+    var request = requestUnchangedFiles(1).getFirst();
+    packetScanRequiredProbe().execute(request, ProbePriority.BACKGROUND);
+    try (var server =
+        WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
+            .configuration(serverConfigurationBuilder().build())
+            .segmentStore(new FakeSegmentStore())
+            .meterRegistry(new SimpleMeterRegistry())
+            .build()) {
+      server.start();
+      try (var worker =
+          LoopbackProbeWorker.builder()
+              .port(server.port())
+              .probeVersion(ProbeVersion.CURRENT)
+              .availableSlots(1)
+              .backgroundProbeCapacity(1)
+              .build()) {
+        var remote = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, tempDir);
+        startScanScheduler(remote::scanKeyframePackets, Clock.systemUTC());
+
+        for (var attempt = 1; attempt <= 3; attempt++) {
+          if (attempt > 1) {
+            retryPendingScansNow();
+          }
+
+          var dispatched = worker.nextResponse(WORKER_WAIT).getStartProbe().getRequest();
+          worker.reply(
+              ProbeAttemptResult.newBuilder()
+                  .setProbeAttemptId(dispatched.getProbeAttemptId())
+                  .setProbeVersion(dispatched.getProbeVersion() + 1)
+                  .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA)
+                  .build());
+
+          var completion = scanCompletions.poll(30, TimeUnit.SECONDS);
+          assertThat(completion).isNotNull();
+          assertThat(completion.getResult()).isEqualTo(ExecutionComplete.Result.FAILED);
+        }
+
+        assertThat(storedKeyframes(request)).isEqualTo(PACKET_SCAN_REQUIRED.keyframes());
+        assertThat(scheduledScans())
+            .as("A reply for another probe version retries until the deployment is fixed")
+            .isOne();
+        assertThat(meterRegistry.find(FAILED_SCANS_METRIC).counters()).isEmpty();
+      }
+    }
   }
 
   @Test

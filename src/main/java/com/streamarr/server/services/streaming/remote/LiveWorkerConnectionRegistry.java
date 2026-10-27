@@ -769,11 +769,13 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private boolean finishProbe(PendingProbe pending, ProbeAttemptResult result) {
+      // Not a contract violation: a wrongly versioned worker deployment fails every probe at once,
+      // and fixing the deployment changes neither a source nor its probe version.
       if (result.getProbeVersion() != pending.request().getProbeVersion()) {
         pending
             .result()
             .completeExceptionally(
-                new ProbeContractViolationException(
+                new ProbeExecutionException(
                     ItemFailureReason.MISCONFIGURED,
                     "Worker probe reply version mismatch: expected %s, received %s"
                         .formatted(

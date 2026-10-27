@@ -514,8 +514,9 @@ class WorkerProbeDispatchTest {
       },
       delimiter = '|')
   @DisplayName(
-      "Should fail the pending probe without accepting data when its reply has another version")
-  void shouldFailPendingProbeWithoutAcceptingDataWhenItsReplyHasAnotherVersion(
+      "Should fail the pending probe as misconfigured without accepting data when its reply has"
+          + " another version")
+  void shouldFailPendingProbeAsMisconfiguredWithoutAcceptingDataWhenItsReplyHasAnotherVersion(
       int requestedVersion, int reportedVersion, String diagnostic) {
     var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
@@ -536,8 +537,9 @@ class WorkerProbeDispatchTest {
         .isInstanceOf(ExecutionException.class)
         .hasRootCauseMessage(diagnostic)
         .cause()
+        .isNotInstanceOf(ProbeContractViolationException.class)
         .isInstanceOfSatisfying(
-            ProbeContractViolationException.class,
+            ProbeExecutionException.class,
             failure -> assertThat(failure.reason()).isEqualTo(ItemFailureReason.MISCONFIGURED));
     assertThat(runningProbes(registry, requestedVersion)).isZero();
   }
