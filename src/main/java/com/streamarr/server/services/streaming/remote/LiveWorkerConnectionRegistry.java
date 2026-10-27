@@ -21,6 +21,7 @@ import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeCancelReason;
 import com.streamarr.transcode.v1.ProbeCapacityChanged;
 import com.streamarr.transcode.v1.ProbeFailure;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
@@ -94,6 +95,7 @@ final class LiveWorkerConnectionRegistry {
   private final WorkerCapacityMeters capacityMeters;
   private final ProbeDeferralWarnings deferralWarnings =
       new ProbeDeferralWarnings(DEFERRAL_WARNING_INTERVAL);
+  private volatile boolean shuttingDown;
 
   @Builder
   LiveWorkerConnectionRegistry(
@@ -491,6 +493,11 @@ final class LiveWorkerConnectionRegistry {
     return Optional.ofNullable(terminalFailures.get(streamSessionId));
   }
 
+  /** From this call on, a probe cancelled before its timeout tells its worker of the shutdown. */
+  void beginShutdown() {
+    shuttingDown = true;
+  }
+
   synchronized void close() {
     var closed = List.copyOf(connections.values());
     connections.clear();
@@ -670,13 +677,16 @@ final class LiveWorkerConnectionRegistry {
           .whenComplete(
               (_, failure) -> {
                 if (pending.result().isCancelled()) {
-                  cancelProbeIfRequested(pending);
+                  cancelProbeIfRequested(pending, reasonForCancelledProbe());
                   return;
                 }
 
                 if (failure instanceof TimeoutException) {
                   // Never run transport callbacks on CompletableFuture's shared timeout thread.
-                  PROBE_DEADLINE_CALLBACKS.execute(() -> cancelProbeIfRequested(pending));
+                  PROBE_DEADLINE_CALLBACKS.execute(
+                      () ->
+                          cancelProbeIfRequested(
+                              pending, ProbeCancelReason.PROBE_CANCEL_REASON_TIMEOUT));
                 }
               });
       var command = StartProbeCommand.newBuilder().setTarget(worker).setRequest(request).build();
@@ -698,7 +708,15 @@ final class LiveWorkerConnectionRegistry {
       return probeTimeoutNanos;
     }
 
-    private void cancelProbeIfRequested(PendingProbe pending) {
+    private ProbeCancelReason reasonForCancelledProbe() {
+      if (shuttingDown) {
+        return ProbeCancelReason.PROBE_CANCEL_REASON_SERVER_SHUTDOWN;
+      }
+
+      return ProbeCancelReason.PROBE_CANCEL_REASON_OTHER;
+    }
+
+    private void cancelProbeIfRequested(PendingProbe pending, ProbeCancelReason reason) {
       // Publication may hold the connection monitor. The recovery deadline must not wait for it.
       pending
           .terminated()
@@ -718,6 +736,7 @@ final class LiveWorkerConnectionRegistry {
             CancelProbeCommand.newBuilder()
                 .setTarget(worker)
                 .setProbeAttemptId(pending.request().getProbeAttemptId())
+                .setReason(reason)
                 .build();
         trySend(EstablishWorkerSessionResponse.newBuilder().setCancelProbe(command).build());
       }

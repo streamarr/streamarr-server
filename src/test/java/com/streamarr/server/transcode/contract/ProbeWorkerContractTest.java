@@ -4,6 +4,7 @@ import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.protobuf.Duration;
+import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.ChromaSubsampling;
 import com.streamarr.transcode.v1.ChromaticityCoordinates;
 import com.streamarr.transcode.v1.CompatibleBase;
@@ -25,6 +26,7 @@ import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.OutputFrameRateBasis;
 import com.streamarr.transcode.v1.Presence;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeCancelReason;
 import com.streamarr.transcode.v1.ProbeChapter;
 import com.streamarr.transcode.v1.ProbeContainerInfo;
 import com.streamarr.transcode.v1.ProbeFailure;
@@ -39,6 +41,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 @Tag("UnitTest")
 @DisplayName("Probe Worker Contract Tests")
@@ -88,6 +92,45 @@ class ProbeWorkerContractTest {
     assertThat(decoded.getRequest().getProbeAttemptId()).isEqualTo(attemptId);
     assertThat(decoded.getRequest().getProbeVersion()).isEqualTo(3);
     assertThat(decoded.getRequest().getSource()).isEqualTo(source);
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = ProbeCancelReason.class,
+      names = {"PROBE_CANCEL_REASON_UNSPECIFIED", "UNRECOGNIZED"},
+      mode = EnumSource.Mode.EXCLUDE)
+  @DisplayName("Should retain the reason when sending a probe cancel command")
+  void shouldRetainReasonWhenSendingProbeCancelCommand(ProbeCancelReason reason) throws Exception {
+    var command =
+        EstablishWorkerSessionResponse.newBuilder()
+            .setCancelProbe(
+                CancelProbeCommand.newBuilder()
+                    .setProbeAttemptId(toProto(UUID.randomUUID()))
+                    .setReason(reason))
+            .build();
+
+    var decoded = EstablishWorkerSessionResponse.parseFrom(command.toByteArray()).getCancelProbe();
+
+    assertThat(decoded).isEqualTo(command.getCancelProbe());
+    assertThat(decoded.getReason()).isEqualTo(reason);
+  }
+
+  @Test
+  @DisplayName(
+      "Should read a probe cancel command without a reason as unspecified when an older server sends it")
+  void shouldReadProbeCancelCommandWithoutReasonAsUnspecifiedWhenOlderServerSendsIt()
+      throws Exception {
+    var attemptId = toProto(UUID.randomUUID());
+    var olderServerCommand =
+        EstablishWorkerSessionResponse.newBuilder()
+            .setCancelProbe(CancelProbeCommand.newBuilder().setProbeAttemptId(attemptId))
+            .build();
+
+    var decoded =
+        EstablishWorkerSessionResponse.parseFrom(olderServerCommand.toByteArray()).getCancelProbe();
+
+    assertThat(decoded.getProbeAttemptId()).isEqualTo(attemptId);
+    assertThat(decoded.getReason()).isEqualTo(ProbeCancelReason.PROBE_CANCEL_REASON_UNSPECIFIED);
   }
 
   @Test

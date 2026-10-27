@@ -953,6 +953,24 @@ message CancelProbeCommand {
   // version once execution ends. Capacity remains reserved until that result or session termination.
   WorkerIdentity target = 1;
   Uuid probe_attempt_id = 2;
+  // Why the server ended the probe. The server sets every reason except
+  // PROBE_CANCEL_REASON_UNSPECIFIED.
+  ProbeCancelReason reason = 3;
+}
+
+// Why the server ended a probe. The server alone enforces the probe timeout, so this reason is the
+// only way that a worker learns that a probe reached the timeout.
+enum ProbeCancelReason {
+  // A server older than this field sends no reason. The worker reads this value as
+  // PROBE_CANCEL_REASON_OTHER.
+  PROBE_CANCEL_REASON_UNSPECIFIED = 0;
+  // The probe reached its timeout on the server. For a keyframe packet scan, the timeout is the
+  // keyframe packet scan timeout, and the worker applies no brake for the scan.
+  PROBE_CANCEL_REASON_TIMEOUT = 1;
+  // The server is shutting down.
+  PROBE_CANCEL_REASON_SERVER_SHUTDOWN = 2;
+  // Any other reason, such as the server's probe thread no longer waiting for the result.
+  PROBE_CANCEL_REASON_OTHER = 3;
 }
 
 message StopVariantCommand {

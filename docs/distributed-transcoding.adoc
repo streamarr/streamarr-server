@@ -143,6 +143,11 @@ A packet scan reads every packet of the source's video stream, which takes longe
 A timeout requests worker cancellation and lets the scheduler retry.
 After three packet scans of a source time out, report no keyframes, or get a worker reply that breaks the worker contract, the server stores its keyframes as unavailable, so playback encodes the source.
 Packet scans run on a scheduler of their own, so they never take the threads that run probes.
+Each cancel command carries a reason: the probe timeout, a server shutdown, or another reason.
+When a probe or a packet scan reaches its timeout, the command carries the timeout reason.
+When the server stops a probe while the server shuts down, the command carries the shutdown reason.
+The worker learns of a timeout only from this reason.
+The worker may lower its background probe capacity when probes reach the timeout, but not when a packet scan does (https://github.com/streamarr/streamarr-adr/blob/main/adr/0032-media-file-probe-results-are-persisted.adoc[ADR 0032]).
 `STREAMING_WORKER_SESSION_PROBE_CANCELLATION_TIMEOUT` allows `5s` for the worker to acknowledge termination.
 Until then, the probe keeps its unit of the worker's probe capacity.
 A worker that misses this deadline is disconnected and fenced. Its other active jobs are abandoned and recover through the existing playback recovery path.
