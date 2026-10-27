@@ -782,8 +782,14 @@ message ProbeStreamInfo {
   // no Dolby Vision sample entry and no RPU. FFmpeg's H.264 decoder drops the NAL units that carry
   // RPUs. FFmpeg's HEVC decoder ignores an RPU that is not the last NAL unit of its sample, and an
   // RPU that it cannot parse. So for H.264 and HEVC the worker also parses the NAL units of every
-  // packet of the read that produced the kept frames. An edit list's preroll widens that read, so
-  // the worker also parses the packets that the decoder discards. observed_rpu is PRESENT when
+  // packet that the walk covers. When the kept read holds 3 frames, the walk covers every packet of
+  // that read. An edit list's preroll widens that read, so the walk also covers the packets that
+  // the decoder discards. When the kept read holds fewer than 3 frames and the read is not cut
+  // short, as first_frames_read describes, the stream holds 192 packets or fewer, and the walk
+  // covers every packet that the widest read read, which is every packet of the stream. The packets
+  // past the kept read decode to no further frame but can still hold an RPU or an SEI message, so a
+  // walk of the kept read alone would rule features out on packets that it never parsed. When the
+  // read is cut short, the walk covers the packets of the kept read. observed_rpu is PRESENT when
   // either the frames or the packets hold an RPU. observed_rpu is ABSENT only when the probe could
   // delimit every NAL unit of every one of those packets.
   //
@@ -832,10 +838,10 @@ message ProbeStreamInfo {
   // follow it, wherever the metadata OBU lies in its temporal unit, so a metadata OBU after the
   // OBUs of the last frame that the probe keeps reaches no frame. They never apply the metadata
   // OBUs of the stream's extradata to the frames. So for AV1 the worker walks every OBU of the
-  // extradata, as the last paragraph of this comment says, then every OBU of every packet of the
-  // read that produced the kept frames, in their order. FFmpeg's demuxers pass the packets in
-  // the low-overhead bitstream format of AV1 section 5, and the walk steps from OBU to OBU by their
-  // sizes, whatever each OBU holds.
+  // extradata, as the last paragraph of this comment says, then every OBU of every packet that the
+  // walk covers, in their order. FFmpeg's demuxers pass the packets in the low-overhead bitstream
+  // format of AV1 section 5, and the walk steps from OBU to OBU by their sizes, whatever each OBU
+  // holds.
   //
   // Each OBU starts with its obu_header, then its extension byte when obu_extension_flag is set.
   // When obu_has_size_field is set, a leb128 obu_size of at most 8 bytes follows, and the OBU ends
