@@ -7,6 +7,7 @@ import com.streamarr.server.domain.streaming.ColorPrimaries;
 import com.streamarr.server.domain.streaming.ColorRange;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
+import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
 import com.streamarr.server.domain.streaming.MatrixCoefficients;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -257,7 +258,9 @@ class RemoteProbeResultStreamPropertiesMapperTest {
             DolbyVisionPresent.newBuilder()
                 .setObservedRpu(com.streamarr.transcode.v1.Presence.PRESENCE_PRESENT)
                 .setFirstRpuHeader(profile8RpuHeader())
-                .setRpuStartsSample(com.streamarr.transcode.v1.Presence.PRESENCE_ABSENT));
+                .setRpuPlacement(
+                    com.streamarr.transcode.v1.DolbyVisionRpuPlacement
+                        .DOLBY_VISION_RPU_PLACEMENT_AFTER_OWN_PICTURE));
 
     var stream = videoOf(version4(media -> media.setStreams(0, video)));
 
@@ -268,20 +271,18 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  @Test
-  @DisplayName("Should keep the first RPU header and the sample layout when the probe read RPUs")
-  void shouldKeepTheFirstRpuHeaderAndTheSampleLayoutWhenTheProbeReadRpus() {
-    var video = hevc().setTransferCharacteristics(SDR_TRANSFER).setFirstFramesRead(true);
-    video
-        .getDynamicRangeBuilder()
-        .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
-        .setDolbyVisionPresent(
-            DolbyVisionPresent.newBuilder()
-                .setObservedRpu(com.streamarr.transcode.v1.Presence.PRESENCE_PRESENT)
-                .setFirstRpuHeader(profile8RpuHeader())
-                .setRpuStartsSample(com.streamarr.transcode.v1.Presence.PRESENCE_PRESENT));
-
-    var stream = videoOf(version5(media -> media.setStreams(0, video)));
+  @ParameterizedTest
+  @EnumSource(
+      value = com.streamarr.transcode.v1.DolbyVisionRpuPlacement.class,
+      names = {
+        "DOLBY_VISION_RPU_PLACEMENT_AFTER_OWN_PICTURE",
+        "DOLBY_VISION_RPU_PLACEMENT_BEFORE_NEXT_PICTURE",
+        "DOLBY_VISION_RPU_PLACEMENT_BEFORE_OWN_PICTURE"
+      })
+  @DisplayName("Should keep the first RPU header and the RPU placement when the probe read RPUs")
+  void shouldKeepTheFirstRpuHeaderAndTheRpuPlacementWhenTheProbeReadRpus(
+      com.streamarr.transcode.v1.DolbyVisionRpuPlacement placement) {
+    var stream = videoOf(version5(media -> media.setStreams(0, profile8HevcWithRpus(placement))));
 
     assertThat(stream.dynamicRange())
         .map(VideoDynamicRange::dolbyVision)
@@ -297,7 +298,27 @@ class RemoteProbeResultStreamPropertiesMapperTest {
                         .disableResidual(true)
                         .vdrBitDepth(12)
                         .build()),
-                Presence.PRESENT));
+                DolbyVisionRpuPlacement.valueOf(
+                    placement.name().substring("DOLBY_VISION_RPU_PLACEMENT_".length()))));
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @Test
+  @DisplayName("Should read an RPU placement as unspecified when the contract does not name it")
+  void shouldReadAnRpuPlacementAsUnspecifiedWhenTheContractDoesNotNameIt() {
+    var video =
+        profile8HevcWithRpus(
+            com.streamarr.transcode.v1.DolbyVisionRpuPlacement
+                .DOLBY_VISION_RPU_PLACEMENT_UNSPECIFIED);
+    video.getDynamicRangeBuilder().getDolbyVisionPresentBuilder().setRpuPlacementValue(99);
+
+    var stream = videoOf(version5(media -> media.setStreams(0, video)));
+
+    assertThat(stream.dynamicRange())
+        .map(VideoDynamicRange::dolbyVision)
+        .map(DolbyVision.Present.class::cast)
+        .map(DolbyVision.Present::rpuPlacement)
+        .contains(DolbyVisionRpuPlacement.UNSPECIFIED);
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
@@ -416,6 +437,15 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   static Stream<Arguments> violations() {
     var present = com.streamarr.transcode.v1.Presence.PRESENCE_PRESENT;
     var absent = com.streamarr.transcode.v1.Presence.PRESENCE_ABSENT;
+    var afterOwnPicture =
+        com.streamarr.transcode.v1.DolbyVisionRpuPlacement
+            .DOLBY_VISION_RPU_PLACEMENT_AFTER_OWN_PICTURE;
+    var beforeNextPicture =
+        com.streamarr.transcode.v1.DolbyVisionRpuPlacement
+            .DOLBY_VISION_RPU_PLACEMENT_BEFORE_NEXT_PICTURE;
+    var beforeOwnPicture =
+        com.streamarr.transcode.v1.DolbyVisionRpuPlacement
+            .DOLBY_VISION_RPU_PLACEMENT_BEFORE_OWN_PICTURE;
     var hlgTransfer =
         com.streamarr.transcode.v1.TransferCharacteristics.TRANSFER_CHARACTERISTICS_ARIB_STD_B67;
     return Stream.of(
@@ -605,7 +635,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
               return stream;
             }),
         violation(
-            "a sample layout absent without reading frames",
+            "an RPU placement without reading frames",
             stream -> {
               stream
                   .setTransferCharacteristics(PQ_TRANSFER)
@@ -614,7 +644,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
                   .setDolbyVisionPresent(
                       DolbyVisionPresent.newBuilder()
                           .setObservedRpu(present)
-                          .setRpuStartsSample(absent));
+                          .setRpuPlacement(afterOwnPicture));
               return stream;
             }),
         violation(
@@ -646,7 +676,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
               return stream;
             }),
         violation(
-            "a sample layout without an observed RPU",
+            "an RPU placement beside an absent observed RPU",
             stream -> {
               stream
                   .setFirstFramesRead(true)
@@ -654,7 +684,17 @@ class RemoteProbeResultStreamPropertiesMapperTest {
                   .setDolbyVisionPresent(
                       DolbyVisionPresent.newBuilder()
                           .setObservedRpu(absent)
-                          .setRpuStartsSample(absent));
+                          .setRpuPlacement(beforeOwnPicture));
+              return stream;
+            }),
+        violation(
+            "an RPU placement beside an unspecified observed RPU",
+            stream -> {
+              stream
+                  .setFirstFramesRead(true)
+                  .getDynamicRangeBuilder()
+                  .setDolbyVisionPresent(
+                      DolbyVisionPresent.newBuilder().setRpuPlacement(beforeNextPicture));
               return stream;
             }),
         violation(
@@ -770,7 +810,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
               return stream;
             }),
         violation(
-            "a sample layout on an AV1 stream",
+            "an RPU placement on an AV1 stream",
             stream -> {
               stream
                   .setCodec("av1")
@@ -782,7 +822,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
                       DolbyVisionPresent.newBuilder()
                           .setDeclared(profile10Record().setBaseLayerCompatibilityId(1))
                           .setObservedRpu(present)
-                          .setRpuStartsSample(absent));
+                          .setRpuPlacement(beforeNextPicture));
               return stream;
             }),
         violation(
@@ -1026,6 +1066,21 @@ class RemoteProbeResultStreamPropertiesMapperTest {
                 .setObservedRpu(com.streamarr.transcode.v1.Presence.PRESENCE_PRESENT)
                 .setFirstRpuHeader(profile8RpuHeader()));
     return stream;
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static ProbeStreamInfo.Builder profile8HevcWithRpus(
+      com.streamarr.transcode.v1.DolbyVisionRpuPlacement placement) {
+    var video = hevc().setTransferCharacteristics(SDR_TRANSFER).setFirstFramesRead(true);
+    video
+        .getDynamicRangeBuilder()
+        .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
+        .setDolbyVisionPresent(
+            DolbyVisionPresent.newBuilder()
+                .setObservedRpu(com.streamarr.transcode.v1.Presence.PRESENCE_PRESENT)
+                .setFirstRpuHeader(profile8RpuHeader())
+                .setRpuPlacement(placement));
+    return video;
   }
 
   private static DolbyVisionConfiguration.Builder profilelessRecord() {

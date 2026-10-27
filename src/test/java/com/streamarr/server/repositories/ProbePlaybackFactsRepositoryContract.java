@@ -16,6 +16,7 @@ import com.streamarr.server.domain.streaming.ContentLightLevel;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
+import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
 import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRatePacketScan;
@@ -49,6 +50,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
@@ -101,7 +103,7 @@ public interface ProbePlaybackFactsRepositoryContract {
                         .disableResidual(true)
                         .vdrBitDepth(12)
                         .build()),
-                Presence.ABSENT));
+                DolbyVisionRpuPlacement.AFTER_OWN_PICTURE));
     var chosen =
         video()
             .index(1)
@@ -134,13 +136,50 @@ public interface ProbePlaybackFactsRepositoryContract {
                             Optional.empty(),
                             Presence.PRESENT,
                             Optional.empty(),
-                            Presence.PRESENT))))
+                            DolbyVisionRpuPlacement.BEFORE_OWN_PICTURE))))
             .videoProperties(Optional.of(VideoStreamProperties.builder().build()))
             .build();
     var published =
         outcomeBuilder()
             .streams(List.of(coverArt(), chosen, atmosAudio(), unnamed))
             .chosenVideoStream(Optional.of(new ChosenVideoStream(1, declaredFilmRate())))
+            .build();
+
+    repository()
+        .publish(
+            ProbePublication.builder()
+                .mediaFileId(mediaFileId)
+                .snapshot(PLAYBACK_FACTS_SNAPSHOT)
+                .probeVersion(ProbeVersion.FIRST_TO_REPORT_FRAME_FACTS)
+                .outcome(published)
+                .build());
+
+    assertThat(storedOutcome(mediaFileId).streams()).isEqualTo(published.streams());
+  }
+
+  @ParameterizedTest
+  @EnumSource(DolbyVisionRpuPlacement.class)
+  @DisplayName("Should read each RPU placement back when a version 5 outcome stores it")
+  default void shouldReadEachRpuPlacementBackWhenAVersion5OutcomeStoresIt(
+      DolbyVisionRpuPlacement placement) {
+    var mediaFileId = createMediaFile();
+    var chosen =
+        video()
+            .codec(Optional.of("hevc"))
+            .dynamicRange(
+                Optional.of(
+                    new VideoDynamicRange(
+                        CompatibleBase.NONE,
+                        Presence.ABSENT,
+                        new DolbyVision.Present(
+                            Optional.empty(), Presence.PRESENT, Optional.empty(), placement))))
+            .videoProperties(
+                Optional.of(VideoStreamProperties.builder().firstFramesRead(true).build()))
+            .build();
+    var published =
+        outcomeBuilder()
+            .streams(List.of(chosen))
+            .chosenVideoStream(Optional.of(new ChosenVideoStream(0, declaredFilmRate())))
             .build();
 
     repository()

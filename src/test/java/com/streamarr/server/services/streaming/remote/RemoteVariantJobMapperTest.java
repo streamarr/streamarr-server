@@ -8,6 +8,7 @@ import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
+import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -337,8 +338,8 @@ class RemoteVariantJobMapperTest {
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   @Test
   @DisplayName(
-      "Should send the source's first RPU header and sample layout when the probe read them")
-  void shouldSendTheSourcesFirstRpuHeaderAndSampleLayoutWhenTheProbeReadThem() {
+      "Should send the source's first RPU header and RPU placement when the probe read them")
+  void shouldSendTheSourcesFirstRpuHeaderAndRpuPlacementWhenTheProbeReadThem() {
     var range =
         sourceRangeOf(
             new com.streamarr.server.domain.streaming.VideoDynamicRange(
@@ -355,7 +356,7 @@ class RemoteVariantJobMapperTest {
                             .disableResidual(true)
                             .vdrBitDepth(12)
                             .build()),
-                    com.streamarr.server.domain.streaming.Presence.ABSENT)));
+                    DolbyVisionRpuPlacement.BEFORE_NEXT_PICTURE)));
 
     assertThat(range.getDolbyVisionPresent())
         .isEqualTo(
@@ -368,8 +369,31 @@ class RemoteVariantJobMapperTest {
                         .setEnhancementLayerSpatialResamplingFilter(true)
                         .setDisableResidual(true)
                         .setVdrBitDepth(12))
-                .setRpuStartsSample(Presence.PRESENCE_ABSENT)
+                .setRpuPlacement(
+                    com.streamarr.transcode.v1.DolbyVisionRpuPlacement
+                        .DOLBY_VISION_RPU_PLACEMENT_BEFORE_NEXT_PICTURE)
                 .build());
+  }
+
+  // ADR 0036 names each RPU placement the same way in the domain and the job.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @ParameterizedTest
+  @EnumSource(DolbyVisionRpuPlacement.class)
+  @DisplayName("Should send the source's RPU placement when a job carries it")
+  void shouldSendTheSourcesRpuPlacementWhenAJobCarriesIt(DolbyVisionRpuPlacement placement) {
+    var range =
+        sourceRangeOf(
+            new com.streamarr.server.domain.streaming.VideoDynamicRange(
+                com.streamarr.server.domain.streaming.CompatibleBase.NONE,
+                com.streamarr.server.domain.streaming.Presence.ABSENT,
+                new com.streamarr.server.domain.streaming.DolbyVision.Present(
+                    Optional.empty(),
+                    com.streamarr.server.domain.streaming.Presence.PRESENT,
+                    Optional.empty(),
+                    placement)));
+
+    assertThat(range.getDolbyVisionPresent().getRpuPlacement().name())
+        .isEqualTo("DOLBY_VISION_RPU_PLACEMENT_" + placement.name());
   }
 
   // ADR 0036 names each compatible base and presence value the same way in the domain and the job.

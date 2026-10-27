@@ -21,9 +21,9 @@ public enum MediaFileProbePropertyIssue {
    */
   DOLBY_VISION_COMPATIBILITY_DISAGREES_WITH_TRANSFER,
   /**
-   * A sample starts with a Dolby Vision RPU ahead of its picture: a muxer started a new sample at
-   * each RPU, so each RPU sits in the next picture's sample and the last sample holds no picture.
-   * Players fail at the end of a copy of such a stream.
+   * A sample starts with a Dolby Vision RPU ahead of its picture, so each RPU sits either in the
+   * next picture's sample, as a muxer that started a new sample at each RPU wrote it, or ahead of
+   * its own picture. A copy would hand players the misplaced RPUs.
    */
   DOLBY_VISION_RPU_STARTS_SAMPLE;
 
@@ -49,7 +49,7 @@ public enum MediaFileProbePropertyIssue {
   public static Set<MediaFileProbePropertyIssue> foundIn(@NonNull VideoDynamicRange range) {
     var issues = EnumSet.noneOf(MediaFileProbePropertyIssue.class);
     if (!(range.dolbyVision()
-        instanceof DolbyVision.Present(var declared, _, _, var rpuStartsSample))) {
+        instanceof DolbyVision.Present(var declared, _, _, var rpuPlacement))) {
       return issues;
     }
 
@@ -57,7 +57,7 @@ public enum MediaFileProbePropertyIssue {
       issues.add(DOLBY_VISION_COMPATIBILITY_DISAGREES_WITH_TRANSFER);
     }
 
-    if (rpuStartsSample == Presence.PRESENT) {
+    if (rpuPlacement.startsSample()) {
       issues.add(DOLBY_VISION_RPU_STARTS_SAMPLE);
     }
 

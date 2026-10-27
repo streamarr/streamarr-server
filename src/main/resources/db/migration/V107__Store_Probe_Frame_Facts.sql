@@ -5,8 +5,8 @@
 -- contract's UNSPECIFIED codec profile.
 --
 -- A Dolby Vision stream keeps the header of the first RPU that the probe read, whole or not at
--- all, and only when the probe observed an RPU. dolby_vision_rpu_starts_sample is NULL when the
--- probe could not see where the RPUs sit, and it too needs an observed RPU.
+-- all, and only when the probe observed an RPU. dolby_vision_rpu_placement is NULL when the probe
+-- could not decide where the samples place the RPUs, and it too needs an observed RPU.
 ALTER TABLE media_file_stream_info
     ADD COLUMN codec_profile TEXT CHECK (codec_profile IN (
         'H264_CONSTRAINED_BASELINE', 'H264_BASELINE', 'H264_MAIN', 'H264_EXTENDED', 'H264_HIGH',
@@ -29,8 +29,8 @@ ALTER TABLE media_file_stream_info
     ADD COLUMN first_frames_read BOOLEAN,
     ADD COLUMN mastering_display_omitted BOOLEAN,
     ADD COLUMN content_light_level_omitted BOOLEAN,
-    ADD COLUMN dolby_vision_rpu_starts_sample TEXT
-        CHECK (dolby_vision_rpu_starts_sample IN ('ABSENT', 'PRESENT')),
+    ADD COLUMN dolby_vision_rpu_placement TEXT CHECK (dolby_vision_rpu_placement IN (
+        'AFTER_OWN_PICTURE', 'BEFORE_NEXT_PICTURE', 'BEFORE_OWN_PICTURE')),
     ADD COLUMN first_rpu_vdr_rpu_profile INTEGER CHECK (first_rpu_vdr_rpu_profile >= 0),
     ADD COLUMN first_rpu_base_layer_full_range BOOLEAN,
     ADD COLUMN first_rpu_enhancement_layer_spatial_resampling_filter BOOLEAN,
@@ -53,5 +53,5 @@ ALTER TABLE media_file_stream_info
                      first_rpu_enhancement_layer_spatial_resampling_filter,
                      first_rpu_disable_residual, first_rpu_vdr_bit_depth) IN (0, 5)),
     ADD CONSTRAINT rpu_details_require_observed_rpu CHECK (
-        (first_rpu_vdr_rpu_profile IS NULL AND dolby_vision_rpu_starts_sample IS NULL) OR
+        (first_rpu_vdr_rpu_profile IS NULL AND dolby_vision_rpu_placement IS NULL) OR
         dolby_vision_observed_rpu = 'PRESENT');

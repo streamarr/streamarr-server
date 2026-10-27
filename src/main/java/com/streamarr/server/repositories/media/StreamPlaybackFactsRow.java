@@ -4,6 +4,7 @@ import com.streamarr.server.domain.streaming.ContentLightLevel;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
+import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
 import com.streamarr.server.domain.streaming.MasteringDisplayColorVolume;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.StreamInfo;
@@ -88,13 +89,13 @@ final class StreamPlaybackFactsRow {
               var declared,
               var observedRpu,
               var firstRpuHeader,
-              var rpuStartsSample) -> {
+              var rpuPlacement) -> {
         row.setDolbyVision(Presence.PRESENT.name());
         row.setDolbyVisionObservedRpu(observedRpu.name());
         declared.ifPresent(configuration -> setDolbyVisionRecord(row, configuration));
         firstRpuHeader.ifPresent(header -> setFirstRpuHeader(row, header));
-        if (rpuStartsSample != Presence.UNSPECIFIED) {
-          row.setDolbyVisionRpuStartsSample(rpuStartsSample.name());
+        if (rpuPlacement != DolbyVisionRpuPlacement.UNSPECIFIED) {
+          row.setDolbyVisionRpuPlacement(rpuPlacement.name());
         }
       }
     }

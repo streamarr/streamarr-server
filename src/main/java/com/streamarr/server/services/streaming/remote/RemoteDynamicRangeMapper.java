@@ -4,6 +4,7 @@ import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
+import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.transcode.v1.DolbyVisionAbsent;
@@ -29,11 +30,11 @@ final class RemoteDynamicRangeMapper {
               var declared,
               var observedRpu,
               var firstRpuHeader,
-              var rpuStartsSample) -> {
+              var rpuPlacement) -> {
         var present =
             DolbyVisionPresent.newBuilder()
                 .setObservedRpu(presence(observedRpu))
-                .setRpuStartsSample(presence(rpuStartsSample));
+                .setRpuPlacement(rpuPlacement(rpuPlacement));
         declared.map(RemoteDynamicRangeMapper::configuration).ifPresent(present::setDeclared);
         firstRpuHeader
             .map(RemoteDynamicRangeMapper::rpuHeader)
@@ -70,6 +71,24 @@ final class RemoteDynamicRangeMapper {
         .setDisableResidual(header.disableResidual())
         .setVdrBitDepth(header.vdrBitDepth())
         .build();
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static com.streamarr.transcode.v1.DolbyVisionRpuPlacement rpuPlacement(
+      DolbyVisionRpuPlacement placement) {
+    return switch (placement) {
+      case UNSPECIFIED ->
+          com.streamarr.transcode.v1.DolbyVisionRpuPlacement.DOLBY_VISION_RPU_PLACEMENT_UNSPECIFIED;
+      case AFTER_OWN_PICTURE ->
+          com.streamarr.transcode.v1.DolbyVisionRpuPlacement
+              .DOLBY_VISION_RPU_PLACEMENT_AFTER_OWN_PICTURE;
+      case BEFORE_NEXT_PICTURE ->
+          com.streamarr.transcode.v1.DolbyVisionRpuPlacement
+              .DOLBY_VISION_RPU_PLACEMENT_BEFORE_NEXT_PICTURE;
+      case BEFORE_OWN_PICTURE ->
+          com.streamarr.transcode.v1.DolbyVisionRpuPlacement
+              .DOLBY_VISION_RPU_PLACEMENT_BEFORE_OWN_PICTURE;
+    };
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")

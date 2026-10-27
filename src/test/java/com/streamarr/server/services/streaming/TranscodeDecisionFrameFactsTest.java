@@ -11,6 +11,7 @@ import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
+import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
 import com.streamarr.server.domain.streaming.MatrixCoefficients;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbeContainer;
@@ -36,6 +37,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -91,17 +93,21 @@ class TranscodeDecisionFrameFactsTest {
                             Optional.empty(),
                             Presence.PRESENT,
                             Optional.of(profile5RpuHeader()),
-                            Presence.ABSENT))))
+                            DolbyVisionRpuPlacement.AFTER_OWN_PICTURE))))
             .videoProperties(Optional.of(bt709Properties(VideoCodecProfile.HEVC_MAIN_10)))
             .build();
 
     assertThat(decide(containerFormat, profile5)).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
   }
 
-  @Test
+  @ParameterizedTest
+  @EnumSource(
+      value = DolbyVisionRpuPlacement.class,
+      names = {"BEFORE_NEXT_PICTURE", "BEFORE_OWN_PICTURE"})
   @DisplayName("Should encode a Dolby Vision profile 9 stream when its RPUs start samples")
-  void shouldEncodeADolbyVisionProfile9StreamWhenItsRpusStartSamples() {
-    var profile9 = profile9Stream(Presence.PRESENT);
+  void shouldEncodeADolbyVisionProfile9StreamWhenItsRpusStartSamples(
+      DolbyVisionRpuPlacement placement) {
+    var profile9 = profile9Stream(placement);
 
     assertThat(decide("mov,mp4,m4a,3gp,3g2,mj2", profile9))
         .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
@@ -110,15 +116,19 @@ class TranscodeDecisionFrameFactsTest {
   @Test
   @DisplayName("Should copy a Dolby Vision profile 9 stream when every RPU follows its picture")
   void shouldCopyADolbyVisionProfile9StreamWhenEveryRpuFollowsItsPicture() {
-    var profile9 = profile9Stream(Presence.ABSENT);
+    var profile9 = profile9Stream(DolbyVisionRpuPlacement.AFTER_OWN_PICTURE);
 
     assertThat(decide("mov,mp4,m4a,3gp,3g2,mj2", profile9)).isEqualTo(TranscodeMode.REMUX);
   }
 
-  @Test
+  @ParameterizedTest
+  @EnumSource(
+      value = DolbyVisionRpuPlacement.class,
+      names = {"BEFORE_NEXT_PICTURE", "BEFORE_OWN_PICTURE"})
   @DisplayName("Should encode a Dolby Vision profile 8.2 stream when its RPUs start samples")
-  void shouldEncodeADolbyVisionProfile8Point2StreamWhenItsRpusStartSamples() {
-    var profile82 = profile82Stream(Presence.PRESENT);
+  void shouldEncodeADolbyVisionProfile8Point2StreamWhenItsRpusStartSamples(
+      DolbyVisionRpuPlacement placement) {
+    var profile82 = profile82Stream(placement);
 
     assertThat(decide("mov,mp4,m4a,3gp,3g2,mj2", profile82))
         .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
@@ -127,7 +137,7 @@ class TranscodeDecisionFrameFactsTest {
   @Test
   @DisplayName("Should copy a Dolby Vision profile 8.2 stream when every RPU follows its picture")
   void shouldCopyADolbyVisionProfile8Point2StreamWhenEveryRpuFollowsItsPicture() {
-    var profile82 = profile82Stream(Presence.ABSENT);
+    var profile82 = profile82Stream(DolbyVisionRpuPlacement.AFTER_OWN_PICTURE);
 
     assertThat(decide("mov,mp4,m4a,3gp,3g2,mj2", profile82)).isEqualTo(TranscodeMode.REMUX);
   }
@@ -147,7 +157,7 @@ class TranscodeDecisionFrameFactsTest {
                             Optional.empty(),
                             Presence.PRESENT,
                             Optional.of(profile5RpuHeader()),
-                            Presence.PRESENT))))
+                            DolbyVisionRpuPlacement.BEFORE_NEXT_PICTURE))))
             .videoProperties(Optional.of(bt709Properties(VideoCodecProfile.HEVC_MAIN_10)))
             .build();
 
@@ -222,17 +232,17 @@ class TranscodeDecisionFrameFactsTest {
 
   // Dolby Vision profile 9: an H.264 base layer with an SDR base, whose record claims
   // compatibility identifier 2.
-  private static StreamInfo profile9Stream(Presence rpuStartsSample) {
+  private static StreamInfo profile9Stream(DolbyVisionRpuPlacement placement) {
     return h264Stream()
-        .dynamicRange(Optional.of(sdrBaseDolbyVision(9, rpuStartsSample)))
+        .dynamicRange(Optional.of(sdrBaseDolbyVision(9, placement)))
         .videoProperties(Optional.of(bt709Properties(VideoCodecProfile.H264_HIGH)))
         .build();
   }
 
   // Dolby Vision profile 8.2: an HEVC base layer with an SDR base.
-  private static StreamInfo profile82Stream(Presence rpuStartsSample) {
+  private static StreamInfo profile82Stream(DolbyVisionRpuPlacement placement) {
     return hevcStream()
-        .dynamicRange(Optional.of(sdrBaseDolbyVision(8, rpuStartsSample)))
+        .dynamicRange(Optional.of(sdrBaseDolbyVision(8, placement)))
         .videoProperties(Optional.of(bt709Properties(VideoCodecProfile.HEVC_MAIN_10)))
         .build();
   }
@@ -249,7 +259,8 @@ class TranscodeDecisionFrameFactsTest {
 
   // A Dolby Vision stream with an SDR base whose record claims compatibility identifier 2, and
   // whose samples the probe read.
-  private static VideoDynamicRange sdrBaseDolbyVision(int profile, Presence rpuStartsSample) {
+  private static VideoDynamicRange sdrBaseDolbyVision(
+      int profile, DolbyVisionRpuPlacement placement) {
     return new VideoDynamicRange(
         CompatibleBase.SDR,
         Presence.UNSPECIFIED,
@@ -264,7 +275,7 @@ class TranscodeDecisionFrameFactsTest {
                     .build()),
             Presence.PRESENT,
             Optional.empty(),
-            rpuStartsSample));
+            placement));
   }
 
   private static VideoStreamProperties bt709Properties(VideoCodecProfile profile) {

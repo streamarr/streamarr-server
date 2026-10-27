@@ -10,6 +10,7 @@ import com.streamarr.server.domain.streaming.ContentLightLevel;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
+import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
 import com.streamarr.server.domain.streaming.MasteringDisplayColorVolume;
 import com.streamarr.server.domain.streaming.MatrixCoefficients;
 import com.streamarr.server.domain.streaming.Presence;
@@ -148,7 +149,7 @@ public class MediaFileStreamInfo {
   private Boolean contentLightLevelOmitted;
 
   @Enumerated(EnumType.STRING)
-  private Presence dolbyVisionRpuStartsSample;
+  private DolbyVisionRpuPlacement dolbyVisionRpuPlacement;
 
   private Integer firstRpuVdrRpuProfile;
   private Boolean firstRpuBaseLayerFullRange;
@@ -264,7 +265,8 @@ public class MediaFileStreamInfo {
               dolbyVisionRecord(),
               dolbyVisionObservedRpu,
               firstRpuHeader(),
-              Optional.ofNullable(dolbyVisionRpuStartsSample).orElse(Presence.UNSPECIFIED));
+              Optional.ofNullable(dolbyVisionRpuPlacement)
+                  .orElse(DolbyVisionRpuPlacement.UNSPECIFIED));
     };
   }
 
@@ -390,13 +392,13 @@ public class MediaFileStreamInfo {
                 var declared,
                 var observedRpu,
                 var firstRpuHeader,
-                var rpuStartsSample) -> {
+                var rpuPlacement) -> {
           dolbyVision = Presence.PRESENT;
           dolbyVisionObservedRpu = observedRpu;
           declared.ifPresent(this::dolbyVisionRecord);
           firstRpuHeader.ifPresent(this::firstRpuHeader);
-          if (rpuStartsSample != Presence.UNSPECIFIED) {
-            dolbyVisionRpuStartsSample = rpuStartsSample;
+          if (rpuPlacement != DolbyVisionRpuPlacement.UNSPECIFIED) {
+            dolbyVisionRpuPlacement = rpuPlacement;
           }
         }
       }

@@ -13,6 +13,7 @@ import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.transcode.v1.CompatibleBase;
 import com.streamarr.transcode.v1.DolbyVisionConfiguration;
 import com.streamarr.transcode.v1.DolbyVisionPresent;
+import com.streamarr.transcode.v1.DolbyVisionRpuPlacement;
 import com.streamarr.transcode.v1.Presence;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
 import java.util.Optional;
@@ -76,7 +77,8 @@ final class RemoteStreamPropertiesMapper {
 
   private static void checkFrameEvidence(ProbeStreamInfo stream) {
     var range = stream.getDynamicRange();
-    // A sample layout needs an observed RPU, which the next check enforces, so it needs frames too.
+    // An RPU placement needs an observed RPU, which the next check enforces, so it needs frames
+    // too.
     var reportsFrameFeature =
         range.getHdr10Plus() != Presence.PRESENCE_UNSPECIFIED
             || range.hasDolbyVisionAbsent()
@@ -91,7 +93,8 @@ final class RemoteStreamPropertiesMapper {
     }
 
     if (present.hasFirstRpuHeader()
-        || present.getRpuStartsSample() != Presence.PRESENCE_UNSPECIFIED) {
+        || present.getRpuPlacement()
+            != DolbyVisionRpuPlacement.DOLBY_VISION_RPU_PLACEMENT_UNSPECIFIED) {
       throw contractViolation("Worker probe described RPUs that it did not observe");
     }
   }
@@ -101,17 +104,18 @@ final class RemoteStreamPropertiesMapper {
       case "h264", "hevc" -> {
         // The worker reads every frame feature of these codecs from the frames or the packets.
       }
-      case "av1" -> checkAv1SampleLayout(stream.getDynamicRange());
+      case "av1" -> checkAv1RpuPlacement(stream.getDynamicRange());
       default -> checkInvisibleFrameFeatures(stream.getDynamicRange());
     }
   }
 
   // An AV1 RPU belongs ahead of the frame that FFmpeg attaches it to, so a sample that starts
-  // with one has the expected layout, and the contract reports no AV1 sample layout.
+  // with one has the expected layout, and the contract reports no AV1 RPU placement.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static void checkAv1SampleLayout(com.streamarr.transcode.v1.VideoDynamicRange range) {
-    if (range.getDolbyVisionPresent().getRpuStartsSample() != Presence.PRESENCE_UNSPECIFIED) {
-      throw contractViolation("Worker probe reported a sample layout of an AV1 stream");
+  private static void checkAv1RpuPlacement(com.streamarr.transcode.v1.VideoDynamicRange range) {
+    if (range.getDolbyVisionPresent().getRpuPlacement()
+        != DolbyVisionRpuPlacement.DOLBY_VISION_RPU_PLACEMENT_UNSPECIFIED) {
+      throw contractViolation("Worker probe reported an RPU placement of an AV1 stream");
     }
   }
 

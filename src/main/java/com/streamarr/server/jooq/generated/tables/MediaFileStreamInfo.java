@@ -372,9 +372,9 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
 
     /**
      * The column
-     * <code>public.media_file_stream_info.dolby_vision_rpu_starts_sample</code>.
+     * <code>public.media_file_stream_info.dolby_vision_rpu_placement</code>.
      */
-    public final TableField<MediaFileStreamInfoRecord, String> DOLBY_VISION_RPU_STARTS_SAMPLE = createField(DSL.name("dolby_vision_rpu_starts_sample"), SQLDataType.CLOB, this, "");
+    public final TableField<MediaFileStreamInfoRecord, String> DOLBY_VISION_RPU_PLACEMENT = createField(DSL.name("dolby_vision_rpu_placement"), SQLDataType.CLOB, this, "");
 
     /**
      * The column
@@ -530,7 +530,7 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
             Internal.createCheck(this, DSL.name("media_file_stream_info_dolby_vision_level_check"), "((dolby_vision_level >= 0))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_dolby_vision_observed_rpu_check"), "((dolby_vision_observed_rpu = ANY (ARRAY['UNSPECIFIED'::text, 'ABSENT'::text, 'PRESENT'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_dolby_vision_profile_check"), "((dolby_vision_profile >= 0))", true),
-            Internal.createCheck(this, DSL.name("media_file_stream_info_dolby_vision_rpu_starts_sample_check"), "((dolby_vision_rpu_starts_sample = ANY (ARRAY['ABSENT'::text, 'PRESENT'::text])))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_dolby_vision_rpu_placement_check"), "((dolby_vision_rpu_placement = ANY (ARRAY['AFTER_OWN_PICTURE'::text, 'BEFORE_NEXT_PICTURE'::text, 'BEFORE_OWN_PICTURE'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_dynamic_range_compatible_base_check"), "((dynamic_range_compatible_base = ANY (ARRAY['UNSPECIFIED'::text, 'NONE'::text, 'SDR'::text, 'PQ'::text, 'HLG'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_end_time_nanos_check"), "(((end_time_nanos >= 0) AND (end_time_nanos <= 999999999)))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_first_rpu_vdr_bit_depth_check"), "((first_rpu_vdr_bit_depth >= 8))", true),
@@ -557,7 +557,7 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
             Internal.createCheck(this, DSL.name("media_file_stream_info_transfer_characteristics_check"), "((transfer_characteristics = ANY (ARRAY['BT709'::text, 'BT470M'::text, 'BT470BG'::text, 'SMPTE170M'::text, 'SMPTE240M'::text, 'LINEAR'::text, 'LOG100'::text, 'LOG316'::text, 'IEC61966_2_4'::text, 'BT1361'::text, 'IEC61966_2_1'::text, 'BT2020_10'::text, 'BT2020_12'::text, 'SMPTE2084'::text, 'SMPTE428'::text, 'ARIB_STD_B67'::text])))", true),
             Internal.createCheck(this, DSL.name("omitted_content_light_level_is_not_listed"), "(((content_light_level_omitted IS NOT TRUE) OR (max_content_light_level IS NULL)))", true),
             Internal.createCheck(this, DSL.name("omitted_mastering_display_is_not_listed"), "(((mastering_display_omitted IS NOT TRUE) OR (mastering_red_x IS NULL)))", true),
-            Internal.createCheck(this, DSL.name("rpu_details_require_observed_rpu"), "((((first_rpu_vdr_rpu_profile IS NULL) AND (dolby_vision_rpu_starts_sample IS NULL)) OR (dolby_vision_observed_rpu = 'PRESENT'::text)))", true)
+            Internal.createCheck(this, DSL.name("rpu_details_require_observed_rpu"), "((((first_rpu_vdr_rpu_profile IS NULL) AND (dolby_vision_rpu_placement IS NULL)) OR (dolby_vision_observed_rpu = 'PRESENT'::text)))", true)
         );
     }
 

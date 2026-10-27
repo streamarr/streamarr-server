@@ -9,6 +9,7 @@ import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.ContentLightLevel;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
+import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
 import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.FrameRatePacketScan;
 import com.streamarr.server.domain.streaming.FrameRateRule;
@@ -34,8 +35,7 @@ import java.util.OptionalLong;
 import java.util.function.Function;
 
 // Maps the facts that probe version 4 adds for playback, and the RPU facts of probe version 5.
-// Domain and protobuf contracts
-// intentionally share simple names.
+// Domain and protobuf contracts intentionally share simple names.
 final class RemotePlaybackFactsMapper {
 
   private static final String WORKER_PROBE_PREFIX = "Worker probe ";
@@ -50,7 +50,7 @@ final class RemotePlaybackFactsMapper {
     this.durations = durations;
   }
 
-  // A probe version that reads no frames reports no RPU header and no sample layout.
+  // A probe version that reads no frames reports no RPU header and no RPU placement.
   StreamInfo.StreamInfoBuilder addStreamFacts(
       StreamInfo.StreamInfoBuilder builder, ProbeStreamInfo stream, boolean readsFrames) {
     return builder
@@ -227,7 +227,22 @@ final class RemotePlaybackFactsMapper {
         present.hasFirstRpuHeader()
             ? Optional.of(RemoteStreamPropertiesMapper.rpuHeader(present.getFirstRpuHeader()))
             : Optional.empty(),
-        presence(present.getRpuStartsSample()));
+        rpuPlacement(present.getRpuPlacement()));
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static DolbyVisionRpuPlacement rpuPlacement(
+      com.streamarr.transcode.v1.DolbyVisionRpuPlacement placement) {
+    return switch (placement) {
+      case DOLBY_VISION_RPU_PLACEMENT_AFTER_OWN_PICTURE ->
+          DolbyVisionRpuPlacement.AFTER_OWN_PICTURE;
+      case DOLBY_VISION_RPU_PLACEMENT_BEFORE_NEXT_PICTURE ->
+          DolbyVisionRpuPlacement.BEFORE_NEXT_PICTURE;
+      case DOLBY_VISION_RPU_PLACEMENT_BEFORE_OWN_PICTURE ->
+          DolbyVisionRpuPlacement.BEFORE_OWN_PICTURE;
+      case DOLBY_VISION_RPU_PLACEMENT_UNSPECIFIED, UNRECOGNIZED ->
+          DolbyVisionRpuPlacement.UNSPECIFIED;
+    };
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
