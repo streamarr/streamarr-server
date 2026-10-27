@@ -782,16 +782,13 @@ message ProbeStreamInfo {
   // no Dolby Vision sample entry and no RPU. FFmpeg's H.264 decoder drops the NAL units that carry
   // RPUs. FFmpeg's HEVC decoder ignores an RPU that is not the last NAL unit of its sample, and an
   // RPU that it cannot parse. So for H.264 and HEVC the worker also parses the NAL units of every
-  // packet that the walk covers. When the kept read holds 3 frames, the walk covers every packet of
-  // that read. An edit list's preroll widens that read, so the walk also covers the packets that
-  // the decoder discards. When the kept read holds fewer than 3 frames and the read is not cut
-  // short, as first_frames_read describes, the stream holds 192 packets or fewer, and the walk
-  // covers every packet that the widest read read, which is every packet of the stream. The packets
-  // past the kept read decode to no further frame but can still hold an RPU or an SEI message, so a
-  // walk of the kept read alone would rule features out on packets that it never parsed. When the
-  // read is cut short, the walk covers the packets of the kept read. observed_rpu is PRESENT when
-  // either the frames or the packets hold an RPU. observed_rpu is ABSENT only when the probe could
-  // delimit every NAL unit of every one of those packets.
+  // packet that the walk covers: every packet that the kept read asked for. An edit list's preroll
+  // widens that read, so the walk also covers the packets that the decoder discards. The worker
+  // reads those packets in a separate read of the same count. ffprobe ends a read without an error
+  // when the demuxer or the file fails, so when that read returns fewer packets than the kept read
+  // asked for, the worker has not read every packet that the walk covers. observed_rpu is PRESENT
+  // when either the frames or the packets hold an RPU. observed_rpu is ABSENT only when the probe
+  // could delimit every NAL unit of every one of those packets.
   //
   // The stream's extradata tells how a packet delimits its NAL units. With an avcC or an hvcC
   // record, whose first byte is configurationVersion 1, each NAL unit follows a big-endian length
@@ -1049,9 +1046,11 @@ message ProbeStreamInfo {
   // MP4 edit list discards do. So the probe reads the first 3, 12, 48 and then 192 packets of the
   // stream, and stops at the first read that decodes 3 frames. A read fails when ffprobe exits with
   // an error, prints no JSON or prints more than 4 MiB. The kept read is the narrowest read that
-  // decodes the most frames, and the probe keeps its first 3 frames. The read is cut short when the
-  // kept read holds fewer than 3 frames and a read failed, the stream holds more than 192 packets,
-  // or the probe cannot count the stream's packets. first_frames_read stays true when the read is
+  // decodes the most frames, and the probe keeps its first 3 frames. The read is cut short whenever
+  // the kept read holds fewer than 3 frames. A stream of fewer than 3 frames is not told apart from
+  // a cut-short one: ffprobe ends a read without an error when the demuxer or the file fails, such
+  // as on a read error from a network share, so neither a read nor a count of the stream's packets
+  // that ends early shows that the stream ends there. first_frames_read stays true when the read is
   // cut short. The stream can then hold frames that the probe did not read, so hdr10_plus,
   // observed_rpu and Dolby Vision are never ABSENT on such a stream: a feature that neither the
   // frames nor the packets show is UNSPECIFIED, and one that they show is PRESENT. The probe
