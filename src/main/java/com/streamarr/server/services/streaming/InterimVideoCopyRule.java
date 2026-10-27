@@ -26,7 +26,17 @@ final class InterimVideoCopyRule {
         && MediaFileProbePropertyIssue.foundIn(range).stream()
             .noneMatch(MediaFileProbePropertyIssue::rulesOutCopy)
         && isCopyableBitDepthAndChroma(videoCodec, facts)
-        && hasDescribableCodecString(facts.codecString());
+        && hasDescribableCodecString(facts.codecString())
+        && !lacksCodecProfile(facts);
+  }
+
+  // From probe version 5 on, a codec profile that the probe could not name rules out a copy. An
+  // earlier probe version reports no codec profile, and its copies stay as they were.
+  private static boolean lacksCodecProfile(VideoPlaybackFacts facts) {
+    return facts
+        .videoProperties()
+        .map(properties -> properties.codecProfile().isEmpty())
+        .orElse(false);
   }
 
   private static boolean isSdrOrUnspecified(CompatibleBase base) {

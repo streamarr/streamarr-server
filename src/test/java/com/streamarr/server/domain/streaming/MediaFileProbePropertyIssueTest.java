@@ -82,6 +82,23 @@ class MediaFileProbePropertyIssueTest {
   }
 
   @ParameterizedTest
+  @EnumSource(Presence.class)
+  @DisplayName("Should find the RPU sample layout issue only when an RPU starts a sample")
+  void shouldFindTheRpuSampleLayoutIssueOnlyWhenAnRpuStartsASample(Presence rpuStartsSample) {
+    var range =
+        new VideoDynamicRange(
+            CompatibleBase.SDR,
+            Presence.ABSENT,
+            new DolbyVision.Present(
+                Optional.empty(), Presence.PRESENT, Optional.empty(), rpuStartsSample));
+
+    assertThat(
+            MediaFileProbePropertyIssue.foundIn(range)
+                .contains(MediaFileProbePropertyIssue.DOLBY_VISION_RPU_STARTS_SAMPLE))
+        .isEqualTo(rpuStartsSample == Presence.PRESENT);
+  }
+
+  @ParameterizedTest
   @EnumSource(MediaFileProbePropertyIssue.class)
   @DisplayName("Should rule out a copy when the probe finds any property issue")
   void shouldRuleOutACopyWhenTheProbeFindsAnyPropertyIssue(MediaFileProbePropertyIssue issue) {

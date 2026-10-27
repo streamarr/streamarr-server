@@ -19,7 +19,13 @@ public enum MediaFileProbePropertyIssue {
    * identifier without a known base disagrees with every compatible base. The stream is encoded,
    * interpreting the signaled transfer.
    */
-  DOLBY_VISION_COMPATIBILITY_DISAGREES_WITH_TRANSFER;
+  DOLBY_VISION_COMPATIBILITY_DISAGREES_WITH_TRANSFER,
+  /**
+   * A sample starts with a Dolby Vision RPU ahead of its picture: a muxer started a new sample at
+   * each RPU, so each RPU sits in the next picture's sample and the last sample holds no picture.
+   * Players fail at the end of a copy of such a stream.
+   */
+  DOLBY_VISION_RPU_STARTS_SAMPLE;
 
   // The base format that each bl_signal_compatibility_id of the Dolby Vision profiles
   // specification claims. Identifier 6 is the PQ base of profile 7.
@@ -34,19 +40,25 @@ public enum MediaFileProbePropertyIssue {
   /** Whether the server must encode a stream that has this issue instead of copying it. */
   public boolean rulesOutCopy() {
     return switch (this) {
-      case DOLBY_VISION_COMPATIBILITY_DISAGREES_WITH_TRANSFER -> true;
+      case DOLBY_VISION_COMPATIBILITY_DISAGREES_WITH_TRANSFER, DOLBY_VISION_RPU_STARTS_SAMPLE ->
+          true;
     };
   }
 
   /** The issues of a video stream with this dynamic range. */
   public static Set<MediaFileProbePropertyIssue> foundIn(@NonNull VideoDynamicRange range) {
     var issues = EnumSet.noneOf(MediaFileProbePropertyIssue.class);
-    if (!(range.dolbyVision() instanceof DolbyVision.Present(var declared, _, _, _))) {
+    if (!(range.dolbyVision()
+        instanceof DolbyVision.Present(var declared, _, _, var rpuStartsSample))) {
       return issues;
     }
 
     if (hasDisagreeingCompatibility(declared, range.compatibleBase())) {
       issues.add(DOLBY_VISION_COMPATIBILITY_DISAGREES_WITH_TRANSFER);
+    }
+
+    if (rpuStartsSample == Presence.PRESENT) {
+      issues.add(DOLBY_VISION_RPU_STARTS_SAMPLE);
     }
 
     return issues;

@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming.remote;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
+import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.transcode.v1.DolbyVisionAbsent;
@@ -24,9 +25,19 @@ final class RemoteDynamicRangeMapper {
       case DolbyVision.Unspecified _ -> proto.clearDolbyVision();
       case DolbyVision.Absent _ ->
           proto.setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance());
-      case DolbyVision.Present(var declared, var observedRpu, _, _) -> {
-        var present = DolbyVisionPresent.newBuilder().setObservedRpu(presence(observedRpu));
+      case DolbyVision.Present(
+              var declared,
+              var observedRpu,
+              var firstRpuHeader,
+              var rpuStartsSample) -> {
+        var present =
+            DolbyVisionPresent.newBuilder()
+                .setObservedRpu(presence(observedRpu))
+                .setRpuStartsSample(presence(rpuStartsSample));
         declared.map(RemoteDynamicRangeMapper::configuration).ifPresent(present::setDeclared);
+        firstRpuHeader
+            .map(RemoteDynamicRangeMapper::rpuHeader)
+            .ifPresent(present::setFirstRpuHeader);
         proto.setDolbyVisionPresent(present);
       }
     }
@@ -46,6 +57,19 @@ final class RemoteDynamicRangeMapper {
     configuration.level().ifPresent(proto::setLevel);
     configuration.baseLayerCompatibilityId().ifPresent(proto::setBaseLayerCompatibilityId);
     return proto.build();
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static com.streamarr.transcode.v1.DolbyVisionRpuHeader rpuHeader(
+      DolbyVisionRpuHeader header) {
+    return com.streamarr.transcode.v1.DolbyVisionRpuHeader.newBuilder()
+        .setVdrRpuProfile(header.vdrRpuProfile())
+        .setBaseLayerFullRange(header.baseLayerFullRange())
+        .setEnhancementLayerSpatialResamplingFilter(
+            header.enhancementLayerSpatialResamplingFilter())
+        .setDisableResidual(header.disableResidual())
+        .setVdrBitDepth(header.vdrBitDepth())
+        .build();
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")

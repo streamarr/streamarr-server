@@ -10,7 +10,8 @@ import lombok.NonNull;
  * transcode decision reads them, and the job carries the stream index, dynamic range and codec
  * string to the worker as ADR 0036's source description. {@code rotationDegrees} is the
  * counterclockwise angle of the stream's display matrix. {@code containerCropping} counts the
- * pixels that the container removes from the picture before the rotation.
+ * pixels that the container removes from the picture before the rotation. {@code videoProperties}
+ * is empty before probe version 5.
  */
 @Builder
 public record VideoPlaybackFacts(
@@ -21,7 +22,8 @@ public record VideoPlaybackFacts(
     @NonNull Optional<String> codecString,
     @NonNull OptionalInt rotationDegrees,
     @NonNull Optional<ContainerCropping> containerCropping,
-    @NonNull FrameRateRule frameRateRule) {
+    @NonNull FrameRateRule frameRateRule,
+    @NonNull Optional<VideoStreamProperties> videoProperties) {
 
   /**
    * The size that FFmpeg scales an encode from, and that a player shows. FFmpeg crops the coded
@@ -81,5 +83,6 @@ public record VideoPlaybackFacts(
     private Optional<String> codecString = Optional.empty();
     private OptionalInt rotationDegrees = OptionalInt.empty();
     private Optional<ContainerCropping> containerCropping = Optional.empty();
+    private Optional<VideoStreamProperties> videoProperties = Optional.empty();
   }
 }

@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.DolbyVision;
+import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -330,6 +331,44 @@ class RemoteVariantJobMapperTest {
                                 .setBaseLayer(true)
                                 .setRpu(true))
                         .setObservedRpu(Presence.PRESENCE_UNSPECIFIED))
+                .build());
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @Test
+  @DisplayName(
+      "Should send the source's first RPU header and sample layout when the probe read them")
+  void shouldSendTheSourcesFirstRpuHeaderAndSampleLayoutWhenTheProbeReadThem() {
+    var range =
+        sourceRangeOf(
+            new com.streamarr.server.domain.streaming.VideoDynamicRange(
+                com.streamarr.server.domain.streaming.CompatibleBase.NONE,
+                com.streamarr.server.domain.streaming.Presence.ABSENT,
+                new com.streamarr.server.domain.streaming.DolbyVision.Present(
+                    Optional.empty(),
+                    com.streamarr.server.domain.streaming.Presence.PRESENT,
+                    Optional.of(
+                        DolbyVisionRpuHeader.builder()
+                            .vdrRpuProfile(0)
+                            .baseLayerFullRange(true)
+                            .enhancementLayerSpatialResamplingFilter(true)
+                            .disableResidual(true)
+                            .vdrBitDepth(12)
+                            .build()),
+                    com.streamarr.server.domain.streaming.Presence.ABSENT)));
+
+    assertThat(range.getDolbyVisionPresent())
+        .isEqualTo(
+            DolbyVisionPresent.newBuilder()
+                .setObservedRpu(Presence.PRESENCE_PRESENT)
+                .setFirstRpuHeader(
+                    com.streamarr.transcode.v1.DolbyVisionRpuHeader.newBuilder()
+                        .setVdrRpuProfile(0)
+                        .setBaseLayerFullRange(true)
+                        .setEnhancementLayerSpatialResamplingFilter(true)
+                        .setDisableResidual(true)
+                        .setVdrBitDepth(12))
+                .setRpuStartsSample(Presence.PRESENCE_ABSENT)
                 .build());
   }
 
