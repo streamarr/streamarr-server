@@ -343,6 +343,21 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @Test
+  @DisplayName(
+      "Should keep a Dolby Vision stream without a signaled transfer when its compatible base is"
+          + " none")
+  void shouldKeepADolbyVisionStreamWithoutASignaledTransferWhenItsCompatibleBaseIsNone() {
+    var video = profile8RpusWithoutTransfer(hevc(), CompatibleBase.COMPATIBLE_BASE_NONE);
+
+    var stream = videoOf(version5(media -> media.setStreams(0, video)));
+
+    assertThat(stream.dynamicRange())
+        .map(VideoDynamicRange::compatibleBase)
+        .contains(com.streamarr.server.domain.streaming.CompatibleBase.NONE);
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   @ParameterizedTest(name = "{0}")
   @MethodSource("declaredProfile10Bases")
   @DisplayName("Should keep a declared profile 10 stream when its record names a compatible base")
@@ -438,6 +453,36 @@ class RemoteProbeResultStreamPropertiesMapperTest {
             "an HLG compatible base without a signaled transfer",
             stream -> {
               stream.getDynamicRangeBuilder().setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_HLG);
+              return stream;
+            }),
+        violation(
+            "an SDR base beside Dolby Vision without a signaled transfer",
+            stream -> profile8RpusWithoutTransfer(stream, CompatibleBase.COMPATIBLE_BASE_SDR)),
+        violation(
+            "an unspecified base beside Dolby Vision without a signaled transfer",
+            stream ->
+                profile8RpusWithoutTransfer(stream, CompatibleBase.COMPATIBLE_BASE_UNSPECIFIED)),
+        violation(
+            "an SDR base without a signaled transfer or Dolby Vision",
+            stream -> {
+              stream.getDynamicRangeBuilder().setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR);
+              return stream;
+            }),
+        violation(
+            "no compatible base with a BT.709 transfer beside Dolby Vision profile 8",
+            stream -> {
+              stream
+                  .setTransferCharacteristics(SDR_TRANSFER)
+                  .getDynamicRangeBuilder()
+                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_NONE)
+                  .setDolbyVisionPresent(
+                      DolbyVisionPresent.newBuilder()
+                          .setDeclared(
+                              DolbyVisionConfiguration.newBuilder()
+                                  .setProfile(8)
+                                  .setBaseLayerCompatibilityId(2)
+                                  .setBaseLayer(true)
+                                  .setRpu(true)));
               return stream;
             }),
         violation(
@@ -962,6 +1007,20 @@ class RemoteProbeResultStreamPropertiesMapperTest {
       case TRANSFER_CHARACTERISTICS_ARIB_STD_B67 -> CompatibleBase.COMPATIBLE_BASE_HLG;
       default -> CompatibleBase.COMPATIBLE_BASE_UNSPECIFIED;
     };
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static ProbeStreamInfo.Builder profile8RpusWithoutTransfer(
+      ProbeStreamInfo.Builder stream, CompatibleBase base) {
+    stream
+        .setFirstFramesRead(true)
+        .getDynamicRangeBuilder()
+        .setCompatibleBase(base)
+        .setDolbyVisionPresent(
+            DolbyVisionPresent.newBuilder()
+                .setObservedRpu(com.streamarr.transcode.v1.Presence.PRESENCE_PRESENT)
+                .setFirstRpuHeader(profile8RpuHeader()));
+    return stream;
   }
 
   private static DolbyVisionConfiguration.Builder profilelessRecord() {

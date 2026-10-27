@@ -128,7 +128,8 @@ final class RemoteStreamPropertiesMapper {
 
   // From probe version 5 on, profiles 5 and 10.0 have no compatible base whatever the signaled
   // transfer says. Otherwise the signaled transfer, which transfer_characteristics names, decides
-  // a PQ or an HLG base.
+  // the base. The contract leaves the base of a transfer other than PQ, HLG and an unspecified one
+  // to the worker's reading of SDR, so such a transfer allows SDR or UNSPECIFIED.
   private static void checkCompatibleBase(ProbeStreamInfo stream) {
     var range = stream.getDynamicRange();
     if (range.hasDolbyVisionPresent() && isBaselessProfile(stream, range.getDolbyVisionPresent())) {
@@ -136,8 +137,9 @@ final class RemoteStreamPropertiesMapper {
       return;
     }
 
-    checkSignaledTransferCompatibleBase(
-        stream.getTransferCharacteristics(), range.getCompatibleBase());
+    if (!signaledTransferBases(stream).contains(range.getCompatibleBase())) {
+      throw contractViolation("Worker probe gave a compatible base that the transfer contradicts");
+    }
   }
 
   private static void checkBaselessProfileCompatibleBase(CompatibleBase base) {
@@ -146,21 +148,18 @@ final class RemoteStreamPropertiesMapper {
     }
   }
 
-  @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static void checkSignaledTransferCompatibleBase(
-      com.streamarr.transcode.v1.TransferCharacteristics transfer, CompatibleBase base) {
-    var isPqTransfer =
-        transfer
-            == com.streamarr.transcode.v1.TransferCharacteristics
-                .TRANSFER_CHARACTERISTICS_SMPTE2084;
-    var isHlgTransfer =
-        transfer
-            == com.streamarr.transcode.v1.TransferCharacteristics
-                .TRANSFER_CHARACTERISTICS_ARIB_STD_B67;
-    if (isPqTransfer != (base == CompatibleBase.COMPATIBLE_BASE_PQ)
-        || isHlgTransfer != (base == CompatibleBase.COMPATIBLE_BASE_HLG)) {
-      throw contractViolation("Worker probe gave a compatible base that the transfer contradicts");
-    }
+  private static Set<CompatibleBase> signaledTransferBases(ProbeStreamInfo stream) {
+    return switch (stream.getTransferCharacteristics()) {
+      case TRANSFER_CHARACTERISTICS_SMPTE2084 -> Set.of(CompatibleBase.COMPATIBLE_BASE_PQ);
+      case TRANSFER_CHARACTERISTICS_ARIB_STD_B67 -> Set.of(CompatibleBase.COMPATIBLE_BASE_HLG);
+      // An unspecified transfer leaves no base: NONE beside a Dolby Vision claim, else UNSPECIFIED.
+      case TRANSFER_CHARACTERISTICS_UNSPECIFIED ->
+          stream.getDynamicRange().hasDolbyVisionPresent()
+              ? Set.of(CompatibleBase.COMPATIBLE_BASE_NONE)
+              : Set.of(CompatibleBase.COMPATIBLE_BASE_UNSPECIFIED);
+      default ->
+          Set.of(CompatibleBase.COMPATIBLE_BASE_SDR, CompatibleBase.COMPATIBLE_BASE_UNSPECIFIED);
+    };
   }
 
   private static boolean isBaselessProfile(ProbeStreamInfo stream, DolbyVisionPresent present) {
