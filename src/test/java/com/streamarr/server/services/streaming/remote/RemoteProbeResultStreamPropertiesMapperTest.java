@@ -118,14 +118,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   void shouldKeepTheCodecProfileWhenTheContractNamesIt(
       com.streamarr.transcode.v1.VideoCodecProfile reported) {
     var codec = reported.name().split("_")[3].toLowerCase(Locale.ROOT);
-    // Both flags let the chosen stream be AV1, whose lacking static HDR values the worker flags.
-    var video =
-        hevc()
-            .setCodec(codec)
-            .setCodecProfile(reported)
-            .setCodecLevel(40)
-            .setMasteringDisplayOmitted(true)
-            .setContentLightLevelOmitted(true);
+    var video = hevc().setCodec(codec).setCodecProfile(reported).setCodecLevel(40);
 
     var stream = videoOf(version5(media -> media.setStreams(0, video)));
 
@@ -414,7 +407,8 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         violation(
             "an H.264 codec profile on an AV1 stream",
             stream ->
-                asAv1(stream)
+                stream
+                    .setCodec("av1")
                     .setCodecProfile(
                         com.streamarr.transcode.v1.VideoCodecProfile
                             .VIDEO_CODEC_PROFILE_H264_HIGH)),
@@ -593,7 +587,8 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         violation(
             "an AV1 profile 10.0 RPU header beside a record without a profile and with an SDR base",
             stream -> {
-              asAv1(stream)
+              stream
+                  .setCodec("av1")
                   .setFirstFramesRead(true)
                   .getDynamicRangeBuilder()
                   .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
@@ -622,7 +617,8 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         violation(
             "a record-less AV1 profile 10.0 stream with an SDR compatible base",
             stream -> {
-              asAv1(stream)
+              stream
+                  .setCodec("av1")
                   .setFirstFramesRead(true)
                   .getDynamicRangeBuilder()
                   .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
@@ -635,7 +631,8 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         violation(
             "a declared profile 10.0 stream with a PQ compatible base",
             stream -> {
-              asAv1(stream)
+              stream
+                  .setCodec("av1")
                   .getDynamicRangeBuilder()
                   .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
                   .setDolbyVisionPresent(
@@ -646,7 +643,8 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         violation(
             "a sample layout on an AV1 stream",
             stream -> {
-              asAv1(stream)
+              stream
+                  .setCodec("av1")
                   .setFirstFramesRead(true)
                   .getDynamicRangeBuilder()
                   .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
@@ -729,7 +727,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   @DisplayName(
       "Should keep a chosen AV1 stream that lacks static HDR metadata when it flags no omission")
   void shouldKeepAChosenAv1StreamThatLacksStaticHdrMetadataWhenItFlagsNoOmission() {
-    var video = hevc().setCodec("av1").setFirstFramesRead(true);
+    var video = av1().setFirstFramesRead(true);
 
     var stream = videoOf(version5(media -> media.setStreams(0, video)));
 
@@ -867,15 +865,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   }
 
   private static ProbeStreamInfo.Builder av1() {
-    return asAv1(hevc());
-  }
-
-  // The worker flags each static HDR value that the chosen AV1 stream lacks.
-  private static ProbeStreamInfo.Builder asAv1(ProbeStreamInfo.Builder stream) {
-    return stream
-        .setCodec("av1")
-        .setMasteringDisplayOmitted(true)
-        .setContentLightLevelOmitted(true);
+    return hevc().setCodec("av1");
   }
 
   private static DolbyVisionConfiguration.Builder profilelessRecord() {
