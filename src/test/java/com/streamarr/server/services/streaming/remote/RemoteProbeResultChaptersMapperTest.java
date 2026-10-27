@@ -6,7 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.domain.streaming.Chapter;
 import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
-import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.fixtures.WorkerProbeResultFixture;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeChapter;
@@ -105,7 +105,8 @@ class RemoteProbeResultChaptersMapperTest {
                     .setChaptersOmitted(true)
                     .addChapters(chapter(0, 0, 60))));
 
-    assertThatThrownBy(() -> mapper.map(report)).isInstanceOf(ProbeExecutionException.class);
+    assertThatThrownBy(() -> mapper.map(report))
+        .isInstanceOf(ProbeContractViolationException.class);
   }
 
   @Test
@@ -135,7 +136,8 @@ class RemoteProbeResultChaptersMapperTest {
                 ProbeContainerInfo.newBuilder()
                     .addChapters(chapter(0, 0, 60).setTitle("é".repeat(256) + "a"))));
 
-    assertThatThrownBy(() -> mapper.map(report)).isInstanceOf(ProbeExecutionException.class);
+    assertThatThrownBy(() -> mapper.map(report))
+        .isInstanceOf(ProbeContractViolationException.class);
   }
 
   @ParameterizedTest
@@ -155,8 +157,10 @@ class RemoteProbeResultChaptersMapperTest {
                 PROBE_VERSION_WITH_CHAPTERS,
                 ProbeContainerInfo.newBuilder().addChapters(endChapter)));
 
-    assertThatThrownBy(() -> mapper.map(startReport)).isInstanceOf(ProbeExecutionException.class);
-    assertThatThrownBy(() -> mapper.map(endReport)).isInstanceOf(ProbeExecutionException.class);
+    assertThatThrownBy(() -> mapper.map(startReport))
+        .isInstanceOf(ProbeContractViolationException.class);
+    assertThatThrownBy(() -> mapper.map(endReport))
+        .isInstanceOf(ProbeContractViolationException.class);
   }
 
   private ChapterKnowledge chaptersOf(ProbeAttemptResult result) {

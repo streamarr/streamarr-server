@@ -10,7 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.google.protobuf.ByteString;
-import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
@@ -237,7 +237,7 @@ class WorkerSessionGrpcServiceTest {
 
     assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
-        .hasCauseInstanceOf(ProbeExecutionException.class);
+        .hasCauseInstanceOf(ProbeContractViolationException.class);
   }
 
   @ParameterizedTest
@@ -256,7 +256,7 @@ class WorkerSessionGrpcServiceTest {
 
     assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
-        .hasCauseInstanceOf(ProbeExecutionException.class);
+        .hasCauseInstanceOf(ProbeContractViolationException.class);
   }
 
   @Test
@@ -286,7 +286,7 @@ class WorkerSessionGrpcServiceTest {
 
     assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
-        .hasCauseInstanceOf(ProbeExecutionException.class);
+        .hasCauseInstanceOf(ProbeContractViolationException.class);
   }
 
   private static List<ProbeKeyframePositionsPart> withoutAttemptIds(ProbeAttemptReport report) {

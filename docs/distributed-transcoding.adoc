@@ -110,6 +110,7 @@ These metrics report the same facts:
 * `streamarr.probes.background_capacity_control` is `1` for each worker. Its `control` tag is `adaptive`, or `fixed` when `TRANSCODE_WORKER_PROBE_CAPACITY` sets the capacity.
 * `streamarr.probes.waiting` reports the probes that running scans still wait for. A probe waits unclaimed while no worker has a free unit for it.
 * `streamarr.probes.deferred` counts the probes that the server deferred after it claimed them. Its `reason` tag is `workers_busy`, `no_compatible_worker`, or `no_connected_worker` when no worker could take the probe at dispatch, and `no_free_capacity` when the worker refused the probe because it had just lowered the probe's capacity.
+* `streamarr.probes.keyframe_packet_scan_failures` counts the keyframe packet scans that ran without a usable result. Its `reason` tag is `timed_out`, `no_keyframe_result`, or `contract_violation` when the worker's reply broke the worker contract.
 * `streamarr.playback.probe_queue_latency` records queue latency for a claimed probe, from its earliest still-waiting playback request until execution starts. It includes scheduler polling, any remaining quiet period or retry backoff, and capacity waits, so a nonzero value alone does not establish capacity exhaustion. Requests that stop waiting before execution starts contribute no sample.
 * `streamarr.playback.probe_wait` times how long a playback request waited for its file's probe outcome. Its `outcome` tag is `ready`, `probe_failed`, or `not_ready`.
 * `streamarr.playback.probe_waits` reports the playback requests that wait for a probe now.
@@ -140,7 +141,7 @@ When the wait reaches the limit, `createStreamSession` returns `MediaFileProbeNo
 `STREAMING_WORKER_SESSION_KEYFRAME_SCAN_TIMEOUT` bounds each keyframe packet scan on the server. It defaults to `30m`.
 A packet scan reads every packet of the source's video stream, which takes longer than a probe on network storage.
 A timeout requests worker cancellation and lets the scheduler retry.
-After three packet scans of a source time out or report no keyframes, the server stores its keyframes as unavailable, so playback encodes the source.
+After three packet scans of a source time out, report no keyframes, or get a worker reply that breaks the worker contract, the server stores its keyframes as unavailable, so playback encodes the source.
 Packet scans run on a scheduler of their own, so they never take the threads that run probes.
 Each cancel command carries a reason: the probe timeout, a server shutdown, or another reason.
 When a probe or a packet scan reaches its timeout, the command carries the timeout reason.

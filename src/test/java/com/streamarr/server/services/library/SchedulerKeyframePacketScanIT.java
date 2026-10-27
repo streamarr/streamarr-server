@@ -1,12 +1,16 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
+import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.streamarr.server.config.KeyframePacketScanScheduler;
 import com.streamarr.server.config.ProbeSchedulingProperties;
+import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
@@ -20,15 +24,24 @@ import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
+import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.exceptions.ProbeTimedOutException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeFfprobeService;
+import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fixtures.LoopbackProbeWorker;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import com.streamarr.server.services.streaming.KeyframePacketScanner;
+import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
+import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.server.support.UnstartedSchedulerConfiguration;
+import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeFailure;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.FileSystems;
@@ -36,6 +49,7 @@ import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -46,6 +60,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
 import javax.sql.DataSource;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
@@ -53,6 +69,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.test.context.TestPropertySource;
@@ -63,6 +82,9 @@ import org.springframework.transaction.PlatformTransactionManager;
 @DisplayName("Keyframe packet scan scheduling")
 class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTest {
 
+  private static final String FAILED_SCANS_METRIC =
+      "streamarr.probes.keyframe_packet_scan_failures";
+  private static final Duration WORKER_WAIT = Duration.ofSeconds(20);
   private static final ProbeOutcome.Success PACKET_SCAN_REQUIRED =
       success(
           new KeyframeKnowledge.PacketScanRequired(KeyframePacketScanReason.NO_CONTAINER_INDEX));
@@ -86,6 +108,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
   @Autowired private MediaFileProbeTaskScheduler probeTaskScheduler;
 
   private final BlockingQueue<ExecutionComplete> scanCompletions = new LinkedBlockingQueue<>();
+  private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
   private KeyframePacketScanScheduler scanScheduler;
 
   @Test
@@ -265,16 +288,18 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
     }
   }
 
-  @Test
-  @DisplayName("Should store unavailable keyframes and stop scanning when every scan times out")
-  void shouldStoreUnavailableKeyframesAndStopScanningWhenEveryScanTimesOut() throws Exception {
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("scanFailures")
+  @DisplayName("Should store unavailable keyframes and stop scanning when every scan fails")
+  void shouldStoreUnavailableKeyframesAndStopScanningWhenEveryScanFails(
+      String reason, Supplier<RuntimeException> failure) throws Exception {
     var request = requestUnchangedFiles(1).getFirst();
     packetScanRequiredProbe().execute(request, ProbePriority.BACKGROUND);
     var scans = new AtomicInteger();
     startScanScheduler(
         _ -> {
           scans.incrementAndGet();
-          throw new ProbeTimedOutException(new TimeoutException());
+          throw failure.get();
         },
         Clock.systemUTC());
 
@@ -288,6 +313,74 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
         .isEqualTo(
             new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_FAILED));
     assertThat(scheduledScans()).isZero();
+    assertThat(meterRegistry.get(FAILED_SCANS_METRIC).tag("reason", reason).counter().count())
+        .isEqualTo(3);
+  }
+
+  private static Stream<Arguments> scanFailures() {
+    return Stream.of(
+        arguments(
+            "timed_out",
+            (Supplier<RuntimeException>) () -> new ProbeTimedOutException(new TimeoutException())),
+        arguments(
+            "contract_violation",
+            (Supplier<RuntimeException>)
+                () ->
+                    new ProbeContractViolationException(
+                        "Worker probe keyframe decode times do not increase")));
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep rescheduling the scan without counting a failed scan when every worker reply is"
+          + " for another probe version")
+  void shouldKeepReschedulingTheScanWithoutCountingAFailedScanWhenEveryReplyIsForAnotherVersion()
+      throws Exception {
+    var request = requestUnchangedFiles(1).getFirst();
+    packetScanRequiredProbe().execute(request, ProbePriority.BACKGROUND);
+    try (var server =
+        WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
+            .configuration(serverConfigurationBuilder().build())
+            .segmentStore(new FakeSegmentStore())
+            .meterRegistry(new SimpleMeterRegistry())
+            .build()) {
+      server.start();
+      try (var worker =
+          LoopbackProbeWorker.builder()
+              .port(server.port())
+              .probeVersion(ProbeVersion.CURRENT)
+              .availableSlots(1)
+              .backgroundProbeCapacity(1)
+              .build()) {
+        var remote = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, tempDir);
+        startScanScheduler(remote::scanKeyframePackets, Clock.systemUTC());
+
+        for (var attempt = 1; attempt <= 3; attempt++) {
+          if (attempt > 1) {
+            retryPendingScansNow();
+          }
+
+          var dispatched = worker.nextResponse(WORKER_WAIT).getStartProbe().getRequest();
+          worker.reply(
+              ProbeAttemptResult.newBuilder()
+                  .setProbeAttemptId(dispatched.getProbeAttemptId())
+                  .setProbeVersion(dispatched.getProbeVersion() + 1)
+                  .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA)
+                  .build());
+
+          var completion = scanCompletions.poll(30, TimeUnit.SECONDS);
+          assertThat(completion).isNotNull();
+          assertThat(completion.getResult()).isEqualTo(ExecutionComplete.Result.FAILED);
+        }
+
+        assertThat(storedKeyframes(request)).isEqualTo(PACKET_SCAN_REQUIRED.keyframes());
+        assertThat(scheduledScans())
+            .as("A reply for another probe version retries until the deployment is fixed")
+            .isOne();
+        assertThat(meterRegistry.find(FAILED_SCANS_METRIC).counters()).isEmpty();
+      }
+    }
   }
 
   @Test
@@ -341,6 +434,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
             .scanner(scanner)
             .fileSystem(FileSystems.getDefault())
             .outcomes(outcomes)
+            .meterRegistry(meterRegistry)
             .build();
     scanScheduler =
         KeyframePacketScanScheduler.builder()
