@@ -809,8 +809,12 @@ message ProbeStreamInfo {
   // IVF, can hold units that the probe does not read, and FFmpeg's HEVC decoder applies the SEI NAL
   // units of Annex B extradata to the frames. So a stream with such extradata counts as one whose
   // units the probe could not all delimit: the worker has not read all of its SEI or all of its
-  // OBUs. A feature that the probe cannot see in a codec stays UNSPECIFIED. Every other video
-  // stream keeps the facts of probe version 4.
+  // OBUs. A packet can also carry a replacement record as new extradata side data, which FFmpeg's
+  // MP4 demuxer attaches when a sample switches to another sample description. ffprobe prints that
+  // side data's type but not its bytes, and FFmpeg's H.264 and HEVC decoders apply the replacement.
+  // So a read in which a packet carries new extradata side data counts the same way. A feature that
+  // the probe cannot see in a codec stays UNSPECIFIED. Every other video stream keeps the facts of
+  // probe version 4.
   VideoDynamicRange dynamic_range = 12;
   // Video streams only: the bit depth of a luma sample, from the pixel format. For example, 8 for
   // yuv420p and 10 for yuv420p10le. Absent when ffprobe reports no pixel format.
