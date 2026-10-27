@@ -51,6 +51,10 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   private static final com.streamarr.transcode.v1.TransferCharacteristics PQ_TRANSFER =
       com.streamarr.transcode.v1.TransferCharacteristics.TRANSFER_CHARACTERISTICS_SMPTE2084;
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static final com.streamarr.transcode.v1.TransferCharacteristics SDR_TRANSFER =
+      com.streamarr.transcode.v1.TransferCharacteristics.TRANSFER_CHARACTERISTICS_BT709;
+
   private final RemoteProbeResultMapper mapper = new RemoteProbeResultMapper();
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
@@ -267,7 +271,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   @Test
   @DisplayName("Should keep the first RPU header and the sample layout when the probe read RPUs")
   void shouldKeepTheFirstRpuHeaderAndTheSampleLayoutWhenTheProbeReadRpus() {
-    var video = hevc().setFirstFramesRead(true);
+    var video = hevc().setTransferCharacteristics(SDR_TRANSFER).setFirstFramesRead(true);
     video
         .getDynamicRangeBuilder()
         .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
@@ -378,7 +382,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         Arguments.of(
             "profile 10 without a compatibility identifier and with an SDR base",
             profile10Record(),
-            com.streamarr.transcode.v1.TransferCharacteristics.TRANSFER_CHARACTERISTICS_BT709,
+            SDR_TRANSFER,
             CompatibleBase.COMPATIBLE_BASE_SDR));
   }
 
@@ -852,7 +856,8 @@ class RemoteProbeResultStreamPropertiesMapperTest {
     h264WithoutDolbyVision
         .getDynamicRangeBuilder()
         .setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance());
-    var h264WithoutRpus = hevc().setCodec("h264").setFirstFramesRead(true);
+    var h264WithoutRpus =
+        hevc().setCodec("h264").setTransferCharacteristics(SDR_TRANSFER).setFirstFramesRead(true);
     h264WithoutRpus
         .getDynamicRangeBuilder()
         .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
