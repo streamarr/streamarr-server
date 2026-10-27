@@ -221,20 +221,28 @@ enum Presence {
 }
 
 // The standard picture format that a player could use without the advanced HDR information. The
-// probe derives it from the signaled transfer and the Dolby Vision claim. When a Dolby Vision
-// compatibility identifier disagrees with the signaled transfer, the signaled transfer decides.
-// Dolby Vision profiles 5 and 10.0 are the exception from probe version 5 on: they have no
-// compatible base, so the base is NONE whatever the signaled transfer says. The probe knows
-// profile 5 from the configuration record's profile, or, when no configuration record names a
-// profile, from the first RPU header of an HEVC stream, as DolbyVisionRpuHeader describes. The
-// probe knows profile 10.0 from a record with profile 10 and base_layer_compatibility_id 0, or,
-// when no configuration record names a profile, from the first RPU header of an AV1 stream that
-// holds vdr_rpu_profile 0 and bl_video_full_range_flag 1.
+// probe derives it from the signaled transfer, which ProbeStreamInfo.transfer_characteristics
+// names, and from whether VideoDynamicRange holds the Dolby Vision present arm:
+// - SDR for BT709, BT470M, BT470BG, SMPTE170M, SMPTE240M, IEC61966_2_4, BT1361, IEC61966_2_1,
+//   BT2020_10 and BT2020_12.
+// - PQ for SMPTE2084, and HLG for ARIB_STD_B67.
+// - Every other transfer names none of these formats: UNSPECIFIED, which also covers H.273's
+//   reserved values, and LINEAR, LOG100, LOG316 and SMPTE428. The base is then NONE when Dolby
+//   Vision is present, and UNSPECIFIED otherwise.
+// An encode interprets the signaled transfer, so when a Dolby Vision compatibility identifier
+// disagrees with the signaled transfer, the signaled transfer decides. Dolby Vision profiles 5 and
+// 10.0 are the exception from probe version 5 on: they have no compatible base, so the base is
+// NONE whatever the signaled transfer says. The probe knows profile 5 from the configuration
+// record's profile, or, when no configuration record names a profile, from the first RPU header of
+// an HEVC stream, as DolbyVisionRpuHeader describes. The probe knows profile 10.0 from a record
+// with profile 10 and base_layer_compatibility_id 0, or, when no configuration record names a
+// profile, from the first RPU header of an AV1 stream that holds vdr_rpu_profile 0 and
+// bl_video_full_range_flag 1.
 enum CompatibleBase {
-  // The probe could not read the transfer and found no Dolby Vision claim.
+  // The signaled transfer names none of SDR, PQ and HLG, and Dolby Vision is not present.
   COMPATIBLE_BASE_UNSPECIFIED = 0;
-  // The stream has no standard compatible base. Dolby Vision declares none, or the signaled
-  // transfer is unspecified while Dolby Vision is present, as in Dolby Vision profile 5.
+  // The stream has no standard compatible base: Dolby Vision is present and the signaled transfer
+  // names none of SDR, PQ and HLG, or the stream is Dolby Vision profile 5 or 10.0.
   COMPATIBLE_BASE_NONE = 1;
   // A standard-dynamic-range transfer, such as BT.709.
   COMPATIBLE_BASE_SDR = 2;
