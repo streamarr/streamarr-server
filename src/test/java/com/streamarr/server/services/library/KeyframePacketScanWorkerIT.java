@@ -129,6 +129,7 @@ class KeyframePacketScanWorkerIT extends AbstractIntegrationTest {
               .scanner(remote::scanKeyframePackets)
               .fileSystem(FileSystems.getDefault())
               .outcomes(outcomes)
+              .meterRegistry(new SimpleMeterRegistry())
               .build()
               .execute(packetScans.requests().getFirst());
 

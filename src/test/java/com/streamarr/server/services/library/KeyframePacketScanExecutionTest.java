@@ -23,6 +23,7 @@ import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
+import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeTimedOutException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
@@ -76,6 +77,7 @@ class KeyframePacketScanExecutionTest {
   private final FakeMediaFileContainerInfoRepository outcomes =
       new FakeMediaFileContainerInfoRepository();
   private final List<ProbeExecutionRequest> scanRequests = new ArrayList<>();
+  private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
   private KeyframePacketScanner scanner = scanAnswering(success(known()));
   private Path source;
   private MediaFile mediaFile;
@@ -232,6 +234,7 @@ class KeyframePacketScanExecutionTest {
 
     assertThat(result).isEqualTo(new KeyframePacketScanResult.Failed());
     assertThat(storedKeyframes()).isEqualTo(packetScanRequired());
+    assertThat(failedScans("no_keyframe_result")).isOne();
   }
 
   @Test
@@ -247,6 +250,24 @@ class KeyframePacketScanExecutionTest {
 
     assertThat(result).isEqualTo(new KeyframePacketScanResult.Failed());
     assertThat(storedKeyframes()).isEqualTo(packetScanRequired());
+    assertThat(failedScans("timed_out")).isOne();
+  }
+
+  @Test
+  @DisplayName("Should end the scan as failed when the worker reply breaks the worker contract")
+  void shouldEndTheScanAsFailedWhenTheWorkerReplyBreaksTheWorkerContract() {
+    var request = storePacketScanRequired();
+    scanner =
+        _ -> {
+          throw new ProbeContractViolationException(
+              "Worker probe keyframe decode times do not increase");
+        };
+
+    var result = execution().execute(request);
+
+    assertThat(result).isEqualTo(new KeyframePacketScanResult.Failed());
+    assertThat(storedKeyframes()).isEqualTo(packetScanRequired());
+    assertThat(failedScans("contract_violation")).isOne();
   }
 
   @Test
@@ -280,7 +301,17 @@ class KeyframePacketScanExecutionTest {
             })
         .fileSystem(FileSystems.getDefault())
         .outcomes(outcomes)
+        .meterRegistry(meterRegistry)
         .build();
+  }
+
+  private long failedScans(String reason) {
+    return (long)
+        meterRegistry
+            .get("streamarr.probes.keyframe_packet_scan_failures")
+            .tag("reason", reason)
+            .counter()
+            .count();
   }
 
   private ProbeExecution probeExecution(

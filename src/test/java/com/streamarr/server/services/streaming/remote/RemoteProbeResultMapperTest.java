@@ -10,6 +10,7 @@ import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.exceptions.ProbeCancelledException;
+import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
@@ -49,7 +50,8 @@ class RemoteProbeResultMapperTest {
     var result = resultWithStream(ProbeStreamInfo.newBuilder().setIndex(index));
     var report = reportOf(result);
 
-    assertThatThrownBy(() -> mapper.map(report)).isInstanceOf(ProbeExecutionException.class);
+    assertThatThrownBy(() -> mapper.map(report))
+        .isInstanceOf(ProbeContractViolationException.class);
   }
 
   @ParameterizedTest
@@ -105,7 +107,8 @@ class RemoteProbeResultMapperTest {
     var result = resultWithDuration(seconds, nanos);
     var report = reportOf(result);
 
-    assertThatThrownBy(() -> mapper.map(report)).isInstanceOf(ProbeExecutionException.class);
+    assertThatThrownBy(() -> mapper.map(report))
+        .isInstanceOf(ProbeContractViolationException.class);
   }
 
   private ProbeAttemptResult resultWithDuration(long seconds, int nanos) throws Exception {
@@ -247,24 +250,40 @@ class RemoteProbeResultMapperTest {
   }
 
   @ParameterizedTest
-  @MethodSource("unknownOutcomes")
-  @DisplayName("Should report a temporary failure when the worker outcome is unknown or missing")
-  void shouldReportATemporaryFailureWhenTheWorkerOutcomeIsUnknownOrMissing(
+  @MethodSource("unspecifiedOutcomes")
+  @DisplayName(
+      "Should reject the result as a contract violation when the worker outcome is unspecified or"
+          + " missing")
+  void shouldRejectTheResultAsAContractViolationWhenTheWorkerOutcomeIsUnspecifiedOrMissing(
       ProbeAttemptResult result) {
     var mapper = new RemoteProbeResultMapper();
     var report = reportOf(result);
 
     assertThatThrownBy(() -> mapper.map(report))
         .isInstanceOfSatisfying(
-            ProbeExecutionException.class,
+            ProbeContractViolationException.class,
             exception -> assertThat(exception.reason()).isEqualTo(ItemFailureReason.TEMPORARY));
   }
 
-  private static Stream<ProbeAttemptResult> unknownOutcomes() {
+  private static Stream<ProbeAttemptResult> unspecifiedOutcomes() {
     return Stream.of(
         ProbeAttemptResult.getDefaultInstance(),
-        ProbeAttemptResult.newBuilder().setFailureValue(0).build(),
-        ProbeAttemptResult.newBuilder().setFailureValue(999).build());
+        ProbeAttemptResult.newBuilder().setFailureValue(0).build());
+  }
+
+  // A newer worker may report a failure that this server does not know yet.
+  @Test
+  @DisplayName(
+      "Should report a retryable temporary failure when the worker failure is unrecognized")
+  void shouldReportARetryableTemporaryFailureWhenTheWorkerFailureIsUnrecognized() {
+    var mapper = new RemoteProbeResultMapper();
+    var report = reportOf(ProbeAttemptResult.newBuilder().setFailureValue(999).build());
+
+    assertThatThrownBy(() -> mapper.map(report))
+        .isNotInstanceOf(ProbeContractViolationException.class)
+        .isInstanceOfSatisfying(
+            ProbeExecutionException.class,
+            exception -> assertThat(exception.reason()).isEqualTo(ItemFailureReason.TEMPORARY));
   }
 
   @Test
@@ -279,7 +298,8 @@ class RemoteProbeResultMapperTest {
             .build();
     var report = reportOf(result);
 
-    assertThatThrownBy(() -> mapper.map(report)).isInstanceOf(ProbeExecutionException.class);
+    assertThatThrownBy(() -> mapper.map(report))
+        .isInstanceOf(ProbeContractViolationException.class);
   }
 
   @Test
@@ -295,7 +315,8 @@ class RemoteProbeResultMapperTest {
             .build();
     var report = reportOf(result);
 
-    assertThatThrownBy(() -> mapper.map(report)).isInstanceOf(ProbeExecutionException.class);
+    assertThatThrownBy(() -> mapper.map(report))
+        .isInstanceOf(ProbeContractViolationException.class);
   }
 
   @Test

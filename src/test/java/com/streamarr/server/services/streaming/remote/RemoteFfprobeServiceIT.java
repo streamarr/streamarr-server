@@ -24,6 +24,7 @@ import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.exceptions.ProbeCancelledException;
+import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeTimedOutException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
@@ -32,11 +33,15 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.LoopbackProbeWorker;
 import com.streamarr.server.fixtures.WorkerProbeResultFixture;
 import com.streamarr.server.support.BoundedTask;
+import com.streamarr.transcode.v1.KeyframePositionSource;
+import com.streamarr.transcode.v1.KeyframePositions;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeChapter;
 import com.streamarr.transcode.v1.ProbeContainerInfo;
 import com.streamarr.transcode.v1.ProbeFailure;
+import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
+import com.streamarr.transcode.v1.ProbeKeyframes;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
@@ -304,6 +309,53 @@ class RemoteFfprobeServiceIT {
   }
 
   @Test
+  @DisplayName(
+      "Should reject the keyframe packet scan as a contract violation when the worker's keyframe"
+          + " decode times do not increase")
+  void shouldRejectTheKeyframePacketScanAsAContractViolationWhenTheWorkersDecodeTimesDoNotIncrease()
+      throws Exception {
+    try (var server = server()) {
+      server.start();
+      try (var worker = worker(server.port(), 1)) {
+        var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
+        var request = request().build();
+        try (var scan = BoundedTask.start(() -> service.scanKeyframePackets(request))) {
+          var dispatched = worker.nextResponse().getStartProbe().getRequest();
+          worker.sendKeyframePositionsPart(
+              ProbeKeyframePositionsPart.newBuilder()
+                  .setProbeAttemptId(dispatched.getProbeAttemptId())
+                  .addAllPresentationTimeDeltas(List.of(0L, 90_000L))
+                  .addAllDecodeTimeDeltas(List.of(0L, 0L))
+                  .build());
+          worker.reply(
+              answer(dispatched)
+                  .setMedia(
+                      ProbeMediaInfo.newBuilder()
+                          .addStreams(
+                              ProbeStreamInfo.newBuilder().setIndex(0).setCodecType("video"))
+                          .setKeyframes(
+                              ProbeKeyframes.newBuilder()
+                                  .setPositions(
+                                      KeyframePositions.newBuilder()
+                                          .setStreamIndex(0)
+                                          .setTimeBaseNumerator(1)
+                                          .setTimeBaseDenominator(90_000)
+                                          .setSource(
+                                              KeyframePositionSource
+                                                  .KEYFRAME_POSITION_SOURCE_PACKET_SCAN)
+                                          .setKeyframeCount(2))))
+                  .build());
+
+          var bound = Duration.ofSeconds(5);
+          assertThatThrownBy(() -> scan.await(bound))
+              .isInstanceOf(ProbeContractViolationException.class)
+              .hasMessage("Worker probe keyframe decode times do not increase");
+        }
+      }
+    }
+  }
+
+  @Test
   @DisplayName("Should fail for persisted retry when the worker disconnects during probing")
   void shouldFailForPersistedRetryWhenTheWorkerDisconnectsDuringProbing() throws Exception {
     try (var server = server();
@@ -480,7 +532,7 @@ class RemoteFfprobeServiceIT {
 
     assertThatThrownBy(() -> replyToVersion4Probe(media))
         .isInstanceOfSatisfying(
-            ProbeExecutionException.class,
+            ProbeContractViolationException.class,
             failure -> assertThat(failure.reason()).isEqualTo(ItemFailureReason.TEMPORARY));
   }
 
