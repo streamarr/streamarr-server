@@ -15,7 +15,6 @@ import com.streamarr.transcode.v1.DolbyVisionConfiguration;
 import com.streamarr.transcode.v1.DolbyVisionPresent;
 import com.streamarr.transcode.v1.Presence;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
-import java.util.EnumSet;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
@@ -29,16 +28,6 @@ final class RemoteStreamPropertiesMapper {
   private static final Set<String> RECORD_LESS_BASELESS_CODECS = Set.of("hevc", "av1");
   // vdr_bit_depth_minus8 + 8, and a uint32 above Integer.MAX_VALUE arrives as a negative int.
   private static final int MINIMUM_VDR_BIT_DEPTH = 8;
-  private static final Set<VideoCodecProfile> H264_PROFILES =
-      EnumSet.of(
-          VideoCodecProfile.H264_CONSTRAINED_BASELINE,
-          VideoCodecProfile.H264_BASELINE,
-          VideoCodecProfile.H264_MAIN,
-          VideoCodecProfile.H264_EXTENDED,
-          VideoCodecProfile.H264_HIGH,
-          VideoCodecProfile.H264_HIGH_10,
-          VideoCodecProfile.H264_HIGH_422,
-          VideoCodecProfile.H264_HIGH_444_PREDICTIVE);
 
   private RemoteStreamPropertiesMapper() {}
 
@@ -159,7 +148,7 @@ final class RemoteStreamPropertiesMapper {
       throw contractViolation("Worker probe gave a stream a codec profile of another codec");
     }
 
-    if (tier.isPresent() && profile.map(RemoteStreamPropertiesMapper::isH264).orElse(false)) {
+    if (tier.isPresent() && "h264".equals(stream.getCodec())) {
       throw contractViolation("Worker probe gave an H.264 codec profile a tier");
     }
 
@@ -187,10 +176,6 @@ final class RemoteStreamPropertiesMapper {
     }
 
     return OptionalInt.of(stream.getCodecLevel());
-  }
-
-  private static boolean isH264(VideoCodecProfile profile) {
-    return H264_PROFILES.contains(profile);
   }
 
   // The codec as ffprobe names it.
