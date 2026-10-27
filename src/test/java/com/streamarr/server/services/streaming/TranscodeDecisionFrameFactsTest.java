@@ -116,6 +116,46 @@ class TranscodeDecisionFrameFactsTest {
   }
 
   @Test
+  @DisplayName("Should encode a Dolby Vision profile 8.2 stream when its RPUs start samples")
+  void shouldEncodeADolbyVisionProfile8Point2StreamWhenItsRpusStartSamples() {
+    var profile82 = profile82Stream(Presence.PRESENT);
+
+    assertThat(decide("mov,mp4,m4a,3gp,3g2,mj2", profile82))
+        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+  }
+
+  @Test
+  @DisplayName("Should copy a Dolby Vision profile 8.2 stream when every RPU follows its picture")
+  void shouldCopyADolbyVisionProfile8Point2StreamWhenEveryRpuFollowsItsPicture() {
+    var profile82 = profile82Stream(Presence.ABSENT);
+
+    assertThat(decide("mov,mp4,m4a,3gp,3g2,mj2", profile82)).isEqualTo(TranscodeMode.REMUX);
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode a record-less Dolby Vision profile 5 stream when its RPUs start samples")
+  void shouldEncodeARecordLessDolbyVisionProfile5StreamWhenItsRpusStartSamples() {
+    var profile5 =
+        hevcStream()
+            .dynamicRange(
+                Optional.of(
+                    new VideoDynamicRange(
+                        CompatibleBase.NONE,
+                        Presence.ABSENT,
+                        new DolbyVision.Present(
+                            Optional.empty(),
+                            Presence.PRESENT,
+                            Optional.of(profile5RpuHeader()),
+                            Presence.PRESENT))))
+            .videoProperties(Optional.of(bt709Properties(VideoCodecProfile.HEVC_MAIN_10)))
+            .build();
+
+    assertThat(decide("mov,mp4,m4a,3gp,3g2,mj2", profile5))
+        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+  }
+
+  @Test
   @DisplayName("Should encode a stream when probe version 5 could not name its codec profile")
   void shouldEncodeAStreamWhenProbeVersion5CouldNotNameItsCodecProfile() {
     var unnamed =
@@ -186,6 +226,14 @@ class TranscodeDecisionFrameFactsTest {
     return h264Stream()
         .dynamicRange(Optional.of(sdrBaseDolbyVision(9, rpuStartsSample)))
         .videoProperties(Optional.of(bt709Properties(VideoCodecProfile.H264_HIGH)))
+        .build();
+  }
+
+  // Dolby Vision profile 8.2: an HEVC base layer with an SDR base.
+  private static StreamInfo profile82Stream(Presence rpuStartsSample) {
+    return hevcStream()
+        .dynamicRange(Optional.of(sdrBaseDolbyVision(8, rpuStartsSample)))
+        .videoProperties(Optional.of(bt709Properties(VideoCodecProfile.HEVC_MAIN_10)))
         .build();
   }
 
