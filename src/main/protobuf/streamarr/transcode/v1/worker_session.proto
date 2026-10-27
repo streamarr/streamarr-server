@@ -1060,11 +1060,13 @@ message ProbeStreamInfo {
   // as on a read error from a network share, so neither a read nor a count of the stream's packets
   // that ends early shows that the stream ends there. first_frames_read stays true when the read is
   // cut short. The stream can then hold frames that the probe did not read, so hdr10_plus,
-  // observed_rpu and Dolby Vision are never ABSENT on such a stream: a feature that neither the
-  // frames nor the packets show is UNSPECIFIED, and one that they show is PRESENT. The probe
-  // reports the first frame's static metadata as for any other read. For H.264, HEVC and AV1, a
-  // cut-short read leaves the walks short of reading all of the SEI or all of the OBUs, so the
-  // worker sets each omitted flag whose value no source gives.
+  // observed_rpu and Dolby Vision are never ABSENT on such a stream: a feature that none of the
+  // frames, the extradata and the packets show is UNSPECIFIED, and one that any of them shows is
+  // PRESENT, with its first RPU header and the compatible base that the header decides, as for any
+  // other read. A cut-short read only keeps a feature from reading ABSENT. The probe reports the
+  // first frame's static metadata as for any other read. For H.264, HEVC and AV1, a cut-short read
+  // leaves the walks short of reading all of the SEI or all of the OBUs, so the worker sets each
+  // omitted flag whose value no source gives.
   bool first_frames_read = 33;
   // Video streams only: true when the stream carries, or may carry, a mastering display color
   // volume that the worker left absent. The container, the first frame, or an SEI message or a
