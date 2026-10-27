@@ -182,7 +182,9 @@ class ProbeVersion4UpgradeIT extends AbstractIntegrationTest {
                           assertThat(state.stored()).isEmpty();
                           assertThat(state.requested())
                               .hasValueSatisfying(
-                                  inputs -> assertThat(inputs.probeVersion()).isEqualTo(4));
+                                  inputs ->
+                                      assertThat(inputs.probeVersion())
+                                          .isEqualTo(ProbeVersion.CURRENT));
                         }));
     assertThat(jdbc.queryForList("SELECT kind::text FROM library_operation", String.class))
         .containsExactly("SCAN", "SCAN");

@@ -293,8 +293,12 @@ Version 4 also adds the end time of each audio and video stream, where the conta
 Version 4 also adds the sample rate and profile of each audio stream, the container cropping of each video stream, and the container's chapters.
 Version 4 also adds the HDR10 static metadata that the container declares for each video stream: the mastering display color volume and the content light level.
 Version 4 also adds the title, the handler name and the hearing-impaired flag of each audio and subtitle stream.
+Version 5 adds the codec profile, level, tier and color signaling of each video stream.
+Version 5 also reads the first frames of the chosen video stream for HDR10+, Dolby Vision RPUs and their sample layout, and the static HDR metadata that only the bitstream carries.
 Version 2 is unused.
-The worker contract defines version 4, but the server still requests version 3.
+The server requests version 5.
+After the version rises, the server scans each library that holds a result of an earlier version at startup.
+Playback keeps using a file's earlier result until the scan stores the file's new result.
 
 https://github.com/streamarr/streamarr-adr/blob/main/adr/0033-transcode-worker-is-a-separate-service.adoc[ADR 0033] requires workers for probing, transcoding, and remuxing.
 Each worker opens an outbound, long-lived gRPC `WorkerSession` over the server's single plaintext listener.
