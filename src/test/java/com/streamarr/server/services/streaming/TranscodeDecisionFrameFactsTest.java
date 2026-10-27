@@ -90,13 +90,7 @@ class TranscodeDecisionFrameFactsTest {
                         new DolbyVision.Present(
                             Optional.empty(),
                             Presence.PRESENT,
-                            Optional.of(
-                                DolbyVisionRpuHeader.builder()
-                                    .vdrRpuProfile(0)
-                                    .baseLayerFullRange(true)
-                                    .disableResidual(true)
-                                    .vdrBitDepth(12)
-                                    .build()),
+                            Optional.of(profile5RpuHeader()),
                             Presence.ABSENT))))
             .videoProperties(Optional.of(bt709Properties(VideoCodecProfile.HEVC_MAIN_10)))
             .build();
@@ -190,25 +184,39 @@ class TranscodeDecisionFrameFactsTest {
   // compatibility identifier 2.
   private static StreamInfo profile9Stream(Presence rpuStartsSample) {
     return h264Stream()
-        .dynamicRange(
-            Optional.of(
-                new VideoDynamicRange(
-                    CompatibleBase.SDR,
-                    Presence.UNSPECIFIED,
-                    new DolbyVision.Present(
-                        Optional.of(
-                            DolbyVisionConfiguration.builder()
-                                .profile(OptionalInt.of(9))
-                                .level(OptionalInt.of(5))
-                                .baseLayerCompatibilityId(OptionalInt.of(2))
-                                .baseLayer(true)
-                                .rpu(true)
-                                .build()),
-                        Presence.PRESENT,
-                        Optional.empty(),
-                        rpuStartsSample))))
+        .dynamicRange(Optional.of(sdrBaseDolbyVision(9, rpuStartsSample)))
         .videoProperties(Optional.of(bt709Properties(VideoCodecProfile.H264_HIGH)))
         .build();
+  }
+
+  // The RPU header fields that tell profile 5 in an HEVC stream without a configuration record.
+  private static DolbyVisionRpuHeader profile5RpuHeader() {
+    return DolbyVisionRpuHeader.builder()
+        .vdrRpuProfile(0)
+        .baseLayerFullRange(true)
+        .disableResidual(true)
+        .vdrBitDepth(12)
+        .build();
+  }
+
+  // A Dolby Vision stream with an SDR base whose record claims compatibility identifier 2, and
+  // whose samples the probe read.
+  private static VideoDynamicRange sdrBaseDolbyVision(int profile, Presence rpuStartsSample) {
+    return new VideoDynamicRange(
+        CompatibleBase.SDR,
+        Presence.UNSPECIFIED,
+        new DolbyVision.Present(
+            Optional.of(
+                DolbyVisionConfiguration.builder()
+                    .profile(OptionalInt.of(profile))
+                    .level(OptionalInt.of(5))
+                    .baseLayerCompatibilityId(OptionalInt.of(2))
+                    .baseLayer(true)
+                    .rpu(true)
+                    .build()),
+            Presence.PRESENT,
+            Optional.empty(),
+            rpuStartsSample));
   }
 
   private static VideoStreamProperties bt709Properties(VideoCodecProfile profile) {
