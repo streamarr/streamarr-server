@@ -651,25 +651,34 @@ class RemoteProbeResultStreamPropertiesMapperTest {
               return stream;
             }),
         violation(
-            "HDR10+ absent on an H.264 stream",
+            "HDR10+ absent on an AV1 stream",
             stream -> {
               stream
-                  .setCodec("h264")
+                  .setCodec("av1")
                   .setFirstFramesRead(true)
                   .getDynamicRangeBuilder()
                   .setHdr10Plus(absent);
               return stream;
-            }),
-        violation(
-            "HDR10+ present on an H.264 stream",
-            stream -> {
-              stream
-                  .setCodec("h264")
-                  .setFirstFramesRead(true)
-                  .getDynamicRangeBuilder()
-                  .setHdr10Plus(present);
-              return stream;
             }));
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
+      value = com.streamarr.transcode.v1.Presence.class,
+      names = {"PRESENCE_PRESENT", "PRESENCE_ABSENT"})
+  @DisplayName("Should keep the HDR10+ presence of an H.264 stream when the probe read its frames")
+  void shouldKeepTheHdr10PlusPresenceOfAnH264StreamWhenTheProbeReadItsFrames(
+      com.streamarr.transcode.v1.Presence hdr10Plus) {
+    var video = hevc().setCodec("h264").setFirstFramesRead(true);
+    video.getDynamicRangeBuilder().setHdr10Plus(hdr10Plus);
+
+    var stream = videoOf(version5(media -> media.setStreams(0, video)));
+
+    assertThat(stream.dynamicRange())
+        .map(VideoDynamicRange::hdr10Plus)
+        .map(Enum::name)
+        .contains(hdr10Plus.name().substring("PRESENCE_".length()));
   }
 
   @ParameterizedTest(name = "{0}")
