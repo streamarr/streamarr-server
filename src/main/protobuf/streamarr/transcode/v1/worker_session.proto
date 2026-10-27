@@ -273,8 +273,14 @@ message DolbyVisionPresent {
   // Whether the samples hold Dolby Vision RPUs. UNSPECIFIED when the probe read no samples.
   Presence observed_rpu = 2;
   // The header of the first RPU that the probe read, from the frames or, when the frames show no
-  // RPU, from the packets. Absent when observed_rpu is not PRESENT, and when the probe found RPUs
-  // but could not parse a header. Only probe version 5 and later report it.
+  // RPU, from the packets, and for AV1 from the av1C record's configOBUs and then the packets, as
+  // ProbeStreamInfo.dynamic_range's walks read them. For AV1 the worker reads the header from the
+  // RPU inside the EMDF container that dynamic_range describes, whatever the Dolby Vision
+  // configuration record says, and an RPU OBU with an extension byte gives no header. FFmpeg opens
+  // that container only when the stream has no Dolby Vision configuration record or one that names
+  // profile 10, so the frames of a stream whose record names another profile show no RPU. Absent
+  // when observed_rpu is not PRESENT, and when the probe found RPUs but could not parse a header.
+  // Only probe version 5 and later report it.
   DolbyVisionRpuHeader first_rpu_header = 3;
   // Whether a sample that the probe read starts with an RPU, ahead of the picture of the sample.
   // The RPU of a picture belongs after that picture, in the same sample. A muxer that starts a new
@@ -282,7 +288,9 @@ message DolbyVisionPresent {
   // holds an RPU and no picture. PRESENT when the probe read such a sample, and ABSENT when every
   // RPU that the probe read follows its picture. UNSPECIFIED when observed_rpu is not PRESENT, or
   // when the probe could not delimit the samples that hold the RPUs. The probe reads the layout
-  // from the NAL units of the packets for H.264 and HEVC. AV1 reports UNSPECIFIED. Only probe
+  // from the NAL units of the packets for H.264 and HEVC. AV1 reports UNSPECIFIED: FFmpeg's AV1
+  // decoders attach an RPU to the next shown frame whose OBUs follow it, so an AV1 RPU belongs
+  // ahead of its frame, and a sample that starts with one has the expected layout. Only probe
   // version 5 and later report it.
   Presence rpu_starts_sample = 4;
 }
@@ -757,19 +765,52 @@ message ProbeStreamInfo {
   // view that FFmpeg does not decode, so it neither proves nor rules out a feature of the decoded
   // picture.
   //
-  // The parsing of the NAL units and the walk of the SEI cover no extradata other than an hvcC
-  // configuration record. An avcC record holds only parameter sets. Any other extradata, such as
-  // Annex B extradata, can hold NAL units that the probe does not read, and FFmpeg's HEVC decoder
-  // applies the SEI NAL units of Annex B extradata to the frames. So a stream with such extradata
-  // counts as one whose NAL units the probe could not all delimit, and the worker has not read all
-  // of its SEI.
+  // FFmpeg's AV1 decoders drop an RPU that they cannot parse, and a whole frame whose HDR10+
+  // message they cannot parse. When they cannot parse an OBU, such as an HDR_CLL or HDR_MDCV
+  // metadata OBU that is too short, they drop the rest of its packet. ffprobe goes on to the next
+  // frame without failing. The decoders attach a metadata OBU to the next shown frame whose OBUs
+  // follow it, wherever the metadata OBU lies in its temporal unit, so a metadata OBU after the
+  // OBUs of the last frame that the probe keeps reaches no frame. They never apply the metadata
+  // OBUs of the AV1 configuration record (av1C) to the frames. So for AV1 the worker walks every
+  // OBU of the record's configOBUs when the stream has a record, then every OBU of every packet of
+  // the read that produced the kept frames, in their order. FFmpeg's demuxers pass the packets in
+  // the low-overhead bitstream format of AV1 section 5, and the walk steps from OBU to OBU by their
+  // sizes, whatever each OBU holds.
   //
-  // FFmpeg's AV1 decoders drop an RPU that they cannot parse. They also drop a whole frame whose
-  // HDR10+ message they cannot parse, and ffprobe goes on to the next frame without failing. The
-  // frames that the probe keeps can then follow the only frame that held an HDR10+ message. The
-  // worker does not parse AV1 OBUs. So for AV1, observed_rpu and hdr10_plus are PRESENT or
-  // UNSPECIFIED, never ABSENT, and Dolby Vision is never ABSENT. A feature that the probe cannot
-  // see in a codec stays UNSPECIFIED. Every other video stream keeps the facts of probe version 4.
+  // Each OBU starts with its obu_header, then its extension byte when obu_extension_flag is set.
+  // When obu_has_size_field is set, a leb128 obu_size of at most 8 bytes follows, and the OBU ends
+  // obu_size bytes after it. Otherwise the OBU runs to the end of its packet or record, so it is
+  // the last OBU there. An OBU is delimited when its header, its extension byte, its obu_size and
+  // its payload end within its packet or record. A metadata OBU (obu_type 5) is delimited when its
+  // metadata_type also ends within the OBU and, for a type that the walk reads, its last nonzero
+  // byte is 0x80: the trailing bits that end the OBU. The walk reads the metadata types HDR_CLL
+  // (1), HDR_MDCV (2) and ITUT_T35 (4). The worker read all of the OBUs when it delimited every OBU
+  // that the walk covers.
+  //
+  // An HDR10+ OBU is an ITU-T T.35 metadata OBU whose payload starts with country code 0xB5,
+  // provider code 0x003C, provider-oriented code 0x0001 and application identifier 4. An RPU is an
+  // ITU-T T.35 metadata OBU whose payload starts with country code 0xB5, provider code 0x003B and
+  // the 32-bit provider-oriented code 0x00000800. An EMDF container wraps the RPU that follows, and
+  // FFmpeg strips the container before it parses the RPU: a 27-bit header that must equal
+  // 0x01BE6841, emdf_payload_size as variable_bits(8), the RPU's bytes, and emdf_protection, 17
+  // bits that must equal 0x400. A metadata OBU with an extension byte names a temporal and a
+  // spatial layer, and FFmpeg's AV1 decoders skip it when the operating point that they decode
+  // leaves out that layer. So such an OBU counts as a nested SEI message does: it neither proves
+  // nor rules out a feature. hdr10_plus is PRESENT when the frames, the configuration record or the
+  // packets hold an HDR10+ OBU without an extension byte, and observed_rpu likewise for an RPU.
+  // Each is ABSENT only when the frames show none, the worker read all of the OBUs, and no OBU with
+  // an extension byte holds one. Otherwise each is UNSPECIFIED. Dolby Vision is ABSENT on the same
+  // evidence as for H.264 and HEVC: no record, no Dolby Vision sample entry, and observed_rpu
+  // ABSENT.
+  //
+  // The parsing of the NAL units and the walks of the SEI and of the OBUs cover no extradata other
+  // than an hvcC or an av1C configuration record. An avcC record holds only parameter sets. Any
+  // other extradata, such as Annex B extradata, or the bare OBUs that FFmpeg gives an AV1 stream in
+  // IVF, can hold units that the probe does not read, and FFmpeg's HEVC decoder applies the SEI NAL
+  // units of Annex B extradata to the frames. So a stream with such extradata counts as one whose
+  // units the probe could not all delimit: the worker has not read all of its SEI or all of its
+  // OBUs. A feature that the probe cannot see in a codec stays UNSPECIFIED. Every other video
+  // stream keeps the facts of probe version 4.
   VideoDynamicRange dynamic_range = 12;
   // Video streams only: the bit depth of a luma sample, from the pixel format. For example, 8 for
   // yuv420p and 10 for yuv420p10le. Absent when ffprobe reports no pixel format.
@@ -819,16 +860,26 @@ message ProbeStreamInfo {
   // (payloadType 137) that is not nested and that dynamic_range's walk finds: in the configuration
   // record first, then in the packets in their order. The message's values are already in SEI
   // units. The worker reports them when the payload holds every field and every value lies in the
-  // range that MasteringDisplayColorVolume states. Otherwise it sets mastering_display_omitted.
+  // range that MasteringDisplayColorVolume states. Otherwise it sets mastering_display_omitted. For
+  // AV1 the probe takes the value, in the same order, from the first HDR_MDCV metadata OBU without
+  // an extension byte that dynamic_range's walk finds. FFmpeg's AV1 decoders read the OBU's values
+  // as fractions: each chromaticity coordinate over 65536, the maximum luminance over 256 and the
+  // minimum luminance over 16384, with the primaries in the order red, green, blue. The worker
+  // converts those fractions as MasteringDisplayColorVolume says. It reports them when the bytes
+  // ahead of the OBU's trailing bits hold every field and every value fits its SEI field. Otherwise
+  // it sets mastering_display_omitted.
   MasteringDisplayColorVolume mastering_display = 21;
-  // Video streams only: the content light level that the container declares, from ffprobe's
-  // Content light level metadata stream side data. Absent when the stream has no such side data.
-  // From probe version 5 on, the probe takes the value from the first frame of the chosen video
-  // stream when the container declares none. When the first frame carries none either, the probe
-  // takes the value for H.264 and HEVC from the first content light level information SEI message
+  // Video streams only: the content light level that the container declares, from ffprobe's Content
+  // light level metadata stream side data. Absent when the stream has no such side data. From probe
+  // version 5 on, the probe takes the value from the first frame of the chosen video stream when
+  // the container declares none. When the first frame carries none either, the probe takes the
+  // value for H.264 and HEVC from the first content light level information SEI message
   // (payloadType 144) that is not nested and that dynamic_range's walk finds, in the same order as
   // for mastering_display. The worker reports the message's values unchanged when the payload holds
-  // both fields. Otherwise it sets content_light_level_omitted.
+  // both fields. Otherwise it sets content_light_level_omitted. For AV1 the probe takes the value,
+  // in the same order, from the first HDR_CLL metadata OBU without an extension byte that the walk
+  // finds. The worker reports its max_cll and max_fall unchanged when the bytes ahead of the OBU's
+  // trailing bits hold both fields. Otherwise it sets content_light_level_omitted.
   ContentLightLevel content_light_level = 22;
   // Audio and subtitle streams only: the stream's title, which a menu shows to name the track. The
   // worker reads two stream tags in this order. It takes the first tag whose value is not empty and
@@ -907,11 +958,11 @@ message ProbeStreamInfo {
   ColorRange color_range = 32;
   // Video streams only: true when the probe read the first frames of the stream. The probe reads
   // the first 3 frames of the chosen video stream, or fewer when the stream holds fewer, and no
-  // frame of any other stream. A Presence on the stream is ABSENT only when this is true. An
-  // absent mastering_display or content_light_level on a stream with this set, and with the
-  // matching omitted flag clear, means that neither the container nor the first frame carries the
-  // value, and for H.264 and HEVC that no SEI message that dynamic_range's walk finds carries it
-  // either.
+  // frame of any other stream. A Presence on the stream is ABSENT only when this is true. An absent
+  // mastering_display or content_light_level on a stream with this set, and with the matching
+  // omitted flag clear, means that neither the container nor the first frame carries the value, and
+  // for H.264, HEVC and AV1 that no SEI message or metadata OBU that dynamic_range's walks find
+  // carries it either.
   //
   // The probe widens its read past packets that decode to no frame, and keeps the frames of a
   // narrower read when a wider read fails. first_frames_read stays true when such a failure cuts
@@ -921,31 +972,30 @@ message ProbeStreamInfo {
   // probe reports the first frame's static metadata as for any other read.
   bool first_frames_read = 33;
   // Video streams only: true when the stream carries, or may carry, a mastering display color
-  // volume that the worker left absent. The container, the first frame or an SEI message that
-  // dynamic_range's walk finds carries one, but ffprobe reported only part or none of its values,
-  // the message is too short, or a value does not fit its SEI field. FFmpeg's Matroska demuxer
-  // drops a MasteringMetadata element only when neither its primaries nor its luminance are
-  // complete. When one half is complete, ffprobe reports a partial value, which this flag already
-  // covers. So when no other source gives a mastering display for the chosen video stream of a
-  // Matroska file, the worker checks the track's Colour element itself, and sets this flag when the
-  // track holds a MasteringMetadata element. The stream then carries static HDR metadata that the
-  // probe could not read.
+  // volume that the worker left absent. The container, the first frame, or an SEI message or a
+  // metadata OBU that dynamic_range's walks find carries one, but ffprobe reported only part or
+  // none of its values, the message or the OBU is too short, or a value does not fit its SEI field.
+  // FFmpeg's Matroska demuxer drops a MasteringMetadata element only when neither its primaries nor
+  // its luminance are complete. When one half is complete, ffprobe reports a partial value, which
+  // this flag already covers. So when no other source gives a mastering display for the chosen
+  // video stream of a Matroska file, the worker checks the track's Colour element itself, and sets
+  // this flag when the track holds a MasteringMetadata element. The stream then carries static HDR
+  // metadata that the probe could not read.
   //
   // The worker also sets this flag on the chosen video stream when first_frames_read is true, no
   // source gives a mastering display and the probe cannot rule one out. For H.264 and HEVC, that is
   // when the worker did not read all of the SEI, as dynamic_range describes, because the part that
   // it could not delimit can hold the message, or when a nesting message holds a mastering display
-  // color volume. For AV1, that is always: FFmpeg's AV1 decoders fail a frame whose metadata OBU
-  // they cannot parse, and the frames that depend on it, and ffprobe goes on without failing. The
-  // first frame that the probe keeps can then lack a value that the stream carries, and the worker
-  // does not parse AV1 OBUs. A stream with this flag set is never PQ10.
+  // color volume. For AV1, that is when the worker did not read all of the OBUs, or when a metadata
+  // OBU with an extension byte is an HDR_MDCV OBU. A stream with this flag set is never PQ10.
   bool mastering_display_omitted = 34;
   // Video streams only: true when the stream carries, or may carry, a content light level that the
-  // worker left absent. The container, the first frame or an SEI message that dynamic_range's walk
-  // finds carries one, but a value does not fit its SEI field, or the message is too short. The
-  // worker also sets this flag on the chosen video stream when first_frames_read is true, no source
-  // gives a content light level and the probe cannot rule one out, under the same rule as
-  // mastering_display_omitted. A stream with this flag set is never PQ10.
+  // worker left absent. The container, the first frame, or an SEI message or a metadata OBU that
+  // dynamic_range's walks find carries one, but a value does not fit its SEI field, or the message
+  // or the OBU is too short. The worker also sets this flag on the chosen video stream when
+  // first_frames_read is true, no source gives a content light level and the probe cannot rule one
+  // out, under the same rule as mastering_display_omitted. A stream with this flag set is never
+  // PQ10.
   bool content_light_level_omitted = 35;
 }
 
@@ -984,13 +1034,14 @@ message ContainerCropping {
 // only the bitstream carries as side data of that frame, and the worker converts it the same way.
 // FFmpeg drops the messages of an SEI NAL unit that follow a message it rejects, so for H.264 and
 // HEVC the worker also reads the SEI messages of the configuration record and of the packets, as
-// ProbeStreamInfo.mastering_display says. For the chosen video stream, absent with
-// mastering_display_omitted clear then means that neither the container, nor the first frame, nor
-// for H.264 and HEVC any of those SEI messages carries the value. A PQ stream whose mastering
-// display and content light level are both absent that way is PQ10. A set omitted flag rules PQ10
-// out, including one that the worker sets because the probe cannot rule a value out. The worker
-// sets the omitted flag of each static value that the chosen AV1 stream lacks, so such a stream is
-// never PQ10.
+// ProbeStreamInfo.mastering_display says. FFmpeg's AV1 decoders drop the rest of a packet from a
+// metadata OBU that they cannot parse, and never apply the configuration record's metadata OBUs,
+// so for AV1 the worker also reads the metadata OBUs of the configuration record and of the
+// packets. For the chosen video stream, absent with mastering_display_omitted clear then means
+// that neither the container, nor the first frame, nor for H.264, HEVC and AV1 any of those SEI
+// messages or metadata OBUs carries the value. A PQ stream whose mastering display and content
+// light level are both absent that way is PQ10. A set omitted flag rules PQ10 out, including one
+// that the worker sets because the probe cannot rule a value out.
 //
 // ffprobe prints each value as a fraction. The worker multiplies the fraction by the number of
 // units in one whole: 50000 for a chromaticity coordinate, and 10000 for a luminance. The worker
