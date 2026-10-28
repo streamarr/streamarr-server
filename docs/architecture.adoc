@@ -297,10 +297,12 @@ Version 5 adds the codec profile, level, tier and color signaling of each video 
 Version 5 also reads the first frames of the chosen video stream for HDR10+, Dolby Vision RPUs and where the samples place them, and the static HDR metadata that only the bitstream carries.
 For H.264 and HEVC the worker also walks the SEI messages of the stream's extradata and of the packets that it read, and for AV1 the metadata OBUs of the extradata and of those packets.
 The probe reports HDR10+ or an RPU as absent only when the frames show none, the walk read every unit that could hold one, and no nested SEI message or layer-specific metadata OBU holds one; otherwise the feature stays unknown.
-For H.264 and HEVC it reports whether each RPU ends its own picture's sample, as Dolby Vision requires, starts the next picture's sample, as mkvmerge wrote it before version 57, or starts its own picture's sample.
+For H.264 and HEVC it reports whether each RPU ends its own picture's sample, as Dolby Vision requires, or starts the next picture's sample, as mkvmerge wrote it before version 57.
+It reports no placement when the first picture's sample starts with an RPU, because the first packets cannot tell a file of the mkvmerge layout whose start was cut away from a file that starts each sample with its own picture's RPU.
 AV1 reports no placement, because an AV1 RPU belongs ahead of its frame.
-An RPU that starts a sample rules out a copy.
+An RPU that starts the next picture's sample rules out a copy.
 An encode of an HEVC Dolby Vision source without a compatible base moves each RPU to the end of its picture's sample, where FFmpeg's decoder reads it, unless the probe found every RPU there already.
+Without a placement, the encode takes an RPU that starts a sample as the previous picture's.
 Every other video codec keeps the frame facts of version 4: the probe reports neither HDR10+ nor an RPU, and never reports Dolby Vision as absent.
 An omitted flag on a mastering display or a content light level means that the stream carries, or may carry, that value although the probe left it empty, either because the probe could not read the value or because it could not rule the value out.
 A stream with either flag set is never PQ10.
