@@ -875,12 +875,15 @@ message ProbeStreamInfo {
   // of lengthSizeMinusOne + 1 bytes. ff_h2645_packet_split reads a length only while at least 4
   // bytes of the packet remain: when 1 to 3 bytes remain where the next length would start, it
   // drops them, whatever they hold. When it reads a length of 0, or a length that runs past the
-  // end of the packet, it rejects the whole packet, so no decoder sees any of its NAL units. A
-  // length within those 1 to 3 bytes, which a length of 1 or 2 bytes allows, therefore rejects
-  // nothing, even when it is 0 or runs past the end: the walk drops those bytes, as the splitter
-  // does, and the NAL units ahead of them still count. Such a packet is delimited when no length
-  // that the splitter reads is 0 or runs past the end of the packet, the packet holds at least one
-  // NAL unit, and no NAL unit holds a start code (0x000001). With any other extradata,
+  // end of the packet, it rejects the whole packet, so no decoder sees any of its NAL units. With
+  // 4-byte lengths, exactly 4 bytes left where the next length starts therefore reject the packet:
+  // whatever length they hold is 0 or runs past the end, and get_nalsize rejects it without
+  // reading it. A length within those 1 to 3 bytes, which a length of 1 or 2 bytes allows,
+  // therefore rejects nothing, even when it is 0 or runs past the end: the walk drops those bytes,
+  // as the splitter does, and the NAL units ahead of them still count. Such a packet is delimited
+  // when no length that starts where at least 4 bytes of the packet remain is 0 or runs past the
+  // end of the packet, the packet holds at least one NAL unit, and no NAL unit holds a start code
+  // (0x000001). With any other extradata,
   // start codes delimit the NAL units, as in Annex B of H.264 and HEVC. Each NAL unit then runs
   // from its start code to the next start code, without the zero bytes ahead of that start code.
   // Such a packet is delimited when it starts with a start code, after any zero bytes, and holds at
