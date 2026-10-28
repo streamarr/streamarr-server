@@ -977,8 +977,14 @@ message ProbeStreamInfo {
   // a replacement record as new extradata side data, which FFmpeg's MP4 demuxer attaches when a
   // sample switches to another sample description. ffprobe prints that side data's type but not its
   // bytes, and FFmpeg's H.264 and HEVC decoders apply the replacement. So a read in which a packet
-  // carries new extradata side data counts the same way. A feature that the probe cannot see in a
-  // codec stays UNSPECIFIED.
+  // carries new extradata side data counts the same way.
+  //
+  // For a chosen video stream of any codec other than H.264, HEVC and AV1, the probe walks neither
+  // the extradata nor the packets. Frames only prove a feature PRESENT, so the frames of such a
+  // stream still count: hdr10_plus or observed_rpu is PRESENT when its frames show that feature,
+  // and UNSPECIFIED otherwise. For example, FFmpeg's Matroska demuxer gives a VP9 frame the HDR10+
+  // metadata of the frame's WebM BlockAdditional element. Such a stream never reports a feature as
+  // ABSENT, its Dolby Vision arm is never ABSENT, and its rpu_placement stays UNSPECIFIED.
   //
   // Every other video stream, and the chosen video stream when first_frames_read is false, gives
   // the probe only its headers and configuration records. hdr10_plus, observed_rpu and the Dolby
