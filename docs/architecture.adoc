@@ -307,7 +307,10 @@ An encode of an HEVC Dolby Vision source without a compatible base moves each RP
 The encode takes an RPU that starts a sample as the previous picture's, with or without a placement.
 The move copies the samples with their presentation times, and a copy of packets without them stamps each picture with its decode time and loses the pictures that B-frames reorder.
 So the encode moves RPUs only when the probe saw a presentation time on every packet that it read; otherwise it reads the samples unchanged.
-The usual source without presentation times is a raw HEVC stream, and FFmpeg's HEVC parser already ends each of its packets with the picture's RPU.
+The usual source without presentation times is a raw HEVC stream.
+FFmpeg's HEVC parser ends each of its packets just ahead of the next access unit, so an RPU that follows its picture's slices, where Dolby Vision places it, ends that picture's packet, and the decoder reads it.
+The decoder still ignores an RPU that lies between the NAL units that begin an access unit and its first slice.
+A source without a compatible base and without presentation times that places its RPUs there keeps every picture, but each picture loses its reshaping and shows the wrong colours; moving those RPUs would keep the colours but lose pictures, because the move's copy stamps each picture with its decode time.
 For every other video codec the probe reads no frame feature: it reports neither HDR10+ nor an RPU, and never reports Dolby Vision as absent.
 An omitted flag on a mastering display or a content light level means that the stream carries, or may carry, that value although the probe left it empty, either because the probe could not read the value or because it could not rule the value out.
 A stream with either flag set is never PQ10.
