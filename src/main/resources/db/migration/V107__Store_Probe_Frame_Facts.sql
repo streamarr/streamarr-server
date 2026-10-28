@@ -30,7 +30,7 @@ ALTER TABLE media_file_stream_info
     ADD COLUMN mastering_display_omitted BOOLEAN,
     ADD COLUMN content_light_level_omitted BOOLEAN,
     ADD COLUMN dolby_vision_rpu_placement TEXT CHECK (dolby_vision_rpu_placement IN (
-        'AFTER_OWN_PICTURE', 'BEFORE_NEXT_PICTURE')),
+        'AFTER_OWN_PICTURE', 'STARTS_SAMPLE')),
     ADD COLUMN first_rpu_vdr_rpu_profile INTEGER CHECK (first_rpu_vdr_rpu_profile >= 0),
     ADD COLUMN first_rpu_base_layer_full_range BOOLEAN,
     ADD COLUMN first_rpu_enhancement_layer_spatial_resampling_filter BOOLEAN,

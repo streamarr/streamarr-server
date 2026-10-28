@@ -236,8 +236,7 @@ final class RemotePlaybackFactsMapper {
     return switch (placement) {
       case DOLBY_VISION_RPU_PLACEMENT_AFTER_OWN_PICTURE ->
           DolbyVisionRpuPlacement.AFTER_OWN_PICTURE;
-      case DOLBY_VISION_RPU_PLACEMENT_BEFORE_NEXT_PICTURE ->
-          DolbyVisionRpuPlacement.BEFORE_NEXT_PICTURE;
+      case DOLBY_VISION_RPU_PLACEMENT_STARTS_SAMPLE -> DolbyVisionRpuPlacement.STARTS_SAMPLE;
       case DOLBY_VISION_RPU_PLACEMENT_UNSPECIFIED, UNRECOGNIZED ->
           DolbyVisionRpuPlacement.UNSPECIFIED;
     };

@@ -37,6 +37,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -102,7 +103,7 @@ class TranscodeDecisionFrameFactsTest {
   @Test
   @DisplayName("Should encode a Dolby Vision profile 9 stream when its RPUs start samples")
   void shouldEncodeADolbyVisionProfile9StreamWhenItsRpusStartSamples() {
-    var profile9 = profile9Stream(DolbyVisionRpuPlacement.BEFORE_NEXT_PICTURE);
+    var profile9 = profile9Stream(DolbyVisionRpuPlacement.STARTS_SAMPLE);
 
     assertThat(decide("mov,mp4,m4a,3gp,3g2,mj2", profile9))
         .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
@@ -116,21 +117,21 @@ class TranscodeDecisionFrameFactsTest {
     assertThat(decide("mov,mp4,m4a,3gp,3g2,mj2", profile9)).isEqualTo(TranscodeMode.REMUX);
   }
 
-  @Test
-  @DisplayName("Should encode a Dolby Vision profile 8.2 stream when its RPUs start samples")
-  void shouldEncodeADolbyVisionProfile8Point2StreamWhenItsRpusStartSamples() {
-    var profile82 = profile82Stream(DolbyVisionRpuPlacement.BEFORE_NEXT_PICTURE);
+  // A shifted file whose start was cut away has an RPU at the start of its first picture packet,
+  // and the probe reports it as STARTS_SAMPLE like any other file whose RPUs start samples.
+  @ParameterizedTest
+  @EnumSource(DolbyVisionRpuPlacement.class)
+  @DisplayName("Should encode a Dolby Vision profile 8.2 stream only when its RPUs start samples")
+  void shouldEncodeADolbyVisionProfile8Point2StreamOnlyWhenItsRpusStartSamples(
+      DolbyVisionRpuPlacement placement) {
+    var profile82 = profile82Stream(placement);
 
-    assertThat(decide("mov,mp4,m4a,3gp,3g2,mj2", profile82))
-        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
-  }
+    var expected = TranscodeMode.REMUX;
+    if (placement == DolbyVisionRpuPlacement.STARTS_SAMPLE) {
+      expected = TranscodeMode.VIDEO_TRANSCODE;
+    }
 
-  @Test
-  @DisplayName("Should copy a Dolby Vision profile 8.2 stream when every RPU follows its picture")
-  void shouldCopyADolbyVisionProfile8Point2StreamWhenEveryRpuFollowsItsPicture() {
-    var profile82 = profile82Stream(DolbyVisionRpuPlacement.AFTER_OWN_PICTURE);
-
-    assertThat(decide("mov,mp4,m4a,3gp,3g2,mj2", profile82)).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decide("mov,mp4,m4a,3gp,3g2,mj2", profile82)).isEqualTo(expected);
   }
 
   @Test
@@ -148,7 +149,7 @@ class TranscodeDecisionFrameFactsTest {
                             Optional.empty(),
                             Presence.PRESENT,
                             Optional.of(profile5RpuHeader()),
-                            DolbyVisionRpuPlacement.BEFORE_NEXT_PICTURE))))
+                            DolbyVisionRpuPlacement.STARTS_SAMPLE))))
             .videoProperties(Optional.of(bt709Properties(VideoCodecProfile.HEVC_MAIN_10)))
             .build();
 

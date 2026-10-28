@@ -442,7 +442,7 @@ class RemoteVariantJobMapperTest {
                             .disableResidual(true)
                             .vdrBitDepth(12)
                             .build()),
-                    DolbyVisionRpuPlacement.BEFORE_NEXT_PICTURE)));
+                    DolbyVisionRpuPlacement.STARTS_SAMPLE)));
 
     assertThat(range.getDolbyVisionPresent())
         .isEqualTo(
@@ -457,7 +457,7 @@ class RemoteVariantJobMapperTest {
                         .setVdrBitDepth(12))
                 .setRpuPlacement(
                     com.streamarr.transcode.v1.DolbyVisionRpuPlacement
-                        .DOLBY_VISION_RPU_PLACEMENT_BEFORE_NEXT_PICTURE)
+                        .DOLBY_VISION_RPU_PLACEMENT_STARTS_SAMPLE)
                 .build());
   }
 

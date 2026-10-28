@@ -96,7 +96,7 @@ class MediaFileProbePropertyIssueTest {
     assertThat(
             MediaFileProbePropertyIssue.foundIn(range)
                 .contains(MediaFileProbePropertyIssue.DOLBY_VISION_RPU_STARTS_SAMPLE))
-        .isEqualTo(placement == DolbyVisionRpuPlacement.BEFORE_NEXT_PICTURE);
+        .isEqualTo(placement == DolbyVisionRpuPlacement.STARTS_SAMPLE);
   }
 
   @ParameterizedTest

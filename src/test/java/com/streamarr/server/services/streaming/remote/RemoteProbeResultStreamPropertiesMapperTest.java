@@ -277,7 +277,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
       value = com.streamarr.transcode.v1.DolbyVisionRpuPlacement.class,
       names = {
         "DOLBY_VISION_RPU_PLACEMENT_AFTER_OWN_PICTURE",
-        "DOLBY_VISION_RPU_PLACEMENT_BEFORE_NEXT_PICTURE"
+        "DOLBY_VISION_RPU_PLACEMENT_STARTS_SAMPLE"
       })
   @DisplayName("Should keep the first RPU header and the RPU placement when the probe read RPUs")
   void shouldKeepTheFirstRpuHeaderAndTheRpuPlacementWhenTheProbeReadRpus(
@@ -499,9 +499,8 @@ class RemoteProbeResultStreamPropertiesMapperTest {
     var afterOwnPicture =
         com.streamarr.transcode.v1.DolbyVisionRpuPlacement
             .DOLBY_VISION_RPU_PLACEMENT_AFTER_OWN_PICTURE;
-    var beforeNextPicture =
-        com.streamarr.transcode.v1.DolbyVisionRpuPlacement
-            .DOLBY_VISION_RPU_PLACEMENT_BEFORE_NEXT_PICTURE;
+    var startsSample =
+        com.streamarr.transcode.v1.DolbyVisionRpuPlacement.DOLBY_VISION_RPU_PLACEMENT_STARTS_SAMPLE;
     var hlgTransfer =
         com.streamarr.transcode.v1.TransferCharacteristics.TRANSFER_CHARACTERISTICS_ARIB_STD_B67;
     return Stream.of(
@@ -786,7 +785,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
                   .setDolbyVisionPresent(
                       DolbyVisionPresent.newBuilder()
                           .setObservedRpu(absent)
-                          .setRpuPlacement(beforeNextPicture));
+                          .setRpuPlacement(startsSample));
               return stream;
             }),
         violation(
@@ -796,7 +795,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
                   .setFirstFramesRead(true)
                   .getDynamicRangeBuilder()
                   .setDolbyVisionPresent(
-                      DolbyVisionPresent.newBuilder().setRpuPlacement(beforeNextPicture));
+                      DolbyVisionPresent.newBuilder().setRpuPlacement(startsSample));
               return stream;
             }),
         violation(
@@ -924,7 +923,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
                       DolbyVisionPresent.newBuilder()
                           .setDeclared(profile10Record().setBaseLayerCompatibilityId(1))
                           .setObservedRpu(present)
-                          .setRpuPlacement(beforeNextPicture));
+                          .setRpuPlacement(startsSample));
               return stream;
             }),
         violation(
