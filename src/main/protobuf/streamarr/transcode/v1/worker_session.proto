@@ -307,31 +307,34 @@ message DolbyVisionPresent {
 // The probe reports UNSPECIFIED unless observed_rpu is PRESENT, the probe delimited every NAL unit
 // of every one of those packets, no packet holds more than one RPU, and no packet ahead of the
 // first picture packet holds an RPU. Otherwise it reports the one value whose rule those packets
-// meet, or UNSPECIFIED when they meet none. AV1 always reports UNSPECIFIED: FFmpeg's AV1 decoders
-// attach an RPU to the next shown frame whose OBUs follow it, so an RPU ahead of its frame is the
-// layout that AV1 expects.
+// meet, or UNSPECIFIED when they meet neither. AV1 always reports UNSPECIFIED: FFmpeg's AV1
+// decoders attach an RPU to the next shown frame whose OBUs follow it, so an RPU ahead of its frame
+// is the layout that AV1 expects.
 //
-// When the first picture packet starts with an RPU and every packet that holds an RPU starts with
-// it, the probe reports UNSPECIFIED. The first packets cannot tell the two layouts that give that
-// pattern apart: a BEFORE_NEXT_PICTURE file whose start was cut away, so that its first picture
-// packet starts with the RPU of a picture that the cut removed, and a file that starts each
-// picture's sample with that picture's own RPU. No known muxer writes the second layout, so the
-// worker repairs UNSPECIFIED as the BEFORE_NEXT_PICTURE layout, as VideoDecision says.
+// STARTS_SAMPLE names what the packets show, not which picture each RPU belongs to. Two layouts
+// start samples with RPUs. In the shifted layout, each picture's RPU starts the sample of the next
+// picture, and the last sample holds an RPU and no picture; mkvmerge wrote it before version 57,
+// released in 2021. In the other layout, each picture's sample starts with that picture's own RPU;
+// no known muxer writes it. When the first picture packet starts with an RPU, as it does in a
+// shifted file whose start was cut away, the first packets cannot tell the two layouts apart, and
+// the probe reports STARTS_SAMPLE whether or not the first picture packet holds an RPU. The worker
+// repairs STARTS_SAMPLE as the shifted layout, as VideoDecision says.
 enum DolbyVisionRpuPlacement {
-  // The probe could not decide, the stream is AV1, or the packets match none of the other values.
+  // The probe could not tell the placement: observed_rpu is not PRESENT, the probe could not
+  // delimit every NAL unit of those packets, a packet holds more than one RPU, a packet ahead of
+  // the first picture packet holds an RPU, the packets meet the rule of neither other value, or the
+  // stream is AV1.
   DOLBY_VISION_RPU_PLACEMENT_UNSPECIFIED = 0;
   // Each RPU is the last NAL unit of its own picture's sample, as Dolby Vision requires. At least
   // one packet holds an RPU, and every RPU follows a slice of its own packet and is the last NAL
   // unit of that packet. A packet whose RPU follows a slice but is followed by another NAL unit,
-  // such as a suffix SEI NAL unit, matches no value, because FFmpeg's HEVC decoder ignores an RPU
-  // that is not the last NAL unit of its sample. An RPU that starts its packet is left to
-  // BEFORE_NEXT_PICTURE, whatever NAL units follow it.
+  // such as a suffix SEI NAL unit, meets the rule of neither value, because FFmpeg's HEVC decoder
+  // ignores an RPU that is not the last NAL unit of its sample. An RPU that starts its packet is
+  // left to STARTS_SAMPLE, whatever NAL units follow it.
   DOLBY_VISION_RPU_PLACEMENT_AFTER_OWN_PICTURE = 1;
-  // Each picture's RPU starts the sample of the next picture, and the last sample holds an RPU and
-  // no picture. mkvmerge wrote this layout before version 57, released in 2021. The first picture
-  // packet holds no RPU, at least one later packet holds an RPU, and every packet that holds an RPU
-  // starts with it.
-  DOLBY_VISION_RPU_PLACEMENT_BEFORE_NEXT_PICTURE = 2;
+  // Every RPU starts its sample. At least one packet holds an RPU, and every packet that holds an
+  // RPU starts with it, whether or not the first picture packet holds one.
+  DOLBY_VISION_RPU_PLACEMENT_STARTS_SAMPLE = 2;
 }
 
 // The fields of a Dolby Vision RPU header that tell the Dolby Vision profile when no configuration
@@ -392,17 +395,20 @@ message VideoDynamicRange {
 // FFmpeg's HEVC decoder ignores an RPU that is not the last NAL unit of its sample, so it does not
 // reshape the picture of a sample that starts with an RPU. So the worker moves the RPUs of an
 // encode whose source_codec_family is HEVC and whose source_dynamic_range has compatible base NONE
-// and a Dolby Vision present arm whose rpu_placement is not AFTER_OWN_PICTURE. An RPU that starts a
-// sample, as DolbyVisionRpuPlacement defines it, moves to the end of the previous picture's sample,
-// and the worker drops one that has no previous picture, such as the first one after a seek or the
-// first one of a file whose start was cut away. For UNSPECIFIED this takes the cut-away
-// BEFORE_NEXT_PICTURE file that DolbyVisionRpuPlacement describes over the file that starts each
-// sample with its own picture's RPU, which no known muxer writes: such a file would show each
-// picture with the next picture's RPU. In the same jobs, an RPU that follows a slice of its sample
-// but is not the sample's last NAL unit moves to the end of that sample. Every other job,
-// AFTER_OWN_PICTURE included, reads the source's samples unchanged: the placement rests on the
-// packets that the probe read, and the worker assumes that the rest of the stream keeps that
-// layout.
+// and a Dolby Vision present arm whose rpu_placement is STARTS_SAMPLE or UNSPECIFIED. An RPU that
+// starts a sample, as DolbyVisionRpuPlacement defines it, moves to the end of the previous
+// picture's sample, and the worker drops one that has no previous picture, such as the first one
+// after a seek or the first one of a shifted file whose start was cut away. This repairs the
+// shifted layout that DolbyVisionRpuPlacement describes, and gives each picture of the layout that
+// no known muxer writes the next picture's RPU. In the same jobs, an RPU that follows a slice of
+// its sample but is not the sample's last NAL unit moves to the end of that sample. The move
+// changes only samples that hold an RPU which FFmpeg's decoder ignores and the samples that such
+// RPUs move behind, so a stream whose every RPU ends its sample passes unchanged. The worker
+// therefore also moves the RPUs of an UNSPECIFIED stream, whose layout the probe could not tell:
+// the picture of a profile 5 stream, which has no compatible base, shows correctly only when the
+// decoder reads its RPU. Every other job, AFTER_OWN_PICTURE included, reads the source's samples
+// unchanged: the placement rests on the packets that the probe read, and the worker assumes that
+// the rest of the stream keeps that layout.
 message VideoDecision {
   VideoMode mode = 6;
   VideoCodecFamily codec_family = 1;
