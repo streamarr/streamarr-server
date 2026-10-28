@@ -61,9 +61,10 @@ message WorkerCapabilities {
   // rate and profile of each audio stream, the chosen video stream, the output frame rate and the
   // container's chapters. Version 5 adds each video stream's codec profile, level, tier and color
   // signaling, and what the probe observes in the first frames and packets of the chosen video
-  // stream: HDR10+, Dolby Vision RPUs, the first RPU header, the placement of the RPUs and the
-  // static HDR metadata that only the bitstream carries. Each version reports every fact of the
-  // versions before it. Version 2 is unused: no server requests it and no worker advertises it.
+  // stream: HDR10+, Dolby Vision RPUs, the first RPU header, the placement of the RPUs, the static
+  // HDR metadata that only the bitstream carries, and whether the packets lack presentation times.
+  // Each version reports every fact of the versions before it. Version 2 is unused: no server
+  // requests it and no worker advertises it.
   repeated uint32 probe_versions = 2;
   // One entry for each codec family the worker can encode: the encoder backend that the worker
   // runs for every job of that codec family. Every entry, hardware or software, passed the worker's
@@ -395,8 +396,9 @@ message VideoDynamicRange {
 //
 // FFmpeg's HEVC decoder ignores an RPU that is not the last NAL unit of its sample, so it does not
 // reshape the picture of a sample that starts with an RPU. So the worker moves the RPUs of an
-// encode whose source_codec_family is HEVC and whose source_dynamic_range has compatible base NONE
-// and a Dolby Vision present arm whose rpu_placement is STARTS_SAMPLE or UNSPECIFIED. An RPU that
+// encode whose source_codec_family is HEVC, whose source_dynamic_range has compatible base NONE
+// and a Dolby Vision present arm whose rpu_placement is STARTS_SAMPLE or UNSPECIFIED, and whose
+// source_packets_lack_presentation_times is false. An RPU that
 // starts a sample, as DolbyVisionRpuPlacement defines it, moves to the end of the previous
 // picture's sample, and the worker drops one that has no previous picture, such as the first one
 // after a seek or the first one of a shifted file whose start was cut away. This repairs the
@@ -412,6 +414,24 @@ message VideoDynamicRange {
 // decoder reads its RPU. Every other job, AFTER_OWN_PICTURE included, reads the source's samples
 // unchanged: the placement rests on the packets that the probe read, and the worker assumes that
 // the rest of the stream keeps that layout.
+//
+// The move copies the source's samples, with their presentation times, into the stream that the
+// encode decodes. A copy of packets without presentation times stamps each picture with its decode
+// time, so the encode loses the pictures that B-frames reorder. So a job that sets
+// source_packets_lack_presentation_times reads the source's samples unchanged, whatever its
+// rpu_placement. FFmpeg's HEVC decoder still reads the RPUs of the usual such source, a raw HEVC
+// elementary stream, because FFmpeg's HEVC parser cuts that stream into packets. The parser
+// (hevc_find_frame_end) ends a packet just ahead of a NAL unit on layer 0 that begins the next
+// access unit: a VPS, SPS or PPS, an access unit delimiter, an end of sequence or of bitstream
+// (types 32 to 37), a prefix SEI NAL unit (type 39), a NAL unit of a reserved type 41 to 44 or 48
+// to 55, or the first slice segment of the next picture. An RPU begins no access unit, so the
+// parser starts no packet at an RPU, except the first packet, which starts wherever the parser
+// starts reading. An RPU that follows its picture's slices, where Dolby Vision places it,
+// therefore ends that picture's packet, where the decoder reads it. The decoder still ignores an
+// RPU that another NAL unit of its packet follows, such as one that lies between the NAL units
+// that begin an access unit and its first slice, and an RPU that starts a sample of a demuxer that
+// keeps the stored samples, as FFmpeg's AVI demuxer does for an HEVC stream tagged HEVC rather than
+// H265. Those pictures lose their reshaping, but the encode keeps every picture.
 message VideoDecision {
   VideoMode mode = 6;
   VideoCodecFamily codec_family = 1;
@@ -433,6 +453,11 @@ message VideoDecision {
   // h264, hevc or av1. UNSPECIFIED for any other codec. codec_family is the output's codec family,
   // which an encode can change. The server sets it on every job, whether it copies or encodes.
   VideoCodecFamily source_codec_family = 10;
+  // Whether the chosen video stream's packets lack presentation times: the value of
+  // ProbeStreamInfo.first_packets_lack_presentation_times as the probe stored it, or false when the
+  // probe stored none. The server sets it on every job, whether it copies or encodes. Only the RPU
+  // move that this message describes reads it.
+  bool source_packets_lack_presentation_times = 11;
 }
 
 message TranscodeDecision {
@@ -780,7 +805,7 @@ enum ColorRange {
 
 // Only probe version 4 and later report the fields from dynamic_range to is_hearing_impaired.
 // Only probe version 5 and later report the fields from codec_profile to
-// content_light_level_omitted.
+// first_packets_lack_presentation_times.
 message ProbeStreamInfo {
   uint32 index = 1;
   string codec_type = 2;
@@ -1164,6 +1189,17 @@ message ProbeStreamInfo {
   // can hold MaxCLL and MaxFALL. That rule applies to every codec, whether or not the probe read
   // the first frames. A stream with this flag set is never PQ10.
   bool content_light_level_omitted = 35;
+  // Video streams only: whether the packets that dynamic_range's walk covers lack presentation
+  // times. The worker asks ffprobe for the pts of each packet in its read of those packets, which
+  // dynamic_range describes. ffprobe's JSON writer leaves out the pts of a packet that its demuxer
+  // gives no presentation time (AV_NOPTS_VALUE). True when at least one packet that the read
+  // printed has no pts, and false when every one has a pts. FFmpeg's raw H.264 and HEVC demuxers
+  // give no packet a presentation time, and its AVI demuxer gives none to the packets of a stream
+  // with B-frames. Absent when the probe read no packets: on every stream but the chosen video
+  // stream, on a chosen video stream whose codec is not H.264, HEVC or AV1 or whose
+  // first_frames_read is false, and when that read fails or prints no packet. The value rests on
+  // the packets that the probe read, and the worker assumes that the rest of the stream keeps it.
+  optional bool first_packets_lack_presentation_times = 36;
 }
 
 // The number of pixels that a container crop removes from each edge of the picture. width and
