@@ -919,7 +919,15 @@ message ProbeStreamInfo {
   // sample switches to another sample description. ffprobe prints that side data's type but not its
   // bytes, and FFmpeg's H.264 and HEVC decoders apply the replacement. So a read in which a packet
   // carries new extradata side data counts the same way. A feature that the probe cannot see in a
-  // codec stays UNSPECIFIED. Every other video stream keeps the facts of probe version 4.
+  // codec stays UNSPECIFIED.
+  //
+  // Every other video stream, and the chosen video stream when first_frames_read is false, gives
+  // the probe only its headers and configuration records. hdr10_plus, observed_rpu and the Dolby
+  // Vision arm then follow the first paragraph of this comment, as under probe version 4, and a
+  // Dolby Vision present arm holds no first_rpu_header and an UNSPECIFIED rpu_placement. The
+  // compatible base follows CompatibleBase, so from probe version 5 on a configuration record that
+  // names profile 5, or profile 10 with base_layer_compatibility_id 0, gives NONE whatever the
+  // signaled transfer says.
   VideoDynamicRange dynamic_range = 12;
   // Video streams only: the bit depth of a luma sample, from the pixel format. For example, 8 for
   // yuv420p and 10 for yuv420p10le. Absent when ffprobe reports no pixel format.
@@ -1079,7 +1087,8 @@ message ProbeStreamInfo {
   // an error, prints no JSON or prints more than 4 MiB. When no read decodes a frame, because every
   // read fails or because even the read of 192 packets decodes none, the probe keeps no read and
   // first_frames_read is false. The probe then has read no frames and walks neither the extradata
-  // nor the packets, so dynamic_range keeps the facts of probe version 4, and mastering_display and
+  // nor the packets, so dynamic_range rests on the headers and configuration records alone, as the
+  // last paragraph of its comment says, and mastering_display and
   // content_light_level come only from the container and the Matroska checks that
   // mastering_display_omitted describes. Such a stream is not one whose read was cut short: the
   // rules that follow for a cut-short read apply only when first_frames_read is true. Otherwise the
