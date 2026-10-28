@@ -132,15 +132,19 @@ final class RemoteStreamPropertiesMapper {
     }
   }
 
-  // The worker reads no frame feature of any other codec, so HDR10+, the observed RPU and the Dolby
-  // Vision arm rest on the headers and configuration records alone.
+  // The probe walks neither the extradata nor the packets of any other codec. Its frames can still
+  // prove HDR10+ or an RPU present, but only a walk rules a feature out or places an RPU.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static void checkInvisibleFrameFeatures(
       com.streamarr.transcode.v1.VideoDynamicRange range) {
-    if (range.getHdr10Plus() != Presence.PRESENCE_UNSPECIFIED
+    var present = range.getDolbyVisionPresent();
+    if (range.getHdr10Plus() == Presence.PRESENCE_ABSENT
         || range.hasDolbyVisionAbsent()
-        || range.getDolbyVisionPresent().getObservedRpu() != Presence.PRESENCE_UNSPECIFIED) {
-      throw contractViolation("Worker probe reported a frame feature that it cannot see");
+        || present.getObservedRpu() == Presence.PRESENCE_ABSENT
+        || present.getRpuPlacement()
+            != DolbyVisionRpuPlacement.DOLBY_VISION_RPU_PLACEMENT_UNSPECIFIED) {
+      throw contractViolation(
+          "Worker probe reported a walk result for a codec whose packets it never walks");
     }
   }
 

@@ -988,13 +988,18 @@ class RemoteProbeResultStreamPropertiesMapperTest {
               return stream;
             }),
         violation(
-            "HDR10+ present on a VP9 stream",
+            "an RPU placement on a VP9 stream",
             stream -> {
               stream
                   .setCodec("vp9")
                   .setFirstFramesRead(true)
+                  .setTransferCharacteristics(PQ_TRANSFER)
                   .getDynamicRangeBuilder()
-                  .setHdr10Plus(present);
+                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
+                  .setDolbyVisionPresent(
+                      DolbyVisionPresent.newBuilder()
+                          .setObservedRpu(present)
+                          .setRpuPlacement(startsSample));
               return stream;
             }),
         violation(
@@ -1023,17 +1028,51 @@ class RemoteProbeResultStreamPropertiesMapperTest {
               return stream;
             }),
         violation(
-            "an observed RPU present on a stream without a codec",
+            "HDR10+ absent on a stream without a codec",
             stream -> {
               stream
                   .clearCodec()
                   .setFirstFramesRead(true)
-                  .setTransferCharacteristics(PQ_TRANSFER)
                   .getDynamicRangeBuilder()
-                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
-                  .setDolbyVisionPresent(DolbyVisionPresent.newBuilder().setObservedRpu(present));
+                  .setHdr10Plus(absent);
               return stream;
             }));
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @Test
+  @DisplayName("Should keep HDR10+ present on a VP9 stream when its frames show HDR10+")
+  void shouldKeepHdr10PlusPresentOnAVp9StreamWhenItsFramesShowHdr10Plus() {
+    var video = hevc().setCodec("vp9").setFirstFramesRead(true);
+    video
+        .getDynamicRangeBuilder()
+        .setHdr10Plus(com.streamarr.transcode.v1.Presence.PRESENCE_PRESENT);
+
+    var stream = videoOf(version5(media -> media.setStreams(0, video)));
+
+    assertThat(stream.dynamicRange()).map(VideoDynamicRange::hdr10Plus).contains(Presence.PRESENT);
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @Test
+  @DisplayName(
+      "Should keep an observed RPU and its header on a VP9 stream when its frames show one")
+  void shouldKeepAnObservedRpuAndItsHeaderOnAVp9StreamWhenItsFramesShowOne() {
+    var video =
+        profile8RpusWithoutTransfer(hevc().setCodec("vp9"), CompatibleBase.COMPATIBLE_BASE_NONE);
+
+    var stream = videoOf(version5(media -> media.setStreams(0, video)));
+
+    assertThat(stream.dynamicRange())
+        .map(VideoDynamicRange::dolbyVision)
+        .get()
+        .isInstanceOfSatisfying(
+            DolbyVision.Present.class,
+            present -> {
+              assertThat(present.observedRpu()).isEqualTo(Presence.PRESENT);
+              assertThat(present.firstRpuHeader()).isPresent();
+              assertThat(present.rpuPlacement()).isEqualTo(DolbyVisionRpuPlacement.UNSPECIFIED);
+            });
   }
 
   @Test
