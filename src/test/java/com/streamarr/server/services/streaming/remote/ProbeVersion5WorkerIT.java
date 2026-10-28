@@ -204,6 +204,7 @@ class ProbeVersion5WorkerIT extends AbstractIntegrationTest {
                               .matrixCoefficients(Optional.of(MatrixCoefficients.BT709))
                               .colorRange(Optional.of(ColorRange.LIMITED))
                               .firstFramesRead(true)
+                              .firstPacketsCarryPresentationTimes(Optional.of(true))
                               .build()));
     }
   }
