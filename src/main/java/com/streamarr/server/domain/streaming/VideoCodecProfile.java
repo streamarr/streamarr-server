@@ -1,9 +1,6 @@
 package com.streamarr.server.domain.streaming;
 
-/**
- * A video stream's codec profile. The probe reports every value, and an encode forces only
- * H264_HIGH or AV1_MAIN.
- */
+/** A video stream's codec profile, as the probe reports it. */
 public enum VideoCodecProfile {
   H264_CONSTRAINED_BASELINE,
   H264_BASELINE,

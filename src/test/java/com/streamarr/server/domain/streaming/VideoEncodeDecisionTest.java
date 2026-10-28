@@ -32,7 +32,7 @@ class VideoEncodeDecisionTest {
                 .bitrate(levelCase.bitrate())
                 .build());
 
-    assertThat(decision.codecProfile()).isEqualTo(VideoCodecProfile.H264_HIGH);
+    assertThat(decision.codecProfile()).isEqualTo(EncodeCodecProfile.H264_HIGH);
     assertThat(decision.tier()).isEmpty();
     assertThat(decision.level()).isEqualTo(levelCase.level());
     assertThat(decision.codecString()).isEqualTo(levelCase.codecString());
@@ -51,7 +51,7 @@ class VideoEncodeDecisionTest {
                 .bitrate(levelCase.bitrate())
                 .build());
 
-    assertThat(decision.codecProfile()).isEqualTo(VideoCodecProfile.AV1_MAIN);
+    assertThat(decision.codecProfile()).isEqualTo(EncodeCodecProfile.AV1_MAIN);
     assertThat(decision.tier()).isEqualTo(Optional.of(VideoCodecTier.MAIN));
     assertThat(decision.level()).isEqualTo(levelCase.level());
     assertThat(decision.codecString()).isEqualTo(levelCase.codecString());

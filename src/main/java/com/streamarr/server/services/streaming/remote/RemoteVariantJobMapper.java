@@ -5,13 +5,13 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.SubtitleMode;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
-import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoEncodeDecision;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
@@ -24,6 +24,7 @@ import com.streamarr.transcode.v1.TranscodeExecution;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
 import com.streamarr.transcode.v1.VideoCodecFamily;
+import com.streamarr.transcode.v1.VideoCodecProfile;
 import com.streamarr.transcode.v1.VideoDynamicRange;
 import com.streamarr.transcode.v1.VideoMode;
 import java.nio.file.Path;
@@ -274,26 +275,18 @@ final class RemoteVariantJobMapper {
         .orElse(false);
   }
 
-  private static VideoCodecFamily codecFamily(VideoCodecProfile profile) {
+  private static VideoCodecFamily codecFamily(EncodeCodecProfile profile) {
     return switch (profile) {
       case H264_HIGH -> VideoCodecFamily.VIDEO_CODEC_FAMILY_H264;
       case AV1_MAIN -> VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1;
-      default -> throw unforcedCodecProfile(profile);
     };
   }
 
-  @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static com.streamarr.transcode.v1.VideoCodecProfile codecProfile(
-      VideoCodecProfile profile) {
+  private static VideoCodecProfile codecProfile(EncodeCodecProfile profile) {
     return switch (profile) {
-      case H264_HIGH -> com.streamarr.transcode.v1.VideoCodecProfile.VIDEO_CODEC_PROFILE_H264_HIGH;
-      case AV1_MAIN -> com.streamarr.transcode.v1.VideoCodecProfile.VIDEO_CODEC_PROFILE_AV1_MAIN;
-      default -> throw unforcedCodecProfile(profile);
+      case H264_HIGH -> VideoCodecProfile.VIDEO_CODEC_PROFILE_H264_HIGH;
+      case AV1_MAIN -> VideoCodecProfile.VIDEO_CODEC_PROFILE_AV1_MAIN;
     };
-  }
-
-  private static IllegalArgumentException unforcedCodecProfile(VideoCodecProfile profile) {
-    return new IllegalArgumentException("An encode never forces the codec profile " + profile);
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")

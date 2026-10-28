@@ -12,7 +12,7 @@ import lombok.NonNull;
  */
 @Builder
 public record VideoEncodeDecision(
-    @NonNull VideoCodecProfile codecProfile,
+    @NonNull EncodeCodecProfile codecProfile,
     @NonNull Optional<VideoCodecTier> tier,
     int level,
     @NonNull String codecString) {
@@ -31,7 +31,7 @@ public record VideoEncodeDecision(
     var level =
         H264Level.smallestAllowing(output).orElseThrow(() -> noLevelAllows(output, "H.264"));
     return VideoEncodeDecision.builder()
-        .codecProfile(VideoCodecProfile.H264_HIGH)
+        .codecProfile(EncodeCodecProfile.H264_HIGH)
         .tier(Optional.empty())
         .level(level.levelIdc())
         .codecString(level.highProfileCodecString())
@@ -41,7 +41,7 @@ public record VideoEncodeDecision(
   private static VideoEncodeDecision av1(EncodedVideoOutput output) {
     var level = Av1Level.smallestAllowing(output).orElseThrow(() -> noLevelAllows(output, "AV1"));
     return VideoEncodeDecision.builder()
-        .codecProfile(VideoCodecProfile.AV1_MAIN)
+        .codecProfile(EncodeCodecProfile.AV1_MAIN)
         .tier(Optional.of(VideoCodecTier.MAIN))
         .level(level.level())
         .codecString(level.mainProfileCodecString())
