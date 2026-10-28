@@ -132,7 +132,8 @@ final class RemoteStreamPropertiesMapper {
     }
   }
 
-  // The worker reads no frame feature of any other codec, which keeps the facts of probe version 4.
+  // The worker reads no frame feature of any other codec, so HDR10+, the observed RPU and the Dolby
+  // Vision arm rest on the headers and configuration records alone.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static void checkInvisibleFrameFeatures(
       com.streamarr.transcode.v1.VideoDynamicRange range) {

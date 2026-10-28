@@ -12,9 +12,10 @@ import lombok.NonNull;
  * codecLevel} is major × 10 + minor. A Presence on the stream is ABSENT only when {@code
  * firstFramesRead} holds. An omitted flag says that the stream carries, or may carry, that half of
  * its static HDR metadata although the probe left it empty, so a stream with either flag set is
- * never PQ10. {@code firstPacketsCarryPresentationTimes} tells whether every packet that the probe
- * read of the chosen video stream carried a presentation time, and is empty when the probe read no
- * packets.
+ * never PQ10. Without {@code firstFramesRead}, an empty mastering display or content light level
+ * says only that the container declares none, so it proves no PQ10 either. {@code
+ * firstPacketsCarryPresentationTimes} tells whether every packet that the probe read of the chosen
+ * video stream carried a presentation time, and is empty when the probe read no packets.
  */
 @Builder
 public record VideoStreamProperties(
