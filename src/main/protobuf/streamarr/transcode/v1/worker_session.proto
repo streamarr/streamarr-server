@@ -857,8 +857,10 @@ message ProbeStreamInfo {
   // - for HEVC, a NAL unit shorter than its 2-byte header, and one whose nuh_temporal_id_plus1 is 0
   //   or whose nuh_layer_id is 63;
   // - for H.264, a NAL unit whose bytes are all 0, an empty one included;
-  // - the last NAL unit of a packet whose NAL units follow lengths, when its length and its bytes
-  //   take fewer than 4 bytes together.
+  // - a NAL unit of a packet whose NAL units follow lengths, when fewer than 4 bytes of the packet
+  //   remain where its length starts. A NAL unit whose length and bytes take fewer than 4 bytes
+  //   still reaches the decoders when at least 4 bytes remain there, as when a dropped tail of 1
+  //   to 3 bytes follows it.
   // The walk skips each of these NAL units, as if the packet or the extradata did not hold it. Such
   // a NAL unit is no RPU and no SEI NAL unit, so it is no evidence of any feature.
   // DolbyVisionRpuPlacement and the RPU move that VideoDecision describes do not count it either:
