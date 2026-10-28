@@ -796,29 +796,29 @@ message ProbeStreamInfo {
   // neither a configuration record nor a Dolby Vision sample entry.
   //
   // Probe version 5 also reads the first frames of the chosen video stream, as first_frames_read
-  // describes. For that stream, hdr10_plus and observed_rpu are PRESENT or ABSENT when the probe
-  // can see the feature in what it read, and Dolby Vision is ABSENT when the probe found no record,
-  // no Dolby Vision sample entry and no RPU. For H.264 and HEVC, an RPU is a NAL unit whose payload
-  // starts with rpu_nal_prefix 25: of type 28 for H.264, or for HEVC of type 62 with nuh_layer_id 0
-  // and nuh_temporal_id_plus1 1, which is TemporalId 0. FFmpeg's H.264 decoder drops every NAL unit
-  // of type 28, and the H.264 NAL unit header holds no layer and no TemporalId, so the type and the
-  // prefix alone make an H.264 RPU. FFmpeg's HEVC decoder reads a NAL unit of type 62 as an RPU
-  // only on layer 0 and TemporalId 0. A NAL unit of type 62 on another layer or another TemporalId
-  // is not an RPU: FFmpeg attaches nothing from it to the frames, so it is no Dolby Vision
-  // evidence. It makes neither observed_rpu nor Dolby Vision PRESENT, gives no RPU header and does
-  // not decide rpu_placement, and the walk and DolbyVisionRpuPlacement count it as any other NAL
-  // unit. Unlike an AV1 metadata OBU with an extension byte, which FFmpeg's AV1 decoders read when
-  // they decode its layer, FFmpeg never reads such a NAL unit as an RPU, so it does not keep
-  // observed_rpu from reading ABSENT. FFmpeg's HEVC decoder also ignores an RPU that is not the
-  // last NAL unit of its sample, and an RPU that it cannot parse. So for H.264 and HEVC the worker
-  // also parses the NAL units of every packet that the walk covers: every packet that the kept read
-  // asked for. An edit list's preroll widens that read, so the walk also covers the packets that
-  // the decoder discards. The worker reads those packets in a separate read of the same count.
-  // ffprobe ends a read without an error when the demuxer or the file fails, so when that read
-  // returns fewer packets than the kept read asked for, the worker has not read every packet that
-  // the walk covers. observed_rpu is PRESENT when either the frames or the packets hold an RPU.
-  // observed_rpu is ABSENT only when the probe could delimit every NAL unit of every one of those
-  // packets.
+  // describes. For that stream, when first_frames_read is true, hdr10_plus and observed_rpu are
+  // PRESENT or ABSENT when the probe can see the feature in what it read, and Dolby Vision is
+  // ABSENT when the probe found no record, no Dolby Vision sample entry and no RPU. For H.264 and
+  // HEVC, an RPU is a NAL unit whose payload starts with rpu_nal_prefix 25: of type 28 for H.264,
+  // or for HEVC of type 62 with nuh_layer_id 0 and nuh_temporal_id_plus1 1, which is TemporalId 0.
+  // FFmpeg's H.264 decoder drops every NAL unit of type 28, and the H.264 NAL unit header holds no
+  // layer and no TemporalId, so the type and the prefix alone make an H.264 RPU. FFmpeg's HEVC
+  // decoder reads a NAL unit of type 62 as an RPU only on layer 0 and TemporalId 0. A NAL unit of
+  // type 62 on another layer or another TemporalId is not an RPU: FFmpeg attaches nothing from it
+  // to the frames, so it is no Dolby Vision evidence. It makes neither observed_rpu nor Dolby
+  // Vision PRESENT, gives no RPU header and does not decide rpu_placement, and the walk and
+  // DolbyVisionRpuPlacement count it as any other NAL unit. Unlike an AV1 metadata OBU with an
+  // extension byte, which FFmpeg's AV1 decoders read when they decode its layer, FFmpeg never reads
+  // such a NAL unit as an RPU, so it does not keep observed_rpu from reading ABSENT. FFmpeg's HEVC
+  // decoder also ignores an RPU that is not the last NAL unit of its sample, and an RPU that it
+  // cannot parse. So for H.264 and HEVC the worker also parses the NAL units of every packet that
+  // the walk covers: every packet that the kept read asked for. An edit list's preroll widens that
+  // read, so the walk also covers the packets that the decoder discards. The worker reads those
+  // packets in a separate read of the same count. ffprobe ends a read without an error when the
+  // demuxer or the file fails, so when that read returns fewer packets than the kept read asked
+  // for, the worker has not read every packet that the walk covers. observed_rpu is PRESENT when
+  // either the frames or the packets hold an RPU. observed_rpu is ABSENT only when the probe could
+  // delimit every NAL unit of every one of those packets.
   //
   // The stream's extradata tells how a packet delimits its NAL units. With an avcC or an hvcC
   // record, whose first byte is configurationVersion 1, each NAL unit follows a big-endian length
@@ -1076,20 +1076,26 @@ message ProbeStreamInfo {
   // ffprobe limits a read by packets, and a packet can decode to no frame, as the packets that an
   // MP4 edit list discards do. So the probe reads the first 3, 12, 48 and then 192 packets of the
   // stream, and stops at the first read that decodes 3 frames. A read fails when ffprobe exits with
-  // an error, prints no JSON or prints more than 4 MiB. The kept read is the narrowest read that
-  // decodes the most frames, and the probe keeps its first 3 frames. The read is cut short whenever
-  // the kept read holds fewer than 3 frames. A stream of fewer than 3 frames is not told apart from
-  // a cut-short one: ffprobe ends a read without an error when the demuxer or the file fails, such
-  // as on a read error from a network share, so neither a read nor a count of the stream's packets
-  // that ends early shows that the stream ends there. first_frames_read stays true when the read is
-  // cut short. The stream can then hold frames that the probe did not read, so hdr10_plus,
-  // observed_rpu and Dolby Vision are never ABSENT on such a stream: a feature that none of the
-  // frames, the extradata and the packets show is UNSPECIFIED, and one that any of them shows is
-  // PRESENT, with its first RPU header and the compatible base that the header decides, as for any
-  // other read. A cut-short read only keeps a feature from reading ABSENT. The probe reports the
-  // first frame's static metadata as for any other read. For H.264, HEVC and AV1, a cut-short read
-  // leaves the walks short of reading all of the SEI or all of the OBUs, so the worker sets each
-  // omitted flag whose value no source gives.
+  // an error, prints no JSON or prints more than 4 MiB. When no read decodes a frame, because every
+  // read fails or because even the read of 192 packets decodes none, the probe keeps no read and
+  // first_frames_read is false. The probe then has read no frames and walks neither the extradata
+  // nor the packets, so dynamic_range keeps the facts of probe version 4, and mastering_display and
+  // content_light_level come only from the container and the Matroska checks that
+  // mastering_display_omitted describes. Such a stream is not one whose read was cut short: the
+  // rules that follow for a cut-short read apply only when first_frames_read is true. Otherwise the
+  // kept read is the narrowest read that decodes the most frames, and the probe keeps its first 3
+  // frames. The read is cut short when the kept read holds 1 or 2 frames. A stream of fewer than 3
+  // frames is not told apart from a cut-short one: ffprobe ends a read without an error when the
+  // demuxer or the file fails, such as on a read error from a network share, so neither a read nor
+  // a count of the stream's packets that ends early shows that the stream ends there.
+  // first_frames_read stays true when the read is cut short. The stream can then hold frames that
+  // the probe did not read, so hdr10_plus, observed_rpu and Dolby Vision are never ABSENT on such a
+  // stream: a feature that none of the frames, the extradata and the packets show is UNSPECIFIED,
+  // and one that any of them shows is PRESENT, with its first RPU header and the compatible base
+  // that the header decides, as for any other read. A cut-short read only keeps a feature from
+  // reading ABSENT. The probe reports the first frame's static metadata as for any other read. For
+  // H.264, HEVC and AV1, a cut-short read leaves the walks short of reading all of the SEI or all
+  // of the OBUs, so the worker sets each omitted flag whose value no source gives.
   bool first_frames_read = 33;
   // Video streams only: true when the stream carries, or may carry, a mastering display color
   // volume that the worker left absent. The container, the first frame, or an SEI message or a
