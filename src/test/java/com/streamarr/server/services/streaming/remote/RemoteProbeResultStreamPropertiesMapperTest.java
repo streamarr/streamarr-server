@@ -122,6 +122,26 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         .contains(carried);
   }
 
+  @ParameterizedTest
+  @ValueSource(strings = {"h264", "hevc", "av1"})
+  @DisplayName(
+      "Should keep the presentation times of the first packets when the probe reads the codec's"
+          + " packets")
+  void shouldKeepThePresentationTimesOfTheFirstPacketsWhenTheProbeReadsTheCodecsPackets(
+      String codec) {
+    var video =
+        hevc()
+            .setCodec(codec)
+            .setFirstFramesRead(true)
+            .setFirstPacketsCarryPresentationTimes(false);
+
+    var stream = videoOf(version5(media -> media.setStreams(0, video)));
+
+    assertThat(stream.videoProperties())
+        .flatMap(VideoStreamProperties::firstPacketsCarryPresentationTimes)
+        .contains(false);
+  }
+
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   @Test
   @DisplayName("Should report no codec profile when the contract names one this server lacks")
@@ -519,6 +539,23 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         com.streamarr.transcode.v1.TransferCharacteristics.TRANSFER_CHARACTERISTICS_ARIB_STD_B67;
     return Stream.of(
         violation("a codec level without a codec profile", stream -> stream.setCodecLevel(41)),
+        violation(
+            "presentation times on packets of a stream whose frames the probe did not read",
+            stream -> stream.setFirstPacketsCarryPresentationTimes(true)),
+        violation(
+            "presentation times on packets of a VP9 stream",
+            stream ->
+                stream
+                    .setCodec("vp9")
+                    .setFirstFramesRead(true)
+                    .setFirstPacketsCarryPresentationTimes(false)),
+        violation(
+            "presentation times on packets of a stream without a codec",
+            stream ->
+                stream
+                    .clearCodec()
+                    .setFirstFramesRead(true)
+                    .setFirstPacketsCarryPresentationTimes(true)),
         violation(
             "a PQ transfer with an SDR compatible base",
             stream -> {

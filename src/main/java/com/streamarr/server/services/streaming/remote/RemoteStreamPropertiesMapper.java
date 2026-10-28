@@ -27,6 +27,7 @@ final class RemoteStreamPropertiesMapper {
   private static final int DOLBY_VISION_PROFILE_5 = 5;
   private static final int DOLBY_VISION_PROFILE_10 = 10;
   private static final Set<String> RECORD_LESS_BASELESS_CODECS = Set.of("hevc", "av1");
+  private static final Set<String> PACKET_READ_CODECS = Set.of("h264", "hevc", "av1");
   // vdr_bit_depth_minus8 + 8, and a uint32 above Integer.MAX_VALUE arrives as a negative int.
   private static final int MINIMUM_VDR_BIT_DEPTH = 8;
 
@@ -40,6 +41,7 @@ final class RemoteStreamPropertiesMapper {
 
     checkStaticHdrMetadataOmission(stream);
     checkFrameEvidence(stream);
+    checkPacketEvidence(stream);
     checkCodecVisibility(stream);
     checkCompatibleBase(stream);
     return builder.videoProperties(Optional.of(properties(stream)));
@@ -96,6 +98,17 @@ final class RemoteStreamPropertiesMapper {
         || present.getRpuPlacement()
             != DolbyVisionRpuPlacement.DOLBY_VISION_RPU_PLACEMENT_UNSPECIFIED) {
       throw contractViolation("Worker probe described RPUs that it did not observe");
+    }
+  }
+
+  // The probe reads the packets of an H.264, HEVC or AV1 stream only beside its first frames.
+  private static void checkPacketEvidence(ProbeStreamInfo stream) {
+    if (!stream.hasFirstPacketsCarryPresentationTimes()) {
+      return;
+    }
+
+    if (!stream.getFirstFramesRead() || !PACKET_READ_CODECS.contains(stream.getCodec())) {
+      throw contractViolation("Worker probe reported presentation times of packets it never read");
     }
   }
 
