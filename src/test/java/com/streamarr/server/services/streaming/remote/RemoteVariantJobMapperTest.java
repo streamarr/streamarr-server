@@ -17,6 +17,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
+import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.exceptions.UnsupportedVideoEncodeException;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.transcode.v1.CompatibleBase;
@@ -35,12 +36,15 @@ import java.time.Duration;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
@@ -290,6 +294,65 @@ class RemoteVariantJobMapperTest {
 
     assertThat(video.getSourceCodecFamily())
         .isEqualTo(VideoCodecFamily.VIDEO_CODEC_FAMILY_UNSPECIFIED);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("storedPresentationTimes")
+  @DisplayName(
+      "Should tell an encode whether the source's packets carry presentation times when the probe"
+          + " stored the fact")
+  void shouldTellAnEncodeWhetherTheSourcesPacketsCarryPresentationTimesWhenTheProbeStoredTheFact(
+      String stored, Optional<VideoStreamProperties> properties, boolean carried) {
+    var request =
+        encodeAttempt("h264")
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                    .videoCodecFamily("h264")
+                    .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
+                    .videoSource(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                                .codec(Optional.of("hevc"))
+                                .videoProperties(properties)
+                                .build()))
+                    .build())
+            .build();
+
+    var video = mapper.map(request).getDecision().getVideo();
+
+    assertThat(video.getSourcePacketsCarryPresentationTimes()).isEqualTo(carried);
+  }
+
+  static Stream<Arguments> storedPresentationTimes() {
+    return Stream.of(
+        Arguments.of("stored true", propertiesWithPresentationTimes(Optional.of(true)), true),
+        Arguments.of("stored false", propertiesWithPresentationTimes(Optional.of(false)), false),
+        Arguments.of("stored no value", propertiesWithPresentationTimes(Optional.empty()), false),
+        Arguments.of("probed before version 5", Optional.empty(), false));
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell a copy that the source's packets carry presentation times when the probe saw"
+          + " them")
+  void shouldTellACopyThatTheSourcesPacketsCarryPresentationTimesWhenTheProbeSawThem() {
+    var request =
+        copyAttempt()
+            .transcodeDecision(
+                copyDecisionBuilder()
+                    .videoSource(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                                .videoProperties(propertiesWithPresentationTimes(Optional.of(true)))
+                                .build()))
+                    .build())
+            .build();
+
+    var video = mapper.map(request).getDecision().getVideo();
+
+    assertThat(video.getSourcePacketsCarryPresentationTimes()).isTrue();
   }
 
   @ParameterizedTest
@@ -620,6 +683,15 @@ class RemoteVariantJobMapperTest {
     assertThatThrownBy(() -> mapper.map(request))
         .isInstanceOf(UnsupportedVideoEncodeException.class)
         .hasMessageContaining("frame rate");
+  }
+
+  private static Optional<VideoStreamProperties> propertiesWithPresentationTimes(
+      Optional<Boolean> carried) {
+    return Optional.of(
+        VideoStreamProperties.builder()
+            .firstFramesRead(true)
+            .firstPacketsCarryPresentationTimes(carried)
+            .build());
   }
 
   private static TranscodeRequest.TranscodeRequestBuilder encodeAttempt(String videoCodecFamily) {

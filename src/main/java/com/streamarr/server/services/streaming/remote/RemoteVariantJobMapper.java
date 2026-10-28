@@ -15,6 +15,7 @@ import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoEncodeDecision;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
+import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.transcode.v1.CompatibleBase;
 import com.streamarr.transcode.v1.ContainerFormat;
 import com.streamarr.transcode.v1.DolbyVisionAbsent;
@@ -97,7 +98,9 @@ final class RemoteVariantJobMapper {
         facts ->
             video
                 .setStreamIndex(facts.streamIndex())
-                .setSourceCodecFamily(sourceCodecFamily(facts)));
+                .setSourceCodecFamily(sourceCodecFamily(facts))
+                .setSourcePacketsCarryPresentationTimes(
+                    sourcePacketsCarryPresentationTimes(facts)));
     encode.tier().map(RemoteVariantJobMapper::tier).ifPresent(video::setTier);
     return video.build();
   }
@@ -114,6 +117,7 @@ final class RemoteVariantJobMapper {
         .setSourceDynamicRange(RemoteDynamicRangeMapper.toProto(source.dynamicRange()))
         .setStreamIndex(source.streamIndex())
         .setSourceCodecFamily(sourceCodecFamily(source))
+        .setSourcePacketsCarryPresentationTimes(sourcePacketsCarryPresentationTimes(source))
         .build();
   }
 
@@ -260,6 +264,14 @@ final class RemoteVariantJobMapper {
       case "av1" -> VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1;
       default -> VideoCodecFamily.VIDEO_CODEC_FAMILY_UNSPECIFIED;
     };
+  }
+
+  // A source whose probe could not tell reads as one without presentation times.
+  private static boolean sourcePacketsCarryPresentationTimes(VideoPlaybackFacts source) {
+    return source
+        .videoProperties()
+        .flatMap(VideoStreamProperties::firstPacketsCarryPresentationTimes)
+        .orElse(false);
   }
 
   private static VideoCodecFamily codecFamily(VideoCodecProfile profile) {
