@@ -299,10 +299,10 @@ message DolbyVisionPresent {
 // picture belongs after the slices of that picture, as the last NAL unit of the same sample. A
 // sample is one packet as FFmpeg's demuxer passes it. The probe decides the placement from the NAL
 // units of the packets that ProbeStreamInfo.dynamic_range's walk covers, in their order. A slice is
-// a NAL unit of type 1 to 5 for H.264, or of type 0 to 31 for HEVC. An RPU is a NAL unit of type 28
-// for H.264, or of type 62 for HEVC, whose payload starts with rpu_nal_prefix 25. A packet starts
-// with an RPU when an RPU comes ahead of its first slice, or when it holds an RPU and no slice. The
-// first picture packet is the first of those packets that holds a slice.
+// a NAL unit of type 1 to 5 for H.264, or of type 0 to 31 for HEVC. An RPU is a NAL unit that
+// ProbeStreamInfo.dynamic_range defines as one. A packet starts with an RPU when an RPU comes ahead
+// of its first slice, or when it holds an RPU and no slice. The first picture packet is the first
+// of those packets that holds a slice.
 //
 // The probe reports UNSPECIFIED unless observed_rpu is PRESENT, the probe delimited every NAL unit
 // of every one of those packets, no packet holds more than one RPU, and no packet ahead of the
@@ -798,16 +798,18 @@ message ProbeStreamInfo {
   // Probe version 5 also reads the first frames of the chosen video stream, as first_frames_read
   // describes. For that stream, hdr10_plus and observed_rpu are PRESENT or ABSENT when the probe
   // can see the feature in what it read, and Dolby Vision is ABSENT when the probe found no record,
-  // no Dolby Vision sample entry and no RPU. FFmpeg's H.264 decoder drops the NAL units that carry
-  // RPUs. FFmpeg's HEVC decoder ignores an RPU that is not the last NAL unit of its sample, and an
-  // RPU that it cannot parse. So for H.264 and HEVC the worker also parses the NAL units of every
-  // packet that the walk covers: every packet that the kept read asked for. An edit list's preroll
-  // widens that read, so the walk also covers the packets that the decoder discards. The worker
-  // reads those packets in a separate read of the same count. ffprobe ends a read without an error
-  // when the demuxer or the file fails, so when that read returns fewer packets than the kept read
-  // asked for, the worker has not read every packet that the walk covers. observed_rpu is PRESENT
-  // when either the frames or the packets hold an RPU. observed_rpu is ABSENT only when the probe
-  // could delimit every NAL unit of every one of those packets.
+  // no Dolby Vision sample entry and no RPU. For H.264 and HEVC, an RPU is a NAL unit of type 28
+  // for H.264, or of type 62 for HEVC, whose payload starts with rpu_nal_prefix 25. FFmpeg's H.264
+  // decoder drops the NAL units that carry RPUs. FFmpeg's HEVC decoder ignores an RPU that is not
+  // the last NAL unit of its sample, and an RPU that it cannot parse. So for H.264 and HEVC the
+  // worker also parses the NAL units of every packet that the walk covers: every packet that the
+  // kept read asked for. An edit list's preroll widens that read, so the walk also covers the
+  // packets that the decoder discards. The worker reads those packets in a separate read of the
+  // same count. ffprobe ends a read without an error when the demuxer or the file fails, so when
+  // that read returns fewer packets than the kept read asked for, the worker has not read every
+  // packet that the walk covers. observed_rpu is PRESENT when either the frames or the packets hold
+  // an RPU. observed_rpu is ABSENT only when the probe could delimit every NAL unit of every one of
+  // those packets.
   //
   // The stream's extradata tells how a packet delimits its NAL units. With an avcC or an hvcC
   // record, whose first byte is configurationVersion 1, each NAL unit follows a big-endian length
