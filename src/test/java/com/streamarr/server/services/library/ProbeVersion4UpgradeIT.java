@@ -1,13 +1,10 @@
 package com.streamarr.server.services.library;
 
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
-import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-import com.github.kagkarlsson.scheduler.Scheduler;
-import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
@@ -22,101 +19,51 @@ import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.FakeFfprobeService;
-import com.streamarr.server.fakes.FakeSegmentStore;
-import com.streamarr.server.fakes.FakeTranscodeExecutor;
-import com.streamarr.server.fixtures.ProbeFixture;
-import com.streamarr.server.fixtures.UpgradeDatabase;
-import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
-import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
-import com.streamarr.server.services.streaming.PlaybackAuthorityGate;
-import com.streamarr.server.services.streaming.ProbeCapacitySource;
-import com.streamarr.server.services.streaming.SegmentStore;
-import com.streamarr.server.services.streaming.StreamingService;
-import com.streamarr.server.services.streaming.TranscodeExecutor;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.OptionalDouble;
 import java.util.UUID;
-import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.flyway.autoconfigure.FlywayDataSource;
 import org.springframework.boot.flyway.autoconfigure.FlywayMigrationStrategy;
-import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.bean.override.convention.TestBean;
-import org.springframework.util.FileSystemUtils;
 
 @Tag("IntegrationTest")
 @DisplayName("Probe Version 4 Upgrade Integration Tests")
 @Import(ProbeVersion4UpgradeIT.UpgradeConfiguration.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
-class ProbeVersion4UpgradeIT extends AbstractIntegrationTest {
+class ProbeVersion4UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
 
   private static final FakeFfprobeService PROBE = new FakeFfprobeService();
 
-  @Autowired private UpgradeFixture fixture;
-  @Autowired private JdbcTemplate jdbc;
-  @Autowired private Scheduler scheduler;
-  @Autowired private MediaFileContainerInfoRepository outcomes;
-  @Autowired private StreamingService streaming;
   @Autowired private HlsPlaylistService playlists;
 
   @TestBean FfprobeService ffprobeService;
-  @TestBean ProbeCapacitySource probeCapacitySource;
-  @TestBean TranscodeExecutor transcodeExecutor;
-  @TestBean SegmentStore segmentStore;
-  @TestBean PlaybackAuthorityGate authorityGate;
 
   static FfprobeService ffprobeService() {
     PROBE.answerWith(retainedProbe());
     return PROBE;
   }
 
-  static ProbeCapacitySource probeCapacitySource() {
-    return ProbeSchedulerStarter.FAKE_WORKERS;
-  }
-
   private static ProbeOutcome.Success retainedProbe() {
-    var probe =
-        ProbeFixture.completeProbe(
-            defaultProbeBuilder()
-                .duration(Duration.ofSeconds(12))
-                .framerate(OptionalDouble.of(24))
-                .keyframes(
-                    ProbeFixture.keyframesEvery(Duration.ofSeconds(6), Duration.ofSeconds(12)))
-                .build());
-    var sourceVideo = probe.streams().getFirst();
+    var probe = completeProbe();
     var video =
-        StreamInfo.builder()
-            .index(sourceVideo.index())
-            .codecType(sourceVideo.codecType())
-            .codec(sourceVideo.codec())
-            .width(sourceVideo.width())
-            .height(sourceVideo.height())
-            .framerate(sourceVideo.framerate())
-            .dynamicRange(sourceVideo.dynamicRange())
-            .bitDepth(sourceVideo.bitDepth())
-            .chromaSubsampling(sourceVideo.chromaSubsampling())
-            .codecString(sourceVideo.codecString())
+        retainedVideo(probe.streams().getFirst())
             .endTime(Optional.of(Duration.ofSeconds(12, 123_456_789)))
             .masteringDisplay(
                 Optional.of(
@@ -155,22 +102,10 @@ class ProbeVersion4UpgradeIT extends AbstractIntegrationTest {
         .build();
   }
 
-  static TranscodeExecutor transcodeExecutor() {
-    return new FakeTranscodeExecutor();
-  }
-
-  static SegmentStore segmentStore() {
-    return new FakeSegmentStore();
-  }
-
-  static PlaybackAuthorityGate authorityGate() {
-    return (_, _) -> true;
-  }
-
   @Test
   @DisplayName("Should re-probe and play every old result when the server starts after upgrading")
   void shouldReprobeAndPlayEveryOldResultWhenTheServerStartsAfterUpgrading() {
-    var mediaFileIds = fixture.files().stream().map(UpgradeFile::mediaFileId).toList();
+    var mediaFileIds = fixture.mediaFileIds();
     await()
         .atMost(Duration.ofSeconds(20))
         .untilAsserted(
@@ -261,33 +196,27 @@ class ProbeVersion4UpgradeIT extends AbstractIntegrationTest {
   }
 
   @TestConfiguration(proxyBeanMethods = false)
+  @Import(UpgradeDatabaseConfiguration.class)
   static class UpgradeConfiguration {
 
-    // A database of its own gives this startup the real V096 schema without relying on hand-built
-    // copies of historical tables.
     @Bean
-    UpgradeDatabase upgradeDatabase(JdbcConnectionDetails connectionDetails) throws SQLException {
-      return UpgradeDatabase.create(connectionDetails);
+    ProbeUpgradeFixture upgradeFixture() throws IOException {
+      return ProbeUpgradeFixture.create(List.of(1, 3));
     }
 
     @Bean
-    @FlywayDataSource
-    DataSource dataSource(UpgradeDatabase database) {
-      return database.dataSource();
-    }
-
-    @Bean
-    UpgradeFixture upgradeFixture() throws IOException {
-      return UpgradeFixture.create();
-    }
-
-    @Bean
-    FlywayMigrationStrategy upgradeFromStoredResults(UpgradeFixture fixture) {
+    FlywayMigrationStrategy upgradeFromStoredResults(ProbeUpgradeFixture fixture) {
       return flyway -> {
         Flyway.configure().configuration(flyway.getConfiguration()).target("96").load().migrate();
-        fixture.seed(flyway.getConfiguration().getDataSource());
+        var dataSource = flyway.getConfiguration().getDataSource();
+        fixture.seed(dataSource, ProbeVersion4UpgradeIT::seedResult);
+        assertThat(
+                new JdbcTemplate(dataSource)
+                    .queryForList(
+                        "SELECT probe_version FROM media_file_container_info", Integer.class))
+            .containsExactlyInAnyOrder(1, 3);
         flyway.migrate();
-        var migratedDatabase = new JdbcTemplate(flyway.getConfiguration().getDataSource());
+        var migratedDatabase = new JdbcTemplate(dataSource);
         assertThat(
                 migratedDatabase.queryForList(
                     "SELECT probe_version FROM media_file_container_info"))
@@ -302,108 +231,33 @@ class ProbeVersion4UpgradeIT extends AbstractIntegrationTest {
     }
   }
 
-  private record UpgradeFile(UUID mediaFileId, int probeVersion, Path source) {}
-
-  private record UpgradeFixture(Path root, List<UpgradeFile> files) implements AutoCloseable {
-
-    private static UpgradeFixture create() throws IOException {
-      var root = Files.createTempDirectory("probe-version-4-upgrade-");
-      var files = new ArrayList<UpgradeFile>();
-      for (var version : List.of(1, 3)) {
-        var library = Files.createDirectory(root.resolve("version-" + version));
-        var source = Files.writeString(library.resolve("Movie (2024).mkv"), "media");
-        files.add(new UpgradeFile(UUID.randomUUID(), version, source));
-      }
-
-      return new UpgradeFixture(root, List.copyOf(files));
+  private static void seedResult(
+      Connection connection, ProbeUpgradeFixture.UpgradeFile file, SourceFileSnapshot snapshot)
+      throws SQLException {
+    try (var insert =
+        connection.prepareStatement(
+            """
+        INSERT INTO media_file_container_info
+          (media_file_id, source_size, source_modified_epoch_second, source_modified_nanos,
+           probe_version, format, duration_seconds, duration_nanos, total_bitrate)
+        VALUES (?, ?, ?, ?, ?, 'matroska', 12, 0, 5000000)
+        """)) {
+      insert.setObject(1, file.mediaFileId());
+      insert.setLong(2, snapshot.size());
+      insert.setLong(3, snapshot.modifiedAt().getEpochSecond());
+      insert.setInt(4, snapshot.modifiedAt().getNano());
+      insert.setInt(5, file.probeVersion());
+      insert.executeUpdate();
     }
 
-    private void seed(DataSource dataSource) {
-      try (var connection = dataSource.getConnection()) {
-        connection.setAutoCommit(false);
-        try (var actor =
-            connection.prepareStatement("SELECT set_config('streamarr.actor_id', ?, true)")) {
-          actor.setString(1, SystemActor.ID.toString());
-          actor.execute();
-        }
-
-        for (var file : files) {
-          seedFile(connection, file);
-        }
-
-        connection.commit();
-      } catch (SQLException | IOException e) {
-        throw new AssertionError("Could not store the pre-upgrade probe results", e);
-      }
-
-      assertThat(
-              new JdbcTemplate(dataSource)
-                  .queryForList(
-                      "SELECT probe_version FROM media_file_container_info", Integer.class))
-          .containsExactlyInAnyOrder(1, 3);
-    }
-
-    private static void seedFile(Connection connection, UpgradeFile file)
-        throws SQLException, IOException {
-      var libraryId = UUID.randomUUID();
-      try (var insert =
-          connection.prepareStatement(
-              """
-          INSERT INTO library (id, filepath_uri, name, status, backend, type)
-          VALUES (?, ?, 'Upgrade library', 'HEALTHY', 'LOCAL', 'MOVIE')
-          """)) {
-        insert.setObject(1, libraryId);
-        insert.setString(2, FilepathCodec.encode(file.source().getParent()));
-        insert.executeUpdate();
-      }
-
-      var snapshot =
-          new SourceFileSnapshot(
-              Files.size(file.source()), Files.getLastModifiedTime(file.source()).toInstant());
-      try (var insert =
-          connection.prepareStatement(
-              """
-          INSERT INTO media_file (id, library_id, filepath_uri, filename, size, status)
-          VALUES (?, ?, ?, ?, ?, 'MATCHED')
-          """)) {
-        insert.setObject(1, file.mediaFileId());
-        insert.setObject(2, libraryId);
-        insert.setString(3, FilepathCodec.encode(file.source()));
-        insert.setString(4, file.source().getFileName().toString());
-        insert.setLong(5, snapshot.size());
-        insert.executeUpdate();
-      }
-
-      try (var insert =
-          connection.prepareStatement(
-              """
-          INSERT INTO media_file_container_info
-            (media_file_id, source_size, source_modified_epoch_second, source_modified_nanos,
-             probe_version, format, duration_seconds, duration_nanos, total_bitrate)
-          VALUES (?, ?, ?, ?, ?, 'matroska', 12, 0, 5000000)
-          """)) {
-        insert.setObject(1, file.mediaFileId());
-        insert.setLong(2, snapshot.size());
-        insert.setLong(3, snapshot.modifiedAt().getEpochSecond());
-        insert.setInt(4, snapshot.modifiedAt().getNano());
-        insert.setInt(5, file.probeVersion());
-        insert.executeUpdate();
-      }
-
-      try (var insert =
-          connection.prepareStatement(
-              """
-          INSERT INTO media_file_stream_info (media_file_id, stream_index, codec_type, codec)
-          VALUES (?, 0, 'video', 'h264')
-          """)) {
-        insert.setObject(1, file.mediaFileId());
-        insert.executeUpdate();
-      }
-    }
-
-    @Override
-    public void close() throws IOException {
-      FileSystemUtils.deleteRecursively(root);
+    try (var insert =
+        connection.prepareStatement(
+            """
+        INSERT INTO media_file_stream_info (media_file_id, stream_index, codec_type, codec)
+        VALUES (?, 0, 'video', 'h264')
+        """)) {
+      insert.setObject(1, file.mediaFileId());
+      insert.executeUpdate();
     }
   }
 }
