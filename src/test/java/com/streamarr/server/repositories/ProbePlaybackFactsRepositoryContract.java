@@ -52,6 +52,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * How every {@link MediaFileContainerInfoRepository} stores the facts that probe versions 4 and 5
@@ -175,6 +176,43 @@ public interface ProbePlaybackFactsRepositoryContract {
                             Optional.empty(), Presence.PRESENT, Optional.empty(), placement))))
             .videoProperties(
                 Optional.of(VideoStreamProperties.builder().firstFramesRead(true).build()))
+            .build();
+    var published =
+        outcomeBuilder()
+            .streams(List.of(chosen))
+            .chosenVideoStream(Optional.of(new ChosenVideoStream(0, declaredFilmRate())))
+            .build();
+
+    repository()
+        .publish(
+            ProbePublication.builder()
+                .mediaFileId(mediaFileId)
+                .snapshot(PLAYBACK_FACTS_SNAPSHOT)
+                .probeVersion(ProbeVersion.FIRST_TO_REPORT_FRAME_FACTS)
+                .outcome(published)
+                .build());
+
+    assertThat(storedOutcome(mediaFileId).streams()).isEqualTo(published.streams());
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
+  @DisplayName(
+      "Should read whether the first packets carry presentation times back when a version 5"
+          + " outcome stores it")
+  default void
+      shouldReadWhetherTheFirstPacketsCarryPresentationTimesBackWhenAVersion5OutcomeStoresIt(
+          boolean carried) {
+    var mediaFileId = createMediaFile();
+    var chosen =
+        video()
+            .codec(Optional.of("hevc"))
+            .videoProperties(
+                Optional.of(
+                    VideoStreamProperties.builder()
+                        .firstFramesRead(true)
+                        .firstPacketsCarryPresentationTimes(Optional.of(carried))
+                        .build()))
             .build();
     var published =
         outcomeBuilder()

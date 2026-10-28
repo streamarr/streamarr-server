@@ -12,7 +12,9 @@ import lombok.NonNull;
  * codecLevel} is major × 10 + minor. A Presence on the stream is ABSENT only when {@code
  * firstFramesRead} holds. An omitted flag says that the stream carries, or may carry, that half of
  * its static HDR metadata although the probe left it empty, so a stream with either flag set is
- * never PQ10.
+ * never PQ10. {@code firstPacketsCarryPresentationTimes} tells whether every packet that the probe
+ * read of the chosen video stream carried a presentation time, and is empty when the probe read no
+ * packets.
  */
 @Builder
 public record VideoStreamProperties(
@@ -25,7 +27,8 @@ public record VideoStreamProperties(
     @NonNull Optional<ColorRange> colorRange,
     boolean firstFramesRead,
     boolean masteringDisplayOmitted,
-    boolean contentLightLevelOmitted) {
+    boolean contentLightLevelOmitted,
+    @NonNull Optional<Boolean> firstPacketsCarryPresentationTimes) {
 
   @SuppressWarnings("java:S1068") // Lombok builder defaults — fields are used by generated code
   public static class VideoStreamPropertiesBuilder {
@@ -36,5 +39,6 @@ public record VideoStreamProperties(
     private Optional<TransferCharacteristics> transferCharacteristics = Optional.empty();
     private Optional<MatrixCoefficients> matrixCoefficients = Optional.empty();
     private Optional<ColorRange> colorRange = Optional.empty();
+    private Optional<Boolean> firstPacketsCarryPresentationTimes = Optional.empty();
   }
 }

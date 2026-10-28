@@ -880,10 +880,26 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
 
     /**
      * Setter for
+     * <code>public.media_file_stream_info.first_packets_carry_presentation_times</code>.
+     */
+    public void setFirstPacketsCarryPresentationTimes(Boolean value) {
+        set(59, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.first_packets_carry_presentation_times</code>.
+     */
+    public Boolean getFirstPacketsCarryPresentationTimes() {
+        return (Boolean) get(59);
+    }
+
+    /**
+     * Setter for
      * <code>public.media_file_stream_info.dolby_vision_rpu_placement</code>.
      */
     public void setDolbyVisionRpuPlacement(String value) {
-        set(59, value);
+        set(60, value);
     }
 
     /**
@@ -891,7 +907,7 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
      * <code>public.media_file_stream_info.dolby_vision_rpu_placement</code>.
      */
     public String getDolbyVisionRpuPlacement() {
-        return (String) get(59);
+        return (String) get(60);
     }
 
     /**
@@ -899,7 +915,7 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
      * <code>public.media_file_stream_info.first_rpu_vdr_rpu_profile</code>.
      */
     public void setFirstRpuVdrRpuProfile(Integer value) {
-        set(60, value);
+        set(61, value);
     }
 
     /**
@@ -907,7 +923,7 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
      * <code>public.media_file_stream_info.first_rpu_vdr_rpu_profile</code>.
      */
     public Integer getFirstRpuVdrRpuProfile() {
-        return (Integer) get(60);
+        return (Integer) get(61);
     }
 
     /**
@@ -915,7 +931,7 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
      * <code>public.media_file_stream_info.first_rpu_base_layer_full_range</code>.
      */
     public void setFirstRpuBaseLayerFullRange(Boolean value) {
-        set(61, value);
+        set(62, value);
     }
 
     /**
@@ -923,7 +939,7 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
      * <code>public.media_file_stream_info.first_rpu_base_layer_full_range</code>.
      */
     public Boolean getFirstRpuBaseLayerFullRange() {
-        return (Boolean) get(61);
+        return (Boolean) get(62);
     }
 
     /**
@@ -931,7 +947,7 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
      * <code>public.media_file_stream_info.first_rpu_enhancement_layer_spatial_resampling_filter</code>.
      */
     public void setFirstRpuEnhancementLayerSpatialResamplingFilter(Boolean value) {
-        set(62, value);
+        set(63, value);
     }
 
     /**
@@ -939,7 +955,7 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
      * <code>public.media_file_stream_info.first_rpu_enhancement_layer_spatial_resampling_filter</code>.
      */
     public Boolean getFirstRpuEnhancementLayerSpatialResamplingFilter() {
-        return (Boolean) get(62);
+        return (Boolean) get(63);
     }
 
     /**
@@ -947,7 +963,7 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
      * <code>public.media_file_stream_info.first_rpu_disable_residual</code>.
      */
     public void setFirstRpuDisableResidual(Boolean value) {
-        set(63, value);
+        set(64, value);
     }
 
     /**
@@ -955,7 +971,7 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
      * <code>public.media_file_stream_info.first_rpu_disable_residual</code>.
      */
     public Boolean getFirstRpuDisableResidual() {
-        return (Boolean) get(63);
+        return (Boolean) get(64);
     }
 
     /**
@@ -963,7 +979,7 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
      * <code>public.media_file_stream_info.first_rpu_vdr_bit_depth</code>.
      */
     public void setFirstRpuVdrBitDepth(Integer value) {
-        set(64, value);
+        set(65, value);
     }
 
     /**
@@ -971,7 +987,7 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
      * <code>public.media_file_stream_info.first_rpu_vdr_bit_depth</code>.
      */
     public Integer getFirstRpuVdrBitDepth() {
-        return (Integer) get(64);
+        return (Integer) get(65);
     }
 
     // -------------------------------------------------------------------------
@@ -997,7 +1013,7 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
     /**
      * Create a detached, initialised MediaFileStreamInfoRecord
      */
-    public MediaFileStreamInfoRecord(UUID mediaFileId, Integer streamIndex, String codecType, String codec, Integer width, Integer height, Double framerate, Integer channels, Long bitrate, String language, Boolean isDefault, Boolean isForced, String dynamicRangeCompatibleBase, String hdr10Plus, String dolbyVision, String dolbyVisionObservedRpu, Integer dolbyVisionProfile, Integer dolbyVisionLevel, Integer dolbyVisionBaseLayerCompatibilityId, Boolean dolbyVisionBaseLayer, Boolean dolbyVisionEnhancementLayer, Boolean dolbyVisionRpu, Integer bitDepth, String chromaSubsampling, Integer rotationDegrees, Integer cropTop, Integer cropBottom, Integer cropLeft, Integer cropRight, String codecString, Integer sampleRateHz, String audioProfile, Long endTimeSeconds, Integer endTimeNanos, Integer masteringRedX, Integer masteringRedY, Integer masteringGreenX, Integer masteringGreenY, Integer masteringBlueX, Integer masteringBlueY, Integer masteringWhitePointX, Integer masteringWhitePointY, Long masteringMaxLuminance, Long masteringMinLuminance, Integer maxContentLightLevel, Integer maxFrameAverageLightLevel, String title, String handlerName, Boolean hearingImpaired, String codecProfile, Integer codecLevel, String codecTier, String colorPrimaries, String transferCharacteristics, String matrixCoefficients, String colorRange, Boolean firstFramesRead, Boolean masteringDisplayOmitted, Boolean contentLightLevelOmitted, String dolbyVisionRpuPlacement, Integer firstRpuVdrRpuProfile, Boolean firstRpuBaseLayerFullRange, Boolean firstRpuEnhancementLayerSpatialResamplingFilter, Boolean firstRpuDisableResidual, Integer firstRpuVdrBitDepth) {
+    public MediaFileStreamInfoRecord(UUID mediaFileId, Integer streamIndex, String codecType, String codec, Integer width, Integer height, Double framerate, Integer channels, Long bitrate, String language, Boolean isDefault, Boolean isForced, String dynamicRangeCompatibleBase, String hdr10Plus, String dolbyVision, String dolbyVisionObservedRpu, Integer dolbyVisionProfile, Integer dolbyVisionLevel, Integer dolbyVisionBaseLayerCompatibilityId, Boolean dolbyVisionBaseLayer, Boolean dolbyVisionEnhancementLayer, Boolean dolbyVisionRpu, Integer bitDepth, String chromaSubsampling, Integer rotationDegrees, Integer cropTop, Integer cropBottom, Integer cropLeft, Integer cropRight, String codecString, Integer sampleRateHz, String audioProfile, Long endTimeSeconds, Integer endTimeNanos, Integer masteringRedX, Integer masteringRedY, Integer masteringGreenX, Integer masteringGreenY, Integer masteringBlueX, Integer masteringBlueY, Integer masteringWhitePointX, Integer masteringWhitePointY, Long masteringMaxLuminance, Long masteringMinLuminance, Integer maxContentLightLevel, Integer maxFrameAverageLightLevel, String title, String handlerName, Boolean hearingImpaired, String codecProfile, Integer codecLevel, String codecTier, String colorPrimaries, String transferCharacteristics, String matrixCoefficients, String colorRange, Boolean firstFramesRead, Boolean masteringDisplayOmitted, Boolean contentLightLevelOmitted, Boolean firstPacketsCarryPresentationTimes, String dolbyVisionRpuPlacement, Integer firstRpuVdrRpuProfile, Boolean firstRpuBaseLayerFullRange, Boolean firstRpuEnhancementLayerSpatialResamplingFilter, Boolean firstRpuDisableResidual, Integer firstRpuVdrBitDepth) {
         super(MediaFileStreamInfo.MEDIA_FILE_STREAM_INFO);
 
         setMediaFileId(mediaFileId);
@@ -1059,6 +1075,7 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
         setFirstFramesRead(firstFramesRead);
         setMasteringDisplayOmitted(masteringDisplayOmitted);
         setContentLightLevelOmitted(contentLightLevelOmitted);
+        setFirstPacketsCarryPresentationTimes(firstPacketsCarryPresentationTimes);
         setDolbyVisionRpuPlacement(dolbyVisionRpuPlacement);
         setFirstRpuVdrRpuProfile(firstRpuVdrRpuProfile);
         setFirstRpuBaseLayerFullRange(firstRpuBaseLayerFullRange);

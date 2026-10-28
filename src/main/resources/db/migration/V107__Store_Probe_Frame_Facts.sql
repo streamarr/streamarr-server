@@ -7,6 +7,9 @@
 -- A Dolby Vision stream keeps the header of the first RPU that the probe read, whole or not at
 -- all, and only when the probe observed an RPU. dolby_vision_rpu_placement is NULL when the probe
 -- could not decide where the samples place the RPUs, and it too needs an observed RPU.
+--
+-- first_packets_carry_presentation_times is NULL when the probe read no packets, which it reads
+-- only beside the first frames that it read.
 ALTER TABLE media_file_stream_info
     ADD COLUMN codec_profile TEXT CHECK (codec_profile IN (
         'H264_CONSTRAINED_BASELINE', 'H264_BASELINE', 'H264_MAIN', 'H264_EXTENDED', 'H264_HIGH',
@@ -29,6 +32,7 @@ ALTER TABLE media_file_stream_info
     ADD COLUMN first_frames_read BOOLEAN,
     ADD COLUMN mastering_display_omitted BOOLEAN,
     ADD COLUMN content_light_level_omitted BOOLEAN,
+    ADD COLUMN first_packets_carry_presentation_times BOOLEAN,
     ADD COLUMN dolby_vision_rpu_placement TEXT CHECK (dolby_vision_rpu_placement IN (
         'AFTER_OWN_PICTURE', 'STARTS_SAMPLE')),
     ADD COLUMN first_rpu_vdr_rpu_profile INTEGER CHECK (first_rpu_vdr_rpu_profile >= 0),
@@ -54,4 +58,6 @@ ALTER TABLE media_file_stream_info
                      first_rpu_disable_residual, first_rpu_vdr_bit_depth) IN (0, 5)),
     ADD CONSTRAINT rpu_details_require_observed_rpu CHECK (
         (first_rpu_vdr_rpu_profile IS NULL AND dolby_vision_rpu_placement IS NULL) OR
-        dolby_vision_observed_rpu = 'PRESENT');
+        dolby_vision_observed_rpu = 'PRESENT'),
+    ADD CONSTRAINT presentation_times_require_first_frames_read CHECK (
+        first_packets_carry_presentation_times IS NULL OR first_frames_read IS TRUE);

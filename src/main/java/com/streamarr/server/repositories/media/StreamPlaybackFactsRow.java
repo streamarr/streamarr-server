@@ -63,6 +63,8 @@ final class StreamPlaybackFactsRow {
     row.setFirstFramesRead(properties.firstFramesRead());
     row.setMasteringDisplayOmitted(properties.masteringDisplayOmitted());
     row.setContentLightLevelOmitted(properties.contentLightLevelOmitted());
+    row.setFirstPacketsCarryPresentationTimes(
+        properties.firstPacketsCarryPresentationTimes().orElse(null));
   }
 
   private static void setMasteringDisplay(

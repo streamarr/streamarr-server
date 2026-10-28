@@ -232,6 +232,10 @@ final class RemoteStreamPropertiesMapper {
         .firstFramesRead(stream.getFirstFramesRead())
         .masteringDisplayOmitted(stream.getMasteringDisplayOmitted())
         .contentLightLevelOmitted(stream.getContentLightLevelOmitted())
+        .firstPacketsCarryPresentationTimes(
+            stream.hasFirstPacketsCarryPresentationTimes()
+                ? Optional.of(stream.getFirstPacketsCarryPresentationTimes())
+                : Optional.empty())
         .build();
   }
 

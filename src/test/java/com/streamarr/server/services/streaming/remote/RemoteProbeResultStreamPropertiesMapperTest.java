@@ -108,6 +108,20 @@ class RemoteProbeResultStreamPropertiesMapperTest {
     assertThat(stream.videoProperties()).contains(VideoStreamProperties.builder().build());
   }
 
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
+  @DisplayName(
+      "Should keep whether the first packets carry presentation times when the probe read them")
+  void shouldKeepWhetherTheFirstPacketsCarryPresentationTimesWhenTheProbeReadThem(boolean carried) {
+    var video = hevc().setFirstFramesRead(true).setFirstPacketsCarryPresentationTimes(carried);
+
+    var stream = videoOf(version5(media -> media.setStreams(0, video)));
+
+    assertThat(stream.videoProperties())
+        .flatMap(VideoStreamProperties::firstPacketsCarryPresentationTimes)
+        .contains(carried);
+  }
+
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   @Test
   @DisplayName("Should report no codec profile when the contract names one this server lacks")

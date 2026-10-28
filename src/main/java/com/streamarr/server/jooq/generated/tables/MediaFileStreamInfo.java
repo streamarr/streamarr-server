@@ -372,6 +372,12 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
 
     /**
      * The column
+     * <code>public.media_file_stream_info.first_packets_carry_presentation_times</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Boolean> FIRST_PACKETS_CARRY_PRESENTATION_TIMES = createField(DSL.name("first_packets_carry_presentation_times"), SQLDataType.BOOLEAN, this, "");
+
+    /**
+     * The column
      * <code>public.media_file_stream_info.dolby_vision_rpu_placement</code>.
      */
     public final TableField<MediaFileStreamInfoRecord, String> DOLBY_VISION_RPU_PLACEMENT = createField(DSL.name("dolby_vision_rpu_placement"), SQLDataType.CLOB, this, "");
@@ -557,6 +563,7 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
             Internal.createCheck(this, DSL.name("media_file_stream_info_transfer_characteristics_check"), "((transfer_characteristics = ANY (ARRAY['BT709'::text, 'BT470M'::text, 'BT470BG'::text, 'SMPTE170M'::text, 'SMPTE240M'::text, 'LINEAR'::text, 'LOG100'::text, 'LOG316'::text, 'IEC61966_2_4'::text, 'BT1361'::text, 'IEC61966_2_1'::text, 'BT2020_10'::text, 'BT2020_12'::text, 'SMPTE2084'::text, 'SMPTE428'::text, 'ARIB_STD_B67'::text])))", true),
             Internal.createCheck(this, DSL.name("omitted_content_light_level_is_not_listed"), "(((content_light_level_omitted IS NOT TRUE) OR (max_content_light_level IS NULL)))", true),
             Internal.createCheck(this, DSL.name("omitted_mastering_display_is_not_listed"), "(((mastering_display_omitted IS NOT TRUE) OR (mastering_red_x IS NULL)))", true),
+            Internal.createCheck(this, DSL.name("presentation_times_require_first_frames_read"), "(((first_packets_carry_presentation_times IS NULL) OR (first_frames_read IS TRUE)))", true),
             Internal.createCheck(this, DSL.name("rpu_details_require_observed_rpu"), "((((first_rpu_vdr_rpu_profile IS NULL) AND (dolby_vision_rpu_placement IS NULL)) OR (dolby_vision_observed_rpu = 'PRESENT'::text)))", true)
         );
     }

@@ -147,6 +147,7 @@ public class MediaFileStreamInfo {
   private Boolean firstFramesRead;
   private Boolean masteringDisplayOmitted;
   private Boolean contentLightLevelOmitted;
+  private Boolean firstPacketsCarryPresentationTimes;
 
   @Enumerated(EnumType.STRING)
   private DolbyVisionRpuPlacement dolbyVisionRpuPlacement;
@@ -228,6 +229,8 @@ public class MediaFileStreamInfo {
             .firstFramesRead(firstFramesRead)
             .masteringDisplayOmitted(masteringDisplayOmitted)
             .contentLightLevelOmitted(contentLightLevelOmitted)
+            .firstPacketsCarryPresentationTimes(
+                Optional.ofNullable(firstPacketsCarryPresentationTimes))
             .build());
   }
 
@@ -367,6 +370,8 @@ public class MediaFileStreamInfo {
       firstFramesRead = properties.firstFramesRead();
       masteringDisplayOmitted = properties.masteringDisplayOmitted();
       contentLightLevelOmitted = properties.contentLightLevelOmitted();
+      firstPacketsCarryPresentationTimes =
+          properties.firstPacketsCarryPresentationTimes().orElse(null);
     }
 
     private void masteringDisplay(MasteringDisplayColorVolume display) {
