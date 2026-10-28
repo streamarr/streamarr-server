@@ -1241,11 +1241,14 @@ message ContainerCropping {
 // ProbeStreamInfo.mastering_display says. FFmpeg's AV1 decoders drop the rest of a packet from a
 // metadata OBU that they cannot parse, and never apply the extradata's metadata OBUs, so for AV1
 // the worker also reads the metadata OBUs of the extradata and of the packets. For the chosen video
-// stream, absent with mastering_display_omitted clear then means that neither the container, nor
-// the first frame, nor for H.264, HEVC and AV1 any of those SEI messages or metadata OBUs carries
-// the value. A PQ stream whose mastering display and content light level are both absent that way
-// is PQ10. A set omitted flag rules PQ10 out, including one that the worker sets because the probe
-// cannot rule a value out.
+// stream with ProbeStreamInfo.first_frames_read set, absent with mastering_display_omitted clear
+// then means that neither the container, nor the first frame, nor for H.264, HEVC and AV1 any of
+// those SEI messages or metadata OBUs carries the value. A PQ stream whose mastering display and
+// content light level are both absent that way is PQ10. A set omitted flag rules PQ10 out,
+// including one that the worker sets because the probe cannot rule a value out. When
+// first_frames_read is false, the probe read neither the frames nor the bitstream, so an absent
+// value means only that the container declares none, as under probe version 4, and never proves
+// PQ10.
 //
 // ffprobe prints each value as a fraction. The worker multiplies the fraction by the number of
 // units in one whole: 50000 for a chromaticity coordinate, and 10000 for a luminance. The worker
