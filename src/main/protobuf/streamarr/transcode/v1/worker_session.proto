@@ -1194,12 +1194,14 @@ message ProbeStreamInfo {
   // times. The worker asks ffprobe for the pts of each packet in its read of those packets, which
   // dynamic_range describes. ffprobe's JSON writer leaves out the pts of a packet that its demuxer
   // gives no presentation time (AV_NOPTS_VALUE). True when every packet that the read printed has a
-  // pts, and false when at least one has none. FFmpeg's raw H.264 and HEVC demuxers
-  // give no packet a presentation time, and its AVI demuxer gives none to the packets of a stream
-  // with B-frames. Absent when the probe read no packets: on every stream but the chosen video
-  // stream, on a chosen video stream whose codec is not H.264, HEVC or AV1 or whose
-  // first_frames_read is false, and when that read fails or prints no packet. The value rests on
-  // the packets that the probe read, and the worker assumes that the rest of the stream keeps it.
+  // pts, and false when at least one has none. FFmpeg's raw H.264 and HEVC demuxers give no packet
+  // a presentation time. With the pinned ffprobe, FFmpeg's AVI demuxer gave none either, with or
+  // without B-frames: ffprobe printed no pts for any of the 480 packets of an H.264 stream, nor
+  // for the packets of an HEVC stream tagged H265. Absent when the probe read no packets: on every
+  // stream but the chosen video stream, on a chosen video stream whose codec is not H.264, HEVC
+  // or AV1 or whose first_frames_read is false, and when that read fails or prints no packet. The
+  // value rests on the packets that the probe read, and the worker assumes that the rest of the
+  // stream keeps it.
   optional bool first_packets_carry_presentation_times = 36;
 }
 
