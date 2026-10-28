@@ -6,19 +6,22 @@ package com.streamarr.server.domain.streaming;
  * its own picture's sample.
  */
 public enum DolbyVisionRpuPlacement {
-  /** The probe could not decide, the stream is AV1, or the packets matched no other placement. */
+  /**
+   * The probe could not decide, the stream is AV1, or the packets matched no other placement. A
+   * first picture packet that starts with an RPU gives this value too, because the first packets
+   * cannot tell a BEFORE_NEXT_PICTURE file whose start was cut away from a file that starts each
+   * sample with its own picture's RPU.
+   */
   UNSPECIFIED,
   /** Each RPU ends its own picture's sample. */
   AFTER_OWN_PICTURE,
   /** Each RPU starts the next picture's sample, as mkvmerge wrote before version 57. */
-  BEFORE_NEXT_PICTURE,
-  /** Each RPU starts its own picture's sample. */
-  BEFORE_OWN_PICTURE;
+  BEFORE_NEXT_PICTURE;
 
-  /** Whether a sample starts with an RPU ahead of its picture. */
+  /** Whether the probe found each RPU at the start of the next picture's sample. */
   public boolean startsSample() {
     return switch (this) {
-      case BEFORE_NEXT_PICTURE, BEFORE_OWN_PICTURE -> true;
+      case BEFORE_NEXT_PICTURE -> true;
       case UNSPECIFIED, AFTER_OWN_PICTURE -> false;
     };
   }

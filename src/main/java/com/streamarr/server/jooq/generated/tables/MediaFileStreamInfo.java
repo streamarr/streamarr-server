@@ -530,7 +530,7 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
             Internal.createCheck(this, DSL.name("media_file_stream_info_dolby_vision_level_check"), "((dolby_vision_level >= 0))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_dolby_vision_observed_rpu_check"), "((dolby_vision_observed_rpu = ANY (ARRAY['UNSPECIFIED'::text, 'ABSENT'::text, 'PRESENT'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_dolby_vision_profile_check"), "((dolby_vision_profile >= 0))", true),
-            Internal.createCheck(this, DSL.name("media_file_stream_info_dolby_vision_rpu_placement_check"), "((dolby_vision_rpu_placement = ANY (ARRAY['AFTER_OWN_PICTURE'::text, 'BEFORE_NEXT_PICTURE'::text, 'BEFORE_OWN_PICTURE'::text])))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_info_dolby_vision_rpu_placement_check"), "((dolby_vision_rpu_placement = ANY (ARRAY['AFTER_OWN_PICTURE'::text, 'BEFORE_NEXT_PICTURE'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_dynamic_range_compatible_base_check"), "((dynamic_range_compatible_base = ANY (ARRAY['UNSPECIFIED'::text, 'NONE'::text, 'SDR'::text, 'PQ'::text, 'HLG'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_end_time_nanos_check"), "(((end_time_nanos >= 0) AND (end_time_nanos <= 999999999)))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_first_rpu_vdr_bit_depth_check"), "((first_rpu_vdr_bit_depth >= 8))", true),

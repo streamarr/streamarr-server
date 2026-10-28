@@ -40,6 +40,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Remote Probe Result Stream Properties Mapper Tests")
@@ -276,8 +277,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
       value = com.streamarr.transcode.v1.DolbyVisionRpuPlacement.class,
       names = {
         "DOLBY_VISION_RPU_PLACEMENT_AFTER_OWN_PICTURE",
-        "DOLBY_VISION_RPU_PLACEMENT_BEFORE_NEXT_PICTURE",
-        "DOLBY_VISION_RPU_PLACEMENT_BEFORE_OWN_PICTURE"
+        "DOLBY_VISION_RPU_PLACEMENT_BEFORE_NEXT_PICTURE"
       })
   @DisplayName("Should keep the first RPU header and the RPU placement when the probe read RPUs")
   void shouldKeepTheFirstRpuHeaderAndTheRpuPlacementWhenTheProbeReadRpus(
@@ -303,14 +303,19 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  @Test
+  @ParameterizedTest
+  // 3 is the value of the own-picture placement that the contract removed.
+  @ValueSource(ints = {3, 99})
   @DisplayName("Should read an RPU placement as unspecified when the contract does not name it")
-  void shouldReadAnRpuPlacementAsUnspecifiedWhenTheContractDoesNotNameIt() {
+  void shouldReadAnRpuPlacementAsUnspecifiedWhenTheContractDoesNotNameIt(int placementValue) {
     var video =
         profile8HevcWithRpus(
             com.streamarr.transcode.v1.DolbyVisionRpuPlacement
                 .DOLBY_VISION_RPU_PLACEMENT_UNSPECIFIED);
-    video.getDynamicRangeBuilder().getDolbyVisionPresentBuilder().setRpuPlacementValue(99);
+    video
+        .getDynamicRangeBuilder()
+        .getDolbyVisionPresentBuilder()
+        .setRpuPlacementValue(placementValue);
 
     var stream = videoOf(version5(media -> media.setStreams(0, video)));
 
@@ -497,9 +502,6 @@ class RemoteProbeResultStreamPropertiesMapperTest {
     var beforeNextPicture =
         com.streamarr.transcode.v1.DolbyVisionRpuPlacement
             .DOLBY_VISION_RPU_PLACEMENT_BEFORE_NEXT_PICTURE;
-    var beforeOwnPicture =
-        com.streamarr.transcode.v1.DolbyVisionRpuPlacement
-            .DOLBY_VISION_RPU_PLACEMENT_BEFORE_OWN_PICTURE;
     var hlgTransfer =
         com.streamarr.transcode.v1.TransferCharacteristics.TRANSFER_CHARACTERISTICS_ARIB_STD_B67;
     return Stream.of(
@@ -784,7 +786,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
                   .setDolbyVisionPresent(
                       DolbyVisionPresent.newBuilder()
                           .setObservedRpu(absent)
-                          .setRpuPlacement(beforeOwnPicture));
+                          .setRpuPlacement(beforeNextPicture));
               return stream;
             }),
         violation(

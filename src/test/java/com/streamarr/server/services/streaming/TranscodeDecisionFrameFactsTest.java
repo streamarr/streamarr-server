@@ -37,7 +37,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -100,14 +99,10 @@ class TranscodeDecisionFrameFactsTest {
     assertThat(decide(containerFormat, profile5)).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
   }
 
-  @ParameterizedTest
-  @EnumSource(
-      value = DolbyVisionRpuPlacement.class,
-      names = {"BEFORE_NEXT_PICTURE", "BEFORE_OWN_PICTURE"})
+  @Test
   @DisplayName("Should encode a Dolby Vision profile 9 stream when its RPUs start samples")
-  void shouldEncodeADolbyVisionProfile9StreamWhenItsRpusStartSamples(
-      DolbyVisionRpuPlacement placement) {
-    var profile9 = profile9Stream(placement);
+  void shouldEncodeADolbyVisionProfile9StreamWhenItsRpusStartSamples() {
+    var profile9 = profile9Stream(DolbyVisionRpuPlacement.BEFORE_NEXT_PICTURE);
 
     assertThat(decide("mov,mp4,m4a,3gp,3g2,mj2", profile9))
         .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
@@ -121,14 +116,10 @@ class TranscodeDecisionFrameFactsTest {
     assertThat(decide("mov,mp4,m4a,3gp,3g2,mj2", profile9)).isEqualTo(TranscodeMode.REMUX);
   }
 
-  @ParameterizedTest
-  @EnumSource(
-      value = DolbyVisionRpuPlacement.class,
-      names = {"BEFORE_NEXT_PICTURE", "BEFORE_OWN_PICTURE"})
+  @Test
   @DisplayName("Should encode a Dolby Vision profile 8.2 stream when its RPUs start samples")
-  void shouldEncodeADolbyVisionProfile8Point2StreamWhenItsRpusStartSamples(
-      DolbyVisionRpuPlacement placement) {
-    var profile82 = profile82Stream(placement);
+  void shouldEncodeADolbyVisionProfile8Point2StreamWhenItsRpusStartSamples() {
+    var profile82 = profile82Stream(DolbyVisionRpuPlacement.BEFORE_NEXT_PICTURE);
 
     assertThat(decide("mov,mp4,m4a,3gp,3g2,mj2", profile82))
         .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);

@@ -85,9 +85,6 @@ final class RemoteDynamicRangeMapper {
       case BEFORE_NEXT_PICTURE ->
           com.streamarr.transcode.v1.DolbyVisionRpuPlacement
               .DOLBY_VISION_RPU_PLACEMENT_BEFORE_NEXT_PICTURE;
-      case BEFORE_OWN_PICTURE ->
-          com.streamarr.transcode.v1.DolbyVisionRpuPlacement
-              .DOLBY_VISION_RPU_PLACEMENT_BEFORE_OWN_PICTURE;
     };
   }
 

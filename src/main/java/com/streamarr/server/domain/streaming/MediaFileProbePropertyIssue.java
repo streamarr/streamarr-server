@@ -21,9 +21,8 @@ public enum MediaFileProbePropertyIssue {
    */
   DOLBY_VISION_COMPATIBILITY_DISAGREES_WITH_TRANSFER,
   /**
-   * A sample starts with a Dolby Vision RPU ahead of its picture, so each RPU sits either in the
-   * next picture's sample, as a muxer that started a new sample at each RPU wrote it, or ahead of
-   * its own picture. A copy would hand players the misplaced RPUs.
+   * Each Dolby Vision RPU starts the next picture's sample, as a muxer that started a new sample at
+   * each RPU wrote it. A copy would hand players the misplaced RPUs.
    */
   DOLBY_VISION_RPU_STARTS_SAMPLE;
 

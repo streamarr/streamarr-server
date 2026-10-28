@@ -136,7 +136,7 @@ public interface ProbePlaybackFactsRepositoryContract {
                             Optional.empty(),
                             Presence.PRESENT,
                             Optional.empty(),
-                            DolbyVisionRpuPlacement.BEFORE_OWN_PICTURE))))
+                            DolbyVisionRpuPlacement.BEFORE_NEXT_PICTURE))))
             .videoProperties(Optional.of(VideoStreamProperties.builder().build()))
             .build();
     var published =
