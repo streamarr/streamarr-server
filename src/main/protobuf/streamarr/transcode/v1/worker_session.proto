@@ -298,7 +298,8 @@ message DolbyVisionPresent {
 // Where the samples of an H.264 or HEVC Dolby Vision stream place each picture's RPU. The RPU of a
 // picture belongs after the slices of that picture, as the last NAL unit of the same sample. A
 // sample is one packet as FFmpeg's demuxer passes it. The probe decides the placement from the NAL
-// units of the packets that ProbeStreamInfo.dynamic_range's walk covers, in their order. A slice is
+// units that ProbeStreamInfo.dynamic_range's walk reads in the packets that it covers, in their
+// order, so a NAL unit that FFmpeg drops before its decoders see it never counts. A slice is
 // a NAL unit of type 1 to 5 for H.264, or of type 0 to 31 for HEVC. An RPU is a NAL unit that
 // ProbeStreamInfo.dynamic_range defines as one. A packet starts with an RPU when an RPU comes ahead
 // of its first slice, or when it holds an RPU and no slice. The first picture packet is the first
@@ -401,7 +402,9 @@ message VideoDynamicRange {
 // after a seek or the first one of a shifted file whose start was cut away. This repairs the
 // shifted layout that DolbyVisionRpuPlacement describes, and gives each picture of the layout that
 // no known muxer writes the next picture's RPU. In the same jobs, an RPU that follows a slice of
-// its sample but is not the sample's last NAL unit moves to the end of that sample. The move
+// its sample but is not the sample's last NAL unit moves to the end of that sample. The move counts
+// NAL units as ProbeStreamInfo.dynamic_range's walk does: a NAL unit that the walk skips is never a
+// slice or an RPU, and never keeps an RPU from being the last NAL unit of its sample. The move
 // changes only samples that hold an RPU which FFmpeg's decoder ignores and the samples that such
 // RPUs move behind, so a stream whose every RPU ends its sample passes unchanged. The worker
 // therefore also moves the RPUs of an UNSPECIFIED stream, whose layout the probe could not tell:
@@ -804,8 +807,9 @@ message ProbeStreamInfo {
   // FFmpeg's H.264 decoder drops every NAL unit of type 28, and the H.264 NAL unit header holds no
   // layer and no TemporalId, so the type and the prefix alone make an H.264 RPU. FFmpeg's HEVC
   // decoder reads a NAL unit of type 62 as an RPU only on layer 0 and TemporalId 0. A NAL unit of
-  // type 62 on another layer or another TemporalId is not an RPU: FFmpeg attaches nothing from it
-  // to the frames, so it is no Dolby Vision evidence. It makes neither observed_rpu nor Dolby
+  // type 62 that the walk keeps, as the next paragraph says, on another layer or another TemporalId
+  // is not an RPU: FFmpeg attaches nothing from it to the frames, so it is no Dolby Vision
+  // evidence. It makes neither observed_rpu nor Dolby
   // Vision PRESENT, gives no RPU header and does not decide rpu_placement, and the walk and
   // DolbyVisionRpuPlacement count it as any other NAL unit. Unlike an AV1 metadata OBU with an
   // extension byte, which FFmpeg's AV1 decoders read when they decode its layer, FFmpeg never reads
@@ -820,11 +824,31 @@ message ProbeStreamInfo {
   // either the frames or the packets hold an RPU. observed_rpu is ABSENT only when the probe could
   // delimit every NAL unit of every one of those packets.
   //
+  // The walk reads only the NAL units that reach FFmpeg's decoders. FFmpeg 8.1 splits each packet,
+  // and the extradata, into NAL units with ff_h2645_packet_split, which drops these NAL units
+  // before any decoder sees them:
+  // - a NAL unit whose forbidden_zero_bit is 1;
+  // - for HEVC, a NAL unit shorter than its 2-byte header, and one whose nuh_temporal_id_plus1 is 0
+  //   or whose nuh_layer_id is 63;
+  // - for H.264, a NAL unit whose bytes are all 0, an empty one included;
+  // - the last NAL unit of a packet whose NAL units follow lengths, when its length and its bytes
+  //   take fewer than 4 bytes together.
+  // The walk skips each of these NAL units, as if the packet or the extradata did not hold it. Such
+  // a NAL unit is no RPU and no SEI NAL unit, so it is no evidence of any feature.
+  // DolbyVisionRpuPlacement and the RPU move that VideoDecision describes do not count it either:
+  // it is never a slice, never makes a packet start with an RPU, and never keeps an RPU from being
+  // the last NAL unit of its sample. FFmpeg keeps the trailing zero bytes of a NAL unit that the 4
+  // bytes 0x000001E0 follow, so there it can keep an H.264 NAL unit whose bytes are all 0, as one
+  // of type 0 that its decoder ignores. The walk skips that NAL unit too: no RPU move rests on an
+  // H.264 stream.
+  //
   // The stream's extradata tells how a packet delimits its NAL units. With an avcC or an hvcC
   // record, whose first byte is configurationVersion 1, each NAL unit follows a big-endian length
   // of lengthSizeMinusOne + 1 bytes. Such a packet is delimited when every length and every NAL
   // unit end within the packet, the last NAL unit ends at the packet's end, the packet holds at
-  // least one NAL unit, and no NAL unit holds a start code (0x000001). With any other extradata,
+  // least one NAL unit, no length is 0, and no NAL unit holds a start code (0x000001).
+  // ff_h2645_packet_split rejects a whole packet with a length of 0, so no decoder sees any of its
+  // NAL units. With any other extradata,
   // start codes delimit the NAL units, as in Annex B of H.264 and HEVC. Each NAL unit then runs
   // from its start code to the next start code, without the zero bytes ahead of that start code.
   // Such a packet is delimited when it starts with a start code, after any zero bytes, and holds at
