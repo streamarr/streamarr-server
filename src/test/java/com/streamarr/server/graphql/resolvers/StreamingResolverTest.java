@@ -1218,6 +1218,64 @@ class StreamingResolverTest {
   }
 
   @Test
+  @DisplayName("Should return every refused capability field when the declaration is invalid")
+  void shouldReturnEveryRefusedCapabilityFieldWhenTheDeclarationIsInvalid() {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+
+    var context =
+        dgsQueryExecutor.executeAndGetDocumentContext(
+            """
+            mutation {
+              createPlaybackSession(input: {
+                mediaFileId: "%s"
+                capabilities: {
+                  video: [{
+                    codecFamily: AV1
+                    codecProfiles: [{profile: HEVC_MAIN, maxLevel: 0}]
+                    maxBitDepth: 10, maxWidth: 3840, maxHeight: 2160, maxFrameRate: 60
+                    compatibleBases: [SDR], dolbyVisionProfiles: [], hdr10Plus: false, hls: true
+                  }]
+                  audio: [{codec: OPUS, maxChannels: 2, hls: true}]
+                }
+              }) {
+                playbackSession { id }
+                userErrors {
+                  __typename
+                  ... on InputMutationError { inputPath }
+                }
+              }
+            }
+            """
+                .formatted(UUID.randomUUID()));
+
+    assertThat(context.read(CREATED_PLAYBACK, Object.class)).isNull();
+    List<Map<String, Object>> errors = context.read("data.createPlaybackSession.userErrors");
+    assertThat(errors)
+        .containsExactly(
+            Map.of(
+                "__typename",
+                "CapabilityProfileMismatchError",
+                "inputPath",
+                List.of("capabilities", "video", "0", "codecProfiles", "0", "profile")),
+            Map.of(
+                "__typename",
+                "CapabilityMaximumInvalidError",
+                "inputPath",
+                List.of("capabilities", "video", "0", "codecProfiles", "0", "maxLevel")),
+            Map.of(
+                "__typename",
+                "VideoCodecTierInvalidError",
+                "inputPath",
+                List.of("capabilities", "video", "0", "codecProfiles", "0", "maxTier")),
+            Map.of(
+                "__typename",
+                "HlsAacCapabilityRequiredError",
+                "inputPath",
+                List.of("capabilities", "audio")));
+    assertThat(STUB_SERVICE.getAllSessions()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should refuse the request when it carries no capability declaration")
   void shouldRefuseTheRequestWhenItCarriesNoCapabilityDeclaration() {
     STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));

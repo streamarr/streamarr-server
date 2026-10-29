@@ -39,7 +39,7 @@ type CreatePlaybackSessionPayload {
     userErrors: [CreatePlaybackSessionError!]!
 }
 
-union CreatePlaybackSessionError = InvalidIdError | PlaybackSessionClosedError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | MediaFileFrameRateUnknownError | TranscodeCapacityUnavailableError | NoEligibleVideoFormatError
+union CreatePlaybackSessionError = InvalidIdError | PlaybackSessionClosedError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | MediaFileFrameRateUnknownError | TranscodeCapacityUnavailableError | NoEligibleVideoFormatError | CapabilityValuesRequiredError | HlsAacCapabilityRequiredError | CapabilityListTooLongError | CapabilityMaximumInvalidError | CapabilityProfileMismatchError | VideoCodecTierInvalidError
 
 input ReportPlaybackFormatFailureInput {
     playbackSessionId: ID!

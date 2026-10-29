@@ -972,7 +972,7 @@ class PlaybackSessionServiceTest {
   }
 
   private static PlaybackSessionSnapshot accepted(
-      Outcome<PlaybackSessionSnapshot, CreateStreamSessionRejection> outcome) {
+      Outcome<PlaybackSessionSnapshot, StartPlaybackSessionRejection> outcome) {
     return outcome.fold(
         result -> result,
         rejections -> {

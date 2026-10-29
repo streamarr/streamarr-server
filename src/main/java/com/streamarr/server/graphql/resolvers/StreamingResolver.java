@@ -24,6 +24,7 @@ import com.streamarr.server.graphql.dto.StreamingOptionsInput;
 import com.streamarr.server.graphql.mutation.InputPath;
 import com.streamarr.server.graphql.mutation.MutationError;
 import com.streamarr.server.graphql.mutation.MutationPayloads;
+import com.streamarr.server.graphql.mutation.streaming.CapabilityDeclarationErrors;
 import com.streamarr.server.graphql.mutation.streaming.CreatePlaybackSessionInput;
 import com.streamarr.server.graphql.mutation.streaming.CreatePlaybackSessionPayload;
 import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionError;
@@ -40,6 +41,7 @@ import com.streamarr.server.graphql.mutation.watchprogress.MarkWatchedInput;
 import com.streamarr.server.graphql.mutation.watchprogress.MarkWatchedPayload;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection;
 import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
 import com.streamarr.server.services.streaming.PlaybackFormatAttempt;
 import com.streamarr.server.services.streaming.PlaybackSessionFailure;
@@ -48,6 +50,7 @@ import com.streamarr.server.services.streaming.PlaybackSessionService;
 import com.streamarr.server.services.streaming.PlaybackSessionSnapshot;
 import com.streamarr.server.services.streaming.ReportPlaybackFormatFailureCommand;
 import com.streamarr.server.services.streaming.StartPlaybackSessionCommand;
+import com.streamarr.server.services.streaming.StartPlaybackSessionRejection;
 import com.streamarr.server.services.watchprogress.MarkUnwatchedRejection;
 import com.streamarr.server.services.watchprogress.MarkWatchedRejection;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
@@ -109,11 +112,19 @@ public class StreamingResolver {
                   .build());
       return MutationPayloads.payload(
           outcome.map(this::toCreatedSessionDto),
-          this::createSessionError,
+          this::startPlaybackError,
           CreatePlaybackSessionPayload::new);
     } catch (PlaybackSessionClosedException _) {
       return MutationPayloads.inputError(closedError(), CreatePlaybackSessionPayload::new);
     }
+  }
+
+  private CreateStreamSessionError startPlaybackError(StartPlaybackSessionRejection rejection) {
+    return switch (rejection) {
+      case CreateStreamSessionRejection streamRejection -> createSessionError(streamRejection);
+      case CapabilityDeclarationRejection declarationRejection ->
+          CapabilityDeclarationErrors.toError(declarationRejection);
+    };
   }
 
   private CreateStreamSessionError createSessionError(CreateStreamSessionRejection rejection) {
