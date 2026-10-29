@@ -23,10 +23,13 @@ public record VideoStreamCopy(
     @NonNull OptionalDouble frameRate,
     @NonNull VideoDynamicRange dynamicRange) {
 
-  // ADR 0037's frame-rate rule divides a motion rate above 60.3 fps down to a listed rate, which
-  // only an encode runs at. A copy keeps every source frame, so it runs at that motion rate. At or
-  // below 60.3 fps the rule only rounds the motion rate to the nearest listed rate.
-  private static final double FASTEST_MOTION_RATE_COUNTED_AS_60 = 60.3;
+  // ADR 0037's frame-rate rule snaps the rate that the source's frames run at to a listed rate,
+  // which only an encode runs at. A copy keeps every source frame at that unsnapped rate, except
+  // that the rule counts a rate from 60 to 60.3 fps as 60.
+  private static final double RATE_60 = 60;
+  private static final double FASTEST_RATE_COUNTED_AS_60 = 60.3;
+  // The rule's fallback passes over a declared rate of 1000 fps or faster as unusable.
+  private static final double FASTEST_USABLE_DECLARED_RATE = 1000;
 
   /** The copy of the source's chosen video stream, or empty without a codec or playback facts. */
   public static Optional<VideoStreamCopy> of(@NonNull MediaProbe source) {
@@ -50,18 +53,53 @@ public record VideoStreamCopy(
   }
 
   private static OptionalDouble frameRate(FrameRateRule rule) {
-    var motionRate =
-        rule.inputs()
-            .packetScan()
-            .map(FrameRatePacketScan::motionRate)
-            .orElse(OptionalDouble.empty());
-    if (motionRate.isPresent() && motionRate.getAsDouble() > FASTEST_MOTION_RATE_COUNTED_AS_60) {
-      return motionRate;
+    var outputFrameRate = rule.outputFrameRate().map(Fraction::toDouble);
+    var sourceRate =
+        switch (rule.basis()) {
+          case PACKET_SCAN -> motionRate(rule.inputs());
+          case DECLARED_RATE_FALLBACK -> usableDeclaredRate(rule.inputs());
+          case DECLARED_RATES, MATROSKA_STATISTICS, REFUSED -> Optional.<Double>empty();
+        };
+    return sourceRate
+        .map(VideoStreamCopy::countedAs60)
+        .or(() -> outputFrameRate)
+        .map(OptionalDouble::of)
+        .orElse(OptionalDouble.empty());
+  }
+
+  private static Optional<Double> motionRate(FrameRateRuleInputs inputs) {
+    return inputs
+        .packetScan()
+        .map(FrameRatePacketScan::motionRate)
+        .filter(OptionalDouble::isPresent)
+        .map(OptionalDouble::getAsDouble);
+  }
+
+  // The rule's fallback snaps the average rate, or the base rate when the average rate is not
+  // usable.
+  private static Optional<Double> usableDeclaredRate(FrameRateRuleInputs inputs) {
+    return inputs
+        .averageRate()
+        .map(Fraction::toDouble)
+        .filter(VideoStreamCopy::isUsableDeclaredRate)
+        .or(
+            () ->
+                inputs
+                    .baseRate()
+                    .map(Fraction::toDouble)
+                    .filter(VideoStreamCopy::isUsableDeclaredRate));
+  }
+
+  private static boolean isUsableDeclaredRate(double rate) {
+    return rate < FASTEST_USABLE_DECLARED_RATE;
+  }
+
+  private static double countedAs60(double rate) {
+    if (rate > RATE_60 && rate <= FASTEST_RATE_COUNTED_AS_60) {
+      return RATE_60;
     }
 
-    return rule.outputFrameRate()
-        .map(rate -> OptionalDouble.of(rate.toDouble()))
-        .orElse(OptionalDouble.empty());
+    return rate;
   }
 
   // A probe that could not read a width or a height stores zero for it.
