@@ -22,7 +22,7 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.To
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyVideoEntries;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoEntriesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoEntryMaximum;
-import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoMaximumNotPositive;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoMaximumInvalid;
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
@@ -93,19 +93,19 @@ class CapabilityDeclarationErrorsTest {
             CreateStreamSessionError.CapabilityListTooLongError.class,
             List.of("capabilities", "video", "0", "dolbyVisionProfiles")),
         Arguments.of(
-            new VideoMaximumNotPositive(0, VideoEntryMaximum.BIT_DEPTH),
+            new VideoMaximumInvalid(0, VideoEntryMaximum.BIT_DEPTH),
             CreateStreamSessionError.CapabilityMaximumInvalidError.class,
             List.of("capabilities", "video", "0", "maxBitDepth")),
         Arguments.of(
-            new VideoMaximumNotPositive(0, VideoEntryMaximum.WIDTH),
+            new VideoMaximumInvalid(0, VideoEntryMaximum.WIDTH),
             CreateStreamSessionError.CapabilityMaximumInvalidError.class,
             List.of("capabilities", "video", "0", "maxWidth")),
         Arguments.of(
-            new VideoMaximumNotPositive(0, VideoEntryMaximum.HEIGHT),
+            new VideoMaximumInvalid(0, VideoEntryMaximum.HEIGHT),
             CreateStreamSessionError.CapabilityMaximumInvalidError.class,
             List.of("capabilities", "video", "0", "maxHeight")),
         Arguments.of(
-            new VideoMaximumNotPositive(0, VideoEntryMaximum.FRAME_RATE),
+            new VideoMaximumInvalid(0, VideoEntryMaximum.FRAME_RATE),
             CreateStreamSessionError.CapabilityMaximumInvalidError.class,
             List.of("capabilities", "video", "0", "maxFrameRate")),
         Arguments.of(
