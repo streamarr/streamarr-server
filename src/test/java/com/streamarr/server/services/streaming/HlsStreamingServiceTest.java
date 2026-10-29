@@ -1040,6 +1040,38 @@ class HlsStreamingServiceTest {
     assertThat(audio.bitrate()).isEqualTo(64_000L);
   }
 
+  @ParameterizedTest(name = "{0} source channels")
+  @ValueSource(ints = {3, 4})
+  @DisplayName(
+      "Should encode the audio to stereo when the source has more channels than the client plays")
+  void shouldEncodeTheAudioToStereoWhenTheSourceHasMoreChannelsThanTheClientPlays(
+      int sourceChannels) {
+    probeResults.setDefaultOutcome(
+        ProbeFixture.completeProbe(
+            defaultProbeBuilder().audioChannels(OptionalInt.of(sourceChannels)).build()));
+    var file = seedMediaFile();
+    var options =
+        StreamingOptions.builder()
+            .supportedCodecs(List.of("h264"))
+            .supportedAudioCodecs(List.of("aac"))
+            .maxAudioChannels(2)
+            .build();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
+    var playlist =
+        new HlsPlaylistService(StreamingProperties.builder().build())
+            .generateMultivariantPlaylist(session, "token");
+
+    var decision = session.getTranscodeDecision().audioDecision();
+    assertThat(decision.mode()).isEqualTo(AudioMode.TRANSCODE);
+    assertThat(decision.channels()).isEqualTo(2);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .isNotEmpty()
+        .allSatisfy(
+            request -> assertThat(request.transcodeDecision().audioDecision()).isEqualTo(decision));
+    assertThat(playlist).contains("CHANNELS=\"2\"");
+  }
+
   @ParameterizedTest(name = "{0} → {1}, encodeVideo={2}")
   @CsvSource({
     "aac, mp4a.40.2, false",
