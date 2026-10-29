@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 import org.testcontainers.Testcontainers;
@@ -24,6 +25,10 @@ import org.testcontainers.images.builder.Transferable;
 
 @Slf4j
 public final class WorkerContainerFixture implements AutoCloseable {
+
+  // The metadata key under which FFmpeg's signalstats filter prints a frame's mean Cr.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static final String MEAN_CR_METADATA_KEY = "lavfi.signalstats.VAVG";
 
   private final WorkerSessionServer workerSessions;
   private final UUID sourceNamespaceId;
@@ -227,6 +232,60 @@ public final class WorkerContainerFixture implements AutoCloseable {
 
   public List<String> audioPacketHashes(Path media) throws Exception {
     return packetHashes(media, "a");
+  }
+
+  /**
+   * The side data that the container declares for the first video stream, such as a mastering
+   * display or a Dolby Vision configuration record, as ffprobe names each type.
+   */
+  public List<String> videoStreamSideDataTypes(Path media) throws Exception {
+    return probeEntries(media, "v:0", List.of("-show_entries", "stream_side_data=side_data_type"))
+        .stream()
+        .flatMap(line -> Stream.of(line.split(",")))
+        .toList();
+  }
+
+  /**
+   * The mean Cr of the first video stream's first frames, on the 8-bit scale where 128 is neutral,
+   * as the image's FFmpeg decodes them.
+   */
+  public double meanCr(Path media, int frameCount) throws Exception {
+    var input = "/tmp/measure-" + UUID.randomUUID() + "-" + media.getFileName();
+    container.copyFileToContainer(Transferable.of(Files.readAllBytes(media), 0644), input);
+    var measure =
+        container.execInContainer(
+            "/cnb/lifecycle/launcher",
+            "ffmpeg",
+            "-v",
+            "error",
+            "-i",
+            input,
+            "-map",
+            "0:v:0",
+            "-frames:v",
+            String.valueOf(frameCount),
+            "-vf",
+            "format=yuv420p,signalstats,metadata=mode=print:key="
+                + MEAN_CR_METADATA_KEY
+                + ":file="
+                + input
+                + ".cr",
+            "-f",
+            "null",
+            "-");
+    assertThat(measure.getExitCode()).as("Measure Cr: %s", measure.getStderr()).isZero();
+    var printed = container.execInContainer("cat", input + ".cr");
+    assertThat(printed.getExitCode()).as(printed.getStderr()).isZero();
+    var means =
+        printed
+            .getStdout()
+            .lines()
+            .filter(line -> line.startsWith(MEAN_CR_METADATA_KEY + "="))
+            .map(line -> Double.parseDouble(line.substring(MEAN_CR_METADATA_KEY.length() + 1)))
+            .limit(frameCount)
+            .toList();
+    assertThat(means).as("the mean Cr of each measured frame").hasSize(frameCount);
+    return means.stream().mapToDouble(Double::doubleValue).average().orElseThrow();
   }
 
   private List<String> packetHashes(Path media, String streamSelector) throws Exception {
