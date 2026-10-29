@@ -9,6 +9,7 @@ import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import lombok.experimental.UtilityClass;
@@ -23,6 +24,27 @@ public class ClientCapabilityDeclarationFixture {
     return ClientCapabilityDeclaration.builder()
         .video(List.of(h264EntryBuilder().build()))
         .audio(List.of(aacEntryBuilder().build()));
+  }
+
+  /** One SDR video capability entry for each codec family and one stereo AAC audio entry. */
+  public static ClientCapabilityDeclaration.ClientCapabilityDeclarationBuilder
+      declarationBuilderFor(ProbedCodecFamily... codecFamilies) {
+    return defaultDeclarationBuilder()
+        .video(
+            Arrays.stream(codecFamilies)
+                .map(family -> videoEntryBuilderFor(family).build())
+                .toList());
+  }
+
+  /** The SDR video capability entry of this fixture for the codec family. */
+  public static VideoCapabilityEntry.VideoCapabilityEntryBuilder videoEntryBuilderFor(
+      ProbedCodecFamily codecFamily) {
+    return switch (codecFamily) {
+      case H264 -> h264EntryBuilder();
+      case HEVC -> hevcEntryBuilder();
+      case AV1 -> av1EntryBuilder();
+      case OTHER -> throw new IllegalArgumentException("No entry names an unknown codec family");
+    };
   }
 
   /** H.264 Constrained Baseline, Main and High up to level 5.2, 8-bit SDR, up to 4K at 60 fps. */

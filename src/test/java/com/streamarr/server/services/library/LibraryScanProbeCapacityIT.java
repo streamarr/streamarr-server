@@ -224,11 +224,7 @@ class LibraryScanProbeCapacityIT extends AbstractScanningIntegrationTest {
             .producerLifecycle(rig.lifecycle())
             .deliveryCoordinator(rig.coordinator())
             .build();
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.AUTO)
-            .supportedCodecs(List.of("h264"))
-            .build();
+    var options = StreamingOptions.builder().quality(VideoQuality.AUTO).build();
     return streamingService.createSession(
         createStreamSessionCommand(probed.getId(), UUID.randomUUID(), options));
   }

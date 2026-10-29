@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.declarationBuilderFor;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.StreamingProperties;
@@ -16,8 +17,8 @@ import com.streamarr.server.domain.streaming.MatrixCoefficients;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.StreamInfo;
-import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TransferCharacteristics;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
@@ -181,12 +182,8 @@ class TranscodeDecisionFrameFactsTest {
         .decide(
             TranscodeDecisionRequest.builder()
                 .source(outcome.mediaProbe())
-                .clientOptions(
-                    StreamingOptions.builder()
-                        .supportedCodecs(List.of("h264", "hevc"))
-                        .supportedAudioCodecs(StreamingOptions.DEFAULT_SUPPORTED_AUDIO_CODECS)
-                        .maxAudioChannels(StreamingOptions.DEFAULT_MAX_AUDIO_CHANNELS)
-                        .build())
+                .capabilityDeclaration(
+                    declarationBuilderFor(ProbedCodecFamily.H264, ProbedCodecFamily.HEVC).build())
                 .encodableVideoCodecFamilies(Set.of("h264", "hevc", "av1"))
                 .build())
         .orElseThrow()

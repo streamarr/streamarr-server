@@ -1,5 +1,9 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.aacEntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.audioEntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildEpisode;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildMovie;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeason;
@@ -18,18 +22,28 @@ import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.BaseCollectable;
+import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
+import com.streamarr.server.domain.streaming.CompatibleBase;
+import com.streamarr.server.domain.streaming.DolbyVisionProfile;
+import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.ProbeError;
+import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.TranscodeMode;
+import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
+import com.streamarr.server.domain.streaming.VideoCodecProfile;
+import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
+import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
@@ -102,6 +116,14 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 class StreamingResolverTest {
 
   private static final String CREATED_PLAYBACK = "data.createPlaybackSession.playbackSession";
+
+  // One H.264 entry and one stereo AAC entry, both for HLS, as a client declares them.
+  private static final String CAPABILITIES =
+      """
+      {video: [{codecFamily: H264, codecProfiles: [{profile: H264_HIGH, maxLevel: 41}], \
+      maxBitDepth: 8, maxWidth: 1920, maxHeight: 1080, maxFrameRate: 60, compatibleBases: [SDR], \
+      dolbyVisionProfiles: [], hdr10Plus: false, hls: true}], \
+      audio: [{codec: AAC, maxChannels: 2, hls: true}]}""";
   private static final String REPORTED_PLAYBACK =
       "data.reportPlaybackFormatFailure.playbackSession";
 
@@ -117,7 +139,8 @@ class StreamingResolverTest {
                 StartPlaybackSessionCommand.builder()
                     .mediaFileId(UUID.randomUUID())
                     .identity(otherIdentity)
-                    .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
+                    .options(StreamingOptions.builder().build())
+                    .capabilityDeclaration(defaultDeclarationBuilder().build())
                     .build())
             .fold(
                 snapshot -> snapshot,
@@ -447,7 +470,9 @@ class StreamingResolverTest {
     return dgsQueryExecutor.executeAndGetDocumentContext(
         """
         mutation {
-          createPlaybackSession(input: {mediaFileId: "%s", options: {quality: %s}}) {
+          createPlaybackSession(
+            input: {mediaFileId: "%s", options: {quality: %s}, capabilities: %s}
+          ) {
             playbackSession {
               id
               currentFormatAttempt {
@@ -458,7 +483,7 @@ class StreamingResolverTest {
           }
         }
         """
-            .formatted(UUID.randomUUID(), quality));
+            .formatted(UUID.randomUUID(), quality, CAPABILITIES));
   }
 
   private DocumentContext reportFailure(String playbackId, String streamId, String reason) {
@@ -512,7 +537,7 @@ class StreamingResolverTest {
         dgsQueryExecutor.execute(
             """
         mutation {
-          createPlaybackSession(input: {mediaFileId: "%s"}) {
+          createPlaybackSession(input: {mediaFileId: "%s", capabilities: %s}) {
             playbackSession {
               id formatAttemptCount maximumFormatAttempts
               currentFormatAttempt {
@@ -524,7 +549,7 @@ class StreamingResolverTest {
           }
         }
         """
-                .formatted(session.getMediaFileId()));
+                .formatted(session.getMediaFileId(), CAPABILITIES));
 
     assertThat(result.getErrors()).isEmpty();
     var context = JsonPath.parse(result.toSpecification());
@@ -706,8 +731,18 @@ class StreamingResolverTest {
         mutation {
           createPlaybackSession(input: {
             mediaFileId: "%s"
-            options: {quality: HIGH_720P, supportedCodecs: ["h264"],
-              supportedAudioCodecs: ["aac", "ac3"], maxAudioChannels: 6}
+            options: {quality: HIGH_720P}
+            capabilities: {
+              video: [{
+                codecFamily: HEVC
+                codecProfiles: [{profile: HEVC_MAIN_10, maxLevel: 51, maxTier: HIGH}]
+                maxBitDepth: 10, maxWidth: 3840, maxHeight: 2160, maxFrameRate: 59.94
+                compatibleBases: [SDR, PQ, HLG]
+                dolbyVisionProfiles: [{profile: PROFILE_8_1, maxLevel: 6}]
+                hdr10Plus: true, hls: true
+              }]
+              audio: [{codec: AAC, maxChannels: 2, hls: true}, {codec: EAC3, maxChannels: 6, hls: false}]
+            }
           }) {
             playbackSession { id currentFormatAttempt { ... on ReadyPlaybackFormatAttempt { streamSession { id streamUrl transcodeMode } } } }
             userErrors { __typename }
@@ -743,9 +778,40 @@ class StreamingResolverTest {
     assertThat(STUB_SERVICE.getLastCreateProfileId()).isEqualTo(TestIdentityConstants.PROFILE_ID);
     var options = STUB_SERVICE.getLastReceivedOptions();
     assertThat(options.quality()).isEqualTo(VideoQuality.HIGH_720P);
-    assertThat(options.supportedCodecs()).containsExactly("h264");
-    assertThat(options.supportedAudioCodecs()).containsExactly("aac", "ac3");
-    assertThat(options.maxAudioChannels()).isEqualTo(6);
+    assertThat(STUB_SERVICE.getLastReceivedDeclaration())
+        .isEqualTo(
+            ClientCapabilityDeclaration.builder()
+                .video(
+                    List.of(
+                        VideoCapabilityEntry.builder()
+                            .codecFamily(ProbedCodecFamily.HEVC)
+                            .codecProfiles(
+                                List.of(
+                                    VideoCodecProfileCapability.builder()
+                                        .profile(VideoCodecProfile.HEVC_MAIN_10)
+                                        .maxLevel(51)
+                                        .maxTier(Optional.of(VideoCodecTier.HIGH))
+                                        .build()))
+                            .maxBitDepth(10)
+                            .maxWidth(3840)
+                            .maxHeight(2160)
+                            .maxFrameRate(59.94)
+                            .compatibleBases(
+                                List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG))
+                            .dolbyVisionProfiles(
+                                List.of(
+                                    DolbyVisionProfileCapability.builder()
+                                        .profile(DolbyVisionProfile.PROFILE_8_1)
+                                        .maxLevel(6)
+                                        .build()))
+                            .hdr10Plus(true)
+                            .hls(true)
+                            .build()))
+                .audio(
+                    List.of(
+                        aacEntryBuilder().build(),
+                        audioEntryBuilder(AudioCodec.EAC3).maxChannels(6).hls(false).build()))
+                .build());
   }
 
   @Test
@@ -758,13 +824,13 @@ class StreamingResolverTest {
         dgsQueryExecutor.execute(
             """
         mutation {
-          createPlaybackSession(input: {mediaFileId: "%s"}) {
+          createPlaybackSession(input: {mediaFileId: "%s", capabilities: %s}) {
             playbackSession { id currentFormatAttempt { ... on ReadyPlaybackFormatAttempt { streamSession { id streamUrl } } } }
             userErrors { __typename }
           }
         }
         """
-                .formatted(UUID.randomUUID()));
+                .formatted(UUID.randomUUID(), CAPABILITIES));
 
     assertThat(result.getErrors()).hasSize(1);
     assertThat(result.getErrors().getFirst().getMessage()).contains("Streaming session not found:");
@@ -944,7 +1010,7 @@ class StreamingResolverTest {
     return dgsQueryExecutor.executeAndGetDocumentContext(
         """
         mutation {
-          createPlaybackSession(input: {mediaFileId: "%s"}) {
+          createPlaybackSession(input: {mediaFileId: "%s", capabilities: %s}) {
             playbackSession { id }
             userErrors {
               __typename
@@ -954,7 +1020,7 @@ class StreamingResolverTest {
           }
         }
         """
-            .formatted(mediaFileId));
+            .formatted(mediaFileId, CAPABILITIES));
   }
 
   private static final StubStreamingService STUB_SERVICE = new StubStreamingService();
@@ -1073,7 +1139,7 @@ class StreamingResolverTest {
                 .subtitleDecision(SubtitleDecision.exclude())
                 .videoSource(Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()))
                 .build())
-        .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
+        .options(StreamingOptions.builder().build())
         .createdAt(Instant.now())
         .build();
   }
@@ -1088,12 +1154,12 @@ class StreamingResolverTest {
         String.format(
             """
             mutation {
-              createPlaybackSession(input: {mediaFileId: "%s"}) {
+              createPlaybackSession(input: {mediaFileId: "%s", capabilities: %s}) {
                 playbackSession { currentFormatAttempt { ... on ReadyPlaybackFormatAttempt { streamSession { streamUrl } } } }
               }
             }
             """,
-            UUID.randomUUID());
+            UUID.randomUUID(), CAPABILITIES);
 
     String streamUrl =
         dgsQueryExecutor.executeAndExtractJsonPath(
@@ -1113,34 +1179,68 @@ class StreamingResolverTest {
   }
 
   @Test
-  @DisplayName("Should use default options when options input is null")
-  void shouldUseDefaultOptionsWhenOptionsInputIsNull() {
-    var sessionId = UUID.randomUUID();
-    var session = buildSession(sessionId);
-    STUB_SERVICE.setNextResult(session);
+  @DisplayName("Should play in Auto quality when the request names no options")
+  void shouldPlayInAutoQualityWhenTheRequestNamesNoOptions() {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
 
     var mutation =
         String.format(
+            """
+            mutation {
+              createPlaybackSession(input: {mediaFileId: "%s", capabilities: %s}) {
+                playbackSession { id }
+              }
+            }
+            """,
+            UUID.randomUUID(), CAPABILITIES);
+
+    dgsQueryExecutor.executeAndExtractJsonPath(
+        mutation, "data.createPlaybackSession.playbackSession.id");
+
+    assertThat(STUB_SERVICE.getLastReceivedOptions())
+        .isEqualTo(StreamingOptions.builder().quality(VideoQuality.AUTO).build());
+    assertThat(STUB_SERVICE.getLastReceivedDeclaration())
+        .isEqualTo(
+            defaultDeclarationBuilder()
+                .video(
+                    List.of(
+                        h264EntryBuilder()
+                            .codecProfiles(
+                                List.of(
+                                    VideoCodecProfileCapability.builder()
+                                        .profile(VideoCodecProfile.H264_HIGH)
+                                        .maxLevel(41)
+                                        .build()))
+                            .maxWidth(1920)
+                            .maxHeight(1080)
+                            .build()))
+                .build());
+  }
+
+  @Test
+  @DisplayName("Should refuse the request when it carries no capability declaration")
+  void shouldRefuseTheRequestWhenItCarriesNoCapabilityDeclaration() {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+
+    var result =
+        dgsQueryExecutor.execute(
             """
             mutation {
               createPlaybackSession(input: {mediaFileId: "%s"}) {
                 playbackSession { id }
               }
             }
-            """,
-            UUID.randomUUID());
+            """
+                .formatted(UUID.randomUUID()));
 
-    dgsQueryExecutor.executeAndExtractJsonPath(
-        mutation, "data.createPlaybackSession.playbackSession.id");
-
-    var receivedOptions = STUB_SERVICE.getLastReceivedOptions();
-    assertThat(receivedOptions.quality()).isEqualTo(VideoQuality.AUTO);
-    assertThat(receivedOptions.supportedCodecs())
-        .isEqualTo(StreamingOptions.DEFAULT_SUPPORTED_CODECS);
-    assertThat(receivedOptions.supportedAudioCodecs())
-        .isEqualTo(StreamingOptions.DEFAULT_SUPPORTED_AUDIO_CODECS);
-    assertThat(receivedOptions.maxAudioChannels())
-        .isEqualTo(StreamingOptions.DEFAULT_MAX_AUDIO_CHANNELS);
+    assertThat(result.getErrors())
+        .singleElement()
+        .satisfies(
+            error -> {
+              assertThat(error.getErrorType()).hasToString("INVALID_ARGUMENT");
+              assertThat(error.getMessage()).contains("capabilities");
+            });
+    assertThat(STUB_SERVICE.getAllSessions()).isEmpty();
   }
 
   @Test
@@ -1213,6 +1313,7 @@ class StreamingResolverTest {
     private StreamSession nextResult;
     private Optional<CreateStreamSessionRejection> rejection = Optional.empty();
     private StreamingOptions lastReceivedOptions;
+    private ClientCapabilityDeclaration lastReceivedDeclaration;
     private UUID lastCreateProfileId;
     private final Map<UUID, StreamSession> sessions = new HashMap<>();
     private Consumer<CreateStreamSessionCommand> duringCreate = _ -> {};
@@ -1221,6 +1322,7 @@ class StreamingResolverTest {
       nextResult = null;
       rejection = Optional.empty();
       lastReceivedOptions = null;
+      lastReceivedDeclaration = null;
       lastCreateProfileId = null;
       sessions.clear();
       duringCreate = _ -> {};
@@ -1238,6 +1340,10 @@ class StreamingResolverTest {
       return lastReceivedOptions;
     }
 
+    ClientCapabilityDeclaration getLastReceivedDeclaration() {
+      return lastReceivedDeclaration;
+    }
+
     UUID getLastCreateProfileId() {
       return lastCreateProfileId;
     }
@@ -1250,6 +1356,7 @@ class StreamingResolverTest {
     public Outcome<StreamSession, CreateStreamSessionRejection> createSession(
         CreateStreamSessionCommand command) {
       this.lastReceivedOptions = command.options();
+      this.lastReceivedDeclaration = command.capabilityDeclaration();
       this.lastCreateProfileId = command.identity().profileId();
       if (rejection.isPresent()) {
         return Outcome.rejected(rejection.get());

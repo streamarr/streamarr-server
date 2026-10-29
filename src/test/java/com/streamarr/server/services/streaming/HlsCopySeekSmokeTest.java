@@ -294,11 +294,7 @@ class HlsCopySeekSmokeTest {
                 .status(MediaFileStatus.MATCHED)
                 .size(Files.size(source))
                 .build());
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.AUTO)
-            .supportedCodecs(List.of("h264"))
-            .build();
+    var options = StreamingOptions.builder().quality(VideoQuality.AUTO).build();
     return OutcomeTestSupport.accepted(
         streamingService.createSession(
             createStreamSessionCommand(file.getId(), UUID.randomUUID(), options)));

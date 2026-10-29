@@ -6,7 +6,7 @@ interface MutationError {
 }
 
 """
-The file has no probe outcome yet, so playback cannot start. createStreamSession moves the file's probe
+The file has no probe outcome yet, so playback cannot start. createPlaybackSession moves the file's probe
 to the front of the queue and waits for the outcome. The error occurs when no compatible worker is
 connected, when a probe attempt fails with a retryable reason, or when the wait reaches the server's
 limit. The probe keeps running, so a later request can start playback.

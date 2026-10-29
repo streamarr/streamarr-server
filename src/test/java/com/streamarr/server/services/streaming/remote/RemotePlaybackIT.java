@@ -1,5 +1,7 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.declarationBuilderFor;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -18,8 +20,8 @@ import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
+import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -423,8 +425,7 @@ class RemotePlaybackIT {
               .decide(
                   TranscodeDecisionRequest.builder()
                       .source(mediaProbe)
-                      .clientOptions(
-                          StreamingOptions.builder().supportedCodecs(List.of("av1")).build())
+                      .capabilityDeclaration(declarationBuilderFor(ProbedCodecFamily.AV1).build())
                       .encodableVideoCodecFamilies(executor.encodableVideoCodecFamilies())
                       .build())
               .orElseThrow();
@@ -527,11 +528,7 @@ class RemotePlaybackIT {
               .decide(
                   TranscodeDecisionRequest.builder()
                       .source(mediaProbe)
-                      .clientOptions(
-                          StreamingOptions.builder()
-                              .supportedCodecs(List.of("h264"))
-                              .supportedAudioCodecs(List.of("aac", "mp3"))
-                              .build())
+                      .capabilityDeclaration(defaultDeclarationBuilder().build())
                       .encodableVideoCodecFamilies(executor.encodableVideoCodecFamilies())
                       .build())
               .orElseThrow();

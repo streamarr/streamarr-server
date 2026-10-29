@@ -88,7 +88,7 @@ public class StreamingResolver {
     authorizationService.requireProfile();
     return MutationPayloads.withUuid(
         input.mediaFileId(),
-        id -> createSession(id, input.options()),
+        id -> createSession(id, input),
         () ->
             MutationPayloads.inputError(
                 new CreateStreamSessionError.InvalidIdError(
@@ -97,14 +97,15 @@ public class StreamingResolver {
   }
 
   private CreatePlaybackSessionPayload createSession(
-      UUID mediaFileId, StreamingOptionsInput options) {
+      UUID mediaFileId, CreatePlaybackSessionInput input) {
     try {
       var outcome =
           playbackSessions.start(
               StartPlaybackSessionCommand.builder()
                   .mediaFileId(mediaFileId)
                   .identity(authorizationService.currentIdentity())
-                  .options(mapOptions(options))
+                  .options(mapOptions(input.options()))
+                  .capabilityDeclaration(input.capabilities().toDeclaration())
                   .build());
       return MutationPayloads.payload(
           outcome.map(this::toCreatedSessionDto),
@@ -349,35 +350,18 @@ public class StreamingResolver {
   }
 
   private StreamingOptions defaultOptions() {
-    return StreamingOptions.builder()
-        .quality(VideoQuality.AUTO)
-        .supportedCodecs(StreamingOptions.DEFAULT_SUPPORTED_CODECS)
-        .supportedAudioCodecs(StreamingOptions.DEFAULT_SUPPORTED_AUDIO_CODECS)
-        .maxAudioChannels(StreamingOptions.DEFAULT_MAX_AUDIO_CHANNELS)
-        .build();
+    return StreamingOptions.builder().quality(VideoQuality.AUTO).build();
   }
 
   private StreamingOptions buildOptionsFromInput(StreamingOptionsInput input) {
     var quality =
         Optional.ofNullable(input.quality()).map(VideoQuality::valueOf).orElse(VideoQuality.AUTO);
-    var codecs =
-        Optional.ofNullable(input.supportedCodecs())
-            .orElse(StreamingOptions.DEFAULT_SUPPORTED_CODECS);
-    var audioCodecs =
-        Optional.ofNullable(input.supportedAudioCodecs())
-            .orElse(StreamingOptions.DEFAULT_SUPPORTED_AUDIO_CODECS);
-    var maxAudioChannels =
-        Optional.ofNullable(input.maxAudioChannels())
-            .orElse(StreamingOptions.DEFAULT_MAX_AUDIO_CHANNELS);
 
     return StreamingOptions.builder()
         .quality(quality)
         .maxWidth(input.maxWidth())
         .maxHeight(input.maxHeight())
         .maxBitrate(input.maxBitrate())
-        .supportedCodecs(codecs)
-        .supportedAudioCodecs(audioCodecs)
-        .maxAudioChannels(maxAudioChannels)
         .audioLanguage(input.audioLanguage())
         .subtitleLanguage(input.subtitleLanguage())
         .build();

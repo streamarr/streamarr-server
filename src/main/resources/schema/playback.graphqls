@@ -30,6 +30,8 @@ enum PlaybackFormatFailure {
 input CreatePlaybackSessionInput {
     mediaFileId: ID!
     options: StreamingOptionsInput
+    "What the client's current player and display accept."
+    capabilities: ClientCapabilityDeclarationInput!
 }
 
 type CreatePlaybackSessionPayload {
