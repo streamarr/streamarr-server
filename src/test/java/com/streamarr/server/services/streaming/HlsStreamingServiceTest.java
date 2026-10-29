@@ -1025,6 +1025,36 @@ class HlsStreamingServiceTest {
     assertThat(audio.bitrate()).isEqualTo(64_000L);
   }
 
+  @Test
+  @DisplayName("Should encode E-AC-3 as 5.1 when the source and the client have more channels")
+  void shouldEncodeEac3As51WhenTheSourceAndTheClientHaveMoreChannels() {
+    probeResults.setDefaultOutcome(
+        ProbeFixture.completeProbe(
+            defaultProbeBuilder().audioCodec("dts").audioChannels(OptionalInt.of(8)).build()));
+    var file = seedMediaFile();
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(
+                List.of(
+                    aacEntryBuilder().build(),
+                    audioEntryBuilder(AudioCodec.EAC3).maxChannels(8).build()))
+            .build();
+
+    var session = createSession(file.getId(), declaration);
+    var playlist =
+        new HlsPlaylistService(StreamingProperties.builder().build())
+            .generateMultivariantPlaylist(session, "token");
+
+    var decision = session.getTranscodeDecision().audioDecision();
+    assertThat(decision.codec()).isEqualTo("eac3");
+    assertThat(decision.channels()).isEqualTo(6);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .isNotEmpty()
+        .allSatisfy(
+            request -> assertThat(request.transcodeDecision().audioDecision()).isEqualTo(decision));
+    assertThat(playlist).contains("CHANNELS=\"6\"");
+  }
+
   @ParameterizedTest(name = "{0} source channels")
   @ValueSource(ints = {3, 4})
   @DisplayName(

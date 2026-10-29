@@ -984,8 +984,8 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("Should transcode to E-AC-3 when surround and client supports E-AC-3")
-  void shouldTranscodeToEac3WhenSurroundAndEac3Supported() {
+  @DisplayName("Should transcode to 5.1 E-AC-3 when the surround source has more channels")
+  void shouldTranscodeTo51Eac3WhenTheSurroundSourceHasMoreChannels() {
     var source = probe("h264", "dts", 8, 640_000L);
     var declaration = declaringAudio(audio(EAC3, 8), audio(AAC, 8));
 
@@ -1002,8 +1002,8 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
     assertThat(decision.audioDecision().codec()).isEqualTo("eac3");
-    assertThat(decision.audioDecision().channels()).isEqualTo(8);
-    assertThat(decision.audioDecision().bitrate()).isEqualTo(512_000L);
+    assertThat(decision.audioDecision().channels()).isEqualTo(6);
+    assertThat(decision.audioDecision().bitrate()).isEqualTo(384_000L);
   }
 
   @Test
