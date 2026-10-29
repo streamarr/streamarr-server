@@ -73,6 +73,12 @@ public interface ProfileRepositoryCustom {
   /** Moves the Profile only while it still belongs to the Household used for the decision. */
   boolean tryRehome(UUID profileId, UUID expectedHouseholdId, UUID destinationHouseholdId);
 
+  /**
+   * Moves a Personal Profile with its Account. The Profile must still belong to {@code
+   * expectedHouseholdId}, its Account's Household; anything else is a broken invariant and throws.
+   */
+  void rehomePersonalProfile(UUID profileId, UUID expectedHouseholdId, UUID destinationHouseholdId);
+
   /** Locks and deletes the Profile only while no Account uses it as a Personal Profile. */
   boolean tryDeleteUnlinked(UUID profileId);
 

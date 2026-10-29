@@ -35,8 +35,10 @@ import com.streamarr.server.support.TestFixtureWork;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
+import lombok.Builder;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -52,6 +54,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Isolated("Uses the shared PostgreSQL identity fixtures")
 @DisplayName("Household Deletion Concurrency Integration Tests")
 class HouseholdDeletionConcurrencyIT extends AbstractIntegrationTest {
+
+  private static final String ACCOUNT_TRANSFER = "%update%user_account%household_id%";
+  private static final String ACCOUNT_DELETION = "%delete%from%user_account%";
+  private static final String SESSION_REVOCATION = "%update%auth_session%revoked_at%";
 
   @Autowired private HouseholdDeletionService service;
   @Autowired private AccountLifecycleService accountLifecycle;
@@ -479,11 +485,270 @@ class HouseholdDeletionConcurrencyIT extends AbstractIntegrationTest {
     } finally {
       auth.deleteIdentity(source);
       auth.deleteIdentity(admin);
-      if (households.existsById(destinationId)) {
-        households.deleteById(destinationId);
-      }
+      deleteHouseholdIfPresent(destinationId);
     }
   }
+
+  @Test
+  @DisplayName("Should refuse a stale transfer of the final Account when deletion transfers it")
+  void shouldRefuseStaleTransferOfFinalAccountWhenDeletionTransfersIt() throws Exception {
+    var admin = auth.createAdminIdentity();
+    var source = auth.createIdentity();
+    var departing = auth.createHouseholdMemberIdentity(source);
+    var competitorDestination = auth.createIdentity();
+    var departureDestination = auth.createIdentity();
+    var identity = auth.freshIdentityOf(admin);
+    var sourceId = source.household().getId();
+    var destinationId = admin.household().getId();
+    try {
+      var outcomes =
+          raceStaleRemovalAgainstDeletion(
+              StaleRemovalRace.builder()
+                  .finalAccountId(source.account().getId())
+                  .competitor(
+                      () ->
+                          accountLifecycle.transferAccount(
+                              identity,
+                              transferTo(
+                                  source.account().getId(),
+                                  competitorDestination.household().getId())))
+                  .competitorStatement(ACCOUNT_TRANSFER)
+                  .departure(
+                      () ->
+                          accountLifecycle.transferAccount(
+                              identity,
+                              transferTo(
+                                  departing.account().getId(),
+                                  departureDestination.household().getId())))
+                  .deletion(
+                      () ->
+                          service.transferLastAccountAndDeleteHousehold(
+                              identity,
+                              TransferLastAccountAndDeleteHouseholdCommand.builder()
+                                  .householdId(sourceId)
+                                  .destinationHouseholdId(destinationId)
+                                  .reason("close source")
+                                  .build()))
+                  .deletionStatement(ACCOUNT_TRANSFER)
+                  .build());
+
+      assertThat(outcomes.competitor())
+          .isEqualTo(Outcome.rejected(new TransferRejections.FinalAccount()));
+      assertThat(outcomes.deletion()).isEqualTo(Outcome.accepted(sourceId));
+      assertThat(accounts.findById(source.account().getId()))
+          .get()
+          .extracting(UserAccount::getHouseholdId)
+          .isEqualTo(destinationId);
+      assertThat(profiles.findById(source.profile().getId()))
+          .get()
+          .extracting(Profile::getHouseholdId)
+          .isEqualTo(destinationId);
+      assertThat(households.findById(sourceId)).isEmpty();
+    } finally {
+      auth.deleteIdentity(departureDestination);
+      auth.deleteIdentity(competitorDestination);
+      auth.deleteIdentity(source);
+      auth.deleteIdentity(admin);
+      deleteHouseholdIfPresent(sourceId);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse a stale deletion of the final Account when deletion preserves its Profile")
+  void shouldRefuseStaleDeletionOfFinalAccountWhenDeletionPreservesItsProfile() throws Exception {
+    var admin = auth.createAdminIdentity();
+    var source = auth.createIdentity();
+    var departing = auth.createHouseholdMemberIdentity(source);
+    var departureDestination = auth.createIdentity();
+    var identity = auth.freshIdentityOf(admin);
+    var sourceId = source.household().getId();
+    var destinationId = admin.household().getId();
+    try {
+      var outcomes =
+          raceStaleRemovalAgainstDeletion(
+              StaleRemovalRace.builder()
+                  .finalAccountId(source.account().getId())
+                  .competitor(
+                      () ->
+                          accountLifecycle.administrativelyDeleteAccount(
+                              identity,
+                              AdministrativelyDeleteAccountCommand.builder()
+                                  .accountId(source.account().getId())
+                                  .profileCleanup(ProfileCleanup.ERASE_PROFILE)
+                                  .reason("stale deletion")
+                                  .build()))
+                  .competitorStatement(ACCOUNT_DELETION)
+                  .departure(
+                      () ->
+                          accountLifecycle.transferAccount(
+                              identity,
+                              transferTo(
+                                  departing.account().getId(),
+                                  departureDestination.household().getId())))
+                  .deletion(
+                      () ->
+                          service.deleteLastAccountAndHouseholdPreservingPersonalProfile(
+                              identity,
+                              DeleteLastAccountAndHouseholdPreservingPersonalProfileCommand
+                                  .builder()
+                                  .householdId(sourceId)
+                                  .destinationHouseholdId(destinationId)
+                                  .replacementManagerAccountId(admin.account().getId())
+                                  .reason("preserve Profile")
+                                  .build()))
+                  // Both revoke the Account's sessions before deleting it, so deletion waits on
+                  // the session row the competitor has already revoked.
+                  .deletionStatement(SESSION_REVOCATION)
+                  .build());
+
+      assertThat(outcomes.competitor())
+          .isEqualTo(Outcome.rejected(new TransferRejections.FinalAccount()));
+      assertThat(outcomes.deletion()).isEqualTo(Outcome.accepted(sourceId));
+      assertThat(accounts.findById(source.account().getId())).isEmpty();
+      assertThat(profiles.findById(source.profile().getId()))
+          .get()
+          .extracting(Profile::getHouseholdId)
+          .isEqualTo(destinationId);
+      assertThat(
+              managers.existsByAccountIdAndProfileId(
+                  admin.account().getId(), source.profile().getId()))
+          .isTrue();
+      assertThat(households.findById(sourceId)).isEmpty();
+    } finally {
+      auth.deleteIdentity(departureDestination);
+      auth.deleteIdentity(source);
+      auth.deleteIdentity(admin);
+      deleteHouseholdIfPresent(sourceId);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse a joining Account with HouseholdNotFound when deletion holds the source")
+  void shouldRefuseJoiningAccountWithHouseholdNotFoundWhenDeletionHoldsSource() throws Exception {
+    var admin = auth.createAdminIdentity();
+    var source = auth.createIdentity();
+    var joiningHome = auth.createIdentity();
+    var joining = auth.createHouseholdMemberIdentity(joiningHome);
+    var identity = auth.freshIdentityOf(admin);
+    var sourceId = source.household().getId();
+    var destinationId = admin.household().getId();
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
+        var held = PostgresLockTestSupport.lockRow(accountRowOf(source.account().getId()));
+        var observer = dataSource.getConnection()) {
+      var deletion =
+          executor.submit(
+              () ->
+                  service.transferLastAccountAndDeleteHousehold(
+                      identity,
+                      TransferLastAccountAndDeleteHouseholdCommand.builder()
+                          .householdId(sourceId)
+                          .destinationHouseholdId(destinationId)
+                          .reason("close source")
+                          .build()));
+      awaitWaiterBehind(held.backendPid(), ACCOUNT_TRANSFER);
+      var deletionPid =
+          PostgresLockTestSupport.awaitBlockedBackendPid(observer, held.backendPid(), null);
+
+      // The join's foreign-key check waits on deletion's lock on the source Household row.
+      var join =
+          executor.submit(
+              () ->
+                  accountLifecycle.transferAccount(
+                      identity, transferTo(joining.account().getId(), sourceId)));
+      awaitWaiterBehind(deletionPid, ACCOUNT_TRANSFER);
+      held.release();
+
+      assertThat(deletion.get(10, TimeUnit.SECONDS)).isEqualTo(Outcome.accepted(sourceId));
+      assertThat(join.get(10, TimeUnit.SECONDS))
+          .isEqualTo(Outcome.rejected(new TransferRejections.HouseholdNotFound()));
+      assertThat(accounts.findById(joining.account().getId()))
+          .get()
+          .extracting(UserAccount::getHouseholdId)
+          .isEqualTo(joiningHome.household().getId());
+      assertThat(profiles.findById(joining.profile().getId()))
+          .get()
+          .extracting(Profile::getHouseholdId)
+          .isEqualTo(joiningHome.household().getId());
+      assertThat(households.findById(sourceId)).isEmpty();
+    } finally {
+      auth.deleteIdentity(joiningHome);
+      auth.deleteIdentity(source);
+      auth.deleteIdentity(admin);
+      deleteHouseholdIfPresent(sourceId);
+    }
+  }
+
+  // The competitor counts two residents, then waits on the final Account's held row. The other
+  // resident then leaves, so deletion counts one and queues behind the competitor. Releasing the
+  // row lets the competitor finish first.
+  private RaceOutcomes raceStaleRemovalAgainstDeletion(StaleRemovalRace race) throws Exception {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
+        var held = PostgresLockTestSupport.lockRow(accountRowOf(race.finalAccountId()));
+        var observer = dataSource.getConnection()) {
+      var competitor = executor.submit(race.competitor());
+      awaitWaiterBehind(held.backendPid(), race.competitorStatement());
+      var competitorPid =
+          PostgresLockTestSupport.awaitBlockedBackendPid(observer, held.backendPid(), null);
+      assertThat(executor.submit(race.departure()).get(10, TimeUnit.SECONDS))
+          .isInstanceOf(Outcome.Accepted.class);
+
+      var deletion = executor.submit(race.deletion());
+      awaitWaiterBehind(competitorPid, race.deletionStatement());
+      held.release();
+      return new RaceOutcomes(
+          competitor.get(10, TimeUnit.SECONDS), deletion.get(10, TimeUnit.SECONDS));
+    }
+  }
+
+  private void awaitWaiterBehind(int blockerPid, String blockedStatement) {
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(
+            () ->
+                assertThat(
+                        PostgresLockTestSupport.waitersBehind(jdbc, blockerPid, blockedStatement))
+                    .isOne());
+  }
+
+  private RowLockTarget accountRowOf(UUID accountId) {
+    return RowLockTarget.builder()
+        .dataSource(dataSource)
+        .table("user_account")
+        .rowId(accountId)
+        .build();
+  }
+
+  private void deleteHouseholdIfPresent(UUID householdId) {
+    if (households.existsById(householdId)) {
+      households.deleteById(householdId);
+    }
+  }
+
+  private static TransferAccountCommand transferTo(UUID accountId, UUID destinationHouseholdId) {
+    return TransferAccountCommand.builder()
+        .accountId(accountId)
+        .destinationHouseholdId(destinationHouseholdId)
+        .sourceHouseholdAccess(SourceHouseholdAccess.END)
+        .reason("relocated")
+        .build();
+  }
+
+  /**
+   * A competitor that removes the final Account after counting two residents, the other resident's
+   * departure, and a Household deletion that then counts one. Each waits at its statement (ILIKE).
+   */
+  @Builder
+  private record StaleRemovalRace(
+      UUID finalAccountId,
+      Callable<Outcome<?, ?>> competitor,
+      String competitorStatement,
+      Callable<Outcome<?, ?>> departure,
+      Callable<Outcome<?, ?>> deletion,
+      String deletionStatement) {}
+
+  private record RaceOutcomes(Outcome<?, ?> competitor, Outcome<?, ?> deletion) {}
 
   private enum ReplacementChange {
     RESTRICTED,

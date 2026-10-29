@@ -69,8 +69,8 @@ class HouseholdDeletionServiceTest {
 
   private final FakeProfileHouseholdShareRepository shares =
       new FakeProfileHouseholdShareRepository();
-  private final RefusingProfileRepository profiles = new RefusingProfileRepository(shares);
-  private final RefusingAccountRepository accounts = new RefusingAccountRepository(shares);
+  private final FakeProfileRepository profiles = new FakeProfileRepository(shares);
+  private final FakeUserAccountRepository accounts = new FakeUserAccountRepository(shares);
   private final FakeHouseholdRepository households = new FakeHouseholdRepository();
   private final FakeProfileManagerRepository managers = new FakeProfileManagerRepository();
   private final FakeProfileManagerInvitationRepository managerInvitations =
@@ -334,73 +334,6 @@ class HouseholdDeletionServiceTest {
 
     assertThat(rejectionOf(outcome))
         .isEqualTo(new HouseholdDeletionRejections.ReplacementManagerNotEligible());
-  }
-
-  @Test
-  @DisplayName("Should reject Household deletion when the final Account cannot transfer")
-  void shouldRejectHouseholdDeletionWhenFinalAccountCannotTransfer() {
-    var lastResident = residentOf(doomed, HouseholdRole.ADMIN);
-    accounts.refuseTransfer();
-
-    var outcome = transferLastAccountAndDeleteHousehold("closing", refuge.getId());
-
-    assertThat(outcome)
-        .isEqualTo(Outcome.rejected(new HouseholdDeletionRejections.LastAccountNotFound()));
-    assertThat(households.findById(doomed.getId())).isPresent();
-    assertThat(profiles.findById(lastResident.getPersonalProfileId())).isPresent();
-    assertThat(audit.entries()).isEmpty();
-  }
-
-  @Test
-  @DisplayName("Should reject Household deletion when the final Account cannot be deleted")
-  void shouldRejectHouseholdDeletionWhenFinalAccountCannotBeDeleted() {
-    var lastResident = residentOf(doomed, HouseholdRole.ADMIN);
-    accounts.refuseDeletion();
-
-    var outcome =
-        service.deleteLastAccountAndHouseholdPreservingPersonalProfile(
-            identity(), preservationCommand().build());
-
-    assertThat(outcome)
-        .isEqualTo(Outcome.rejected(new HouseholdDeletionRejections.LastAccountNotFound()));
-    assertThat(households.findById(doomed.getId())).isPresent();
-    assertThat(profiles.findById(lastResident.getPersonalProfileId())).isPresent();
-    assertThat(audit.entries()).isEmpty();
-  }
-
-  @Test
-  @DisplayName("Should abort Household deletion when the transferred Personal Profile cannot move")
-  void shouldAbortHouseholdDeletionWhenTransferredPersonalProfileCannotMove() {
-    var lastResident = residentOf(doomed, HouseholdRole.ADMIN);
-    profiles.refuseRehome();
-    var destinationHouseholdId = refuge.getId();
-
-    assertThatThrownBy(
-            () -> transferLastAccountAndDeleteHousehold("closing", destinationHouseholdId))
-        .isInstanceOf(RuntimeException.class)
-        .hasMessage("The Personal Profile could not move to the requested Household.");
-
-    assertThat(households.findById(doomed.getId())).isPresent();
-    assertThat(profiles.findById(lastResident.getPersonalProfileId())).isPresent();
-    assertThat(audit.entries()).isEmpty();
-  }
-
-  @Test
-  @DisplayName("Should abort Household deletion when the preserved Personal Profile cannot move")
-  void shouldAbortHouseholdDeletionWhenPreservedPersonalProfileCannotMove() {
-    var lastResident = residentOf(doomed, HouseholdRole.ADMIN);
-    profiles.refuseRehome();
-    var identity = identity();
-    var command = preservationCommand().build();
-
-    assertThatThrownBy(
-            () -> service.deleteLastAccountAndHouseholdPreservingPersonalProfile(identity, command))
-        .isInstanceOf(RuntimeException.class)
-        .hasMessage("The Personal Profile could not move to the requested Household.");
-
-    assertThat(households.findById(doomed.getId())).isPresent();
-    assertThat(profiles.findById(lastResident.getPersonalProfileId())).isPresent();
-    assertThat(audit.entries()).isEmpty();
   }
 
   @Test
@@ -682,55 +615,5 @@ class HouseholdDeletionServiceTest {
       case Outcome.Accepted<?, ?> accepted ->
           throw new AssertionError("expected a rejection but got " + accepted);
     };
-  }
-
-  private static final class RefusingAccountRepository extends FakeUserAccountRepository {
-
-    private boolean refuseTransfer;
-    private boolean refuseDeletion;
-
-    private RefusingAccountRepository(FakeProfileHouseholdShareRepository shares) {
-      super(shares);
-    }
-
-    void refuseTransfer() {
-      refuseTransfer = true;
-    }
-
-    void refuseDeletion() {
-      refuseDeletion = true;
-    }
-
-    @Override
-    public boolean tryDelete(UUID accountId, UUID expectedHouseholdId) {
-      return !refuseDeletion && super.tryDelete(accountId, expectedHouseholdId);
-    }
-
-    @Override
-    public boolean tryTransfer(
-        UUID accountId, UUID expectedHouseholdId, UUID destinationHouseholdId, HouseholdRole role) {
-      return !refuseTransfer
-          && super.tryTransfer(accountId, expectedHouseholdId, destinationHouseholdId, role);
-    }
-  }
-
-  private static final class RefusingProfileRepository extends FakeProfileRepository {
-
-    private boolean refuseRehome;
-
-    private RefusingProfileRepository(FakeProfileHouseholdShareRepository shares) {
-      super(shares);
-    }
-
-    void refuseRehome() {
-      refuseRehome = true;
-    }
-
-    @Override
-    public boolean tryRehome(
-        UUID profileId, UUID expectedHouseholdId, UUID destinationHouseholdId) {
-      return !refuseRehome
-          && super.tryRehome(profileId, expectedHouseholdId, destinationHouseholdId);
-    }
   }
 }

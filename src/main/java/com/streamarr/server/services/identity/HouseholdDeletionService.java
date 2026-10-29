@@ -6,7 +6,6 @@ import com.streamarr.server.domain.auth.SecurityAuditEventRecordView;
 import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.domain.streaming.SessionProgress;
-import com.streamarr.server.exceptions.AccountRemovalConflictException;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
@@ -151,20 +150,15 @@ public class HouseholdDeletionService {
     }
 
     var now = clock.instant();
-    try {
-      return mutationTransactions.write(
-          () -> deleteHouseholdWithinTransaction(identity, request, now),
-          constraint ->
-              switch (constraint) {
-                case CHK_SERVER_ADMIN_REMAINS ->
-                    Optional.of(new HouseholdDeletionRejections.LastServerAdmin());
-                case CHK_NAMES_UNIQUE ->
-                    Optional.of(new HouseholdDeletionRejections.NameConflict());
-                default -> Optional.empty();
-              });
-    } catch (AccountRemovalConflictException _) {
-      return Outcome.rejected(new HouseholdDeletionRejections.LastAccountNotFound());
-    }
+    return mutationTransactions.write(
+        () -> deleteHouseholdWithinTransaction(identity, request, now),
+        constraint ->
+            switch (constraint) {
+              case CHK_SERVER_ADMIN_REMAINS ->
+                  Optional.of(new HouseholdDeletionRejections.LastServerAdmin());
+              case CHK_NAMES_UNIQUE -> Optional.of(new HouseholdDeletionRejections.NameConflict());
+              default -> Optional.empty();
+            });
   }
 
   private UUID deleteHouseholdWithinTransaction(
