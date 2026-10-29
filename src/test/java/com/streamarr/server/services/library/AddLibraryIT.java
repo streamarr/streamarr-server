@@ -18,6 +18,7 @@ import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport;
 import com.streamarr.server.support.TestFixtureAuditActorConfiguration;
 import com.streamarr.server.support.TestFixtureWork;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -65,12 +66,13 @@ class AddLibraryIT extends AbstractIntegrationTest {
   @Autowired private DataSource dataSource;
   @Autowired private JdbcTemplate jdbcTemplate;
 
-  private final List<UUID> createdLibraryIds = new ArrayList<>();
+  private final List<Path> libraryFolders = new ArrayList<>();
   private AuthTestSupport.TestIdentity testIdentity;
 
+  // Deletes by path, so a library that an add committed after a failed assertion goes too.
   @AfterEach
   void deleteLibraries() {
-    createdLibraryIds.forEach(libraryRepository::deleteById);
+    librariesAt(libraryFolders.toArray(Path[]::new)).forEach(libraryRepository::deleteById);
     committed.events.clear();
     if (testIdentity != null) {
       authTestSupport.deleteIdentity(testIdentity);
@@ -86,8 +88,8 @@ class AddLibraryIT extends AbstractIntegrationTest {
       String description, ConcurrentAdds adds) throws Exception {
     testIdentity = authTestSupport.createAdminIdentity();
     var identity = authenticatedIdentity(testIdentity);
-    var firstFolder = Files.createDirectories(tempDir.resolve(adds.firstFolder()));
-    var secondFolder = Files.createDirectories(tempDir.resolve(adds.secondFolder()));
+    var firstFolder = libraryFolder(adds.firstFolder());
+    var secondFolder = libraryFolder(adds.secondFolder());
     Library first;
     Outcome<Library, AddLibraryRejection> second;
     // The held library is invisible to the first add's path check, so the first add's insert waits
@@ -208,11 +210,15 @@ class AddLibraryIT extends AbstractIntegrationTest {
         .toList();
   }
 
-  private Library accepted(Outcome<Library, AddLibraryRejection> outcome) {
+  private Path libraryFolder(String name) throws IOException {
+    var folder = Files.createDirectories(tempDir.resolve(name));
+    libraryFolders.add(folder);
+    return folder;
+  }
+
+  private static Library accepted(Outcome<Library, AddLibraryRejection> outcome) {
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
-    var library = ((Outcome.Accepted<Library, AddLibraryRejection>) outcome).result();
-    createdLibraryIds.add(library.getId());
-    return library;
+    return ((Outcome.Accepted<Library, AddLibraryRejection>) outcome).result();
   }
 
   private static Path normalized(Path folder) {
