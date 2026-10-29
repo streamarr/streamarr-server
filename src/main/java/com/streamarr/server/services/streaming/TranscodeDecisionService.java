@@ -42,7 +42,8 @@ public class TranscodeDecisionService {
           new EncodeCandidate("h264", VideoCodecProfile.H264_HIGH));
   // A multichannel encode prefers the first of these codecs that keeps more than two channels.
   private static final List<String> MULTICHANNEL_ENCODE_PREFERENCE = List.of("eac3", "ac3", "aac");
-  private static final int AC3_MAX_CHANNELS = 6;
+  // FFmpeg's AC-3 and E-AC-3 encoders stop at 5.1.
+  private static final int AC3_AND_EAC3_ENCODER_MAX_CHANNELS = 6;
   private static final int STEREO = 2;
   // The plain aac declaration covers LC, HE-AAC and HE-AAC v2.
   private static final Set<String> COPYABLE_AAC_CODEC_STRINGS =
@@ -285,7 +286,10 @@ public class TranscodeDecisionService {
   }
 
   private static int encoderChannelLimit(String codec) {
-    return "ac3".equals(codec) ? AC3_MAX_CHANNELS : Integer.MAX_VALUE;
+    return switch (codec) {
+      case "ac3", "eac3" -> AC3_AND_EAC3_ENCODER_MAX_CHANNELS;
+      default -> Integer.MAX_VALUE;
+    };
   }
 
   private AudioDecision transcode(String codec, int channels) {
