@@ -37,6 +37,7 @@ public class AccountLifecycleService {
   private static final String CHK_HOSTING_ADMIN = "chk_hosting_household_retains_eligible_admin";
   private static final String CHK_RESTRICTED_AUTHORITY =
       "chk_restricted_account_holds_no_authority";
+  private static final String FK_ACCOUNT_HOUSEHOLD = "fk_user_account_household";
   private static final String ACCOUNT_ID = "accountId";
 
   private final AuthorizationService authorizationService;
@@ -255,6 +256,8 @@ public class AccountLifecycleService {
       case CHK_NAMES_UNIQUE -> Optional.of(new TransferRejections.NameConflict());
       case CHK_ELIGIBLE_MANAGER -> Optional.of(new TransferRejections.EligibleManagerRequired());
       case CHK_RESTRICTED_AUTHORITY -> Optional.of(new TransferRejections.RestrictedFirstAccount());
+      // The destination Household was deleted after the existence check, before the Account moved.
+      case FK_ACCOUNT_HOUSEHOLD -> Optional.of(new TransferRejections.HouseholdNotFound());
       default -> Optional.empty();
     };
   }

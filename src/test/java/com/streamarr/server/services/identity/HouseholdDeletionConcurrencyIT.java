@@ -27,7 +27,6 @@ import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteEmp
 import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteLastAccountAndHouseholdCommand;
 import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteLastAccountAndHouseholdPreservingPersonalProfileCommand;
 import com.streamarr.server.services.identity.HouseholdDeletionService.TransferLastAccountAndDeleteHouseholdCommand;
-import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport;
@@ -48,7 +47,6 @@ import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -76,7 +74,6 @@ class HouseholdDeletionConcurrencyIT extends AbstractIntegrationTest {
   @Autowired private JdbcTemplate jdbc;
   @Autowired private DSLContext dsl;
   @Autowired private TransactionTemplate transactionTemplate;
-  @Autowired private ConstraintViolationTranslator constraintViolations;
 
   @Test
   @DisplayName(
@@ -627,8 +624,9 @@ class HouseholdDeletionConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep a joining Account out of the source while deletion holds the source")
-  void shouldKeepJoiningAccountOutOfSourceWhileDeletionHoldsSource() throws Exception {
+  @DisplayName(
+      "Should refuse a joining Account with HouseholdNotFound when deletion holds the source")
+  void shouldRefuseJoiningAccountWithHouseholdNotFoundWhenDeletionHoldsSource() throws Exception {
     var admin = auth.createAdminIdentity();
     var source = auth.createIdentity();
     var joiningHome = auth.createIdentity();
@@ -663,15 +661,8 @@ class HouseholdDeletionConcurrencyIT extends AbstractIntegrationTest {
       held.release();
 
       assertThat(deletion.get(10, TimeUnit.SECONDS)).isEqualTo(Outcome.accepted(sourceId));
-      assertThat(join)
-          .failsWithin(Duration.ofSeconds(10))
-          .withThrowableThat()
-          .havingCause()
-          .isInstanceOfSatisfying(
-              DataIntegrityViolationException.class,
-              violation ->
-                  assertThat(constraintViolations.constraintName(violation))
-                      .contains("fk_user_account_household"));
+      assertThat(join.get(10, TimeUnit.SECONDS))
+          .isEqualTo(Outcome.rejected(new TransferRejections.HouseholdNotFound()));
       assertThat(accounts.findById(joining.account().getId()))
           .get()
           .extracting(UserAccount::getHouseholdId)
