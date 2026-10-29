@@ -44,7 +44,7 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.To
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyVideoEntries;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoEntriesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoEntryMaximum;
-import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoMaximumNotPositive;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoMaximumInvalid;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -144,10 +144,10 @@ class PlaybackSessionCapabilityDeclarationTest {
         .isEqualTo(
             Outcome.rejected(
                 List.of(
-                    new VideoMaximumNotPositive(1, VideoEntryMaximum.BIT_DEPTH),
-                    new VideoMaximumNotPositive(1, VideoEntryMaximum.WIDTH),
-                    new VideoMaximumNotPositive(1, VideoEntryMaximum.HEIGHT),
-                    new VideoMaximumNotPositive(1, VideoEntryMaximum.FRAME_RATE),
+                    new VideoMaximumInvalid(1, VideoEntryMaximum.BIT_DEPTH),
+                    new VideoMaximumInvalid(1, VideoEntryMaximum.WIDTH),
+                    new VideoMaximumInvalid(1, VideoEntryMaximum.HEIGHT),
+                    new VideoMaximumInvalid(1, VideoEntryMaximum.FRAME_RATE),
                     new AudioChannelsNotPositive(1))));
   }
 
