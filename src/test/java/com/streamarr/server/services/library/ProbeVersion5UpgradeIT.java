@@ -110,8 +110,9 @@ class ProbeVersion5UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should re-probe every version 4 result and play each file from it until the file's version 5 result is stored")
-  void shouldReprobeEveryVersion4ResultAndPlayEachFileFromItUntilTheFilesVersion5ResultIsStored() {
+      "Should play each file from its version 4 result until its version 5 result is stored when the server starts after upgrading")
+  void
+      shouldPlayEachFileFromItsVersion4ResultUntilItsVersion5ResultIsStoredWhenTheServerStartsAfterUpgrading() {
     var mediaFileIds = fixture.mediaFileIds();
     await()
         .atMost(Duration.ofSeconds(20))
