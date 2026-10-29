@@ -1,11 +1,7 @@
 package com.streamarr.server.services.library;
 
-import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.mockingDetails;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.ExternalAgentStrategy;
@@ -19,24 +15,23 @@ import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
-import com.streamarr.server.support.PostgresLockProbe;
 import com.streamarr.server.support.PostgresLockTestSupport;
+import com.streamarr.server.support.TestFixtureAuditActorConfiguration;
 import com.streamarr.server.support.TestFixtureWork;
-import jakarta.persistence.EntityManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
 import java.util.stream.Stream;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -48,8 +43,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-import org.springframework.test.util.AopTestUtils;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
@@ -66,10 +59,10 @@ class AddLibraryIT extends AbstractIntegrationTest {
   @TempDir Path tempDir;
 
   @Autowired private LibraryManagementService libraryManagementService;
-  @MockitoSpyBean private LibraryRepository libraryRepository;
+  @Autowired private LibraryRepository libraryRepository;
   @Autowired private CommittedLibraryRecorder committed;
   @Autowired private AuthTestSupport authTestSupport;
-  @Autowired private EntityManager entityManager;
+  @Autowired private DataSource dataSource;
   @Autowired private JdbcTemplate jdbcTemplate;
 
   private final List<UUID> createdLibraryIds = new ArrayList<>();
@@ -95,39 +88,38 @@ class AddLibraryIT extends AbstractIntegrationTest {
     var identity = authenticatedIdentity(testIdentity);
     var firstFolder = Files.createDirectories(tempDir.resolve(adds.firstFolder()));
     var secondFolder = Files.createDirectories(tempDir.resolve(adds.secondFolder()));
-    var firstAdd = parkFirstAddBeforeItsInsert();
     Library first;
     Outcome<Library, AddLibraryRejection> second;
-    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
-      try {
-        var firstOutcome =
-            executor.submit(
-                () ->
-                    libraryManagementService.addLibrary(
-                        identity, unsavedLibrary("First", firstFolder)));
-        awaitLatch(firstAdd.parked());
-        var secondOutcome =
-            executor.submit(
-                () ->
-                    libraryManagementService.addLibrary(
-                        identity, unsavedLibrary("Second", secondFolder)));
-        await()
-            .atMost(Duration.ofSeconds(10))
-            .untilAsserted(
-                () ->
-                    assertThat(
-                            PostgresLockTestSupport.waitersBehind(
-                                jdbcTemplate,
-                                firstAdd.backendPid().get(),
-                                "%pg_advisory_xact_lock%"))
-                        .as("the second add waits for the first add's lock")
-                        .isOne());
-        firstAdd.release().countDown();
-        first = accepted(firstOutcome.get(30, TimeUnit.SECONDS));
-        second = secondOutcome.get(30, TimeUnit.SECONDS);
-      } finally {
-        firstAdd.release().countDown();
-      }
+    // The held library is invisible to the first add's path check, so the first add's insert waits
+    // for it while the first add holds its lock.
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
+        var heldLibrary = HeldLibraryInsert.open(dataSource, firstFolder);
+        var observer = dataSource.getConnection()) {
+      var firstOutcome =
+          executor.submit(
+              () ->
+                  libraryManagementService.addLibrary(
+                      identity, unsavedLibrary("First", firstFolder)));
+      var firstAddPid =
+          PostgresLockTestSupport.awaitBlockedBackendPid(
+              observer, heldLibrary.backendPid(), "transactionid");
+      var secondOutcome =
+          executor.submit(
+              () ->
+                  libraryManagementService.addLibrary(
+                      identity, unsavedLibrary("Second", secondFolder)));
+      await()
+          .atMost(Duration.ofSeconds(10))
+          .untilAsserted(
+              () ->
+                  assertThat(
+                          PostgresLockTestSupport.waitersBehind(
+                              jdbcTemplate, firstAddPid, "%pg_advisory_xact_lock%"))
+                      .as("the second add waits for the first add's lock")
+                      .isOne());
+      heldLibrary.rollBack();
+      first = accepted(firstOutcome.get(30, TimeUnit.SECONDS));
+      second = secondOutcome.get(30, TimeUnit.SECONDS);
     }
 
     assertThat(second)
@@ -169,31 +161,43 @@ class AddLibraryIT extends AbstractIntegrationTest {
       String secondFolder,
       BiFunction<Library, Path, AddLibraryRejection> expectedRejection) {}
 
-  private record ParkedAdd(
-      CountDownLatch parked, CountDownLatch release, AtomicInteger backendPid) {}
+  /** An uncommitted library at one path, in a transaction of its own. Closing rolls it back. */
+  private record HeldLibraryInsert(Connection connection, int backendPid) implements AutoCloseable {
 
-  /** Parks the first add inside its transaction, after its path check and before its insert. */
-  private ParkedAdd parkFirstAddBeforeItsInsert() {
-    var parkedAdd =
-        new ParkedAdd(new CountDownLatch(1), new CountDownLatch(1), new AtomicInteger());
-    var lockProbe = new PostgresLockProbe(entityManager, jdbcTemplate);
-    var parkedOnce = new AtomicBoolean();
-    var repositorySpy = AopTestUtils.<LibraryRepository>getUltimateTargetObject(libraryRepository);
-    var repositoryAnswer =
-        mockingDetails(repositorySpy).getMockCreationSettings().getDefaultAnswer();
-    doAnswer(
-            invocation -> {
-              if (parkedOnce.compareAndSet(false, true)) {
-                parkedAdd.backendPid().set(lockProbe.currentBackendPid());
-                parkedAdd.parked().countDown();
-                awaitLatch(parkedAdd.release());
-              }
+    static HeldLibraryInsert open(DataSource dataSource, Path folder) throws SQLException {
+      var connection = dataSource.getConnection();
+      try {
+        connection.setAutoCommit(false);
+        TestFixtureAuditActorConfiguration.nameTestFixtureActorIn(connection);
+        try (var insert =
+            connection.prepareStatement(
+                """
+                INSERT INTO library (filepath_uri, name, status, backend, type)
+                VALUES (?, 'Held library', 'HEALTHY', 'LOCAL', 'MOVIE')
+                """)) {
+          insert.setString(1, FilepathCodec.encode(folder));
+          insert.executeUpdate();
+        }
 
-              return repositoryAnswer.answer(invocation);
-            })
-        .when(repositorySpy)
-        .saveAndFlush(any(Library.class));
-    return parkedAdd;
+        return new HeldLibraryInsert(connection, PostgresLockTestSupport.backendPid(connection));
+      } catch (SQLException failure) {
+        connection.close();
+        throw failure;
+      }
+    }
+
+    void rollBack() throws SQLException {
+      connection.rollback();
+    }
+
+    @Override
+    public void close() throws SQLException {
+      try {
+        connection.rollback();
+      } finally {
+        connection.close();
+      }
+    }
   }
 
   private List<UUID> librariesAt(Path... folders) {
