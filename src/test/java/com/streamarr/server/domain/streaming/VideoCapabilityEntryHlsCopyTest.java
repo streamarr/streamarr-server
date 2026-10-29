@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.stream.Stream;
 import lombok.Builder;
@@ -120,12 +121,12 @@ class VideoCapabilityEntryHlsCopyTest {
         Optional.empty());
   }
 
-  private static List<Optional<Fraction>> frameRates() {
+  private static List<OptionalDouble> frameRates() {
     return List.of(
-        Optional.of(new Fraction(30, 1)),
-        Optional.of(new Fraction(30_000, 1_001)),
-        Optional.of(new Fraction(3_001, 100)),
-        Optional.empty());
+        OptionalDouble.of(30),
+        OptionalDouble.of(30_000.0 / 1_001),
+        OptionalDouble.of(30.01),
+        OptionalDouble.empty());
   }
 
   @ParameterizedTest(name = "{0}")
@@ -162,7 +163,7 @@ class VideoCapabilityEntryHlsCopyTest {
             "unknown level and tier above the frame-rate maximum",
             fittingCopy()
                 .videoProperties(Optional.of(unknownLevelAndTier))
-                .frameRate(Optional.of(new Fraction(60, 1)))
+                .frameRate(OptionalDouble.of(60))
                 .build(),
             false),
         Arguments.of(
@@ -176,11 +177,11 @@ class VideoCapabilityEntryHlsCopyTest {
             "unknown level and tier with an unknown frame rate at a size that fits",
             fittingCopy()
                 .videoProperties(Optional.of(unknownLevelAndTier))
-                .frameRate(Optional.empty())
+                .frameRate(OptionalDouble.empty())
                 .build(),
             true),
         Arguments.of(
-            "unknown frame rate", fittingCopy().frameRate(Optional.empty()).build(), true));
+            "unknown frame rate", fittingCopy().frameRate(OptionalDouble.empty()).build(), true));
   }
 
   @Test
@@ -252,7 +253,7 @@ class VideoCapabilityEntryHlsCopyTest {
             .videoProperties(Optional.empty())
             .bitDepth(OptionalInt.of(12))
             .decodedSize(Optional.of(new PictureSize(3840, 2160)))
-            .frameRate(Optional.of(new Fraction(120, 1)))
+            .frameRate(OptionalDouble.of(120))
             .build();
 
     assertThat(ENTRY.acceptsHlsCopy(version4Copy)).isTrue();
@@ -306,7 +307,7 @@ class VideoCapabilityEntryHlsCopyTest {
       @NonNull Coding coding,
       @NonNull OptionalInt bitDepth,
       @NonNull Optional<PictureSize> decodedSize,
-      @NonNull Optional<Fraction> frameRate) {
+      @NonNull OptionalDouble frameRate) {
 
     VideoStreamCopy copy() {
       return fittingCopy()
@@ -324,7 +325,7 @@ class VideoCapabilityEntryHlsCopyTest {
           && decodedSize.isPresent()
           && decodedSize.get().width() <= MAX_SIZE.width()
           && decodedSize.get().height() <= MAX_SIZE.height()
-          && frameRate.map(rate -> rate.toDouble() <= MAX_FRAME_RATE).orElse(true);
+          && (frameRate.isEmpty() || frameRate.getAsDouble() <= MAX_FRAME_RATE);
     }
 
     @Override
