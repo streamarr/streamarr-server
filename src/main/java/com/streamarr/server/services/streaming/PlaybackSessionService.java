@@ -8,6 +8,7 @@ import com.streamarr.server.exceptions.PlaybackSessionClosedException;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import java.time.Clock;
 import java.time.Duration;
@@ -22,6 +23,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import lombok.Builder;
@@ -233,14 +235,35 @@ public class PlaybackSessionService implements AutoCloseable {
 
   @EventListener
   public void onVideoCopyOutputMismatch(@NonNull VideoCopyOutputMismatchEvent event) {
-    var playback = streamOwners.get(event.streamSessionId());
+    var failedId = event.streamSessionId();
+    handleJobFailure(
+        failedId,
+        playback ->
+            reserveFormatAttempt(playback, failedId, new PlaybackSessionFailure.OutputMismatch()));
+  }
+
+  /** Fails the playback session without another format attempt, which would fail the same way. */
+  @EventListener
+  public void onTerminalTranscodeFailure(@NonNull TerminalTranscodeFailureEvent event) {
+    var failedId = event.streamSessionId();
+    var reason =
+        switch (event.failure()) {
+          case OUTPUT_MISMATCH -> new PlaybackSessionFailure.OutputMismatch();
+          case INVALID_SPECIFICATION -> new PlaybackSessionFailure.InvalidSpecification();
+        };
+    handleJobFailure(failedId, playback -> reserveFailure(playback, failedId, reason));
+  }
+
+  private void handleJobFailure(
+      UUID failedId, Function<PlaybackSession, Optional<FormatAttemptReservation>> reserve) {
+    var playback = streamOwners.get(failedId);
     if (playback == null) {
       return;
     }
 
     try {
       if (allowsRecovery(playback)) {
-        recover(playback, event.streamSessionId(), new PlaybackSessionFailure.OutputMismatch());
+        locked(playback, () -> reserve.apply(playback)).ifPresent(this::schedule);
       }
     } catch (RuntimeException failure) {
       discardAfterFailure(playback, failure);
@@ -255,31 +278,31 @@ public class PlaybackSessionService implements AutoCloseable {
     reservation.ifPresent(this::schedule);
   }
 
+  private Optional<FormatAttemptReservation> reserveFailure(
+      PlaybackSession playback, UUID failedId, PlaybackSessionFailure reason) {
+    if (!isCurrentAttempt(playback, failedId)) {
+      return Optional.empty();
+    }
+
+    return Optional.of(failPlayback(playback, failedId, reason));
+  }
+
   private Optional<FormatAttemptReservation> reserveFormatAttempt(
       PlaybackSession playback, UUID failedId, PlaybackSessionFailure fixedFailure) {
-    if (!owns(playback)
-        || !playback.current.streamSessionId().equals(failedId)
-        || playback.current instanceof PlaybackFormatAttempt.Failed
+    if (!isCurrentAttempt(playback, failedId)
         || (fixedFailure instanceof PlaybackSessionFailure.FixedFormatFailed
             && playback.current instanceof PlaybackFormatAttempt.Pending)) {
       return Optional.empty();
     }
 
-    var work = FormatAttemptReservation.builder().playback(playback).retiredStreamId(failedId);
-    playback.lastAccessedAt = clock.instant();
     var quality = playback.command.options().quality();
     if (quality != null && quality != VideoQuality.AUTO) {
-      playback.current = new PlaybackFormatAttempt.Failed(failedId, fixedFailure);
-      streamOwners.remove(failedId, playback);
-      return Optional.of(work.streamId(Optional.empty()).build());
+      return Optional.of(failPlayback(playback, failedId, fixedFailure));
     }
 
     if (playback.formatAttemptCount >= maximumFormatAttempts) {
-      playback.current =
-          new PlaybackFormatAttempt.Failed(
-              failedId, new PlaybackSessionFailure.AttemptsExhausted());
-      streamOwners.remove(failedId, playback);
-      return Optional.of(work.streamId(Optional.empty()).build());
+      return Optional.of(
+          failPlayback(playback, failedId, new PlaybackSessionFailure.AttemptsExhausted()));
     }
 
     if (fixedFailure instanceof PlaybackSessionFailure.FixedFormatFailed
@@ -288,13 +311,37 @@ public class PlaybackSessionService implements AutoCloseable {
       playback.excludedEncodeCodecFamilies.add(session.getTranscodeDecision().videoCodecFamily());
     }
 
+    playback.lastAccessedAt = clock.instant();
     var childId = UUID.randomUUID();
     playback.current = new PlaybackFormatAttempt.Pending(childId);
     playback.formatAttemptCount++;
     playback.streamIds.add(childId);
     streamOwners.remove(failedId, playback);
     streamOwners.put(childId, playback);
-    return Optional.of(work.streamId(Optional.of(childId)).build());
+    return Optional.of(
+        FormatAttemptReservation.builder()
+            .playback(playback)
+            .retiredStreamId(failedId)
+            .streamId(Optional.of(childId))
+            .build());
+  }
+
+  private boolean isCurrentAttempt(PlaybackSession playback, UUID streamId) {
+    return owns(playback)
+        && playback.current.streamSessionId().equals(streamId)
+        && !(playback.current instanceof PlaybackFormatAttempt.Failed);
+  }
+
+  private FormatAttemptReservation failPlayback(
+      PlaybackSession playback, UUID failedId, PlaybackSessionFailure reason) {
+    playback.lastAccessedAt = clock.instant();
+    playback.current = new PlaybackFormatAttempt.Failed(failedId, reason);
+    streamOwners.remove(failedId, playback);
+    return FormatAttemptReservation.builder()
+        .playback(playback)
+        .retiredStreamId(failedId)
+        .streamId(Optional.empty())
+        .build();
   }
 
   private void schedule(FormatAttemptReservation work) {

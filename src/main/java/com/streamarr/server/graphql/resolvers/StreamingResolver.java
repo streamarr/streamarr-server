@@ -253,7 +253,10 @@ public class StreamingResolver {
     return switch (failure) {
       case PlaybackSessionFailure.OutputMismatch() ->
           new PlaybackSessionError.PlaybackOutputMismatchError(
-              "The source video cannot be copied for playback.");
+              "The server cannot produce the planned video format from this source.");
+      case PlaybackSessionFailure.InvalidSpecification() ->
+          new PlaybackSessionError.PlaybackInvalidSpecificationError(
+              "The transcode worker rejected the server's plan for this video.");
       case PlaybackSessionFailure.FixedFormatFailed(var reason) ->
           new PlaybackSessionError.PlaybackFormatRejectedError(
               "The player cannot play this video format.", reason);

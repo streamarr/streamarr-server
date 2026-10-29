@@ -27,6 +27,7 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.SegmentDelivery;
+import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
@@ -302,30 +303,72 @@ class RemoteFormatFailureIT {
     "VIDEO_TRANSCODE,false",
     "FULL_TRANSCODE,false"
   })
-  @DisplayName("Should treat output mismatch as terminal only when the decision copies video")
-  void shouldTreatOutputMismatchAsTerminalOnlyWhenDecisionCopiesVideo(
-      TranscodeMode mode, boolean terminal) throws Exception {
+  @DisplayName("Should treat output mismatch as terminal when the decision copies or encodes video")
+  void shouldTreatOutputMismatchAsTerminalWhenDecisionCopiesOrEncodesVideo(
+      TranscodeMode mode, boolean copiesVideo) throws Exception {
     var events = new CapturingEventPublisher();
     try (var rig = new FailureRig(events);
         var worker = new TestWorker(rig.server)) {
-      var original = rig.session.getTranscodeDecision();
-      var decision =
-          TranscodeDecision.builder()
-              .transcodeMode(mode)
-              .videoCodecFamily(original.videoCodecFamily())
-              .audioDecision(original.audioDecision())
-              .subtitleDecision(original.subtitleDecision())
-              .videoSource(original.videoSource())
-              .build();
-      rig.executor.start(rig.requestBuilder().transcodeDecision(decision).build());
+      rig.executor.start(rig.requestBuilder().transcodeDecision(rig.decision(mode)).build());
       var job = worker.nextJob();
       worker.fail(job);
       worker.awaitProcessed(rig.server);
 
-      assertThat(rig.executor.terminalFailure(rig.session.getSessionId()).isPresent())
-          .isEqualTo(terminal);
+      assertThat(rig.executor.terminalFailure(rig.session.getSessionId()))
+          .contains(TranscodeFailure.OUTPUT_MISMATCH);
       assertThat(events.getEventsOfType(VideoCopyOutputMismatchEvent.class))
-          .hasSize(terminal ? 1 : 0);
+          .hasSize(copiesVideo ? 1 : 0);
+      assertThat(events.getEventsOfType(TerminalTranscodeFailureEvent.class))
+          .isEqualTo(
+              copiesVideo
+                  ? List.of()
+                  : List.of(terminalEventFor(job, TranscodeFailure.OUTPUT_MISMATCH)));
+    }
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = TranscodeMode.class,
+      names = {"REMUX", "AUDIO_TRANSCODE", "VIDEO_TRANSCODE", "FULL_TRANSCODE"})
+  @DisplayName("Should treat an invalid specification as terminal when the job runs in any mode")
+  void shouldTreatInvalidSpecificationAsTerminalWhenJobRunsInAnyMode(TranscodeMode mode)
+      throws Exception {
+    var events = new CapturingEventPublisher();
+    try (var rig = new FailureRig(events);
+        var worker = new TestWorker(rig.server)) {
+      rig.executor.start(rig.requestBuilder().transcodeDecision(rig.decision(mode)).build());
+      var job = worker.nextJob();
+      worker.fail(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION);
+      worker.awaitProcessed(rig.server);
+
+      assertThat(rig.executor.terminalFailure(rig.session.getSessionId()))
+          .contains(TranscodeFailure.INVALID_SPECIFICATION);
+      assertThat(events.getEventsOfType(VideoCopyOutputMismatchEvent.class)).isEmpty();
+      assertThat(events.getEventsOfType(TerminalTranscodeFailureEvent.class))
+          .containsExactly(terminalEventFor(job, TranscodeFailure.INVALID_SPECIFICATION));
+    }
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "REMUX,JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION",
+    "VIDEO_TRANSCODE,JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH",
+    "VIDEO_TRANSCODE,JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION",
+    "FULL_TRANSCODE,JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH"
+  })
+  @DisplayName("Should send no replacement attempt when a segment request follows a final failure")
+  void shouldSendNoReplacementAttemptWhenSegmentRequestFollowsFinalFailure(
+      TranscodeMode mode, JobAttemptFailure failure) throws Exception {
+    try (var rig = new FailureRig(new CapturingEventPublisher());
+        var worker = new TestWorker(rig.server)) {
+      var request = rig.requestBuilder().transcodeDecision(rig.decision(mode)).build();
+      rig.session.setHandle(rig.executor.start(request));
+      worker.fail(worker.nextJob(), failure);
+      rig.awaitStopped();
+
+      assertThat(rig.deliver()).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+      assertThatThrownBy(() -> rig.executor.start(request)).isInstanceOf(TranscodeException.class);
+      assertThat(worker.jobs).hasSize(1);
     }
   }
 
@@ -361,6 +404,16 @@ class RemoteFormatFailureIT {
       assertThat(rig.executor.terminalFailure(rig.session.getSessionId())).isEmpty();
       assertThat(events.getEventsOfType(VideoCopyOutputMismatchEvent.class)).isEmpty();
     }
+  }
+
+  private static TerminalTranscodeFailureEvent terminalEventFor(
+      VariantJob job, TranscodeFailure failure) {
+    return TerminalTranscodeFailureEvent.builder()
+        .streamSessionId(fromProto(job.getStreamSessionId()))
+        .jobAttemptId(fromProto(job.getJobAttemptId()))
+        .variantLabel(job.getVariant().getVariantLabel())
+        .failure(failure)
+        .build();
   }
 
   private static VideoCopyOutputMismatchEvent eventFor(VariantJob job) {
@@ -412,6 +465,17 @@ class RemoteFormatFailureIT {
           .width(1920)
           .height(1080)
           .bitrate(5_000_000);
+    }
+
+    private TranscodeDecision decision(TranscodeMode mode) {
+      var original = session.getTranscodeDecision();
+      return TranscodeDecision.builder()
+          .transcodeMode(mode)
+          .videoCodecFamily(original.videoCodecFamily())
+          .audioDecision(original.audioDecision())
+          .subtitleDecision(original.subtitleDecision())
+          .videoSource(original.videoSource())
+          .build();
     }
 
     private SegmentDelivery deliver() {

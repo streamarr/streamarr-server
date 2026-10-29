@@ -20,7 +20,7 @@ type FailedPlaybackFormatAttempt {
     error: PlaybackFormatAttemptError!
 }
 
-union PlaybackFormatAttemptError = PlaybackOutputMismatchError | PlaybackFormatRejectedError | PlaybackFormatAttemptsExhaustedError | PlaybackStartupFailedError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | MediaFileFrameRateUnknownError | TranscodeCapacityUnavailableError | NoEligibleVideoFormatError
+union PlaybackFormatAttemptError = PlaybackOutputMismatchError | PlaybackInvalidSpecificationError | PlaybackFormatRejectedError | PlaybackFormatAttemptsExhaustedError | PlaybackStartupFailedError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | MediaFileFrameRateUnknownError | TranscodeCapacityUnavailableError | NoEligibleVideoFormatError
 
 enum PlaybackFormatFailure {
     UNSUPPORTED_FORMAT
@@ -68,6 +68,10 @@ type PlaybackSessionClosedError implements MutationError {
 }
 
 type PlaybackOutputMismatchError implements MutationError {
+    message: String!
+}
+
+type PlaybackInvalidSpecificationError implements MutationError {
     message: String!
 }
 

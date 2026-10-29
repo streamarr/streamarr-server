@@ -28,6 +28,7 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
+import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
@@ -47,6 +48,7 @@ import com.streamarr.server.services.streaming.PlaybackSessionRequest;
 import com.streamarr.server.services.streaming.PlaybackSessionService;
 import com.streamarr.server.services.streaming.StartPlaybackSessionCommand;
 import com.streamarr.server.services.streaming.StreamingService;
+import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.server.services.watchprogress.MarkUnwatchedRejection;
 import com.streamarr.server.services.watchprogress.MarkWatchedRejection;
@@ -74,6 +76,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -325,6 +328,36 @@ class StreamingResolverTest {
                 .read(
                     "data.playbackSession.currentFormatAttempt.error['__typename']", String.class))
         .isEqualTo("PlaybackOutputMismatchError");
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "OUTPUT_MISMATCH,PlaybackOutputMismatchError",
+    "INVALID_SPECIFICATION,PlaybackInvalidSpecificationError"
+  })
+  @DisplayName("Should expose the typed worker failure when a job attempt fails finally")
+  void shouldExposeTheTypedWorkerFailureWhenAJobAttemptFailsFinally(
+      TranscodeFailure failure, String typename) {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+    var created = startPlayback(VideoQuality.AUTO);
+    var playbackId = created.read(CREATED_PLAYBACK + ".id", String.class);
+    var streamId =
+        created.read(CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.id", String.class);
+
+    playbackSessions.onTerminalTranscodeFailure(
+        TerminalTranscodeFailureEvent.builder()
+            .streamSessionId(UUID.fromString(streamId))
+            .jobAttemptId(UUID.randomUUID())
+            .variantLabel("default")
+            .failure(failure)
+            .build());
+
+    var status = playbackStatus(playbackId);
+    assertThat(status.read("data.playbackSession.formatAttemptCount", Integer.class)).isEqualTo(1);
+    assertThat(
+            status.read(
+                "data.playbackSession.currentFormatAttempt.error['__typename']", String.class))
+        .isEqualTo(typename);
   }
 
   @Test
