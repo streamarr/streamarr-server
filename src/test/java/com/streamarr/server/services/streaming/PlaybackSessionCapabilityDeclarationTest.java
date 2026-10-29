@@ -20,6 +20,7 @@ import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
+import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
@@ -163,6 +164,54 @@ class PlaybackSessionCapabilityDeclarationTest {
     assertThat(start(declaration))
         .isEqualTo(
             Outcome.rejected(List.of(new CodecProfilesMissing(0), new CompatibleBasesMissing(0))));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("entriesForDolbyVisionWithoutACompatibleBase")
+  @DisplayName(
+      "Should start playback when a video entry lists no compatible base for Dolby Vision without one")
+  void shouldStartPlaybackWhenAVideoEntryListsNoCompatibleBaseForDolbyVisionWithoutOne(
+      String scenario, VideoCapabilityEntry entry) {
+    var declaration =
+        defaultDeclarationBuilder().video(List.of(h264EntryBuilder().build(), entry)).build();
+
+    var outcome = start(declaration);
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(streams.getAllSessions()).hasSize(1);
+  }
+
+  static Stream<Arguments> entriesForDolbyVisionWithoutACompatibleBase() {
+    return Stream.of(
+        Arguments.of(
+            "HEVC with Dolby Vision profile 5",
+            hevcEntryBuilder()
+                .compatibleBases(List.of())
+                .dolbyVisionProfiles(List.of(dolbyVision(PROFILE_5)))
+                .build()),
+        Arguments.of(
+            "AV1 with Dolby Vision profile 10.0",
+            av1EntryBuilder()
+                .compatibleBases(List.of())
+                .dolbyVisionProfiles(List.of(dolbyVision(PROFILE_10_0)))
+                .build()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse a video entry without a compatible base when each Dolby Vision profile has one")
+  void shouldRefuseAVideoEntryWithoutACompatibleBaseWhenEachDolbyVisionProfileHasOne() {
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    hevcEntryBuilder()
+                        .compatibleBases(List.of())
+                        .dolbyVisionProfiles(List.of(dolbyVision(PROFILE_8_1)))
+                        .build()))
+            .build();
+
+    assertThat(start(declaration)).isEqualTo(Outcome.rejected(new CompatibleBasesMissing(0)));
   }
 
   @Test
