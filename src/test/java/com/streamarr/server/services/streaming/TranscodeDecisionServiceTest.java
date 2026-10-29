@@ -36,6 +36,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Transcode Decision Service Tests")
@@ -1016,6 +1017,49 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
     assertThat(decision.audioDecision().codec()).isEqualTo("aac");
     assertThat(decision.audioDecision().channels()).isEqualTo(6);
+  }
+
+  @ParameterizedTest(name = "{0} source channels")
+  @ValueSource(ints = {3, 4})
+  @DisplayName("Should encode stereo AAC when the source has more channels than the client plays")
+  void shouldEncodeStereoAacWhenTheSourceHasMoreChannelsThanTheClientPlays(int sourceChannels) {
+    var source = probe("h264", "aac", sourceChannels, 256_000L);
+    var clientOptions = options(List.of("h264"), List.of("aac"), 2);
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
+    assertThat(decision.audioDecision().codec()).isEqualTo("aac");
+    assertThat(decision.audioDecision().channels()).isEqualTo(2);
+  }
+
+  @ParameterizedTest(name = "{0} source channels")
+  @ValueSource(ints = {3, 4, 5, 7})
+  @DisplayName("Should announce the source's channel count when the client plays every channel")
+  void shouldAnnounceTheSourcesChannelCountWhenTheClientPlaysEveryChannel(int sourceChannels) {
+    var source = probe("h264", "aac", sourceChannels, 256_000L);
+    var clientOptions = options(List.of("h264"), List.of("aac"), 8);
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .clientOptions(clientOptions)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
+    assertThat(decision.audioDecision().channels()).isEqualTo(sourceChannels);
   }
 
   @Test

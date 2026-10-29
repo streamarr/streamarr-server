@@ -193,7 +193,10 @@ public class TranscodeDecisionService {
     var candidates = new HashSet<>(clientAudioCodecs);
     candidates.retainAll(AudioDecision.deliverableCodecs());
 
-    int normalizedChannels = AudioDecision.normalizeChannels(source.audioChannels().orElse(2));
+    // A copy carries every source channel, so the copy rule and the announced count use the
+    // source's count. Only an encode lays the channels out in a normalized layout.
+    int sourceChannels = source.audioChannels().orElse(2);
+    int normalizedChannels = AudioDecision.normalizeChannels(sourceChannels);
     int effectiveChannels = Math.min(normalizedChannels, maxChannels);
 
     var sourceCodecString =
@@ -202,12 +205,12 @@ public class TranscodeDecisionService {
             .flatMap(StreamInfo::codecString)
             .filter(codecString -> isCopyableAudioCodecString(source.audioCodec(), codecString));
     if (candidates.contains(source.audioCodec())
-        && normalizedChannels <= maxChannels
+        && sourceChannels <= maxChannels
         && sourceCodecString.isPresent()) {
       return AudioDecision.builder()
           .mode(AudioMode.COPY)
           .codec(source.audioCodec())
-          .channels(normalizedChannels)
+          .channels(sourceChannels)
           .bitrate(
               source.audioBitrate().orElse(AudioDecision.bitrateForChannels(normalizedChannels)))
           .sourceCodecString(sourceCodecString)
