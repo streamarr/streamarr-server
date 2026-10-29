@@ -65,7 +65,7 @@ public sealed interface ProbeOutcome {
                   chosen ->
                       VideoPlaybackFacts.builder()
                           .streamIndex(chosen.streamIndex())
-                          .codec(video.codec().map(ProbedVideoCodec::fromProbedName))
+                          .codecFamily(video.codec().map(ProbedCodecFamily::fromProbedName))
                           .dynamicRange(video.dynamicRange().orElse(VideoDynamicRange.UNSPECIFIED))
                           .bitDepth(video.bitDepth())
                           .chromaSubsampling(video.chromaSubsampling())

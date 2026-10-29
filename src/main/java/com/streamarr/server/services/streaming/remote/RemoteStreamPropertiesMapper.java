@@ -4,7 +4,7 @@ import com.streamarr.server.domain.streaming.ColorPrimaries;
 import com.streamarr.server.domain.streaming.ColorRange;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
 import com.streamarr.server.domain.streaming.MatrixCoefficients;
-import com.streamarr.server.domain.streaming.ProbedVideoCodec;
+import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.TransferCharacteristics;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
@@ -37,13 +37,13 @@ final class RemoteStreamPropertiesMapper {
       return builder;
     }
 
-    var codec = ProbedVideoCodec.fromProbedName(stream.getCodec());
+    var codecFamily = ProbedCodecFamily.fromProbedName(stream.getCodec());
     checkStaticHdrMetadataOmission(stream);
     checkFrameEvidence(stream);
-    checkPacketEvidence(stream, codec);
-    checkCodecVisibility(stream, codec);
-    checkCompatibleBase(stream, codec);
-    return builder.videoProperties(Optional.of(properties(stream, codec)));
+    checkPacketEvidence(stream, codecFamily);
+    checkCodecVisibility(stream, codecFamily);
+    checkCompatibleBase(stream, codecFamily);
+    return builder.videoProperties(Optional.of(properties(stream, codecFamily)));
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
@@ -100,18 +100,18 @@ final class RemoteStreamPropertiesMapper {
     }
   }
 
-  private static void checkPacketEvidence(ProbeStreamInfo stream, ProbedVideoCodec codec) {
+  private static void checkPacketEvidence(ProbeStreamInfo stream, ProbedCodecFamily codecFamily) {
     if (!stream.hasFirstPacketsCarryPresentationTimes()) {
       return;
     }
 
-    if (!stream.getFirstFramesRead() || !codec.isWalkedByProbe()) {
+    if (!stream.getFirstFramesRead() || !codecFamily.isWalkedByProbe()) {
       throw contractViolation("Worker probe reported presentation times of packets it never read");
     }
   }
 
-  private static void checkCodecVisibility(ProbeStreamInfo stream, ProbedVideoCodec codec) {
-    switch (codec) {
+  private static void checkCodecVisibility(ProbeStreamInfo stream, ProbedCodecFamily codecFamily) {
+    switch (codecFamily) {
       case H264, HEVC -> {
         // The worker reads every frame feature of these codecs from the frames or the packets.
       }
@@ -131,8 +131,7 @@ final class RemoteStreamPropertiesMapper {
   }
 
   // The frames of a codec that the probe does not walk can still prove HDR10+ or an RPU present,
-  // but
-  // only a walk rules a feature out or places an RPU.
+  // but only a walk rules a feature out or places an RPU.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static void checkFrameEvidenceOfUnwalkedCodec(
       com.streamarr.transcode.v1.VideoDynamicRange range) {
@@ -150,9 +149,10 @@ final class RemoteStreamPropertiesMapper {
   // From probe version 5 on, profiles 5 and 10.0 have no compatible base whatever the signaled
   // transfer says. Otherwise the signaled transfer, which transfer_characteristics names, decides
   // the base.
-  private static void checkCompatibleBase(ProbeStreamInfo stream, ProbedVideoCodec codec) {
+  private static void checkCompatibleBase(ProbeStreamInfo stream, ProbedCodecFamily codecFamily) {
     var range = stream.getDynamicRange();
-    if (range.hasDolbyVisionPresent() && isBaselessProfile(codec, range.getDolbyVisionPresent())) {
+    if (range.hasDolbyVisionPresent()
+        && isBaselessProfile(codecFamily, range.getDolbyVisionPresent())) {
       checkBaselessProfileCompatibleBase(range.getCompatibleBase());
       return;
     }
@@ -198,13 +198,14 @@ final class RemoteStreamPropertiesMapper {
     };
   }
 
-  private static boolean isBaselessProfile(ProbedVideoCodec codec, DolbyVisionPresent present) {
+  private static boolean isBaselessProfile(
+      ProbedCodecFamily codecFamily, DolbyVisionPresent present) {
     if (present.getDeclared().hasProfile()) {
       return isBaselessRecord(present.getDeclared());
     }
 
     var header = present.getFirstRpuHeader();
-    return codec.hasRecordLessBaselessProfile()
+    return codecFamily.hasRecordLessBaselessProfile()
         && present.hasFirstRpuHeader()
         && header.getVdrRpuProfile() == 0
         && header.getBaseLayerFullRange();
@@ -220,7 +221,8 @@ final class RemoteStreamPropertiesMapper {
     };
   }
 
-  private static VideoStreamProperties properties(ProbeStreamInfo stream, ProbedVideoCodec codec) {
+  private static VideoStreamProperties properties(
+      ProbeStreamInfo stream, ProbedCodecFamily codecFamily) {
     var profile = codecProfile(stream.getCodecProfile());
     var tier = codecTier(stream.getCodecTier());
     if (profile.isEmpty() && (stream.hasCodecLevel() || tier.isPresent())) {
@@ -228,11 +230,11 @@ final class RemoteStreamPropertiesMapper {
     }
 
     // The worker reads the profile from the record or sequence header of the stream's own codec.
-    if (profile.isPresent() && profile.get().codec() != codec) {
+    if (profile.isPresent() && profile.get().codecFamily() != codecFamily) {
       throw contractViolation("Worker probe gave a stream a codec profile of another codec");
     }
 
-    if (tier.isPresent() && codec == ProbedVideoCodec.H264) {
+    if (tier.isPresent() && codecFamily == ProbedCodecFamily.H264) {
       throw contractViolation("Worker probe gave an H.264 codec profile a tier");
     }
 

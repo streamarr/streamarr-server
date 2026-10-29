@@ -18,8 +18,8 @@ public enum VideoCodecProfile {
   AV1_HIGH,
   AV1_PROFESSIONAL;
 
-  /** The codec whose profiles include this one. */
-  public ProbedVideoCodec codec() {
+  /** The codec family whose profiles include this one. */
+  public ProbedCodecFamily codecFamily() {
     return switch (this) {
       case H264_CONSTRAINED_BASELINE,
           H264_BASELINE,
@@ -29,10 +29,10 @@ public enum VideoCodecProfile {
           H264_HIGH_10,
           H264_HIGH_422,
           H264_HIGH_444_PREDICTIVE ->
-          ProbedVideoCodec.H264;
+          ProbedCodecFamily.H264;
       case HEVC_MAIN, HEVC_MAIN_10, HEVC_MAIN_STILL_PICTURE, HEVC_FORMAT_RANGE_EXTENSIONS ->
-          ProbedVideoCodec.HEVC;
-      case AV1_MAIN, AV1_HIGH, AV1_PROFESSIONAL -> ProbedVideoCodec.AV1;
+          ProbedCodecFamily.HEVC;
+      case AV1_MAIN, AV1_HIGH, AV1_PROFESSIONAL -> ProbedCodecFamily.AV1;
     };
   }
 }

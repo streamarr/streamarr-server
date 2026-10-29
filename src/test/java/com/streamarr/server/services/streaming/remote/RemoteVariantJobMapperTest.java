@@ -11,7 +11,7 @@ import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.Fraction;
-import com.streamarr.server.domain.streaming.ProbedVideoCodec;
+import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
@@ -222,7 +222,7 @@ class RemoteVariantJobMapperTest {
   })
   @DisplayName("Should send the source's codec family when the job encodes the video")
   void shouldSendTheSourcesCodecFamilyWhenTheJobEncodesTheVideo(
-      ProbedVideoCodec sourceCodec, VideoCodecFamily sourceCodecFamily) {
+      ProbedCodecFamily probedCodecFamily, VideoCodecFamily sourceCodecFamily) {
     var request =
         encodeAttempt("h264")
             .transcodeDecision(
@@ -234,7 +234,7 @@ class RemoteVariantJobMapperTest {
                     .videoSource(
                         Optional.of(
                             VideoPlaybackFactsFixture.sdrH264FactsBuilder()
-                                .codec(Optional.of(sourceCodec))
+                                .codecFamily(Optional.of(probedCodecFamily))
                                 .build()))
                     .build())
             .build();
@@ -262,7 +262,8 @@ class RemoteVariantJobMapperTest {
                     .videoSource(
                         Optional.of(
                             VideoPlaybackFactsFixture.sdrH264FactsBuilder()
-                                .codec(Optional.of(ProbedVideoCodec.fromProbedName(sourceCodec)))
+                                .codecFamily(
+                                    Optional.of(ProbedCodecFamily.fromProbedName(sourceCodec)))
                                 .build()))
                     .build())
             .build();
@@ -286,7 +287,7 @@ class RemoteVariantJobMapperTest {
                     .videoSource(
                         Optional.of(
                             VideoPlaybackFactsFixture.sdrH264FactsBuilder()
-                                .codec(Optional.empty())
+                                .codecFamily(Optional.empty())
                                 .build()))
                     .build())
             .build();
@@ -315,7 +316,7 @@ class RemoteVariantJobMapperTest {
                     .videoSource(
                         Optional.of(
                             VideoPlaybackFactsFixture.sdrH264FactsBuilder()
-                                .codec(Optional.of(ProbedVideoCodec.HEVC))
+                                .codecFamily(Optional.of(ProbedCodecFamily.HEVC))
                                 .videoProperties(properties)
                                 .build()))
                     .build())

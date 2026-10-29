@@ -3,16 +3,16 @@ package com.streamarr.server.domain.streaming;
 import lombok.NonNull;
 
 /**
- * A video stream's codec, read from the codec name that the probe stores, such as {@code hevc}.
- * Every codec that the server has no rules for reads as {@link #OTHER}.
+ * A video stream's codec family, read from the codec name that the probe stores, such as {@code
+ * hevc}. Every codec family that the server has no rules for reads as {@link #OTHER}.
  */
-public enum ProbedVideoCodec {
+public enum ProbedCodecFamily {
   H264,
   HEVC,
   AV1,
   OTHER;
 
-  public static ProbedVideoCodec fromProbedName(@NonNull String name) {
+  public static ProbedCodecFamily fromProbedName(@NonNull String name) {
     return switch (name) {
       case "h264" -> H264;
       case "hevc" -> HEVC;
@@ -22,9 +22,9 @@ public enum ProbedVideoCodec {
   }
 
   /**
-   * Whether the probe walks this codec's extradata and, beside its first frames, its first packets.
-   * Only a walk rules a frame feature out, places an RPU or tells whether the packets carry
-   * presentation times.
+   * Whether the probe walks the extradata of a stream of this codec family and, beside its first
+   * frames, its first packets. Only a walk rules a frame feature out, places an RPU or tells
+   * whether the packets carry presentation times.
    */
   public boolean isWalkedByProbe() {
     return switch (this) {
