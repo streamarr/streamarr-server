@@ -2,7 +2,6 @@ package com.streamarr.server.fixtures;
 
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DolbyVision;
-import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
@@ -12,6 +11,7 @@ import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoStreamCopy;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import lombok.experimental.UtilityClass;
 
@@ -33,7 +33,7 @@ public class VideoStreamCopyFixture {
                     .build()))
         .bitDepth(OptionalInt.of(10))
         .decodedSize(Optional.of(new PictureSize(1920, 1080)))
-        .frameRate(Optional.of(new Fraction(30, 1)))
+        .frameRate(OptionalDouble.of(30))
         .dynamicRange(
             new VideoDynamicRange(CompatibleBase.SDR, Presence.ABSENT, new DolbyVision.Absent()));
   }

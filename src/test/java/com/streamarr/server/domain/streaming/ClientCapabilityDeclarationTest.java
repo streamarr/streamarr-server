@@ -10,8 +10,9 @@ import com.streamarr.server.fixtures.VideoStreamCopyFixture;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.function.UnaryOperator;
 import java.util.Optional;
+import java.util.OptionalDouble;
+import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -158,7 +159,7 @@ class ClientCapabilityDeclarationTest {
     var copy =
         VideoStreamCopyFixture.sdrHevcCopyBuilder()
             .decodedSize(Optional.of(new PictureSize(width, height)))
-            .frameRate(Optional.of(new Fraction(frameRate, 1)))
+            .frameRate(OptionalDouble.of(frameRate))
             .build();
 
     assertThat(declaration.acceptsHlsCopy(copy)).isEqualTo(accepted);

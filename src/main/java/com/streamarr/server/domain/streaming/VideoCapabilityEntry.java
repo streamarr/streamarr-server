@@ -3,6 +3,7 @@ package com.streamarr.server.domain.streaming;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import lombok.Builder;
 import lombok.NonNull;
@@ -92,8 +93,8 @@ public record VideoCapabilityEntry(
   }
 
   // A stream without a usable frame rate cannot be encoded (#446), so a copy is its only path.
-  private boolean acceptsFrameRate(Optional<Fraction> frameRate) {
-    return frameRate.map(rate -> rate.toDouble() <= maxFrameRate).orElse(true);
+  private boolean acceptsFrameRate(OptionalDouble frameRate) {
+    return frameRate.isEmpty() || frameRate.getAsDouble() <= maxFrameRate;
   }
 
   // Declaring a compatible base declares neither Dolby Vision nor HDR10+ (ADR 0049).
