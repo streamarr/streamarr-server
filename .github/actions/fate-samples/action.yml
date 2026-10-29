@@ -1,0 +1,35 @@
+name: FATE Samples
+description: >-
+  Fetch the FFmpeg FATE samples that ProbeVersion5MergeGateSmokeTest reads, and set FATE_SUITE.
+  The samples state no license (streamarr/streamarr-transcode-worker#108), so the repository
+  never commits them.
+
+runs:
+  using: composite
+  steps:
+    - name: Restore the FATE samples
+      id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ runner.temp }}/fate-suite
+        key: fate-samples-${{ hashFiles('.github/actions/fate-samples/action.yml') }}
+
+    - name: Fetch the FATE samples
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        printf '%s\n' \
+          hevc/hdr10_plus_h265_sample.hevc \
+          mkv/dovi-p7-hvce.mkv \
+          mkv/hdr10tags-both.mkv \
+          mov/dovi-p5.mp4 \
+          mov/dovi-p7-hvce.mp4 \
+          mov/dovi-p7.mp4 \
+          mov/dovi-p81.mp4 \
+          mpegts/dovi-p7.ts |
+          rsync --times --copy-links --timeout=60 --contimeout=60 --files-from=- \
+            rsync://fate-suite.ffmpeg.org/fate-suite/ "$RUNNER_TEMP/fate-suite/"
+
+    - name: Point the smoke tests at the FATE samples
+      shell: bash
+      run: printf 'FATE_SUITE=%s\n' "$RUNNER_TEMP/fate-suite" >> "$GITHUB_ENV"

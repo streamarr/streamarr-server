@@ -113,7 +113,12 @@ jobs:
           ./mvnw --batch-mode verify -Pci-${{ matrix.suite }}
           -Dcheckstyle.skip=${{ matrix.suite == 'integration' }}
 
-      # These real-worker tests prove playback continuity across producer replacement.
+      - name: Fetch FATE samples
+        if: matrix.suite == 'unit'
+        uses: $/.github/actions/fate-samples
+
+      # These real-worker tests prove playback continuity across producer replacement, and the
+      # probe version 5 merge gate (#394) reads FATE samples.
       - name: Run HLS smoke tests
         if: matrix.suite == 'unit'
         run: >-
@@ -257,6 +262,10 @@ jobs:
           java-version: '25'
           distribution: 'zulu'
           cache: maven
+
+      - name: Fetch FATE samples
+        if: matrix.architecture == 'arm64'
+        uses: $/.github/actions/fate-samples
 
       - name: Run HLS smoke tests
         if: matrix.architecture == 'arm64'

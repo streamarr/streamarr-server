@@ -77,6 +77,18 @@ Renovate proposes digest and version updates. Server CI verifies compatibility b
 Set `STREAMARR_WORKER_IMAGE` or pass `-Dstreamarr.worker.image=<image>` to test a local worker build.
 No host FFmpeg installation is needed.
 
+`ProbeVersion5MergeGateSmokeTest` reads samples from FFmpeg's FATE suite.
+The samples state no license, so the repository never commits them.
+Set `FATE_SUITE`, or pass `-DFATE_SUITE=<path>`, to a local copy of the suite.
+Without the suite, the test fails.
+CI fetches only the samples that the test names, with `.github/actions/fate-samples`.
+
+[source,bash]
+----
+rsync -vrltLW rsync://fate-suite.ffmpeg.org/fate-suite/ ~/fate-suite
+FATE_SUITE=~/fate-suite ./mvnw test -Dsurefire.excludedGroups= -Dtest=ProbeVersion5MergeGateSmokeTest
+----
+
 == Container Images
 
 When the Maven version is `X.Y.Z-SNAPSHOT`, successful `main` CI publishes that exact tag for both architectures.

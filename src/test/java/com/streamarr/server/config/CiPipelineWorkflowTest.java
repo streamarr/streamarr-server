@@ -26,6 +26,8 @@ class CiPipelineWorkflowTest {
 
   private static final String SONAR_ANALYSIS =
       "Analyze coverage and require the SonarCloud quality gate";
+  private static final String SMOKE_TESTS = "Run HLS smoke tests";
+  private static final String FATE_SAMPLES = "Fetch FATE samples";
 
   @TempDir private Path temporaryDirectory;
 
@@ -287,6 +289,16 @@ class CiPipelineWorkflowTest {
     assertThat(job("contracts")).doesNotContainKey("needs");
     assertThat(stepNames("contracts")).containsAll(contractChecks);
     assertThat(stepNames("application")).doesNotContainAnyElementsOf(contractChecks);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"application", "package_image"})
+  @DisplayName("Should fetch the FATE samples first when a job runs the smoke tests")
+  void shouldFetchTheFateSamplesFirstWhenAJobRunsTheSmokeTests(String job) throws Exception {
+    assertThat(stepNames(job)).containsSubsequence(FATE_SAMPLES, SMOKE_TESTS);
+    assertThat(step(job, FATE_SAMPLES))
+        .containsEntry("uses", "$/.github/actions/fate-samples")
+        .containsEntry("if", step(job, SMOKE_TESTS).get("if"));
   }
 
   private static Map<String, String> successfulChecks() {
