@@ -334,11 +334,13 @@ class RemoteVariantJobMapperTest {
         Arguments.of("probed before version 5", Optional.empty(), false));
   }
 
-  @Test
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
   @DisplayName(
-      "Should tell a copy that the source's packets carry presentation times when the probe saw"
-          + " them")
-  void shouldTellACopyThatTheSourcesPacketsCarryPresentationTimesWhenTheProbeSawThem() {
+      "Should tell a copy whether the source's packets carry presentation times when the probe"
+          + " stored the fact")
+  void shouldTellACopyWhetherTheSourcesPacketsCarryPresentationTimesWhenTheProbeStoredTheFact(
+      boolean carried) {
     var request =
         copyAttempt()
             .transcodeDecision(
@@ -346,14 +348,15 @@ class RemoteVariantJobMapperTest {
                     .videoSource(
                         Optional.of(
                             VideoPlaybackFactsFixture.sdrH264FactsBuilder()
-                                .videoProperties(propertiesWithPresentationTimes(Optional.of(true)))
+                                .videoProperties(
+                                    propertiesWithPresentationTimes(Optional.of(carried)))
                                 .build()))
                     .build())
             .build();
 
     var video = mapper.map(request).getDecision().getVideo();
 
-    assertThat(video.getSourcePacketsCarryPresentationTimes()).isTrue();
+    assertThat(video.getSourcePacketsCarryPresentationTimes()).isEqualTo(carried);
   }
 
   @ParameterizedTest
@@ -485,11 +488,15 @@ class RemoteVariantJobMapperTest {
                 .build());
   }
 
+  // Each case sets every field apart from its default, and from the fields that could take its
+  // place, so a field that the mapper drops or swaps reaches the worker wrong.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  @Test
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("firstRpuHeaders")
   @DisplayName(
       "Should send the source's first RPU header and RPU placement when the probe read them")
-  void shouldSendTheSourcesFirstRpuHeaderAndRpuPlacementWhenTheProbeReadThem() {
+  void shouldSendTheSourcesFirstRpuHeaderAndRpuPlacementWhenTheProbeReadThem(
+      DolbyVisionRpuHeader stored, com.streamarr.transcode.v1.DolbyVisionRpuHeader.Builder sent) {
     var range =
         sourceRangeOf(
             new com.streamarr.server.domain.streaming.VideoDynamicRange(
@@ -498,31 +505,49 @@ class RemoteVariantJobMapperTest {
                 new com.streamarr.server.domain.streaming.DolbyVision.Present(
                     Optional.empty(),
                     com.streamarr.server.domain.streaming.Presence.PRESENT,
-                    Optional.of(
-                        DolbyVisionRpuHeader.builder()
-                            .vdrRpuProfile(0)
-                            .baseLayerFullRange(true)
-                            .enhancementLayerSpatialResamplingFilter(true)
-                            .disableResidual(true)
-                            .vdrBitDepth(12)
-                            .build()),
+                    Optional.of(stored),
                     DolbyVisionRpuPlacement.STARTS_SAMPLE)));
 
     assertThat(range.getDolbyVisionPresent())
         .isEqualTo(
             DolbyVisionPresent.newBuilder()
                 .setObservedRpu(Presence.PRESENCE_PRESENT)
-                .setFirstRpuHeader(
-                    com.streamarr.transcode.v1.DolbyVisionRpuHeader.newBuilder()
-                        .setVdrRpuProfile(0)
-                        .setBaseLayerFullRange(true)
-                        .setEnhancementLayerSpatialResamplingFilter(true)
-                        .setDisableResidual(true)
-                        .setVdrBitDepth(12))
+                .setFirstRpuHeader(sent)
                 .setRpuPlacement(
                     com.streamarr.transcode.v1.DolbyVisionRpuPlacement
                         .DOLBY_VISION_RPU_PLACEMENT_STARTS_SAMPLE)
                 .build());
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  static Stream<Arguments> firstRpuHeaders() {
+    return Stream.of(
+        Arguments.of(
+            DolbyVisionRpuHeader.builder()
+                .vdrRpuProfile(1)
+                .baseLayerFullRange(true)
+                .enhancementLayerSpatialResamplingFilter(false)
+                .disableResidual(true)
+                .vdrBitDepth(12)
+                .build(),
+            com.streamarr.transcode.v1.DolbyVisionRpuHeader.newBuilder()
+                .setVdrRpuProfile(1)
+                .setBaseLayerFullRange(true)
+                .setDisableResidual(true)
+                .setVdrBitDepth(12)),
+        Arguments.of(
+            DolbyVisionRpuHeader.builder()
+                .vdrRpuProfile(1)
+                .baseLayerFullRange(false)
+                .enhancementLayerSpatialResamplingFilter(true)
+                .disableResidual(true)
+                .vdrBitDepth(10)
+                .build(),
+            com.streamarr.transcode.v1.DolbyVisionRpuHeader.newBuilder()
+                .setVdrRpuProfile(1)
+                .setEnhancementLayerSpatialResamplingFilter(true)
+                .setDisableResidual(true)
+                .setVdrBitDepth(10)));
   }
 
   // ADR 0036 names each RPU placement the same way in the domain and the job.

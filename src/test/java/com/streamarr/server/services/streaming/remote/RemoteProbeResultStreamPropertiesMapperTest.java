@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming.remote;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.streaming.ColorPrimaries;
@@ -65,6 +66,10 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static final com.streamarr.transcode.v1.Presence REPORTED_ABSENT =
       com.streamarr.transcode.v1.Presence.PRESENCE_ABSENT;
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static final com.streamarr.transcode.v1.DolbyVisionRpuPlacement REPORTED_STARTS_SAMPLE =
+      com.streamarr.transcode.v1.DolbyVisionRpuPlacement.DOLBY_VISION_RPU_PLACEMENT_STARTS_SAMPLE;
 
   private final RemoteProbeResultMapper mapper = new RemoteProbeResultMapper();
 
@@ -313,6 +318,62 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         .contains(new DolbyVision.Present(Optional.empty(), Presence.PRESENT));
   }
 
+  // Each case sets every field apart from its default, and from the fields that could take its
+  // place, so a field that the mapper drops or swaps reads back wrong.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @ParameterizedTest(name = "{1}")
+  @MethodSource("firstRpuHeaders")
+  @DisplayName("Should keep each field of the first RPU header when the probe read RPUs")
+  void shouldKeepEachFieldOfTheFirstRpuHeaderWhenTheProbeReadRpus(
+      com.streamarr.transcode.v1.DolbyVisionRpuHeader.Builder reported,
+      DolbyVisionRpuHeader expected) {
+    var video =
+        withDolbyVision(
+            sdrHevcWithFramesRead(),
+            DolbyVisionPresent.newBuilder()
+                .setObservedRpu(REPORTED_PRESENT)
+                .setFirstRpuHeader(reported));
+
+    var stream = videoOf(version5(media -> media.setStreams(0, video)));
+
+    assertThat(stream.dynamicRange())
+        .map(VideoDynamicRange::dolbyVision)
+        .map(DolbyVision.Present.class::cast)
+        .flatMap(DolbyVision.Present::firstRpuHeader)
+        .contains(expected);
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  static Stream<Arguments> firstRpuHeaders() {
+    return Stream.of(
+        Arguments.of(
+            com.streamarr.transcode.v1.DolbyVisionRpuHeader.newBuilder()
+                .setVdrRpuProfile(1)
+                .setBaseLayerFullRange(true)
+                .setDisableResidual(true)
+                .setVdrBitDepth(12),
+            DolbyVisionRpuHeader.builder()
+                .vdrRpuProfile(1)
+                .baseLayerFullRange(true)
+                .enhancementLayerSpatialResamplingFilter(false)
+                .disableResidual(true)
+                .vdrBitDepth(12)
+                .build()),
+        Arguments.of(
+            com.streamarr.transcode.v1.DolbyVisionRpuHeader.newBuilder()
+                .setVdrRpuProfile(1)
+                .setEnhancementLayerSpatialResamplingFilter(true)
+                .setDisableResidual(true)
+                .setVdrBitDepth(10),
+            DolbyVisionRpuHeader.builder()
+                .vdrRpuProfile(1)
+                .baseLayerFullRange(false)
+                .enhancementLayerSpatialResamplingFilter(true)
+                .disableResidual(true)
+                .vdrBitDepth(10)
+                .build()));
+  }
+
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   @ParameterizedTest
   @EnumSource(
@@ -321,27 +382,17 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         "DOLBY_VISION_RPU_PLACEMENT_AFTER_OWN_PICTURE",
         "DOLBY_VISION_RPU_PLACEMENT_STARTS_SAMPLE"
       })
-  @DisplayName("Should keep the first RPU header and the RPU placement when the probe read RPUs")
-  void shouldKeepTheFirstRpuHeaderAndTheRpuPlacementWhenTheProbeReadRpus(
+  @DisplayName("Should keep the RPU placement when the probe read RPUs")
+  void shouldKeepTheRpuPlacementWhenTheProbeReadRpus(
       com.streamarr.transcode.v1.DolbyVisionRpuPlacement placement) {
     var stream = videoOf(version5(media -> media.setStreams(0, profile8HevcWithRpus(placement))));
 
     assertThat(stream.dynamicRange())
         .map(VideoDynamicRange::dolbyVision)
-        .contains(
-            new DolbyVision.Present(
-                Optional.empty(),
-                Presence.PRESENT,
-                Optional.of(
-                    DolbyVisionRpuHeader.builder()
-                        .vdrRpuProfile(1)
-                        .baseLayerFullRange(false)
-                        .enhancementLayerSpatialResamplingFilter(false)
-                        .disableResidual(true)
-                        .vdrBitDepth(12)
-                        .build()),
-                DolbyVisionRpuPlacement.valueOf(
-                    placement.name().substring("DOLBY_VISION_RPU_PLACEMENT_".length()))));
+        .map(DolbyVision.Present.class::cast)
+        .map(DolbyVision.Present::rpuPlacement)
+        .map(Enum::name)
+        .contains(placement.name().substring("DOLBY_VISION_RPU_PLACEMENT_".length()));
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
@@ -368,21 +419,13 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         .contains(DolbyVisionRpuPlacement.UNSPECIFIED);
   }
 
+  // ADR 0036: profiles 5 and 10.0 have no compatible base whatever the signaled transfer says.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  @Test
-  @DisplayName(
-      "Should keep a record-less profile 5 stream with a PQ transfer when its compatible base is"
-          + " none")
-  void shouldKeepARecordLessProfile5StreamWithAPqTransferWhenItsCompatibleBaseIsNone() {
-    var video = hevc().setTransferCharacteristics(PQ_TRANSFER).setFirstFramesRead(true);
-    video
-        .getDynamicRangeBuilder()
-        .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_NONE)
-        .setDolbyVisionPresent(
-            DolbyVisionPresent.newBuilder()
-                .setObservedRpu(com.streamarr.transcode.v1.Presence.PRESENCE_PRESENT)
-                .setFirstRpuHeader(profile5RpuHeader()));
-
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("profilesWithoutABase")
+  @DisplayName("Should keep no compatible base when the Dolby Vision profile has none")
+  void shouldKeepNoCompatibleBaseWhenTheDolbyVisionProfileHasNone(
+      String profile, ProbeStreamInfo.Builder video) {
     var stream = videoOf(version5(media -> media.setStreams(0, video)));
 
     assertThat(stream.dynamicRange())
@@ -390,24 +433,67 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         .contains(com.streamarr.server.domain.streaming.CompatibleBase.NONE);
   }
 
-  @SuppressWarnings("checkstyle:fullyQualifiedName")
-  @Test
-  @DisplayName("Should keep a record-less AV1 profile 10.0 stream when its compatible base is none")
-  void shouldKeepARecordLessAv1Profile10Point0StreamWhenItsCompatibleBaseIsNone() {
-    var video = av1().setFirstFramesRead(true);
-    video
-        .getDynamicRangeBuilder()
-        .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_NONE)
-        .setDolbyVisionPresent(
-            DolbyVisionPresent.newBuilder()
-                .setObservedRpu(com.streamarr.transcode.v1.Presence.PRESENCE_PRESENT)
-                .setFirstRpuHeader(profile5RpuHeader()));
+  static Stream<Arguments> profilesWithoutABase() {
+    return Stream.of(
+        Arguments.of(
+            "HEVC profile 5 that the first RPU header names, tagged BT.709",
+            recordLessBaselessStream("hevc", SDR_TRANSFER)),
+        Arguments.of(
+            "HEVC profile 5 that the first RPU header names, tagged PQ",
+            recordLessBaselessStream("hevc", PQ_TRANSFER)),
+        Arguments.of(
+            "AV1 profile 10.0 that the first RPU header names, tagged PQ",
+            recordLessBaselessStream("av1", PQ_TRANSFER)),
+        Arguments.of(
+            "HEVC profile 5 that the configuration record names, tagged BT.709",
+            declaredBaselessStream("hevc", profile5Record())),
+        Arguments.of(
+            "AV1 profile 10.0 that the configuration record names, tagged BT.709",
+            declaredBaselessStream("av1", profile10Record().setBaseLayerCompatibilityId(0))));
+  }
 
+  // ADR 0036: a configuration record that names a profile decides whether the stream has a base.
+  // Only when the record names none does the first RPU header name profile 5 in HEVC, and 10.0 in
+  // AV1, and only when it has vdr_rpu_profile 0 and bl_video_full_range_flag 1. Every other stream
+  // takes its base from the signaled transfer.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("profilesWithABase")
+  @DisplayName("Should keep the base that the transfer gives when the Dolby Vision profile has one")
+  void shouldKeepTheBaseThatTheTransferGivesWhenTheDolbyVisionProfileHasOne(
+      String profile, ProbeStreamInfo.Builder video) {
     var stream = videoOf(version5(media -> media.setStreams(0, video)));
 
     assertThat(stream.dynamicRange())
         .map(VideoDynamicRange::compatibleBase)
-        .contains(com.streamarr.server.domain.streaming.CompatibleBase.NONE);
+        .contains(com.streamarr.server.domain.streaming.CompatibleBase.SDR);
+  }
+
+  static Stream<Arguments> profilesWithABase() {
+    return Stream.of(
+        Arguments.of(
+            "HEVC profile 8.2 that the configuration record names, beside a profile 5 RPU header",
+            withRecord(
+                sdrStreamWithRpuHeader("hevc", profile5RpuHeader()),
+                profile8Record().setBaseLayerCompatibilityId(2))),
+        Arguments.of(
+            "AV1 profile 10.2 that the configuration record names, beside a profile 10.0 RPU"
+                + " header",
+            withRecord(
+                sdrStreamWithRpuHeader("av1", profile5RpuHeader()),
+                profile10Record().setBaseLayerCompatibilityId(2))),
+        Arguments.of(
+            "HEVC with RPU profile 0 and a limited-range base layer",
+            sdrStreamWithRpuHeader("hevc", rpuHeader(0, false))),
+        Arguments.of(
+            "HEVC with RPU profile 1 and a full-range base layer",
+            sdrStreamWithRpuHeader("hevc", rpuHeader(1, true))),
+        Arguments.of(
+            "H.264 with RPU profile 0 and a full-range base layer",
+            sdrStreamWithRpuHeader("h264", rpuHeader(0, true))),
+        Arguments.of(
+            "VP9 with RPU profile 0 and a full-range base layer",
+            sdrStreamWithRpuHeader("vp9", rpuHeader(0, true))));
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
@@ -526,526 +612,314 @@ class RemoteProbeResultStreamPropertiesMapperTest {
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("violations")
-  @DisplayName("Should reject the result when it breaks the probe version 5 contract")
-  void shouldRejectTheResultWhenItBreaksTheProbeVersion5Contract(
-      String violation, UnaryOperator<ProbeStreamInfo.Builder> breakContract) {
-    var report = report(version5(media -> media.setStreams(0, breakContract.apply(hevc()))));
+  @DisplayName(
+      "Should accept the stream that a contract violation starts from when no fact breaks it")
+  void shouldAcceptTheStreamThatAContractViolationStartsFromWhenNoFactBreaksIt(
+      ContractViolation violation) {
+    var report = report(version5(media -> media.setStreams(0, violation.validStream())));
+
+    assertThatCode(() -> mapper.map(report)).doesNotThrowAnyException();
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("violations")
+  @DisplayName("Should reject the result when one fact breaks the probe version 5 contract")
+  void shouldRejectTheResultWhenOneFactBreaksTheProbeVersion5Contract(ContractViolation violation) {
+    var report = report(version5(media -> media.setStreams(0, violation.brokenStream())));
 
     assertThatThrownBy(() -> mapper.map(report))
         .isInstanceOf(ProbeContractViolationException.class);
   }
 
+  // Each violation starts from a stream that maps and changes one fact, so the rule that guards
+  // that fact is the only one that can reject it.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  static Stream<Arguments> violations() {
-    var present = com.streamarr.transcode.v1.Presence.PRESENCE_PRESENT;
-    var absent = com.streamarr.transcode.v1.Presence.PRESENCE_ABSENT;
-    var afterOwnPicture =
-        com.streamarr.transcode.v1.DolbyVisionRpuPlacement
-            .DOLBY_VISION_RPU_PLACEMENT_AFTER_OWN_PICTURE;
-    var startsSample =
-        com.streamarr.transcode.v1.DolbyVisionRpuPlacement.DOLBY_VISION_RPU_PLACEMENT_STARTS_SAMPLE;
+  static Stream<ContractViolation> violations() {
+    var mainTier = com.streamarr.transcode.v1.VideoCodecTier.VIDEO_CODEC_TIER_MAIN;
+    var h264High = com.streamarr.transcode.v1.VideoCodecProfile.VIDEO_CODEC_PROFILE_H264_HIGH;
+    var hevcMain = com.streamarr.transcode.v1.VideoCodecProfile.VIDEO_CODEC_PROFILE_HEVC_MAIN;
+    var hevcMain10 = com.streamarr.transcode.v1.VideoCodecProfile.VIDEO_CODEC_PROFILE_HEVC_MAIN_10;
+    var av1Main = com.streamarr.transcode.v1.VideoCodecProfile.VIDEO_CODEC_PROFILE_AV1_MAIN;
     var hlgTransfer =
         com.streamarr.transcode.v1.TransferCharacteristics.TRANSFER_CHARACTERISTICS_ARIB_STD_B67;
+    var linearTransfer =
+        com.streamarr.transcode.v1.TransferCharacteristics.TRANSFER_CHARACTERISTICS_LINEAR;
+    var log100Transfer =
+        com.streamarr.transcode.v1.TransferCharacteristics.TRANSFER_CHARACTERISTICS_LOG100;
+    var log316Transfer =
+        com.streamarr.transcode.v1.TransferCharacteristics.TRANSFER_CHARACTERISTICS_LOG316;
+    var smpte428Transfer =
+        com.streamarr.transcode.v1.TransferCharacteristics.TRANSFER_CHARACTERISTICS_SMPTE428;
+    var bt2020TenBitTransfer =
+        com.streamarr.transcode.v1.TransferCharacteristics.TRANSFER_CHARACTERISTICS_BT2020_10;
+    var sdrBase = CompatibleBase.COMPATIBLE_BASE_SDR;
+    var pqBase = CompatibleBase.COMPATIBLE_BASE_PQ;
+    var hlgBase = CompatibleBase.COMPATIBLE_BASE_HLG;
+    var noBase = CompatibleBase.COMPATIBLE_BASE_NONE;
+    var unspecifiedBase = CompatibleBase.COMPATIBLE_BASE_UNSPECIFIED;
     return Stream.of(
-        violation("a codec level without a codec profile", stream -> stream.setCodecLevel(41)),
+        violation(
+            "a codec level without a codec profile", sdrHevc(), stream -> stream.setCodecLevel(41)),
+        violation(
+            "a codec tier without a codec profile",
+            sdrHevc(),
+            stream -> stream.setCodecTier(mainTier)),
+        violation(
+            "a codec tier on an H.264 codec profile",
+            sdrHevc().setCodec("h264").setCodecProfile(h264High),
+            stream -> stream.setCodecTier(mainTier)),
+        violation(
+            "an HEVC codec profile on an H.264 stream",
+            sdrHevc().setCodec("h264"),
+            stream -> stream.setCodecProfile(hevcMain10)),
+        violation(
+            "an H.264 codec profile on an AV1 stream",
+            sdrHevc().setCodec("av1"),
+            stream -> stream.setCodecProfile(h264High)),
+        violation(
+            "an AV1 codec profile on an HEVC stream",
+            sdrHevc(),
+            stream -> stream.setCodecProfile(av1Main)),
+        violation(
+            "a codec profile on a VP9 stream",
+            sdrHevc().setCodec("vp9"),
+            stream -> stream.setCodecProfile(av1Main)),
+        violation(
+            "a codec profile on a stream without a codec",
+            sdrHevc().clearCodec(),
+            stream -> stream.setCodecProfile(hevcMain)),
+        violation(
+            "a codec level of 0",
+            sdrHevc().setCodecProfile(hevcMain),
+            stream -> stream.setCodecLevel(0)),
+        violation(
+            "a codec level beyond the integer range",
+            sdrHevc().setCodecProfile(hevcMain),
+            stream -> stream.setCodecLevel(-1)),
         violation(
             "presentation times on packets of a stream whose frames the probe did not read",
+            sdrHevc(),
             stream -> stream.setFirstPacketsCarryPresentationTimes(true)),
         violation(
             "presentation times on packets of a VP9 stream",
-            stream ->
-                stream
-                    .setCodec("vp9")
-                    .setFirstFramesRead(true)
-                    .setFirstPacketsCarryPresentationTimes(false)),
+            sdrHevc().setCodec("vp9").setFirstFramesRead(true),
+            stream -> stream.setFirstPacketsCarryPresentationTimes(false)),
         violation(
             "presentation times on packets of a stream without a codec",
-            stream ->
-                stream
-                    .clearCodec()
-                    .setFirstFramesRead(true)
-                    .setFirstPacketsCarryPresentationTimes(true)),
+            sdrHevc().clearCodec().setFirstFramesRead(true),
+            stream -> stream.setFirstPacketsCarryPresentationTimes(true)),
         violation(
             "a PQ transfer with an SDR compatible base",
-            stream -> {
-              stream
-                  .setTransferCharacteristics(PQ_TRANSFER)
-                  .getDynamicRangeBuilder()
-                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR);
-              return stream;
-            }),
+            sdrHevc(),
+            stream -> stream.setTransferCharacteristics(PQ_TRANSFER)),
         violation(
             "an HLG transfer with a PQ compatible base",
-            stream -> {
-              stream
-                  .setTransferCharacteristics(hlgTransfer)
-                  .getDynamicRangeBuilder()
-                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ);
-              return stream;
-            }),
+            pqHevc(),
+            stream -> stream.setTransferCharacteristics(hlgTransfer)),
         violation(
             "a PQ compatible base with a BT.709 transfer",
-            stream -> {
-              stream
-                  .setTransferCharacteristics(
-                      com.streamarr.transcode.v1.TransferCharacteristics
-                          .TRANSFER_CHARACTERISTICS_BT709)
-                  .getDynamicRangeBuilder()
-                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ);
-              return stream;
-            }),
-        violation(
-            "an HLG compatible base without a signaled transfer",
-            stream -> {
-              stream.getDynamicRangeBuilder().setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_HLG);
-              return stream;
-            }),
-        violation(
-            "an SDR base beside Dolby Vision without a signaled transfer",
-            stream -> profile8RpusWithoutTransfer(stream, CompatibleBase.COMPATIBLE_BASE_SDR)),
-        violation(
-            "an unspecified base beside Dolby Vision without a signaled transfer",
-            stream ->
-                profile8RpusWithoutTransfer(stream, CompatibleBase.COMPATIBLE_BASE_UNSPECIFIED)),
-        violation(
-            "an SDR base beside Dolby Vision with a transfer that the contract does not name",
-            stream ->
-                profile8RpusWithoutTransfer(stream, CompatibleBase.COMPATIBLE_BASE_SDR)
-                    .setTransferCharacteristicsValue(999)),
+            sdrHevc(),
+            stream -> withBase(stream, pqBase)),
         violation(
             "an unspecified base with a BT.709 transfer",
-            stream -> stream.setTransferCharacteristics(SDR_TRANSFER)),
+            sdrHevc(),
+            stream -> withBase(stream, unspecifiedBase)),
         violation(
-            "an unspecified base with a BT.2020 10-bit transfer beside Dolby Vision",
-            stream ->
-                profile8RpusWithoutTransfer(stream, CompatibleBase.COMPATIBLE_BASE_UNSPECIFIED)
-                    .setTransferCharacteristics(
-                        com.streamarr.transcode.v1.TransferCharacteristics
-                            .TRANSFER_CHARACTERISTICS_BT2020_10)),
-        violation(
-            "an SDR base with a linear transfer",
-            stream -> {
-              stream
-                  .setTransferCharacteristics(
-                      com.streamarr.transcode.v1.TransferCharacteristics
-                          .TRANSFER_CHARACTERISTICS_LINEAR)
-                  .getDynamicRangeBuilder()
-                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR);
-              return stream;
-            }),
-        violation(
-            "no compatible base with a logarithmic transfer and without Dolby Vision",
-            stream -> {
-              stream
-                  .setTransferCharacteristics(
-                      com.streamarr.transcode.v1.TransferCharacteristics
-                          .TRANSFER_CHARACTERISTICS_LOG100)
-                  .getDynamicRangeBuilder()
-                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_NONE);
-              return stream;
-            }),
-        violation(
-            "an SDR base beside Dolby Vision with a logarithmic transfer",
-            stream ->
-                profile8RpusWithoutTransfer(stream, CompatibleBase.COMPATIBLE_BASE_SDR)
-                    .setTransferCharacteristics(
-                        com.streamarr.transcode.v1.TransferCharacteristics
-                            .TRANSFER_CHARACTERISTICS_LOG316)),
-        violation(
-            "an unspecified base beside Dolby Vision with an SMPTE ST 428 transfer",
-            stream ->
-                profile8RpusWithoutTransfer(stream, CompatibleBase.COMPATIBLE_BASE_UNSPECIFIED)
-                    .setTransferCharacteristics(
-                        com.streamarr.transcode.v1.TransferCharacteristics
-                            .TRANSFER_CHARACTERISTICS_SMPTE428)),
+            "an HLG compatible base without a signaled transfer",
+            hevc(),
+            stream -> withBase(stream, hlgBase)),
         violation(
             "an SDR base without a signaled transfer or Dolby Vision",
-            stream -> {
-              stream.getDynamicRangeBuilder().setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR);
-              return stream;
-            }),
+            hevc(),
+            stream -> withBase(stream, sdrBase)),
+        violation(
+            "an SDR base with a linear transfer",
+            hevc().setTransferCharacteristics(linearTransfer),
+            stream -> withBase(stream, sdrBase)),
+        violation(
+            "no compatible base with a logarithmic transfer and without Dolby Vision",
+            hevc().setTransferCharacteristics(log100Transfer),
+            stream -> withBase(stream, noBase)),
+        violation(
+            "an SDR base beside Dolby Vision without a signaled transfer",
+            profile8RpusWithoutTransfer(hevc(), noBase),
+            stream -> withBase(stream, sdrBase)),
+        violation(
+            "an unspecified base beside Dolby Vision without a signaled transfer",
+            profile8RpusWithoutTransfer(hevc(), noBase),
+            stream -> withBase(stream, unspecifiedBase)),
+        violation(
+            "an SDR base beside Dolby Vision with a transfer that the contract does not name",
+            profile8RpusWithoutTransfer(hevc(), noBase).setTransferCharacteristicsValue(999),
+            stream -> withBase(stream, sdrBase)),
+        violation(
+            "an SDR base beside Dolby Vision with a logarithmic transfer",
+            profile8RpusWithoutTransfer(hevc(), noBase).setTransferCharacteristics(log316Transfer),
+            stream -> withBase(stream, sdrBase)),
+        violation(
+            "an unspecified base beside Dolby Vision with an SMPTE ST 428 transfer",
+            profile8RpusWithoutTransfer(hevc(), noBase)
+                .setTransferCharacteristics(smpte428Transfer),
+            stream -> withBase(stream, unspecifiedBase)),
+        violation(
+            "an unspecified base with a BT.2020 10-bit transfer beside Dolby Vision",
+            profile8RpusWithoutTransfer(hevc(), sdrBase)
+                .setTransferCharacteristics(bt2020TenBitTransfer),
+            stream -> withBase(stream, unspecifiedBase)),
         violation(
             "no compatible base with a BT.709 transfer beside Dolby Vision profile 8",
-            stream -> {
-              stream
-                  .setTransferCharacteristics(SDR_TRANSFER)
-                  .getDynamicRangeBuilder()
-                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_NONE)
-                  .setDolbyVisionPresent(
-                      DolbyVisionPresent.newBuilder()
-                          .setDeclared(
-                              DolbyVisionConfiguration.newBuilder()
-                                  .setProfile(8)
-                                  .setBaseLayerCompatibilityId(2)
-                                  .setBaseLayer(true)
-                                  .setRpu(true)));
-              return stream;
-            }),
+            sdrProfile82Hevc(),
+            stream -> withBase(stream, noBase)),
         violation(
             "a PQ transfer with the SDR base that a Dolby Vision profile 8.2 record names",
-            stream -> {
-              stream
-                  .setTransferCharacteristics(PQ_TRANSFER)
-                  .getDynamicRangeBuilder()
-                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
-                  .setDolbyVisionPresent(
-                      DolbyVisionPresent.newBuilder()
-                          .setDeclared(
-                              DolbyVisionConfiguration.newBuilder()
-                                  .setProfile(8)
-                                  .setBaseLayerCompatibilityId(2)
-                                  .setBaseLayer(true)
-                                  .setRpu(true)));
-              return stream;
-            }),
-        violation(
-            "a codec tier without a codec profile",
-            stream ->
-                stream.setCodecTier(
-                    com.streamarr.transcode.v1.VideoCodecTier.VIDEO_CODEC_TIER_MAIN)),
-        violation(
-            "a codec tier on an H.264 codec profile",
-            stream ->
-                stream
-                    .setCodec("h264")
-                    .setCodecProfile(
-                        com.streamarr.transcode.v1.VideoCodecProfile.VIDEO_CODEC_PROFILE_H264_HIGH)
-                    .setCodecTier(com.streamarr.transcode.v1.VideoCodecTier.VIDEO_CODEC_TIER_MAIN)),
-        violation(
-            "an HEVC codec profile on an H.264 stream",
-            stream ->
-                stream
-                    .setCodec("h264")
-                    .setCodecProfile(
-                        com.streamarr.transcode.v1.VideoCodecProfile
-                            .VIDEO_CODEC_PROFILE_HEVC_MAIN_10)),
-        violation(
-            "an H.264 codec profile on an AV1 stream",
-            stream ->
-                stream
-                    .setCodec("av1")
-                    .setCodecProfile(
-                        com.streamarr.transcode.v1.VideoCodecProfile
-                            .VIDEO_CODEC_PROFILE_H264_HIGH)),
-        violation(
-            "an AV1 codec profile on an HEVC stream",
-            stream ->
-                stream.setCodecProfile(
-                    com.streamarr.transcode.v1.VideoCodecProfile.VIDEO_CODEC_PROFILE_AV1_MAIN)),
-        violation(
-            "a codec profile on a VP9 stream",
-            stream ->
-                stream
-                    .setCodec("vp9")
-                    .setCodecProfile(
-                        com.streamarr.transcode.v1.VideoCodecProfile.VIDEO_CODEC_PROFILE_AV1_MAIN)),
-        violation(
-            "a codec profile on a stream without a codec",
-            stream ->
-                stream
-                    .clearCodec()
-                    .setCodecProfile(
-                        com.streamarr.transcode.v1.VideoCodecProfile
-                            .VIDEO_CODEC_PROFILE_HEVC_MAIN)),
-        violation(
-            "a codec level of 0",
-            stream ->
-                stream
-                    .setCodecProfile(
-                        com.streamarr.transcode.v1.VideoCodecProfile.VIDEO_CODEC_PROFILE_HEVC_MAIN)
-                    .setCodecLevel(0)),
-        violation(
-            "a codec level beyond the integer range",
-            stream ->
-                stream
-                    .setCodecProfile(
-                        com.streamarr.transcode.v1.VideoCodecProfile.VIDEO_CODEC_PROFILE_HEVC_MAIN)
-                    .setCodecLevel(-1)),
+            sdrProfile82Hevc(),
+            stream -> stream.setTransferCharacteristics(PQ_TRANSFER)),
         violation(
             "an omitted mastering display that the stream still lists",
-            stream ->
-                stream
-                    .setMasteringDisplayOmitted(true)
-                    .setMasteringDisplay(WorkerProbeResultFixture.masteringDisplayBuilder())),
+            pqHevc().setMasteringDisplay(WorkerProbeResultFixture.masteringDisplayBuilder()),
+            stream -> stream.setMasteringDisplayOmitted(true)),
         violation(
             "an omitted content light level that the stream still lists",
-            stream ->
-                stream
-                    .setContentLightLevelOmitted(true)
-                    .setContentLightLevel(ContentLightLevel.getDefaultInstance())),
+            pqHevc().setContentLightLevel(ContentLightLevel.getDefaultInstance()),
+            stream -> stream.setContentLightLevelOmitted(true)),
         violation(
             "HDR10+ absent without reading frames",
-            stream -> {
-              stream.getDynamicRangeBuilder().setHdr10Plus(absent);
-              return stream;
-            }),
-        violation(
-            "Dolby Vision absent without reading frames",
-            stream -> {
-              stream
-                  .getDynamicRangeBuilder()
-                  .setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance());
-              return stream;
-            }),
-        violation(
-            "an observed RPU absent without reading frames",
-            stream -> {
-              stream
-                  .getDynamicRangeBuilder()
-                  .setDolbyVisionPresent(DolbyVisionPresent.newBuilder().setObservedRpu(absent));
-              return stream;
-            }),
-        violation(
-            "an RPU placement without reading frames",
-            stream -> {
-              stream
-                  .setTransferCharacteristics(PQ_TRANSFER)
-                  .getDynamicRangeBuilder()
-                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
-                  .setDolbyVisionPresent(
-                      DolbyVisionPresent.newBuilder()
-                          .setObservedRpu(present)
-                          .setRpuPlacement(afterOwnPicture));
-              return stream;
-            }),
+            withHdr10Plus(sdrHevcWithFramesRead(), REPORTED_ABSENT),
+            stream -> stream.setFirstFramesRead(false)),
         violation(
             "HDR10+ present without reading frames",
-            stream -> {
-              stream.getDynamicRangeBuilder().setHdr10Plus(present);
-              return stream;
-            }),
+            withHdr10Plus(sdrHevcWithFramesRead(), REPORTED_PRESENT),
+            stream -> stream.setFirstFramesRead(false)),
+        violation(
+            "Dolby Vision absent without reading frames",
+            withoutDolbyVision(sdrHevcWithFramesRead()),
+            stream -> stream.setFirstFramesRead(false)),
+        violation(
+            "an observed RPU absent without reading frames",
+            withDolbyVision(
+                sdrHevcWithFramesRead(),
+                DolbyVisionPresent.newBuilder().setObservedRpu(REPORTED_ABSENT)),
+            stream -> stream.setFirstFramesRead(false)),
         violation(
             "an observed RPU present without reading frames",
-            stream -> {
-              stream
-                  .setTransferCharacteristics(PQ_TRANSFER)
-                  .getDynamicRangeBuilder()
-                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
-                  .setDolbyVisionPresent(DolbyVisionPresent.newBuilder().setObservedRpu(present));
-              return stream;
-            }),
+            profile8HevcWithRpus(
+                com.streamarr.transcode.v1.DolbyVisionRpuPlacement
+                    .DOLBY_VISION_RPU_PLACEMENT_UNSPECIFIED),
+            stream -> stream.setFirstFramesRead(false)),
         violation(
             "a first RPU header without an observed RPU",
+            withDolbyVision(
+                sdrHevcWithFramesRead(),
+                DolbyVisionPresent.newBuilder().setObservedRpu(REPORTED_ABSENT)),
             stream -> {
-              stream
-                  .setFirstFramesRead(true)
-                  .getDynamicRangeBuilder()
-                  .setDolbyVisionPresent(
-                      DolbyVisionPresent.newBuilder()
-                          .setObservedRpu(absent)
-                          .setFirstRpuHeader(profile8RpuHeader()));
+              dolbyVisionOf(stream).setFirstRpuHeader(profile8RpuHeader());
               return stream;
             }),
         violation(
             "an RPU placement beside an absent observed RPU",
+            withDolbyVision(
+                sdrHevcWithFramesRead(),
+                DolbyVisionPresent.newBuilder().setObservedRpu(REPORTED_ABSENT)),
             stream -> {
-              stream
-                  .setFirstFramesRead(true)
-                  .getDynamicRangeBuilder()
-                  .setDolbyVisionPresent(
-                      DolbyVisionPresent.newBuilder()
-                          .setObservedRpu(absent)
-                          .setRpuPlacement(startsSample));
+              dolbyVisionOf(stream).setRpuPlacement(REPORTED_STARTS_SAMPLE);
               return stream;
             }),
         violation(
             "an RPU placement beside an unspecified observed RPU",
+            withDolbyVision(sdrHevcWithFramesRead(), DolbyVisionPresent.newBuilder()),
             stream -> {
-              stream
-                  .setFirstFramesRead(true)
-                  .getDynamicRangeBuilder()
-                  .setDolbyVisionPresent(
-                      DolbyVisionPresent.newBuilder().setRpuPlacement(startsSample));
+              dolbyVisionOf(stream).setRpuPlacement(REPORTED_STARTS_SAMPLE);
               return stream;
             }),
         violation(
             "an RPU bit depth below 8",
+            profile8HevcWithRpus(
+                com.streamarr.transcode.v1.DolbyVisionRpuPlacement
+                    .DOLBY_VISION_RPU_PLACEMENT_UNSPECIFIED),
             stream -> {
-              stream
-                  .setFirstFramesRead(true)
-                  .setTransferCharacteristics(PQ_TRANSFER)
-                  .getDynamicRangeBuilder()
-                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
-                  .setDolbyVisionPresent(
-                      DolbyVisionPresent.newBuilder()
-                          .setObservedRpu(present)
-                          .setFirstRpuHeader(profile8RpuHeader().setVdrBitDepth(7)));
+              dolbyVisionOf(stream).getFirstRpuHeaderBuilder().setVdrBitDepth(7);
               return stream;
             }),
         violation(
             "an RPU profile beyond the integer range",
+            profile8HevcWithRpus(
+                com.streamarr.transcode.v1.DolbyVisionRpuPlacement
+                    .DOLBY_VISION_RPU_PLACEMENT_UNSPECIFIED),
             stream -> {
-              stream
-                  .setFirstFramesRead(true)
-                  .setTransferCharacteristics(PQ_TRANSFER)
-                  .getDynamicRangeBuilder()
-                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
-                  .setDolbyVisionPresent(
-                      DolbyVisionPresent.newBuilder()
-                          .setObservedRpu(present)
-                          .setFirstRpuHeader(profile8RpuHeader().setVdrRpuProfile(-1)));
+              dolbyVisionOf(stream).getFirstRpuHeaderBuilder().setVdrRpuProfile(-1);
               return stream;
             }),
         violation(
             "a record-less profile 5 stream with an SDR compatible base",
-            stream -> {
-              stream
-                  .setFirstFramesRead(true)
-                  .getDynamicRangeBuilder()
-                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
-                  .setDolbyVisionPresent(
-                      DolbyVisionPresent.newBuilder()
-                          .setObservedRpu(present)
-                          .setFirstRpuHeader(profile5RpuHeader()));
-              return stream;
-            }),
+            recordLessBaselessStream("hevc", SDR_TRANSFER),
+            stream -> withBase(stream, sdrBase)),
         violation(
             "a profile 5 RPU header beside a record without a profile and with an SDR base",
-            stream -> {
-              stream
-                  .setFirstFramesRead(true)
-                  .getDynamicRangeBuilder()
-                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
-                  .setDolbyVisionPresent(
-                      DolbyVisionPresent.newBuilder()
-                          .setDeclared(profilelessRecord())
-                          .setObservedRpu(present)
-                          .setFirstRpuHeader(profile5RpuHeader()));
-              return stream;
-            }),
-        violation(
-            "an AV1 profile 10.0 RPU header beside a record without a profile and with an SDR base",
-            stream -> {
-              stream
-                  .setCodec("av1")
-                  .setFirstFramesRead(true)
-                  .getDynamicRangeBuilder()
-                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
-                  .setDolbyVisionPresent(
-                      DolbyVisionPresent.newBuilder()
-                          .setDeclared(profilelessRecord())
-                          .setObservedRpu(present)
-                          .setFirstRpuHeader(profile5RpuHeader()));
-              return stream;
-            }),
+            withRecord(recordLessBaselessStream("hevc", SDR_TRANSFER), profilelessRecord()),
+            stream -> withBase(stream, sdrBase)),
         violation(
             "a declared profile 5 stream with an SDR compatible base",
-            stream -> {
-              stream
-                  .getDynamicRangeBuilder()
-                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
-                  .setDolbyVisionPresent(
-                      DolbyVisionPresent.newBuilder()
-                          .setDeclared(
-                              DolbyVisionConfiguration.newBuilder()
-                                  .setProfile(5)
-                                  .setBaseLayer(true)
-                                  .setRpu(true)));
-              return stream;
-            }),
+            declaredBaselessStream("hevc", profile5Record()),
+            stream -> withBase(stream, sdrBase)),
         violation(
             "a record-less AV1 profile 10.0 stream with an SDR compatible base",
-            stream -> {
-              stream
-                  .setCodec("av1")
-                  .setFirstFramesRead(true)
-                  .getDynamicRangeBuilder()
-                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
-                  .setDolbyVisionPresent(
-                      DolbyVisionPresent.newBuilder()
-                          .setObservedRpu(present)
-                          .setFirstRpuHeader(profile5RpuHeader()));
-              return stream;
-            }),
+            recordLessBaselessStream("av1", SDR_TRANSFER),
+            stream -> withBase(stream, sdrBase)),
+        violation(
+            "an AV1 profile 10.0 RPU header beside a record without a profile and with an SDR base",
+            withRecord(recordLessBaselessStream("av1", SDR_TRANSFER), profilelessRecord()),
+            stream -> withBase(stream, sdrBase)),
         violation(
             "a declared profile 10.0 stream with a PQ compatible base",
-            stream -> {
-              stream
-                  .setCodec("av1")
-                  .setTransferCharacteristics(PQ_TRANSFER)
-                  .getDynamicRangeBuilder()
-                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
-                  .setDolbyVisionPresent(
-                      DolbyVisionPresent.newBuilder()
-                          .setDeclared(profile10Record().setBaseLayerCompatibilityId(0)));
-              return stream;
-            }),
+            declaredBaselessStream("av1", profile10Record().setBaseLayerCompatibilityId(0))
+                .setTransferCharacteristics(PQ_TRANSFER),
+            stream -> withBase(stream, pqBase)),
+        violation(
+            "a declared profile 8.2 stream beside a profile 5 RPU header without a compatible base",
+            withRecord(
+                sdrStreamWithRpuHeader("hevc", profile5RpuHeader()),
+                profile8Record().setBaseLayerCompatibilityId(2)),
+            stream -> withBase(stream, noBase)),
         violation(
             "an RPU placement on an AV1 stream",
+            withDolbyVision(
+                pqHevc().setCodec("av1").setFirstFramesRead(true),
+                DolbyVisionPresent.newBuilder()
+                    .setDeclared(profile10Record().setBaseLayerCompatibilityId(1))
+                    .setObservedRpu(REPORTED_PRESENT)),
             stream -> {
-              stream
-                  .setCodec("av1")
-                  .setFirstFramesRead(true)
-                  .setTransferCharacteristics(PQ_TRANSFER)
-                  .getDynamicRangeBuilder()
-                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
-                  .setDolbyVisionPresent(
-                      DolbyVisionPresent.newBuilder()
-                          .setDeclared(profile10Record().setBaseLayerCompatibilityId(1))
-                          .setObservedRpu(present)
-                          .setRpuPlacement(startsSample));
+              dolbyVisionOf(stream).setRpuPlacement(REPORTED_STARTS_SAMPLE);
               return stream;
             }),
         violation(
             "HDR10+ absent on a VP9 stream",
-            stream -> {
-              stream
-                  .setCodec("vp9")
-                  .setFirstFramesRead(true)
-                  .getDynamicRangeBuilder()
-                  .setHdr10Plus(absent);
-              return stream;
-            }),
+            sdrHevcWithFramesRead().setCodec("vp9"),
+            stream -> withHdr10Plus(stream, REPORTED_ABSENT)),
         violation(
             "an RPU placement on a VP9 stream",
+            withDolbyVision(
+                pqHevc().setCodec("vp9").setFirstFramesRead(true),
+                DolbyVisionPresent.newBuilder().setObservedRpu(REPORTED_PRESENT)),
             stream -> {
-              stream
-                  .setCodec("vp9")
-                  .setFirstFramesRead(true)
-                  .setTransferCharacteristics(PQ_TRANSFER)
-                  .getDynamicRangeBuilder()
-                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
-                  .setDolbyVisionPresent(
-                      DolbyVisionPresent.newBuilder()
-                          .setObservedRpu(present)
-                          .setRpuPlacement(startsSample));
-              return stream;
-            }),
-        violation(
-            "Dolby Vision absent on an MPEG-2 stream",
-            stream -> {
-              stream
-                  .setCodec("mpeg2video")
-                  .setFirstFramesRead(true)
-                  .getDynamicRangeBuilder()
-                  .setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance());
+              dolbyVisionOf(stream).setRpuPlacement(REPORTED_STARTS_SAMPLE);
               return stream;
             }),
         violation(
             "an observed RPU absent on a VP9 stream",
+            withDolbyVision(
+                pqHevc().setCodec("vp9").setFirstFramesRead(true), DolbyVisionPresent.newBuilder()),
             stream -> {
-              stream
-                  .setCodec("vp9")
-                  .setFirstFramesRead(true)
-                  .setTransferCharacteristics(PQ_TRANSFER)
-                  .getDynamicRangeBuilder()
-                  .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
-                  .setDolbyVisionPresent(
-                      DolbyVisionPresent.newBuilder()
-                          .setDeclared(profile10Record().setBaseLayerCompatibilityId(1))
-                          .setObservedRpu(absent));
+              dolbyVisionOf(stream).setObservedRpu(REPORTED_ABSENT);
               return stream;
             }),
         violation(
+            "Dolby Vision absent on an MPEG-2 stream",
+            sdrHevcWithFramesRead().setCodec("mpeg2video"),
+            RemoteProbeResultStreamPropertiesMapperTest::withoutDolbyVision),
+        violation(
             "HDR10+ absent on a stream without a codec",
-            stream -> {
-              stream
-                  .clearCodec()
-                  .setFirstFramesRead(true)
-                  .getDynamicRangeBuilder()
-                  .setHdr10Plus(absent);
-              return stream;
-            }));
+            sdrHevcWithFramesRead().clearCodec(),
+            stream -> withHdr10Plus(stream, REPORTED_ABSENT)));
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
@@ -1207,18 +1081,51 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   @Test
   @DisplayName("Should reject the result when a stream other than the chosen one read frames")
   void shouldRejectTheResultWhenAStreamOtherThanTheChosenOneReadFrames() {
-    var report =
+    var unread = report(version5(media -> media.addStreams(secondVideoStream())));
+    var read =
+        report(version5(media -> media.addStreams(secondVideoStream().setFirstFramesRead(true))));
+
+    assertThatCode(() -> mapper.map(unread)).doesNotThrowAnyException();
+    assertThatThrownBy(() -> mapper.map(read)).isInstanceOf(ProbeContractViolationException.class);
+  }
+
+  // ADR 0036: the compatible base of every video stream follows the probe version 5 rules.
+  @Test
+  @DisplayName(
+      "Should reject the result when another video stream has a base that its transfer"
+          + " contradicts")
+  void shouldRejectTheResultWhenAnotherVideoStreamHasABaseThatItsTransferContradicts() {
+    var agreeing = report(version5(media -> media.addStreams(sdrHevc().setIndex(1))));
+    var contradicting =
         report(
             version5(
                 media ->
                     media.addStreams(
-                        ProbeStreamInfo.newBuilder()
-                            .setIndex(1)
-                            .setCodecType("video")
-                            .setFirstFramesRead(true))));
+                        withBase(sdrHevc().setIndex(1), CompatibleBase.COMPATIBLE_BASE_PQ))));
 
-    assertThatThrownBy(() -> mapper.map(report))
+    assertThatCode(() -> mapper.map(agreeing)).doesNotThrowAnyException();
+    assertThatThrownBy(() -> mapper.map(contradicting))
         .isInstanceOf(ProbeContractViolationException.class);
+  }
+
+  /** A stream that maps, and the one fact that breaks the probe version 5 contract. */
+  record ContractViolation(
+      @NonNull String description,
+      @NonNull ProbeStreamInfo.Builder valid,
+      @NonNull UnaryOperator<ProbeStreamInfo.Builder> breakContract) {
+
+    ProbeStreamInfo validStream() {
+      return valid.build();
+    }
+
+    ProbeStreamInfo brokenStream() {
+      return breakContract.apply(valid.clone()).build();
+    }
+
+    @Override
+    public String toString() {
+      return description;
+    }
   }
 
   @Builder
@@ -1248,9 +1155,11 @@ class RemoteProbeResultStreamPropertiesMapperTest {
     }
   }
 
-  private static Arguments violation(
-      String violation, UnaryOperator<ProbeStreamInfo.Builder> breakContract) {
-    return Arguments.of(violation, breakContract);
+  private static ContractViolation violation(
+      String description,
+      ProbeStreamInfo.Builder valid,
+      UnaryOperator<ProbeStreamInfo.Builder> breakContract) {
+    return new ContractViolation(description, valid, breakContract);
   }
 
   private static ProbeStreamInfo.Builder hevc() {
@@ -1268,6 +1177,28 @@ class RemoteProbeResultStreamPropertiesMapperTest {
 
   private static ProbeStreamInfo.Builder sdrHevcWithFramesRead() {
     return sdrHevc().setFirstFramesRead(true);
+  }
+
+  private static ProbeStreamInfo.Builder pqHevc() {
+    return withBase(
+        hevc().setTransferCharacteristics(PQ_TRANSFER), CompatibleBase.COMPATIBLE_BASE_PQ);
+  }
+
+  // Dolby Vision profile 8.2: a record that names profile 8 and the SDR base of identifier 2.
+  private static ProbeStreamInfo.Builder sdrProfile82Hevc() {
+    return withDolbyVision(
+        sdrHevc(),
+        DolbyVisionPresent.newBuilder()
+            .setDeclared(
+                DolbyVisionConfiguration.newBuilder()
+                    .setProfile(8)
+                    .setBaseLayerCompatibilityId(2)
+                    .setBaseLayer(true)
+                    .setRpu(true)));
+  }
+
+  private static ProbeStreamInfo.Builder secondVideoStream() {
+    return ProbeStreamInfo.newBuilder().setIndex(1).setCodecType("video");
   }
 
   private static ProbeStreamInfo.Builder withBase(
@@ -1292,6 +1223,16 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   private static ProbeStreamInfo.Builder withoutDolbyVision(ProbeStreamInfo.Builder stream) {
     stream.getDynamicRangeBuilder().setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance());
     return stream;
+  }
+
+  private static ProbeStreamInfo.Builder withRecord(
+      ProbeStreamInfo.Builder stream, DolbyVisionConfiguration.Builder record) {
+    dolbyVisionOf(stream).setDeclared(record);
+    return stream;
+  }
+
+  private static DolbyVisionPresent.Builder dolbyVisionOf(ProbeStreamInfo.Builder stream) {
+    return stream.getDynamicRangeBuilder().getDolbyVisionPresentBuilder();
   }
 
   // ADR 0036 lists the compatible base that each signaled transfer gives a stream without Dolby
@@ -1372,8 +1313,48 @@ class RemoteProbeResultStreamPropertiesMapperTest {
             .setRpuPlacement(placement));
   }
 
+  // A stream whose configuration record names no profile and whose first RPU header has profile 0
+  // and a full-range base layer: profile 5 in HEVC, and profile 10.0 in AV1.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static ProbeStreamInfo.Builder recordLessBaselessStream(
+      String codec, com.streamarr.transcode.v1.TransferCharacteristics transfer) {
+    return withDolbyVision(
+        withBase(
+            hevc().setCodec(codec).setTransferCharacteristics(transfer).setFirstFramesRead(true),
+            CompatibleBase.COMPATIBLE_BASE_NONE),
+        DolbyVisionPresent.newBuilder()
+            .setObservedRpu(REPORTED_PRESENT)
+            .setFirstRpuHeader(profile5RpuHeader()));
+  }
+
+  // A stream tagged BT.709 whose configuration record names profile 5 or profile 10.0.
+  private static ProbeStreamInfo.Builder declaredBaselessStream(
+      String codec, DolbyVisionConfiguration.Builder record) {
+    return withDolbyVision(
+        withBase(
+            hevc().setCodec(codec).setTransferCharacteristics(SDR_TRANSFER),
+            CompatibleBase.COMPATIBLE_BASE_NONE),
+        DolbyVisionPresent.newBuilder().setDeclared(record));
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static ProbeStreamInfo.Builder sdrStreamWithRpuHeader(
+      String codec, com.streamarr.transcode.v1.DolbyVisionRpuHeader.Builder header) {
+    return withDolbyVision(
+        sdrHevcWithFramesRead().setCodec(codec),
+        DolbyVisionPresent.newBuilder().setObservedRpu(REPORTED_PRESENT).setFirstRpuHeader(header));
+  }
+
   private static DolbyVisionConfiguration.Builder profilelessRecord() {
     return DolbyVisionConfiguration.newBuilder().setBaseLayer(true).setRpu(true);
+  }
+
+  private static DolbyVisionConfiguration.Builder profile5Record() {
+    return DolbyVisionConfiguration.newBuilder().setProfile(5).setBaseLayer(true).setRpu(true);
+  }
+
+  private static DolbyVisionConfiguration.Builder profile8Record() {
+    return DolbyVisionConfiguration.newBuilder().setProfile(8).setBaseLayer(true).setRpu(true);
   }
 
   private static DolbyVisionConfiguration.Builder profile10Record() {
