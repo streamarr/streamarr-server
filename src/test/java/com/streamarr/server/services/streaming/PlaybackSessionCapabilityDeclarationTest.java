@@ -151,6 +151,20 @@ class PlaybackSessionCapabilityDeclarationTest {
                     new AudioChannelsNotPositive(1))));
   }
 
+  @ParameterizedTest
+  @ValueSource(doubles = {Double.POSITIVE_INFINITY, Double.NaN})
+  @DisplayName("Should refuse the frame-rate maximum when it is not a finite number")
+  void shouldRefuseTheFrameRateMaximumWhenItIsNotAFiniteNumber(double maximum) {
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().maxFrameRate(maximum).build()))
+            .build();
+
+    assertThat(start(declaration))
+        .isEqualTo(Outcome.rejected(new VideoMaximumInvalid(0, VideoEntryMaximum.FRAME_RATE)));
+    assertThat(streams.getAllSessions()).isEmpty();
+  }
+
   @Test
   @DisplayName("Should refuse a video entry when it lists no codec profile or compatible base")
   void shouldRefuseAVideoEntryWhenItListsNoCodecProfileOrCompatibleBase() {

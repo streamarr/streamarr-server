@@ -150,7 +150,7 @@ type CapabilityListTooLongError implements InputMutationError & MutationError {
     maximum: Int!
 }
 
-"A maximum of the capability declaration is zero or negative."
+"A maximum of the capability declaration is zero, negative, or not a finite number."
 type CapabilityMaximumInvalidError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!

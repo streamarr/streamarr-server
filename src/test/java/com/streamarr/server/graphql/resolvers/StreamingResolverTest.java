@@ -1276,6 +1276,49 @@ class StreamingResolverTest {
   }
 
   @Test
+  @DisplayName("Should refuse the frame-rate maximum when its literal overflows to infinity")
+  void shouldRefuseTheFrameRateMaximumWhenItsLiteralOverflowsToInfinity() {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+
+    var context =
+        dgsQueryExecutor.executeAndGetDocumentContext(
+            """
+            mutation {
+              createPlaybackSession(input: {
+                mediaFileId: "%s"
+                capabilities: {
+                  video: [{
+                    codecFamily: H264
+                    codecProfiles: [{profile: H264_HIGH, maxLevel: 41}]
+                    maxBitDepth: 8, maxWidth: 1920, maxHeight: 1080, maxFrameRate: 1e309
+                    compatibleBases: [SDR], dolbyVisionProfiles: [], hdr10Plus: false, hls: true
+                  }]
+                  audio: [{codec: AAC, maxChannels: 2, hls: true}]
+                }
+              }) {
+                playbackSession { id }
+                userErrors {
+                  __typename
+                  ... on InputMutationError { inputPath }
+                }
+              }
+            }
+            """
+                .formatted(UUID.randomUUID()));
+
+    assertThat(context.read(CREATED_PLAYBACK, Object.class)).isNull();
+    List<Map<String, Object>> errors = context.read("data.createPlaybackSession.userErrors");
+    assertThat(errors)
+        .containsExactly(
+            Map.of(
+                "__typename",
+                "CapabilityMaximumInvalidError",
+                "inputPath",
+                List.of("capabilities", "video", "0", "maxFrameRate")));
+    assertThat(STUB_SERVICE.getAllSessions()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should refuse the request when it carries no capability declaration")
   void shouldRefuseTheRequestWhenItCarriesNoCapabilityDeclaration() {
     STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));

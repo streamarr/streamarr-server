@@ -41,6 +41,7 @@ public final class CapabilityDeclarationErrors {
   private static final String MAX_LEVEL = "maxLevel";
   private static final String TOO_MANY = "List no more than %d values here.";
   private static final String NOT_POSITIVE = "Enter a maximum above zero.";
+  private static final String NOT_FINITE_AND_POSITIVE = "Enter a finite maximum above zero.";
 
   private CapabilityDeclarationErrors() {}
 
@@ -70,7 +71,8 @@ public final class CapabilityDeclarationErrors {
       case TooManyDolbyVisionProfiles(var entry, var maximum) ->
           tooMany(maximum, videoPath(entry, DOLBY_VISION_PROFILES));
       case VideoMaximumInvalid(var entry, var maximum) ->
-          new CapabilityMaximumInvalidError(NOT_POSITIVE, videoPath(entry, fieldOf(maximum)));
+          new CapabilityMaximumInvalidError(
+              NOT_FINITE_AND_POSITIVE, videoPath(entry, fieldOf(maximum)));
       case CodecProfileOutsideCodecFamily(var entry, var profile) ->
           new CapabilityProfileMismatchError(
               "Declare only codec profiles of the entry's codec family.",
