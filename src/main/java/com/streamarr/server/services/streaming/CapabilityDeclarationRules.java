@@ -32,14 +32,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.IntStream;
 
-/**
- * The API boundary's checks of a client capability declaration (ADR 0049). The server assumes no
- * capability for a client, so every maximum must be positive and finite, and every entry must name
- * values that belong to its codec family. HEVC and AV1 codec profiles name a maximum tier, because
- * a capability entry gives every maximum; H.264 has no tier. An entry lists a compatible base
- * unless it lists Dolby Vision profile 5 or 10.0, whose streams have none. Each list holds at most
- * {@link #MAXIMUM_LIST_SIZE} values, and an overlong list is reported without checking its values.
- */
+/** The API boundary's checks of a client capability declaration (ADR 0049). */
 final class CapabilityDeclarationRules {
 
   /** The longest list that a declaration may hold, generous for any measured player. */
@@ -75,7 +68,7 @@ final class CapabilityDeclarationRules {
       int index, VideoCapabilityEntry entry) {
     var rejections = new ArrayList<CapabilityDeclarationRejection>();
     Arrays.stream(VideoEntryMaximum.values())
-        .filter(maximum -> !isValid(entry, maximum))
+        .filter(maximum -> !isAcceptableMaximum(entry, maximum))
         .map(maximum -> new VideoMaximumInvalid(index, maximum))
         .forEach(rejections::add);
     rejections.addAll(codecProfileRejections(index, entry));
@@ -84,7 +77,8 @@ final class CapabilityDeclarationRules {
     return rejections;
   }
 
-  private static boolean isValid(VideoCapabilityEntry entry, VideoEntryMaximum maximum) {
+  private static boolean isAcceptableMaximum(
+      VideoCapabilityEntry entry, VideoEntryMaximum maximum) {
     return switch (maximum) {
       case BIT_DEPTH -> entry.maxBitDepth() > 0;
       case WIDTH -> entry.maxWidth() > 0;
