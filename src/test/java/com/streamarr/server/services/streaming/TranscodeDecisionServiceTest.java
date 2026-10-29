@@ -13,6 +13,7 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.a
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.declarationBuilderFor;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -21,6 +22,11 @@ import com.streamarr.server.domain.streaming.AudioCapabilityEntry;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
+import com.streamarr.server.domain.streaming.CompatibleBase;
+import com.streamarr.server.domain.streaming.DolbyVision;
+import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
+import com.streamarr.server.domain.streaming.DolbyVisionProfile;
+import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
@@ -29,6 +35,7 @@ import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -36,6 +43,8 @@ import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
+import com.streamarr.server.domain.streaming.VideoDynamicRange;
+import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -1344,6 +1353,74 @@ class TranscodeDecisionServiceTest {
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(probeVersion5H264(1920, 1080, 24))
+                    .capabilityDeclaration(declaration)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode a Dolby Vision 8.1 source when an entry accepts it until HDR copies return")
+  void shouldEncodeADolbyVision81SourceWhenAnEntryAcceptsItUntilHdrCopiesReturn() {
+    var profile81 =
+        new VideoDynamicRange(
+            CompatibleBase.PQ,
+            Presence.ABSENT,
+            new DolbyVision.Present(
+                Optional.of(
+                    DolbyVisionConfiguration.builder()
+                        .profile(OptionalInt.of(8))
+                        .level(OptionalInt.of(6))
+                        .baseLayerCompatibilityId(OptionalInt.of(1))
+                        .baseLayer(true)
+                        .rpu(true)
+                        .build()),
+                Presence.PRESENT));
+    var source =
+        probeBuilder("hevc", "aac")
+            .videoPlaybackFacts(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .streamIndex(0)
+                        .codecFamily(Optional.of(HEVC))
+                        .codecString(Optional.of("hvc1.2.4.L120.90"))
+                        .bitDepth(OptionalInt.of(10))
+                        .dynamicRange(profile81)
+                        .videoProperties(
+                            Optional.of(
+                                VideoStreamProperties.builder()
+                                    .codecProfile(Optional.of(VideoCodecProfile.HEVC_MAIN_10))
+                                    .codecLevel(OptionalInt.of(41))
+                                    .codecTier(Optional.of(VideoCodecTier.MAIN))
+                                    .firstFramesRead(true)
+                                    .build()))
+                        .build()))
+            .build();
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    h264EntryBuilder().build(),
+                    hevcEntryBuilder()
+                        .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
+                        .dolbyVisionProfiles(
+                            List.of(
+                                DolbyVisionProfileCapability.builder()
+                                    .profile(DolbyVisionProfile.PROFILE_8_1)
+                                    .maxLevel(6)
+                                    .build()))
+                        .build()))
+            .build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
                     .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())

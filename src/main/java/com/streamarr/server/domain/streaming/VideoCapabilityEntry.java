@@ -65,7 +65,8 @@ public record VideoCapabilityEntry(
     return acceptsCodecProfile(properties)
         && acceptsBitDepth(copy.bitDepth())
         && acceptsPictureSize(copy.decodedSize())
-        && acceptsFrameRate(copy.frameRate());
+        && acceptsFrameRate(copy.frameRate())
+        && acceptsDynamicRange(copy);
   }
 
   private boolean acceptsCodecProfile(VideoStreamProperties properties) {
@@ -93,5 +94,34 @@ public record VideoCapabilityEntry(
   // A stream without a usable frame rate cannot be encoded (#446), so a copy is its only path.
   private boolean acceptsFrameRate(Optional<Fraction> frameRate) {
     return frameRate.map(rate -> rate.toDouble() <= maxFrameRate).orElse(true);
+  }
+
+  // Declaring a compatible base declares neither Dolby Vision nor HDR10+ (ADR 0049).
+  private boolean acceptsDynamicRange(VideoStreamCopy copy) {
+    var range = copy.dynamicRange();
+    var dolbyVisionFits =
+        switch (CopiedDolbyVision.of(copy.codecFamily(), range)) {
+          case CopiedDolbyVision.None _, CopiedDolbyVision.KeptUnderSdrBase _ -> true;
+          case CopiedDolbyVision.Declarable(var profile, var level) ->
+              listsDolbyVision(profile, level);
+          case CopiedDolbyVision.Undeclarable _ -> false;
+        };
+    return dolbyVisionFits
+        && acceptsCompatibleBase(range.compatibleBase())
+        && (range.hdr10Plus() != Presence.PRESENT || hdr10Plus);
+  }
+
+  // A base of NONE comes only with Dolby Vision, whose profile and level alone admit it.
+  private boolean acceptsCompatibleBase(CompatibleBase base) {
+    return switch (base) {
+      case UNSPECIFIED -> compatibleBases.contains(CompatibleBase.SDR);
+      case NONE -> true;
+      case SDR, PQ, HLG -> compatibleBases.contains(base);
+    };
+  }
+
+  private boolean listsDolbyVision(DolbyVisionProfile profile, int level) {
+    return dolbyVisionProfiles.stream()
+        .anyMatch(capability -> capability.profile() == profile && level <= capability.maxLevel());
   }
 }
