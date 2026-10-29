@@ -11,8 +11,11 @@ post {
 }
 
 body:graphql {
-  mutation CreatePlaybackSession($mediaFileId: ID!) {
-    createPlaybackSession(input: { mediaFileId: $mediaFileId }) {
+  mutation CreatePlaybackSession(
+    $mediaFileId: ID!
+    $capabilities: ClientCapabilityDeclarationInput!
+  ) {
+    createPlaybackSession(input: { mediaFileId: $mediaFileId, capabilities: $capabilities }) {
       playbackSession {
         id
         formatAttemptCount
@@ -52,7 +55,30 @@ body:graphql {
 
 body:graphql:vars {
   {
-    "mediaFileId": "{{MEDIA_FILE_ID}}"
+    "mediaFileId": "{{MEDIA_FILE_ID}}",
+    "capabilities": {
+      "video": [
+        {
+          "codecFamily": "H264",
+          "codecProfiles": [
+            { "profile": "H264_CONSTRAINED_BASELINE", "maxLevel": 51 },
+            { "profile": "H264_MAIN", "maxLevel": 51 },
+            { "profile": "H264_HIGH", "maxLevel": 51 }
+          ],
+          "maxBitDepth": 8,
+          "maxWidth": 3840,
+          "maxHeight": 2160,
+          "maxFrameRate": 60,
+          "compatibleBases": ["SDR"],
+          "dolbyVisionProfiles": [],
+          "hdr10Plus": false,
+          "hls": true
+        }
+      ],
+      "audio": [
+        { "codec": "AAC", "maxChannels": 2, "hls": true }
+      ]
+    }
   }
 }
 

@@ -33,7 +33,6 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -169,10 +168,7 @@ class HlsStreamingSmokeTest {
   }
 
   private StreamingOptions defaultOptions() {
-    return StreamingOptions.builder()
-        .quality(VideoQuality.AUTO)
-        .supportedCodecs(List.of("h264"))
-        .build();
+    return StreamingOptions.builder().quality(VideoQuality.AUTO).build();
   }
 
   private MediaFile seedMediaFile() {
@@ -230,11 +226,7 @@ class HlsStreamingSmokeTest {
   @DisplayName("Should choose remux when source codec is compatible")
   void shouldChooseRemuxWhenSourceCodecIsCompatible() {
     var file = seedMediaFile();
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.AUTO)
-            .supportedCodecs(List.of("h264"))
-            .build();
+    var options = StreamingOptions.builder().quality(VideoQuality.AUTO).build();
 
     var session = createSession(file.getId(), UUID.randomUUID(), options);
 
@@ -246,11 +238,7 @@ class HlsStreamingSmokeTest {
   @DisplayName("Should start FFmpeg and produce segments when session is created")
   void shouldStartFfmpegAndProduceSegmentsWhenSessionIsCreated() {
     var file = seedMediaFile();
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.AUTO)
-            .supportedCodecs(List.of("h264"))
-            .build();
+    var options = StreamingOptions.builder().quality(VideoQuality.AUTO).build();
 
     var session = createSession(file.getId(), UUID.randomUUID(), options);
 
@@ -345,11 +333,7 @@ class HlsStreamingSmokeTest {
   void shouldTerminateFfmpegProcessWhenSessionIsDestroyed() throws Exception {
     Files.createFile(testVideo.getParent().resolve("hold-producer"));
     var file = seedMediaFile();
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.AUTO)
-            .supportedCodecs(List.of("h264"))
-            .build();
+    var options = StreamingOptions.builder().quality(VideoQuality.AUTO).build();
 
     var session = createSession(file.getId(), UUID.randomUUID(), options);
     var sessionId = session.getSessionId();
@@ -374,11 +358,7 @@ class HlsStreamingSmokeTest {
   @DisplayName("Should remove session state when session is destroyed")
   void shouldRemoveSessionStateWhenSessionIsDestroyed() {
     var file = seedMediaFile();
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.AUTO)
-            .supportedCodecs(List.of("h264"))
-            .build();
+    var options = StreamingOptions.builder().quality(VideoQuality.AUTO).build();
 
     var session = createSession(file.getId(), UUID.randomUUID(), options);
     var sessionId = session.getSessionId();

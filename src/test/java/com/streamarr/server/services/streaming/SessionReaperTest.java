@@ -28,7 +28,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayDeque;
-import java.util.List;
 import java.util.OptionalDouble;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -117,13 +116,7 @@ class SessionReaperTest {
             .clock(Clock.fixed(Instant.now().minus(Duration.ofHours(25)), ZoneOffset.UTC))
             .build();
     var command =
-        startPlaybackBuilder()
-            .options(
-                StreamingOptions.builder()
-                    .quality(quality)
-                    .supportedCodecs(List.of("h264"))
-                    .build())
-            .build();
+        startPlaybackBuilder().options(StreamingOptions.builder().quality(quality).build()).build();
     var initial = acceptedPlayback(playback.start(command));
     var unrelated = startPlaybackBuilder().build();
     var retained = acceptedPlayback(playback.start(unrelated));
