@@ -11,6 +11,7 @@ import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.Fraction;
+import com.streamarr.server.domain.streaming.ProbedVideoCodec;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
@@ -214,14 +215,14 @@ class RemoteVariantJobMapperTest {
 
   @ParameterizedTest
   @CsvSource({
-    "h264, VIDEO_CODEC_FAMILY_H264",
-    "hevc, VIDEO_CODEC_FAMILY_HEVC",
-    "av1, VIDEO_CODEC_FAMILY_AV1",
-    "vp9, VIDEO_CODEC_FAMILY_UNSPECIFIED"
+    "H264, VIDEO_CODEC_FAMILY_H264",
+    "HEVC, VIDEO_CODEC_FAMILY_HEVC",
+    "AV1, VIDEO_CODEC_FAMILY_AV1",
+    "OTHER, VIDEO_CODEC_FAMILY_UNSPECIFIED"
   })
   @DisplayName("Should send the source's codec family when the job encodes the video")
   void shouldSendTheSourcesCodecFamilyWhenTheJobEncodesTheVideo(
-      String sourceCodec, VideoCodecFamily sourceCodecFamily) {
+      ProbedVideoCodec sourceCodec, VideoCodecFamily sourceCodecFamily) {
     var request =
         encodeAttempt("h264")
             .transcodeDecision(
@@ -261,7 +262,7 @@ class RemoteVariantJobMapperTest {
                     .videoSource(
                         Optional.of(
                             VideoPlaybackFactsFixture.sdrH264FactsBuilder()
-                                .codec(Optional.of(sourceCodec))
+                                .codec(Optional.of(ProbedVideoCodec.fromProbedName(sourceCodec)))
                                 .build()))
                     .build())
             .build();
@@ -314,7 +315,7 @@ class RemoteVariantJobMapperTest {
                     .videoSource(
                         Optional.of(
                             VideoPlaybackFactsFixture.sdrH264FactsBuilder()
-                                .codec(Optional.of("hevc"))
+                                .codec(Optional.of(ProbedVideoCodec.HEVC))
                                 .videoProperties(properties)
                                 .build()))
                     .build())

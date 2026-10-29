@@ -7,6 +7,7 @@ import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.ProbedVideoCodec;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.SubtitleMode;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
@@ -257,13 +258,20 @@ final class RemoteVariantJobMapper {
     };
   }
 
-  // The contract names no other source codec family.
   private static VideoCodecFamily sourceCodecFamily(VideoPlaybackFacts source) {
-    return switch (source.codec().orElse("")) {
-      case "h264" -> VideoCodecFamily.VIDEO_CODEC_FAMILY_H264;
-      case "hevc" -> VideoCodecFamily.VIDEO_CODEC_FAMILY_HEVC;
-      case "av1" -> VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1;
-      default -> VideoCodecFamily.VIDEO_CODEC_FAMILY_UNSPECIFIED;
+    return source
+        .codec()
+        .map(RemoteVariantJobMapper::sourceCodecFamily)
+        .orElse(VideoCodecFamily.VIDEO_CODEC_FAMILY_UNSPECIFIED);
+  }
+
+  // The contract names no other source codec family.
+  private static VideoCodecFamily sourceCodecFamily(ProbedVideoCodec codec) {
+    return switch (codec) {
+      case H264 -> VideoCodecFamily.VIDEO_CODEC_FAMILY_H264;
+      case HEVC -> VideoCodecFamily.VIDEO_CODEC_FAMILY_HEVC;
+      case AV1 -> VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1;
+      case OTHER -> VideoCodecFamily.VIDEO_CODEC_FAMILY_UNSPECIFIED;
     };
   }
 

@@ -8,16 +8,16 @@ import lombok.NonNull;
 /**
  * The facts of the chosen video stream that probe version 4 and later report for playback. A
  * transcode decision reads them, and the job carries the stream index, codec, dynamic range and
- * codec string to the worker as ADR 0036's source description. {@code codec} names the codec as the
- * probe stored it, such as {@code hevc}. {@code rotationDegrees} is the counterclockwise angle of
- * the stream's display matrix. {@code containerCropping} counts the pixels that the container
- * removes from the picture before the rotation. {@code videoProperties} is empty before probe
- * version 5.
+ * codec string to the worker as ADR 0036's source description. {@code codec} is the codec that the
+ * probe stored, and is empty when the probe stored none. {@code rotationDegrees} is the
+ * counterclockwise angle of the stream's display matrix. {@code containerCropping} counts the
+ * pixels that the container removes from the picture before the rotation. {@code videoProperties}
+ * is empty before probe version 5.
  */
 @Builder
 public record VideoPlaybackFacts(
     int streamIndex,
-    @NonNull Optional<String> codec,
+    @NonNull Optional<ProbedVideoCodec> codec,
     @NonNull VideoDynamicRange dynamicRange,
     @NonNull OptionalInt bitDepth,
     @NonNull Optional<ChromaSubsampling> chromaSubsampling,
@@ -79,7 +79,7 @@ public record VideoPlaybackFacts(
 
   @SuppressWarnings("java:S1068") // Lombok builder defaults — fields are used by generated code
   public static class VideoPlaybackFactsBuilder {
-    private Optional<String> codec = Optional.empty();
+    private Optional<ProbedVideoCodec> codec = Optional.empty();
     private VideoDynamicRange dynamicRange = VideoDynamicRange.UNSPECIFIED;
     private OptionalInt bitDepth = OptionalInt.empty();
     private Optional<ChromaSubsampling> chromaSubsampling = Optional.empty();

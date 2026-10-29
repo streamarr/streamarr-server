@@ -4,6 +4,7 @@ import com.streamarr.server.domain.streaming.ColorPrimaries;
 import com.streamarr.server.domain.streaming.ColorRange;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
 import com.streamarr.server.domain.streaming.MatrixCoefficients;
+import com.streamarr.server.domain.streaming.ProbedVideoCodec;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.TransferCharacteristics;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
@@ -18,7 +19,6 @@ import com.streamarr.transcode.v1.Presence;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
 import java.util.Optional;
 import java.util.OptionalInt;
-import java.util.Set;
 
 // Maps the facts that probe version 5 adds to each video stream and checks them against the
 // version 5 contract. Domain and protobuf contracts intentionally share simple names.
@@ -26,8 +26,6 @@ final class RemoteStreamPropertiesMapper {
 
   private static final int DOLBY_VISION_PROFILE_5 = 5;
   private static final int DOLBY_VISION_PROFILE_10 = 10;
-  private static final Set<String> RECORD_LESS_BASELESS_CODECS = Set.of("hevc", "av1");
-  private static final Set<String> PACKET_READ_CODECS = Set.of("h264", "hevc", "av1");
   // vdr_bit_depth_minus8 + 8, and a uint32 above Integer.MAX_VALUE arrives as a negative int.
   private static final int MINIMUM_VDR_BIT_DEPTH = 8;
 
@@ -39,12 +37,13 @@ final class RemoteStreamPropertiesMapper {
       return builder;
     }
 
+    var codec = ProbedVideoCodec.fromProbedName(stream.getCodec());
     checkStaticHdrMetadataOmission(stream);
     checkFrameEvidence(stream);
-    checkPacketEvidence(stream);
-    checkCodecVisibility(stream);
-    checkCompatibleBase(stream);
-    return builder.videoProperties(Optional.of(properties(stream)));
+    checkPacketEvidence(stream, codec);
+    checkCodecVisibility(stream, codec);
+    checkCompatibleBase(stream, codec);
+    return builder.videoProperties(Optional.of(properties(stream, codec)));
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
@@ -101,24 +100,23 @@ final class RemoteStreamPropertiesMapper {
     }
   }
 
-  // The probe reads the packets of an H.264, HEVC or AV1 stream only beside its first frames.
-  private static void checkPacketEvidence(ProbeStreamInfo stream) {
+  private static void checkPacketEvidence(ProbeStreamInfo stream, ProbedVideoCodec codec) {
     if (!stream.hasFirstPacketsCarryPresentationTimes()) {
       return;
     }
 
-    if (!stream.getFirstFramesRead() || !PACKET_READ_CODECS.contains(stream.getCodec())) {
+    if (!stream.getFirstFramesRead() || !codec.isWalkedByProbe()) {
       throw contractViolation("Worker probe reported presentation times of packets it never read");
     }
   }
 
-  private static void checkCodecVisibility(ProbeStreamInfo stream) {
-    switch (stream.getCodec()) {
-      case "h264", "hevc" -> {
+  private static void checkCodecVisibility(ProbeStreamInfo stream, ProbedVideoCodec codec) {
+    switch (codec) {
+      case H264, HEVC -> {
         // The worker reads every frame feature of these codecs from the frames or the packets.
       }
-      case "av1" -> checkAv1RpuPlacement(stream.getDynamicRange());
-      default -> checkInvisibleFrameFeatures(stream.getDynamicRange());
+      case AV1 -> checkAv1RpuPlacement(stream.getDynamicRange());
+      case OTHER -> checkFrameEvidenceOfUnwalkedCodec(stream.getDynamicRange());
     }
   }
 
@@ -132,10 +130,11 @@ final class RemoteStreamPropertiesMapper {
     }
   }
 
-  // The probe walks neither the extradata nor the packets of any other codec. Its frames can still
-  // prove HDR10+ or an RPU present, but only a walk rules a feature out or places an RPU.
+  // The frames of a codec that the probe does not walk can still prove HDR10+ or an RPU present,
+  // but
+  // only a walk rules a feature out or places an RPU.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static void checkInvisibleFrameFeatures(
+  private static void checkFrameEvidenceOfUnwalkedCodec(
       com.streamarr.transcode.v1.VideoDynamicRange range) {
     var present = range.getDolbyVisionPresent();
     if (range.getHdr10Plus() == Presence.PRESENCE_ABSENT
@@ -151,9 +150,9 @@ final class RemoteStreamPropertiesMapper {
   // From probe version 5 on, profiles 5 and 10.0 have no compatible base whatever the signaled
   // transfer says. Otherwise the signaled transfer, which transfer_characteristics names, decides
   // the base.
-  private static void checkCompatibleBase(ProbeStreamInfo stream) {
+  private static void checkCompatibleBase(ProbeStreamInfo stream, ProbedVideoCodec codec) {
     var range = stream.getDynamicRange();
-    if (range.hasDolbyVisionPresent() && isBaselessProfile(stream, range.getDolbyVisionPresent())) {
+    if (range.hasDolbyVisionPresent() && isBaselessProfile(codec, range.getDolbyVisionPresent())) {
       checkBaselessProfileCompatibleBase(range.getCompatibleBase());
       return;
     }
@@ -199,15 +198,13 @@ final class RemoteStreamPropertiesMapper {
     };
   }
 
-  private static boolean isBaselessProfile(ProbeStreamInfo stream, DolbyVisionPresent present) {
+  private static boolean isBaselessProfile(ProbedVideoCodec codec, DolbyVisionPresent present) {
     if (present.getDeclared().hasProfile()) {
       return isBaselessRecord(present.getDeclared());
     }
 
-    // The header tells the profile when no record names one: the same header means profile 5 in
-    // HEVC and profile 10.0 in AV1.
     var header = present.getFirstRpuHeader();
-    return RECORD_LESS_BASELESS_CODECS.contains(stream.getCodec())
+    return codec.hasRecordLessBaselessProfile()
         && present.hasFirstRpuHeader()
         && header.getVdrRpuProfile() == 0
         && header.getBaseLayerFullRange();
@@ -223,7 +220,7 @@ final class RemoteStreamPropertiesMapper {
     };
   }
 
-  private static VideoStreamProperties properties(ProbeStreamInfo stream) {
+  private static VideoStreamProperties properties(ProbeStreamInfo stream, ProbedVideoCodec codec) {
     var profile = codecProfile(stream.getCodecProfile());
     var tier = codecTier(stream.getCodecTier());
     if (profile.isEmpty() && (stream.hasCodecLevel() || tier.isPresent())) {
@@ -231,11 +228,11 @@ final class RemoteStreamPropertiesMapper {
     }
 
     // The worker reads the profile from the record or sequence header of the stream's own codec.
-    if (profile.isPresent() && !codecOf(profile.get()).equals(stream.getCodec())) {
+    if (profile.isPresent() && profile.get().codec() != codec) {
       throw contractViolation("Worker probe gave a stream a codec profile of another codec");
     }
 
-    if (tier.isPresent() && "h264".equals(stream.getCodec())) {
+    if (tier.isPresent() && codec == ProbedVideoCodec.H264) {
       throw contractViolation("Worker probe gave an H.264 codec profile a tier");
     }
 
@@ -267,23 +264,6 @@ final class RemoteStreamPropertiesMapper {
     }
 
     return OptionalInt.of(stream.getCodecLevel());
-  }
-
-  // The codec as ffprobe names it.
-  private static String codecOf(VideoCodecProfile profile) {
-    return switch (profile) {
-      case H264_CONSTRAINED_BASELINE,
-          H264_BASELINE,
-          H264_MAIN,
-          H264_EXTENDED,
-          H264_HIGH,
-          H264_HIGH_10,
-          H264_HIGH_422,
-          H264_HIGH_444_PREDICTIVE ->
-          "h264";
-      case HEVC_MAIN, HEVC_MAIN_10, HEVC_MAIN_STILL_PICTURE, HEVC_FORMAT_RANGE_EXTENSIONS -> "hevc";
-      case AV1_MAIN, AV1_HIGH, AV1_PROFESSIONAL -> "av1";
-    };
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")

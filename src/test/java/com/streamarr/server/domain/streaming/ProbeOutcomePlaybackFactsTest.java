@@ -30,7 +30,7 @@ class ProbeOutcomePlaybackFactsTest {
         .hasValueSatisfying(
             facts -> {
               assertThat(facts.streamIndex()).isEqualTo(1);
-              assertThat(facts.codec()).contains("h264");
+              assertThat(facts.codec()).contains(ProbedVideoCodec.H264);
               assertThat(facts.codecString()).contains("avc1.640028");
               assertThat(facts.rotationDegrees()).hasValue(-90);
               assertThat(facts.containerCropping()).contains(LETTERBOX);
