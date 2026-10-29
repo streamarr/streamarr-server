@@ -17,10 +17,13 @@ import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.ColorPrimaries;
 import com.streamarr.server.domain.streaming.ColorRange;
+import com.streamarr.server.domain.streaming.CompatibleBase;
+import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MatrixCoefficients;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -32,6 +35,7 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TransferCharacteristics;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
+import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.fakes.CapturingEventPublisher;
@@ -171,9 +175,10 @@ class ProbeVersion5WorkerIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should store the codec profile, color signaling and first frames of a video stream when the worker probes it")
-  void shouldStoreTheCodecProfileColorSignalingAndFirstFramesOfAVideoStreamWhenTheWorkerProbesIt()
-      throws Exception {
+      "Should store an SDR stream's codec profile, color signaling and absent HDR features when the worker reads its first frames")
+  void
+      shouldStoreAnSdrStreamsCodecProfileColorSignalingAndAbsentHdrFeaturesWhenTheWorkerReadsItsFirstFrames()
+          throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
 
     try (var server = server(new LocalSegmentStore(tempDir.resolve("server-segments")));
@@ -193,19 +198,27 @@ class ProbeVersion5WorkerIT extends AbstractIntegrationTest {
       assertThat(stored)
           .isInstanceOfSatisfying(
               ProbeOutcome.Success.class,
-              success ->
-                  assertThat(success.streams().getFirst().videoProperties())
-                      .contains(
-                          VideoStreamProperties.builder()
-                              .codecProfile(Optional.of(VideoCodecProfile.H264_HIGH))
-                              .codecLevel(OptionalInt.of(40))
-                              .colorPrimaries(Optional.of(ColorPrimaries.BT709))
-                              .transferCharacteristics(Optional.of(TransferCharacteristics.BT709))
-                              .matrixCoefficients(Optional.of(MatrixCoefficients.BT709))
-                              .colorRange(Optional.of(ColorRange.LIMITED))
-                              .firstFramesRead(true)
-                              .firstPacketsCarryPresentationTimes(Optional.of(true))
-                              .build()));
+              success -> {
+                var video = success.streams().getFirst();
+                assertThat(video.videoProperties())
+                    .contains(
+                        VideoStreamProperties.builder()
+                            .codecProfile(Optional.of(VideoCodecProfile.H264_HIGH))
+                            .codecLevel(OptionalInt.of(40))
+                            .colorPrimaries(Optional.of(ColorPrimaries.BT709))
+                            .transferCharacteristics(Optional.of(TransferCharacteristics.BT709))
+                            .matrixCoefficients(Optional.of(MatrixCoefficients.BT709))
+                            .colorRange(Optional.of(ColorRange.LIMITED))
+                            .firstFramesRead(true)
+                            .firstPacketsCarryPresentationTimes(Optional.of(true))
+                            .build());
+                // For H.264 the worker walks the units of the frames that it read, so it reports
+                // HDR10+ and an RPU as absent rather than unknown.
+                assertThat(video.dynamicRange())
+                    .contains(
+                        new VideoDynamicRange(
+                            CompatibleBase.SDR, Presence.ABSENT, new DolbyVision.Absent()));
+              });
     }
   }
 
