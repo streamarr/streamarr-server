@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
@@ -239,11 +240,8 @@ class WorkerPlaybackRecoveryIT {
           StartPlaybackSessionCommand.builder()
               .mediaFileId(file.getId())
               .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
-              .options(
-                  StreamingOptions.builder()
-                      .quality(VideoQuality.AUTO)
-                      .supportedCodecs(List.of("h264"))
-                      .build())
+              .options(StreamingOptions.builder().quality(VideoQuality.AUTO).build())
+              .capabilityDeclaration(defaultDeclarationBuilder().build())
               .build();
     }
 

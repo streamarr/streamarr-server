@@ -427,6 +427,7 @@ public class PlaybackSessionService implements AutoCloseable {
                 .mediaFileId(playback.command.mediaFileId())
                 .identity(playback.command.identity())
                 .options(playback.command.options())
+                .capabilityDeclaration(playback.command.capabilityDeclaration())
                 .excludedEncodeCodecFamilies(Set.copyOf(playback.excludedEncodeCodecFamilies))
                 .videoFormatConstraint(
                     playback.command.options().quality() == VideoQuality.ORIGINAL

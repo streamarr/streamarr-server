@@ -208,7 +208,20 @@ class AdversarialPlaybackTest {
     return queries.execute(
         """
         mutation($id: ID!) {
-          createPlaybackSession(input: {mediaFileId: $id}) {
+          createPlaybackSession(
+            input: {
+              mediaFileId: $id
+              capabilities: {
+                video: [{
+                  codecFamily: H264
+                  codecProfiles: [{profile: H264_HIGH, maxLevel: 41}]
+                  maxBitDepth: 8, maxWidth: 1920, maxHeight: 1080, maxFrameRate: 60
+                  compatibleBases: [SDR], dolbyVisionProfiles: [], hdr10Plus: false, hls: true
+                }]
+                audio: [{codec: AAC, maxChannels: 2, hls: true}]
+              }
+            }
+          ) {
             playbackSession { id }
             userErrors { __typename ... on MutationError { message } }
           }

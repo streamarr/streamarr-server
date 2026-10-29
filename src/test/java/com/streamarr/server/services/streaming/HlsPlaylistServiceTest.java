@@ -113,7 +113,7 @@ class HlsPlaylistServiceTest {
                     .subtitleDecision(SubtitleDecision.exclude())
                     .videoSource(Optional.of(source))
                     .build())
-            .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
+            .options(StreamingOptions.builder().build())
             .createdAt(Instant.now())
             .build();
     session.setHandle(StreamSessionFixture.mintHandle(1L, TranscodeStatus.ACTIVE));
@@ -147,7 +147,7 @@ class HlsPlaylistServiceTest {
                     .videoSource(
                         Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()))
                     .build())
-            .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
+            .options(StreamingOptions.builder().build())
             .createdAt(Instant.now())
             .build();
     session.setHandle(StreamSessionFixture.mintHandle(1L, TranscodeStatus.ACTIVE));
@@ -206,7 +206,7 @@ class HlsPlaylistServiceTest {
                     .subtitleDecision(SubtitleDecision.exclude())
                     .videoSource(Optional.of(source))
                     .build())
-            .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
+            .options(StreamingOptions.builder().build())
             .variants(variants)
             .createdAt(Instant.now())
             .build();
@@ -1007,7 +1007,7 @@ class HlsPlaylistServiceTest {
                       .subtitleDecision(SubtitleDecision.exclude())
                       .videoSource(Optional.of(source))
                       .build())
-              .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
+              .options(StreamingOptions.builder().build())
               .variants(List.of(variant))
               .createdAt(Instant.now())
               .build();

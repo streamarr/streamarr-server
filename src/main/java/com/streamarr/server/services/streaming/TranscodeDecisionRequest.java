@@ -1,7 +1,7 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.MediaProbe;
-import com.streamarr.server.domain.streaming.StreamingOptions;
 import java.util.Set;
 import lombok.Builder;
 import lombok.NonNull;
@@ -9,7 +9,7 @@ import lombok.NonNull;
 @Builder(toBuilder = true)
 public record TranscodeDecisionRequest(
     @NonNull MediaProbe source,
-    @NonNull StreamingOptions clientOptions,
+    @NonNull ClientCapabilityDeclaration capabilityDeclaration,
     @NonNull Set<String> encodableVideoCodecFamilies,
     @NonNull VideoFormatConstraint videoFormatConstraint,
     @NonNull Set<String> excludedEncodeCodecFamilies) {
@@ -27,7 +27,7 @@ public record TranscodeDecisionRequest(
     public TranscodeDecisionRequest build() {
       return new TranscodeDecisionRequest(
           source,
-          clientOptions,
+          capabilityDeclaration,
           encodableVideoCodecFamilies,
           videoFormatConstraint,
           excludedEncodeCodecFamilies);

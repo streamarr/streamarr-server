@@ -14,6 +14,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.PlaybackRequest;
@@ -43,7 +44,7 @@ public final class StreamSessionFixture {
         .sourcePath(Path.of("/media/movie.mkv"))
         .mediaProbe(defaultProbeBuilder().build())
         .transcodeDecision(remuxDecision())
-        .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
+        .options(StreamingOptions.builder().build())
         .createdAt(Instant.now());
   }
 
@@ -132,13 +133,20 @@ public final class StreamSessionFixture {
 
   public static CreateStreamSessionCommand createStreamSessionCommand(
       UUID mediaFileId, UUID profileId, StreamingOptions options) {
+    return createStreamSessionCommandBuilder(mediaFileId, profileId).options(options).build();
+  }
+
+  /** A command with Auto quality and the default capability declaration, for the profile. */
+  public static CreateStreamSessionCommand.CreateStreamSessionCommandBuilder
+      createStreamSessionCommandBuilder(UUID mediaFileId, UUID profileId) {
     var authority = playbackAuthorityFor(profileId);
     return CreateStreamSessionCommand.builder()
         .streamSessionId(UUID.randomUUID())
         .mediaFileId(mediaFileId)
         .identity(identityFor(authority))
-        .options(options)
-        .build();
+        .options(StreamingOptions.builder().quality(VideoQuality.AUTO).build())
+        .capabilityDeclaration(
+            ClientCapabilityDeclarationFixture.defaultDeclarationBuilder().build());
   }
 
   public static PlaybackRequest playbackRequest(StreamSession session) {
