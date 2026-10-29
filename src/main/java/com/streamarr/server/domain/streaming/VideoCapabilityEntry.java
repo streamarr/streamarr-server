@@ -41,4 +41,9 @@ public record VideoCapabilityEntry(
     compatibleBases = List.copyOf(compatibleBases);
     dolbyVisionProfiles = List.copyOf(dolbyVisionProfiles);
   }
+
+  /** Whether this entry accepts the stream copy over HLS. */
+  public boolean acceptsHlsCopy(@NonNull VideoStreamCopy copy) {
+    return hls && copy.codecFamily() == codecFamily;
+  }
 }
