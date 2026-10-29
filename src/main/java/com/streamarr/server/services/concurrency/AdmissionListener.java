@@ -11,7 +11,10 @@ public interface AdmissionListener {
    */
   default void onAdmitted() {}
 
-  /** Called on the task's thread after its report returned its admission. */
+  /**
+   * Called on the task's thread after its report returned its admission. The returned admission can
+   * let a later task run and report first, so reports can arrive out of admission order.
+   */
   default void onReported(AdmittedTaskReport report) {}
 
   /** Called once when the admission closes. */
