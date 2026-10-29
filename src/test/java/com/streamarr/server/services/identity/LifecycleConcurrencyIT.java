@@ -4,9 +4,11 @@ import static com.streamarr.server.fixtures.AccountInvitationFixture.pendingInvi
 import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
 import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
@@ -14,10 +16,12 @@ import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.ResourceBusyException;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
+import com.streamarr.server.repositories.auth.DeviceRegistrationRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -41,6 +45,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
@@ -61,6 +66,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
   private static final String ISSUED_INVITATION_INVALIDATION =
       "%update%account_invitation%issuer_account_id%";
   private static final String SESSION_REVOCATION = "%update%auth_session%revoked_at%";
+  private static final String REGISTRATION_REVOCATION = "%update%device_registration%revoked_at%";
   private static final String COMMIT = "commit";
 
   @Autowired private AccountLifecycleService accountLifecycleService;
@@ -72,6 +78,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
   @Autowired private AuthSessionRepository sessionRepository;
   @Autowired private ProfileManagerRepository managerRepository;
   @Autowired private AccountInvitationRepository invitationRepository;
+  @Autowired private DeviceRegistrationRepository registrationRepository;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DataSource dataSource;
   @Autowired private JdbcTemplate jdbcTemplate;
@@ -542,6 +549,64 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should report self-deletion busy and keep the Account when an administrator transfers it"
+          + " meanwhile")
+  void shouldReportSelfDeletionBusyAndKeepAccountWhenAdministratorTransfersItMeanwhile()
+      throws Exception {
+    var actor = authTestSupport.createAdminIdentity();
+    var source = authTestSupport.createIdentity();
+    var self = authTestSupport.createHouseholdMemberIdentity(source);
+    var destination = authTestSupport.createIdentity();
+    var registration = registrationAuthorizedBy(self);
+    try {
+      assertThatThrownBy(
+              () ->
+                  commitCompetitorWhileOperationWaitsOnHeldRow(
+                      HeldRowRace.builder()
+                          .heldRow(rowOf("device_registration", registration.getId()))
+                          .operation(
+                              () ->
+                                  accountLifecycleService.deleteMyAccount(
+                                      authenticated(self), "DELETE"))
+                          .blockedStatement(REGISTRATION_REVOCATION)
+                          .competitor(
+                              () ->
+                                  assertThat(
+                                          accountLifecycleService.transferAccount(
+                                              authenticated(actor),
+                                              // END would also wait to revoke the held
+                                              // registration.
+                                              TransferAccountCommand.builder()
+                                                  .accountId(self.account().getId())
+                                                  .destinationHouseholdId(
+                                                      destination.household().getId())
+                                                  .sourceHouseholdAccess(
+                                                      SourceHouseholdAccess.KEEP_AS_VISITOR)
+                                                  .reason("relocated")
+                                                  .build()))
+                                      .isInstanceOf(Outcome.Accepted.class))
+                          .build()))
+          .isInstanceOf(ExecutionException.class)
+          .cause()
+          .isInstanceOf(ResourceBusyException.class);
+
+      assertThat(accountRepository.findById(self.account().getId()))
+          .get()
+          .extracting(UserAccount::getHouseholdId)
+          .isEqualTo(destination.household().getId());
+      assertThat(registrationRepository.findById(registration.getId()).orElseThrow().getRevokedAt())
+          .as("self-deletion side effects must roll back with the busy mutation")
+          .isNull();
+    } finally {
+      registrationRepository.deleteById(registration.getId());
+      authTestSupport.deleteIdentity(destination);
+      authTestSupport.deleteIdentity(source);
+      authTestSupport.deleteIdentity(actor);
+    }
+  }
+
+  @Test
+  @DisplayName(
       "Should return FinalAccount and keep one resident when all Accounts transfer concurrently")
   void shouldReturnFinalAccountAndKeepOneResidentWhenAllAccountsTransferConcurrently()
       throws Exception {
@@ -778,6 +843,16 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
 
   private RowLockTarget rowOf(String table, UUID rowId) {
     return RowLockTarget.builder().dataSource(dataSource).table(table).rowId(rowId).build();
+  }
+
+  private DeviceRegistration registrationAuthorizedBy(AuthTestSupport.TestIdentity identity) {
+    return registrationRepository.saveAndFlush(
+        DeviceRegistration.builder()
+            .esn(UUID.randomUUID().toString())
+            .displayName("Living room TV")
+            .householdId(identity.household().getId())
+            .authorizingAccountId(identity.account().getId())
+            .build());
   }
 
   private UserAccount residentOf(UUID householdId, HouseholdRole role) {
