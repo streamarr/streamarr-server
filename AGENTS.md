@@ -269,7 +269,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - **Pure logic unit tests** (no database, no Spring) for parsers, validators, and stateless utilities with meaningful complexity (e.g., pagination math)
 
 ### Hard Rules
-- Mockito **mocks for verification** are banned — no `verify()`, no `ArgumentCaptor`. Observe outcomes through Fakes (e.g., `FakeMovieRepository`) instead
+- Mockito **mocks for verification** and **spies** are banned — no `verify()`, no `ArgumentCaptor`, no `@MockitoSpyBean`, no `spy()`. Observe outcomes through Fakes (e.g., `FakeMovieRepository`) instead. To park a race at a chosen point, hold the PostgreSQL lock the operation takes next (`PostgresLockTestSupport.lockRow`, then `awaitBlockedBackendPid`)
 - Tests assert outcomes (returned values, persisted state, published events, metrics, health), never log output. The one exception is a **redaction test** proving that a secret, credential, personal data, or attacker-controlled input stays out of the logs: capture with `LogCapture`, assert `renderedEvents()` is not empty (so the check cannot pass vacuously) and that no rendered event contains the value, and never pin a level, wording, or event count. A failure whose only trace is a log line is a missing outcome: give it a metric, health signal, persisted record, or event and test that instead
 - NEVER make a method public or package-private solely for testing, break encapsulation via reflection (`FieldUtils.writeField`), or test implementation details that would break on refactoring
 - All database tests use TestContainers — no H2

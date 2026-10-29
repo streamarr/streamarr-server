@@ -20,6 +20,22 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 public final class PostgresLockTestSupport {
 
+  private static final String WAITERS_BEHIND =
+      """
+      WITH RECURSIVE waiter AS (
+        SELECT pid FROM pg_stat_activity WHERE ? = ANY(pg_blocking_pids(pid))
+        UNION
+        SELECT blocked.pid
+        FROM pg_stat_activity blocked
+        JOIN waiter ON waiter.pid = ANY(pg_blocking_pids(blocked.pid))
+      )
+      SELECT count(*)
+      FROM pg_stat_activity activity
+      JOIN waiter USING (pid)
+      WHERE activity.wait_event_type = 'Lock'
+        AND activity.query ILIKE ?
+      """;
+
   private PostgresLockTestSupport() {}
 
   public static void lockArtworkRows(Connection connection, UUID entityId) throws SQLException {
@@ -73,24 +89,25 @@ public final class PostgresLockTestSupport {
    * blocks. Scoping by the holder keeps the count exact while other tests contend for locks.
    */
   public static int waitersBehind(JdbcTemplate jdbcTemplate, int blockerPid, String queryPattern) {
-    return jdbcTemplate.queryForObject(
-        """
-        WITH RECURSIVE waiter AS (
-          SELECT pid FROM pg_stat_activity WHERE ? = ANY(pg_blocking_pids(pid))
-          UNION
-          SELECT blocked.pid
-          FROM pg_stat_activity blocked
-          JOIN waiter ON waiter.pid = ANY(pg_blocking_pids(blocked.pid))
-        )
-        SELECT count(*)
-        FROM pg_stat_activity activity
-        JOIN waiter USING (pid)
-        WHERE activity.wait_event_type = 'Lock'
-          AND activity.query ILIKE ?
-        """,
-        Integer.class,
-        blockerPid,
-        queryPattern);
+    return jdbcTemplate.queryForObject(WAITERS_BEHIND, Integer.class, blockerPid, queryPattern);
+  }
+
+  /**
+   * {@link #waitersBehind(JdbcTemplate, int, String)} read through {@code observer}. A caller that
+   * holds the lock in its own transaction polls this way: that transaction keeps its first activity
+   * snapshot and would never see a new waiter.
+   */
+  public static int waitersBehind(Connection observer, int blockerPid, String queryPattern)
+      throws SQLException {
+    clearActivitySnapshot(observer);
+    try (var statement = observer.prepareStatement(WAITERS_BEHIND)) {
+      statement.setInt(1, blockerPid);
+      statement.setString(2, queryPattern);
+      try (var result = statement.executeQuery()) {
+        result.next();
+        return result.getInt(1);
+      }
+    }
   }
 
   /** Waits until exactly {@code waiters} backends wait behind {@code blockerPid}. */
