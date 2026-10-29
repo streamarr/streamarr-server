@@ -29,6 +29,7 @@ import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
+import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePosition;
@@ -1317,24 +1318,30 @@ class TranscodeDecisionServiceTest {
             "Original, 2160p60", VideoFormatConstraint.COPY_ONLY, uhdAt60, Optional.empty()));
   }
 
-  // ADR 0037's frame-rate rule divides 120 fps motion to a 60 fps output frame rate, which only an
-  // encode runs at. A copy keeps every source frame.
+  // ADR 0037's frame-rate rule snaps the rate that the source's frames run at to a listed output
+  // frame rate, which only an encode runs at. A copy keeps every source frame at its own rate.
   @ParameterizedTest(name = "{0}")
-  @MethodSource("constraintsFor120FpsSource")
+  @MethodSource("sourcesWhoseFramesRunFasterThanTheirOutputFrameRate")
   @DisplayName(
-      "Should not copy 120 fps video when the entry's maximum frame rate is 60 fps although the"
-          + " output frame rate is 60 fps")
+      "Should not copy video whose frames run faster than the entry's maximum frame rate when its"
+          + " output frame rate fits that maximum")
   void
-      shouldNotCopy120FpsVideoWhenTheEntrysMaximumFrameRateIs60FpsAlthoughTheOutputFrameRateIs60Fps(
-          VideoFormatConstraint constraint, Optional<TranscodeMode> expected) {
-    var source =
-        probeVersion5H264(
-            new PictureSize(1920, 1080),
-            VideoPlaybackFactsFixture.packetScanRule(120, new Fraction(60, 1)));
+      shouldNotCopyVideoWhoseFramesRunFasterThanTheEntrysMaximumFrameRateWhenItsOutputFrameRateFitsThatMaximum(
+          String scenario,
+          FrameRateRule frameRateRule,
+          VideoFormatConstraint constraint,
+          Optional<TranscodeMode> expected) {
+    var outputFrameRate = frameRateRule.outputFrameRate().orElseThrow().toDouble();
+    var source = probeVersion5H264(new PictureSize(1920, 1080), frameRateRule);
     var declaration =
         defaultDeclarationBuilder()
             .video(
-                List.of(h264EntryBuilder().maxWidth(1920).maxHeight(1080).maxFrameRate(60).build()))
+                List.of(
+                    h264EntryBuilder()
+                        .maxWidth(1920)
+                        .maxHeight(1080)
+                        .maxFrameRate(outputFrameRate)
+                        .build()))
             .build();
 
     var decision =
@@ -1349,11 +1356,36 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.map(TranscodeDecision::transcodeMode)).isEqualTo(expected);
   }
 
-  static Stream<Arguments> constraintsFor120FpsSource() {
-    return Stream.of(
-        Arguments.of(
-            VideoFormatConstraint.COPY_OR_ENCODE, Optional.of(TranscodeMode.VIDEO_TRANSCODE)),
-        Arguments.of(VideoFormatConstraint.COPY_ONLY, Optional.empty()));
+  static Stream<Arguments> sourcesWhoseFramesRunFasterThanTheirOutputFrameRate() {
+    var rules =
+        Stream.of(
+            Map.entry(
+                "120 fps motion divided to 60",
+                VideoPlaybackFactsFixture.packetScanRule(120, new Fraction(60, 1))),
+            Map.entry(
+                "37.5 fps motion rounded to 30",
+                VideoPlaybackFactsFixture.packetScanRule(37.5, new Fraction(30, 1))),
+            Map.entry(
+                "120 fps average rate divided to 60 after a scan found fewer than 2 frames",
+                VideoPlaybackFactsFixture.declaredRateFallbackRule(
+                    FrameRateRuleInputs.builder()
+                        .averageRate(Optional.of(new Fraction(120, 1)))
+                        .baseRate(Optional.of(new Fraction(120, 1)))
+                        .build(),
+                    new Fraction(60, 1))));
+    return rules.flatMap(
+        rule ->
+            Stream.of(
+                Arguments.of(
+                    "Auto, " + rule.getKey(),
+                    rule.getValue(),
+                    VideoFormatConstraint.COPY_OR_ENCODE,
+                    Optional.of(TranscodeMode.VIDEO_TRANSCODE)),
+                Arguments.of(
+                    "Original, " + rule.getKey(),
+                    rule.getValue(),
+                    VideoFormatConstraint.COPY_ONLY,
+                    Optional.empty())));
   }
 
   @Test
