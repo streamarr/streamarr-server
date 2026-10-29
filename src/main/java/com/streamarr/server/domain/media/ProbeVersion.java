@@ -8,9 +8,10 @@ public final class ProbeVersion {
 
   // Version 3 adds the chosen video stream's keyframe positions. Version 4 adds the dynamic range
   // facts of streamarr/streamarr-server#501 and the other facts that ADR 0032 lists for version 4.
-  // Each version includes the facts of every earlier version. Version 2 is unused. V097 deleted
-  // every result of an earlier version.
-  public static final int CURRENT = 4;
+  // Version 5 adds the frame facts below. Each version includes the facts of every earlier version.
+  // Version 2 is unused. V097 deleted every result before version 4; a version 4 result stays
+  // playable until the re-scan stores the file's version 5 result.
+  public static final int CURRENT = 5;
 
   public static final int FIRST_TO_REPORT_CHAPTERS = 4;
 

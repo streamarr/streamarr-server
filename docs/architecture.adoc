@@ -293,8 +293,32 @@ Version 4 also adds the end time of each audio and video stream, where the conta
 Version 4 also adds the sample rate and profile of each audio stream, the container cropping of each video stream, and the container's chapters.
 Version 4 also adds the HDR10 static metadata that the container declares for each video stream: the mastering display color volume and the content light level.
 Version 4 also adds the title, the handler name and the hearing-impaired flag of each audio and subtitle stream.
+Version 5 adds the codec profile, level, tier and color signaling of each video stream.
+Version 5 also reads the first frames of the chosen video stream for HDR10+, Dolby Vision RPUs and where the samples place them, and the static HDR metadata that only the bitstream carries.
+It also reports whether every packet that it read of that stream carries a presentation time.
+For H.264 and HEVC the worker also walks the SEI messages of the stream's extradata and of the packets that it read, and for AV1 the metadata OBUs of the extradata and of those packets.
+The walk skips each NAL unit that FFmpeg drops before its decoders see it, so such a unit is never an RPU, an SEI message or a slice.
+The probe reports HDR10+ or an RPU as absent only when the frames show none, the walk read every unit that could hold one, and no nested SEI message or layer-specific metadata OBU holds one; otherwise the feature stays unknown.
+For H.264 and HEVC it reports whether each RPU ends its own picture's sample, as Dolby Vision requires, or starts its sample.
+Before version 57, mkvmerge started each picture's sample with the previous picture's RPU, and a file of that layout whose start was cut away also starts its first picture's sample with an RPU, so the probe reports that every RPU starts its sample whether or not the first picture's sample holds one.
+The probe reports no placement when the first packets cannot tell it, and AV1 reports none, because an AV1 RPU belongs ahead of its frame.
+An RPU that starts its sample rules out a copy; no placement does not.
+An encode of an HEVC Dolby Vision source without a compatible base moves each RPU to the end of its picture's sample, where FFmpeg's decoder reads it, unless the probe found every RPU there already.
+The encode takes an RPU that starts a sample as the previous picture's, with or without a placement.
+The move copies the samples with their presentation times, and a copy of packets without them stamps each picture with its decode time and loses the pictures that B-frames reorder.
+So the encode moves RPUs only when the probe saw a presentation time on every packet that it read; otherwise it reads the samples unchanged.
+The usual source without presentation times is a raw HEVC stream.
+FFmpeg's HEVC parser ends each of its packets just ahead of the next access unit, so an RPU that follows its picture's slices, where Dolby Vision places it, ends that picture's packet, and the decoder reads it.
+The decoder still ignores an RPU that lies between the NAL units that begin an access unit and its first slice.
+A source without a compatible base and without presentation times that places its RPUs there keeps every picture, but each picture loses its reshaping and shows the wrong colours; moving those RPUs would keep the colours but lose pictures, because the move's copy stamps each picture with its decode time.
+For every other video codec the probe walks no units, so only the frames tell it a feature: it reports HDR10+ or an RPU when the frames show one, as VP9 frames in WebM carry HDR10+, but never reports HDR10+, an RPU or Dolby Vision as absent, and reports no placement.
+An omitted flag on a mastering display or a content light level means that the stream carries, or may carry, that value although the probe left it empty, either because the probe could not read the value or because it could not rule the value out.
+A stream with either flag set is never PQ10.
+When the probe read no frames, an empty value means only that the container declares none, so it never proves PQ10.
 Version 2 is unused.
-The worker contract defines version 4, but the server still requests version 3.
+The server requests version 5.
+After the version rises, the server scans each library that holds a result of an earlier version at startup.
+Playback keeps using a file's earlier result until the scan stores the file's new result.
 
 https://github.com/streamarr/streamarr-adr/blob/main/adr/0033-transcode-worker-is-a-separate-service.adoc[ADR 0033] requires workers for probing, transcoding, and remuxing.
 Each worker opens an outbound, long-lived gRPC `WorkerSession` over the server's single plaintext listener.
