@@ -212,7 +212,7 @@ public final class WorkerContainerFixture implements AutoCloseable {
 
   public List<Double> packetTimestamps(Path media) throws Exception {
     var timestamps =
-        probePackets(media, "v", List.of("-show_entries", "packet=pts_time")).stream()
+        probeEntries(media, "v", List.of("-show_entries", "packet=pts_time")).stream()
             .filter(line -> !line.equals("N/A"))
             .map(line -> line.replace(",", ""))
             .map(Double::parseDouble)
@@ -230,13 +230,13 @@ public final class WorkerContainerFixture implements AutoCloseable {
   }
 
   private List<String> packetHashes(Path media, String streamSelector) throws Exception {
-    return probePackets(
+    return probeEntries(
         media,
         streamSelector,
         List.of("-show_entries", "packet=data_hash", "-show_data_hash", "sha256"));
   }
 
-  private List<String> probePackets(
+  private List<String> probeEntries(
       Path media, String streamSelector, List<String> inspectionArguments) throws Exception {
     var input = "/tmp/inspect-" + UUID.randomUUID() + ".mp4";
     container.copyFileToContainer(Transferable.of(Files.readAllBytes(media), 0644), input);
