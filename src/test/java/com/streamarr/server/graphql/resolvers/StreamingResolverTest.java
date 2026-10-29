@@ -234,7 +234,7 @@ class StreamingResolverTest {
                 "data.playbackSession.currentFormatAttempt.error['__typename']", String.class))
         .isEqualTo("PlaybackStartupFailedError");
     assertThat(status.read("data.playbackSession.currentFormatAttempt.error.message", String.class))
-        .isEqualTo("The server could not start the next format attempt.");
+        .isEqualTo("The server couldn't start this video. Try again in a few minutes.");
     assertThat(status.jsonString()).doesNotContain("private infrastructure detail");
   }
 
@@ -309,6 +309,10 @@ class StreamingResolverTest {
     assertThat(
             reported.read(REPORTED_PLAYBACK + ".currentFormatAttempt.error.reason", String.class))
         .isEqualTo(reason);
+    assertThat(
+            reported.read(REPORTED_PLAYBACK + ".currentFormatAttempt.error.message", String.class))
+        .isEqualTo(
+            "This device can't play the quality you chose. Set Quality to Auto and try again.");
   }
 
   @Test
@@ -331,13 +335,18 @@ class StreamingResolverTest {
   }
 
   @ParameterizedTest
-  @CsvSource({
-    "OUTPUT_MISMATCH,PlaybackOutputMismatchError",
-    "INVALID_SPECIFICATION,PlaybackInvalidSpecificationError"
-  })
+  @CsvSource(
+      delimiter = '|',
+      quoteCharacter = '"',
+      value = {
+        "OUTPUT_MISMATCH|PlaybackOutputMismatchError|This video file can't be played. Ask your"
+            + " server admin to check the file.",
+        "INVALID_SPECIFICATION|PlaybackInvalidSpecificationError|This video can't be played right"
+            + " now. Ask your server admin to check the server logs."
+      })
   @DisplayName("Should expose the typed worker failure when a job attempt fails finally")
   void shouldExposeTheTypedWorkerFailureWhenAJobAttemptFailsFinally(
-      TranscodeFailure failure, String typename) {
+      TranscodeFailure failure, String typename, String message) {
     STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
     var created = startPlayback(VideoQuality.AUTO);
     var playbackId = created.read(CREATED_PLAYBACK + ".id", String.class);
@@ -358,6 +367,8 @@ class StreamingResolverTest {
             status.read(
                 "data.playbackSession.currentFormatAttempt.error['__typename']", String.class))
         .isEqualTo(typename);
+    assertThat(status.read("data.playbackSession.currentFormatAttempt.error.message", String.class))
+        .isEqualTo(message);
   }
 
   @Test
@@ -383,6 +394,10 @@ class StreamingResolverTest {
             reported.read(
                 REPORTED_PLAYBACK + ".currentFormatAttempt.error['__typename']", String.class))
         .isEqualTo("PlaybackFormatAttemptsExhaustedError");
+    assertThat(
+            reported.read(REPORTED_PLAYBACK + ".currentFormatAttempt.error.message", String.class))
+        .isEqualTo(
+            "This video didn't start on this device. Try again later, or try another device.");
     assertThat(reported.read(REPORTED_PLAYBACK + ".maximumFormatAttempts", Integer.class))
         .isEqualTo(2);
   }

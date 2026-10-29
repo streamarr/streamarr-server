@@ -253,20 +253,21 @@ public class StreamingResolver {
     return switch (failure) {
       case PlaybackSessionFailure.OutputMismatch() ->
           new PlaybackSessionError.PlaybackOutputMismatchError(
-              "The server cannot produce the planned video format from this source.");
+              "This video file can't be played. Ask your server admin to check the file.");
       case PlaybackSessionFailure.InvalidSpecification() ->
           new PlaybackSessionError.PlaybackInvalidSpecificationError(
-              "The transcode worker rejected the server's plan for this video.");
+              "This video can't be played right now. Ask your server admin to check the server logs.");
       case PlaybackSessionFailure.FixedFormatFailed(var reason) ->
           new PlaybackSessionError.PlaybackFormatRejectedError(
-              "The player cannot play this video format.", reason);
+              "This device can't play the quality you chose. Set Quality to Auto and try again.",
+              reason);
       case PlaybackSessionFailure.AttemptsExhausted() ->
           new PlaybackSessionError.PlaybackFormatAttemptsExhaustedError(
-              "Playback could not start within the allowed format attempts.");
+              "This video didn't start on this device. Try again later, or try another device.");
       case PlaybackSessionFailure.CreationRejected(var rejection) -> createSessionError(rejection);
       case PlaybackSessionFailure.StartupFailed() ->
           new PlaybackSessionError.PlaybackStartupFailedError(
-              "The server could not start the next format attempt.");
+              "The server couldn't start this video. Try again in a few minutes.");
     };
   }
 
