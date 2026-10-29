@@ -1,6 +1,7 @@
 package com.streamarr.server.domain.streaming;
 
 import java.util.Optional;
+import java.util.OptionalInt;
 import lombok.Builder;
 import lombok.NonNull;
 
@@ -12,6 +13,16 @@ import lombok.NonNull;
 @Builder
 public record VideoCodecProfileCapability(
     @NonNull VideoCodecProfile profile, int maxLevel, @NonNull Optional<VideoCodecTier> maxTier) {
+
+  /** Whether a stream of this profile fits these maximums. An unknown level or tier fits. */
+  boolean acceptsLevelAndTier(OptionalInt level, Optional<VideoCodecTier> tier) {
+    var levelFits = level.isEmpty() || level.getAsInt() <= maxLevel;
+    return levelFits && tier.map(this::acceptsTier).orElse(true);
+  }
+
+  private boolean acceptsTier(VideoCodecTier tier) {
+    return maxTier.filter(tier::isAtMost).isPresent();
+  }
 
   // Lombok skips its own builder() because this one exists.
   public static VideoCodecProfileCapabilityBuilder builder() {
