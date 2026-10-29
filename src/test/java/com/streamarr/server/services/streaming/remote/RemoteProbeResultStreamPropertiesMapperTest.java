@@ -575,7 +575,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
     var video =
         withDolbyVision(
             withBase(av1().setTransferCharacteristics(declared.transfer()), declared.base()),
-            DolbyVisionPresent.newBuilder().setDeclared(declared.record()));
+            DolbyVisionPresent.newBuilder().setDeclared(declared.configuration()));
 
     var stream = videoOf(version5(media -> media.setStreams(0, video)));
 
@@ -590,13 +590,13 @@ class RemoteProbeResultStreamPropertiesMapperTest {
     return Stream.of(
         DeclaredProfile10Base.builder()
             .description("profile 10.1 with a PQ base")
-            .record(profile10Record().setBaseLayerCompatibilityId(1))
+            .configuration(profile10Record().setBaseLayerCompatibilityId(1))
             .transfer(PQ_TRANSFER)
             .base(CompatibleBase.COMPATIBLE_BASE_PQ)
             .build(),
         DeclaredProfile10Base.builder()
             .description("profile 10.4 with an HLG base")
-            .record(profile10Record().setBaseLayerCompatibilityId(4))
+            .configuration(profile10Record().setBaseLayerCompatibilityId(4))
             .transfer(
                 com.streamarr.transcode.v1.TransferCharacteristics
                     .TRANSFER_CHARACTERISTICS_ARIB_STD_B67)
@@ -604,7 +604,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
             .build(),
         DeclaredProfile10Base.builder()
             .description("profile 10 without a compatibility identifier and with an SDR base")
-            .record(profile10Record())
+            .configuration(profile10Record())
             .transfer(SDR_TRANSFER)
             .base(CompatibleBase.COMPATIBLE_BASE_SDR)
             .build());
@@ -1131,7 +1131,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   @Builder
   record DeclaredProfile10Base(
       @NonNull String description,
-      @NonNull DolbyVisionConfiguration.Builder record,
+      @NonNull DolbyVisionConfiguration.Builder configuration,
       @SuppressWarnings("checkstyle:fullyQualifiedName") @NonNull
           com.streamarr.transcode.v1.TransferCharacteristics transfer,
       @NonNull CompatibleBase base) {
@@ -1226,8 +1226,8 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   }
 
   private static ProbeStreamInfo.Builder withRecord(
-      ProbeStreamInfo.Builder stream, DolbyVisionConfiguration.Builder record) {
-    dolbyVisionOf(stream).setDeclared(record);
+      ProbeStreamInfo.Builder stream, DolbyVisionConfiguration.Builder configuration) {
+    dolbyVisionOf(stream).setDeclared(configuration);
     return stream;
   }
 
@@ -1329,12 +1329,12 @@ class RemoteProbeResultStreamPropertiesMapperTest {
 
   // A stream tagged BT.709 whose configuration record names profile 5 or profile 10.0.
   private static ProbeStreamInfo.Builder declaredBaselessStream(
-      String codec, DolbyVisionConfiguration.Builder record) {
+      String codec, DolbyVisionConfiguration.Builder configuration) {
     return withDolbyVision(
         withBase(
             hevc().setCodec(codec).setTransferCharacteristics(SDR_TRANSFER),
             CompatibleBase.COMPATIBLE_BASE_NONE),
-        DolbyVisionPresent.newBuilder().setDeclared(record));
+        DolbyVisionPresent.newBuilder().setDeclared(configuration));
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
