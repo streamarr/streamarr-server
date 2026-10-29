@@ -9,7 +9,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
-@DisplayName("Probed codec family")
+@DisplayName("Probed Codec Family Tests")
 class ProbedCodecFamilyTest {
 
   @ParameterizedTest

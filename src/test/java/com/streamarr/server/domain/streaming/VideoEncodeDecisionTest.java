@@ -40,8 +40,10 @@ class VideoEncodeDecisionTest {
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("av1LevelCases")
-  @DisplayName("Should force AV1 Main in the Main tier at the smallest Annex A level")
-  void shouldForceAv1MainInTheMainTierAtTheSmallestAnnexALevel(LevelCase levelCase) {
+  @DisplayName(
+      "Should force AV1 Main in the Main tier at the smallest Annex A level when the output fits it")
+  void shouldForceAv1MainInTheMainTierAtTheSmallestAnnexALevelWhenTheOutputFitsIt(
+      LevelCase levelCase) {
     var decision =
         VideoEncodeDecision.of(
             output("av1")

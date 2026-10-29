@@ -247,23 +247,22 @@ class RemoteVariantJobMapperTest {
 
   @ParameterizedTest
   @CsvSource({
-    "h264, VIDEO_CODEC_FAMILY_H264",
-    "hevc, VIDEO_CODEC_FAMILY_HEVC",
-    "av1, VIDEO_CODEC_FAMILY_AV1"
+    "h264, H264, VIDEO_CODEC_FAMILY_H264",
+    "hevc, HEVC, VIDEO_CODEC_FAMILY_HEVC",
+    "av1, AV1, VIDEO_CODEC_FAMILY_AV1"
   })
   @DisplayName("Should send the source's codec family when the job copies the video")
   void shouldSendTheSourcesCodecFamilyWhenTheJobCopiesTheVideo(
-      String sourceCodec, VideoCodecFamily sourceCodecFamily) {
+      String copiedCodec, ProbedCodecFamily probedCodecFamily, VideoCodecFamily sourceCodecFamily) {
     var request =
         copyAttempt()
             .transcodeDecision(
                 copyDecisionBuilder()
-                    .videoCodecFamily(sourceCodec)
+                    .videoCodecFamily(copiedCodec)
                     .videoSource(
                         Optional.of(
                             VideoPlaybackFactsFixture.sdrH264FactsBuilder()
-                                .codecFamily(
-                                    Optional.of(ProbedCodecFamily.fromProbedName(sourceCodec)))
+                                .codecFamily(Optional.of(probedCodecFamily))
                                 .build()))
                     .build())
             .build();

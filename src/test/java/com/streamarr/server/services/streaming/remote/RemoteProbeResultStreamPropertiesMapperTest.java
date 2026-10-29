@@ -28,11 +28,12 @@ import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
+import lombok.Builder;
+import lombok.NonNull;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -56,6 +57,14 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static final com.streamarr.transcode.v1.TransferCharacteristics SDR_TRANSFER =
       com.streamarr.transcode.v1.TransferCharacteristics.TRANSFER_CHARACTERISTICS_BT709;
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static final com.streamarr.transcode.v1.Presence REPORTED_PRESENT =
+      com.streamarr.transcode.v1.Presence.PRESENCE_PRESENT;
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static final com.streamarr.transcode.v1.Presence REPORTED_ABSENT =
+      com.streamarr.transcode.v1.Presence.PRESENCE_ABSENT;
 
   private final RemoteProbeResultMapper mapper = new RemoteProbeResultMapper();
 
@@ -162,8 +171,8 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   @DisplayName("Should keep the codec profile when the contract names it")
   void shouldKeepTheCodecProfileWhenTheContractNamesIt(
       com.streamarr.transcode.v1.VideoCodecProfile reported) {
-    var codec = reported.name().split("_")[3].toLowerCase(Locale.ROOT);
-    var video = hevc().setCodec(codec).setCodecProfile(reported).setCodecLevel(40);
+    var video =
+        hevc().setCodec(probedCodecOf(reported)).setCodecProfile(reported).setCodecLevel(40);
 
     var stream = videoOf(version5(media -> media.setStreams(0, video)));
 
@@ -198,8 +207,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   @DisplayName("Should keep the transfer characteristics when the contract names them")
   void shouldKeepTheTransferCharacteristicsWhenTheContractNamesThem(
       com.streamarr.transcode.v1.TransferCharacteristics reported) {
-    var video = hevc().setTransferCharacteristics(reported);
-    video.getDynamicRangeBuilder().setCompatibleBase(signaledBase(reported));
+    var video = withBase(hevc().setTransferCharacteristics(reported), signaledBase(reported));
 
     var stream = videoOf(version5(media -> media.setStreams(0, video)));
 
@@ -291,7 +299,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
         .setDolbyVisionPresent(
             DolbyVisionPresent.newBuilder()
-                .setObservedRpu(com.streamarr.transcode.v1.Presence.PRESENCE_PRESENT)
+                .setObservedRpu(REPORTED_PRESENT)
                 .setFirstRpuHeader(profile8RpuHeader())
                 .setRpuPlacement(
                     com.streamarr.transcode.v1.DolbyVisionRpuPlacement
@@ -457,12 +465,14 @@ class RemoteProbeResultStreamPropertiesMapperTest {
       })
   @DisplayName(
       "Should keep a stream without Dolby Vision whose transfer names no standard format when its"
-          + " compatible base is unspecified")
+          + " base is unspecified")
   void
       shouldKeepAStreamWithoutDolbyVisionWhoseTransferNamesNoStandardFormatWhenItsBaseIsUnspecified(
           com.streamarr.transcode.v1.TransferCharacteristics transfer) {
-    var video = hevc().setTransferCharacteristics(transfer);
-    video.getDynamicRangeBuilder().setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_UNSPECIFIED);
+    var video =
+        withBase(
+            hevc().setTransferCharacteristics(transfer),
+            CompatibleBase.COMPATIBLE_BASE_UNSPECIFIED);
 
     var stream = videoOf(version5(media -> media.setStreams(0, video)));
 
@@ -471,48 +481,47 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         .contains(com.streamarr.server.domain.streaming.CompatibleBase.UNSPECIFIED);
   }
 
-  @SuppressWarnings("checkstyle:fullyQualifiedName")
   @ParameterizedTest(name = "{0}")
   @MethodSource("declaredProfile10Bases")
   @DisplayName("Should keep a declared profile 10 stream when its record names a compatible base")
   void shouldKeepADeclaredProfile10StreamWhenItsRecordNamesACompatibleBase(
-      String record,
-      DolbyVisionConfiguration.Builder declared,
-      com.streamarr.transcode.v1.TransferCharacteristics transfer,
-      CompatibleBase base) {
-    var video = av1().setTransferCharacteristics(transfer);
-    video
-        .getDynamicRangeBuilder()
-        .setCompatibleBase(base)
-        .setDolbyVisionPresent(DolbyVisionPresent.newBuilder().setDeclared(declared));
+      DeclaredProfile10Base declared) {
+    var video =
+        withDolbyVision(
+            withBase(av1().setTransferCharacteristics(declared.transfer()), declared.base()),
+            DolbyVisionPresent.newBuilder().setDeclared(declared.record()));
 
     var stream = videoOf(version5(media -> media.setStreams(0, video)));
 
     assertThat(stream.dynamicRange())
         .map(VideoDynamicRange::compatibleBase)
         .map(Enum::name)
-        .contains(base.name().substring("COMPATIBLE_BASE_".length()));
+        .contains(declared.base().name().substring("COMPATIBLE_BASE_".length()));
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  static Stream<Arguments> declaredProfile10Bases() {
+  static Stream<DeclaredProfile10Base> declaredProfile10Bases() {
     return Stream.of(
-        Arguments.of(
-            "profile 10.1 with a PQ base",
-            profile10Record().setBaseLayerCompatibilityId(1),
-            PQ_TRANSFER,
-            CompatibleBase.COMPATIBLE_BASE_PQ),
-        Arguments.of(
-            "profile 10.4 with an HLG base",
-            profile10Record().setBaseLayerCompatibilityId(4),
-            com.streamarr.transcode.v1.TransferCharacteristics
-                .TRANSFER_CHARACTERISTICS_ARIB_STD_B67,
-            CompatibleBase.COMPATIBLE_BASE_HLG),
-        Arguments.of(
-            "profile 10 without a compatibility identifier and with an SDR base",
-            profile10Record(),
-            SDR_TRANSFER,
-            CompatibleBase.COMPATIBLE_BASE_SDR));
+        DeclaredProfile10Base.builder()
+            .description("profile 10.1 with a PQ base")
+            .record(profile10Record().setBaseLayerCompatibilityId(1))
+            .transfer(PQ_TRANSFER)
+            .base(CompatibleBase.COMPATIBLE_BASE_PQ)
+            .build(),
+        DeclaredProfile10Base.builder()
+            .description("profile 10.4 with an HLG base")
+            .record(profile10Record().setBaseLayerCompatibilityId(4))
+            .transfer(
+                com.streamarr.transcode.v1.TransferCharacteristics
+                    .TRANSFER_CHARACTERISTICS_ARIB_STD_B67)
+            .base(CompatibleBase.COMPATIBLE_BASE_HLG)
+            .build(),
+        DeclaredProfile10Base.builder()
+            .description("profile 10 without a compatibility identifier and with an SDR base")
+            .record(profile10Record())
+            .transfer(SDR_TRANSFER)
+            .base(CompatibleBase.COMPATIBLE_BASE_SDR)
+            .build());
   }
 
   @ParameterizedTest(name = "{0}")
@@ -1044,9 +1053,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   @DisplayName("Should keep HDR10+ present on a VP9 stream when its frames show HDR10+")
   void shouldKeepHdr10PlusPresentOnAVp9StreamWhenItsFramesShowHdr10Plus() {
     var video = hevc().setCodec("vp9").setFirstFramesRead(true);
-    video
-        .getDynamicRangeBuilder()
-        .setHdr10Plus(com.streamarr.transcode.v1.Presence.PRESENCE_PRESENT);
+    video.getDynamicRangeBuilder().setHdr10Plus(REPORTED_PRESENT);
 
     var stream = videoOf(version5(media -> media.setStreams(0, video)));
 
@@ -1108,8 +1115,7 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   @DisplayName("Should keep the HDR10+ presence of an H.264 stream when the probe read its frames")
   void shouldKeepTheHdr10PlusPresenceOfAnH264StreamWhenTheProbeReadItsFrames(
       com.streamarr.transcode.v1.Presence hdr10Plus) {
-    var video = hevc().setCodec("h264").setFirstFramesRead(true);
-    video.getDynamicRangeBuilder().setHdr10Plus(hdr10Plus);
+    var video = withHdr10Plus(hevc().setCodec("h264").setFirstFramesRead(true), hdr10Plus);
 
     var stream = videoOf(version5(media -> media.setStreams(0, video)));
 
@@ -1122,85 +1128,80 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   @ParameterizedTest(name = "{0}")
   @MethodSource("visibleAbsences")
   @DisplayName("Should keep an absence when the probe can see the feature in the stream's codec")
-  void shouldKeepAnAbsenceWhenTheProbeCanSeeTheFeatureInTheStreamsCodec(
-      String absence, ProbeStreamInfo.Builder video, DolbyVision dolbyVision, Presence hdr10Plus) {
-    var stream = videoOf(version5(media -> media.setStreams(0, video)));
+  void shouldKeepAnAbsenceWhenTheProbeCanSeeTheFeatureInTheStreamsCodec(VisibleAbsence absence) {
+    var stream = videoOf(version5(media -> media.setStreams(0, absence.stream())));
 
-    assertThat(stream.dynamicRange()).map(VideoDynamicRange::dolbyVision).contains(dolbyVision);
-    assertThat(stream.dynamicRange()).map(VideoDynamicRange::hdr10Plus).contains(hdr10Plus);
+    assertThat(stream.dynamicRange())
+        .map(VideoDynamicRange::dolbyVision)
+        .contains(absence.dolbyVision());
+    assertThat(stream.dynamicRange())
+        .map(VideoDynamicRange::hdr10Plus)
+        .contains(absence.hdr10Plus());
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  static Stream<Arguments> visibleAbsences() {
-    var absent = com.streamarr.transcode.v1.Presence.PRESENCE_ABSENT;
-    var h264WithoutDolbyVision = hevc().setCodec("h264").setFirstFramesRead(true);
-    h264WithoutDolbyVision
-        .getDynamicRangeBuilder()
-        .setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance());
+  static Stream<VisibleAbsence> visibleAbsences() {
     var h264WithoutRpus =
-        hevc().setCodec("h264").setTransferCharacteristics(SDR_TRANSFER).setFirstFramesRead(true);
-    h264WithoutRpus
-        .getDynamicRangeBuilder()
-        .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
-        .setDolbyVisionPresent(
+        withDolbyVision(
+            withBase(
+                hevc()
+                    .setCodec("h264")
+                    .setTransferCharacteristics(SDR_TRANSFER)
+                    .setFirstFramesRead(true),
+                CompatibleBase.COMPATIBLE_BASE_SDR),
             DolbyVisionPresent.newBuilder()
                 .setDeclared(DolbyVisionConfiguration.newBuilder().setProfile(9))
-                .setObservedRpu(absent));
-    var hevcWithoutEither = hevc().setFirstFramesRead(true);
-    hevcWithoutEither
-        .getDynamicRangeBuilder()
-        .setHdr10Plus(absent)
-        .setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance());
-    var av1WithoutRpus = av1().setFirstFramesRead(true);
-    av1WithoutRpus
-        .setTransferCharacteristics(PQ_TRANSFER)
-        .getDynamicRangeBuilder()
-        .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
-        .setDolbyVisionPresent(
+                .setObservedRpu(REPORTED_ABSENT));
+    var av1WithoutRpus =
+        withDolbyVision(
+            withBase(
+                av1().setTransferCharacteristics(PQ_TRANSFER).setFirstFramesRead(true),
+                CompatibleBase.COMPATIBLE_BASE_PQ),
             DolbyVisionPresent.newBuilder()
                 .setDeclared(DolbyVisionConfiguration.newBuilder().setProfile(10))
-                .setObservedRpu(absent));
-    var av1WithoutEither = av1().setFirstFramesRead(true);
-    av1WithoutEither
-        .getDynamicRangeBuilder()
-        .setHdr10Plus(absent)
-        .setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance());
+                .setObservedRpu(REPORTED_ABSENT));
     return Stream.of(
-        Arguments.of(
-            "Dolby Vision absent on an H.264 stream",
-            h264WithoutDolbyVision,
-            new DolbyVision.Absent(),
-            Presence.UNSPECIFIED),
-        Arguments.of(
-            "an observed RPU absent on an H.264 stream",
-            h264WithoutRpus,
-            new DolbyVision.Present(
-                Optional.of(
-                    com.streamarr.server.domain.streaming.DolbyVisionConfiguration.builder()
-                        .profile(OptionalInt.of(9))
-                        .build()),
-                Presence.ABSENT),
-            Presence.UNSPECIFIED),
-        Arguments.of(
-            "HDR10+ and Dolby Vision absent on an HEVC stream",
-            hevcWithoutEither,
-            new DolbyVision.Absent(),
-            Presence.ABSENT),
-        Arguments.of(
-            "an observed RPU absent on an AV1 stream",
-            av1WithoutRpus,
-            new DolbyVision.Present(
-                Optional.of(
-                    com.streamarr.server.domain.streaming.DolbyVisionConfiguration.builder()
-                        .profile(OptionalInt.of(10))
-                        .build()),
-                Presence.ABSENT),
-            Presence.UNSPECIFIED),
-        Arguments.of(
-            "HDR10+ and Dolby Vision absent on an AV1 stream",
-            av1WithoutEither,
-            new DolbyVision.Absent(),
-            Presence.ABSENT));
+        VisibleAbsence.builder().description("Dolby Vision absent on an H.264 stream").stream(
+                withoutDolbyVision(hevc().setCodec("h264").setFirstFramesRead(true)))
+            .dolbyVision(new DolbyVision.Absent())
+            .hdr10Plus(Presence.UNSPECIFIED)
+            .build(),
+        VisibleAbsence.builder().description("an observed RPU absent on an H.264 stream").stream(
+                h264WithoutRpus)
+            .dolbyVision(
+                new DolbyVision.Present(
+                    Optional.of(
+                        com.streamarr.server.domain.streaming.DolbyVisionConfiguration.builder()
+                            .profile(OptionalInt.of(9))
+                            .build()),
+                    Presence.ABSENT))
+            .hdr10Plus(Presence.UNSPECIFIED)
+            .build(),
+        VisibleAbsence.builder()
+            .description("HDR10+ and Dolby Vision absent on an HEVC stream")
+            .stream(
+                withoutDolbyVision(withHdr10Plus(hevc().setFirstFramesRead(true), REPORTED_ABSENT)))
+            .dolbyVision(new DolbyVision.Absent())
+            .hdr10Plus(Presence.ABSENT)
+            .build(),
+        VisibleAbsence.builder().description("an observed RPU absent on an AV1 stream").stream(
+                av1WithoutRpus)
+            .dolbyVision(
+                new DolbyVision.Present(
+                    Optional.of(
+                        com.streamarr.server.domain.streaming.DolbyVisionConfiguration.builder()
+                            .profile(OptionalInt.of(10))
+                            .build()),
+                    Presence.ABSENT))
+            .hdr10Plus(Presence.UNSPECIFIED)
+            .build(),
+        VisibleAbsence.builder()
+            .description("HDR10+ and Dolby Vision absent on an AV1 stream")
+            .stream(
+                withoutDolbyVision(withHdr10Plus(av1().setFirstFramesRead(true), REPORTED_ABSENT)))
+            .dolbyVision(new DolbyVision.Absent())
+            .hdr10Plus(Presence.ABSENT)
+            .build());
   }
 
   @Test
@@ -1220,6 +1221,33 @@ class RemoteProbeResultStreamPropertiesMapperTest {
         .isInstanceOf(ProbeContractViolationException.class);
   }
 
+  @Builder
+  record DeclaredProfile10Base(
+      @NonNull String description,
+      @NonNull DolbyVisionConfiguration.Builder record,
+      @SuppressWarnings("checkstyle:fullyQualifiedName") @NonNull
+          com.streamarr.transcode.v1.TransferCharacteristics transfer,
+      @NonNull CompatibleBase base) {
+
+    @Override
+    public String toString() {
+      return description;
+    }
+  }
+
+  @Builder
+  record VisibleAbsence(
+      @NonNull String description,
+      @NonNull ProbeStreamInfo.Builder stream,
+      @NonNull DolbyVision dolbyVision,
+      @NonNull Presence hdr10Plus) {
+
+    @Override
+    public String toString() {
+      return description;
+    }
+  }
+
   private static Arguments violation(
       String violation, UnaryOperator<ProbeStreamInfo.Builder> breakContract) {
     return Arguments.of(violation, breakContract);
@@ -1233,11 +1261,56 @@ class RemoteProbeResultStreamPropertiesMapperTest {
     return hevc().setCodec("av1");
   }
 
-  // The compatible base that the signaled transfer decides for a stream without Dolby Vision.
+  private static ProbeStreamInfo.Builder sdrHevc() {
+    return withBase(
+        hevc().setTransferCharacteristics(SDR_TRANSFER), CompatibleBase.COMPATIBLE_BASE_SDR);
+  }
+
+  private static ProbeStreamInfo.Builder sdrHevcWithFramesRead() {
+    return sdrHevc().setFirstFramesRead(true);
+  }
+
+  private static ProbeStreamInfo.Builder withBase(
+      ProbeStreamInfo.Builder stream, CompatibleBase base) {
+    stream.getDynamicRangeBuilder().setCompatibleBase(base);
+    return stream;
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static ProbeStreamInfo.Builder withHdr10Plus(
+      ProbeStreamInfo.Builder stream, com.streamarr.transcode.v1.Presence hdr10Plus) {
+    stream.getDynamicRangeBuilder().setHdr10Plus(hdr10Plus);
+    return stream;
+  }
+
+  private static ProbeStreamInfo.Builder withDolbyVision(
+      ProbeStreamInfo.Builder stream, DolbyVisionPresent.Builder present) {
+    stream.getDynamicRangeBuilder().setDolbyVisionPresent(present);
+    return stream;
+  }
+
+  private static ProbeStreamInfo.Builder withoutDolbyVision(ProbeStreamInfo.Builder stream) {
+    stream.getDynamicRangeBuilder().setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance());
+    return stream;
+  }
+
+  // ADR 0036 lists the compatible base that each signaled transfer gives a stream without Dolby
+  // Vision. A transfer that names no standard format gives none.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static CompatibleBase signaledBase(
       com.streamarr.transcode.v1.TransferCharacteristics transfer) {
     return switch (transfer) {
+      case TRANSFER_CHARACTERISTICS_BT709,
+          TRANSFER_CHARACTERISTICS_BT470M,
+          TRANSFER_CHARACTERISTICS_BT470BG,
+          TRANSFER_CHARACTERISTICS_SMPTE170M,
+          TRANSFER_CHARACTERISTICS_SMPTE240M,
+          TRANSFER_CHARACTERISTICS_IEC61966_2_4,
+          TRANSFER_CHARACTERISTICS_BT1361,
+          TRANSFER_CHARACTERISTICS_IEC61966_2_1,
+          TRANSFER_CHARACTERISTICS_BT2020_10,
+          TRANSFER_CHARACTERISTICS_BT2020_12 ->
+          CompatibleBase.COMPATIBLE_BASE_SDR;
       case TRANSFER_CHARACTERISTICS_SMPTE2084 -> CompatibleBase.COMPATIBLE_BASE_PQ;
       case TRANSFER_CHARACTERISTICS_ARIB_STD_B67 -> CompatibleBase.COMPATIBLE_BASE_HLG;
       case TRANSFER_CHARACTERISTICS_UNSPECIFIED,
@@ -1247,37 +1320,56 @@ class RemoteProbeResultStreamPropertiesMapperTest {
           TRANSFER_CHARACTERISTICS_SMPTE428,
           UNRECOGNIZED ->
           CompatibleBase.COMPATIBLE_BASE_UNSPECIFIED;
-      default -> CompatibleBase.COMPATIBLE_BASE_SDR;
+    };
+  }
+
+  // The codec name that the probe stores for a stream of each codec profile that the contract
+  // names.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static String probedCodecOf(com.streamarr.transcode.v1.VideoCodecProfile profile) {
+    return switch (profile) {
+      case VIDEO_CODEC_PROFILE_H264_CONSTRAINED_BASELINE,
+          VIDEO_CODEC_PROFILE_H264_BASELINE,
+          VIDEO_CODEC_PROFILE_H264_MAIN,
+          VIDEO_CODEC_PROFILE_H264_EXTENDED,
+          VIDEO_CODEC_PROFILE_H264_HIGH,
+          VIDEO_CODEC_PROFILE_H264_HIGH_10,
+          VIDEO_CODEC_PROFILE_H264_HIGH_422,
+          VIDEO_CODEC_PROFILE_H264_HIGH_444_PREDICTIVE ->
+          "h264";
+      case VIDEO_CODEC_PROFILE_HEVC_MAIN,
+          VIDEO_CODEC_PROFILE_HEVC_MAIN_10,
+          VIDEO_CODEC_PROFILE_HEVC_MAIN_STILL_PICTURE,
+          VIDEO_CODEC_PROFILE_HEVC_FORMAT_RANGE_EXTENSIONS ->
+          "hevc";
+      case VIDEO_CODEC_PROFILE_AV1_MAIN,
+          VIDEO_CODEC_PROFILE_AV1_HIGH,
+          VIDEO_CODEC_PROFILE_AV1_PROFESSIONAL ->
+          "av1";
+      case VIDEO_CODEC_PROFILE_UNSPECIFIED, UNRECOGNIZED ->
+          throw new IllegalArgumentException("The contract names no codec for " + profile);
     };
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static ProbeStreamInfo.Builder profile8RpusWithoutTransfer(
       ProbeStreamInfo.Builder stream, CompatibleBase base) {
-    stream
-        .setFirstFramesRead(true)
-        .getDynamicRangeBuilder()
-        .setCompatibleBase(base)
-        .setDolbyVisionPresent(
-            DolbyVisionPresent.newBuilder()
-                .setObservedRpu(com.streamarr.transcode.v1.Presence.PRESENCE_PRESENT)
-                .setFirstRpuHeader(profile8RpuHeader()));
-    return stream;
+    return withDolbyVision(
+        withBase(stream.setFirstFramesRead(true), base),
+        DolbyVisionPresent.newBuilder()
+            .setObservedRpu(REPORTED_PRESENT)
+            .setFirstRpuHeader(profile8RpuHeader()));
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static ProbeStreamInfo.Builder profile8HevcWithRpus(
       com.streamarr.transcode.v1.DolbyVisionRpuPlacement placement) {
-    var video = hevc().setTransferCharacteristics(SDR_TRANSFER).setFirstFramesRead(true);
-    video
-        .getDynamicRangeBuilder()
-        .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
-        .setDolbyVisionPresent(
-            DolbyVisionPresent.newBuilder()
-                .setObservedRpu(com.streamarr.transcode.v1.Presence.PRESENCE_PRESENT)
-                .setFirstRpuHeader(profile8RpuHeader())
-                .setRpuPlacement(placement));
-    return video;
+    return withDolbyVision(
+        sdrHevcWithFramesRead(),
+        DolbyVisionPresent.newBuilder()
+            .setObservedRpu(REPORTED_PRESENT)
+            .setFirstRpuHeader(profile8RpuHeader())
+            .setRpuPlacement(placement));
   }
 
   private static DolbyVisionConfiguration.Builder profilelessRecord() {
@@ -1290,17 +1382,20 @@ class RemoteProbeResultStreamPropertiesMapperTest {
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.transcode.v1.DolbyVisionRpuHeader.Builder profile8RpuHeader() {
-    return com.streamarr.transcode.v1.DolbyVisionRpuHeader.newBuilder()
-        .setVdrRpuProfile(1)
-        .setDisableResidual(true)
-        .setVdrBitDepth(12);
+    return rpuHeader(1, false);
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.transcode.v1.DolbyVisionRpuHeader.Builder profile5RpuHeader() {
+    return rpuHeader(0, true);
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static com.streamarr.transcode.v1.DolbyVisionRpuHeader.Builder rpuHeader(
+      int vdrRpuProfile, boolean baseLayerFullRange) {
     return com.streamarr.transcode.v1.DolbyVisionRpuHeader.newBuilder()
-        .setVdrRpuProfile(0)
-        .setBaseLayerFullRange(true)
+        .setVdrRpuProfile(vdrRpuProfile)
+        .setBaseLayerFullRange(baseLayerFullRange)
         .setDisableResidual(true)
         .setVdrBitDepth(12);
   }

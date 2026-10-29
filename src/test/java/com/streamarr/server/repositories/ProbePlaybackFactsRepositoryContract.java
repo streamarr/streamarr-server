@@ -125,19 +125,17 @@ public interface ProbePlaybackFactsRepositoryContract {
                         .contentLightLevelOmitted(true)
                         .build()))
             .build();
+    // A Dolby Vision stream other than the chosen one: the probe reads none of its frames, so it
+    // names no property, no RPU header and no RPU placement.
     var unnamed =
         video()
             .index(3)
             .dynamicRange(
                 Optional.of(
                     new VideoDynamicRange(
-                        CompatibleBase.SDR,
+                        CompatibleBase.NONE,
                         Presence.UNSPECIFIED,
-                        new DolbyVision.Present(
-                            Optional.empty(),
-                            Presence.PRESENT,
-                            Optional.empty(),
-                            DolbyVisionRpuPlacement.STARTS_SAMPLE))))
+                        new DolbyVision.Present(Optional.empty(), Presence.UNSPECIFIED))))
             .videoProperties(Optional.of(VideoStreamProperties.builder().build()))
             .build();
     var published =

@@ -37,7 +37,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -119,17 +119,13 @@ class TranscodeDecisionFrameFactsTest {
 
   // A shifted file whose start was cut away has an RPU at the start of its first picture packet,
   // and the probe reports it as STARTS_SAMPLE like any other file whose RPUs start samples.
-  @ParameterizedTest
-  @EnumSource(DolbyVisionRpuPlacement.class)
+  // ADR 0013: an UNSPECIFIED placement rules out no copy, so only STARTS_SAMPLE refuses one.
+  @ParameterizedTest(name = "{0}")
+  @CsvSource({"UNSPECIFIED, REMUX", "AFTER_OWN_PICTURE, REMUX", "STARTS_SAMPLE, VIDEO_TRANSCODE"})
   @DisplayName("Should encode a Dolby Vision profile 8.2 stream only when its RPUs start samples")
   void shouldEncodeADolbyVisionProfile8Point2StreamOnlyWhenItsRpusStartSamples(
-      DolbyVisionRpuPlacement placement) {
+      DolbyVisionRpuPlacement placement, TranscodeMode expected) {
     var profile82 = profile82Stream(placement);
-
-    var expected = TranscodeMode.REMUX;
-    if (placement == DolbyVisionRpuPlacement.STARTS_SAMPLE) {
-      expected = TranscodeMode.VIDEO_TRANSCODE;
-    }
 
     assertThat(decide("mov,mp4,m4a,3gp,3g2,mj2", profile82)).isEqualTo(expected);
   }
