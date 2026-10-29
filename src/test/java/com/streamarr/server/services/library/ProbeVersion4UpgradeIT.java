@@ -104,8 +104,10 @@ class ProbeVersion4UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
 
   @Test
   @DisplayName("Should re-probe and play every old result when the server starts after upgrading")
-  void shouldReprobeAndPlayEveryOldResultWhenTheServerStartsAfterUpgrading() {
+  void shouldReprobeAndPlayEveryOldResultWhenTheServerStartsAfterUpgrading()
+      throws InterruptedException {
     var mediaFileIds = fixture.mediaFileIds();
+    // Nothing signals that the startup scan has requested its probes, so the test polls for them.
     await()
         .atMost(Duration.ofSeconds(20))
         .untilAsserted(
@@ -139,22 +141,19 @@ class ProbeVersion4UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
           .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.ProbeNotReady()));
     }
 
-    scheduler.start();
+    var scheduler = startProbeScheduler();
     try {
-      await()
-          .atMost(Duration.ofSeconds(20))
-          .untilAsserted(
-              () ->
-                  assertThat(outcomes.findProbeStates(mediaFileIds))
-                      .allSatisfy(
-                          state ->
-                              assertThat(state.stored())
-                                  .hasValueSatisfying(
-                                      stored -> {
-                                        assertThat(stored.inputs().probeVersion())
-                                            .isEqualTo(ProbeVersion.CURRENT);
-                                        assertThat(stored.error()).isEmpty();
-                                      })));
+      progress.awaitProbeAttemptsEnded(mediaFileIds.size());
+      assertThat(outcomes.findProbeStates(mediaFileIds))
+          .allSatisfy(
+              state ->
+                  assertThat(state.stored())
+                      .hasValueSatisfying(
+                          stored -> {
+                            assertThat(stored.inputs().probeVersion())
+                                .isEqualTo(ProbeVersion.CURRENT);
+                            assertThat(stored.error()).isEmpty();
+                          }));
       for (var file : fixture.files()) {
         var stored = outcomes.findByMediaFileId(file.mediaFileId()).orElseThrow();
         assertThat(
@@ -184,19 +183,16 @@ class ProbeVersion4UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
       }
 
       assertThat(PROBE.probeCount()).isEqualTo(2);
-      await()
-          .atMost(Duration.ofSeconds(20))
-          .untilAsserted(
-              () ->
-                  assertThat(jdbc.queryForList("SELECT status::text FROM library", String.class))
-                      .containsExactly("HEALTHY", "HEALTHY"));
+      progress.awaitScansEnded(mediaFileIds.size());
+      assertThat(jdbc.queryForList("SELECT status::text FROM library", String.class))
+          .containsExactly("HEALTHY", "HEALTHY");
     } finally {
       scheduler.stop();
     }
   }
 
   @TestConfiguration(proxyBeanMethods = false)
-  @Import(UpgradeDatabaseConfiguration.class)
+  @Import({UpgradeDatabaseConfiguration.class, UpgradeProgress.class})
   static class UpgradeConfiguration {
 
     @Bean

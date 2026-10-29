@@ -112,8 +112,10 @@ class ProbeVersion5UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
   @DisplayName(
       "Should play each file from its version 4 result until its version 5 result is stored when the server starts after upgrading")
   void
-      shouldPlayEachFileFromItsVersion4ResultUntilItsVersion5ResultIsStoredWhenTheServerStartsAfterUpgrading() {
+      shouldPlayEachFileFromItsVersion4ResultUntilItsVersion5ResultIsStoredWhenTheServerStartsAfterUpgrading()
+          throws InterruptedException {
     var mediaFileIds = fixture.mediaFileIds();
+    // Nothing signals that the startup scan has requested its probes, so the test polls for them.
     await()
         .atMost(Duration.ofSeconds(20))
         .untilAsserted(
@@ -134,15 +136,12 @@ class ProbeVersion5UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
         mediaFileId ->
             assertThat(playedVideoProperties(mediaFileId)).as("the version 4 result").isEmpty());
 
-    scheduler.start();
+    var scheduler = startProbeScheduler();
     try {
-      await()
-          .atMost(Duration.ofSeconds(20))
-          .untilAsserted(
-              () ->
-                  assertThat(outcomes.findProbeStates(mediaFileIds))
-                      .filteredOn(state -> storedVersion(state).equals(Optional.of(VERSION_5)))
-                      .hasSize(1));
+      progress.awaitProbeAttemptsEnded(1);
+      assertThat(outcomes.findProbeStates(mediaFileIds))
+          .filteredOn(state -> storedVersion(state).equals(Optional.of(VERSION_5)))
+          .hasSize(1);
       for (var state : outcomes.findProbeStates(mediaFileIds)) {
         var expected = Optional.<VideoStreamProperties>empty();
         if (storedVersion(state).equals(Optional.of(VERSION_5))) {
@@ -153,22 +152,16 @@ class ProbeVersion5UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
       }
 
       RELEASE_LATER_PROBES.countDown();
-      await()
-          .atMost(Duration.ofSeconds(20))
-          .untilAsserted(
-              () ->
-                  assertThat(outcomes.findProbeStates(mediaFileIds))
-                      .allSatisfy(state -> assertThat(storedVersion(state)).contains(VERSION_5)));
+      progress.awaitProbeAttemptsEnded(1);
+      assertThat(outcomes.findProbeStates(mediaFileIds))
+          .allSatisfy(state -> assertThat(storedVersion(state)).contains(VERSION_5));
       mediaFileIds.forEach(
           mediaFileId ->
               assertThat(playedVideoProperties(mediaFileId)).contains(VERSION_5_PROPERTIES));
       assertThat(PROBE.probeCount()).isEqualTo(2);
-      await()
-          .atMost(Duration.ofSeconds(20))
-          .untilAsserted(
-              () ->
-                  assertThat(jdbc.queryForList("SELECT status::text FROM library", String.class))
-                      .containsExactly("HEALTHY", "HEALTHY"));
+      progress.awaitScansEnded(mediaFileIds.size());
+      assertThat(jdbc.queryForList("SELECT status::text FROM library", String.class))
+          .containsExactly("HEALTHY", "HEALTHY");
     } finally {
       RELEASE_LATER_PROBES.countDown();
       scheduler.stop();
@@ -204,7 +197,7 @@ class ProbeVersion5UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
   }
 
   @TestConfiguration(proxyBeanMethods = false)
-  @Import(UpgradeDatabaseConfiguration.class)
+  @Import({UpgradeDatabaseConfiguration.class, UpgradeProgress.class})
   static class UpgradeConfiguration {
 
     @Bean
