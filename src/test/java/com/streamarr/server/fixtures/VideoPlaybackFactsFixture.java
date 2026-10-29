@@ -105,6 +105,19 @@ public class VideoPlaybackFactsFixture {
   }
 
   /**
+   * The rule's result when the packet scan found fewer than 2 frames, so the rule snapped the
+   * average rate, or the base rate when the average rate is not usable, to the output frame rate.
+   */
+  public static FrameRateRule declaredRateFallbackRule(
+      FrameRateRuleInputs declaredRates, Fraction outputFrameRate) {
+    return FrameRateRule.builder()
+        .outputFrameRate(Optional.of(outputFrameRate))
+        .basis(OutputFrameRateBasis.DECLARED_RATE_FALLBACK)
+        .inputs(declaredRates)
+        .build();
+  }
+
+  /**
    * Dolby Vision profile 8.2: an SDR compatible base whose record claims compatibility identifier
    * 2, the SDR base.
    */

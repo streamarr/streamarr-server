@@ -18,8 +18,10 @@ class VideoStreamCopyTest {
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("frameRateRules")
-  @DisplayName("Should run a copy at the source's motion rate when the frame-rate rule divided it")
-  void shouldRunACopyAtTheSourcesMotionRateWhenTheFrameRateRuleDividedIt(
+  @DisplayName(
+      "Should run a copy at the rate the source's frames run at when the frame-rate rule snapped"
+          + " that rate")
+  void shouldRunACopyAtTheRateTheSourcesFramesRunAtWhenTheFrameRateRuleSnappedThatRate(
       String scenario, FrameRateRule rule, OptionalDouble expected) {
     var source =
         MediaProbe.builder()
@@ -38,14 +40,23 @@ class VideoStreamCopyTest {
     assertThat(copy.frameRate()).isEqualTo(expected);
   }
 
-  // ADR 0037's rule divides a motion rate above 60.3 fps down to a listed rate, and counts a
-  // motion rate from 60 to 60.3 fps as 60.
+  // ADR 0037's rule snaps a measured or declared rate to a listed rate: it raises a rate below 10
+  // fps to 10, counts a rate from 60 to 60.3 fps as 60, divides a faster rate down to a listed
+  // rate and otherwise takes the nearest listed rate.
   static Stream<Arguments> frameRateRules() {
     return Stream.of(
         Arguments.of(
             "declared 23.976 fps",
             VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24_000, 1_001)),
             OptionalDouble.of(24_000.0 / 1_001)),
+        Arguments.of(
+            "declared rate kept against Matroska's statistics",
+            FrameRateRule.builder()
+                .outputFrameRate(Optional.of(new Fraction(24, 1)))
+                .basis(OutputFrameRateBasis.MATROSKA_STATISTICS)
+                .inputs(FrameRateRuleInputs.builder().build())
+                .build(),
+            OptionalDouble.of(24)),
         Arguments.of(
             "120 fps motion divided to 60",
             VideoPlaybackFactsFixture.packetScanRule(120, new Fraction(60, 1)),
@@ -65,7 +76,58 @@ class VideoStreamCopyTest {
         Arguments.of(
             "59.95 fps motion rounded to 59.94",
             VideoPlaybackFactsFixture.packetScanRule(59.95, new Fraction(60_000, 1_001)),
-            OptionalDouble.of(60_000.0 / 1_001)),
+            OptionalDouble.of(59.95)),
+        Arguments.of(
+            "37.5 fps motion rounded down to 30",
+            VideoPlaybackFactsFixture.packetScanRule(37.5, new Fraction(30, 1)),
+            OptionalDouble.of(37.5)),
+        Arguments.of(
+            "8 fps motion raised to 10",
+            VideoPlaybackFactsFixture.packetScanRule(8, new Fraction(10, 1)),
+            OptionalDouble.of(8)),
+        Arguments.of(
+            "packet scan without a motion rate",
+            FrameRateRule.builder()
+                .outputFrameRate(Optional.of(new Fraction(30, 1)))
+                .basis(OutputFrameRateBasis.PACKET_SCAN)
+                .inputs(
+                    FrameRateRuleInputs.builder()
+                        .packetScan(
+                            Optional.of(FrameRatePacketScan.builder().scannedFrameCount(1).build()))
+                        .build())
+                .build(),
+            OptionalDouble.of(30)),
+        Arguments.of(
+            "120 fps average rate divided to 60 after a scan found fewer than 2 frames",
+            VideoPlaybackFactsFixture.declaredRateFallbackRule(
+                FrameRateRuleInputs.builder()
+                    .averageRate(Optional.of(new Fraction(120, 1)))
+                    .baseRate(Optional.of(new Fraction(24, 1)))
+                    .build(),
+                new Fraction(60, 1)),
+            OptionalDouble.of(120)),
+        Arguments.of(
+            "60.3 fps average rate counted as 60 after a scan found fewer than 2 frames",
+            VideoPlaybackFactsFixture.declaredRateFallbackRule(
+                FrameRateRuleInputs.builder()
+                    .averageRate(Optional.of(new Fraction(603, 10)))
+                    .build(),
+                new Fraction(60, 1)),
+            OptionalDouble.of(60)),
+        Arguments.of(
+            "base rate after a scan found fewer than 2 frames and the average rate is not usable",
+            VideoPlaybackFactsFixture.declaredRateFallbackRule(
+                FrameRateRuleInputs.builder()
+                    .averageRate(Optional.of(new Fraction(1_000, 1)))
+                    .baseRate(Optional.of(new Fraction(75, 2)))
+                    .build(),
+                new Fraction(30, 1)),
+            OptionalDouble.of(37.5)),
+        Arguments.of(
+            "declared-rate fallback without a declared rate",
+            VideoPlaybackFactsFixture.declaredRateFallbackRule(
+                FrameRateRuleInputs.builder().build(), new Fraction(30, 1)),
+            OptionalDouble.of(30)),
         Arguments.of(
             "refused rule",
             FrameRateRule.builder()
