@@ -1,22 +1,31 @@
 package com.streamarr.server.fixtures;
 
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
+import com.streamarr.server.domain.streaming.ColorPrimaries;
+import com.streamarr.server.domain.streaming.ColorRange;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
+import com.streamarr.server.domain.streaming.MatrixCoefficients;
 import com.streamarr.server.domain.streaming.OutputFrameRateBasis;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
+import com.streamarr.server.domain.streaming.TransferCharacteristics;
+import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
+import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import java.util.Optional;
 import java.util.OptionalInt;
 import lombok.experimental.UtilityClass;
 
-/** Chosen video streams as a probe version 4 outcome describes them. */
+/**
+ * Chosen video streams as a probe version 4 outcome describes them, and the properties that probe
+ * version 5 adds.
+ */
 @UtilityClass
 public class VideoPlaybackFactsFixture {
 
@@ -42,6 +51,21 @@ public class VideoPlaybackFactsFixture {
         .chromaSubsampling(Optional.of(ChromaSubsampling.CHROMA_420))
         .codecString(Optional.of("avc1.640028"))
         .frameRateRule(declaredRateRule(FILM_RATE));
+  }
+
+  /**
+   * What probe version 5 reports for an SDR H.264 High profile stream at level 4.0 whose first
+   * frames it read.
+   */
+  public static VideoStreamProperties.VideoStreamPropertiesBuilder h264HighPropertiesBuilder() {
+    return VideoStreamProperties.builder()
+        .codecProfile(Optional.of(VideoCodecProfile.H264_HIGH))
+        .codecLevel(OptionalInt.of(40))
+        .colorPrimaries(Optional.of(ColorPrimaries.BT709))
+        .transferCharacteristics(Optional.of(TransferCharacteristics.BT709))
+        .matrixCoefficients(Optional.of(MatrixCoefficients.BT709))
+        .colorRange(Optional.of(ColorRange.LIMITED))
+        .firstFramesRead(true);
   }
 
   /** The rule's result when the two declared rates agree on a listed rate. */

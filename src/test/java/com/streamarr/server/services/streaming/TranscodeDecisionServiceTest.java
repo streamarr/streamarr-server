@@ -21,6 +21,7 @@ import com.streamarr.server.domain.streaming.AudioCapabilityEntry;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
+import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePosition;
@@ -1257,6 +1258,127 @@ class TranscodeDecisionServiceTest {
                 .build());
 
     assertThat(decision).isEmpty();
+  }
+
+  // Auto and a fixed quality may copy or encode. Original only copies.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("copiesAgainstTwoEntries")
+  @DisplayName(
+      "Should copy the video only when one entry accepts every property of the copy, never two"
+          + " entries together")
+  void shouldCopyTheVideoOnlyWhenOneEntryAcceptsEveryPropertyOfTheCopyNeverTwoEntriesTogether(
+      String scenario,
+      VideoFormatConstraint constraint,
+      MediaProbe source,
+      Optional<TranscodeMode> expected) {
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    h264EntryBuilder().maxWidth(3840).maxHeight(2160).maxFrameRate(30).build(),
+                    h264EntryBuilder().maxWidth(1920).maxHeight(1080).maxFrameRate(60).build()))
+            .build();
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .capabilityDeclaration(declaration)
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .videoFormatConstraint(constraint)
+                .build());
+
+    assertThat(decision.map(TranscodeDecision::transcodeMode)).isEqualTo(expected);
+  }
+
+  static Stream<Arguments> copiesAgainstTwoEntries() {
+    var uhdAt30 = probeVersion5H264(3840, 2160, 30);
+    var hdAt60 = probeVersion5H264(1920, 1080, 60);
+    var uhdAt60 = probeVersion5H264(3840, 2160, 60);
+    var copy = Optional.of(TranscodeMode.REMUX);
+    var encode = Optional.of(TranscodeMode.VIDEO_TRANSCODE);
+    return Stream.of(
+        Arguments.of("Auto, 2160p30", VideoFormatConstraint.COPY_OR_ENCODE, uhdAt30, copy),
+        Arguments.of("Auto, 1080p60", VideoFormatConstraint.COPY_OR_ENCODE, hdAt60, copy),
+        Arguments.of("Auto, 2160p60", VideoFormatConstraint.COPY_OR_ENCODE, uhdAt60, encode),
+        Arguments.of("Original, 2160p30", VideoFormatConstraint.COPY_ONLY, uhdAt30, copy),
+        Arguments.of(
+            "Original, 2160p60", VideoFormatConstraint.COPY_ONLY, uhdAt60, Optional.empty()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should copy a probe version 4 outcome when an HLS entry names its codec family whatever its"
+          + " maximums")
+  void shouldCopyAProbeVersion4OutcomeWhenAnHlsEntryNamesItsCodecFamilyWhateverItsMaximums() {
+    var version4 = probeBuilder("h264", "aac").width(7680).height(4320).build();
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().maxWidth(1280).maxHeight(720).build()))
+            .build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(version4)
+                    .capabilityDeclaration(declaration)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode a probe version 5 outcome when its picture exceeds the entry's maximum size")
+  void shouldEncodeAProbeVersion5OutcomeWhenItsPictureExceedsTheEntrysMaximumSize() {
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().maxWidth(1280).maxHeight(720).build()))
+            .build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(probeVersion5H264(1920, 1080, 24))
+                    .capabilityDeclaration(declaration)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+  }
+
+  // An 8-bit 4:2:0 SDR H.264 High profile source at level 5.1 that probe version 5 described.
+  private static MediaProbe probeVersion5H264(int width, int height, int frameRate) {
+    return MediaProbe.builder()
+        .keyframes(KEYFRAMES_EVERY_TWO_SECONDS)
+        .duration(Duration.ofMinutes(120))
+        .framerate(OptionalDouble.of(frameRate))
+        .width(width)
+        .height(height)
+        .videoCodec("h264")
+        .audioCodec("aac")
+        .streams(List.of(ProbeFixture.audioStreamBuilder("aac").index(1).build()))
+        .bitrate(5_000_000L)
+        .audioChannels(OptionalInt.of(2))
+        .videoPlaybackFacts(
+            Optional.of(
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                    .streamIndex(0)
+                    .frameRateRule(
+                        VideoPlaybackFactsFixture.declaredRateRule(new Fraction(frameRate, 1)))
+                    .videoProperties(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.h264HighPropertiesBuilder()
+                                .codecLevel(OptionalInt.of(51))
+                                .build()))
+                    .build()))
+        .build();
   }
 
   @ParameterizedTest(name = "{0}")

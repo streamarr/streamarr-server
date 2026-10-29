@@ -8,10 +8,10 @@ import lombok.NonNull;
 /**
  * The video that a stream copy of the chosen video stream would deliver, described by the probe
  * outcome's facts. {@code videoProperties} is empty for a probe version 4 outcome, which stores no
- * codec profile, codec level or codec tier. {@code decodedSize} is the size of the frames that the
- * stream carries, before the container's cropping and the rotation, and is empty when the probe
- * could not read a width or a height. {@code frameRate} is the output frame rate, empty when the
- * frame-rate rule refused one.
+ * codec profile, codec level or codec tier. {@code decodedSize} is the size of the frames that a
+ * decoder outputs, before the container's cropping and the rotation, because decoder limits bound
+ * decoded frames. It is empty when the probe could not read a width or a height. {@code frameRate}
+ * is the output frame rate, empty when the frame-rate rule refused one.
  */
 @Builder
 public record VideoStreamCopy(

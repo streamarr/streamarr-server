@@ -2,18 +2,22 @@ package com.streamarr.server.domain.streaming;
 
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.aacEntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.fixtures.VideoStreamCopyFixture;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.UnaryOperator;
+import java.util.Optional;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -135,6 +139,29 @@ class ClientCapabilityDeclarationTest {
         profile.name().startsWith("PROFILE_10") ? ProbedCodecFamily.AV1 : ProbedCodecFamily.HEVC;
 
     assertThat(profile.codecFamily()).isEqualTo(expected);
+  }
+
+  @ParameterizedTest
+  @CsvSource({"3840, 2160, 30, true", "1920, 1080, 60, true", "3840, 2160, 60, false"})
+  @DisplayName(
+      "Should accept a copy only when one entry accepts every property, never two entries together")
+  void shouldAcceptACopyOnlyWhenOneEntryAcceptsEveryPropertyNeverTwoEntriesTogether(
+      int width, int height, int frameRate, boolean accepted) {
+    var declaration =
+        ClientCapabilityDeclaration.builder()
+            .video(
+                List.of(
+                    hevcEntryBuilder().maxWidth(3840).maxHeight(2160).maxFrameRate(30).build(),
+                    hevcEntryBuilder().maxWidth(1920).maxHeight(1080).maxFrameRate(60).build()))
+            .audio(List.of(aacEntryBuilder().build()))
+            .build();
+    var copy =
+        VideoStreamCopyFixture.sdrHevcCopyBuilder()
+            .decodedSize(Optional.of(new PictureSize(width, height)))
+            .frameRate(Optional.of(new Fraction(frameRate, 1)))
+            .build();
+
+    assertThat(declaration.acceptsHlsCopy(copy)).isEqualTo(accepted);
   }
 
   @Test
