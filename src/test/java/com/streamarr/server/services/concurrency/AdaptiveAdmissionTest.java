@@ -194,11 +194,49 @@ class AdaptiveAdmissionTest {
     assertThat(admission.inFlight()).isZero();
     assertThat(listener.admitted()).isEqualTo(4);
     assertThat(listener.reports())
-        .containsExactly(
+        .containsExactlyInAnyOrder(
             AdmittedTaskReport.LATENCY,
             AdmittedTaskReport.IGNORED,
             AdmittedTaskReport.DROP,
             AdmittedTaskReport.IGNORED);
+  }
+
+  @Test
+  @DisplayName("Should admit the next task while the listener still handles the previous report")
+  void shouldAdmitTheNextTaskWhileTheListenerStillHandlesThePreviousReport() throws Exception {
+    var secondTaskReported = new CountDownLatch(1);
+    var reports = new CopyOnWriteArrayList<AdmittedTaskReport>();
+    AdmissionListener parksTheFirstReport =
+        new AdmissionListener() {
+          @Override
+          public void onReported(AdmittedTaskReport report) {
+            if (report == AdmittedTaskReport.LATENCY) {
+              awaitWithinBound(secondTaskReported);
+            }
+
+            reports.add(report);
+            if (report == AdmittedTaskReport.IGNORED) {
+              secondTaskReported.countDown();
+            }
+          }
+        };
+    var admission =
+        AdaptiveAdmission.builder()
+            .limit(FixedLimit.of(1))
+            .nanoClock(clock)
+            .listener(parksTheFirstReport)
+            .build();
+    AdmittedTask<Integer> task =
+        subject -> subject == 0 ? AdmittedTaskReport.LATENCY : AdmittedTaskReport.IGNORED;
+
+    try (var walk =
+        BoundedTask.start(
+            () -> admission.forkAdmittedTasks(new CountingSubjects(2), task, THREADS))) {
+      assertThat(walk.await(BOUND)).isEmpty();
+    }
+
+    assertThat(reports).containsExactly(AdmittedTaskReport.IGNORED, AdmittedTaskReport.LATENCY);
+    assertThat(admission.inFlight()).isZero();
   }
 
   @Test
