@@ -57,6 +57,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Keyframe packet scan execution")
@@ -171,10 +172,12 @@ class KeyframePacketScanExecutionTest {
     assertThat(scanRequests).isEmpty();
   }
 
-  @Test
+  // A scan requested under an earlier version is still queued when the server upgrades.
+  @ParameterizedTest
+  @ValueSource(ints = {ProbeVersion.CURRENT - 1, ProbeVersion.CURRENT + 1})
   @DisplayName("Should complete without scanning when the request names another probe version")
-  void shouldCompleteWithoutScanningWhenTheRequestNamesAnotherProbeVersion() {
-    var request = storePacketScanRequired(ProbeVersion.CURRENT + 1);
+  void shouldCompleteWithoutScanningWhenTheRequestNamesAnotherProbeVersion(int probeVersion) {
+    var request = storePacketScanRequired(probeVersion);
 
     var result = execution().execute(request);
 
