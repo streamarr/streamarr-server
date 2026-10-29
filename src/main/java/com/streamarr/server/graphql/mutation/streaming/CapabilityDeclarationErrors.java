@@ -26,7 +26,7 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.To
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyVideoEntries;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoEntriesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoEntryMaximum;
-import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoMaximumNotPositive;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoMaximumInvalid;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -69,7 +69,7 @@ public final class CapabilityDeclarationErrors {
           tooMany(maximum, videoPath(entry, "compatibleBases"));
       case TooManyDolbyVisionProfiles(var entry, var maximum) ->
           tooMany(maximum, videoPath(entry, DOLBY_VISION_PROFILES));
-      case VideoMaximumNotPositive(var entry, var maximum) ->
+      case VideoMaximumInvalid(var entry, var maximum) ->
           new CapabilityMaximumInvalidError(NOT_POSITIVE, videoPath(entry, fieldOf(maximum)));
       case CodecProfileOutsideCodecFamily(var entry, var profile) ->
           new CapabilityProfileMismatchError(

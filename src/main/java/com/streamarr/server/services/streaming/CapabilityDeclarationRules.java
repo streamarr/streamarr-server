@@ -25,7 +25,7 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.To
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyVideoEntries;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoEntriesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoEntryMaximum;
-import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoMaximumNotPositive;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoMaximumInvalid;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -75,8 +75,8 @@ final class CapabilityDeclarationRules {
       int index, VideoCapabilityEntry entry) {
     var rejections = new ArrayList<CapabilityDeclarationRejection>();
     Arrays.stream(VideoEntryMaximum.values())
-        .filter(maximum -> !isPositive(entry, maximum))
-        .map(maximum -> new VideoMaximumNotPositive(index, maximum))
+        .filter(maximum -> !isValid(entry, maximum))
+        .map(maximum -> new VideoMaximumInvalid(index, maximum))
         .forEach(rejections::add);
     rejections.addAll(codecProfileRejections(index, entry));
     compatibleBaseRejection(index, entry).ifPresent(rejections::add);
@@ -84,7 +84,7 @@ final class CapabilityDeclarationRules {
     return rejections;
   }
 
-  private static boolean isPositive(VideoCapabilityEntry entry, VideoEntryMaximum maximum) {
+  private static boolean isValid(VideoCapabilityEntry entry, VideoEntryMaximum maximum) {
     return switch (maximum) {
       case BIT_DEPTH -> entry.maxBitDepth() > 0;
       case WIDTH -> entry.maxWidth() > 0;

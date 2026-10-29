@@ -39,7 +39,7 @@ public sealed interface CapabilityDeclarationRejection extends StartPlaybackSess
   record TooManyDolbyVisionProfiles(int videoEntry, int maximum)
       implements CapabilityDeclarationRejection {}
 
-  record VideoMaximumNotPositive(int videoEntry, VideoEntryMaximum maximum)
+  record VideoMaximumInvalid(int videoEntry, VideoEntryMaximum maximum)
       implements CapabilityDeclarationRejection {}
 
   /** The codec profile belongs to another codec family than its capability entry. */
