@@ -234,7 +234,7 @@ class StreamingResolverTest {
                 "data.playbackSession.currentFormatAttempt.error['__typename']", String.class))
         .isEqualTo("PlaybackStartupFailedError");
     assertThat(status.read("data.playbackSession.currentFormatAttempt.error.message", String.class))
-        .isEqualTo("The server could not start the next format attempt.");
+        .isEqualTo("The server couldn't start this video. Try again in a few minutes.");
     assertThat(status.jsonString()).doesNotContain("private infrastructure detail");
   }
 
@@ -309,6 +309,10 @@ class StreamingResolverTest {
     assertThat(
             reported.read(REPORTED_PLAYBACK + ".currentFormatAttempt.error.reason", String.class))
         .isEqualTo(reason);
+    assertThat(
+            reported.read(REPORTED_PLAYBACK + ".currentFormatAttempt.error.message", String.class))
+        .isEqualTo(
+            "This device can't play the quality you chose. Set Quality to Auto and try again.");
   }
 
   @Test
@@ -323,21 +327,31 @@ class StreamingResolverTest {
     playbackSessions.onVideoCopyOutputMismatch(
         new VideoCopyOutputMismatchEvent(UUID.fromString(streamId), UUID.randomUUID(), "default"));
 
+    var status = playbackStatus(playbackId);
     assertThat(
-            playbackStatus(playbackId)
-                .read(
-                    "data.playbackSession.currentFormatAttempt.error['__typename']", String.class))
+            status.read(
+                "data.playbackSession.currentFormatAttempt.error['__typename']", String.class))
         .isEqualTo("PlaybackOutputMismatchError");
+    assertThat(status.read("data.playbackSession.currentFormatAttempt.error.message", String.class))
+        .isEqualTo(
+            "This video can't play in this format. Set Quality to Auto and try again. If Quality is"
+                + " already Auto, ask your server admin to check the file.");
   }
 
   @ParameterizedTest
-  @CsvSource({
-    "OUTPUT_MISMATCH,PlaybackOutputMismatchError",
-    "INVALID_SPECIFICATION,PlaybackInvalidSpecificationError"
-  })
+  @CsvSource(
+      delimiter = '|',
+      quoteCharacter = '"',
+      value = {
+        "OUTPUT_MISMATCH|PlaybackOutputMismatchError|This video can't play in this format. Set"
+            + " Quality to Auto and try again. If Quality is already Auto, ask your server admin"
+            + " to check the file.",
+        "INVALID_SPECIFICATION|PlaybackInvalidSpecificationError|This video can't be played right"
+            + " now. Ask your server admin to check the server logs."
+      })
   @DisplayName("Should expose the typed worker failure when a job attempt fails finally")
   void shouldExposeTheTypedWorkerFailureWhenAJobAttemptFailsFinally(
-      TranscodeFailure failure, String typename) {
+      TranscodeFailure failure, String typename, String message) {
     STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
     var created = startPlayback(VideoQuality.AUTO);
     var playbackId = created.read(CREATED_PLAYBACK + ".id", String.class);
@@ -358,6 +372,8 @@ class StreamingResolverTest {
             status.read(
                 "data.playbackSession.currentFormatAttempt.error['__typename']", String.class))
         .isEqualTo(typename);
+    assertThat(status.read("data.playbackSession.currentFormatAttempt.error.message", String.class))
+        .isEqualTo(message);
   }
 
   @Test
@@ -383,6 +399,10 @@ class StreamingResolverTest {
             reported.read(
                 REPORTED_PLAYBACK + ".currentFormatAttempt.error['__typename']", String.class))
         .isEqualTo("PlaybackFormatAttemptsExhaustedError");
+    assertThat(
+            reported.read(REPORTED_PLAYBACK + ".currentFormatAttempt.error.message", String.class))
+        .isEqualTo(
+            "This video didn't start on this device. Try again later, or try another device.");
     assertThat(reported.read(REPORTED_PLAYBACK + ".maximumFormatAttempts", Integer.class))
         .isEqualTo(2);
   }
@@ -530,6 +550,8 @@ class StreamingResolverTest {
     assertThat(context.read("data.createPlaybackSession.playbackSession", Object.class)).isNull();
     assertThat(context.read("data.createPlaybackSession.userErrors[0].__typename", String.class))
         .isEqualTo("TranscodeCapacityUnavailableError");
+    assertThat(context.read("data.createPlaybackSession.userErrors[0].message", String.class))
+        .isEqualTo("The server can't start this video right now. Try again in a few minutes.");
   }
 
   @Test
@@ -542,6 +564,9 @@ class StreamingResolverTest {
     assertThat(context.read("data.createPlaybackSession.playbackSession", Object.class)).isNull();
     assertThat(context.read("data.createPlaybackSession.userErrors[0].__typename", String.class))
         .isEqualTo("MediaFileNotFoundError");
+    assertThat(context.read("data.createPlaybackSession.userErrors[0].message", String.class))
+        .isEqualTo(
+            "This video's file is no longer on the server. Go back to your library. If the video is still there, open it again.");
     List<String> inputPath = context.read("data.createPlaybackSession.userErrors[0].inputPath");
     assertThat(inputPath).containsExactly("mediaFileId");
   }
@@ -577,15 +602,15 @@ class StreamingResolverTest {
         Arguments.of(
             ProbeError.INVALID_MEDIA,
             "InvalidMediaFileError",
-            "This file cannot be read as supported media."),
+            "The server can't read this video file. Ask your server admin to check the file."),
         Arguments.of(
             ProbeError.NO_VIDEO_STREAM,
             "MediaFileHasNoVideoError",
-            "This file has no video stream."),
+            "This file has no video to play. Ask your server admin to check the file."),
         Arguments.of(
             ProbeError.RESULT_TOO_LARGE,
             "InvalidMediaFileError",
-            "This file has more streams or metadata than the server can read."));
+            "This video file has more tracks or metadata than the server can read. Ask your server admin to check the file."));
   }
 
   @Test
@@ -600,7 +625,8 @@ class StreamingResolverTest {
         .containsExactly(
             Map.of(
                 "__typename", "MediaFileProbeNotReadyError",
-                "message", "This file is being prepared for playback. Try again shortly."));
+                "message",
+                    "The server is still preparing this video. Try again in a few minutes."));
   }
 
   @Test
@@ -617,7 +643,7 @@ class StreamingResolverTest {
             Map.of(
                 "__typename", "MediaFileFrameRateUnknownError",
                 "message",
-                    "This file's video must be converted for playback, but its frame rate is unknown."));
+                    "This video needs converting, but the server can't find its frame rate. Ask your server admin to check the file."));
   }
 
   @Test
@@ -632,7 +658,8 @@ class StreamingResolverTest {
         .containsExactly(
             Map.of(
                 "__typename", "NoEligibleVideoFormatError",
-                "message", "No supported video format is available for this playback request."));
+                "message",
+                    "The server can't find a video format this device can play. Set Quality to Auto, or try another device."));
   }
 
   @Test
@@ -648,7 +675,8 @@ class StreamingResolverTest {
         .containsExactly(
             Map.of(
                 "__typename", "InvalidMediaFileError",
-                "message", "This file has no playable duration."));
+                "message",
+                    "This video file has no playable length. Ask your server admin to check the file."));
   }
 
   @Test
@@ -663,7 +691,8 @@ class StreamingResolverTest {
         .containsExactly(
             Map.of(
                 "__typename", "InvalidMediaFileError",
-                "message", "This file's video has no usable picture size."));
+                "message",
+                    "This video file has no usable picture size. Ask your server admin to check the file."));
   }
 
   @Test
