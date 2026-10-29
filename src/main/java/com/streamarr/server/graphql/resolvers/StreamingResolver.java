@@ -119,25 +119,27 @@ public class StreamingResolver {
     return switch (rejection) {
       case CreateStreamSessionRejection.TranscodeCapacityUnavailable _ ->
           new CreateStreamSessionError.TranscodeCapacityUnavailableError(
-              "The server is busy and can't start playback right now. Please try again later.");
+              "The server can't start this video right now. Try again in a few minutes.");
       case CreateStreamSessionRejection.MediaFileNotFound _ ->
           new CreateStreamSessionError.MediaFileNotFoundError(
-              "This media file no longer exists.", InputPath.of("mediaFileId"));
+              "This video's file is no longer on the server. Go back and open the video again.",
+              InputPath.of("mediaFileId"));
       case CreateStreamSessionRejection.ProbeNotReady() ->
           new CreateStreamSessionError.MediaFileProbeNotReadyError(
-              "This file is being prepared for playback. Try again shortly.");
+              "The server is still preparing this video. Try again in a few minutes.");
       case CreateStreamSessionRejection.ProbeFailed(var reason) -> probeFailureError(reason);
       case CreateStreamSessionRejection.FrameRateUnknown() ->
           new CreateStreamSessionError.MediaFileFrameRateUnknownError(
-              "This file's video must be converted for playback, but its frame rate is unknown.");
+              "This video needs converting, but the server can't find its frame rate. Ask your server admin to check the file.");
       case CreateStreamSessionRejection.InvalidPictureSize() ->
           new CreateStreamSessionError.InvalidMediaFileError(
-              "This file's video has no usable picture size.");
+              "This video file has no usable picture size. Ask your server admin to check the file.");
       case CreateStreamSessionRejection.NoEligibleVideoFormat() ->
           new CreateStreamSessionError.NoEligibleVideoFormatError(
-              "No supported video format is available for this playback request.");
+              "The server can't find a video format this device can play. Set Quality to Auto, or try another device.");
       case CreateStreamSessionRejection.NoMediaSegments() ->
-          new CreateStreamSessionError.InvalidMediaFileError("This file has no playable duration.");
+          new CreateStreamSessionError.InvalidMediaFileError(
+              "This video file has no playable length. Ask your server admin to check the file.");
     };
   }
 
@@ -145,12 +147,13 @@ public class StreamingResolver {
     return switch (reason) {
       case INVALID_MEDIA ->
           new CreateStreamSessionError.InvalidMediaFileError(
-              "This file cannot be read as supported media.");
+              "The server can't read this video file. Ask your server admin to check the file.");
       case RESULT_TOO_LARGE ->
           new CreateStreamSessionError.InvalidMediaFileError(
-              "This file has more streams or metadata than the server can read.");
+              "This video file has more tracks or metadata than the server can read. Ask your server admin to check the file.");
       case NO_VIDEO_STREAM ->
-          new CreateStreamSessionError.MediaFileHasNoVideoError("This file has no video stream.");
+          new CreateStreamSessionError.MediaFileHasNoVideoError(
+              "This file has no video to play. Ask your server admin to check the file.");
     };
   }
 

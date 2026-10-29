@@ -545,6 +545,8 @@ class StreamingResolverTest {
     assertThat(context.read("data.createPlaybackSession.playbackSession", Object.class)).isNull();
     assertThat(context.read("data.createPlaybackSession.userErrors[0].__typename", String.class))
         .isEqualTo("TranscodeCapacityUnavailableError");
+    assertThat(context.read("data.createPlaybackSession.userErrors[0].message", String.class))
+        .isEqualTo("The server can't start this video right now. Try again in a few minutes.");
   }
 
   @Test
@@ -557,6 +559,9 @@ class StreamingResolverTest {
     assertThat(context.read("data.createPlaybackSession.playbackSession", Object.class)).isNull();
     assertThat(context.read("data.createPlaybackSession.userErrors[0].__typename", String.class))
         .isEqualTo("MediaFileNotFoundError");
+    assertThat(context.read("data.createPlaybackSession.userErrors[0].message", String.class))
+        .isEqualTo(
+            "This video's file is no longer on the server. Go back and open the video again.");
     List<String> inputPath = context.read("data.createPlaybackSession.userErrors[0].inputPath");
     assertThat(inputPath).containsExactly("mediaFileId");
   }
@@ -592,15 +597,15 @@ class StreamingResolverTest {
         Arguments.of(
             ProbeError.INVALID_MEDIA,
             "InvalidMediaFileError",
-            "This file cannot be read as supported media."),
+            "The server can't read this video file. Ask your server admin to check the file."),
         Arguments.of(
             ProbeError.NO_VIDEO_STREAM,
             "MediaFileHasNoVideoError",
-            "This file has no video stream."),
+            "This file has no video to play. Ask your server admin to check the file."),
         Arguments.of(
             ProbeError.RESULT_TOO_LARGE,
             "InvalidMediaFileError",
-            "This file has more streams or metadata than the server can read."));
+            "This video file has more tracks or metadata than the server can read. Ask your server admin to check the file."));
   }
 
   @Test
@@ -615,7 +620,8 @@ class StreamingResolverTest {
         .containsExactly(
             Map.of(
                 "__typename", "MediaFileProbeNotReadyError",
-                "message", "This file is being prepared for playback. Try again shortly."));
+                "message",
+                    "The server is still preparing this video. Try again in a few minutes."));
   }
 
   @Test
@@ -632,7 +638,7 @@ class StreamingResolverTest {
             Map.of(
                 "__typename", "MediaFileFrameRateUnknownError",
                 "message",
-                    "This file's video must be converted for playback, but its frame rate is unknown."));
+                    "This video needs converting, but the server can't find its frame rate. Ask your server admin to check the file."));
   }
 
   @Test
@@ -647,7 +653,8 @@ class StreamingResolverTest {
         .containsExactly(
             Map.of(
                 "__typename", "NoEligibleVideoFormatError",
-                "message", "No supported video format is available for this playback request."));
+                "message",
+                    "The server can't find a video format this device can play. Set Quality to Auto, or try another device."));
   }
 
   @Test
@@ -663,7 +670,8 @@ class StreamingResolverTest {
         .containsExactly(
             Map.of(
                 "__typename", "InvalidMediaFileError",
-                "message", "This file has no playable duration."));
+                "message",
+                    "This video file has no playable length. Ask your server admin to check the file."));
   }
 
   @Test
@@ -678,7 +686,8 @@ class StreamingResolverTest {
         .containsExactly(
             Map.of(
                 "__typename", "InvalidMediaFileError",
-                "message", "This file's video has no usable picture size."));
+                "message",
+                    "This video file has no usable picture size. Ask your server admin to check the file."));
   }
 
   @Test
