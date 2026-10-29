@@ -1,6 +1,7 @@
 package com.streamarr.server.domain.streaming;
 
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import lombok.Builder;
 import lombok.NonNull;
@@ -19,7 +20,7 @@ public record VideoStreamCopy(
     @NonNull Optional<VideoStreamProperties> videoProperties,
     @NonNull OptionalInt bitDepth,
     @NonNull Optional<PictureSize> decodedSize,
-    @NonNull Optional<Fraction> frameRate,
+    @NonNull OptionalDouble frameRate,
     @NonNull VideoDynamicRange dynamicRange) {
 
   /** The copy of the source's chosen video stream, or empty without a codec or playback facts. */
@@ -38,9 +39,15 @@ public record VideoStreamCopy(
                     .videoProperties(facts.videoProperties())
                     .bitDepth(facts.bitDepth())
                     .decodedSize(decodedSize(source))
-                    .frameRate(facts.frameRateRule().outputFrameRate())
+                    .frameRate(frameRate(facts.frameRateRule()))
                     .dynamicRange(facts.dynamicRange())
                     .build());
+  }
+
+  private static OptionalDouble frameRate(FrameRateRule rule) {
+    return rule.outputFrameRate()
+        .map(rate -> OptionalDouble.of(rate.toDouble()))
+        .orElse(OptionalDouble.empty());
   }
 
   // A probe that could not read a width or a height stores zero for it.
