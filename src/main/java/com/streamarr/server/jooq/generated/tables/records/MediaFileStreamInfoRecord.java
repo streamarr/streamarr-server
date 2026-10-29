@@ -730,6 +730,266 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
         return (Boolean) get(48);
     }
 
+    /**
+     * Setter for <code>public.media_file_stream_info.codec_profile</code>.
+     */
+    public void setCodecProfile(String value) {
+        set(49, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.codec_profile</code>.
+     */
+    public String getCodecProfile() {
+        return (String) get(49);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.codec_level</code>.
+     */
+    public void setCodecLevel(Integer value) {
+        set(50, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.codec_level</code>.
+     */
+    public Integer getCodecLevel() {
+        return (Integer) get(50);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.codec_tier</code>.
+     */
+    public void setCodecTier(String value) {
+        set(51, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.codec_tier</code>.
+     */
+    public String getCodecTier() {
+        return (String) get(51);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.color_primaries</code>.
+     */
+    public void setColorPrimaries(String value) {
+        set(52, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.color_primaries</code>.
+     */
+    public String getColorPrimaries() {
+        return (String) get(52);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.transfer_characteristics</code>.
+     */
+    public void setTransferCharacteristics(String value) {
+        set(53, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.transfer_characteristics</code>.
+     */
+    public String getTransferCharacteristics() {
+        return (String) get(53);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.matrix_coefficients</code>.
+     */
+    public void setMatrixCoefficients(String value) {
+        set(54, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.matrix_coefficients</code>.
+     */
+    public String getMatrixCoefficients() {
+        return (String) get(54);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.color_range</code>.
+     */
+    public void setColorRange(String value) {
+        set(55, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.color_range</code>.
+     */
+    public String getColorRange() {
+        return (String) get(55);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.first_frames_read</code>.
+     */
+    public void setFirstFramesRead(Boolean value) {
+        set(56, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.first_frames_read</code>.
+     */
+    public Boolean getFirstFramesRead() {
+        return (Boolean) get(56);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.mastering_display_omitted</code>.
+     */
+    public void setMasteringDisplayOmitted(Boolean value) {
+        set(57, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.mastering_display_omitted</code>.
+     */
+    public Boolean getMasteringDisplayOmitted() {
+        return (Boolean) get(57);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.content_light_level_omitted</code>.
+     */
+    public void setContentLightLevelOmitted(Boolean value) {
+        set(58, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.content_light_level_omitted</code>.
+     */
+    public Boolean getContentLightLevelOmitted() {
+        return (Boolean) get(58);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.first_packets_carry_presentation_times</code>.
+     */
+    public void setFirstPacketsCarryPresentationTimes(Boolean value) {
+        set(59, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.first_packets_carry_presentation_times</code>.
+     */
+    public Boolean getFirstPacketsCarryPresentationTimes() {
+        return (Boolean) get(59);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.dolby_vision_rpu_placement</code>.
+     */
+    public void setDolbyVisionRpuPlacement(String value) {
+        set(60, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.dolby_vision_rpu_placement</code>.
+     */
+    public String getDolbyVisionRpuPlacement() {
+        return (String) get(60);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.first_rpu_vdr_rpu_profile</code>.
+     */
+    public void setFirstRpuVdrRpuProfile(Integer value) {
+        set(61, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.first_rpu_vdr_rpu_profile</code>.
+     */
+    public Integer getFirstRpuVdrRpuProfile() {
+        return (Integer) get(61);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.first_rpu_base_layer_full_range</code>.
+     */
+    public void setFirstRpuBaseLayerFullRange(Boolean value) {
+        set(62, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.first_rpu_base_layer_full_range</code>.
+     */
+    public Boolean getFirstRpuBaseLayerFullRange() {
+        return (Boolean) get(62);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.first_rpu_enhancement_layer_spatial_resampling_filter</code>.
+     */
+    public void setFirstRpuEnhancementLayerSpatialResamplingFilter(Boolean value) {
+        set(63, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.first_rpu_enhancement_layer_spatial_resampling_filter</code>.
+     */
+    public Boolean getFirstRpuEnhancementLayerSpatialResamplingFilter() {
+        return (Boolean) get(63);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.first_rpu_disable_residual</code>.
+     */
+    public void setFirstRpuDisableResidual(Boolean value) {
+        set(64, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.first_rpu_disable_residual</code>.
+     */
+    public Boolean getFirstRpuDisableResidual() {
+        return (Boolean) get(64);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.first_rpu_vdr_bit_depth</code>.
+     */
+    public void setFirstRpuVdrBitDepth(Integer value) {
+        set(65, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.first_rpu_vdr_bit_depth</code>.
+     */
+    public Integer getFirstRpuVdrBitDepth() {
+        return (Integer) get(65);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -753,7 +1013,7 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
     /**
      * Create a detached, initialised MediaFileStreamInfoRecord
      */
-    public MediaFileStreamInfoRecord(UUID mediaFileId, Integer streamIndex, String codecType, String codec, Integer width, Integer height, Double framerate, Integer channels, Long bitrate, String language, Boolean isDefault, Boolean isForced, String dynamicRangeCompatibleBase, String hdr10Plus, String dolbyVision, String dolbyVisionObservedRpu, Integer dolbyVisionProfile, Integer dolbyVisionLevel, Integer dolbyVisionBaseLayerCompatibilityId, Boolean dolbyVisionBaseLayer, Boolean dolbyVisionEnhancementLayer, Boolean dolbyVisionRpu, Integer bitDepth, String chromaSubsampling, Integer rotationDegrees, Integer cropTop, Integer cropBottom, Integer cropLeft, Integer cropRight, String codecString, Integer sampleRateHz, String audioProfile, Long endTimeSeconds, Integer endTimeNanos, Integer masteringRedX, Integer masteringRedY, Integer masteringGreenX, Integer masteringGreenY, Integer masteringBlueX, Integer masteringBlueY, Integer masteringWhitePointX, Integer masteringWhitePointY, Long masteringMaxLuminance, Long masteringMinLuminance, Integer maxContentLightLevel, Integer maxFrameAverageLightLevel, String title, String handlerName, Boolean hearingImpaired) {
+    public MediaFileStreamInfoRecord(UUID mediaFileId, Integer streamIndex, String codecType, String codec, Integer width, Integer height, Double framerate, Integer channels, Long bitrate, String language, Boolean isDefault, Boolean isForced, String dynamicRangeCompatibleBase, String hdr10Plus, String dolbyVision, String dolbyVisionObservedRpu, Integer dolbyVisionProfile, Integer dolbyVisionLevel, Integer dolbyVisionBaseLayerCompatibilityId, Boolean dolbyVisionBaseLayer, Boolean dolbyVisionEnhancementLayer, Boolean dolbyVisionRpu, Integer bitDepth, String chromaSubsampling, Integer rotationDegrees, Integer cropTop, Integer cropBottom, Integer cropLeft, Integer cropRight, String codecString, Integer sampleRateHz, String audioProfile, Long endTimeSeconds, Integer endTimeNanos, Integer masteringRedX, Integer masteringRedY, Integer masteringGreenX, Integer masteringGreenY, Integer masteringBlueX, Integer masteringBlueY, Integer masteringWhitePointX, Integer masteringWhitePointY, Long masteringMaxLuminance, Long masteringMinLuminance, Integer maxContentLightLevel, Integer maxFrameAverageLightLevel, String title, String handlerName, Boolean hearingImpaired, String codecProfile, Integer codecLevel, String codecTier, String colorPrimaries, String transferCharacteristics, String matrixCoefficients, String colorRange, Boolean firstFramesRead, Boolean masteringDisplayOmitted, Boolean contentLightLevelOmitted, Boolean firstPacketsCarryPresentationTimes, String dolbyVisionRpuPlacement, Integer firstRpuVdrRpuProfile, Boolean firstRpuBaseLayerFullRange, Boolean firstRpuEnhancementLayerSpatialResamplingFilter, Boolean firstRpuDisableResidual, Integer firstRpuVdrBitDepth) {
         super(MediaFileStreamInfo.MEDIA_FILE_STREAM_INFO);
 
         setMediaFileId(mediaFileId);
@@ -805,6 +1065,23 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
         setTitle(title);
         setHandlerName(handlerName);
         setHearingImpaired(hearingImpaired);
+        setCodecProfile(codecProfile);
+        setCodecLevel(codecLevel);
+        setCodecTier(codecTier);
+        setColorPrimaries(colorPrimaries);
+        setTransferCharacteristics(transferCharacteristics);
+        setMatrixCoefficients(matrixCoefficients);
+        setColorRange(colorRange);
+        setFirstFramesRead(firstFramesRead);
+        setMasteringDisplayOmitted(masteringDisplayOmitted);
+        setContentLightLevelOmitted(contentLightLevelOmitted);
+        setFirstPacketsCarryPresentationTimes(firstPacketsCarryPresentationTimes);
+        setDolbyVisionRpuPlacement(dolbyVisionRpuPlacement);
+        setFirstRpuVdrRpuProfile(firstRpuVdrRpuProfile);
+        setFirstRpuBaseLayerFullRange(firstRpuBaseLayerFullRange);
+        setFirstRpuEnhancementLayerSpatialResamplingFilter(firstRpuEnhancementLayerSpatialResamplingFilter);
+        setFirstRpuDisableResidual(firstRpuDisableResidual);
+        setFirstRpuVdrBitDepth(firstRpuVdrBitDepth);
         resetTouchedOnNotNull();
     }
 }

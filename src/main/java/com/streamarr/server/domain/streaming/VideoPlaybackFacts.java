@@ -7,21 +7,25 @@ import lombok.NonNull;
 
 /**
  * The facts of the chosen video stream that probe version 4 and later report for playback. A
- * transcode decision reads them, and the job carries the stream index, dynamic range and codec
- * string to the worker as ADR 0036's source description. {@code rotationDegrees} is the
- * counterclockwise angle of the stream's display matrix. {@code containerCropping} counts the
- * pixels that the container removes from the picture before the rotation.
+ * transcode decision reads them, and the job carries the stream index, codec family, dynamic range
+ * and codec string to the worker as ADR 0036's source description. {@code codecFamily} is the
+ * family of the codec that the probe stored, and is empty when the probe stored none. {@code
+ * rotationDegrees} is the counterclockwise angle of the stream's display matrix. {@code
+ * containerCropping} counts the pixels that the container removes from the picture before the
+ * rotation. {@code videoProperties} is empty before probe version 5.
  */
 @Builder
 public record VideoPlaybackFacts(
     int streamIndex,
+    @NonNull Optional<ProbedCodecFamily> codecFamily,
     @NonNull VideoDynamicRange dynamicRange,
     @NonNull OptionalInt bitDepth,
     @NonNull Optional<ChromaSubsampling> chromaSubsampling,
     @NonNull Optional<String> codecString,
     @NonNull OptionalInt rotationDegrees,
     @NonNull Optional<ContainerCropping> containerCropping,
-    @NonNull FrameRateRule frameRateRule) {
+    @NonNull FrameRateRule frameRateRule,
+    @NonNull Optional<VideoStreamProperties> videoProperties) {
 
   /**
    * The size that FFmpeg scales an encode from, and that a player shows. FFmpeg crops the coded
@@ -75,11 +79,13 @@ public record VideoPlaybackFacts(
 
   @SuppressWarnings("java:S1068") // Lombok builder defaults — fields are used by generated code
   public static class VideoPlaybackFactsBuilder {
+    private Optional<ProbedCodecFamily> codecFamily = Optional.empty();
     private VideoDynamicRange dynamicRange = VideoDynamicRange.UNSPECIFIED;
     private OptionalInt bitDepth = OptionalInt.empty();
     private Optional<ChromaSubsampling> chromaSubsampling = Optional.empty();
     private Optional<String> codecString = Optional.empty();
     private OptionalInt rotationDegrees = OptionalInt.empty();
     private Optional<ContainerCropping> containerCropping = Optional.empty();
+    private Optional<VideoStreamProperties> videoProperties = Optional.empty();
   }
 }

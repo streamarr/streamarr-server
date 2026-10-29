@@ -17,4 +17,9 @@ public final class ProbeVersion {
   // The chosen video stream, its frame-rate rule, and each stream's dynamic range, bit depth,
   // chroma subsampling, rotation, container cropping, codec string, sample rate and audio profile.
   public static final int FIRST_TO_REPORT_PLAYBACK_FACTS = 4;
+
+  // Each video stream's codec profile, level, tier and color signaling, and what the probe read
+  // in the first frames of the chosen video stream: HDR10+, the Dolby Vision RPUs and their sample
+  // layout, and the static HDR metadata that only the bitstream carries.
+  public static final int FIRST_TO_REPORT_FRAME_FACTS = 5;
 }

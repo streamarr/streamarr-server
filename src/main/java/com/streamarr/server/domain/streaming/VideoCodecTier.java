@@ -1,6 +1,7 @@
 package com.streamarr.server.domain.streaming;
 
-/** The tier that an AV1 or H.265 encode forces. H.264 has no tier. */
+/** The tier of an AV1 or H.265 video stream. H.264 has no tier. An encode forces only MAIN. */
 public enum VideoCodecTier {
-  MAIN
+  MAIN,
+  HIGH
 }

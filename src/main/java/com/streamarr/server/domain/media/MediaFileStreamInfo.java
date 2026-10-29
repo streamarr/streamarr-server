@@ -2,15 +2,24 @@ package com.streamarr.server.domain.media;
 
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ChromaticityCoordinates;
+import com.streamarr.server.domain.streaming.ColorPrimaries;
+import com.streamarr.server.domain.streaming.ColorRange;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.ContentLightLevel;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
+import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
+import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
 import com.streamarr.server.domain.streaming.MasteringDisplayColorVolume;
+import com.streamarr.server.domain.streaming.MatrixCoefficients;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.domain.streaming.TransferCharacteristics;
+import com.streamarr.server.domain.streaming.VideoCodecProfile;
+import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
+import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import jakarta.persistence.Column;
 import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Entity;
@@ -115,6 +124,40 @@ public class MediaFileStreamInfo {
   private String handlerName;
   private Boolean hearingImpaired;
 
+  @Enumerated(EnumType.STRING)
+  private VideoCodecProfile codecProfile;
+
+  private Integer codecLevel;
+
+  @Enumerated(EnumType.STRING)
+  private VideoCodecTier codecTier;
+
+  @Enumerated(EnumType.STRING)
+  private ColorPrimaries colorPrimaries;
+
+  @Enumerated(EnumType.STRING)
+  private TransferCharacteristics transferCharacteristics;
+
+  @Enumerated(EnumType.STRING)
+  private MatrixCoefficients matrixCoefficients;
+
+  @Enumerated(EnumType.STRING)
+  private ColorRange colorRange;
+
+  private Boolean firstFramesRead;
+  private Boolean masteringDisplayOmitted;
+  private Boolean contentLightLevelOmitted;
+  private Boolean firstPacketsCarryPresentationTimes;
+
+  @Enumerated(EnumType.STRING)
+  private DolbyVisionRpuPlacement dolbyVisionRpuPlacement;
+
+  private Integer firstRpuVdrRpuProfile;
+  private Boolean firstRpuBaseLayerFullRange;
+  private Boolean firstRpuEnhancementLayerSpatialResamplingFilter;
+  private Boolean firstRpuDisableResidual;
+  private Integer firstRpuVdrBitDepth;
+
   @Override
   public boolean equals(Object other) {
     if (this == other) {
@@ -165,7 +208,30 @@ public class MediaFileStreamInfo {
         .title(Optional.ofNullable(title))
         .handlerName(Optional.ofNullable(handlerName))
         .hearingImpaired(Optional.ofNullable(hearingImpaired))
+        .videoProperties(videoProperties())
         .build();
+  }
+
+  private Optional<VideoStreamProperties> videoProperties() {
+    if (firstFramesRead == null) {
+      return Optional.empty();
+    }
+
+    return Optional.of(
+        VideoStreamProperties.builder()
+            .codecProfile(Optional.ofNullable(codecProfile))
+            .codecLevel(optionalInt(codecLevel))
+            .codecTier(Optional.ofNullable(codecTier))
+            .colorPrimaries(Optional.ofNullable(colorPrimaries))
+            .transferCharacteristics(Optional.ofNullable(transferCharacteristics))
+            .matrixCoefficients(Optional.ofNullable(matrixCoefficients))
+            .colorRange(Optional.ofNullable(colorRange))
+            .firstFramesRead(firstFramesRead)
+            .masteringDisplayOmitted(masteringDisplayOmitted)
+            .contentLightLevelOmitted(contentLightLevelOmitted)
+            .firstPacketsCarryPresentationTimes(
+                Optional.ofNullable(firstPacketsCarryPresentationTimes))
+            .build());
   }
 
   private Optional<MasteringDisplayColorVolume> masteringDisplay() {
@@ -197,8 +263,30 @@ public class MediaFileStreamInfo {
     return switch (dolbyVision) {
       case UNSPECIFIED -> new DolbyVision.Unspecified();
       case ABSENT -> new DolbyVision.Absent();
-      case PRESENT -> new DolbyVision.Present(dolbyVisionRecord(), dolbyVisionObservedRpu);
+      case PRESENT ->
+          new DolbyVision.Present(
+              dolbyVisionRecord(),
+              dolbyVisionObservedRpu,
+              firstRpuHeader(),
+              Optional.ofNullable(dolbyVisionRpuPlacement)
+                  .orElse(DolbyVisionRpuPlacement.UNSPECIFIED));
     };
+  }
+
+  private Optional<DolbyVisionRpuHeader> firstRpuHeader() {
+    if (firstRpuVdrRpuProfile == null) {
+      return Optional.empty();
+    }
+
+    return Optional.of(
+        DolbyVisionRpuHeader.builder()
+            .vdrRpuProfile(firstRpuVdrRpuProfile)
+            .baseLayerFullRange(firstRpuBaseLayerFullRange)
+            .enhancementLayerSpatialResamplingFilter(
+                firstRpuEnhancementLayerSpatialResamplingFilter)
+            .disableResidual(firstRpuDisableResidual)
+            .vdrBitDepth(firstRpuVdrBitDepth)
+            .build());
   }
 
   private Optional<DolbyVisionConfiguration> dolbyVisionRecord() {
@@ -267,7 +355,23 @@ public class MediaFileStreamInfo {
       title = info.title().orElse(null);
       handlerName = info.handlerName().orElse(null);
       hearingImpaired = info.hearingImpaired().orElse(null);
+      info.videoProperties().ifPresent(this::videoProperties);
       return this;
+    }
+
+    private void videoProperties(VideoStreamProperties properties) {
+      codecProfile = properties.codecProfile().orElse(null);
+      codecLevel = nullableInt(properties.codecLevel());
+      codecTier = properties.codecTier().orElse(null);
+      colorPrimaries = properties.colorPrimaries().orElse(null);
+      transferCharacteristics = properties.transferCharacteristics().orElse(null);
+      matrixCoefficients = properties.matrixCoefficients().orElse(null);
+      colorRange = properties.colorRange().orElse(null);
+      firstFramesRead = properties.firstFramesRead();
+      masteringDisplayOmitted = properties.masteringDisplayOmitted();
+      contentLightLevelOmitted = properties.contentLightLevelOmitted();
+      firstPacketsCarryPresentationTimes =
+          properties.firstPacketsCarryPresentationTimes().orElse(null);
     }
 
     private void masteringDisplay(MasteringDisplayColorVolume display) {
@@ -289,10 +393,18 @@ public class MediaFileStreamInfo {
       switch (range.dolbyVision()) {
         case DolbyVision.Unspecified _ -> dolbyVision = Presence.UNSPECIFIED;
         case DolbyVision.Absent _ -> dolbyVision = Presence.ABSENT;
-        case DolbyVision.Present(var declared, var observedRpu) -> {
+        case DolbyVision.Present(
+                var declared,
+                var observedRpu,
+                var firstRpuHeader,
+                var rpuPlacement) -> {
           dolbyVision = Presence.PRESENT;
           dolbyVisionObservedRpu = observedRpu;
           declared.ifPresent(this::dolbyVisionRecord);
+          firstRpuHeader.ifPresent(this::firstRpuHeader);
+          if (rpuPlacement != DolbyVisionRpuPlacement.UNSPECIFIED) {
+            dolbyVisionRpuPlacement = rpuPlacement;
+          }
         }
       }
     }
@@ -304,6 +416,15 @@ public class MediaFileStreamInfo {
       dolbyVisionBaseLayer = configuration.baseLayer();
       dolbyVisionEnhancementLayer = configuration.enhancementLayer();
       dolbyVisionRpu = configuration.rpu();
+    }
+
+    private void firstRpuHeader(DolbyVisionRpuHeader header) {
+      firstRpuVdrRpuProfile = header.vdrRpuProfile();
+      firstRpuBaseLayerFullRange = header.baseLayerFullRange();
+      firstRpuEnhancementLayerSpatialResamplingFilter =
+          header.enhancementLayerSpatialResamplingFilter();
+      firstRpuDisableResidual = header.disableResidual();
+      firstRpuVdrBitDepth = header.vdrBitDepth();
     }
 
     private void containerCropping(ContainerCropping crop) {

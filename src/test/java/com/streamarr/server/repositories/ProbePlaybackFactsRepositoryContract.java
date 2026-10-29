@@ -8,11 +8,15 @@ import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.ChosenVideoStream;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ChromaticityCoordinates;
+import com.streamarr.server.domain.streaming.ColorPrimaries;
+import com.streamarr.server.domain.streaming.ColorRange;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.ContentLightLevel;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
+import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
+import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
 import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRatePacketScan;
@@ -20,13 +24,18 @@ import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MasteringDisplayColorVolume;
+import com.streamarr.server.domain.streaming.MatrixCoefficients;
 import com.streamarr.server.domain.streaming.MatroskaStatistics;
 import com.streamarr.server.domain.streaming.OutputFrameRateBasis;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.domain.streaming.TransferCharacteristics;
+import com.streamarr.server.domain.streaming.VideoCodecProfile;
+import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
+import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import java.time.Duration;
@@ -41,12 +50,14 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
- * How every {@link MediaFileContainerInfoRepository} stores the facts that probe version 4 adds for
- * playback (ADR 0032, ADR 0036): a stored outcome reads back each fact that its probe reported, and
- * keeps an unknown value apart from a known one.
+ * How every {@link MediaFileContainerInfoRepository} stores the facts that probe versions 4 and 5
+ * add for playback (ADR 0032, ADR 0036): a stored outcome reads back each fact that its probe
+ * reported, and keeps an unknown value apart from a known one.
  */
 public interface ProbePlaybackFactsRepositoryContract {
 
@@ -72,6 +83,151 @@ public interface ProbePlaybackFactsRepositoryContract {
     var stored = storedOutcome(mediaFileId);
     assertThat(stored.streams()).isEqualTo(published.streams());
     assertThat(stored.chosenVideoStream()).isEqualTo(published.chosenVideoStream());
+  }
+
+  @Test
+  @DisplayName("Should read every frame fact back when a version 5 outcome is stored")
+  default void shouldReadEveryFrameFactBackWhenAVersion5OutcomeIsStored() {
+    var mediaFileId = createMediaFile();
+    var profile5WithoutRecord =
+        new VideoDynamicRange(
+            CompatibleBase.NONE,
+            Presence.ABSENT,
+            new DolbyVision.Present(
+                Optional.empty(),
+                Presence.PRESENT,
+                Optional.of(
+                    DolbyVisionRpuHeader.builder()
+                        .vdrRpuProfile(0)
+                        .baseLayerFullRange(true)
+                        .enhancementLayerSpatialResamplingFilter(false)
+                        .disableResidual(true)
+                        .vdrBitDepth(12)
+                        .build()),
+                DolbyVisionRpuPlacement.AFTER_OWN_PICTURE));
+    var chosen =
+        video()
+            .index(1)
+            .codec(Optional.of("hevc"))
+            .dynamicRange(Optional.of(profile5WithoutRecord))
+            .videoProperties(
+                Optional.of(
+                    VideoStreamProperties.builder()
+                        .codecProfile(Optional.of(VideoCodecProfile.HEVC_MAIN_10))
+                        .codecLevel(OptionalInt.of(51))
+                        .codecTier(Optional.of(VideoCodecTier.HIGH))
+                        .colorPrimaries(Optional.of(ColorPrimaries.BT709))
+                        .transferCharacteristics(Optional.of(TransferCharacteristics.BT709))
+                        .matrixCoefficients(Optional.of(MatrixCoefficients.BT709))
+                        .colorRange(Optional.of(ColorRange.FULL))
+                        .firstFramesRead(true)
+                        .masteringDisplayOmitted(true)
+                        .contentLightLevelOmitted(true)
+                        .build()))
+            .build();
+    // A Dolby Vision stream other than the chosen one: the probe reads none of its frames, so it
+    // names no property, no RPU header and no RPU placement.
+    var unnamed =
+        video()
+            .index(3)
+            .dynamicRange(
+                Optional.of(
+                    new VideoDynamicRange(
+                        CompatibleBase.NONE,
+                        Presence.UNSPECIFIED,
+                        new DolbyVision.Present(Optional.empty(), Presence.UNSPECIFIED))))
+            .videoProperties(Optional.of(VideoStreamProperties.builder().build()))
+            .build();
+    var published =
+        outcomeBuilder()
+            .streams(List.of(coverArt(), chosen, atmosAudio(), unnamed))
+            .chosenVideoStream(Optional.of(new ChosenVideoStream(1, declaredFilmRate())))
+            .build();
+
+    repository()
+        .publish(
+            ProbePublication.builder()
+                .mediaFileId(mediaFileId)
+                .snapshot(PLAYBACK_FACTS_SNAPSHOT)
+                .probeVersion(ProbeVersion.FIRST_TO_REPORT_FRAME_FACTS)
+                .outcome(published)
+                .build());
+
+    assertThat(storedOutcome(mediaFileId).streams()).isEqualTo(published.streams());
+  }
+
+  @ParameterizedTest
+  @EnumSource(DolbyVisionRpuPlacement.class)
+  @DisplayName("Should read each RPU placement back when a version 5 outcome stores it")
+  default void shouldReadEachRpuPlacementBackWhenAVersion5OutcomeStoresIt(
+      DolbyVisionRpuPlacement placement) {
+    var mediaFileId = createMediaFile();
+    var chosen =
+        video()
+            .codec(Optional.of("hevc"))
+            .dynamicRange(
+                Optional.of(
+                    new VideoDynamicRange(
+                        CompatibleBase.NONE,
+                        Presence.ABSENT,
+                        new DolbyVision.Present(
+                            Optional.empty(), Presence.PRESENT, Optional.empty(), placement))))
+            .videoProperties(
+                Optional.of(VideoStreamProperties.builder().firstFramesRead(true).build()))
+            .build();
+    var published =
+        outcomeBuilder()
+            .streams(List.of(chosen))
+            .chosenVideoStream(Optional.of(new ChosenVideoStream(0, declaredFilmRate())))
+            .build();
+
+    repository()
+        .publish(
+            ProbePublication.builder()
+                .mediaFileId(mediaFileId)
+                .snapshot(PLAYBACK_FACTS_SNAPSHOT)
+                .probeVersion(ProbeVersion.FIRST_TO_REPORT_FRAME_FACTS)
+                .outcome(published)
+                .build());
+
+    assertThat(storedOutcome(mediaFileId).streams()).isEqualTo(published.streams());
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
+  @DisplayName(
+      "Should read whether the first packets carry presentation times back when a version 5"
+          + " outcome stores it")
+  default void
+      shouldReadWhetherTheFirstPacketsCarryPresentationTimesBackWhenAVersion5OutcomeStoresIt(
+          boolean carried) {
+    var mediaFileId = createMediaFile();
+    var chosen =
+        video()
+            .codec(Optional.of("hevc"))
+            .videoProperties(
+                Optional.of(
+                    VideoStreamProperties.builder()
+                        .firstFramesRead(true)
+                        .firstPacketsCarryPresentationTimes(Optional.of(carried))
+                        .build()))
+            .build();
+    var published =
+        outcomeBuilder()
+            .streams(List.of(chosen))
+            .chosenVideoStream(Optional.of(new ChosenVideoStream(0, declaredFilmRate())))
+            .build();
+
+    repository()
+        .publish(
+            ProbePublication.builder()
+                .mediaFileId(mediaFileId)
+                .snapshot(PLAYBACK_FACTS_SNAPSHOT)
+                .probeVersion(ProbeVersion.FIRST_TO_REPORT_FRAME_FACTS)
+                .outcome(published)
+                .build());
+
+    assertThat(storedOutcome(mediaFileId).streams()).isEqualTo(published.streams());
   }
 
   @ParameterizedTest

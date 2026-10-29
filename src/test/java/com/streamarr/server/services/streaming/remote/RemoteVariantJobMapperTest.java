@@ -7,14 +7,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.DolbyVision;
+import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
+import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.Fraction;
+import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
+import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.exceptions.UnsupportedVideoEncodeException;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.transcode.v1.CompatibleBase;
@@ -33,12 +37,15 @@ import java.time.Duration;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
@@ -193,6 +200,8 @@ class RemoteVariantJobMapperTest {
 
     assertThat(video.hasSourceDynamicRange()).isTrue();
     assertThat(video.getSourceDynamicRange()).isEqualTo(VideoDynamicRange.getDefaultInstance());
+    assertThat(video.getSourceCodecFamily())
+        .isEqualTo(VideoCodecFamily.VIDEO_CODEC_FAMILY_UNSPECIFIED);
     assertThat(video.getOutputDynamicRange())
         .isEqualTo(
             VideoDynamicRange.newBuilder()
@@ -202,6 +211,152 @@ class RemoteVariantJobMapperTest {
                 .build());
     assertThat(video.hasStreamIndex()).isTrue();
     assertThat(video.getStreamIndex()).isZero();
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "H264, VIDEO_CODEC_FAMILY_H264",
+    "HEVC, VIDEO_CODEC_FAMILY_HEVC",
+    "AV1, VIDEO_CODEC_FAMILY_AV1",
+    "OTHER, VIDEO_CODEC_FAMILY_UNSPECIFIED"
+  })
+  @DisplayName("Should send the source's codec family when the job encodes the video")
+  void shouldSendTheSourcesCodecFamilyWhenTheJobEncodesTheVideo(
+      ProbedCodecFamily probedCodecFamily, VideoCodecFamily sourceCodecFamily) {
+    var request =
+        encodeAttempt("h264")
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                    .videoCodecFamily("h264")
+                    .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
+                    .videoSource(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                                .codecFamily(Optional.of(probedCodecFamily))
+                                .build()))
+                    .build())
+            .build();
+
+    var video = mapper.map(request).getDecision().getVideo();
+
+    assertThat(video.getSourceCodecFamily()).isEqualTo(sourceCodecFamily);
+    assertThat(video.getCodecFamily()).isEqualTo(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264);
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "h264, H264, VIDEO_CODEC_FAMILY_H264",
+    "hevc, HEVC, VIDEO_CODEC_FAMILY_HEVC",
+    "av1, AV1, VIDEO_CODEC_FAMILY_AV1"
+  })
+  @DisplayName("Should send the source's codec family when the job copies the video")
+  void shouldSendTheSourcesCodecFamilyWhenTheJobCopiesTheVideo(
+      String copiedCodec, ProbedCodecFamily probedCodecFamily, VideoCodecFamily sourceCodecFamily) {
+    var request =
+        copyAttempt()
+            .transcodeDecision(
+                copyDecisionBuilder()
+                    .videoCodecFamily(copiedCodec)
+                    .videoSource(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                                .codecFamily(Optional.of(probedCodecFamily))
+                                .build()))
+                    .build())
+            .build();
+
+    var video = mapper.map(request).getDecision().getVideo();
+
+    assertThat(video.getSourceCodecFamily()).isEqualTo(sourceCodecFamily);
+  }
+
+  @Test
+  @DisplayName("Should send no source codec family when the probe stored no codec")
+  void shouldSendNoSourceCodecFamilyWhenTheProbeStoredNoCodec() {
+    var request =
+        encodeAttempt("av1")
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                    .videoCodecFamily("av1")
+                    .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
+                    .videoSource(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                                .codecFamily(Optional.empty())
+                                .build()))
+                    .build())
+            .build();
+
+    var video = mapper.map(request).getDecision().getVideo();
+
+    assertThat(video.getSourceCodecFamily())
+        .isEqualTo(VideoCodecFamily.VIDEO_CODEC_FAMILY_UNSPECIFIED);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("storedPresentationTimes")
+  @DisplayName(
+      "Should tell an encode whether the source's packets carry presentation times when the probe"
+          + " stored the fact")
+  void shouldTellAnEncodeWhetherTheSourcesPacketsCarryPresentationTimesWhenTheProbeStoredTheFact(
+      String stored, Optional<VideoStreamProperties> properties, boolean carried) {
+    var request =
+        encodeAttempt("h264")
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                    .videoCodecFamily("h264")
+                    .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
+                    .videoSource(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                                .codecFamily(Optional.of(ProbedCodecFamily.HEVC))
+                                .videoProperties(properties)
+                                .build()))
+                    .build())
+            .build();
+
+    var video = mapper.map(request).getDecision().getVideo();
+
+    assertThat(video.getSourcePacketsCarryPresentationTimes()).isEqualTo(carried);
+  }
+
+  static Stream<Arguments> storedPresentationTimes() {
+    return Stream.of(
+        Arguments.of("stored true", propertiesWithPresentationTimes(Optional.of(true)), true),
+        Arguments.of("stored false", propertiesWithPresentationTimes(Optional.of(false)), false),
+        Arguments.of("stored no value", propertiesWithPresentationTimes(Optional.empty()), false),
+        Arguments.of("probed before version 5", Optional.empty(), false));
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
+  @DisplayName(
+      "Should tell a copy whether the source's packets carry presentation times when the probe"
+          + " stored the fact")
+  void shouldTellACopyWhetherTheSourcesPacketsCarryPresentationTimesWhenTheProbeStoredTheFact(
+      boolean carried) {
+    var request =
+        copyAttempt()
+            .transcodeDecision(
+                copyDecisionBuilder()
+                    .videoSource(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                                .videoProperties(
+                                    propertiesWithPresentationTimes(Optional.of(carried)))
+                                .build()))
+                    .build())
+            .build();
+
+    var video = mapper.map(request).getDecision().getVideo();
+
+    assertThat(video.getSourcePacketsCarryPresentationTimes()).isEqualTo(carried);
   }
 
   @ParameterizedTest
@@ -331,6 +486,89 @@ class RemoteVariantJobMapperTest {
                                 .setRpu(true))
                         .setObservedRpu(Presence.PRESENCE_UNSPECIFIED))
                 .build());
+  }
+
+  // Each case sets every field apart from its default, and from the fields that could take its
+  // place, so a field that the mapper drops or swaps reaches the worker wrong.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("firstRpuHeaders")
+  @DisplayName(
+      "Should send the source's first RPU header and RPU placement when the probe read them")
+  void shouldSendTheSourcesFirstRpuHeaderAndRpuPlacementWhenTheProbeReadThem(
+      DolbyVisionRpuHeader stored, com.streamarr.transcode.v1.DolbyVisionRpuHeader.Builder sent) {
+    var range =
+        sourceRangeOf(
+            new com.streamarr.server.domain.streaming.VideoDynamicRange(
+                com.streamarr.server.domain.streaming.CompatibleBase.NONE,
+                com.streamarr.server.domain.streaming.Presence.ABSENT,
+                new com.streamarr.server.domain.streaming.DolbyVision.Present(
+                    Optional.empty(),
+                    com.streamarr.server.domain.streaming.Presence.PRESENT,
+                    Optional.of(stored),
+                    DolbyVisionRpuPlacement.STARTS_SAMPLE)));
+
+    assertThat(range.getDolbyVisionPresent())
+        .isEqualTo(
+            DolbyVisionPresent.newBuilder()
+                .setObservedRpu(Presence.PRESENCE_PRESENT)
+                .setFirstRpuHeader(sent)
+                .setRpuPlacement(
+                    com.streamarr.transcode.v1.DolbyVisionRpuPlacement
+                        .DOLBY_VISION_RPU_PLACEMENT_STARTS_SAMPLE)
+                .build());
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  static Stream<Arguments> firstRpuHeaders() {
+    return Stream.of(
+        Arguments.of(
+            DolbyVisionRpuHeader.builder()
+                .vdrRpuProfile(1)
+                .baseLayerFullRange(true)
+                .enhancementLayerSpatialResamplingFilter(false)
+                .disableResidual(true)
+                .vdrBitDepth(12)
+                .build(),
+            com.streamarr.transcode.v1.DolbyVisionRpuHeader.newBuilder()
+                .setVdrRpuProfile(1)
+                .setBaseLayerFullRange(true)
+                .setDisableResidual(true)
+                .setVdrBitDepth(12)),
+        Arguments.of(
+            DolbyVisionRpuHeader.builder()
+                .vdrRpuProfile(1)
+                .baseLayerFullRange(false)
+                .enhancementLayerSpatialResamplingFilter(true)
+                .disableResidual(true)
+                .vdrBitDepth(10)
+                .build(),
+            com.streamarr.transcode.v1.DolbyVisionRpuHeader.newBuilder()
+                .setVdrRpuProfile(1)
+                .setEnhancementLayerSpatialResamplingFilter(true)
+                .setDisableResidual(true)
+                .setVdrBitDepth(10)));
+  }
+
+  // ADR 0036 names each RPU placement the same way in the domain and the job.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @ParameterizedTest
+  @EnumSource(DolbyVisionRpuPlacement.class)
+  @DisplayName("Should send the source's RPU placement when a job carries it")
+  void shouldSendTheSourcesRpuPlacementWhenAJobCarriesIt(DolbyVisionRpuPlacement placement) {
+    var range =
+        sourceRangeOf(
+            new com.streamarr.server.domain.streaming.VideoDynamicRange(
+                com.streamarr.server.domain.streaming.CompatibleBase.NONE,
+                com.streamarr.server.domain.streaming.Presence.ABSENT,
+                new com.streamarr.server.domain.streaming.DolbyVision.Present(
+                    Optional.empty(),
+                    com.streamarr.server.domain.streaming.Presence.PRESENT,
+                    Optional.empty(),
+                    placement)));
+
+    assertThat(range.getDolbyVisionPresent().getRpuPlacement().name())
+        .isEqualTo("DOLBY_VISION_RPU_PLACEMENT_" + placement.name());
   }
 
   // ADR 0036 names each compatible base and presence value the same way in the domain and the job.
@@ -471,6 +709,15 @@ class RemoteVariantJobMapperTest {
     assertThatThrownBy(() -> mapper.map(request))
         .isInstanceOf(UnsupportedVideoEncodeException.class)
         .hasMessageContaining("frame rate");
+  }
+
+  private static Optional<VideoStreamProperties> propertiesWithPresentationTimes(
+      Optional<Boolean> carried) {
+    return Optional.of(
+        VideoStreamProperties.builder()
+            .firstFramesRead(true)
+            .firstPacketsCarryPresentationTimes(carried)
+            .build());
   }
 
   private static TranscodeRequest.TranscodeRequestBuilder encodeAttempt(String videoCodecFamily) {

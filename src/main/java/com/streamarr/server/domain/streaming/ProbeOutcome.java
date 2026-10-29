@@ -65,6 +65,7 @@ public sealed interface ProbeOutcome {
                   chosen ->
                       VideoPlaybackFacts.builder()
                           .streamIndex(chosen.streamIndex())
+                          .codecFamily(video.codec().map(ProbedCodecFamily::fromProbedName))
                           .dynamicRange(video.dynamicRange().orElse(VideoDynamicRange.UNSPECIFIED))
                           .bitDepth(video.bitDepth())
                           .chromaSubsampling(video.chromaSubsampling())
@@ -72,6 +73,7 @@ public sealed interface ProbeOutcome {
                           .rotationDegrees(video.rotationDegrees())
                           .containerCropping(video.containerCropping())
                           .frameRateRule(chosen.frameRateRule())
+                          .videoProperties(video.videoProperties())
                           .build()))
           .build();
     }

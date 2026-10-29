@@ -9,6 +9,7 @@ import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
 import com.streamarr.server.domain.streaming.OutputFrameRateBasis;
 import com.streamarr.server.domain.streaming.Presence;
+import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import java.util.Optional;
@@ -35,6 +36,7 @@ public class VideoPlaybackFactsFixture {
   public static VideoPlaybackFacts.VideoPlaybackFactsBuilder sdrH264FactsBuilder() {
     return VideoPlaybackFacts.builder()
         .streamIndex(1)
+        .codecFamily(Optional.of(ProbedCodecFamily.H264))
         .dynamicRange(SDR)
         .bitDepth(OptionalInt.of(8))
         .chromaSubsampling(Optional.of(ChromaSubsampling.CHROMA_420))

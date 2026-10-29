@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.CompatibleBase;
+import com.streamarr.server.domain.streaming.MediaFileProbePropertyIssue;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -22,9 +23,20 @@ final class InterimVideoCopyRule {
   static boolean permitsCopy(String videoCodec, VideoPlaybackFacts facts) {
     var range = facts.dynamicRange();
     return isSdrOrUnspecified(range.compatibleBase())
-        && !range.hasDisagreeingDolbyVisionCompatibility()
+        && MediaFileProbePropertyIssue.foundIn(range).stream()
+            .noneMatch(MediaFileProbePropertyIssue::rulesOutCopy)
         && isCopyableBitDepthAndChroma(videoCodec, facts)
-        && hasDescribableCodecString(facts.codecString());
+        && hasDescribableCodecString(facts.codecString())
+        && !lacksCodecProfile(facts);
+  }
+
+  // From probe version 5 on, a codec profile that the probe could not name rules out a copy. An
+  // earlier probe version reports no codec profile, and its copies stay as they were.
+  private static boolean lacksCodecProfile(VideoPlaybackFacts facts) {
+    return facts
+        .videoProperties()
+        .map(properties -> properties.codecProfile().isEmpty())
+        .orElse(false);
   }
 
   private static boolean isSdrOrUnspecified(CompatibleBase base) {

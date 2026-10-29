@@ -1,7 +1,9 @@
 package com.streamarr.server.fixtures;
 
+import com.streamarr.transcode.v1.ChromaticityCoordinates;
 import com.streamarr.transcode.v1.Fraction;
 import com.streamarr.transcode.v1.FrameRateRuleResult;
+import com.streamarr.transcode.v1.MasteringDisplayColorVolume;
 import com.streamarr.transcode.v1.OutputFrameRateBasis;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
@@ -27,5 +29,15 @@ public class WorkerProbeResultFixture {
             .setBasis(OutputFrameRateBasis.OUTPUT_FRAME_RATE_BASIS_DECLARED_RATES);
     rule.getInputsBuilder().setBaseRate(filmRate).setAverageRate(filmRate);
     return rule;
+  }
+
+  /** A mastering display whose four chromaticity coordinates and luminances are all 0. */
+  public static MasteringDisplayColorVolume.Builder masteringDisplayBuilder() {
+    var coordinates = ChromaticityCoordinates.getDefaultInstance();
+    return MasteringDisplayColorVolume.newBuilder()
+        .setRed(coordinates)
+        .setGreen(coordinates)
+        .setBlue(coordinates)
+        .setWhitePoint(coordinates);
   }
 }

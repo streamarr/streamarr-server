@@ -3,15 +3,19 @@ package com.streamarr.server.repositories.media;
 import com.streamarr.server.domain.streaming.ContentLightLevel;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
+import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
+import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
 import com.streamarr.server.domain.streaming.MasteringDisplayColorVolume;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
+import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.jooq.generated.tables.records.MediaFileStreamInfoRecord;
 import java.time.Duration;
 import java.util.OptionalInt;
 
-// Writes the stream facts that probe version 4 adds into a stream row.
+// Writes the stream facts that probe versions 4 and 5 add into a stream row. An unspecified RPU
+// sample layout is stored as NULL.
 final class StreamPlaybackFactsRow {
 
   private StreamPlaybackFactsRow() {}
@@ -43,6 +47,24 @@ final class StreamPlaybackFactsRow {
     row.setTitle(stream.title().orElse(null));
     row.setHandlerName(stream.handlerName().orElse(null));
     row.setHearingImpaired(stream.hearingImpaired().orElse(null));
+    stream.videoProperties().ifPresent(properties -> setVideoProperties(row, properties));
+  }
+
+  private static void setVideoProperties(
+      MediaFileStreamInfoRecord row, VideoStreamProperties properties) {
+    row.setCodecProfile(properties.codecProfile().map(Enum::name).orElse(null));
+    row.setCodecLevel(nullable(properties.codecLevel()));
+    row.setCodecTier(properties.codecTier().map(Enum::name).orElse(null));
+    row.setColorPrimaries(properties.colorPrimaries().map(Enum::name).orElse(null));
+    row.setTransferCharacteristics(
+        properties.transferCharacteristics().map(Enum::name).orElse(null));
+    row.setMatrixCoefficients(properties.matrixCoefficients().map(Enum::name).orElse(null));
+    row.setColorRange(properties.colorRange().map(Enum::name).orElse(null));
+    row.setFirstFramesRead(properties.firstFramesRead());
+    row.setMasteringDisplayOmitted(properties.masteringDisplayOmitted());
+    row.setContentLightLevelOmitted(properties.contentLightLevelOmitted());
+    row.setFirstPacketsCarryPresentationTimes(
+        properties.firstPacketsCarryPresentationTimes().orElse(null));
   }
 
   private static void setMasteringDisplay(
@@ -65,12 +87,30 @@ final class StreamPlaybackFactsRow {
     switch (range.dolbyVision()) {
       case DolbyVision.Unspecified _ -> row.setDolbyVision(Presence.UNSPECIFIED.name());
       case DolbyVision.Absent _ -> row.setDolbyVision(Presence.ABSENT.name());
-      case DolbyVision.Present(var declared, var observedRpu) -> {
+      case DolbyVision.Present(
+              var declared,
+              var observedRpu,
+              var firstRpuHeader,
+              var rpuPlacement) -> {
         row.setDolbyVision(Presence.PRESENT.name());
         row.setDolbyVisionObservedRpu(observedRpu.name());
         declared.ifPresent(configuration -> setDolbyVisionRecord(row, configuration));
+        firstRpuHeader.ifPresent(header -> setFirstRpuHeader(row, header));
+        if (rpuPlacement != DolbyVisionRpuPlacement.UNSPECIFIED) {
+          row.setDolbyVisionRpuPlacement(rpuPlacement.name());
+        }
       }
     }
+  }
+
+  private static void setFirstRpuHeader(
+      MediaFileStreamInfoRecord row, DolbyVisionRpuHeader header) {
+    row.setFirstRpuVdrRpuProfile(header.vdrRpuProfile());
+    row.setFirstRpuBaseLayerFullRange(header.baseLayerFullRange());
+    row.setFirstRpuEnhancementLayerSpatialResamplingFilter(
+        header.enhancementLayerSpatialResamplingFilter());
+    row.setFirstRpuDisableResidual(header.disableResidual());
+    row.setFirstRpuVdrBitDepth(header.vdrBitDepth());
   }
 
   private static void setDolbyVisionRecord(

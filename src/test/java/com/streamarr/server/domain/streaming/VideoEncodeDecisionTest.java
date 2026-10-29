@@ -32,7 +32,7 @@ class VideoEncodeDecisionTest {
                 .bitrate(levelCase.bitrate())
                 .build());
 
-    assertThat(decision.codecProfile()).isEqualTo(VideoCodecProfile.H264_HIGH);
+    assertThat(decision.codecProfile()).isEqualTo(EncodeCodecProfile.H264_HIGH);
     assertThat(decision.tier()).isEmpty();
     assertThat(decision.level()).isEqualTo(levelCase.level());
     assertThat(decision.codecString()).isEqualTo(levelCase.codecString());
@@ -40,8 +40,10 @@ class VideoEncodeDecisionTest {
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("av1LevelCases")
-  @DisplayName("Should force AV1 Main in the Main tier at the smallest Annex A level")
-  void shouldForceAv1MainInTheMainTierAtTheSmallestAnnexALevel(LevelCase levelCase) {
+  @DisplayName(
+      "Should force AV1 Main in the Main tier at the smallest Annex A level when the output fits it")
+  void shouldForceAv1MainInTheMainTierAtTheSmallestAnnexALevelWhenTheOutputFitsIt(
+      LevelCase levelCase) {
     var decision =
         VideoEncodeDecision.of(
             output("av1")
@@ -51,7 +53,7 @@ class VideoEncodeDecisionTest {
                 .bitrate(levelCase.bitrate())
                 .build());
 
-    assertThat(decision.codecProfile()).isEqualTo(VideoCodecProfile.AV1_MAIN);
+    assertThat(decision.codecProfile()).isEqualTo(EncodeCodecProfile.AV1_MAIN);
     assertThat(decision.tier()).isEqualTo(Optional.of(VideoCodecTier.MAIN));
     assertThat(decision.level()).isEqualTo(levelCase.level());
     assertThat(decision.codecString()).isEqualTo(levelCase.codecString());
