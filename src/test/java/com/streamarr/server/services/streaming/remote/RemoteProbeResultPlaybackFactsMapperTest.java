@@ -457,6 +457,28 @@ class RemoteProbeResultPlaybackFactsMapperTest {
                 media.getStreamsBuilder(0).getDynamicRangeBuilder().setCompatibleBaseValue(99);
                 return media;
               }),
+          violation(
+              "no compatible base beside an absent Dolby Vision",
+              media -> {
+                media
+                    .getStreamsBuilder(0)
+                    .getDynamicRangeBuilder()
+                    .setCompatibleBase(
+                        com.streamarr.transcode.v1.CompatibleBase.COMPATIBLE_BASE_NONE)
+                    .setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance());
+                return media;
+              }),
+          violation(
+              "no compatible base beside an unchecked Dolby Vision",
+              media -> {
+                media
+                    .getStreamsBuilder(0)
+                    .getDynamicRangeBuilder()
+                    .setCompatibleBase(
+                        com.streamarr.transcode.v1.CompatibleBase.COMPATIBLE_BASE_NONE)
+                    .clearDolbyVision();
+                return media;
+              }),
           violation("no frame-rate rule", ProbeMediaInfo.Builder::clearFrameRateRule),
           violation(
               "a frame-rate rule without a basis",
@@ -575,7 +597,10 @@ class RemoteProbeResultPlaybackFactsMapperTest {
     void shouldReadEachCompatibleBaseWhenAStreamReportsIt(
         com.streamarr.transcode.v1.CompatibleBase base) {
       var video = ProbeStreamInfo.newBuilder().setIndex(0).setCodecType("video");
-      video.getDynamicRangeBuilder().setCompatibleBase(base);
+      video
+          .getDynamicRangeBuilder()
+          .setCompatibleBase(base)
+          .setDolbyVisionPresent(DolbyVisionPresent.getDefaultInstance());
 
       var range = streamsOf(result(media -> media.setStreams(0, video))).getFirst().dynamicRange();
 

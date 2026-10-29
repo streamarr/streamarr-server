@@ -583,7 +583,8 @@ class RemoteVariantJobMapperTest {
             new com.streamarr.server.domain.streaming.VideoDynamicRange(
                 base,
                 com.streamarr.server.domain.streaming.Presence.UNSPECIFIED,
-                new DolbyVision.Unspecified()));
+                new DolbyVision.Present(
+                    Optional.empty(), com.streamarr.server.domain.streaming.Presence.UNSPECIFIED)));
 
     assertThat(range.getCompatibleBase().name()).isEqualTo("COMPATIBLE_BASE_" + base.name());
   }

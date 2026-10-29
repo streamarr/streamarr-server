@@ -172,6 +172,13 @@ final class RemotePlaybackFactsMapper {
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static VideoDynamicRange dynamicRange(
       com.streamarr.transcode.v1.VideoDynamicRange range, boolean readsFrames) {
+    // The contract gives NONE only beside Dolby Vision in every probe version, so this check also
+    // covers a version 4 result, which carries no typed transfer.
+    if (range.getCompatibleBase() == com.streamarr.transcode.v1.CompatibleBase.COMPATIBLE_BASE_NONE
+        && !range.hasDolbyVisionPresent()) {
+      throw contractViolation("Worker probe gave no compatible base without Dolby Vision");
+    }
+
     return new VideoDynamicRange(
         compatibleBase(range.getCompatibleBase()),
         presence(range.getHdr10Plus()),

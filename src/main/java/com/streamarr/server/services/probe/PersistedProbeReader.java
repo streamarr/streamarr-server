@@ -3,6 +3,7 @@ package com.streamarr.server.services.probe;
 import com.streamarr.server.domain.media.PersistedProbeOutcome;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.ChapterKnowledge;
+import com.streamarr.server.exceptions.ContradictoryDynamicRangeException;
 import com.streamarr.server.exceptions.MalformedKeyframePositionsException;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import java.util.Collection;
@@ -39,7 +40,7 @@ public class PersistedProbeReader {
                           () -> repository.findKeyframeKnowledge(mediaFileId).orElseThrow(),
                           () -> chapterKnowledge(mediaFileId))))
           .filter(outcome -> outcome.isCompatibleWith(ProbeVersion.CURRENT));
-    } catch (MalformedKeyframePositionsException _) {
+    } catch (MalformedKeyframePositionsException | ContradictoryDynamicRangeException _) {
       // Without an outcome, the scheduler requests a probe, and its publication replaces the row.
       return Optional.empty();
     }

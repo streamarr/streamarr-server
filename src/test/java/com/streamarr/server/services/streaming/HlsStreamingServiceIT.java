@@ -51,6 +51,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.convention.TestBean;
@@ -205,6 +207,37 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
         .doesNotContain(FilepathCodec.decode(savedMediaFile.getFilepathUri()));
   }
 
+  @ParameterizedTest
+  @CsvSource({"4,UNSPECIFIED", "4,ABSENT", "5,UNSPECIFIED", "5,ABSENT"})
+  @DisplayName(
+      "Should request a new probe without starting a job attempt when a stored result has no compatible base without Dolby Vision")
+  void
+      shouldRequestNewProbeWithoutStartingJobAttemptWhenStoredResultHasNoCompatibleBaseWithoutDolbyVision(
+          int probeVersion, String dolbyVision) {
+    storeOutcome(ProbeFixture.completeProbe(defaultProbeBuilder().build()), probeVersion);
+    assertThat(
+            jdbc.update(
+                """
+                UPDATE media_file_stream_info
+                SET dynamic_range_compatible_base = 'NONE', dolby_vision = ?
+                WHERE media_file_id = ? AND dynamic_range_compatible_base IS NOT NULL
+                """,
+                dolbyVision,
+                savedMediaFile.getId()))
+        .isEqualTo(1);
+    var command =
+        createStreamSessionCommand(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(streamingService.createSession(command))
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.ProbeNotReady()));
+    assertThat(scheduledRequest())
+        .hasValueSatisfying(
+            request -> assertThat(request.probeVersion()).isEqualTo(ProbeVersion.CURRENT));
+    assertThat(FAKE_EXECUTOR.getStartedRequests())
+        .extracting(TranscodeRequest::sourcePath)
+        .doesNotContain(FilepathCodec.decode(savedMediaFile.getFilepathUri()));
+  }
+
   @Test
   @DisplayName("Should keep serving persisted values when a compatible refresh is pending")
   void shouldKeepServingPersistedValuesWhenACompatibleRefreshIsPending() {
@@ -249,12 +282,16 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   }
 
   private void storeOutcome(ProbeOutcome.Success outcome) {
+    storeOutcome(outcome, ProbeVersion.CURRENT);
+  }
+
+  private void storeOutcome(ProbeOutcome.Success outcome, int probeVersion) {
     assertThat(
             probeResults.publish(
                 ProbePublication.builder()
                     .mediaFileId(savedMediaFile.getId())
                     .snapshot(sourceSnapshot)
-                    .probeVersion(ProbeVersion.CURRENT)
+                    .probeVersion(probeVersion)
                     .outcome(outcome)
                     .build()))
         .isTrue();
