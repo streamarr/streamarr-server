@@ -30,7 +30,7 @@ input VideoCapabilityEntryInput {
     maxHeight: Int!
     "The highest frame rate, in frames per second, that the player decodes."
     maxFrameRate: Float!
-    "The compatible bases that the player displays. The entry needs at least one."
+    "The compatible bases that the player displays. The entry needs at least one unless it lists Dolby Vision profile 5 or 10.0, whose streams have no compatible base."
     compatibleBases: [DeclaredCompatibleBase!]!
     "The Dolby Vision profiles whose RPUs the player applies. A player that plays only a stream's base layer lists none."
     dolbyVisionProfiles: [DolbyVisionProfileCapabilityInput!]!
