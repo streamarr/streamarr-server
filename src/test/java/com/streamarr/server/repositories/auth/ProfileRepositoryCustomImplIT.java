@@ -1,10 +1,12 @@
 package com.streamarr.server.repositories.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.support.AuthTestSupport;
 import java.util.UUID;
+import org.jooq.exception.NoDataFoundException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -40,6 +42,31 @@ class ProfileRepositoryCustomImplIT extends AbstractIntegrationTest {
   @DisplayName("Should report no change when the Profile does not exist")
   void shouldReportNoChangeWhenTheProfileDoesNotExist() {
     assertThat(trySetPicture(UUID.randomUUID(), "avatar-7")).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should refuse to rehome a Personal Profile when it has left the expected Household")
+  void shouldRefuseToRehomePersonalProfileWhenItHasLeftTheExpectedHousehold() {
+    var identity = authTestSupport.createIdentity();
+    var elsewhere = authTestSupport.createIdentity();
+    try {
+      var profileId = identity.profile().getId();
+      var elsewhereId = elsewhere.household().getId();
+
+      assertThatThrownBy(
+              () ->
+                  transactionTemplate.executeWithoutResult(
+                      _ ->
+                          profileRepository.rehomePersonalProfile(
+                              profileId, elsewhereId, elsewhereId)))
+          .isInstanceOf(NoDataFoundException.class);
+
+      assertThat(profileRepository.findById(profileId).orElseThrow().getHouseholdId())
+          .isEqualTo(identity.household().getId());
+    } finally {
+      authTestSupport.deleteIdentity(elsewhere);
+      authTestSupport.deleteIdentity(identity);
+    }
   }
 
   private boolean trySetPicture(UUID profileId, String picture) {

@@ -170,6 +170,14 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
     return rehomeWhileIn(profileId, expectedHouseholdId, destinationHouseholdId).execute() > 0;
   }
 
+  @Override
+  public void rehomePersonalProfile(
+      UUID profileId, UUID expectedHouseholdId, UUID destinationHouseholdId) {
+    rehomeWhileIn(profileId, expectedHouseholdId, destinationHouseholdId)
+        .returning(PROFILE.ID)
+        .fetchSingle();
+  }
+
   private UpdateConditionStep<ProfileRecord> rehomeWhileIn(
       UUID profileId, UUID expectedHouseholdId, UUID destinationHouseholdId) {
     return dsl.update(PROFILE)

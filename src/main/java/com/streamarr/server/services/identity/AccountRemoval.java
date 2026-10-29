@@ -6,7 +6,6 @@ import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AccountRemovalConflictException;
-import com.streamarr.server.exceptions.ProfileRehomeFailedException;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
@@ -60,7 +59,7 @@ class AccountRemoval {
       throw new AccountRemovalConflictException();
     }
 
-    rehomeProfile(profileId, sourceHouseholdId, destinationHouseholdId);
+    profileRepository.rehomePersonalProfile(profileId, sourceHouseholdId, destinationHouseholdId);
 
     updateSourceHouseholdAccess(transfer);
     shareRepository.ensureActiveMembershipShare(profileId, destinationHouseholdId, now);
@@ -130,19 +129,13 @@ class AccountRemoval {
       return;
     }
 
-    rehomeProfile(profileId, sourceHouseholdId, destinationHouseholdId);
+    profileRepository.rehomePersonalProfile(profileId, sourceHouseholdId, destinationHouseholdId);
     shareRepository
         .findByProfileIdAndHouseholdIdAndStatus(
             profileId, sourceHouseholdId, ProfileShareStatus.ACTIVE)
         .ifPresent(share -> shareRepository.tryEndActive(share.getId(), now));
     shareRepository.ensureActiveMembershipShare(profileId, destinationHouseholdId, now);
     shareRepository.convertMembershipShareToVisitorShare(profileId, destinationHouseholdId);
-  }
-
-  private void rehomeProfile(UUID profileId, UUID sourceHouseholdId, UUID destinationHouseholdId) {
-    if (!profileRepository.tryRehome(profileId, sourceHouseholdId, destinationHouseholdId)) {
-      throw new ProfileRehomeFailedException();
-    }
   }
 
   /** Deletes an unlinked Profile with its selections and pending Profile-bound artifacts. */
