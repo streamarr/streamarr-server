@@ -17,6 +17,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import org.jooq.exception.NoDataFoundException;
 
 /** Pair with a {@link FakeProfileHouseholdShareRepository} so availability follows the shares. */
 public class FakeProfileRepository extends FakeJpaRepository<Profile> implements ProfileRepository {
@@ -105,6 +106,15 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
         findById(profileId).filter(current -> expectedHouseholdId.equals(current.getHouseholdId()));
     profile.ifPresent(found -> found.setHouseholdId(destinationHouseholdId));
     return profile.isPresent();
+  }
+
+  @Override
+  public void rehomePersonalProfile(
+      UUID profileId, UUID expectedHouseholdId, UUID destinationHouseholdId) {
+    findById(profileId)
+        .filter(current -> expectedHouseholdId.equals(current.getHouseholdId()))
+        .orElseThrow(NoDataFoundException::new)
+        .setHouseholdId(destinationHouseholdId);
   }
 
   @Override
