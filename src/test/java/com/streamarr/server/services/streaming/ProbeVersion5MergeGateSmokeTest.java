@@ -53,11 +53,11 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
- * The merge gate of streamarr/streamarr-server#394. Each clause probes, decides and encodes through
- * the server path, against the worker image that {@code worker-image.env} pins. The FATE samples
- * state no license, so the gate reads them from the local copy of FFmpeg's FATE suite that the
- * {@code FATE_SUITE} environment variable or system property names, and builds every derived file
- * at test time in a temporary directory. Without {@code FATE_SUITE}, the gate fails.
+ * The merge gate of streamarr/streamarr-server#394. It probes, decides and encodes through the
+ * server path, against the worker image that {@code worker-image.env} pins. The FATE samples state
+ * no license, so the gate reads them from the local copy of FFmpeg's FATE suite that the {@code
+ * FATE_SUITE} environment variable or system property names, and builds every derived file at test
+ * time in a temporary directory. Without {@code FATE_SUITE}, the gate fails.
  */
 @Tag("SmokeTest")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -244,12 +244,14 @@ class ProbeVersion5MergeGateSmokeTest {
   // teal. Probe version 5 finds profile 5 in the first RPU header, which leaves the stream no
   // compatible base. The same pictures without their RPUs are copied, so only the RPUs rule the
   // copy out. The pinned worker answers probe version 5 only, so no version 4 outcome can show it.
+  // FATE's black pictures keep a mean Cr of 128 with or without tone mapping, so the gate reads the
+  // tone mapping from the worker's command and the SDR result from the encode's color tags.
   @ParameterizedTest(name = "{0}")
   @MethodSource("recordLessProfile5Files")
   @DisplayName(
-      "Should encode record-less Dolby Vision profile 5 when probe version 5 finds the profile in"
-          + " its first RPU header")
-  void shouldEncodeRecordLessProfile5WhenProbeVersion5FindsTheProfileInItsFirstRpuHeader(
+      "Should tone-map record-less Dolby Vision profile 5 to SDR when probe version 5 finds the"
+          + " profile in its first RPU header")
+  void shouldToneMapRecordLessProfile5ToSdrWhenProbeVersion5FindsTheProfileInItsFirstRpuHeader(
       String fileName, Optional<TransferCharacteristics> signaledTransfer) throws Exception {
     var file = recordLessProfile5(fileName);
     var withoutRpus =
@@ -285,10 +287,19 @@ class ProbeVersion5MergeGateSmokeTest {
               assertThat(header.vdrRpuProfile()).isZero();
               assertThat(header.baseLayerFullRange()).isTrue();
             });
-    assertThat(decide(outcome).transcodeMode().copiesVideo()).as("a copy with RPUs").isFalse();
     assertThat(decide(probeWithKeyframes(withoutRpus)).transcodeMode().copiesVideo())
         .as("a copy of the same pictures without RPUs")
         .isTrue();
+
+    var encode = encode(file, outcome);
+
+    assertThat(worker().commandFor(encode.attemptId()).orElseThrow())
+        .as("the worker's FFmpeg arguments")
+        .anySatisfy(argument -> assertThat(argument).contains("tonemapx="));
+    assertThat(worker().decodedVideoFrameCount(encode.media())).as("decoded frames").isPositive();
+    assertThat(worker().videoStreamEntry(encode.media(), "codec_name")).isEqualTo("h264");
+    assertThat(worker().videoStreamEntry(encode.media(), "color_transfer")).isEqualTo("bt709");
+    assertThat(worker().videoStreamEntry(encode.media(), "color_primaries")).isEqualTo("bt709");
   }
 
   // FATE's mov/dovi-p5.mp4 decodes to black pictures with neutral chroma, so every encode of it

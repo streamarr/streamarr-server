@@ -246,6 +246,15 @@ public final class WorkerContainerFixture implements AutoCloseable {
   }
 
   /**
+   * One entry of the first video stream, such as codec_name or color_transfer, as ffprobe names it.
+   */
+  public String videoStreamEntry(Path media, String entry) throws Exception {
+    var values = probeEntries(media, "v:0", List.of("-show_entries", "stream=" + entry));
+    assertThat(values).as("the %s of the first video stream", entry).hasSize(1);
+    return values.getFirst();
+  }
+
+  /**
    * The mean Cr of the first video stream's first frames, on the 8-bit scale where 128 is neutral,
    * as the image's FFmpeg decodes them.
    */
