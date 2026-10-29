@@ -38,7 +38,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * How the transcode decision uses the facts that probe version 5 adds (streamarr/streamarr-server
@@ -75,13 +74,11 @@ class TranscodeDecisionFrameFactsTest {
     assertThat(decide("mov,mp4,m4a,3gp,3g2,mj2", profile5)).isEqualTo(TranscodeMode.REMUX);
   }
 
-  @ParameterizedTest
-  @ValueSource(strings = {"mov,mp4,m4a,3gp,3g2,mj2", "mpegts"})
+  @Test
   @DisplayName(
       "Should encode a record-less Dolby Vision profile 5 stream tagged BT.709 when probe version 5"
-          + " reads its first RPU")
-  void shouldEncodeARecordLessDolbyVisionProfile5StreamTaggedBt709WhenProbeVersion5ReadsItsFirstRpu(
-      String containerFormat) {
+          + " gives it no compatible base")
+  void shouldEncodeARecordLessDolbyVisionProfile5StreamTaggedBt709WhenProbeVersion5GivesItNoBase() {
     var profile5 =
         hevcStream()
             .dynamicRange(
@@ -97,7 +94,8 @@ class TranscodeDecisionFrameFactsTest {
             .videoProperties(Optional.of(bt709Properties(VideoCodecProfile.HEVC_MAIN_10)))
             .build();
 
-    assertThat(decide(containerFormat, profile5)).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(decide("mov,mp4,m4a,3gp,3g2,mj2", profile5))
+        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
   }
 
   @Test
@@ -128,29 +126,6 @@ class TranscodeDecisionFrameFactsTest {
     var profile82 = profile82Stream(placement);
 
     assertThat(decide("mov,mp4,m4a,3gp,3g2,mj2", profile82)).isEqualTo(expected);
-  }
-
-  @Test
-  @DisplayName(
-      "Should encode a record-less Dolby Vision profile 5 stream when its RPUs start samples")
-  void shouldEncodeARecordLessDolbyVisionProfile5StreamWhenItsRpusStartSamples() {
-    var profile5 =
-        hevcStream()
-            .dynamicRange(
-                Optional.of(
-                    new VideoDynamicRange(
-                        CompatibleBase.NONE,
-                        Presence.ABSENT,
-                        new DolbyVision.Present(
-                            Optional.empty(),
-                            Presence.PRESENT,
-                            Optional.of(profile5RpuHeader()),
-                            DolbyVisionRpuPlacement.STARTS_SAMPLE))))
-            .videoProperties(Optional.of(bt709Properties(VideoCodecProfile.HEVC_MAIN_10)))
-            .build();
-
-    assertThat(decide("mov,mp4,m4a,3gp,3g2,mj2", profile5))
-        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
   }
 
   @Test

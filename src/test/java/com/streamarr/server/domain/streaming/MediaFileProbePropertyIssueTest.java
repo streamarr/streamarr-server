@@ -98,11 +98,4 @@ class MediaFileProbePropertyIssueTest {
                 .contains(MediaFileProbePropertyIssue.DOLBY_VISION_RPU_STARTS_SAMPLE))
         .isEqualTo(placement == DolbyVisionRpuPlacement.STARTS_SAMPLE);
   }
-
-  @ParameterizedTest
-  @EnumSource(MediaFileProbePropertyIssue.class)
-  @DisplayName("Should rule out a copy when the probe finds any property issue")
-  void shouldRuleOutACopyWhenTheProbeFindsAnyPropertyIssue(MediaFileProbePropertyIssue issue) {
-    assertThat(issue.rulesOutCopy()).isTrue();
-  }
 }

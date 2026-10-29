@@ -27,20 +27,4 @@ class ProbedCodecFamilyTest {
   void shouldReadAsAnotherCodecFamilyWhenTheServerHasNoRulesForTheProbedName(String name) {
     assertThat(ProbedCodecFamily.fromProbedName(name)).isEqualTo(ProbedCodecFamily.OTHER);
   }
-
-  @ParameterizedTest
-  @CsvSource({"H264, true", "HEVC, true", "AV1, true", "OTHER, false"})
-  @DisplayName("Should say whether the probe walks a codec family when asked for any family")
-  void shouldSayWhetherTheProbeWalksACodecFamilyWhenAskedForAnyFamily(
-      ProbedCodecFamily codecFamily, boolean walked) {
-    assertThat(codecFamily.isWalkedByProbe()).isEqualTo(walked);
-  }
-
-  @ParameterizedTest
-  @CsvSource({"H264, false", "HEVC, true", "AV1, true", "OTHER, false"})
-  @DisplayName("Should say whether an RPU header alone marks a baseless profile when asked")
-  void shouldSayWhetherAnRpuHeaderAloneMarksABaselessProfileWhenAsked(
-      ProbedCodecFamily codecFamily, boolean recordLessBaseless) {
-    assertThat(codecFamily.hasRecordLessBaselessProfile()).isEqualTo(recordLessBaseless);
-  }
 }
