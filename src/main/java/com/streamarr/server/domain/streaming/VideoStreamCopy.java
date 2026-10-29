@@ -12,7 +12,7 @@ import lombok.NonNull;
  * codec profile, codec level or codec tier. {@code decodedSize} is the size of the frames that a
  * decoder outputs, before the container's cropping and the rotation, because decoder limits bound
  * decoded frames. It is empty when the probe could not read a width or a height. {@code frameRate}
- * is the output frame rate, empty when the frame-rate rule refused one.
+ * is the rate at which the copied frames run, empty when the frame-rate rule refused one.
  */
 @Builder
 public record VideoStreamCopy(
@@ -22,6 +22,11 @@ public record VideoStreamCopy(
     @NonNull Optional<PictureSize> decodedSize,
     @NonNull OptionalDouble frameRate,
     @NonNull VideoDynamicRange dynamicRange) {
+
+  // ADR 0037's frame-rate rule divides a motion rate above 60.3 fps down to a listed rate, which
+  // only an encode runs at. A copy keeps every source frame, so it runs at that motion rate. At or
+  // below 60.3 fps the rule only rounds the motion rate to the nearest listed rate.
+  private static final double FASTEST_MOTION_RATE_COUNTED_AS_60 = 60.3;
 
   /** The copy of the source's chosen video stream, or empty without a codec or playback facts. */
   public static Optional<VideoStreamCopy> of(@NonNull MediaProbe source) {
@@ -45,6 +50,15 @@ public record VideoStreamCopy(
   }
 
   private static OptionalDouble frameRate(FrameRateRule rule) {
+    var motionRate =
+        rule.inputs()
+            .packetScan()
+            .map(FrameRatePacketScan::motionRate)
+            .orElse(OptionalDouble.empty());
+    if (motionRate.isPresent() && motionRate.getAsDouble() > FASTEST_MOTION_RATE_COUNTED_AS_60) {
+      return motionRate;
+    }
+
     return rule.outputFrameRate()
         .map(rate -> OptionalDouble.of(rate.toDouble()))
         .orElse(OptionalDouble.empty());
