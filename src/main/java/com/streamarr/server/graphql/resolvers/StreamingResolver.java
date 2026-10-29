@@ -122,7 +122,7 @@ public class StreamingResolver {
               "The server can't start this video right now. Try again in a few minutes.");
       case CreateStreamSessionRejection.MediaFileNotFound _ ->
           new CreateStreamSessionError.MediaFileNotFoundError(
-              "This video's file is no longer on the server. Go back and open the video again.",
+              "This video's file is no longer on the server. Go back to your library. If the video is still there, open it again.",
               InputPath.of("mediaFileId"));
       case CreateStreamSessionRejection.ProbeNotReady() ->
           new CreateStreamSessionError.MediaFileProbeNotReadyError(
@@ -256,7 +256,7 @@ public class StreamingResolver {
     return switch (failure) {
       case PlaybackSessionFailure.OutputMismatch() ->
           new PlaybackSessionError.PlaybackOutputMismatchError(
-              "This video file can't be played. Ask your server admin to check the file.");
+              "This video can't play in this format. Set Quality to Auto and try again. If Quality is already Auto, ask your server admin to check the file.");
       case PlaybackSessionFailure.InvalidSpecification() ->
           new PlaybackSessionError.PlaybackInvalidSpecificationError(
               "This video can't be played right now. Ask your server admin to check the server logs.");

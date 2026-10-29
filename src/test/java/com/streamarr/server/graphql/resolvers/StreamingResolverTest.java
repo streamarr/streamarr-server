@@ -327,11 +327,15 @@ class StreamingResolverTest {
     playbackSessions.onVideoCopyOutputMismatch(
         new VideoCopyOutputMismatchEvent(UUID.fromString(streamId), UUID.randomUUID(), "default"));
 
+    var status = playbackStatus(playbackId);
     assertThat(
-            playbackStatus(playbackId)
-                .read(
-                    "data.playbackSession.currentFormatAttempt.error['__typename']", String.class))
+            status.read(
+                "data.playbackSession.currentFormatAttempt.error['__typename']", String.class))
         .isEqualTo("PlaybackOutputMismatchError");
+    assertThat(status.read("data.playbackSession.currentFormatAttempt.error.message", String.class))
+        .isEqualTo(
+            "This video can't play in this format. Set Quality to Auto and try again. If Quality is"
+                + " already Auto, ask your server admin to check the file.");
   }
 
   @ParameterizedTest
@@ -339,8 +343,9 @@ class StreamingResolverTest {
       delimiter = '|',
       quoteCharacter = '"',
       value = {
-        "OUTPUT_MISMATCH|PlaybackOutputMismatchError|This video file can't be played. Ask your"
-            + " server admin to check the file.",
+        "OUTPUT_MISMATCH|PlaybackOutputMismatchError|This video can't play in this format. Set"
+            + " Quality to Auto and try again. If Quality is already Auto, ask your server admin"
+            + " to check the file.",
         "INVALID_SPECIFICATION|PlaybackInvalidSpecificationError|This video can't be played right"
             + " now. Ask your server admin to check the server logs."
       })
@@ -561,7 +566,7 @@ class StreamingResolverTest {
         .isEqualTo("MediaFileNotFoundError");
     assertThat(context.read("data.createPlaybackSession.userErrors[0].message", String.class))
         .isEqualTo(
-            "This video's file is no longer on the server. Go back and open the video again.");
+            "This video's file is no longer on the server. Go back to your library. If the video is still there, open it again.");
     List<String> inputPath = context.read("data.createPlaybackSession.userErrors[0].inputPath");
     assertThat(inputPath).containsExactly("mediaFileId");
   }
