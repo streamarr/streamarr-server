@@ -308,13 +308,13 @@ class ProfileAdministrationConcurrencyIT extends AbstractIntegrationTest {
         });
   }
 
+  // Only the role changes, so the UPDATE does not conflict with the KEY SHARE lock that the
+  // creation's manager foreign key holds on the Account, and waits only on the authorization lock.
   private void demoteHouseholdAdmin(AuthTestSupport.TestIdentity actor) {
     transactionTemplate.executeWithoutResult(
-        _ -> {
-          var account = userAccountRepository.findById(actor.account().getId()).orElseThrow();
-          account.setHouseholdRole(HouseholdRole.MEMBER);
-          userAccountRepository.saveAndFlush(account);
-        });
+        _ ->
+            assertThat(userAccountRepository.tryDemoteToHouseholdMember(actor.account().getId()))
+                .isTrue());
   }
 
   private void revokeServerAdmin(AuthTestSupport.TestIdentity actor) {
