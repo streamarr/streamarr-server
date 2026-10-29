@@ -139,17 +139,15 @@ class ProbeVersion5UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
     var scheduler = startProbeScheduler();
     try {
       progress.awaitProbeAttemptsEnded(1);
-      assertThat(outcomes.findProbeStates(mediaFileIds))
-          .filteredOn(state -> storedVersion(state).equals(Optional.of(VERSION_5)))
-          .hasSize(1);
-      for (var state : outcomes.findProbeStates(mediaFileIds)) {
-        var expected = Optional.<VideoStreamProperties>empty();
-        if (storedVersion(state).equals(Optional.of(VERSION_5))) {
-          expected = Optional.of(VERSION_5_PROPERTIES);
-        }
-
-        assertThat(playedVideoProperties(state.mediaFileId())).isEqualTo(expected);
-      }
+      var states = outcomes.findProbeStates(mediaFileIds);
+      var reprobed = fileStoredAt(states, VERSION_5);
+      var waiting = fileStoredAt(states, VERSION_4);
+      assertThat(playedVideoProperties(reprobed))
+          .as("the re-probed file's version 5 result")
+          .contains(VERSION_5_PROPERTIES);
+      assertThat(playedVideoProperties(waiting))
+          .as("the waiting file's version 4 result")
+          .isEmpty();
 
       RELEASE_LATER_PROBES.countDown();
       progress.awaitProbeAttemptsEnded(1);
@@ -174,6 +172,17 @@ class ProbeVersion5UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
 
   private static Optional<Integer> storedVersion(ProbeState state) {
     return state.stored().map(stored -> stored.inputs().probeVersion());
+  }
+
+  // Either file's probe can run first, so the test finds each file by the version it stores.
+  private static UUID fileStoredAt(List<ProbeState> states, int probeVersion) {
+    var files =
+        states.stream()
+            .filter(state -> storedVersion(state).equals(Optional.of(probeVersion)))
+            .map(ProbeState::mediaFileId)
+            .toList();
+    assertThat(files).as("the files stored at probe version %d", probeVersion).hasSize(1);
+    return files.getFirst();
   }
 
   private Optional<VideoStreamProperties> playedVideoProperties(UUID mediaFileId) {
