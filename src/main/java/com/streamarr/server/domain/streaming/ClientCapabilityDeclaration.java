@@ -17,4 +17,9 @@ public record ClientCapabilityDeclaration(
     video = List.copyOf(video);
     audio = List.copyOf(audio);
   }
+
+  /** Whether one video capability entry accepts the stream copy over HLS. */
+  public boolean acceptsHlsCopy(@NonNull VideoStreamCopy copy) {
+    return video.stream().anyMatch(entry -> entry.acceptsHlsCopy(copy));
+  }
 }
