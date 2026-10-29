@@ -5,6 +5,9 @@ import lombok.NonNull;
 public sealed interface PlaybackSessionFailure {
   record OutputMismatch() implements PlaybackSessionFailure {}
 
+  /** The worker rejected the job's specification, so every replacement attempt would fail too. */
+  record InvalidSpecification() implements PlaybackSessionFailure {}
+
   record FixedFormatFailed(@NonNull PlaybackFormatFailure reason)
       implements PlaybackSessionFailure {}
 

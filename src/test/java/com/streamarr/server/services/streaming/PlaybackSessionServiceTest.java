@@ -12,12 +12,14 @@ import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.PlaybackSessionClosedException;
 import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -158,6 +160,80 @@ class PlaybackSessionServiceTest {
             new PlaybackFormatAttempt.Failed(
                 failedId, new PlaybackSessionFailure.OutputMismatch()));
     assertThat(streams.getAllSessions()).isEmpty();
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "AUTO,OUTPUT_MISMATCH",
+    "AUTO,INVALID_SPECIFICATION",
+    "HIGH_720P,OUTPUT_MISMATCH",
+    "ORIGINAL,INVALID_SPECIFICATION"
+  })
+  @DisplayName("Should fail playback without a new format attempt when a job failure is final")
+  void shouldFailPlaybackWithoutNewFormatAttemptWhenJobFailureIsFinal(
+      VideoQuality quality, TranscodeFailure failure) {
+    var command =
+        startCommand()
+            .options(
+                StreamingOptions.builder()
+                    .quality(quality)
+                    .supportedCodecs(List.of("h264"))
+                    .build())
+            .build();
+    var snapshot = accepted(service.start(command));
+    var failedId = snapshot.currentFormatAttempt().streamSessionId();
+
+    service.onTerminalTranscodeFailure(terminalFailure(failedId, failure));
+
+    var failed = service.access(request(snapshot, command)).orElseThrow();
+    assertThat(failed.formatAttemptCount()).isEqualTo(1);
+    assertThat(failed.currentFormatAttempt())
+        .isEqualTo(new PlaybackFormatAttempt.Failed(failedId, playbackFailureOf(failure)));
+    assertThat(streams.getAllSessions()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should ignore a final job failure when it names a retired stream session")
+  void shouldIgnoreFinalJobFailureWhenItNamesRetiredStreamSession() {
+    var command = startCommand().build();
+    var snapshot = accepted(service.start(command));
+    var retiredId = snapshot.currentFormatAttempt().streamSessionId();
+    service.onVideoCopyOutputMismatch(
+        new VideoCopyOutputMismatchEvent(retiredId, UUID.randomUUID(), "default"));
+
+    service.onTerminalTranscodeFailure(
+        terminalFailure(retiredId, TranscodeFailure.INVALID_SPECIFICATION));
+
+    var current = service.access(request(snapshot, command)).orElseThrow();
+    assertThat(current.formatAttemptCount()).isEqualTo(2);
+    assertThat(current.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+  }
+
+  @Test
+  @DisplayName("Should ignore a final job failure when no playback session owns the stream")
+  void shouldIgnoreFinalJobFailureWhenNoPlaybackSessionOwnsTheStream() {
+    var event = terminalFailure(UUID.randomUUID(), TranscodeFailure.OUTPUT_MISMATCH);
+
+    service.onTerminalTranscodeFailure(event);
+
+    assertThat(streams.getAllSessions()).isEmpty();
+  }
+
+  private static TerminalTranscodeFailureEvent terminalFailure(
+      UUID streamSessionId, TranscodeFailure failure) {
+    return TerminalTranscodeFailureEvent.builder()
+        .streamSessionId(streamSessionId)
+        .jobAttemptId(UUID.randomUUID())
+        .variantLabel("default")
+        .failure(failure)
+        .build();
+  }
+
+  private static PlaybackSessionFailure playbackFailureOf(TranscodeFailure failure) {
+    return switch (failure) {
+      case OUTPUT_MISMATCH -> new PlaybackSessionFailure.OutputMismatch();
+      case INVALID_SPECIFICATION -> new PlaybackSessionFailure.InvalidSpecification();
+    };
   }
 
   @Test

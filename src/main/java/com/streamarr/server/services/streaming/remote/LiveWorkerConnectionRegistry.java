@@ -13,6 +13,7 @@ import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.ProbeCapacity;
 import com.streamarr.server.services.streaming.SegmentPublication;
+import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.transcode.v1.BackgroundProbeCapacityControl;
 import com.streamarr.transcode.v1.CancelProbeCommand;
@@ -508,16 +509,32 @@ final class LiveWorkerConnectionRegistry {
   Optional<VariantJob> failJobAttempt(
       UUID workerId, UUID workerSessionId, JobAttemptFailed failed) {
     var released = acceptJobAttemptFailure(workerId, workerSessionId, failed);
-    released
-        .filter(job -> WorkerConnection.isCopyOutputMismatch(job, failed))
-        .ifPresent(
-            job ->
-                eventPublisher.publishEvent(
-                    new VideoCopyOutputMismatchEvent(
-                        fromProto(job.getStreamSessionId()),
-                        fromProto(job.getJobAttemptId()),
-                        job.getVariant().getVariantLabel())));
+    released.ifPresent(job -> publishTerminalFailure(job, failed));
     return released;
+  }
+
+  private void publishTerminalFailure(VariantJob job, JobAttemptFailed failed) {
+    var failure = WorkerConnection.terminalFailure(failed);
+    if (failure.isEmpty()) {
+      return;
+    }
+
+    var streamSessionId = fromProto(job.getStreamSessionId());
+    var jobAttemptId = fromProto(job.getJobAttemptId());
+    var variantLabel = job.getVariant().getVariantLabel();
+    if (WorkerConnection.isCopyOutputMismatch(job, failed)) {
+      eventPublisher.publishEvent(
+          new VideoCopyOutputMismatchEvent(streamSessionId, jobAttemptId, variantLabel));
+      return;
+    }
+
+    eventPublisher.publishEvent(
+        TerminalTranscodeFailureEvent.builder()
+            .streamSessionId(streamSessionId)
+            .jobAttemptId(jobAttemptId)
+            .variantLabel(variantLabel)
+            .failure(failure.get())
+            .build());
   }
 
   private synchronized Optional<VariantJob> acceptJobAttemptFailure(
@@ -924,11 +941,25 @@ final class LiveWorkerConnectionRegistry {
         return Optional.empty();
       }
 
-      if (isCopyOutputMismatch(job, failed)) {
-        terminalFailures.put(fromProto(job.getStreamSessionId()), TranscodeFailure.OUTPUT_MISMATCH);
-      }
-
+      terminalFailure(failed)
+          .ifPresent(failure -> terminalFailures.put(fromProto(job.getStreamSessionId()), failure));
       return releaseJobAttempt(attemptId);
+    }
+
+    // The worker contract says that a replacement attempt with the same decision repeats an output
+    // mismatch on the same encoder backend, and an invalid specification on every worker.
+    private static Optional<TranscodeFailure> terminalFailure(JobAttemptFailed failed) {
+      return switch (failed.getFailure()) {
+        case JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH -> Optional.of(TranscodeFailure.OUTPUT_MISMATCH);
+        case JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION ->
+            Optional.of(TranscodeFailure.INVALID_SPECIFICATION);
+        case JOB_ATTEMPT_FAILURE_UNSPECIFIED,
+            JOB_ATTEMPT_FAILURE_SOURCE_UNAVAILABLE,
+            JOB_ATTEMPT_FAILURE_STARTUP_FAILED,
+            JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED,
+            UNRECOGNIZED ->
+            Optional.empty();
+      };
     }
 
     private static boolean isCopyOutputMismatch(VariantJob job, JobAttemptFailed failed) {

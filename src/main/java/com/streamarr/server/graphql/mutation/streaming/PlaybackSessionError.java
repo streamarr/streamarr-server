@@ -9,6 +9,8 @@ public sealed interface PlaybackSessionError extends MutationError {
 
   record PlaybackOutputMismatchError(String message) implements PlaybackSessionError {}
 
+  record PlaybackInvalidSpecificationError(String message) implements PlaybackSessionError {}
+
   record PlaybackFormatRejectedError(String message, PlaybackFormatFailure reason)
       implements PlaybackSessionError {}
 

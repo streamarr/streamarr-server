@@ -84,6 +84,10 @@ class TranscodeDecisionCopyRuleTest {
     for (var sampleEntry : SampleEntry.values()) {
       for (var base : CompatibleBase.values()) {
         for (var dolbyVision : dolbyVisionClaims()) {
+          if (!isRepresentable(base, dolbyVision)) {
+            continue;
+          }
+
           for (var bitDepth : List.of(OptionalInt.of(8), OptionalInt.of(10), OptionalInt.empty())) {
             for (var chroma : chromaSubsamplings()) {
               for (var clientCodecs : clientCodecLists()) {
@@ -107,6 +111,11 @@ class TranscodeDecisionCopyRuleTest {
     }
 
     return cases.stream();
+  }
+
+  // ADR 0036 gives a compatible base of NONE only to a stream with Dolby Vision present.
+  private static boolean isRepresentable(CompatibleBase base, DolbyVision dolbyVision) {
+    return base != CompatibleBase.NONE || dolbyVision instanceof DolbyVision.Present;
   }
 
   private static List<DolbyVision> dolbyVisionClaims() {
