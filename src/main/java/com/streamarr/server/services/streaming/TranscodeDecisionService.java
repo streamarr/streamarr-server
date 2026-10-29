@@ -36,10 +36,8 @@ import org.springframework.stereotype.Service;
 public class TranscodeDecisionService {
 
   // An encode forces one codec profile for each codec family (ADR 0013).
-  private static final List<EncodeCandidate> CODEC_PREFERENCE =
-      List.of(
-          new EncodeCandidate("av1", VideoCodecProfile.AV1_MAIN),
-          new EncodeCandidate("h264", VideoCodecProfile.H264_HIGH));
+  private static final List<VideoCodecProfile> CODEC_PREFERENCE =
+      List.of(VideoCodecProfile.AV1_MAIN, VideoCodecProfile.H264_HIGH);
   // A multichannel encode prefers the first of these codecs that keeps more than two channels.
   private static final List<String> MULTICHANNEL_ENCODE_PREFERENCE = List.of("eac3", "ac3", "aac");
   // FFmpeg's AC-3 and E-AC-3 encoders stop at 5.1.
@@ -53,8 +51,6 @@ public class TranscodeDecisionService {
 
   private final StreamingProperties properties;
   private final MeterRegistry meterRegistry;
-
-  private record EncodeCandidate(String codecFamily, VideoCodecProfile codecProfile) {}
 
   /**
    * A copy needs a video capability entry for HLS that names the source's codec family. An encode
@@ -306,8 +302,8 @@ public class TranscodeDecisionService {
       Set<String> encodableVideoCodecFamilies,
       Set<String> excludedEncodeCodecFamilies) {
     return CODEC_PREFERENCE.stream()
-        .filter(candidate -> declaresHlsCodecProfile(declaration, candidate.codecProfile()))
-        .map(EncodeCandidate::codecFamily)
+        .filter(profile -> declaresHlsCodecProfile(declaration, profile))
+        .map(profile -> profile.codecFamily().name().toLowerCase(Locale.ROOT))
         .filter(encodableVideoCodecFamilies::contains)
         .filter(family -> !excludedEncodeCodecFamilies.contains(family))
         .findFirst();
