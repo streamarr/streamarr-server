@@ -30,6 +30,7 @@ import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Record1;
 import org.jooq.SelectSeekStep1;
+import org.jooq.UpdateConditionStep;
 import org.jooq.UpdateSetFirstStep;
 import org.jooq.UpdateSetMoreStep;
 import org.jooq.impl.DSL;
@@ -166,12 +167,15 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
 
   @Override
   public boolean tryRehome(UUID profileId, UUID expectedHouseholdId, UUID destinationHouseholdId) {
+    return rehomeWhileIn(profileId, expectedHouseholdId, destinationHouseholdId).execute() > 0;
+  }
+
+  private UpdateConditionStep<ProfileRecord> rehomeWhileIn(
+      UUID profileId, UUID expectedHouseholdId, UUID destinationHouseholdId) {
     return dsl.update(PROFILE)
-            .set(PROFILE.HOUSEHOLD_ID, destinationHouseholdId)
-            .where(PROFILE.ID.eq(profileId))
-            .and(PROFILE.HOUSEHOLD_ID.eq(expectedHouseholdId))
-            .execute()
-        > 0;
+        .set(PROFILE.HOUSEHOLD_ID, destinationHouseholdId)
+        .where(PROFILE.ID.eq(profileId))
+        .and(PROFILE.HOUSEHOLD_ID.eq(expectedHouseholdId));
   }
 
   @Override
