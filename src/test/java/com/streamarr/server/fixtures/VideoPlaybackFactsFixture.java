@@ -7,6 +7,7 @@ import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.Fraction;
+import com.streamarr.server.domain.streaming.FrameRatePacketScan;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
 import com.streamarr.server.domain.streaming.MatrixCoefficients;
@@ -19,6 +20,7 @@ import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import lombok.experimental.UtilityClass;
 
@@ -77,6 +79,27 @@ public class VideoPlaybackFactsFixture {
             FrameRateRuleInputs.builder()
                 .baseRate(Optional.of(rate))
                 .averageRate(Optional.of(rate))
+                .build())
+        .build();
+  }
+
+  /**
+   * The rule's result when the declared rates disagree and the packet scan measured the motion
+   * rate, which the rule snapped to the output frame rate.
+   */
+  public static FrameRateRule packetScanRule(double motionRate, Fraction outputFrameRate) {
+    return FrameRateRule.builder()
+        .outputFrameRate(Optional.of(outputFrameRate))
+        .basis(OutputFrameRateBasis.PACKET_SCAN)
+        .inputs(
+            FrameRateRuleInputs.builder()
+                .timeBase(Optional.of(new Fraction(1, 90_000)))
+                .packetScan(
+                    Optional.of(
+                        FrameRatePacketScan.builder()
+                            .motionRate(OptionalDouble.of(motionRate))
+                            .scannedFrameCount(1_000)
+                            .build()))
                 .build())
         .build();
   }

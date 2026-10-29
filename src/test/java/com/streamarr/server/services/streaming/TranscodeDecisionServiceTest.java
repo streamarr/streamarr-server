@@ -28,6 +28,7 @@ import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
 import com.streamarr.server.domain.streaming.Fraction;
+import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePosition;
@@ -35,6 +36,7 @@ import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
@@ -1224,6 +1226,45 @@ class TranscodeDecisionServiceTest {
             "Original, 2160p60", VideoFormatConstraint.COPY_ONLY, uhdAt60, Optional.empty()));
   }
 
+  // ADR 0037's frame-rate rule divides 120 fps motion to a 60 fps output frame rate, which only an
+  // encode runs at. A copy keeps every source frame.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("constraintsFor120FpsSource")
+  @DisplayName(
+      "Should not copy 120 fps video when the entry's maximum frame rate is 60 fps although the"
+          + " output frame rate is 60 fps")
+  void
+      shouldNotCopy120FpsVideoWhenTheEntrysMaximumFrameRateIs60FpsAlthoughTheOutputFrameRateIs60Fps(
+          VideoFormatConstraint constraint, Optional<TranscodeMode> expected) {
+    var source =
+        probeVersion5H264(
+            new PictureSize(1920, 1080),
+            VideoPlaybackFactsFixture.packetScanRule(120, new Fraction(60, 1)));
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(h264EntryBuilder().maxWidth(1920).maxHeight(1080).maxFrameRate(60).build()))
+            .build();
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .capabilityDeclaration(declaration)
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .videoFormatConstraint(constraint)
+                .build());
+
+    assertThat(decision.map(TranscodeDecision::transcodeMode)).isEqualTo(expected);
+  }
+
+  static Stream<Arguments> constraintsFor120FpsSource() {
+    return Stream.of(
+        Arguments.of(
+            VideoFormatConstraint.COPY_OR_ENCODE, Optional.of(TranscodeMode.VIDEO_TRANSCODE)),
+        Arguments.of(VideoFormatConstraint.COPY_ONLY, Optional.empty()));
+  }
+
   @Test
   @DisplayName(
       "Should copy a probe version 4 outcome when an HLS entry names its codec family whatever its"
@@ -1341,12 +1382,18 @@ class TranscodeDecisionServiceTest {
 
   // An 8-bit 4:2:0 SDR H.264 High profile source at level 5.1 that probe version 5 described.
   private static MediaProbe probeVersion5H264(int width, int height, int frameRate) {
+    return probeVersion5H264(
+        new PictureSize(width, height),
+        VideoPlaybackFactsFixture.declaredRateRule(new Fraction(frameRate, 1)));
+  }
+
+  private static MediaProbe probeVersion5H264(PictureSize size, FrameRateRule frameRateRule) {
     return MediaProbe.builder()
         .keyframes(KEYFRAMES_EVERY_TWO_SECONDS)
         .duration(Duration.ofMinutes(120))
-        .framerate(OptionalDouble.of(frameRate))
-        .width(width)
-        .height(height)
+        .framerate(OptionalDouble.of(frameRateRule.outputFrameRate().orElseThrow().toDouble()))
+        .width(size.width())
+        .height(size.height())
         .videoCodec("h264")
         .audioCodec("aac")
         .streams(List.of(ProbeFixture.audioStreamBuilder("aac").index(1).build()))
@@ -1356,8 +1403,7 @@ class TranscodeDecisionServiceTest {
             Optional.of(
                 VideoPlaybackFactsFixture.sdrH264FactsBuilder()
                     .streamIndex(0)
-                    .frameRateRule(
-                        VideoPlaybackFactsFixture.declaredRateRule(new Fraction(frameRate, 1)))
+                    .frameRateRule(frameRateRule)
                     .videoProperties(
                         Optional.of(
                             VideoPlaybackFactsFixture.h264HighPropertiesBuilder()
