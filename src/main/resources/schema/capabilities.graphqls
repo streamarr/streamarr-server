@@ -2,7 +2,8 @@
 The client capability declaration that a client builds from its current player and display each
 time it starts a playback session (ADR 0049). The server chooses each output from these capability
 entries. An output fits only when one capability entry accepts every property of the output; the
-server never combines the properties of two capability entries.
+server never combines the properties of two capability entries. Every list of the declaration holds
+at most 32 values, and every maximum must be above zero.
 """
 input ClientCapabilityDeclarationInput {
     "The video capability entries. The declaration needs at least one."
@@ -127,4 +128,42 @@ enum AudioCodec {
     OPUS
     FLAC
     ALAC
+}
+
+"A list of the capability declaration is empty where the declaration needs at least one value. The inputPath names the list."
+type CapabilityValuesRequiredError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"The capability declaration has no AAC audio capability entry that applies to HLS. The server's audio encode is AAC, so every declaration needs one."
+type HlsAacCapabilityRequiredError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"A list of the capability declaration holds more values than the server accepts. The server checks no value of that list."
+type CapabilityListTooLongError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+    "The most values that the list may hold."
+    maximum: Int!
+}
+
+"A maximum of the capability declaration is zero or negative."
+type CapabilityMaximumInvalidError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"A codec profile or Dolby Vision profile belongs to another codec family than its video capability entry."
+type CapabilityProfileMismatchError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"A codec profile's maximum tier is absent for an HEVC or AV1 profile, or present for an H.264 profile, which has no tier."
+type VideoCodecTierInvalidError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
 }

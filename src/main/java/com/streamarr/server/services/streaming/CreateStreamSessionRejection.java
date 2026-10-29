@@ -4,7 +4,7 @@ import com.streamarr.server.domain.streaming.ProbeError;
 import java.util.UUID;
 import lombok.NonNull;
 
-public sealed interface CreateStreamSessionRejection {
+public sealed interface CreateStreamSessionRejection extends StartPlaybackSessionRejection {
 
   record TranscodeCapacityUnavailable(int maximumConcurrent)
       implements CreateStreamSessionRejection {}
