@@ -649,7 +649,6 @@ class LiveWorkerConnectionRegistryTest {
     assertThat(targets).hasSize(2).first().isEqualTo(hardwareTarget);
   }
 
-  /** Registers a libsvtav1 worker, then an av1_nvenc worker, and returns the latter's target. */
   private static ExecutionTargetId registerSoftwareThenHardwareAv1Workers(
       LiveWorkerConnectionRegistry registry) {
     var hardwareWorkerId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
@@ -662,9 +661,12 @@ class LiveWorkerConnectionRegistryTest {
         registry.register(
             hardwareWorkerId,
             registration(
-                hardwareWorkerId,
-                keyframeVerifiedHardwareEncoder(
-                    VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "av1_nvenc")),
+                    hardwareWorkerId,
+                    keyframeVerifiedHardwareEncoder(
+                        VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "av1_nvenc"))
+                .toBuilder()
+                .setAvailableSlots(1)
+                .build(),
             new CancellableObserver());
     return new ExecutionTargetId(hardwareSession.toString());
   }
