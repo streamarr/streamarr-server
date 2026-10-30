@@ -9,7 +9,9 @@ import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.QualityVariant;
+import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import java.time.Duration;
 import java.util.List;
@@ -86,6 +88,23 @@ class QualityLadderServiceTest {
     assertThat(variants)
         .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::label)
         .containsExactly(tuple(534, 300, "300p"));
+  }
+
+  @Test
+  @DisplayName("Should offer only the source-sized default variant when the quality is fixed")
+  void shouldOfferOnlyTheSourceSizedDefaultVariantWhenTheQualityIsFixed() {
+    var probe = buildProbe(1920, 1080, 8_000_000L);
+    var options = StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build();
+
+    var variants = service.generateVariants(probe, options);
+
+    assertThat(variants)
+        .extracting(
+            QualityVariant::width,
+            QualityVariant::height,
+            QualityVariant::videoBitrate,
+            QualityVariant::label)
+        .containsExactly(tuple(1920, 1080, 8_000_000L, StreamSession.defaultVariant()));
   }
 
   @Test
