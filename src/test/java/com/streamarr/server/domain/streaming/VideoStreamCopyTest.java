@@ -10,6 +10,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
@@ -38,6 +39,26 @@ class VideoStreamCopyTest {
     var copy = VideoStreamCopy.of(source).orElseThrow();
 
     assertThat(copy.frameRate()).isEqualTo(expected);
+  }
+
+  @ParameterizedTest(name = "{0}×{1}")
+  @CsvSource({"0, 1080", "1920, 0"})
+  @DisplayName("Should leave a copy's decoded size empty when the probe could not read a dimension")
+  void shouldLeaveACopysDecodedSizeEmptyWhenTheProbeCouldNotReadADimension(int width, int height) {
+    var source =
+        MediaProbe.builder()
+            .framerate(OptionalDouble.empty())
+            .width(width)
+            .height(height)
+            .videoCodec("h264")
+            .keyframes(new KeyframeKnowledge.NotReported())
+            .videoPlaybackFacts(
+                Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()))
+            .build();
+
+    var copy = VideoStreamCopy.of(source).orElseThrow();
+
+    assertThat(copy.decodedSize()).isEmpty();
   }
 
   // ADR 0037's rule snaps a measured or declared rate to a listed rate: it raises a rate below 10
