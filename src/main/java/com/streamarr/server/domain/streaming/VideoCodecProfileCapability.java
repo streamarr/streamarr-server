@@ -13,8 +13,8 @@ import lombok.NonNull;
 public record VideoCodecProfileCapability(
     @NonNull VideoCodecProfile profile, int maxLevel, @NonNull Optional<VideoCodecTier> maxTier) {
 
-  @SuppressWarnings("java:S1068") // Lombok builder defaults — fields are used by generated code
-  public static class VideoCodecProfileCapabilityBuilder {
-    private Optional<VideoCodecTier> maxTier = Optional.empty();
+  // Lombok skips its own builder() because this one exists.
+  public static VideoCodecProfileCapabilityBuilder builder() {
+    return new VideoCodecProfileCapabilityBuilder().maxTier(Optional.empty());
   }
 }
