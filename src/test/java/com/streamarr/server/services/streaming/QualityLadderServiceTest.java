@@ -496,7 +496,8 @@ class QualityLadderServiceTest {
     "FULL_HD_1080P, 8000000, 384000, 100000, 640, 360, 100000",
     "FULL_HD_1080P, 300000, 128000, 500000, 640, 360, 300000",
     "FULL_HD_1080P, 0, 128000, 500000, 640, 360, 500000",
-    "AUTO, 8000000, 128000, 500000, 640, 360, 500000"
+    "AUTO, 8000000, 128000, 500000, 640, 360, 500000",
+    "AUTO, 300000, 128000, 500000, 640, 360, 300000"
   })
   @DisplayName(
       "Should bound the single variant by the maximum bitrate less the audio, or by the 360p box"
