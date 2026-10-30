@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
-import java.util.stream.IntStream;
 import lombok.Builder;
 import lombok.NonNull;
 
@@ -134,11 +133,7 @@ public record VideoCapabilityEntry(
             Math.min(request.bounds().width(), maxWidth),
             Math.min(request.bounds().height(), maxHeight));
     var source = request.source();
-    return IntStream.iterate(
-            EncodedPictureSizes.largestHeightWithin(source, bounds),
-            height -> height >= 0,
-            height -> height - 2)
-        .mapToObj(height -> EncodedPictureSizes.atHeight(source, height))
+    return EncodedPictureSizes.picturesWithin(source, bounds)
         .map(
             size ->
                 EncodedVideoOutput.builder()
