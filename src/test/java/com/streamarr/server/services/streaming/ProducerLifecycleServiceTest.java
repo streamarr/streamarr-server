@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountScopedBuilder;
+import static com.streamarr.server.fixtures.SegmentRequestFixture.segmentRequest;
 import static com.streamarr.server.fixtures.StreamSessionFixture.abrSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultLadderSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
@@ -513,7 +514,7 @@ class ProducerLifecycleServiceTest {
 
   private ProducerLifecycleService.RecoveryResult recover(StreamSession session) {
     return lifecycle.recover(
-        session.getSessionId(), StreamSession.defaultVariant(), "segment2.m4s");
+        segmentRequest(session.getSessionId(), StreamSession.defaultVariant(), "segment2.m4s"));
   }
 
   private Duration timeUntilStall(StreamSession session) {
@@ -603,7 +604,10 @@ class ProducerLifecycleServiceTest {
 
     var result =
         lifecycle.recover(
-            sixtySecondSession.getSessionId(), StreamSession.defaultVariant(), "segment10.m4s");
+            segmentRequest(
+                sixtySecondSession.getSessionId(),
+                StreamSession.defaultVariant(),
+                "segment10.m4s"));
 
     assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.SEGMENT_NOT_ADVERTISED);
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
@@ -622,7 +626,10 @@ class ProducerLifecycleServiceTest {
 
     var result =
         lifecycle.recover(
-            sixtySecondSession.getSessionId(), StreamSession.defaultVariant(), "segment10.m4s");
+            segmentRequest(
+                sixtySecondSession.getSessionId(),
+                StreamSession.defaultVariant(),
+                "segment10.m4s"));
 
     assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.SEGMENT_NOT_ADVERTISED);
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
@@ -730,7 +737,8 @@ class ProducerLifecycleServiceTest {
     var session = startedLadderSession();
     transcodeExecutor.markDead(session.getSessionId(), "480p");
 
-    var result = lifecycle.recover(session.getSessionId(), "480p", "480p/segment2.m4s");
+    var result =
+        lifecycle.recover(segmentRequest(session.getSessionId(), "480p", "480p/segment2.m4s"));
 
     assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
     var request = transcodeExecutor.getStartedRequests().getLast();
@@ -749,7 +757,8 @@ class ProducerLifecycleServiceTest {
     var session = startedLadderSession();
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
-    var result = lifecycle.recover(session.getSessionId(), "720p", "720p/segment2.m4s");
+    var result =
+        lifecycle.recover(segmentRequest(session.getSessionId(), "720p", "720p/segment2.m4s"));
 
     assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.VARIANT_NOT_RUNNING);
     assertThat(startedSince(startedBefore)).isEmpty();
@@ -766,7 +775,7 @@ class ProducerLifecycleServiceTest {
     transcodeExecutor.markDead(sessionId, "1080p");
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
-    var result = lifecycle.recover(sessionId, "1080p", "1080p/init.mp4");
+    var result = lifecycle.recover(segmentRequest(sessionId, "1080p", "1080p/init.mp4"));
 
     assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
     assertThat(startedSince(startedBefore))
@@ -828,7 +837,8 @@ class ProducerLifecycleServiceTest {
     session.setVariantHandle("1080p", suspended);
     transcodeExecutor.markDead(session.getSessionId(), "1080p");
 
-    var result = lifecycle.recover(session.getSessionId(), "1080p", "1080p/segment2.m4s");
+    var result =
+        lifecycle.recover(segmentRequest(session.getSessionId(), "1080p", "1080p/segment2.m4s"));
 
     assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
     assertThat(session.getVariantHandle("1080p").orElseThrow().status())
@@ -949,7 +959,7 @@ class ProducerLifecycleServiceTest {
     transcodeExecutor.markDead(session.getSessionId(), "1080p");
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
-    lifecycle.recover(session.getSessionId(), "1080p", "1080p/segment2.m4s");
+    lifecycle.recover(segmentRequest(session.getSessionId(), "1080p", "1080p/segment2.m4s"));
     lifecycle.ensurePositioned(session.getSessionId(), "1080p", "1080p/segment100.m4s");
 
     assertThat(startedSince(startedBefore))
@@ -1166,7 +1176,7 @@ class ProducerLifecycleServiceTest {
     transcodeExecutor.markDead(session.getSessionId(), "1080p");
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
-    lifecycle.recover(session.getSessionId(), "1080p", "1080p/segment2.m4s");
+    lifecycle.recover(segmentRequest(session.getSessionId(), "1080p", "1080p/segment2.m4s"));
     lifecycle.ensurePositioned(session.getSessionId(), "1080p", "1080p/segment100.m4s");
 
     assertThat(startedSince(startedBefore))
@@ -1360,7 +1370,8 @@ class ProducerLifecycleServiceTest {
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
     var result =
-        lifecycle.recover(session.getSessionId(), StreamSession.defaultVariant(), "segment3.m4s");
+        lifecycle.recover(
+            segmentRequest(session.getSessionId(), StreamSession.defaultVariant(), "segment3.m4s"));
 
     assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.SEGMENT_NOT_ADVERTISED);
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);

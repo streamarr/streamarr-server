@@ -69,8 +69,8 @@ public class ProducerLifecycleService {
    * Observes progress and decides whether to wait, replace, or exhaust under the same session mutex
    * as every producer mutation. Recovery bookkeeping is committed before releasing it.
    */
-  public RecoveryResult recover(UUID sessionId, String variantLabel, String segmentName) {
-    return withSessionLock(sessionId, () -> doRecover(sessionId, variantLabel, segmentName));
+  public RecoveryResult recover(SegmentRequest request) {
+    return withSessionLock(request.sessionId(), () -> doRecover(request));
   }
 
   /**
@@ -105,7 +105,10 @@ public class ProducerLifecycleService {
         () -> recoveryStates.keySet().removeIf(key -> key.sessionId().equals(sessionId)));
   }
 
-  private RecoveryResult doRecover(UUID sessionId, String variantLabel, String segmentName) {
+  private RecoveryResult doRecover(SegmentRequest request) {
+    var sessionId = request.sessionId();
+    var variantLabel = request.variantLabel();
+    var segmentName = request.segmentName();
     var session = runtimeRegistry.findById(sessionId).orElse(null);
     if (session == null) {
       return RecoveryResult.SESSION_GONE;
@@ -380,10 +383,12 @@ public class ProducerLifecycleService {
    * variant without a job attempt then starts that variant: at the requested media segment, or at
    * the current segment for the initialization segment. A stored media segment starts nothing, and
    * neither does a full transcode limit. A variant that does not start stays without a job attempt,
-   * so recovery answers the request as {@link RecoveryResult#VARIANT_NOT_RUNNING}.
+   * so recovery answers the request as {@link RecoveryResult#VARIANT_NOT_RUNNING}. Answers the
+   * request that later recovery passes name.
    */
-  public void prepareRequestedVariant(UUID sessionId, String variantLabel, String segmentName) {
-    withSessionLock(
+  public SegmentRequest prepareRequestedVariant(
+      UUID sessionId, String variantLabel, String segmentName) {
+    return withSessionLock(
         sessionId,
         () -> {
           if (SegmentNames.indexOf(segmentName).isPresent()) {
@@ -391,6 +396,11 @@ public class ProducerLifecycleService {
           }
 
           doStartVariantOnDemand(sessionId, variantLabel, segmentName);
+          return SegmentRequest.builder()
+              .sessionId(sessionId)
+              .variantLabel(variantLabel)
+              .segmentName(segmentName)
+              .build();
         });
   }
 
