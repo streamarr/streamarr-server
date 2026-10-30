@@ -26,6 +26,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import lombok.Builder;
@@ -39,6 +44,8 @@ class WorkerProbeCapacityTest {
 
   private static final UUID OTHER_WORKER_ID =
       UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+  private static final UUID THIRD_WORKER_ID =
+      UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
   private static final int PROBE_VERSION = 1;
 
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
@@ -180,6 +187,60 @@ class WorkerProbeCapacityTest {
 
     assertThat(startProbeCount(playbackOnly)).isOne();
     assertThat(startProbeCount(backgroundOnly)).isOne();
+  }
+
+  @Test
+  @DisplayName(
+      "Should send a playback probe to a worker with only a background unit free when the worker"
+          + " with a free playback unit ordered next fills it while the dispatch waits on the"
+          + " first")
+  void
+      shouldSendAPlaybackProbeToABackgroundUnitWhenTheWorkerOrderedNextFillsItsPlaybackUnitWhileTheDispatchWaits()
+          throws Exception {
+    var sendReached = new CountDownLatch(1);
+    var sendRelease = new Semaphore(0);
+    var gatedSession =
+        registerSession(
+            Worker.builder().backgroundProbeCapacity(0).playbackProbeCapacity(1).build(),
+            new CapturingResponses(
+                _ -> {
+                  sendReached.countDown();
+                  sendRelease.acquireUninterruptibly();
+                }));
+    var orderedNext =
+        register(
+            Worker.builder()
+                .workerId(OTHER_WORKER_ID)
+                .backgroundProbeCapacity(0)
+                .playbackProbeCapacity(1)
+                .build());
+    var backgroundOnly =
+        register(
+            Worker.builder()
+                .workerId(THIRD_WORKER_ID)
+                .backgroundProbeCapacity(1)
+                .playbackProbeCapacity(0)
+                .build());
+    var waiting = playbackProbe().build();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var dispatching = executor.submit(() -> registry.dispatchProbe(waiting));
+      assertThat(sendReached.await(5, TimeUnit.SECONDS)).isTrue();
+
+      registry.disconnect(WORKER_ID, gatedSession);
+      assertDispatched(registry.dispatchProbe(playbackProbe().build()));
+      sendRelease.release();
+
+      assertDispatched(dispatching.get(5, TimeUnit.SECONDS));
+    } finally {
+      sendRelease.release();
+    }
+
+    assertThat(startProbeCount(orderedNext)).isOne();
+    assertThat(backgroundOnly.values)
+        .filteredOn(EstablishWorkerSessionResponse::hasStartProbe)
+        .extracting(response -> response.getStartProbe().getRequest())
+        .containsExactly(waiting);
   }
 
   @Test
@@ -608,10 +669,22 @@ class WorkerProbeCapacityTest {
       implements StreamObserver<EstablishWorkerSessionResponse> {
 
     private final List<EstablishWorkerSessionResponse> values = new CopyOnWriteArrayList<>();
+    private final Consumer<EstablishWorkerSessionResponse> onStartProbe;
+
+    private CapturingResponses() {
+      this(_ -> {});
+    }
+
+    private CapturingResponses(Consumer<EstablishWorkerSessionResponse> onStartProbe) {
+      this.onStartProbe = onStartProbe;
+    }
 
     @Override
     public void onNext(EstablishWorkerSessionResponse response) {
       values.add(response);
+      if (response.hasStartProbe()) {
+        onStartProbe.accept(response);
+      }
     }
 
     @Override
