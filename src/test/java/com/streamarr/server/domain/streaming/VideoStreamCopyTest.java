@@ -42,7 +42,8 @@ class VideoStreamCopyTest {
 
   // ADR 0037's rule snaps a measured or declared rate to a listed rate: it raises a rate below 10
   // fps to 10, counts a rate from 60 to 60.3 fps as 60, divides a faster rate down to a listed
-  // rate and otherwise takes the nearest listed rate.
+  // rate and otherwise takes the nearest listed rate. A copy keeps the unsnapped rate in every
+  // case.
   static Stream<Arguments> frameRateRules() {
     return Stream.of(
         Arguments.of(
@@ -70,9 +71,9 @@ class VideoStreamCopyTest {
             VideoPlaybackFactsFixture.packetScanRule(65, new Fraction(60, 1)),
             OptionalDouble.of(65)),
         Arguments.of(
-            "60.3 fps motion counted as 60",
+            "60.3 fps motion that the rule counts as 60",
             VideoPlaybackFactsFixture.packetScanRule(60.3, new Fraction(60, 1)),
-            OptionalDouble.of(60)),
+            OptionalDouble.of(60.3)),
         Arguments.of(
             "59.95 fps motion rounded to 59.94",
             VideoPlaybackFactsFixture.packetScanRule(59.95, new Fraction(60_000, 1_001)),
@@ -107,13 +108,13 @@ class VideoStreamCopyTest {
                 new Fraction(60, 1)),
             OptionalDouble.of(120)),
         Arguments.of(
-            "60.3 fps average rate counted as 60 after a scan found fewer than 2 frames",
+            "60.3 fps average rate that the rule counts as 60 after a scan found fewer than 2 frames",
             VideoPlaybackFactsFixture.declaredRateFallbackRule(
                 FrameRateRuleInputs.builder()
                     .averageRate(Optional.of(new Fraction(603, 10)))
                     .build(),
                 new Fraction(60, 1)),
-            OptionalDouble.of(60)),
+            OptionalDouble.of(60.3)),
         Arguments.of(
             "base rate after a scan found fewer than 2 frames and the average rate is not usable",
             VideoPlaybackFactsFixture.declaredRateFallbackRule(

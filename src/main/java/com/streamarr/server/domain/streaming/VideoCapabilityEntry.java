@@ -29,6 +29,9 @@ public record VideoCapabilityEntry(
 
   private static final EnumSet<CompatibleBase> DECLARABLE_COMPATIBLE_BASES =
       EnumSet.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG);
+  // Timestamp rounding can put a measured rate slightly above the source's standard rate, such as
+  // 60.2 fps for a 60 fps stream with millisecond timestamps.
+  private static final double MEASURED_FRAME_RATE_MARGIN = 1.005;
 
   public VideoCapabilityEntry {
     if (codecFamily == ProbedCodecFamily.OTHER) {
@@ -94,7 +97,8 @@ public record VideoCapabilityEntry(
 
   // A stream without a usable frame rate cannot be encoded (#446), so a copy is its only path.
   private boolean acceptsFrameRate(OptionalDouble frameRate) {
-    return frameRate.isEmpty() || frameRate.getAsDouble() <= maxFrameRate;
+    return frameRate.isEmpty()
+        || frameRate.getAsDouble() <= maxFrameRate * MEASURED_FRAME_RATE_MARGIN;
   }
 
   // Declaring a compatible base declares neither Dolby Vision nor HDR10+ (ADR 0049).
