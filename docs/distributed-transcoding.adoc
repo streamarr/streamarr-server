@@ -205,21 +205,6 @@ STREAMARR_MEDIA_PATH=/absolute/path/to/media docker compose \
 The worker uses its own Spring Boot image and normal entrypoint.
 The server image contains neither the worker application nor FFmpeg.
 
-Hardware transcoding is a separate opt-in overlay.
-Find the numeric group ID that owns the host's `/dev/dri/render*` device and set `STREAMARR_RENDER_GID`:
-
-[source,bash]
-----
-STREAMARR_MEDIA_PATH=/absolute/path/to/media STREAMARR_RENDER_GID=109 docker compose \
-  --env-file worker-image.env --env-file .env \
-  -f docker-compose.yml \
-  -f deploy/compose/hardware-transcoding.yml \
-  up -d
-----
-
-The group ID is host-specific. `109` is only an example.
-The overlay passes `/dev/dri` only to the worker. CPU deployments need no hardware overlay.
-
 == Kubernetes
 
 link:../deploy/kubernetes/distributed-transcoding.yaml[The example manifest] creates the `streamarr` namespace with sidecar injection enabled, separate server and worker ServiceAccounts, one server replica, and two worker replicas.
@@ -260,18 +245,6 @@ A CPU request changed in place takes effect when the container restarts.
 python3 deploy/kubernetes/render-deployment.py > /tmp/streamarr-deployment.yaml
 kubectl apply -f /tmp/streamarr-deployment.yaml
 ----
-
-For direct-rendering hardware, edit the group ID in `deploy/kubernetes/hardware-transcoding-patch.yaml` to match the node's render device group, then apply the patch:
-
-[source,bash]
-----
-kubectl -n streamarr patch deployment streamarr-transcode-worker \
-  --type strategic \
-  --patch-file deploy/kubernetes/hardware-transcoding-patch.yaml
-----
-
-The patch mounts `/dev/dri` only into worker pods.
-Use a device plugin's advertised resource when one is installed.
 
 == Validate the mesh
 

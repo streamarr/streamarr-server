@@ -368,15 +368,6 @@ class PackagedConfigurationTest {
 
   @Test
   @DisplayName(
-      "Should ship opt-in hardware transcoding for the Docker Compose worker when packaged")
-  void shouldShipOptInHardwareTranscodingForDockerComposeWorkerWhenPackaged() throws IOException {
-    var deployment = Files.readString(Path.of("deploy/compose/hardware-transcoding.yml"));
-
-    assertThat(deployment).contains("transcode-worker:", "devices:", "/dev/dri:/dev/dri");
-  }
-
-  @Test
-  @DisplayName(
       "Should ship a single-server Kubernetes path with per-pod worker identity when packaged")
   void shouldShipSingleServerKubernetesPathWithPerPodWorkerIdentityWhenPackaged()
       throws IOException {
