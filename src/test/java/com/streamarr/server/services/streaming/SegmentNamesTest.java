@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.domain.streaming.StreamSession;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -12,6 +13,23 @@ import org.junit.jupiter.params.provider.ValueSource;
 @Tag("UnitTest")
 @DisplayName("Segment Names Tests")
 class SegmentNamesTest {
+
+  @Test
+  @DisplayName("Should store the default variant's segments at the top of the stream session")
+  void shouldStoreDefaultVariantsSegmentsAtTopOfStreamSession() {
+    assertThat(SegmentNames.storedSegmentName(StreamSession.defaultVariant(), "init.mp4"))
+        .isEqualTo("init.mp4");
+    assertThat(SegmentNames.storedSegmentName(StreamSession.defaultVariant(), "segment3.m4s"))
+        .isEqualTo("segment3.m4s");
+  }
+
+  @Test
+  @DisplayName("Should store a labelled variant's segments under its label")
+  void shouldStoreLabelledVariantsSegmentsUnderItsLabel() {
+    assertThat(SegmentNames.storedSegmentName("720p", "init.mp4")).isEqualTo("720p/init.mp4");
+    assertThat(SegmentNames.storedSegmentName("720p", "segment3.m4s"))
+        .isEqualTo("720p/segment3.m4s");
+  }
 
   @Test
   @DisplayName("Should parse the timeline index when the name is a canonical media segment")
