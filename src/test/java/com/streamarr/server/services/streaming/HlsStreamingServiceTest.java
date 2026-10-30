@@ -66,6 +66,7 @@ import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
+import com.streamarr.server.fixtures.HardwareEncodedFamiliesAndExpectedEncode;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
@@ -97,6 +98,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.ArgumentsSource;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -1945,7 +1947,7 @@ class HlsStreamingServiceTest {
 
   // A software AV1 encoder falls behind real time on a large source, while H.264 keeps up.
   @ParameterizedTest(name = "hardware encoders for {0}")
-  @MethodSource("hardwareEncodedFamiliesAndExpectedEncode")
+  @ArgumentsSource(HardwareEncodedFamiliesAndExpectedEncode.class)
   @DisplayName(
       "Should encode AV1 for a client that declares AV1 and H.264 only when a worker with a free"
           + " slot encodes AV1 in hardware")
@@ -1963,14 +1965,6 @@ class HlsStreamingServiceTest {
         .singleElement()
         .extracting(request -> request.transcodeDecision().videoCodecFamily())
         .isEqualTo(expectedCodecFamily);
-  }
-
-  static Stream<Arguments> hardwareEncodedFamiliesAndExpectedEncode() {
-    return Stream.of(
-        Arguments.of(Set.of(), "h264"),
-        Arguments.of(Set.of("h264"), "h264"),
-        Arguments.of(Set.of("av1"), "av1"),
-        Arguments.of(Set.of("h264", "av1"), "av1"));
   }
 
   @Test

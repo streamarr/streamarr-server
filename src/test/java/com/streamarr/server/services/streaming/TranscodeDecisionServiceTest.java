@@ -51,6 +51,7 @@ import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
+import com.streamarr.server.fixtures.HardwareEncodedFamiliesAndExpectedEncode;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -64,13 +65,13 @@ import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.ArgumentsSource;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -714,7 +715,7 @@ class TranscodeDecisionServiceTest {
   }
 
   @ParameterizedTest(name = "hardware encoders for {0}")
-  @MethodSource("hardwareEncodedFamiliesAndExpectedEncode")
+  @ArgumentsSource(HardwareEncodedFamiliesAndExpectedEncode.class)
   @DisplayName(
       "Should prefer H.264 over AV1 unless a worker that can run the encode encodes AV1 in hardware"
           + " when the client declares both")
@@ -738,16 +739,8 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.videoCodecFamily()).isEqualTo(expectedCodecFamily);
   }
 
-  static Stream<Arguments> hardwareEncodedFamiliesAndExpectedEncode() {
-    return Stream.of(
-        Arguments.of(Set.of(), "h264"),
-        Arguments.of(Set.of("h264"), "h264"),
-        Arguments.of(Set.of("av1"), "av1"),
-        Arguments.of(Set.of("h264", "av1"), "av1"));
-  }
-
   @ParameterizedTest
-  @CsvSource({"30, 60, av1, h264", "60, 30, , av1", "30, 30, av1, av1", "30, 30, , h264"})
+  @MethodSource("entryFrameRatesHardwareEncodedFamiliesAndExpectedEncode")
   @DisplayName(
       "Should encode the codec family that keeps the higher frame rate before preferring a codec"
           + " family when the families' entries allow different frame rates")
@@ -755,7 +748,7 @@ class TranscodeDecisionServiceTest {
       shouldEncodeTheCodecFamilyThatKeepsTheHigherFrameRateBeforePreferringACodecFamilyWhenTheFamiliesEntriesAllowDifferentRates(
           double av1MaxFrameRate,
           double h264MaxFrameRate,
-          String hardwareEncodedFamily,
+          Set<String> hardwareEncodedFamilies,
           String expectedCodecFamily) {
     var source =
         probeVersion5H264(
@@ -777,12 +770,19 @@ class TranscodeDecisionServiceTest {
                     .capabilityDeclaration(declaration)
                     .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
-                    .hardwareEncodableVideoCodecFamilies(
-                        Stream.ofNullable(hardwareEncodedFamily).collect(Collectors.toSet()))
+                    .hardwareEncodableVideoCodecFamilies(hardwareEncodedFamilies)
                     .build())
             .orElseThrow();
 
     assertThat(decision.videoCodecFamily()).isEqualTo(expectedCodecFamily);
+  }
+
+  static Stream<Arguments> entryFrameRatesHardwareEncodedFamiliesAndExpectedEncode() {
+    return Stream.of(
+        Arguments.of(30.0, 60.0, Set.of("av1"), "h264"),
+        Arguments.of(60.0, 30.0, Set.of(), "av1"),
+        Arguments.of(30.0, 30.0, Set.of("av1"), "av1"),
+        Arguments.of(30.0, 30.0, Set.of(), "h264"));
   }
 
   @Test
