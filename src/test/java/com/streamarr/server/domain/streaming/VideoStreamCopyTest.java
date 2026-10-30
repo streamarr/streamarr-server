@@ -1,6 +1,7 @@
 package com.streamarr.server.domain.streaming;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import java.util.Optional;
@@ -8,6 +9,7 @@ import java.util.OptionalDouble;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -59,6 +61,14 @@ class VideoStreamCopyTest {
     var copy = VideoStreamCopy.of(source).orElseThrow();
 
     assertThat(copy.decodedSize()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should refuse to describe a copy when the caller passes no source")
+  void shouldRefuseToDescribeACopyWhenTheCallerPassesNoSource() {
+    assertThatThrownBy(() -> VideoStreamCopy.of(null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("source");
   }
 
   // ADR 0037's rule snaps a measured or declared rate to a listed rate: it raises a rate below 10
