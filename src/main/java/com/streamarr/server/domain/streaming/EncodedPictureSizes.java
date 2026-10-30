@@ -2,6 +2,7 @@ package com.streamarr.server.domain.streaming;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.stream.IntStream;
 import lombok.NonNull;
 
 /** The picture sizes that the worker encodes a variant at. */
@@ -17,5 +18,21 @@ public final class EncodedPictureSizes {
         BigDecimal.valueOf((long) height * source.width())
             .divide(BigDecimal.valueOf(2L * source.height()), 0, RoundingMode.HALF_UP);
     return new PictureSize(halfWidth.intValueExact() * 2, height);
+  }
+
+  /**
+   * The height of the largest picture with the source's aspect ratio that the worker encodes within
+   * the bounds, never taller than the source.
+   */
+  public static int largestHeightWithin(@NonNull PictureSize source, @NonNull PictureSize bounds) {
+    var heightAtBoundWidth = (long) bounds.width() * source.height() / source.width();
+    var largestHeight =
+        (int) Math.min(Math.min(bounds.height(), source.height()), heightAtBoundWidth);
+    // FFmpeg's width rounding can put the width at that height just past the bound.
+    return IntStream.iterate(
+            largestHeight - largestHeight % 2, height -> height >= 0, height -> height - 2)
+        .filter(height -> atHeight(source, height).width() <= bounds.width())
+        .findFirst()
+        .orElseThrow();
   }
 }
