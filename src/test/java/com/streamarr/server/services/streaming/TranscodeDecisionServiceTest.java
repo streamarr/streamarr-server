@@ -1304,9 +1304,13 @@ class TranscodeDecisionServiceTest {
   }
 
   static Stream<Arguments> copiesAgainstTwoEntries() {
-    var uhdAt30 = probeVersion5H264(3840, 2160, 30);
-    var hdAt60 = probeVersion5H264(1920, 1080, 60);
-    var uhdAt60 = probeVersion5H264(3840, 2160, 60);
+    var uhd = new PictureSize(3840, 2160);
+    var hd = new PictureSize(1920, 1080);
+    var at30 = VideoPlaybackFactsFixture.declaredRateRule(new Fraction(30, 1));
+    var at60 = VideoPlaybackFactsFixture.declaredRateRule(new Fraction(60, 1));
+    var uhdAt30 = probeVersion5H264(uhd, at30);
+    var hdAt60 = probeVersion5H264(hd, at60);
+    var uhdAt60 = probeVersion5H264(uhd, at60);
     var copy = Optional.of(TranscodeMode.REMUX);
     var encode = Optional.of(TranscodeMode.VIDEO_TRANSCODE);
     return Stream.of(
@@ -1495,7 +1499,10 @@ class TranscodeDecisionServiceTest {
         service
             .decide(
                 TranscodeDecisionRequest.builder()
-                    .source(probeVersion5H264(1920, 1080, 24))
+                    .source(
+                        probeVersion5H264(
+                            new PictureSize(1920, 1080),
+                            VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1))))
                     .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
@@ -1574,12 +1581,6 @@ class TranscodeDecisionServiceTest {
   }
 
   // An 8-bit 4:2:0 SDR H.264 High profile source at level 5.1 that probe version 5 described.
-  private static MediaProbe probeVersion5H264(int width, int height, int frameRate) {
-    return probeVersion5H264(
-        new PictureSize(width, height),
-        VideoPlaybackFactsFixture.declaredRateRule(new Fraction(frameRate, 1)));
-  }
-
   private static MediaProbe probeVersion5H264(PictureSize size, FrameRateRule frameRateRule) {
     return MediaProbe.builder()
         .keyframes(KEYFRAMES_EVERY_TWO_SECONDS)
