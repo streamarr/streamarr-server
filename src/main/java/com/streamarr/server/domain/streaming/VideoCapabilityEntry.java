@@ -111,16 +111,17 @@ public record VideoCapabilityEntry(
   // Declaring a compatible base declares neither Dolby Vision nor HDR10+ (ADR 0049).
   private boolean acceptsDynamicRange(VideoStreamCopy copy) {
     var range = copy.dynamicRange();
-    var dolbyVisionFits =
-        switch (CopiedDolbyVision.of(copy.codecFamily(), range)) {
-          case CopiedDolbyVision.None _, CopiedDolbyVision.KeptUnderSdrBase _ -> true;
-          case CopiedDolbyVision.Declarable(var profile, var level) ->
-              listsDolbyVision(profile, level);
-          case CopiedDolbyVision.Undeclarable _ -> false;
-        };
-    return dolbyVisionFits
+    return acceptsDolbyVision(copy)
         && acceptsCompatibleBase(range.compatibleBase())
-        && (range.hdr10Plus() != Presence.PRESENT || hdr10Plus);
+        && acceptsHdr10Plus(range.hdr10Plus());
+  }
+
+  private boolean acceptsDolbyVision(VideoStreamCopy copy) {
+    return switch (CopiedDolbyVision.of(copy.codecFamily(), copy.dynamicRange())) {
+      case CopiedDolbyVision.None _, CopiedDolbyVision.KeptUnderSdrBase _ -> true;
+      case CopiedDolbyVision.Declarable(var profile, var level) -> listsDolbyVision(profile, level);
+      case CopiedDolbyVision.Undeclarable _ -> false;
+    };
   }
 
   // A base of NONE comes only with Dolby Vision, whose profile and level alone admit it.
@@ -130,6 +131,10 @@ public record VideoCapabilityEntry(
       case NONE -> true;
       case SDR, PQ, HLG -> compatibleBases.contains(base);
     };
+  }
+
+  private boolean acceptsHdr10Plus(Presence hdr10PlusInformation) {
+    return hdr10PlusInformation != Presence.PRESENT || hdr10Plus;
   }
 
   private boolean listsDolbyVision(DolbyVisionProfile profile, int level) {
