@@ -477,24 +477,26 @@ final class LiveWorkerConnectionRegistry {
   }
 
   Set<String> encodableVideoCodecFamilies(UUID sourceNamespaceId) {
-    var sourceNamespace = toProto(sourceNamespaceId);
-    return connections.values().stream()
-        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
-        .filter(connection -> connection.availableSlots() > 0)
-        .flatMap(connection -> connection.countedEncoders.keySet().stream())
+    return encodersOfWorkersWithFreeSlot(sourceNamespaceId)
+        .map(WorkerVerifiedEncoder::backend)
+        .map(EncoderBackend::codecFamily)
         .collect(Collectors.toUnmodifiableSet());
   }
 
   Set<String> hardwareEncodableVideoCodecFamilies(UUID sourceNamespaceId) {
-    var sourceNamespace = toProto(sourceNamespaceId);
-    return connections.values().stream()
-        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
-        .filter(connection -> connection.availableSlots() > 0)
-        .flatMap(connection -> connection.countedEncoders.values().stream())
+    return encodersOfWorkersWithFreeSlot(sourceNamespaceId)
         .map(WorkerVerifiedEncoder::backend)
         .filter(backend -> backend.kind() == EncoderBackend.Kind.HARDWARE)
         .map(EncoderBackend::codecFamily)
         .collect(Collectors.toUnmodifiableSet());
+  }
+
+  private Stream<WorkerVerifiedEncoder> encodersOfWorkersWithFreeSlot(UUID sourceNamespaceId) {
+    var sourceNamespace = toProto(sourceNamespaceId);
+    return connections.values().stream()
+        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
+        .filter(connection -> connection.availableSlots() > 0)
+        .flatMap(connection -> connection.countedEncoders.values().stream());
   }
 
   private static boolean isCountedForEncodes(WorkerVerifiedEncoder encoder) {
