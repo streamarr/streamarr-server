@@ -42,7 +42,7 @@ public class QualityLadderService {
       return fitDefaultVariant(request).map(QualityLadderService::defaultVariant).stream().toList();
     }
 
-    var variants = new ArrayList<QualityVariant>();
+    var variants = new ArrayList<LabelledVariant>();
     for (var tier : QualityTier.offeredFor(source)) {
       var tierBitrate = tier.videoBitrate(request.codecProfile());
       if (maxBitrate.isPresent() && tierBitrate + request.audioBitrate() > maxBitrate.getAsLong()) {
@@ -56,49 +56,47 @@ public class QualityLadderService {
 
       fit(request, box, tierBitrate)
           .filter(output -> QualityTier.containing(pictureOf(output)) == tier)
-          .map(output -> labelledVariant(output, source))
+          .map(output -> labelled(output, source))
           .ifPresent(variants::add);
     }
 
     if (variants.isEmpty()) {
       return fitUntiered(request, viewerBounds, maxBitrate)
-          .map(output -> labelledVariant(output, source))
+          .map(output -> labelled(output, source).variant())
           .stream()
           .toList();
     }
 
-    return withoutRepeatedLabels(variants, source);
+    return withoutRepeatedLabels(variants);
   }
 
-  // A variant takes the label of the tier whose box it reaches, or else its shorter side's
-  // (ADR 0050).
-  private static QualityVariant labelledVariant(EncodedVideoOutput output, PictureSize source) {
+  private record LabelledVariant(QualityVariant variant, boolean reachesItsTier) {}
+
+  private static LabelledVariant labelled(EncodedVideoOutput output, PictureSize source) {
     var picture = pictureOf(output);
     var tier = QualityTier.containing(picture);
     if (EncodedPictureSizes.reaches(source, picture, tier.box())) {
-      return variantBuilder(output).label(tier.label()).build();
+      return new LabelledVariant(variantBuilder(output).label(tier.label()).build(), true);
     }
 
-    return variantBuilder(output).label(Math.min(picture.width(), picture.height()) + "p").build();
+    var shorterSide = Math.min(picture.width(), picture.height());
+    return new LabelledVariant(variantBuilder(output).label(shorterSide + "p").build(), false);
   }
 
   // A label names a variant's playlist, so a variant that only its shorter side labels gives way
   // to the variant whose tier has the same label.
-  private static List<QualityVariant> withoutRepeatedLabels(
-      List<QualityVariant> variants, PictureSize source) {
+  private static List<QualityVariant> withoutRepeatedLabels(List<LabelledVariant> variants) {
     var tierLabels =
         variants.stream()
-            .filter(variant -> reachesItsTier(variant, source))
-            .map(QualityVariant::label)
+            .filter(LabelledVariant::reachesItsTier)
+            .map(labelled -> labelled.variant().label())
             .collect(Collectors.toSet());
     return variants.stream()
-        .filter(variant -> reachesItsTier(variant, source) || !tierLabels.contains(variant.label()))
+        .filter(
+            labelled ->
+                labelled.reachesItsTier() || !tierLabels.contains(labelled.variant().label()))
+        .map(LabelledVariant::variant)
         .toList();
-  }
-
-  private static boolean reachesItsTier(QualityVariant variant, PictureSize source) {
-    var picture = new PictureSize(variant.width(), variant.height());
-    return EncodedPictureSizes.reaches(source, picture, QualityTier.containing(picture).box());
   }
 
   // The viewer's limits bound the tier's picture before any entry shrinks it.
