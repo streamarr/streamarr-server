@@ -25,10 +25,11 @@ public final class EncodedPictureSizes {
    * the bounds, never taller than the source.
    */
   public static int largestHeightWithin(@NonNull PictureSize source, @NonNull PictureSize bounds) {
-    var heightAtBoundWidth = (long) bounds.width() * source.height() / source.width();
+    // FFmpeg rounds the width to the nearest multiple of two, so a height whose exact width is
+    // up to one pixel past the bound can still fit. No taller height fits.
+    var tallestHeightThatCanFit = ((long) bounds.width() + 1) * source.height() / source.width();
     var largestHeight =
-        (int) Math.min(Math.min(bounds.height(), source.height()), heightAtBoundWidth);
-    // FFmpeg's width rounding can put the width at that height just past the bound.
+        (int) Math.min(Math.min(bounds.height(), source.height()), tallestHeightThatCanFit);
     return IntStream.iterate(
             largestHeight - largestHeight % 2, height -> height >= 0, height -> height - 2)
         .filter(height -> atHeight(source, height).width() <= bounds.width())
