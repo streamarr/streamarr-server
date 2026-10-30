@@ -54,6 +54,9 @@ public class ProducerLifecycleService {
   // it (ADR 0019).
   private final ConcurrentHashMap<VariantKey, SegmentRequest> newestPositioningRequests =
       new ConcurrentHashMap<>();
+  // The newest media-segment request of each stream session, for any variant: where the player is.
+  private final ConcurrentHashMap<UUID, SegmentRequest> newestMediaSegmentRequests =
+      new ConcurrentHashMap<>();
 
   public enum RecoveryResult {
     WAITING,
@@ -138,6 +141,7 @@ public class ProducerLifecycleService {
         () -> {
           recoveryStates.keySet().removeIf(key -> key.sessionId().equals(sessionId));
           newestPositioningRequests.keySet().removeIf(key -> key.sessionId().equals(sessionId));
+          newestMediaSegmentRequests.remove(sessionId);
         });
   }
 
@@ -191,7 +195,8 @@ public class ProducerLifecycleService {
     var pending =
         PendingSegment.builder()
             .request(request)
-            .requestedIndex(SegmentNames.indexOf(segmentName).orElseGet(session::getCurrentSegment))
+            .requestedIndex(
+                SegmentNames.indexOf(segmentName).orElseGet(() -> currentSegment(session)))
             .build();
     if (handle.status() == TranscodeStatus.FAILED
         && !state.resetForFreshTargets(
@@ -492,6 +497,7 @@ public class ProducerLifecycleService {
                   .arrival(requestArrivals.incrementAndGet())
                   .build();
           if (SegmentNames.indexOf(segmentName).isPresent()) {
+            rememberNewestMediaSegmentRequest(request);
             doStopOtherVideoVariants(sessionId, variantLabel);
           }
 
@@ -501,6 +507,38 @@ public class ProducerLifecycleService {
 
           return request;
         });
+  }
+
+  private void rememberNewestMediaSegmentRequest(SegmentRequest request) {
+    var offered =
+        runtimeRegistry
+            .findById(request.sessionId())
+            .filter(session -> session.offersVariant(request.variantLabel()));
+    if (offered.isPresent()) {
+      newestMediaSegmentRequests.put(request.sessionId(), request);
+    }
+  }
+
+  /**
+   * The current segment (ADR 0019): the media segment that the player needs next. That is the
+   * segment of the stream session's newest media-segment request until that segment is stored, and
+   * the segment after it once it is stored, unless it is the last advertised segment. Before any
+   * media-segment request, it is the segment at which the stream session starts.
+   */
+  private int currentSegment(StreamSession session) {
+    var newest = newestMediaSegmentRequests.get(session.getSessionId());
+    if (newest == null) {
+      return session.getCurrentSegment();
+    }
+
+    var index = SegmentNames.indexOf(newest.segmentName()).orElseThrow();
+    var next = index + 1;
+    if (!segmentStore.segmentExists(session.getSessionId(), newest.segmentName())
+        || !timelineOf(session).advertises(next)) {
+      return index;
+    }
+
+    return next;
   }
 
   private void doStopOtherVideoVariants(UUID sessionId, String requestedVariantLabel) {
@@ -544,7 +582,7 @@ public class ProducerLifecycleService {
     }
 
     var startSequenceNumber =
-        SegmentNames.indexOf(segmentName).orElseGet(session::getCurrentSegment);
+        SegmentNames.indexOf(segmentName).orElseGet(() -> currentSegment(session));
     if (!hasConfiguredTranscodeSlotFor(session)) {
       log.warn(
           "Transcode limit reached: session {} variant {} did not start at segment {}",
@@ -874,7 +912,7 @@ public class ProducerLifecycleService {
       return false;
     }
 
-    var segmentIndex = SegmentNames.indexOf(segmentName).orElseGet(session::getCurrentSegment);
+    var segmentIndex = SegmentNames.indexOf(segmentName).orElseGet(() -> currentSegment(session));
 
     startVariant(session, variantLabel, segmentIndex);
     session.setLastAccessedAt(Instant.now());
@@ -894,7 +932,8 @@ public class ProducerLifecycleService {
   }
 
   // The first job attempt that reports an encoder pins the variant to that encoder backend. Every
-  // started job attempt moves the current segment to its first media segment (ADR 0019).
+  // started job attempt moves the session's start segment, which the current segment falls back to
+  // before the player requests a media segment, to its first media segment.
   private static void installHandle(
       StreamSession session, String variantLabel, TranscodeHandle handle) {
     session.setVariantHandle(variantLabel, handle);

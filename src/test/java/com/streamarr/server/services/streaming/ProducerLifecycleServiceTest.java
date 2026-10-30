@@ -962,6 +962,55 @@ class ProducerLifecycleServiceTest {
             });
   }
 
+  @ParameterizedTest(name = "stored: {0}")
+  @CsvSource({"false, 30", "true, 31"})
+  @DisplayName(
+      "Should start a variant where the player needs its next segment when its initialization segment is requested")
+  void shouldStartAVariantWhereThePlayerNeedsItsNextSegmentWhenItsInitializationSegmentIsRequested(
+      boolean newestRequestedSegmentStored, int expectedStart) {
+    var session = startedLadderSession();
+    var sessionId = session.getSessionId();
+    lifecycle.prepareRequestedVariant(sessionId, "480p", "480p/segment30.m4s");
+    if (newestRequestedSegmentStored) {
+      segmentStore.addSegment(sessionId, "480p/segment30.m4s", new byte[] {1});
+    }
+
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    lifecycle.prepareRequestedVariant(sessionId, "1080p", "1080p/init.mp4");
+
+    assertThat(startedSince(startedBefore))
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.variantLabel()).isEqualTo("1080p");
+              assertThat(request.startSequenceNumber()).isEqualTo(expectedStart);
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should start a variant at the last advertised segment when its initialization segment is requested after the player received that segment")
+  void
+      shouldStartAVariantAtTheLastAdvertisedSegmentWhenItsInitializationSegmentIsRequestedAfterThePlayerReceivedThatSegment() {
+    var session =
+        defaultLadderSessionBuilder()
+            .mediaProbe(defaultProbeBuilder().duration(Duration.ofSeconds(60)).build())
+            .build();
+    runtimeRegistry.save(session);
+    lifecycle.startFirstListedVariant(session);
+    var sessionId = session.getSessionId();
+    segmentStore.addSegment(sessionId, "480p/segment9.m4s", new byte[] {1});
+    lifecycle.prepareRequestedVariant(sessionId, "480p", "480p/segment9.m4s");
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    lifecycle.prepareRequestedVariant(sessionId, "1080p", "1080p/init.mp4");
+
+    assertThat(startedSince(startedBefore))
+        .singleElement()
+        .satisfies(request -> assertThat(request.startSequenceNumber()).isEqualTo(9));
+  }
+
   @Test
   @DisplayName("Should report session gone when recovery follows destruction")
   void shouldReportSessionGoneWhenRecoveryFollowsDestruction() {

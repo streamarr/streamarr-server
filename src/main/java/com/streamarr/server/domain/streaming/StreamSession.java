@@ -113,8 +113,9 @@ public class StreamSession {
   }
 
   /**
-   * The current segment (ADR 0019): the first media segment of the most recently started job
-   * attempt, or the segment at which the stream session starts before any job attempt starts.
+   * The first media segment of the most recently started job attempt, or the segment at which the
+   * stream session starts before any job attempt starts. The current segment of ADR 0019 falls back
+   * to it until the player requests a media segment.
    */
   public int getCurrentSegment() {
     return currentSegment.get();

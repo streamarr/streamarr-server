@@ -1156,9 +1156,9 @@ class SegmentDeliveryCoordinatorTest {
 
   @Test
   @DisplayName(
-      "Should start the variant at the current segment and stop no job attempt when the initialization segment of a variant with no job attempt is requested")
+      "Should start the variant after the newest requested segment and stop no job attempt when the initialization segment of a variant with no job attempt is requested")
   void
-      shouldStartTheVariantAtTheCurrentSegmentAndStopNoJobAttemptWhenTheInitializationSegmentOfAVariantWithNoJobAttemptIsRequested()
+      shouldStartTheVariantAfterTheNewestRequestedSegmentAndStopNoJobAttemptWhenTheInitializationSegmentOfAVariantWithNoJobAttemptIsRequested()
           throws Exception {
     var session = startedLadderSession();
     var sessionId = session.getSessionId();
@@ -1176,9 +1176,73 @@ class SegmentDeliveryCoordinatorTest {
         .satisfies(
             request -> {
               assertThat(request.variantLabel()).isEqualTo("1080p");
-              assertThat(request.startSequenceNumber()).isEqualTo(20);
+              assertThat(request.startSequenceNumber()).isEqualTo(21);
             });
     assertThat(runningVariants(session)).containsExactlyInAnyOrder("480p", "1080p");
+  }
+
+  @Test
+  @DisplayName(
+      "Should start a switched variant once when the player requests its initialization segment and then the segment after the last one it received")
+  void
+      shouldStartASwitchedVariantOnceWhenThePlayerRequestsItsInitializationSegmentAndThenTheSegmentAfterTheLastOneItReceived()
+          throws Exception {
+    var session = startedLadderSession();
+    var sessionId = session.getSessionId();
+    for (var index = 0; index < 10; index++) {
+      var segmentName = "480p/" + SegmentNames.mediaSegmentName(index);
+      upload(sessionId, segmentName, new byte[] {1});
+      assertThat(coordinator.deliver(sessionId, "480p", segmentName))
+          .isInstanceOf(SegmentDelivery.Ready.class);
+    }
+    storeInitializationSegments(session);
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    assertThat(coordinator.deliver(sessionId, "1080p", "1080p/init.mp4"))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+    var delivery = heldDelivery(sessionId, "1080p", "1080p/segment10.m4s");
+    upload(sessionId, "1080p/segment10.m4s", new byte[] {10});
+
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(startedSince(startedBefore))
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.variantLabel()).isEqualTo("1080p");
+              assertThat(request.startSequenceNumber()).isEqualTo(10);
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should start a switched variant once at the held segment when the player leaves a variant before that segment is stored")
+  void
+      shouldStartASwitchedVariantOnceAtTheHeldSegmentWhenThePlayerLeavesAVariantBeforeThatSegmentIsStored()
+          throws Exception {
+    var session = startedLadderSession();
+    var sessionId = session.getSessionId();
+    for (var index = 0; index < 9; index++) {
+      upload(sessionId, "480p/" + SegmentNames.mediaSegmentName(index), new byte[] {1});
+    }
+    var abandoned = heldDelivery(sessionId, "480p", "480p/segment9.m4s");
+    storeInitializationSegments(session);
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    assertThat(coordinator.deliver(sessionId, "360p", "360p/init.mp4"))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+    var delivery = heldDelivery(sessionId, "360p", "360p/segment9.m4s");
+    upload(sessionId, "360p/segment9.m4s", new byte[] {9});
+
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(abandoned.get(2, TimeUnit.SECONDS))
+        .isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(startedSince(startedBefore))
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.variantLabel()).isEqualTo("360p");
+              assertThat(request.startSequenceNumber()).isEqualTo(9);
+            });
   }
 
   @Test
