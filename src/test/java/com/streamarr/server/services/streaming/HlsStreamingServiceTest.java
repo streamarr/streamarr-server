@@ -2374,8 +2374,9 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should encode a fixed quality within the viewer's maximum height")
-  void shouldEncodeAFixedQualityWithinTheViewersMaximumHeight() {
+  @DisplayName(
+      "Should encode a fixed quality within the viewer's maximum height when the source is taller")
+  void shouldEncodeAFixedQualityWithinTheViewersMaximumHeightWhenTheSourceIsTaller() {
     probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
     var options =
         StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P).maxHeight(300).build();
