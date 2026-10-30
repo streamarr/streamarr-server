@@ -345,8 +345,10 @@ class HlsStreamingServiceTest {
 
   @ParameterizedTest
   @CsvSource({"CHROMA_444, 316", "CHROMA_422, 314"})
-  @DisplayName("Should plan even output dimensions when Auto encodes below the smallest tier")
-  void shouldPlanEvenOutputDimensionsWhenAutoEncodesBelowTheSmallestTier(
+  @DisplayName(
+      "Should plan even output dimensions when Auto encodes a source smaller than the 360p tier's"
+          + " box")
+  void shouldPlanEvenOutputDimensionsWhenAutoEncodesASourceSmallerThanThe360pTiersBox(
       ChromaSubsampling subsampling, int expectedWidth) {
     probeResults.setDefaultProbe(oddCroppedProbe(subsampling).width(320).height(240).build());
 
