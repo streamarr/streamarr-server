@@ -4,8 +4,6 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.fixtures.VideoStreamCopyFixture;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
@@ -68,70 +66,79 @@ class VideoCapabilityEntryHlsCopyTest {
   }
 
   static Stream<CopyCase> everyCombination() {
-    var cases = new ArrayList<CopyCase>();
-    for (var coding : codings()) {
-      for (var bitDepth : List.of(OptionalInt.of(10), OptionalInt.of(11), OptionalInt.empty())) {
-        for (var size : sizes()) {
-          for (var frameRate : frameRates()) {
-            cases.add(
-                CopyCase.builder()
-                    .coding(coding)
-                    .bitDepth(bitDepth)
-                    .decodedSize(size)
-                    .frameRate(frameRate)
-                    .build());
-          }
-        }
-      }
-    }
-
-    return cases.stream();
+    return codings()
+        .map(VideoCapabilityEntryHlsCopyTest::withinTheEntryCodedAs)
+        .flatMap(VideoCapabilityEntryHlsCopyTest::atEveryBitDepth)
+        .flatMap(VideoCapabilityEntryHlsCopyTest::atEverySize)
+        .flatMap(VideoCapabilityEntryHlsCopyTest::atEveryFrameRate);
   }
 
   // A probe that cannot name the codec profile reports no level or tier either.
-  private static List<Coding> codings() {
-    var codings = new ArrayList<Coding>();
-    codings.add(new Coding(Optional.empty(), OptionalInt.empty(), Optional.empty()));
-    var profiles =
-        List.of(
-            VideoCodecProfile.HEVC_MAIN,
-            VideoCodecProfile.HEVC_MAIN_10,
-            VideoCodecProfile.HEVC_FORMAT_RANGE_EXTENSIONS);
-    var levels =
-        List.of(OptionalInt.of(41), OptionalInt.of(51), OptionalInt.of(52), OptionalInt.empty());
-    var tiers =
-        List.of(
+  private static Stream<Coding> codings() {
+    var unknownProfile =
+        Coding.builder()
+            .profile(Optional.empty())
+            .level(OptionalInt.empty())
+            .tier(Optional.empty())
+            .build();
+    var knownProfiles =
+        Stream.of(
+                VideoCodecProfile.HEVC_MAIN,
+                VideoCodecProfile.HEVC_MAIN_10,
+                VideoCodecProfile.HEVC_FORMAT_RANGE_EXTENSIONS)
+            .map(profile -> unknownProfile.toBuilder().profile(Optional.of(profile)).build())
+            .flatMap(VideoCapabilityEntryHlsCopyTest::atEveryLevel)
+            .flatMap(VideoCapabilityEntryHlsCopyTest::atEveryTier);
+    return Stream.concat(Stream.of(unknownProfile), knownProfiles);
+  }
+
+  private static Stream<Coding> atEveryLevel(Coding coding) {
+    return Stream.of(
+            OptionalInt.of(41), OptionalInt.of(51), OptionalInt.of(52), OptionalInt.empty())
+        .map(level -> coding.toBuilder().level(level).build());
+  }
+
+  private static Stream<Coding> atEveryTier(Coding coding) {
+    return Stream.of(
             Optional.of(VideoCodecTier.MAIN),
             Optional.of(VideoCodecTier.HIGH),
-            Optional.<VideoCodecTier>empty());
-    for (var profile : profiles) {
-      for (var level : levels) {
-        for (var tier : tiers) {
-          codings.add(new Coding(Optional.of(profile), level, tier));
-        }
-      }
-    }
-
-    return codings;
+            Optional.<VideoCodecTier>empty())
+        .map(tier -> coding.toBuilder().tier(tier).build());
   }
 
-  private static List<Optional<PictureSize>> sizes() {
-    return List.of(
-        Optional.of(MAX_SIZE),
-        Optional.of(new PictureSize(1921, 1080)),
-        Optional.of(new PictureSize(1920, 1081)),
-        Optional.empty());
+  private static CopyCase withinTheEntryCodedAs(Coding coding) {
+    return CopyCase.builder()
+        .coding(coding)
+        .bitDepth(OptionalInt.of(MAX_BIT_DEPTH))
+        .decodedSize(Optional.of(MAX_SIZE))
+        .frameRate(OptionalDouble.of(MAX_FRAME_RATE))
+        .build();
   }
 
-  private static List<OptionalDouble> frameRates() {
-    return List.of(
-        OptionalDouble.of(30),
-        OptionalDouble.of(30_000.0 / 1_001),
-        OptionalDouble.of(30.01),
-        OptionalDouble.of(30.14),
-        OptionalDouble.of(30.15),
-        OptionalDouble.of(30.16),
-        OptionalDouble.empty());
+  private static Stream<CopyCase> atEveryBitDepth(CopyCase copyCase) {
+    return Stream.of(OptionalInt.of(10), OptionalInt.of(11), OptionalInt.empty())
+        .map(bitDepth -> copyCase.toBuilder().bitDepth(bitDepth).build());
+  }
+
+  private static Stream<CopyCase> atEverySize(CopyCase copyCase) {
+    return Stream.of(
+            Optional.of(MAX_SIZE),
+            Optional.of(new PictureSize(1921, 1080)),
+            Optional.of(new PictureSize(1920, 1081)),
+            Optional.<PictureSize>empty())
+        .map(size -> copyCase.toBuilder().decodedSize(size).build());
+  }
+
+  private static Stream<CopyCase> atEveryFrameRate(CopyCase copyCase) {
+    return Stream.of(
+            OptionalDouble.of(30),
+            OptionalDouble.of(30_000.0 / 1_001),
+            OptionalDouble.of(30.01),
+            OptionalDouble.of(30.14),
+            OptionalDouble.of(30.15),
+            OptionalDouble.of(30.16),
+            OptionalDouble.empty())
+        .map(frameRate -> copyCase.toBuilder().frameRate(frameRate).build());
   }
 
   @ParameterizedTest(name = "{0}")
@@ -271,11 +278,17 @@ class VideoCapabilityEntryHlsCopyTest {
 
   private static VideoStreamProperties properties(
       VideoCodecProfile profile, int level, VideoCodecTier tier) {
-    return new Coding(Optional.of(profile), OptionalInt.of(level), Optional.of(tier)).properties();
+    return Coding.builder()
+        .profile(Optional.of(profile))
+        .level(OptionalInt.of(level))
+        .tier(Optional.of(tier))
+        .build()
+        .properties();
   }
 
   record ProfileLimit(int maxLevel, @NonNull VideoCodecTier maxTier) {}
 
+  @Builder(toBuilder = true)
   record Coding(
       @NonNull Optional<VideoCodecProfile> profile,
       @NonNull OptionalInt level,
@@ -307,7 +320,7 @@ class VideoCapabilityEntryHlsCopyTest {
     }
   }
 
-  @Builder
+  @Builder(toBuilder = true)
   record CopyCase(
       @NonNull Coding coding,
       @NonNull OptionalInt bitDepth,
@@ -324,13 +337,22 @@ class VideoCapabilityEntryHlsCopyTest {
     }
 
     boolean fits() {
-      return coding.fits()
-          && bitDepth.isPresent()
-          && bitDepth.getAsInt() <= MAX_BIT_DEPTH
-          && decodedSize.isPresent()
-          && decodedSize.get().width() <= MAX_SIZE.width()
-          && decodedSize.get().height() <= MAX_SIZE.height()
-          && (frameRate.isEmpty() || frameRate.getAsDouble() <= MAX_MEASURED_FRAME_RATE);
+      return coding.fits() && bitDepthFits() && sizeFits() && frameRateFits();
+    }
+
+    private boolean bitDepthFits() {
+      return bitDepth.isPresent() && bitDepth.getAsInt() <= MAX_BIT_DEPTH;
+    }
+
+    private boolean sizeFits() {
+      return decodedSize
+          .filter(size -> size.width() <= MAX_SIZE.width() && size.height() <= MAX_SIZE.height())
+          .isPresent();
+    }
+
+    // An unknown frame rate fits, because a copy is the only path for a stream without one.
+    private boolean frameRateFits() {
+      return frameRate.isEmpty() || frameRate.getAsDouble() <= MAX_MEASURED_FRAME_RATE;
     }
 
     @Override
