@@ -1148,8 +1148,12 @@ public class ProducerLifecycleService {
 
   private static long countRunningJobAttempts(StreamSession session) {
     return session.getVariantHandles().values().stream()
-        .filter(handle -> handle.status() == TranscodeStatus.ACTIVE)
+        .filter(ProducerLifecycleService::takesConfiguredTranscodeSlot)
         .count();
+  }
+
+  private static boolean takesConfiguredTranscodeSlot(TranscodeHandle handle) {
+    return handle.status() == TranscodeStatus.ACTIVE;
   }
 
   public void ensurePositioned(UUID sessionId, String variantLabel, String segmentName) {
