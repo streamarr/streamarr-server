@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.streamarr.server.services.auth.TokenScope;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.Filter;
 import jakarta.servlet.http.Cookie;
 import java.time.Duration;
@@ -204,6 +205,33 @@ class SecurityConfigTest {
         .andExpect(status().isNotFound());
   }
 
+  @Test
+  @DisplayName("Should let the error dispatch answer when a playback-scoped request fails")
+  void shouldLetErrorDispatchAnswerWhenPlaybackScopedRequestFails() throws Exception {
+    mockMvc
+        .perform(
+            get("/error")
+                .with(user("viewer").authorities(playbackScope()))
+                .with(
+                    request -> {
+                      request.setDispatcherType(DispatcherType.ERROR);
+                      return request;
+                    }))
+        .andExpect(status().isInternalServerError());
+  }
+
+  @Test
+  @DisplayName("Should refuse the error page when a playback-scoped request targets it directly")
+  void shouldRefuseErrorPageWhenPlaybackScopedRequestTargetsItDirectly() throws Exception {
+    mockMvc
+        .perform(get("/error").with(user("viewer").authorities(playbackScope())))
+        .andExpect(status().isForbidden());
+  }
+
+  private static SimpleGrantedAuthority playbackScope() {
+    return new SimpleGrantedAuthority(TokenScope.PLAYBACK.authority());
+  }
+
   @Configuration(proxyBeanMethods = false)
   @EnableWebSecurity
   @Import({
@@ -257,6 +285,11 @@ class SecurityConfigTest {
     @PostMapping("/graphql")
     ResponseEntity<Void> graphQl() {
       return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/error")
+    ResponseEntity<Void> error() {
+      return ResponseEntity.internalServerError().build();
     }
   }
 }

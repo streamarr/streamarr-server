@@ -1,6 +1,7 @@
 package com.streamarr.server.config.security;
 
 import com.streamarr.server.services.auth.TokenScope;
+import jakarta.servlet.DispatcherType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -47,6 +48,12 @@ public class SecurityConfig {
         .authorizeHttpRequests(
             authorize ->
                 authorize
+                    // The container forwards a failed request to the error page after its own
+                    // authorization; judging that forward again by the error page's path would
+                    // turn a stream failure into a 403. A direct request to the error page still
+                    // falls to anyRequest().
+                    .dispatcherTypeMatchers(DispatcherType.ERROR)
+                    .permitAll()
                     .requestMatchers(
                         StreamarrBearerTokenResolver.UNAUTHENTICATED_PATHS.toArray(String[]::new))
                     .permitAll()
