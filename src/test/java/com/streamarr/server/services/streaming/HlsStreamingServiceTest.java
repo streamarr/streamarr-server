@@ -88,6 +88,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
@@ -489,7 +490,9 @@ class HlsStreamingServiceTest {
   @ParameterizedTest
   @CsvSource({
     "FULL_HD_1080P, 0, 0, 5000000",
-    "FULL_HD_1080P, 0, 2000000, 2000000",
+    "FULL_HD_1080P, 0, 2000000, 1872000",
+    "FULL_HD_1080P, 0, 700000, 700000",
+    "FULL_HD_1080P, 0, 100000, 100000",
     "AUTO, 300, 0, 800000",
     "AUTO, 300, 1000000, 800000",
     "FULL_HD_1080P, 0, 20000000, 5000000",
@@ -519,51 +522,107 @@ class HlsStreamingServiceTest {
     assertThat(playlist).contains(",AVERAGE-BANDWIDTH=" + (expectedBitrate + audioBitrate) + ",");
   }
 
-  @Test
+  // ADR 0050: a variant costs its video bitrate plus the stream session's audio bitrate, here a
+  // 128 kb/s stereo AAC encode.
+  @ParameterizedTest
+  @CsvSource({
+    "FULL_HD_1080P, , 2000000, 1920, 1080, 1872000",
+    "FULL_HD_1080P, , 1000000, 1920, 1080, 872000",
+    "FULL_HD_1080P, , 700000, 640, 360, 700000",
+    "FULL_HD_1080P, , 100000, 640, 360, 100000",
+    "AUTO, 500, 1000000, 498, 280, 872000",
+    "AUTO, , 500000, 640, 360, 500000"
+  })
   @DisplayName(
-      "Should encode a fixed quality within the viewer's maximum bitrate when the source's bitrate"
-          + " is higher")
-  void shouldEncodeAFixedQualityWithinTheViewersMaximumBitrateWhenTheSourcesBitrateIsHigher() {
+      "Should encode a single variant within the viewer's maximum bitrate less the audio, and in"
+          + " the 360p box when less than the 360p tier's video bitrate remains")
+  void shouldEncodeASingleVariantWithinTheViewersMaximumBitrateLessTheAudio(
+      VideoQuality quality,
+      Integer maxWidth,
+      int maxBitrate,
+      int expectedWidth,
+      int expectedHeight,
+      long expectedVideoBitrate) {
     probeResults.setDefaultProbe(
         defaultProbeBuilder().videoCodec("hevc").bitrate(8_000_000L).build());
     var options =
         StreamingOptions.builder()
-            .quality(VideoQuality.FULL_HD_1080P)
-            .maxBitrate(1_000_000)
+            .quality(quality)
+            .maxWidth(maxWidth)
+            .maxBitrate(maxBitrate)
             .build();
 
     var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
 
-    assertThat(session.getVariants())
-        .extracting(QualityVariant::videoBitrate)
-        .containsExactly(1_000_000L);
+    assertThat(session.getTranscodeDecision().audioDecision().bitrate()).isEqualTo(128_000L);
     assertThat(transcodeExecutor.getStartedRequests())
         .singleElement()
-        .satisfies(request -> assertThat(request.bitrate()).isEqualTo(1_000_000L));
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(expectedWidth);
+              assertThat(request.height()).isEqualTo(expectedHeight);
+              assertThat(request.bitrate()).isEqualTo(expectedVideoBitrate);
+            });
+    var averageBandwidth = expectedVideoBitrate + 128_000L;
+    assertThat(playlist)
+        .contains(
+            "BANDWIDTH="
+                + (averageBandwidth + averageBandwidth / 5)
+                + ",AVERAGE-BANDWIDTH="
+                + averageBandwidth
+                + ",");
   }
 
-  @Test
+  @ParameterizedTest
+  @CsvSource({"2, 3100000, '480p, 360p'", "2, 1800000, '480p, 360p'", "8, 1800000, '360p'"})
   @DisplayName(
-      "Should encode Auto's only variant within the viewer's maximum bitrate when the viewer's"
-          + " maximum width and bitrate leave no tier")
-  void shouldEncodeAutosOnlyVariantWithinTheViewersMaximumBitrateWhenTheViewersLimitsLeaveNoTier() {
-    probeResults.setDefaultProbe(
-        defaultProbeBuilder().videoCodec("hevc").bitrate(8_000_000L).build());
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.AUTO)
-            .maxWidth(500)
-            .maxBitrate(1_000_000)
+      "Should offer only the tiers whose video bitrate plus the session's audio bitrate is within"
+          + " the viewer's maximum bitrate")
+  void shouldOfferOnlyTheTiersWhoseVideoPlusAudioBitrateIsWithinTheViewersMaximumBitrate(
+      int sourceChannels, int maxBitrate, String expectedLabels) {
+    probeResults.setDefaultOutcome(
+        ProbeFixture.completeProbe(
+            defaultProbeBuilder()
+                .videoCodec("hevc")
+                .audioCodec("dts")
+                .audioChannels(OptionalInt.of(sourceChannels))
+                .build()));
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(
+                List.of(
+                    aacEntryBuilder().build(),
+                    audioEntryBuilder(AudioCodec.EAC3).maxChannels(8).build()))
             .build();
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(maxBitrate).build();
 
-    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+    var session =
+        accepted(
+            service.createSession(
+                createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                    .options(options)
+                    .capabilityDeclaration(declaration)
+                    .build()));
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
 
     assertThat(session.getVariants())
-        .extracting(QualityVariant::width, QualityVariant::videoBitrate)
-        .containsExactly(tuple(498, 1_000_000L));
-    assertThat(transcodeExecutor.getStartedRequests())
-        .singleElement()
-        .satisfies(request -> assertThat(request.bitrate()).isEqualTo(1_000_000L));
+        .extracting(QualityVariant::label)
+        .containsExactlyInAnyOrder(expectedLabels.split(", "));
+    assertThat(averageBandwidths(playlist))
+        .isNotEmpty()
+        .allSatisfy(bandwidth -> assertThat(bandwidth).isLessThanOrEqualTo(maxBitrate));
+  }
+
+  private static List<Long> averageBandwidths(String playlist) {
+    return Pattern.compile("AVERAGE-BANDWIDTH=(\\d+)")
+        .matcher(playlist)
+        .results()
+        .map(match -> Long.parseLong(match.group(1)))
+        .toList();
   }
 
   @Test

@@ -11,7 +11,8 @@ import lombok.NonNull;
 /**
  * What the ladder of an encode is built from: the source's probe, the viewer's options, the client
  * capability declaration whose entries each variant fits, the codec profile that the encode forces,
- * and the source's output frame rate.
+ * the source's output frame rate, and the stream session's audio bitrate, which every variant's
+ * cost includes because every variant shares the one audio rendition (ADR 0043).
  */
 @Builder
 public record QualityLadderRequest(
@@ -19,4 +20,5 @@ public record QualityLadderRequest(
     @NonNull StreamingOptions options,
     @NonNull ClientCapabilityDeclaration capabilityDeclaration,
     @NonNull EncodeCodecProfile codecProfile,
-    @NonNull Fraction frameRate) {}
+    @NonNull Fraction frameRate,
+    long audioBitrate) {}
