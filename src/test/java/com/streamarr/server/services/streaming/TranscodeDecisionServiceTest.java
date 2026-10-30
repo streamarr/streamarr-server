@@ -1017,7 +1017,72 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
     assertThat(decision.audioDecision().codec()).isEqualTo("eac3");
     assertThat(decision.audioDecision().channels()).isEqualTo(6);
-    assertThat(decision.audioDecision().bitrate()).isEqualTo(384_000L);
+    assertThat(decision.audioDecision().bitrate()).isEqualTo(768_000L);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("fivePointOneEncodeBitrates")
+  @DisplayName(
+      "Should encode 5.1 audio at the highest bitrate that real media uses for the codec when the"
+          + " client declares that codec")
+  void
+      shouldEncode51AudioAtTheHighestBitrateThatRealMediaUsesForTheCodecWhenTheClientDeclaresThatCodec(
+          String scenario,
+          ClientCapabilityDeclaration declaration,
+          String expectedCodec,
+          long expectedBitrate) {
+    var source = probe("h264", "dts", 6, 1_500_000L);
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaration)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
+    assertThat(decision.audioDecision().codec()).isEqualTo(expectedCodec);
+    assertThat(decision.audioDecision().channels()).isEqualTo(6);
+    assertThat(decision.audioDecision().bitrate()).isEqualTo(expectedBitrate);
+  }
+
+  static Stream<Arguments> fivePointOneEncodeBitrates() {
+    return Stream.of(
+        Arguments.of(
+            "E-AC-3 at 768 kb/s", declaringAudio(audio(AAC, 6), audio(EAC3, 6)), "eac3", 768_000L),
+        Arguments.of(
+            "AC-3 at 640 kb/s", declaringAudio(audio(AAC, 6), audio(AC3, 6)), "ac3", 640_000L),
+        Arguments.of("AAC at 384 kb/s", declaringAudio(audio(AAC, 6)), "aac", 384_000L));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @CsvSource({"AC3, 640000", "EAC3, 768000"})
+  @DisplayName(
+      "Should announce the codec's highest 5.1 bitrate when a copied 5.1 track has no probed"
+          + " bitrate")
+  void shouldAnnounceTheCodecsHighest51BitrateWhenACopied51TrackHasNoProbedBitrate(
+      AudioCodec codec, long expectedBitrate) {
+    var source =
+        probeBuilder("h264", codec.probedName())
+            .audioChannels(OptionalInt.of(6))
+            .audioBitrate(OptionalLong.empty())
+            .build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaringAudio(audio(AAC, 6), audio(codec, 6)))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
+    assertThat(decision.audioDecision().bitrate()).isEqualTo(expectedBitrate);
   }
 
   @Test

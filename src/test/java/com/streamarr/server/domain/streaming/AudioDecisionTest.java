@@ -23,7 +23,14 @@ class AudioDecisionTest {
 
   @ParameterizedTest(name = "{0} at channels={1} → bitrate={2}")
   @DisplayName("Should calculate bitrate when codec and channel count given")
-  @CsvSource({"aac, 1, 64000", "aac, 2, 128000", "aac, 6, 384000", "aac, 8, 512000"})
+  @CsvSource({
+    "aac, 1, 64000",
+    "aac, 2, 128000",
+    "aac, 6, 384000",
+    "aac, 8, 512000",
+    "ac3, 6, 640000",
+    "eac3, 6, 768000"
+  })
   void shouldCalculateBitrateWhenCodecAndChannelCountGiven(
       String codec, int channels, long expectedBitrate) {
     assertThat(AudioDecision.bitrateFor(codec, channels)).isEqualTo(expectedBitrate);
