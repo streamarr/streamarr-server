@@ -19,6 +19,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
+import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoStreamCopy;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -120,7 +121,7 @@ public class TranscodeDecisionService {
 
     return source
         .videoPlaybackFacts()
-        .flatMap(facts -> facts.frameRateRule().outputFrameRate())
+        .flatMap(VideoPlaybackFacts::outputFrameRate)
         .map(
             frameRate ->
                 EncodedVariantRequest.builder()
