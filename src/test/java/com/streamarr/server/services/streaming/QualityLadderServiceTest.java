@@ -1,11 +1,14 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ContainerCropping;
+import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
@@ -106,6 +109,82 @@ class QualityLadderServiceTest {
             QualityVariant::videoBitrate,
             QualityVariant::label)
         .containsExactly(tuple(1920, 1080, 8_000_000L, StreamSession.defaultVariant()));
+  }
+
+  @Test
+  @DisplayName("Should skip every tier wider than the viewer's maximum width")
+  void shouldSkipEveryTierWiderThanTheViewersMaximumWidth() {
+    var probe = buildProbe(1920, 1080, 8_000_000L);
+    var options = StreamingOptions.builder().maxWidth(1000).build();
+
+    var variants = generateVariants(probe, options);
+
+    assertThat(variants)
+        .extracting(QualityVariant::width, QualityVariant::height)
+        .containsExactly(tuple(854, 480), tuple(640, 360));
+  }
+
+  @Test
+  @DisplayName(
+      "Should size the only variant within the viewer's maximum width when every tier is wider")
+  void shouldSizeTheOnlyVariantWithinTheViewersMaximumWidthWhenEveryTierIsWider() {
+    var probe = buildProbe(1920, 1080, 8_000_000L);
+    var options = StreamingOptions.builder().maxWidth(500).build();
+
+    var variants = generateVariants(probe, options);
+
+    assertThat(variants)
+        .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::label)
+        .containsExactly(tuple(498, 280, "280p"));
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the smaller tier's bitrate when an entry shrinks a larger tier to the smaller"
+          + " tier's size")
+  void shouldKeepTheSmallerTiersBitrateWhenAnEntryShrinksALargerTierToTheSmallerTiersSize() {
+    var probe = buildProbe(1920, 1080, 8_000_000L);
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().maxWidth(1280).maxHeight(720).build()))
+            .build();
+
+    var variants =
+        service.generateVariants(
+            ladderRequest(probe, StreamingOptions.builder().build())
+                .capabilityDeclaration(declaration)
+                .build());
+
+    assertThat(variants)
+        .extracting(QualityVariant::label, QualityVariant::height, QualityVariant::videoBitrate)
+        .containsExactly(
+            tuple("720p", 720, 3_000_000L),
+            tuple("480p", 480, 1_500_000L),
+            tuple("360p", 360, 800_000L));
+  }
+
+  @Test
+  @DisplayName("Should label a capped variant by its height when no smaller tier has that size")
+  void shouldLabelACappedVariantByItsHeightWhenNoSmallerTierHasThatSize() {
+    var probe = buildProbe(1920, 1080, 8_000_000L);
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().maxWidth(1600).maxHeight(900).build()))
+            .build();
+
+    var variants =
+        service.generateVariants(
+            ladderRequest(probe, StreamingOptions.builder().build())
+                .capabilityDeclaration(declaration)
+                .build());
+
+    assertThat(variants)
+        .extracting(QualityVariant::label, QualityVariant::width, QualityVariant::height)
+        .containsExactly(
+            tuple("900p", 1600, 900),
+            tuple("720p", 1280, 720),
+            tuple("480p", 854, 480),
+            tuple("360p", 640, 360));
   }
 
   @Test
@@ -267,12 +346,18 @@ class QualityLadderServiceTest {
   }
 
   private List<QualityVariant> generateVariants(MediaProbe probe, StreamingOptions options) {
-    return service.generateVariants(
-        QualityLadderRequest.builder()
-            .probe(probe)
-            .options(options)
-            .frameRate(new Fraction(24, 1))
-            .build());
+    return service.generateVariants(ladderRequest(probe, options).build());
+  }
+
+  // An H.264 ladder at 24 fps for a player whose only entry plays up to 3840×2160 at 60 fps.
+  private static QualityLadderRequest.QualityLadderRequestBuilder ladderRequest(
+      MediaProbe probe, StreamingOptions options) {
+    return QualityLadderRequest.builder()
+        .probe(probe)
+        .options(options)
+        .capabilityDeclaration(defaultDeclarationBuilder().build())
+        .codecProfile(EncodeCodecProfile.H264_HIGH)
+        .frameRate(new Fraction(24, 1));
   }
 
   private MediaProbe buildProbe(int width, int height, long bitrate) {

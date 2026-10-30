@@ -2,12 +2,12 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
@@ -101,7 +101,7 @@ public class HlsStreamingService implements StreamingService {
       return Outcome.rejected(encodeRejection.get());
     }
 
-    var variants = resolveVariants(probe, options, decision);
+    var variants = resolveVariants(command, probe, decision);
     var sessionId = command.streamSessionId();
     var refusal = capacityRefusalFor(decision);
     // A left variant only serves its own player's switch back, so it never keeps a new stream
@@ -162,7 +162,7 @@ public class HlsStreamingService implements StreamingService {
     }
 
     var probe = request.source();
-    var variants = resolveVariants(probe, command.options(), decision);
+    var variants = resolveVariants(command, probe, decision);
     if (hasInvalidEncodeSize(variants)) {
       return Optional.of(new CreateStreamSessionRejection.InvalidPictureSize());
     }
@@ -314,7 +314,7 @@ public class HlsStreamingService implements StreamingService {
 
   // Every encode runs as a variant of the ladder; a copy keeps the source and has no ladder.
   private List<QualityVariant> resolveVariants(
-      MediaProbe probe, StreamingOptions options, TranscodeDecision decision) {
+      CreateStreamSessionCommand command, MediaProbe probe, TranscodeDecision decision) {
     if (!requiresVideoTranscode(decision.transcodeMode())) {
       return List.of();
     }
@@ -323,7 +323,9 @@ public class HlsStreamingService implements StreamingService {
     var request =
         QualityLadderRequest.builder()
             .probe(probe)
-            .options(options)
+            .options(command.options())
+            .capabilityDeclaration(command.capabilityDeclaration())
+            .codecProfile(EncodeCodecProfile.forCodecFamilyName(decision.videoCodecFamily()))
             .frameRate(outputFrameRate(decision).orElseThrow())
             .build();
     return MultivariantPlaylistOrder.of(

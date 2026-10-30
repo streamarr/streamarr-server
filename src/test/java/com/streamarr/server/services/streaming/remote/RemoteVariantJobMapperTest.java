@@ -685,6 +685,39 @@ class RemoteVariantJobMapperTest {
                 .build());
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @Test
+  @DisplayName(
+      "Should send the variant's divided frame rate when the variant encodes below the source's"
+          + " output frame rate")
+  void shouldSendTheVariantsDividedFrameRateWhenTheVariantEncodesBelowTheSourcesOutputFrameRate() {
+    var source =
+        VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+            .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(60_000, 1_001)))
+            .build();
+    var request =
+        encodeAttempt("h264")
+            .outputFrameRate(Optional.of(new Fraction(30_000, 1_001)))
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                    .videoCodecFamily("h264")
+                    .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
+                    .videoSource(Optional.of(source))
+                    .build())
+            .build();
+
+    var execution = mapper.map(request).getExecution();
+
+    assertThat(execution.getOutputFrameRate())
+        .isEqualTo(
+            com.streamarr.transcode.v1.Fraction.newBuilder()
+                .setNumerator(30_000)
+                .setDenominator(1_001)
+                .build());
+  }
+
   @Test
   @DisplayName("Should send no output frame rate when the job copies the video")
   void shouldSendNoOutputFrameRateWhenTheJobCopiesTheVideo() {
