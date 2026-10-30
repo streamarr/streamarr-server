@@ -8,14 +8,17 @@ import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.StreamingService;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public final class FakeStreamingService implements StreamingService {
 
   private final FakeRuntimeStreamSessionRegistry registry;
   private final List<UUID> destroyedIds = new CopyOnWriteArrayList<>();
+  private final Map<UUID, RuntimeException> accessFailures = new ConcurrentHashMap<>();
 
   public FakeStreamingService() {
     this(new FakeRuntimeStreamSessionRegistry());
@@ -33,6 +36,10 @@ public final class FakeStreamingService implements StreamingService {
     addSession(session);
   }
 
+  public void failAccess(UUID sessionId, RuntimeException failure) {
+    accessFailures.put(sessionId, failure);
+  }
+
   public List<UUID> getDestroyedIds() {
     return List.copyOf(destroyedIds);
   }
@@ -45,6 +52,11 @@ public final class FakeStreamingService implements StreamingService {
 
   @Override
   public Optional<StreamSession> accessSession(PlaybackRequest request) {
+    var failure = accessFailures.get(request.streamSessionId());
+    if (failure != null) {
+      throw failure;
+    }
+
     return registry.findById(request.streamSessionId());
   }
 
