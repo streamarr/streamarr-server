@@ -204,6 +204,7 @@ STREAMARR_MEDIA_PATH=/absolute/path/to/media docker compose \
 
 The worker uses its own Spring Boot image and normal entrypoint.
 The server image contains neither the worker application nor FFmpeg.
+To encode on an NVIDIA GPU, see <<_gpu_encoding>>.
 
 == Kubernetes
 
@@ -245,6 +246,124 @@ A CPU request changed in place takes effect when the container restarts.
 python3 deploy/kubernetes/render-deployment.py > /tmp/streamarr-deployment.yaml
 kubectl apply -f /tmp/streamarr-deployment.yaml
 ----
+
+To encode on NVIDIA GPUs in worker pods, see <<_kubernetes_gpus>>.
+
+== GPU encoding
+
+The worker can encode video on an NVIDIA GPU.
+Only NVIDIA GPUs work for now.
+The worker image's FFmpeg has VAAPI, Quick Sync and AMF encoders, but the image lacks the libraries they load at run time: `libva`, the Intel media driver and AMD's `libamfrt64`.
+Passing `/dev/dri` to the worker therefore leaves Intel and AMD encoding unavailable.
+Without a usable GPU, the worker encodes H.264 with libx264, HEVC with libx265 and AV1 with libsvtav1.
+
+=== Host prerequisites
+
+Install these on each host that runs a worker:
+
+* An NVIDIA driver for the GPU. Run `nvidia-smi` on the host to check that the driver sees the GPU.
+* The https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html[NVIDIA Container Toolkit], configured for Docker. Run `sudo nvidia-ctk runtime configure --runtime=docker` and restart Docker.
+
+FFmpeg's NVENC encoders load the driver's CUDA library and its video encode library.
+The toolkit mounts the video encode library only for a container that requests the `video` driver capability.
+Without a request, the toolkit mounts its default capabilities, `compute` and `utility`.
+See https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/docker-specialized.html#driver-capabilities[Driver Capabilities].
+Every example below requests `compute`, `video` and `utility`.
+The worker uses `compute` and `video`. The `utility` capability adds `nvidia-smi` to the container for troubleshooting.
+
+=== Docker Compose GPUs
+
+Add a GPU reservation to the `transcode-worker` service in your Compose file:
+
+[source#compose-nvidia-gpu,yaml]
+----
+services:
+  transcode-worker:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu, compute, video, utility]
+----
+
+Docker passes the `compute`, `video` and `utility` entries to the toolkit as `NVIDIA_DRIVER_CAPABILITIES`.
+A reservation with only `[gpu]` can leave out the video encode library, because the toolkit then mounts only its defaults.
+See https://docs.docker.com/compose/how-tos/gpu-support/[Enable GPU support] for the other reservation fields.
+
+=== docker run GPUs
+
+If you start the worker with `docker run`, add the `--gpus` option with the same capabilities and keep the worker's other options:
+
+[source#docker-run-nvidia-gpu,bash]
+----
+docker run --gpus 'all,"capabilities=compute,video,utility"' ... "$STREAMARR_WORKER_IMAGE"
+----
+
+Some hosts give containers GPUs through the `nvidia` runtime and `NVIDIA_VISIBLE_DEVICES` instead of a GPU request.
+On those hosts, also set `NVIDIA_DRIVER_CAPABILITIES=compute,video,utility` on the worker container.
+
+=== Kubernetes GPUs
+
+Worker nodes need the NVIDIA driver and the https://github.com/NVIDIA/k8s-device-plugin[NVIDIA device plugin], or the NVIDIA GPU Operator, which installs both.
+Save this patch as `worker-gpu-patch.yaml`:
+
+[source#kubernetes-nvidia-gpu,yaml]
+----
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: streamarr-transcode-worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: worker
+          env:
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: compute,video,utility
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+----
+
+Apply the patch to the deployed worker:
+
+[source,bash]
+----
+kubectl -n streamarr patch deployment streamarr-transcode-worker \
+  --type strategic \
+  --patch-file worker-gpu-patch.yaml
+----
+
+The patch adds the variable to the worker's existing environment and keeps its CPU request.
+Each worker pod then needs a free GPU on its node.
+
+=== Confirm GPU encoding
+
+At startup, the worker encodes one test frame with each hardware encoder and logs the result in one line:
+
+[source,bash]
+----
+docker compose logs transcode-worker | grep 'FFmpeg capabilities:'
+----
+
+On a working GPU, `GPU=true` and the encoder backends name NVENC encoders with `hardware=true`:
+
+[source,text]
+----
+FFmpeg capabilities: GPU=true, encoders=[h264_nvenc, hevc_nvenc], accelerator=cuda,vaapi,qsv,drm,opencl,vulkan,amf, encoder backends=[EncoderBackend[codecFamily=H264, encoder=h264_nvenc, hardware=true], EncoderBackend[codecFamily=HEVC, encoder=hevc_nvenc, hardware=true], EncoderBackend[codecFamily=AV1, encoder=libsvtav1, hardware=false]]
+----
+
+The worker uses a hardware encoder only after its test encode succeeds.
+An encoder that the GPU lacks fails the test encode, and that codec stays on its software encoder.
+In the example, the GPU has no AV1 encoder, so AV1 stays on libsvtav1.
+The worker runs the test encodes again only when it restarts.
+
+If the line shows `GPU=false`, run `nvidia-smi` in the worker container, for example `docker compose exec transcode-worker nvidia-smi`.
+If that command fails, the container has no GPU. Check the toolkit setup and the reservation.
+If it lists the GPU, check that the request includes the `video` capability.
 
 == Validate the mesh
 
