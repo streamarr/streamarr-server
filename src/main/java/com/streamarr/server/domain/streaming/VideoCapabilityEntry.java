@@ -146,7 +146,7 @@ public record VideoCapabilityEntry(
 
     var bitrate = Math.min(request.bitrate(), highestBitrate.getAsLong());
     var source = request.source();
-    var entryBox = maximumsOrientedLike(source);
+    var entryBox = maximums().orientedLike(source);
     var bounds =
         new PictureSize(
             Math.min(request.bounds().width(), entryBox.width()),
@@ -163,18 +163,6 @@ public record VideoCapabilityEntry(
                     .build())
         .filter(output -> acceptsLevelAndTier(capability, output))
         .findFirst();
-  }
-
-  // The maximums bound a picture in either orientation, so a portrait phone video fits an entry
-  // declared as landscape. The codec level still bounds the picture's total size.
-  private PictureSize maximumsOrientedLike(PictureSize source) {
-    var larger = Math.max(maxWidth, maxHeight);
-    var smaller = Math.min(maxWidth, maxHeight);
-    if (source.height() > source.width()) {
-      return new PictureSize(smaller, larger);
-    }
-
-    return new PictureSize(larger, smaller);
   }
 
   private static boolean acceptsLevelAndTier(
@@ -213,13 +201,14 @@ public record VideoCapabilityEntry(
     return bitDepth.isPresent() && bitDepth.getAsInt() <= maxBitDepth;
   }
 
+  // The maximums bound a picture in either orientation, so a portrait phone video fits an entry
+  // declared as landscape. The codec level still bounds the picture's total size.
   private boolean acceptsPictureSize(Optional<PictureSize> size) {
-    return size.filter(this::fitsInEitherOrientation).isPresent();
+    return size.filter(picture -> picture.fitsWithinEitherOrientation(maximums())).isPresent();
   }
 
-  private boolean fitsInEitherOrientation(PictureSize size) {
-    var maximums = maximumsOrientedLike(size);
-    return size.width() <= maximums.width() && size.height() <= maximums.height();
+  private PictureSize maximums() {
+    return new PictureSize(maxWidth, maxHeight);
   }
 
   // A stream without a usable frame rate cannot be encoded (#446), so a copy is its only path.
