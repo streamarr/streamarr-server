@@ -2638,6 +2638,67 @@ class HlsStreamingServiceTest {
 
   @Test
   @DisplayName(
+      "Should label a variant by its shorter side when a capability entry shrinks it short of its"
+          + " tier's box")
+  void shouldLabelAVariantByItsShorterSideWhenACapabilityEntryShrinksItShortOfItsTiersBox() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().maxWidth(1600).maxHeight(900).build()))
+            .build();
+
+    var session = accepted(service.createSession(createCommandDeclaring(declaration)));
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label, QualityVariant::width, QualityVariant::height)
+        .contains(tuple("900p", 1600, 900), tuple("720p", 1280, 720));
+    assertThat(playlist).contains("900p/stream.m3u8?t=t").doesNotContain("1080p/");
+  }
+
+  @Test
+  @DisplayName(
+      "Should label the only variant by its shorter side when the source is smaller than the 360p"
+          + " box")
+  void shouldLabelTheOnlyVariantByItsShorterSideWhenTheSourceIsSmallerThanThe360pBox() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").width(320).height(180).build());
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label, QualityVariant::width, QualityVariant::height)
+        .containsExactly(tuple("180p", 320, 180));
+  }
+
+  // A 1.85:1 source in a 2048×1080 entry: the 1440p tier shrinks to 1998×1080, whose shorter side
+  // names the 1080p tier's label.
+  @Test
+  @DisplayName(
+      "Should drop a variant labelled by its shorter side when another variant's tier has the same"
+          + " label")
+  void shouldDropAVariantLabelledByItsShorterSideWhenAnotherVariantsTierHasTheSameLabel() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").width(3996).height(2160).build());
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().maxWidth(2048).maxHeight(1080).build()))
+            .build();
+
+    var session = accepted(service.createSession(createCommandDeclaring(declaration)));
+
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label, QualityVariant::width, QualityVariant::height)
+        .containsExactlyInAnyOrder(
+            tuple("1080p", 1920, 1038),
+            tuple("720p", 1280, 692),
+            tuple("480p", 854, 462),
+            tuple("360p", 640, 346));
+  }
+
+  @Test
+  @DisplayName(
       "Should offer the 2160p and 1440p tiers when the source and the capability entry allow 4K")
   void shouldOfferThe2160pAnd1440pTiersWhenTheSourceAndTheCapabilityEntryAllow4K() {
     probeResults.setDefaultProbe(
