@@ -112,8 +112,9 @@ class QualityLadderServiceTest {
   }
 
   @Test
-  @DisplayName("Should skip every tier wider than the viewer's maximum width")
-  void shouldSkipEveryTierWiderThanTheViewersMaximumWidth() {
+  @DisplayName(
+      "Should skip every tier wider than the viewer's maximum width when the viewer sets one")
+  void shouldSkipEveryTierWiderThanTheViewersMaximumWidthWhenTheViewerSetsOne() {
     var probe = buildProbe(1920, 1080, 8_000_000L);
     var options = StreamingOptions.builder().maxWidth(1000).build();
 
