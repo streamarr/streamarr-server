@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.domain.streaming.StreamSession;
 import java.util.OptionalInt;
 import java.util.regex.Pattern;
 
@@ -26,6 +27,18 @@ public final class SegmentNames {
   /** The name of the media segment at {@code index} on the variant's zero-based timeline. */
   public static String mediaSegmentName(int index) {
     return "segment" + index + MEDIA_SEGMENT_EXTENSION;
+  }
+
+  /**
+   * The name under which the segment store keeps a variant's segment: the default variant's
+   * segments sit at the top of the stream session, and every other variant's sit under its label.
+   */
+  public static String storedSegmentName(String variantLabel, String segmentName) {
+    if (StreamSession.defaultVariant().equals(variantLabel)) {
+      return segmentName;
+    }
+
+    return variantLabel + "/" + segmentName;
   }
 
   /** Whether the name carries the extension of a media segment or an initialization segment. */
