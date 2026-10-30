@@ -38,7 +38,7 @@ public class QualityLadderService {
     if (!isAutoQuality(options)) {
       var bounds =
           QualityTier.ofFixedQuality(options.quality())
-              .map(tier -> within(viewerBounds, tier.box().orientedLike(source)))
+              .map(tier -> viewerBounds.boundedBy(tier.box().orientedLike(source)))
               .orElse(viewerBounds);
       return fitUntiered(request, bounds, maxBitrate)
           .map(output -> viewerAndEntryBoundedVariant(output, StreamSession.defaultVariant()))
@@ -72,11 +72,6 @@ public class QualityLadderService {
     }
 
     return List.copyOf(variants);
-  }
-
-  private static PictureSize within(PictureSize bounds, PictureSize box) {
-    return new PictureSize(
-        Math.min(bounds.width(), box.width()), Math.min(bounds.height(), box.height()));
   }
 
   // The viewer's options bound the tier's picture before any entry shrinks it.
@@ -130,7 +125,7 @@ public class QualityLadderService {
 
     var box = smallest.box().orientedLike(request.probe().displayedSize());
     return new VideoBudget(
-        within(bounds, box), Math.min(smallest.videoBitrate(), maxBitrate.getAsLong()));
+        bounds.boundedBy(box), Math.min(smallest.videoBitrate(), maxBitrate.getAsLong()));
   }
 
   private static OptionalLong sourceBitrate(QualityLadderRequest request) {

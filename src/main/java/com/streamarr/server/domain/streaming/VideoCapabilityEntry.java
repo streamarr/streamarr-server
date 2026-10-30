@@ -146,11 +146,7 @@ public record VideoCapabilityEntry(
 
     var bitrate = Math.min(request.bitrate(), highestBitrate.getAsLong());
     var source = request.source();
-    var entryBox = maximums().orientedLike(source);
-    var bounds =
-        new PictureSize(
-            Math.min(request.bounds().width(), entryBox.width()),
-            Math.min(request.bounds().height(), entryBox.height()));
+    var bounds = request.bounds().boundedBy(maximums().orientedLike(source));
     return EncodedPictureSizes.picturesWithin(source, bounds)
         .map(
             size ->
