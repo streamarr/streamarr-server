@@ -165,6 +165,20 @@ class ClientCapabilityDeclarationTest {
     assertThat(declaration.acceptsHlsCopy(copy)).isEqualTo(accepted);
   }
 
+  @Test
+  @DisplayName("Should refuse to judge a copy when the caller passes none")
+  void shouldRefuseToJudgeACopyWhenTheCallerPassesNone() {
+    var declaration =
+        ClientCapabilityDeclaration.builder()
+            .video(List.of(hevcEntryBuilder().build()))
+            .audio(List.of(aacEntryBuilder().build()))
+            .build();
+
+    assertThatThrownBy(() -> declaration.acceptsHlsCopy(null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("copy");
+  }
+
   static Stream<String> requiredDeclarationLists() {
     return REQUIRED_DECLARATION_LISTS.keySet().stream().sorted();
   }
