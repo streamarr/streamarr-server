@@ -771,29 +771,40 @@ public class ProducerLifecycleService {
   }
 
   // While the variant that the player switched to has no running job attempt, the left variant is
-  // the only variant that can serve the player.
+  // the only variant that can serve the player. Another stream session's left variant stops only
+  // while its job attempt runs (ADR 0019); once it ends, that stream session's next media-segment
+  // request stops it.
   private boolean freesSlotFor(StreamSession session, String leftVariant, SlotShortage shortage) {
     var sessionId = session.getSessionId();
     var switchedVariant = newestMediaSegmentRequests.get(sessionId).variantLabel();
     return transcodeExecutor.isRunning(sessionId, switchedVariant)
+        && transcodeExecutor.runningExecutionTarget(sessionId, leftVariant).isPresent()
         && freesTakenSlots(session, leftVariant, shortage);
   }
 
-  // A variant frees a slot for the start only while its own job attempt runs: in a transcoding
-  // stream session for a configured transcode slot, and on a worker that can run the start for a
-  // worker job slot.
+  // A variant frees a configured transcode slot exactly when the limit counts it, whether or not
+  // its job attempt still runs. It frees a worker job slot only while its job attempt runs on a
+  // worker that can run the start.
   private boolean freesTakenSlots(
       StreamSession session, String variantLabel, SlotShortage shortage) {
-    var target = transcodeExecutor.runningExecutionTarget(session.getSessionId(), variantLabel);
-    if (target.isEmpty()) {
+    if (shortage.configuredTranscodeSlot()
+        && !takesConfiguredTranscodeSlot(session, variantLabel)) {
       return false;
     }
 
-    if (shortage.configuredTranscodeSlot() && !requiresTranscode(session)) {
-      return false;
-    }
+    return !shortage.workerJobSlot()
+        || transcodeExecutor
+            .runningExecutionTarget(session.getSessionId(), variantLabel)
+            .filter(shortage.usableTargets()::contains)
+            .isPresent();
+  }
 
-    return !shortage.workerJobSlot() || shortage.usableTargets().contains(target.get());
+  private static boolean takesConfiguredTranscodeSlot(StreamSession session, String variantLabel) {
+    return requiresTranscode(session)
+        && session
+            .getVariantHandle(variantLabel)
+            .filter(ProducerLifecycleService::takesConfiguredTranscodeSlot)
+            .isPresent();
   }
 
   // Only the stream session's newest media-segment request makes room for an on-demand start, and

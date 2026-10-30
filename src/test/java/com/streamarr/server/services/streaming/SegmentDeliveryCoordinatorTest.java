@@ -1639,6 +1639,26 @@ class SegmentDeliveryCoordinatorTest {
 
   @Test
   @DisplayName(
+      "Should stop the variant that the player leaves to start the switched variant when the transcode limit leaves no room and the left variant's job attempt ends before the start")
+  void
+      shouldStopTheVariantThatThePlayerLeavesToStartTheSwitchedVariantWhenTheTranscodeLimitLeavesNoRoomAndTheLeftVariantsJobAttemptEndsBeforeTheStart()
+          throws Exception {
+    rebuildRig(1, new MutexFactory<>());
+    var session = ladderSessionPlayingFirstListedVariant(3);
+    var sessionId = session.getSessionId();
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+    transcodeExecutor.endAfterNextLivenessCheck(sessionId, "480p");
+
+    var switched = deliverAsync(sessionId, "1080p", "1080p/segment3.m4s");
+    transcodeExecutor.awaitStartedRequestCount(startedBefore + 1);
+
+    assertThat(session.getVariantHandles()).containsOnlyKeys("1080p");
+    upload(sessionId, "1080p/segment3.m4s", new byte[] {3});
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  @Test
+  @DisplayName(
       "Should keep the variant that the player leaves running when the switched variant fails to start for a reason other than a full slot")
   void
       shouldKeepTheVariantThatThePlayerLeavesRunningWhenTheSwitchedVariantFailsToStartForAReasonOtherThanAFullSlot() {

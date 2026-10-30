@@ -55,6 +55,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final AtomicLong jobSlotRefusals = new AtomicLong();
   private final Map<ProcessKey, AtomicLong> livenessChecksByVariant = new ConcurrentHashMap<>();
   private final Set<UUID> failingOnStopVariant = ConcurrentHashMap.newKeySet();
+  private final Set<ProcessKey> endingAfterNextLivenessCheck = ConcurrentHashMap.newKeySet();
   private final HeldSegmentRequests heldRequests =
       new HeldSegmentRequests(new SimpleMeterRegistry());
   private final Object observationMonitor = new Object();
@@ -231,8 +232,20 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     livenessChecks.incrementAndGet();
     livenessChecksByVariant.computeIfAbsent(key, _ -> new AtomicLong()).incrementAndGet();
     var result = running.contains(key);
+    if (endingAfterNextLivenessCheck.remove(key)) {
+      end(key);
+    }
+
     signalObservation();
     return result;
+  }
+
+  /**
+   * The variant's job attempt ends right after the next look at its liveness, which still finds it
+   * running, as a job attempt that reaches the end of its file between two looks does.
+   */
+  public void endAfterNextLivenessCheck(UUID sessionId, String variantLabel) {
+    endingAfterNextLivenessCheck.add(new ProcessKey(sessionId, variantLabel));
   }
 
   @Override

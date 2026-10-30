@@ -452,6 +452,26 @@ class ProducerLifecycleServiceTest {
     assertThat(transcodeExecutor.runningExecutionTarget(sessionId, "1080p")).contains(NVENC_WORKER);
   }
 
+  @Test
+  @DisplayName(
+      "Should stop the stream session's own left variant to start the switched variant when the transcode limit still counts the left variant's ended job attempt")
+  void
+      shouldStopTheStreamSessionsOwnLeftVariantToStartTheSwitchedVariantWhenTheTranscodeLimitStillCountsTheLeftVariantsEndedJobAttempt() {
+    var limited = lifecycleWith(new MutexFactory<>(), 1);
+    var session = defaultLadderSessionBuilder().build();
+    var sessionId = session.getSessionId();
+    runtimeRegistry.save(session);
+    limited.startFirstListedVariant(session);
+    limited.completeVariantSwitch(
+        limited.prepareRequestedVariant(sessionId, "480p", "480p/segment0.m4s"));
+    transcodeExecutor.endAfterNextLivenessCheck(sessionId, "480p");
+
+    limited.prepareRequestedVariant(sessionId, "1080p", "1080p/segment1.m4s");
+
+    assertThat(session.getVariantHandles()).containsOnlyKeys("1080p");
+    assertThat(transcodeExecutor.isRunning(sessionId, "1080p")).isTrue();
+  }
+
   private ProducerLifecycleService lifecycleWith(
       MutexFactory<UUID> sessionMutex, int maxConcurrentTranscodes) {
     return StreamingRigFixture.streamingRigBuilder()
