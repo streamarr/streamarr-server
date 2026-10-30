@@ -88,7 +88,6 @@ class HlsPlaylistServiceTest {
                     .width(variant.width())
                     .height(variant.height())
                     .videoBitrate(variant.videoBitrate())
-                    .audioBitrate(variant.audioBitrate())
                     .label(variant.label())
                     .frameRate(rate)
                     .build())
@@ -186,21 +185,18 @@ class HlsPlaylistServiceTest {
                 .width(1920)
                 .height(1080)
                 .videoBitrate(5_000_000L)
-                .audioBitrate(128_000L)
                 .label("1080p")
                 .build(),
             StreamSessionFixture.defaultVariantBuilder()
                 .width(1280)
                 .height(720)
                 .videoBitrate(3_000_000L)
-                .audioBitrate(128_000L)
                 .label("720p")
                 .build(),
             StreamSessionFixture.defaultVariantBuilder()
                 .width(854)
                 .height(480)
                 .videoBitrate(1_500_000L)
-                .audioBitrate(96_000L)
                 .label("480p")
                 .build());
 
@@ -1006,7 +1002,6 @@ class HlsPlaylistServiceTest {
               .width(1920)
               .height(1080)
               .videoBitrate(5_000_000L)
-              .audioBitrate(128_000L)
               .label("1080p")
               .build();
 

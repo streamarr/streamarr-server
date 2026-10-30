@@ -18,7 +18,6 @@ import org.springframework.stereotype.Service;
 @Service
 public class QualityLadderService {
 
-  private static final long VIEWER_AND_ENTRY_BOUNDED_AUDIO_BITRATE = 64_000L;
   // More than any codec level allows, so fitting caps it at the entry level's highest bitrate.
   private static final long UNCAPPED_BITRATE = Long.MAX_VALUE;
 
@@ -165,15 +164,12 @@ public class QualityLadderService {
   }
 
   private static QualityVariant tierVariant(EncodedVideoOutput output, QualityTier tier) {
-    return variantBuilder(output).audioBitrate(tier.audioBitrate()).label(tier.label()).build();
+    return variantBuilder(output).label(tier.label()).build();
   }
 
   private static QualityVariant viewerAndEntryBoundedVariant(
       EncodedVideoOutput output, String label) {
-    return variantBuilder(output)
-        .audioBitrate(VIEWER_AND_ENTRY_BOUNDED_AUDIO_BITRATE)
-        .label(label)
-        .build();
+    return variantBuilder(output).label(label).build();
   }
 
   private static QualityVariant.QualityVariantBuilder variantBuilder(EncodedVideoOutput output) {
