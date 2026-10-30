@@ -64,7 +64,7 @@ public class ProducerLifecycleService {
     // Only a new request for the variant starts it again (ADR 0019).
     VARIANT_NOT_RUNNING,
     // A newer request positioned the variant, and the request's segment needs the variant
-    // relocated or resumed. Only a request at least as new may position it (ADR 0019).
+    // relocated or resumed. Only a request at least as new may relocate or resume it (ADR 0019).
     SUPERSEDED
   }
 
