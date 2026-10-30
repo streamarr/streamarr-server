@@ -594,6 +594,31 @@ class LiveWorkerConnectionRegistryTest {
     assertThat(registry.encodableVideoCodecFamilies(SOURCE_NAMESPACE_ID)).containsOnly("h264");
   }
 
+  @Test
+  @DisplayName(
+      "Should report a codec family as encoded in hardware only when a worker with a free slot"
+          + " counts a hardware encoder for it")
+  void
+      shouldReportACodecFamilyAsEncodedInHardwareOnlyWhenAWorkerWithAFreeSlotCountsAHardwareEncoderForIt() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    registry.register(
+        WORKER_ID,
+        registration(
+            WORKER_ID,
+            keyframeVerifiedHardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "av1_nvenc"),
+            hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_HEVC, "hevc_nvenc"),
+            softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264")),
+        new CancellableObserver());
+
+    assertThat(registry.hardwareEncodableVideoCodecFamilies(SOURCE_NAMESPACE_ID))
+        .containsExactly("av1");
+    assertThat(registry.hardwareEncodableVideoCodecFamilies(UUID.randomUUID())).isEmpty();
+
+    assertThat(registry.dispatch(encodeJob("h264"))).isPresent();
+
+    assertThat(registry.hardwareEncodableVideoCodecFamilies(SOURCE_NAMESPACE_ID)).isEmpty();
+  }
+
   @ParameterizedTest(name = "{2} encode with only {1}")
   @CsvSource({
     "VIDEO_CODEC_FAMILY_AV1, av1_nvenc, av1",
