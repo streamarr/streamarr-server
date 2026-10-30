@@ -233,6 +233,12 @@ public final class WorkerSessionServer
     return workerConnections.availableSlots(sourceNamespaceId, decision);
   }
 
+  public synchronized int availableSlots(
+      UUID sourceNamespaceId, @NonNull WorkerVerifiedEncoder pinnedEncoder) {
+    requireStarted();
+    return workerConnections.availableSlots(sourceNamespaceId, pinnedEncoder);
+  }
+
   private void requireStarted() {
     if (!started) {
       throw new IllegalStateException("Worker session server is not started");

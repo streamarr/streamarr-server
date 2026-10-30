@@ -1050,6 +1050,35 @@ class LiveWorkerConnectionRegistryTest {
 
   @Test
   @DisplayName(
+      "Should count a pinned encode's free slots only on workers that advertise the pinned encoder backend")
+  void shouldCountAPinnedEncodesFreeSlotsOnlyOnWorkersThatAdvertiseThePinnedEncoderBackend() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var libx264WorkerId = UUID.randomUUID();
+    registry.register(
+        WORKER_ID,
+        registration(
+            WORKER_ID,
+            keyframeVerifiedHardwareEncoder(
+                VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc")),
+        new CancellableObserver());
+    registry.register(
+        libx264WorkerId,
+        registration(libx264WorkerId, libx264Encoder()),
+        new CancellableObserver());
+    var pinned = WorkerVerifiedEncoderFixture.libx264();
+    var freeSlots = registry.availableSlots(SOURCE_NAMESPACE_ID, pinned);
+
+    registry.dispatch(encodeJob("h264"), pinned);
+
+    assertThat(freeSlots).isOne();
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, pinned)).isZero();
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, encodeJob("h264").getDecision()))
+        .isOne();
+    assertThat(registry.availableSlots(UUID.randomUUID(), pinned)).isZero();
+  }
+
+  @Test
+  @DisplayName(
       "Should withdraw the worker's encoder for the codec family when a start report names another backend")
   void shouldWithdrawWorkersEncoderForCodecFamilyWhenStartReportNamesAnotherBackend() {
     var encode = RunningEncode.dispatch();

@@ -511,6 +511,15 @@ final class LiveWorkerConnectionRegistry {
         .sum();
   }
 
+  int availableSlots(UUID sourceNamespaceId, WorkerVerifiedEncoder pinnedEncoder) {
+    var sourceNamespace = toProto(sourceNamespaceId);
+    return connections.values().stream()
+        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
+        .filter(connection -> connection.advertises(pinnedEncoder))
+        .mapToInt(WorkerConnection::availableSlots)
+        .sum();
+  }
+
   Optional<TranscodeFailure> terminalFailure(UUID streamSessionId) {
     return Optional.ofNullable(terminalFailures.get(streamSessionId));
   }

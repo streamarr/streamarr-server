@@ -12,6 +12,7 @@ import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -59,6 +60,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final Object observationMonitor = new Object();
   private int availableSlots = TranscodeExecutor.UNBOUNDED_SLOTS;
   private volatile int jobSlots = TranscodeExecutor.UNBOUNDED_SLOTS;
+  private final Map<ExecutionTargetId, Integer> jobSlotsByTarget = new ConcurrentHashMap<>();
   private final Map<String, Integer> encodeSlotsByVideoCodecFamily =
       new ConcurrentHashMap<>(unboundedEncodeSlots(Set.of("h264", "hevc", "av1")));
   private boolean healthy = true;
@@ -75,8 +77,8 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       throw new TranscodeException("No connected transcode worker runs the pinned encoder");
     }
 
-    // A start that no target advertises an encoder for runs on the first eligible target.
-    var runningTarget = accepting.or(() -> candidateTargets(request).stream().findFirst());
+    // A start that no target advertises an encoder for runs on an eligible target.
+    var runningTarget = accepting.or(() -> firstWithFreeJobSlot(candidateTargets(request)));
     var handle = doStart(request, runningTarget);
     return accepting
         .flatMap(target -> advertisedEncoder(target, request.transcodeDecision()))
@@ -86,9 +88,18 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   // The first target, in failover order, that advertises an encoder the request can run on.
   private Optional<ExecutionTargetId> acceptingTarget(TranscodeRequest request) {
-    return candidateTargets(request).stream()
-        .filter(target -> advertisedEncoder(target, request.transcodeDecision()).isPresent())
-        .findFirst();
+    return firstWithFreeJobSlot(
+        candidateTargets(request).stream()
+            .filter(target -> advertisedEncoder(target, request.transcodeDecision()).isPresent())
+            .toList());
+  }
+
+  // Prefers a target with a free job slot. When every target is full, the first refuses the start.
+  private Optional<ExecutionTargetId> firstWithFreeJobSlot(Collection<ExecutionTargetId> targets) {
+    return targets.stream()
+        .filter(target -> freeJobSlotsOn(target) > 0)
+        .findFirst()
+        .or(() -> targets.stream().findFirst());
   }
 
   private Set<ExecutionTargetId> candidateTargets(TranscodeRequest request) {
@@ -131,14 +142,12 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     }
 
     var key = new ProcessKey(request.sessionId(), request.variantLabel());
-    if (!tryTakeJobSlot(key)) {
+    if (!tryTakeJobSlot(key, runningTarget)) {
       jobSlotRefusals.incrementAndGet();
       signalObservation();
       throw new TranscodeException("No connected transcode worker has a free job slot");
     }
 
-    runningTarget.ifPresentOrElse(
-        target -> runningTargets.put(key, target), () -> runningTargets.remove(key));
     started.add(key);
     startedRequests.add(request);
     var handle =
@@ -331,17 +340,27 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public int availableSlots() {
-    return Math.min(availableSlots, freeJobSlots());
+    return Math.min(Math.min(availableSlots, freeJobSlots()), freeJobSlotsOn(executionTargets));
   }
 
   @Override
   public int availableSlots(TranscodeDecision decision) {
+    var slots = Math.min(availableSlots(), freeJobSlotsOn(executionTargets(decision)));
     if (!encodesVideo(decision)) {
-      return availableSlots();
+      return slots;
     }
 
-    var encodeSlots = encodeSlotsByVideoCodecFamily.getOrDefault(decision.videoCodecFamily(), 0);
-    return Math.min(availableSlots(), encodeSlots);
+    return Math.min(slots, encodeSlots(decision.videoCodecFamily()));
+  }
+
+  @Override
+  public int availableSlots(WorkerVerifiedEncoder pinnedEncoder) {
+    var slots = Math.min(availableSlots(), freeJobSlotsOn(executionTargets(pinnedEncoder)));
+    return Math.min(slots, encodeSlots(pinnedEncoder.backend().codecFamily()));
+  }
+
+  private int encodeSlots(String videoCodecFamily) {
+    return encodeSlotsByVideoCodecFamily.getOrDefault(videoCodecFamily, 0);
   }
 
   public void setAvailableSlots(int availableSlots) {
@@ -356,6 +375,14 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     this.jobSlots = jobSlots;
   }
 
+  /**
+   * The target has this many job slots. Each job attempt that runs on it takes one, and a start on
+   * it is refused when every slot is taken. A target left unset has unbounded job slots.
+   */
+  public void limitJobSlots(ExecutionTargetId target, int jobSlots) {
+    jobSlotsByTarget.put(target, jobSlots);
+  }
+
   private synchronized int freeJobSlots() {
     if (jobSlots == UNBOUNDED_SLOTS) {
       return UNBOUNDED_SLOTS;
@@ -364,12 +391,34 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     return Math.max(0, jobSlots - running.size());
   }
 
-  private synchronized boolean tryTakeJobSlot(ProcessKey key) {
-    if (freeJobSlots() <= 0) {
+  private synchronized int freeJobSlotsOn(ExecutionTargetId target) {
+    var limit = jobSlotsByTarget.get(target);
+    if (limit == null) {
+      return UNBOUNDED_SLOTS;
+    }
+
+    var taken = runningTargets.values().stream().filter(target::equals).count();
+    return (int) Math.max(0, limit - taken);
+  }
+
+  private synchronized int freeJobSlotsOn(Collection<ExecutionTargetId> targets) {
+    if (jobSlotsByTarget.isEmpty()) {
+      return UNBOUNDED_SLOTS;
+    }
+
+    var free = targets.stream().mapToLong(this::freeJobSlotsOn).sum();
+    return (int) Math.min(UNBOUNDED_SLOTS, free);
+  }
+
+  private synchronized boolean tryTakeJobSlot(
+      ProcessKey key, Optional<ExecutionTargetId> runningTarget) {
+    if (freeJobSlots() <= 0 || runningTarget.filter(t -> freeJobSlotsOn(t) <= 0).isPresent()) {
       return false;
     }
 
     running.add(key);
+    runningTarget.ifPresentOrElse(
+        target -> runningTargets.put(key, target), () -> runningTargets.remove(key));
     return true;
   }
 

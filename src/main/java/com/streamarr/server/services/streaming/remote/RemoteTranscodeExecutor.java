@@ -112,6 +112,11 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
+  public int availableSlots(@NonNull WorkerVerifiedEncoder pinnedEncoder) {
+    return workerServer.availableSlots(sourceNamespaceId, pinnedEncoder);
+  }
+
+  @Override
   public Set<ExecutionTargetId> executionTargets(TranscodeDecision decision) {
     return workerServer.eligibleWorkers(
         sourceNamespaceId, RemoteVariantJobMapper.decision(decision));
