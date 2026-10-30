@@ -135,11 +135,22 @@ class QualityLadderServiceTest {
         .containsExactly(tuple(534, 300, "300p"));
   }
 
-  @Test
-  @DisplayName("Should offer only the source-sized default variant when the quality is fixed")
-  void shouldOfferOnlyTheSourceSizedDefaultVariantWhenTheQualityIsFixed() {
-    var probe = buildProbe(1920, 1080, 8_000_000L);
-    var options = StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build();
+  @ParameterizedTest
+  @CsvSource({
+    "LOW_360P, 640, 360",
+    "MEDIUM_480P, 854, 480",
+    "HIGH_720P, 1280, 720",
+    "FULL_HD_1080P, 1920, 1080",
+    "UHD_4K, 3840, 2160",
+    "ORIGINAL, 3840, 2160"
+  })
+  @DisplayName(
+      "Should offer only a default variant within the fixed quality's box when the quality is"
+          + " fixed")
+  void shouldOfferOnlyADefaultVariantWithinTheFixedQualitysBoxWhenTheQualityIsFixed(
+      VideoQuality quality, int expectedWidth, int expectedHeight) {
+    var probe = buildProbe(3840, 2160, 8_000_000L);
+    var options = StreamingOptions.builder().quality(quality).build();
 
     var variants = generateVariants(probe, options);
 
@@ -149,7 +160,28 @@ class QualityLadderServiceTest {
             QualityVariant::height,
             QualityVariant::videoBitrate,
             QualityVariant::label)
-        .containsExactly(tuple(1920, 1080, 8_000_000L, StreamSession.defaultVariant()));
+        .containsExactly(
+            tuple(expectedWidth, expectedHeight, 8_000_000L, StreamSession.defaultVariant()));
+  }
+
+  @ParameterizedTest
+  @CsvSource({"1080, 1920, FULL_HD_1080P, 1080, 1920", "1920, 1080, UHD_4K, 1920, 1080"})
+  @DisplayName(
+      "Should fit a fixed quality's box to the source's orientation without enlarging the source")
+  void shouldFitAFixedQualitysBoxToTheSourcesOrientationWithoutEnlargingTheSource(
+      int sourceWidth,
+      int sourceHeight,
+      VideoQuality quality,
+      int expectedWidth,
+      int expectedHeight) {
+    var probe = buildProbe(sourceWidth, sourceHeight, 8_000_000L);
+    var options = StreamingOptions.builder().quality(quality).build();
+
+    var variants = generateVariants(probe, options);
+
+    assertThat(variants)
+        .extracting(QualityVariant::width, QualityVariant::height)
+        .containsExactly(tuple(expectedWidth, expectedHeight));
   }
 
   @Test
@@ -183,7 +215,7 @@ class QualityLadderServiceTest {
       shouldEncodeAtTheNominalBitrateOfTheSmallestTierWhoseBoxHoldsThePictureWhenTheProbeNamesNoSourceBitrate(
           int width, int height, long expectedBitrate) {
     var probe = buildProbe(width, height, 0L);
-    var options = StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build();
+    var options = StreamingOptions.builder().quality(VideoQuality.UHD_4K).build();
 
     var variants = generateVariants(probe, options);
 
@@ -200,7 +232,10 @@ class QualityLadderServiceTest {
           int maxBitrate, long expectedBitrate) {
     var probe = buildProbe(1920, 1080, 0L);
     var options =
-        StreamingOptions.builder().quality(VideoQuality.HIGH_720P).maxBitrate(maxBitrate).build();
+        StreamingOptions.builder()
+            .quality(VideoQuality.FULL_HD_1080P)
+            .maxBitrate(maxBitrate)
+            .build();
 
     var variants = generateVariants(probe, options);
 
