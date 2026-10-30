@@ -25,7 +25,7 @@ public class QualityLadderService {
           new QualityTier(480, 1_500_000L, 96_000L),
           new QualityTier(360, 800_000L, 64_000L));
 
-  private static final long SOURCE_SIZED_AUDIO_BITRATE = 64_000L;
+  private static final long VIEWER_AND_ENTRY_BOUNDED_AUDIO_BITRATE = 64_000L;
 
   /**
    * The variants that an encode offers, each fitted to one capability entry (ADR 0049). Auto offers
@@ -40,7 +40,7 @@ public class QualityLadderService {
     var viewerBounds = viewerBounds(source, options);
     if (!isAutoQuality(options)) {
       var output = fit(request, viewerBounds, request.probe().bitrate());
-      return List.of(sourceSizedVariant(output, StreamSession.defaultVariant()));
+      return List.of(viewerAndEntryBoundedVariant(output, StreamSession.defaultVariant()));
     }
 
     var maxBitrate = resolveMaxBitrate(options);
@@ -66,7 +66,7 @@ public class QualityLadderService {
     if (variants.isEmpty()) {
       var bitrate = withinMaxBitrate(request.probe().bitrate(), maxBitrate);
       var output = fit(request, viewerBounds, bitrate);
-      return List.of(sourceSizedVariant(output, output.height() + "p"));
+      return List.of(viewerAndEntryBoundedVariant(output, output.height() + "p"));
     }
 
     return List.copyOf(variants.values());
@@ -108,8 +108,12 @@ public class QualityLadderService {
         .build();
   }
 
-  private static QualityVariant sourceSizedVariant(EncodedVideoOutput output, String label) {
-    return variantBuilder(output).audioBitrate(SOURCE_SIZED_AUDIO_BITRATE).label(label).build();
+  private static QualityVariant viewerAndEntryBoundedVariant(
+      EncodedVideoOutput output, String label) {
+    return variantBuilder(output)
+        .audioBitrate(VIEWER_AND_ENTRY_BOUNDED_AUDIO_BITRATE)
+        .label(label)
+        .build();
   }
 
   private static QualityVariant.QualityVariantBuilder variantBuilder(EncodedVideoOutput output) {
