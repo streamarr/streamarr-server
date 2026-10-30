@@ -38,6 +38,8 @@ public record VideoCapabilityEntry(
   private static final BigDecimal FRAME_RATE_MARGIN = new BigDecimal("1.005");
   // Every encode is 8-bit SDR video without Dolby Vision or HDR10+ information.
   private static final int ENCODED_BIT_DEPTH = 8;
+  // ADR 0037's frame-rate rule chooses no output frame rate below 10 fps.
+  private static final BigDecimal LOWEST_ENCODED_FRAME_RATE = BigDecimal.TEN;
 
   public VideoCapabilityEntry {
     if (codecFamily == ProbedCodecFamily.OTHER) {
@@ -72,9 +74,9 @@ public record VideoCapabilityEntry(
   /**
    * The largest encoded output within the request's bounds that this entry accepts over HLS (ADR
    * 0049), or empty when this entry accepts no encode of the request. The output keeps the source's
-   * aspect ratio. A frame rate above the maximum is divided by the smallest whole number that fits.
-   * A picture whose codec level is above the profile's maximum level steps down in size until the
-   * level fits, and a bitrate above what that level allows is capped at it.
+   * aspect ratio. A frame rate above the maximum is divided by the smallest whole number that fits,
+   * never below 10 fps. A picture whose codec level is above the profile's maximum level steps down
+   * in size until the level fits, and a bitrate above what that level allows is capped at it.
    */
   public Optional<EncodedVideoOutput> fitHlsEncode(@NonNull EncodedVariantRequest request) {
     if (!acceptsHlsEncode(request.codecProfile())) {
@@ -111,12 +113,22 @@ public record VideoCapabilityEntry(
                 0,
                 RoundingMode.CEILING)
             .max(BigDecimal.ONE);
-    var largestDivisor = BigDecimal.valueOf(Integer.MAX_VALUE / rate.denominator());
-    if (divisor.compareTo(largestDivisor) > 0) {
+    if (isBelowLowestEncodedFrameRate(rate, divisor)) {
       return Optional.empty();
     }
 
     return Optional.of(rate.dividedBy(divisor.intValueExact()));
+  }
+
+  // Every segment interval needs a frame to start it, and the segment list stays the same however
+  // slow a variant runs (ADR 0037). Dividing never goes below the frame-rate rule's lowest rate, so
+  // the divided denominator also stays within an int.
+  private static boolean isBelowLowestEncodedFrameRate(Fraction rate, BigDecimal divisor) {
+    var lowestNumerator =
+        LOWEST_ENCODED_FRAME_RATE
+            .multiply(BigDecimal.valueOf(rate.denominator()))
+            .multiply(divisor);
+    return BigDecimal.valueOf(rate.numerator()).compareTo(lowestNumerator) < 0;
   }
 
   private Optional<EncodedVideoOutput> fitWithinLevel(
