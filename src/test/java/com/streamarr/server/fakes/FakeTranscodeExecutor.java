@@ -64,6 +64,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final Map<ExecutionTargetId, Integer> jobSlotsByTarget = new ConcurrentHashMap<>();
   private final Map<String, Integer> encodeSlotsByVideoCodecFamily =
       new ConcurrentHashMap<>(unboundedEncodeSlots(Set.of("h264", "hevc", "av1")));
+  private Set<String> hardwareEncodableVideoCodecFamilies = Set.of();
   private boolean healthy = true;
   private volatile boolean failUntargetedStarts;
 
@@ -499,6 +500,18 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
         .filter(entry -> entry.getValue() > 0)
         .map(Map.Entry::getKey)
         .collect(Collectors.toUnmodifiableSet());
+  }
+
+  @Override
+  public Set<String> hardwareEncodableVideoCodecFamilies() {
+    return hardwareEncodableVideoCodecFamilies.stream()
+        .filter(encodableVideoCodecFamilies()::contains)
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
+  /** Each listed family that has a free encode slot is encoded in hardware. */
+  public void setHardwareEncodableVideoCodecFamilies(Set<String> families) {
+    hardwareEncodableVideoCodecFamilies = Set.copyOf(families);
   }
 
   /** Every listed family gets unbounded encode slots; any other family has none. */
