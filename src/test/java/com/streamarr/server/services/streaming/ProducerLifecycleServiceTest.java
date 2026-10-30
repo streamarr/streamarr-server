@@ -44,14 +44,21 @@ import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.LongStream;
 import org.assertj.core.api.SoftAssertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -417,6 +424,173 @@ class ProducerLifecycleServiceTest {
     assertThat(session.getVariantHandles()).containsOnlyKeys("1080p");
     assertThat(others)
         .allSatisfy(other -> assertThat(other.getVariantHandles()).containsOnlyKeys("480p"));
+  }
+
+  private ProducerLifecycleService lifecycleWith(
+      MutexFactory<UUID> sessionMutex, int maxConcurrentTranscodes) {
+    return StreamingRigFixture.streamingRigBuilder()
+        .transcodeExecutor(transcodeExecutor)
+        .segmentStore(segmentStore)
+        .properties(
+            StreamingProperties.builder()
+                .maxConcurrentTranscodes(maxConcurrentTranscodes)
+                .targetSegmentDuration(Duration.ofSeconds(6))
+                .sessionTimeout(Duration.ofSeconds(60))
+                .build())
+        .clock(clock)
+        .runtimeRegistry(runtimeRegistry)
+        .serverSettings(serverSettings)
+        .sessionMutex(sessionMutex)
+        .build()
+        .lifecycle();
+  }
+
+  // Plays 480p, then requests 1080p, so the stream session keeps 480p as its left variant beside
+  // the running 1080p.
+  private StreamSession switchingLadderSession(ProducerLifecycleService lifecycle) {
+    var session = defaultLadderSessionBuilder().build();
+    var sessionId = session.getSessionId();
+    runtimeRegistry.save(session);
+    lifecycle.startFirstListedVariant(session);
+    var played = lifecycle.prepareRequestedVariant(sessionId, "480p", "480p/segment0.m4s");
+    lifecycle.completeVariantSwitch(played);
+    lifecycle.prepareRequestedVariant(sessionId, "1080p", "1080p/segment1.m4s");
+    assertThat(session.getVariantHandles()).containsOnlyKeys("480p", "1080p");
+    return session;
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop each one's left variant without a deadlock when two stream sessions that keep a left variant look for room in each other at once")
+  void
+      shouldStopEachOnesLeftVariantWithoutADeadlockWhenTwoStreamSessionsThatKeepALeftVariantLookForRoomInEachOtherAtOnce()
+          throws Exception {
+    var sessionMutex = new ParkingMutexFactory(2);
+    var parkingLifecycle = lifecycleWith(sessionMutex, 4);
+    var first = switchingLadderSession(parkingLifecycle);
+    var second = switchingLadderSession(parkingLifecycle);
+    assertThat(parkingLifecycle.freeConfiguredTranscodeSlots()).isZero();
+    var stoppedBefore = transcodeExecutor.getStoppedVariants().size();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var firstLooks =
+          executor.submit(
+              () ->
+                  sessionMutex.parkAfterTakingAnotherMutex(
+                      () ->
+                          parkingLifecycle.stopLeftVariantOfAnotherStreamSession(
+                              first.getSessionId(), first.getTranscodeDecision())));
+      var secondLooks =
+          executor.submit(
+              () ->
+                  sessionMutex.parkAfterTakingAnotherMutex(
+                      () ->
+                          parkingLifecycle.stopLeftVariantOfAnotherStreamSession(
+                              second.getSessionId(), second.getTranscodeDecision())));
+      sessionMutex.awaitParked();
+      sessionMutex.release();
+
+      firstLooks.get(2, TimeUnit.SECONDS);
+      secondLooks.get(2, TimeUnit.SECONDS);
+    }
+
+    var stopped = transcodeExecutor.getStoppedVariants();
+    assertThat(stopped.subList(stoppedBefore, stopped.size()))
+        .containsExactlyInAnyOrder(first.getSessionId() + "/480p", second.getSessionId() + "/480p");
+    assertThat(first.getVariantHandles()).containsOnlyKeys("1080p");
+    assertThat(second.getVariantHandles()).containsOnlyKeys("1080p");
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse to look for another stream session's left variant when the caller holds a stream session mutex")
+  void
+      shouldRefuseToLookForAnotherStreamSessionsLeftVariantWhenTheCallerHoldsAStreamSessionMutex() {
+    var sessionMutex = new MutexFactory<UUID>();
+    var guardedLifecycle = lifecycleWith(sessionMutex, 3);
+    var session = switchingLadderSession(guardedLifecycle);
+    var sessionId = session.getSessionId();
+    var held = sessionMutex.getMutex(sessionId);
+
+    held.lock();
+    try {
+      assertThatThrownBy(
+              () ->
+                  guardedLifecycle.stopLeftVariantOfAnotherStreamSession(
+                      UUID.randomUUID(), session.getTranscodeDecision()))
+          .isInstanceOf(IllegalStateException.class);
+    } finally {
+      held.unlock();
+    }
+
+    assertThat(session.getVariantHandles()).containsOnlyKeys("480p", "1080p");
+  }
+
+  /**
+   * Parks each registered thread right after it takes a stream session mutex that it tried to take
+   * without waiting, until the test releases every parked thread.
+   */
+  private static final class ParkingMutexFactory extends MutexFactory<UUID> {
+
+    private final Map<UUID, ReentrantLock> mutexes = new ConcurrentHashMap<>();
+    private final Set<Thread> parkingThreads = ConcurrentHashMap.newKeySet();
+    private final CountDownLatch parked;
+    private final CountDownLatch released = new CountDownLatch(1);
+
+    private ParkingMutexFactory(int parkedThreads) {
+      parked = new CountDownLatch(parkedThreads);
+    }
+
+    @Override
+    public ReentrantLock getMutex(UUID sessionId) {
+      return mutexes.computeIfAbsent(sessionId, _ -> new ParkingLock());
+    }
+
+    @Override
+    public boolean isAnyMutexHeldByCurrentThread() {
+      return mutexes.values().stream().anyMatch(ReentrantLock::isHeldByCurrentThread);
+    }
+
+    private Void parkAfterTakingAnotherMutex(Runnable action) {
+      parkingThreads.add(Thread.currentThread());
+      action.run();
+      return null;
+    }
+
+    private void awaitParked() throws InterruptedException {
+      assertThat(parked.await(5, TimeUnit.SECONDS))
+          .as("each thread must take another stream session's mutex")
+          .isTrue();
+    }
+
+    private void release() {
+      released.countDown();
+    }
+
+    private final class ParkingLock extends ReentrantLock {
+
+      @Override
+      public boolean tryLock() {
+        var taken = super.tryLock();
+        if (taken && parkingThreads.remove(Thread.currentThread())) {
+          parked.countDown();
+          awaitRelease();
+        }
+
+        return taken;
+      }
+
+      private void awaitRelease() {
+        try {
+          assertThat(released.await(5, TimeUnit.SECONDS))
+              .as("the test must release the parked threads")
+              .isTrue();
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          throw new AssertionError("Interrupted while parked at a stream session mutex", e);
+        }
+      }
+    }
   }
 
   @Test

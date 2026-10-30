@@ -12,6 +12,7 @@ import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
@@ -49,6 +50,7 @@ import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
+import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -94,6 +96,7 @@ class HlsStreamingServiceTest {
   private HlsStreamingService service;
   private SegmentDeliveryCoordinator coordinator;
   private SimpleMeterRegistry meters;
+  private final MutexFactory<UUID> sessionMutex = new MutexFactory<>();
 
   @Test
   @DisplayName("Should reject session creation when the media file has no persisted probe outcome")
@@ -656,6 +659,7 @@ class HlsStreamingServiceTest {
             .properties(properties)
             .runtimeRegistry(registry)
             .heldRequests(executor.heldSegmentRequests())
+            .sessionMutex(sessionMutex)
             .build();
     coordinator = rig.coordinator();
     return HlsStreamingService.builder()
@@ -2101,6 +2105,12 @@ class HlsStreamingServiceTest {
         CompletableFuture.supplyAsync(
             () -> coordinator.deliver(switchingId, "1080p", "1080p/segment1.m4s"));
     transcodeExecutor.awaitLivenessCheckCount(switchingId, "1080p", looks + 1);
+    var switchingMutex = sessionMutex.getMutex(switchingId);
+    await()
+        .pollDelay(Duration.ZERO)
+        .pollInterval(Duration.ofMillis(1))
+        .atMost(Duration.ofSeconds(5))
+        .until(() -> !switchingMutex.isLocked());
     var other = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
     assertThat(switching.getVariantHandles()).containsOnlyKeys("480p", "1080p");
 

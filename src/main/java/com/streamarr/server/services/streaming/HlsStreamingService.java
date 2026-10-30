@@ -104,9 +104,8 @@ public class HlsStreamingService implements StreamingService {
     var refusal = capacityRefusalFor(decision);
     // A left variant only serves its own player's switch back, so it never keeps a new stream
     // session out (ADR 0019).
-    if (refusal.isPresent()
-        && isSlotShortage(refusal.get())
-        && producerLifecycle.stopLeftVariantOfAnotherStreamSession(sessionId)) {
+    if (refusal.isPresent() && isSlotShortage(refusal.get())) {
+      producerLifecycle.stopLeftVariantOfAnotherStreamSession(sessionId, decision);
       refusal = capacityRefusalFor(decision);
     }
 

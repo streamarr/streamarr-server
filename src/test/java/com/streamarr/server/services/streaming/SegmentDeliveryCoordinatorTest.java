@@ -3,9 +3,11 @@ package com.streamarr.server.services.streaming;
 import static com.streamarr.server.fixtures.SegmentRequestFixture.earliestArrivingSegmentRequestBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultLadderSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.sessionWithDurationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.QualityVariant;
@@ -25,6 +27,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -55,6 +58,7 @@ class SegmentDeliveryCoordinatorTest {
   private StreamingProperties properties;
   private ProducerLifecycleService lifecycle;
   private MutableClock clock;
+  private MutexFactory<UUID> sessionMutex;
   private SegmentDeliveryCoordinator coordinator;
 
   @BeforeEach
@@ -63,6 +67,7 @@ class SegmentDeliveryCoordinatorTest {
     segmentStore = new FakeSegmentStore();
     runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
     clock = new MutableClock();
+    sessionMutex = new MutexFactory<>();
     properties =
         StreamingProperties.builder()
             .maxConcurrentTranscodes(3)
@@ -91,6 +96,7 @@ class SegmentDeliveryCoordinatorTest {
         .properties(properties)
         .runtimeRegistry(runtimeRegistry)
         .clock(clock)
+        .sessionMutex(sessionMutex)
         .heldRequests(executor.heldSegmentRequests());
   }
 
@@ -169,8 +175,8 @@ class SegmentDeliveryCoordinatorTest {
         () -> coordinator.deliver(sessionId, variantLabel, segmentName));
   }
 
-  // Delivers on another thread and returns once the request has looked at its variant and found
-  // no segment, so that it is held until a wake or its stall deadline.
+  // Delivers on another thread and returns once the request has looked at its variant, found no
+  // segment and released the session mutex, so that it is held until a wake or its stall deadline.
   private CompletableFuture<SegmentDelivery> heldDelivery(UUID sessionId, String segmentName) {
     return heldDelivery(sessionId, StreamSession.defaultVariant(), segmentName);
   }
@@ -180,6 +186,12 @@ class SegmentDeliveryCoordinatorTest {
     var looks = transcodeExecutor.livenessChecks(sessionId, variantLabel);
     var delivery = deliverAsync(sessionId, variantLabel, segmentName);
     transcodeExecutor.awaitLivenessCheckCount(sessionId, variantLabel, looks + 1);
+    var mutex = sessionMutex.getMutex(sessionId);
+    await()
+        .pollDelay(Duration.ZERO)
+        .pollInterval(Duration.ofMillis(1))
+        .atMost(Duration.ofSeconds(5))
+        .until(() -> !mutex.isLocked());
     return delivery;
   }
 
@@ -1846,6 +1858,191 @@ class SegmentDeliveryCoordinatorTest {
     assertThat(recovery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     upload(switchingId, "1080p/segment3.m4s", new byte[] {3});
     assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  private record SwitchingSession(
+      StreamSession session, CompletableFuture<SegmentDelivery> switched) {
+
+    private UUID sessionId() {
+      return session.getSessionId();
+    }
+  }
+
+  // Plays the first-listed variant, then holds a request for 1080p, so the stream session keeps
+  // 480p as its left variant beside the running switched variant.
+  private SwitchingSession switchingLadderSession() {
+    var session = ladderSessionPlayingFirstListedVariant(3);
+    var switched = heldDelivery(session.getSessionId(), "1080p", "1080p/segment3.m4s");
+    return new SwitchingSession(session, switched);
+  }
+
+  private void deliverSwitch(SwitchingSession switching) throws Exception {
+    upload(switching.sessionId(), "1080p/segment3.m4s", new byte[] {3});
+    assertThat(switching.switched().get(2, TimeUnit.SECONDS))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  private StreamSession suspendedLadderSession() {
+    return suspended(defaultLadderSessionBuilder().build());
+  }
+
+  private StreamSession suspended(StreamSession session) {
+    runtimeRegistry.save(session);
+    lifecycle.startFirstListedVariant(session);
+    lifecycle.suspend(session.getSessionId());
+    return session;
+  }
+
+  private void rebuildRig(int maxConcurrentTranscodes, MutexFactory<UUID> sessionMutex) {
+    this.sessionMutex = sessionMutex;
+    properties =
+        StreamingProperties.builder()
+            .maxConcurrentTranscodes(maxConcurrentTranscodes)
+            .targetSegmentDuration(Duration.ofSeconds(6))
+            .sessionTimeout(Duration.ofSeconds(60))
+            .producerStallThreshold(STALL_THRESHOLD)
+            .build();
+    var rig = rigBuilder(transcodeExecutor, segmentStore).build();
+    lifecycle = rig.lifecycle();
+    coordinator = rig.coordinator();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep another stream session's left variant when the variant that its player switched to does not run")
+  void shouldKeepAnotherStreamSessionsLeftVariantWhenTheVariantThatItsPlayerSwitchedToDoesNotRun()
+      throws Exception {
+    var requesting = suspendedLadderSession();
+    var switching = switchingLadderSession();
+    transcodeExecutor.refuseTarget(ExecutionTargetId.LOCAL);
+    transcodeExecutor.markDead(switching.sessionId(), "1080p");
+    assertThat(switching.switched().get(2, TimeUnit.SECONDS))
+        .isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    startedLadderSession();
+    startedLadderSession();
+    assertThat(lifecycle.freeConfiguredTranscodeSlots()).isZero();
+
+    var delivery = deliverAsync(requesting.getSessionId(), "1080p", "1080p/segment0.m4s");
+
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(runningVariants(switching.session())).containsExactly("480p");
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep another stream session's left variant when its job attempt runs on a worker that cannot run the start")
+  void
+      shouldKeepAnotherStreamSessionsLeftVariantWhenItsJobAttemptRunsOnAWorkerThatCannotRunTheStart()
+          throws Exception {
+    rebuildRig(10, new MutexFactory<>());
+    transcodeExecutor.setExecutionTargets(List.of(TARGET_A, TARGET_B));
+    transcodeExecutor.setTargetEncodableVideoCodecFamilies(TARGET_A, Set.of("h264"));
+    transcodeExecutor.setTargetEncodableVideoCodecFamilies(TARGET_B, Set.of("hevc"));
+    var requesting =
+        suspended(
+            defaultLadderSessionBuilder().transcodeDecision(fullTranscodeDecision("hevc")).build());
+    var switching = switchingLadderSession();
+    transcodeExecutor.limitJobSlots(2);
+    assertThat(transcodeExecutor.availableSlots()).isZero();
+
+    var delivery = deliverAsync(requesting.getSessionId(), "1080p", "1080p/segment0.m4s");
+
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(runningVariants(switching.session())).containsExactlyInAnyOrder("480p", "1080p");
+    deliverSwitch(switching);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep another stream session's left variant when that left variant's job attempt no longer runs")
+  void shouldKeepAnotherStreamSessionsLeftVariantWhenThatLeftVariantsJobAttemptNoLongerRuns()
+      throws Exception {
+    var requesting = suspendedLadderSession();
+    var switching = switchingLadderSession();
+    transcodeExecutor.markDead(switching.sessionId(), "480p");
+    startedLadderSession();
+    assertThat(lifecycle.freeConfiguredTranscodeSlots()).isZero();
+
+    var delivery = deliverAsync(requesting.getSessionId(), "1080p", "1080p/segment0.m4s");
+
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(switching.session().getVariantHandles()).containsOnlyKeys("480p", "1080p");
+    deliverSwitch(switching);
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer a request without waiting when the only other stream session that keeps a left variant is busy")
+  void shouldAnswerARequestWithoutWaitingWhenTheOnlyOtherStreamSessionThatKeepsALeftVariantIsBusy()
+      throws Exception {
+    var sessionMutex = new MutexFactory<UUID>();
+    rebuildRig(3, sessionMutex);
+    var requesting = suspendedLadderSession();
+    var busy = switchingLadderSession();
+    startedLadderSession();
+    var busyMutex = sessionMutex.getMutex(busy.sessionId());
+
+    busyMutex.lock();
+    try {
+      var delivery = deliverAsync(requesting.getSessionId(), "1080p", "1080p/segment0.m4s");
+
+      assertThat(delivery.get(2, TimeUnit.SECONDS))
+          .isInstanceOf(SegmentDelivery.Unrecoverable.class);
+      assertThat(runningVariants(busy.session())).containsExactlyInAnyOrder("480p", "1080p");
+    } finally {
+      busyMutex.unlock();
+    }
+
+    deliverSwitch(busy);
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop the left variant of a stream session that is not busy when another stream session that keeps a left variant is busy")
+  void
+      shouldStopTheLeftVariantOfAStreamSessionThatIsNotBusyWhenAnotherStreamSessionThatKeepsALeftVariantIsBusy()
+          throws Exception {
+    var sessionMutex = new MutexFactory<UUID>();
+    rebuildRig(4, sessionMutex);
+    var requesting = suspendedLadderSession();
+    var requestingId = requesting.getSessionId();
+    var busy = switchingLadderSession();
+    var idle = switchingLadderSession();
+    assertThat(lifecycle.freeConfiguredTranscodeSlots()).isZero();
+    var busyMutex = sessionMutex.getMutex(busy.sessionId());
+
+    busyMutex.lock();
+    try {
+      var delivery = heldDelivery(requestingId, "1080p", "1080p/segment0.m4s");
+
+      assertThat(runningVariants(busy.session())).containsExactlyInAnyOrder("480p", "1080p");
+      assertThat(runningVariants(idle.session())).containsExactly("1080p");
+      upload(requestingId, "1080p/segment0.m4s", new byte[] {0});
+      assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    } finally {
+      busyMutex.unlock();
+    }
+
+    deliverSwitch(busy);
+    deliverSwitch(idle);
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer a request and keep another stream session's left variant when that left variant cannot be stopped")
+  void
+      shouldAnswerARequestAndKeepAnotherStreamSessionsLeftVariantWhenThatLeftVariantCannotBeStopped()
+          throws Exception {
+    var requesting = suspendedLadderSession();
+    var switching = switchingLadderSession();
+    startedLadderSession();
+    transcodeExecutor.failOnStopVariant(switching.sessionId());
+
+    var delivery = deliverAsync(requesting.getSessionId(), "1080p", "1080p/segment0.m4s");
+
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(switching.session().getVariantHandles()).containsOnlyKeys("480p", "1080p");
+    deliverSwitch(switching);
   }
 
   @Test
