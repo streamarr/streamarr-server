@@ -43,7 +43,6 @@ import io.grpc.stub.StreamObserver;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
-import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -62,6 +61,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -274,15 +274,20 @@ final class LiveWorkerConnectionRegistry {
   }
 
   // A playback probe goes first to a worker with a free playback unit, and so leaves background
-  // units to the background probes claimed beside it.
+  // units to the background probes claimed beside it. Each worker's free playback unit is read
+  // once: probes start and finish concurrently, and a sort whose keys change mid-sort may throw
+  // instead of ordering the workers.
   private List<WorkerConnection> candidatesFor(ProbeKind kind) {
     var candidates = List.copyOf(connections.values());
     if (kind != ProbeKind.PLAYBACK) {
       return candidates;
     }
 
-    return candidates.stream()
-        .sorted(Comparator.comparing(connection -> !connection.hasFreePlaybackProbeUnit()))
+    var byFreePlaybackUnit =
+        candidates.stream()
+            .collect(Collectors.partitioningBy(WorkerConnection::hasFreePlaybackProbeUnit));
+    return Stream.concat(
+            byFreePlaybackUnit.get(true).stream(), byFreePlaybackUnit.get(false).stream())
         .toList();
   }
 
