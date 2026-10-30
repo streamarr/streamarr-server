@@ -1753,6 +1753,50 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should skip an encode codec when its entries shrink the source below the smallest picture")
+  void shouldSkipAnEncodeCodecWhenItsEntriesShrinkTheSourceBelowTheSmallestPicture() {
+    var source = probeBuilder("hevc", "aac").width(4096).height(2).build();
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    av1EntryBuilder().maxWidth(1280).maxHeight(720).build(),
+                    h264EntryBuilder().maxWidth(4096).build()))
+            .build();
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .capabilityDeclaration(declaration)
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .build());
+
+    assertThat(decision).map(TranscodeDecision::videoCodecFamily).contains("h264");
+  }
+
+  @ParameterizedTest
+  @CsvSource({"1920, 1", "1, 3"})
+  @DisplayName(
+      "Should choose an encode codec by its codec profile when no encoder can encode the source's"
+          + " picture at any size")
+  void shouldChooseAnEncodeCodecByItsCodecProfileWhenNoEncoderCanEncodeTheSourcesPictureAtAnySize(
+      int width, int height) {
+    var source = probeBuilder("hevc", "aac").width(width).height(height).build();
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .capabilityDeclaration(declaring(H264))
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .build());
+
+    assertThat(decision).map(TranscodeDecision::videoCodecFamily).contains("h264");
+  }
+
+  @Test
   @DisplayName("Should return no decision when no entry of any family fits an encoded variant")
   void shouldReturnNoDecisionWhenNoEntryOfAnyFamilyFitsAnEncodedVariant() {
     var declaration =

@@ -10,6 +10,7 @@ import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Optional;
 import lombok.NonNull;
 import org.springframework.stereotype.Service;
 
@@ -32,15 +33,18 @@ public class QualityLadderService {
    * the standard tiers, or one variant when the source or the viewer's options leave no tier. A
    * fixed quality offers only the default variant. Sizes each variant from the picture that a
    * player shows, after cropping and rotation. A tier that an entry shrinks to the size of a
-   * smaller tier gives way to that tier.
+   * smaller tier gives way to that tier. Returns no variant when the viewer's options leave no
+   * picture that the worker encodes.
    */
   public List<QualityVariant> generateVariants(@NonNull QualityLadderRequest request) {
     var options = request.options();
     var source = request.probe().displayedSize();
     var viewerBounds = viewerBounds(source, options);
     if (!isAutoQuality(options)) {
-      var output = fit(request, viewerBounds, request.probe().bitrate());
-      return List.of(viewerAndEntryBoundedVariant(output, StreamSession.defaultVariant()));
+      return fit(request, viewerBounds, request.probe().bitrate())
+          .map(output -> viewerAndEntryBoundedVariant(output, StreamSession.defaultVariant()))
+          .stream()
+          .toList();
     }
 
     var maxBitrate = resolveMaxBitrate(options);
@@ -59,14 +63,17 @@ public class QualityLadderService {
       }
 
       var bounds = new PictureSize(viewerBounds.width(), tier.height());
-      var variant = tierVariant(fit(request, bounds, tier.videoBitrate()), tier);
-      variants.put(variant.label(), variant);
+      fit(request, bounds, tier.videoBitrate())
+          .map(output -> tierVariant(output, tier))
+          .ifPresent(variant -> variants.put(variant.label(), variant));
     }
 
     if (variants.isEmpty()) {
       var bitrate = withinMaxBitrate(request.probe().bitrate(), maxBitrate);
-      var output = fit(request, viewerBounds, bitrate);
-      return List.of(viewerAndEntryBoundedVariant(output, output.height() + "p"));
+      return fit(request, viewerBounds, bitrate)
+          .map(output -> viewerAndEntryBoundedVariant(output, output.height() + "p"))
+          .stream()
+          .toList();
     }
 
     return List.copyOf(variants.values());
@@ -81,8 +88,9 @@ public class QualityLadderService {
   }
 
   // The decision encodes only a codec family that one entry fits at the source's size, so one
-  // entry fits every smaller picture of the source.
-  private static EncodedVideoOutput fit(
+  // entry fits every smaller picture of the source that the worker encodes. Only bounds below the
+  // smallest such picture leave none.
+  private static Optional<EncodedVideoOutput> fit(
       QualityLadderRequest request, PictureSize bounds, long bitrate) {
     var variantRequest =
         EncodedVariantRequest.builder()
@@ -92,13 +100,7 @@ public class QualityLadderService {
             .frameRate(request.frameRate())
             .bitrate(bitrate)
             .build();
-    return request
-        .capabilityDeclaration()
-        .fitHlsEncode(variantRequest)
-        .orElseThrow(
-            () ->
-                new IllegalStateException(
-                    "No capability entry fits the encode that the transcode decision chose"));
+    return request.capabilityDeclaration().fitHlsEncode(variantRequest);
   }
 
   private static QualityVariant tierVariant(EncodedVideoOutput output, QualityTier tier) {

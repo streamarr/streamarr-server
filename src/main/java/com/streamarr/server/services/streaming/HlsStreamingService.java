@@ -158,17 +158,14 @@ public class HlsStreamingService implements StreamingService {
       return Optional.of(new CreateStreamSessionRejection.FrameRateUnknown());
     }
 
+    // An encode whose ladder has no variant has no picture that the worker encodes.
     var probe = request.source();
     var variants = resolveVariants(command, probe, decision);
-    if (hasInvalidEncodeSize(variants)) {
+    if (variants.isEmpty()) {
       return Optional.of(new CreateStreamSessionRejection.InvalidPictureSize());
     }
 
     return Optional.empty();
-  }
-
-  private static boolean hasInvalidEncodeSize(List<QualityVariant> variants) {
-    return variants.stream().anyMatch(variant -> variant.width() <= 0 || variant.height() <= 0);
   }
 
   // An encode whose encoders all run on workers with no free slot is decided only once a slot is

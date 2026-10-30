@@ -5,6 +5,7 @@ import static com.streamarr.server.domain.streaming.ProbedCodecFamily.H264;
 import static com.streamarr.server.domain.streaming.ProbedCodecFamily.HEVC;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.aacEntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.audioEntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.av1EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.declarationBuilderFor;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
@@ -380,12 +381,81 @@ class HlsStreamingServiceTest {
   }
 
   @ParameterizedTest
-  @CsvSource({"AUTO, 3", "HIGH_720P, 3", "AUTO, 1080"})
-  @DisplayName("Should reject an encode when a planned output width rounds to zero")
-  void shouldRejectAnEncodeWhenAPlannedOutputWidthRoundsToZero(VideoQuality quality, int height) {
+  @CsvSource({"AUTO, 3", "HIGH_720P, 3"})
+  @DisplayName("Should reject an encode when every planned output width rounds to zero")
+  void shouldRejectAnEncodeWhenEveryPlannedOutputWidthRoundsToZero(
+      VideoQuality quality, int height) {
     probeResults.setDefaultProbe(
         defaultProbeBuilder().videoCodec("hevc").width(1).height(height).build());
     var options = StreamingOptions.builder().quality(quality).build();
+    var command = createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    assertThat(service.createSession(command))
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.InvalidPictureSize()));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+    assertThat(service.getActiveSessionCount()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode the next codec family when the preferred family's entries shrink the source"
+          + " below the smallest picture")
+  void
+      shouldEncodeTheNextCodecFamilyWhenThePreferredFamilysEntriesShrinkTheSourceBelowTheSmallestPicture() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").width(4096).height(2).build());
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    av1EntryBuilder().maxWidth(1280).maxHeight(720).build(),
+                    h264EntryBuilder().maxWidth(4096).build()))
+            .build();
+
+    var outcome = service.createSession(createCommandDeclaring(declaration));
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.transcodeDecision().videoCodecFamily()).isEqualTo("h264");
+              assertThat(request.width()).isEqualTo(4096);
+              assertThat(request.height()).isEqualTo(2);
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject the session as having no eligible format when every entry shrinks the source"
+          + " below the smallest picture")
+  void
+      shouldRejectTheSessionAsHavingNoEligibleFormatWhenEveryEntryShrinksTheSourceBelowTheSmallestPicture() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").width(4096).height(2).build());
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().maxWidth(1280).maxHeight(720).build()))
+            .build();
+
+    var outcome = service.createSession(createCommandDeclaring(declaration));
+
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+    assertThat(service.getActiveSessionCount()).isZero();
+  }
+
+  @ParameterizedTest
+  @CsvSource({"AUTO, 1, 0", "AUTO, 0, 1", "FULL_HD_1080P, 1, 0", "FULL_HD_1080P, 0, 1"})
+  @DisplayName(
+      "Should reject an encode as an invalid picture size when the viewer's maximums leave no"
+          + " picture")
+  void shouldRejectAnEncodeAsAnInvalidPictureSizeWhenTheViewersMaximumsLeaveNoPicture(
+      VideoQuality quality, int maxHeight, int maxWidth) {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
+    var options =
+        StreamingOptions.builder().quality(quality).maxHeight(maxHeight).maxWidth(maxWidth).build();
     var command = createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), options);
 
     assertThat(service.createSession(command))
@@ -436,6 +506,21 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStartedRequests())
         .singleElement()
         .satisfies(request -> assertThat(request.bitrate()).isEqualTo(1_000_000L));
+  }
+
+  @Test
+  @DisplayName(
+      "Should offer only the tiers the worker encodes when a narrow picture rounds the smaller tiers"
+          + " to zero width")
+  void shouldOfferOnlyTheTiersTheWorkerEncodesWhenANarrowPictureRoundsTheSmallerTiersToZeroWidth() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").width(1).height(1080).build());
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::width, QualityVariant::height)
+        .containsExactly(tuple(2, 1080));
   }
 
   @Test
