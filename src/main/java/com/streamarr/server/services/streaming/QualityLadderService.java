@@ -49,7 +49,8 @@ public class QualityLadderService {
 
     var variants = new ArrayList<QualityVariant>();
     for (var tier : QualityTier.offeredFor(source)) {
-      if (maxBitrate.isPresent() && tier.videoBitrate() > maxBitrate.getAsLong()) {
+      if (maxBitrate.isPresent()
+          && tier.videoBitrate() + request.audioBitrate() > maxBitrate.getAsLong()) {
         continue;
       }
 
@@ -95,19 +96,42 @@ public class QualityLadderService {
     return new PictureSize(output.width(), output.height());
   }
 
-  // The untiered variant asks for the source's bitrate within the viewer's maximum. A probe that
+  // The untiered variant asks for the source's bitrate within its video budget. A probe that
   // names no source bitrate reports 0, so the variant then asks for the nominal bitrate of the
-  // smallest tier whose box holds the fitted picture, within the viewer's maximum. The entry's
-  // codec level caps each.
+  // smallest tier whose box holds the fitted picture, within the budget. The entry's codec level
+  // caps each.
   private static Optional<EncodedVideoOutput> fitUntiered(
       QualityLadderRequest request, PictureSize bounds, OptionalLong maxBitrate) {
-    var bitrateLimit = maxBitrate.orElse(UNCAPPED_BITRATE);
+    var budget = videoBudget(request, bounds, maxBitrate);
     var sourceBitrate = sourceBitrate(request);
     if (sourceBitrate.isPresent()) {
-      return fit(request, bounds, Math.min(sourceBitrate.getAsLong(), bitrateLimit));
+      return fit(request, budget.bounds(), Math.min(sourceBitrate.getAsLong(), budget.bitrate()));
     }
 
-    return fit(request, bounds, bitrateLimit).map(QualityLadderService::atNominalBitrate);
+    return fit(request, budget.bounds(), budget.bitrate())
+        .map(QualityLadderService::atNominalBitrate);
+  }
+
+  private record VideoBudget(PictureSize bounds, long bitrate) {}
+
+  // The viewer's maximum bitrate covers the video and the stream session's audio. When less than
+  // the 360p tier's video bitrate remains, the variant takes the 360p box and the 360p tier's
+  // bitrate within the maximum, because an encoder reads a zero bitrate as no limit (ADR 0050).
+  private static VideoBudget videoBudget(
+      QualityLadderRequest request, PictureSize bounds, OptionalLong maxBitrate) {
+    if (maxBitrate.isEmpty()) {
+      return new VideoBudget(bounds, UNCAPPED_BITRATE);
+    }
+
+    var remainder = maxBitrate.getAsLong() - request.audioBitrate();
+    var smallest = QualityTier.TIER_360P;
+    if (remainder >= smallest.videoBitrate()) {
+      return new VideoBudget(bounds, remainder);
+    }
+
+    var box = smallest.box().orientedLike(request.probe().displayedSize());
+    return new VideoBudget(
+        within(bounds, box), Math.min(smallest.videoBitrate(), maxBitrate.getAsLong()));
   }
 
   private static OptionalLong sourceBitrate(QualityLadderRequest request) {
