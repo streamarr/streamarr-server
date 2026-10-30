@@ -54,7 +54,7 @@ public class QualityLadderService {
     }
 
     if (variants.isEmpty()) {
-      var size = EncodedPictureSizes.atHeight(source, source.height());
+      var size = EncodedPictureSizes.atHeight(source, maxHeight);
       variants.add(
           QualityVariant.builder()
               .width(size.width())
