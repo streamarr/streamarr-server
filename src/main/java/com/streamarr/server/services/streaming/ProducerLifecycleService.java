@@ -70,8 +70,7 @@ public class ProducerLifecycleService {
   private record VariantKey(UUID sessionId, String variantLabel) {}
 
   @Builder
-  private record PendingSegment(
-      UUID sessionId, String variantLabel, String segmentName, int requestedIndex, long arrival) {}
+  private record PendingSegment(SegmentRequest request, int requestedIndex) {}
 
   /**
    * Observes progress and decides whether to wait, replace, or exhaust under the same session mutex
@@ -108,9 +107,10 @@ public class ProducerLifecycleService {
 
   // Once a newer request has started the variant's job attempt, an older request that would start
   // another one would move the variant away from the newer request's segment.
-  private boolean isSuperseded(UUID sessionId, String variantLabel, long arrival) {
-    var newestStartingArrival = newestStartingArrivals.get(new VariantKey(sessionId, variantLabel));
-    return newestStartingArrival != null && newestStartingArrival > arrival;
+  private boolean isSuperseded(SegmentRequest request) {
+    var newestStartingArrival =
+        newestStartingArrivals.get(new VariantKey(request.sessionId(), request.variantLabel()));
+    return newestStartingArrival != null && newestStartingArrival > request.arrival();
   }
 
   /**
@@ -182,9 +182,8 @@ public class ProducerLifecycleService {
       return RecoveryResult.VARIANT_NOT_RUNNING;
     }
 
-    if (isSuperseded(sessionId, variantLabel, request.arrival())
-        && needsPositioning(session, variantLabel, segmentName)) {
-      return superseded(sessionId, variantLabel, segmentName);
+    if (isSuperseded(request) && needsPositioning(session, variantLabel, segmentName)) {
+      return superseded(request);
     }
 
     var positioned = tryEnsurePositioned(session, variantLabel, segmentName);
@@ -194,11 +193,8 @@ public class ProducerLifecycleService {
             new VariantKey(sessionId, variantLabel), _ -> new VariantDeliveryState());
     var pending =
         PendingSegment.builder()
-            .sessionId(sessionId)
-            .variantLabel(variantLabel)
-            .segmentName(segmentName)
+            .request(request)
             .requestedIndex(SegmentNames.indexOf(segmentName).orElseGet(session::getCurrentSegment))
-            .arrival(request.arrival())
             .build();
     if (handle.status() == TranscodeStatus.FAILED
         && !state.resetForFreshTargets(
@@ -213,13 +209,12 @@ public class ProducerLifecycleService {
     return session.isSuspended() || requiresRelocation(session, variantLabel, segmentName);
   }
 
-  private static RecoveryResult superseded(
-      UUID sessionId, String variantLabel, String segmentName) {
+  private static RecoveryResult superseded(SegmentRequest request) {
     log.info(
         "Ended the request for {} of session {}: a newer request started variant {}",
-        segmentName,
-        sessionId,
-        variantLabel);
+        request.segmentName(),
+        request.sessionId(),
+        request.variantLabel());
     return RecoveryResult.SUPERSEDED;
   }
 
@@ -244,15 +239,16 @@ public class ProducerLifecycleService {
 
   private RecoveryResult attemptRecovery(
       VariantDeliveryState state, PendingSegment pending, boolean positioned) {
+    var request = pending.request();
     while (true) {
-      var session = runtimeRegistry.findById(pending.sessionId()).orElse(null);
+      var session = runtimeRegistry.findById(request.sessionId()).orElse(null);
       if (session == null) {
         return RecoveryResult.SESSION_GONE;
       }
 
-      var handle = session.getVariantHandle(pending.variantLabel()).orElseThrow();
+      var handle = session.getVariantHandle(request.variantLabel()).orElseThrow();
       syncProgress(state, handle, pending);
-      var running = transcodeExecutor.isRunning(pending.sessionId(), pending.variantLabel());
+      var running = transcodeExecutor.isRunning(request.sessionId(), request.variantLabel());
       if (running && !hasStalled(state)) {
         return RecoveryResult.WAITING;
       }
@@ -262,15 +258,15 @@ public class ProducerLifecycleService {
         return RecoveryResult.WAITING;
       }
 
-      var eligibleTargets = eligibleTargets(session, pending.variantLabel());
+      var eligibleTargets = eligibleTargets(session, request.variantLabel());
       // Segment publication is external to the session mutex and may advance during discovery.
       syncProgress(state, handle, pending);
       if (noLongerNeedsRecovery(state, pending, running)) {
         return RecoveryResult.WAITING;
       }
 
-      if (isSuperseded(pending.sessionId(), pending.variantLabel(), pending.arrival())) {
-        return superseded(pending.sessionId(), pending.variantLabel(), pending.segmentName());
+      if (isSuperseded(request)) {
+        return superseded(request);
       }
 
       var target = state.nextTarget(eligibleTargets);
@@ -280,9 +276,9 @@ public class ProducerLifecycleService {
 
       var command =
           ReplaceProducerCommand.builder()
-              .sessionId(pending.sessionId())
-              .variantLabel(pending.variantLabel())
-              .segmentName(pending.segmentName())
+              .sessionId(request.sessionId())
+              .variantLabel(request.variantLabel())
+              .segmentName(request.segmentName())
               .segmentIndex(pending.requestedIndex())
               .expectedAttemptId(handle.attemptId())
               .reason(reason)
@@ -305,20 +301,22 @@ public class ProducerLifecycleService {
 
   private boolean noLongerNeedsRecovery(
       VariantDeliveryState state, PendingSegment pending, boolean running) {
-    return segmentStore.segmentExists(pending.sessionId(), pending.segmentName())
+    return segmentStore.segmentExists(
+            pending.request().sessionId(), pending.request().segmentName())
         || (running && !hasStalled(state));
   }
 
   private RecoveryResult exhaust(
       VariantDeliveryState state, PendingSegment pending, UUID expectedAttemptId) {
-    if (!doExhaust(pending.sessionId(), pending.variantLabel(), expectedAttemptId)) {
+    if (!doExhaust(
+        pending.request().sessionId(), pending.request().variantLabel(), expectedAttemptId)) {
       return RecoveryResult.WAITING;
     }
 
     log.warn(
         "Recovery exhausted for session {} variant {}: every eligible execution target in {} was tried",
-        pending.sessionId(),
-        pending.variantLabel(),
+        pending.request().sessionId(),
+        pending.request().variantLabel(),
         state.attemptedTargets());
     return RecoveryResult.EXHAUSTED;
   }
@@ -361,7 +359,8 @@ public class ProducerLifecycleService {
         handle,
         index ->
             segmentStore.segmentExists(
-                pending.sessionId(), SegmentNames.siblingName(pending.segmentName(), index)),
+                pending.request().sessionId(),
+                SegmentNames.siblingName(pending.request().segmentName(), index)),
         clock.instant());
   }
 

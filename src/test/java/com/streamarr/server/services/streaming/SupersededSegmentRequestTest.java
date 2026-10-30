@@ -136,7 +136,9 @@ class SupersededSegmentRequestTest {
   }
 
   // Wakes the variant's held requests without pause until closed, as a run of uploads and ended
-  // job attempts does, so that every held request keeps looking at the variant.
+  // job attempts does, so that every held request keeps looking at the variant. The waker yields
+  // after
+  // each wake so that the held requests still run on a two-core runner.
   private AutoCloseable wakingContinuously(UUID sessionId) {
     var waking = new AtomicBoolean(true);
     var waker =
@@ -146,6 +148,7 @@ class SupersededSegmentRequestTest {
                 () -> {
                   while (waking.get()) {
                     transcodeExecutor.heldSegmentRequests().wakeVariant(sessionId, VARIANT);
+                    Thread.yield();
                   }
                 });
     return () -> {

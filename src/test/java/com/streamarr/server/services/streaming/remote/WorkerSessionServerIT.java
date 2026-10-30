@@ -6,7 +6,7 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChanne
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.streamCopyDecision;
-import static com.streamarr.server.fixtures.SegmentRequestFixture.segmentRequest;
+import static com.streamarr.server.fixtures.SegmentRequestFixture.earliestArrivingSegmentRequest;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -931,7 +931,7 @@ class WorkerSessionServerIT {
 
           var recovery =
               lifecycle.recover(
-                  segmentRequest(
+                  earliestArrivingSegmentRequest(
                       session.getSessionId(), StreamSession.defaultVariant(), "segment0.m4s"));
 
           assertThat(recovery).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);

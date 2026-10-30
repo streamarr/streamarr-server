@@ -80,13 +80,13 @@ public class SegmentDeliveryCoordinator {
 
     return switch (producerLifecycle.recover(request)) {
       case EXHAUSTED, VARIANT_NOT_RUNNING, SUPERSEDED ->
-          exhaustedDelivery(request.sessionId(), request.segmentName());
+          unrecoverableDelivery(request.sessionId(), request.segmentName());
       case SESSION_GONE, SEGMENT_NOT_ADVERTISED -> new SegmentDelivery.SessionEnded();
       case WAITING -> null;
     };
   }
 
-  private SegmentDelivery exhaustedDelivery(UUID sessionId, String segmentName) {
+  private SegmentDelivery unrecoverableDelivery(UUID sessionId, String segmentName) {
     var lastPublication = tryRead(sessionId, segmentName);
     if (lastPublication != null) {
       return lastPublication;
