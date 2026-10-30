@@ -40,6 +40,7 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
+import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
@@ -47,6 +48,7 @@ import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
+import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
@@ -114,6 +116,29 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.videoCodecFamily()).isEqualTo("h264");
     assertThat(decision.videoSource()).isEqualTo(source.videoPlaybackFacts());
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
+  }
+
+  @ParameterizedTest
+  @CsvSource({"COPY_OR_ENCODE, VIDEO_TRANSCODE", "COPY_ONLY, "})
+  @DisplayName("Should not copy the video when the source exceeds the viewer's limits")
+  void shouldNotCopyTheVideoWhenTheSourceExceedsTheViewersLimits(
+      VideoFormatConstraint constraint, TranscodeMode expectedMode) {
+    var limits =
+        ViewerLimits.of(StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build());
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(probe("h264", "aac"))
+                .capabilityDeclaration(declaring(H264))
+                .encodableVideoCodecFamilies(Set.of("h264"))
+                .videoFormatConstraint(constraint)
+                .viewerLimits(limits)
+                .build());
+
+    assertThat(decision.map(TranscodeDecision::transcodeMode))
+        .isEqualTo(Optional.ofNullable(expectedMode));
+    assertThat(meterRegistry.find(STREAM_COPY_REFUSALS).counter()).isNull();
   }
 
   @Test

@@ -58,17 +58,19 @@ public class TranscodeDecisionService {
   private final MeterRegistry meterRegistry;
 
   /**
-   * A copy needs a video capability entry for HLS that accepts the copy. An encode uses, among the
-   * codecs that a worker-verified encoder encodes (ADR 0009), the one whose video capability entry
-   * for HLS fits an encoded variant of the source at the highest frame rate, and the first in the
-   * preference on a tie (ADR 0049). The audio follows the audio capability entries for HLS. Returns
-   * empty when neither a copy nor a supported encode satisfies the request's constraints.
+   * A copy needs a video capability entry for HLS that accepts the copy, and a source that fits the
+   * viewer's limits (ADR 0050). An encode uses, among the codecs that a worker-verified encoder
+   * encodes (ADR 0009), the one whose video capability entry for HLS fits an encoded variant of the
+   * source at the highest frame rate, and the first in the preference on a tie (ADR 0049). The
+   * audio follows the audio capability entries for HLS. Returns empty when neither a copy nor a
+   * supported encode satisfies the request's constraints.
    */
   public Optional<TranscodeDecision> decide(@NonNull TranscodeDecisionRequest request) {
     var source = request.source();
     var declaration = request.capabilityDeclaration();
     boolean videoCopyable =
         request.videoFormatConstraint() != VideoFormatConstraint.ENCODE_ONLY
+            && request.viewerLimits().allowsCopyOf(source)
             && decideVideoCopy(source, declaration);
     if (!videoCopyable && request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
       return Optional.empty();
