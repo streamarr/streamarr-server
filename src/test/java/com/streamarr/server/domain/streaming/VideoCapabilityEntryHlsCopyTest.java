@@ -2,6 +2,7 @@ package com.streamarr.server.domain.streaming;
 
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.fixtures.VideoStreamCopyFixture;
 import java.util.Map;
@@ -217,6 +218,14 @@ class VideoCapabilityEntryHlsCopyTest {
   @DisplayName("Should accept a copy when every property is known and within the entry")
   void shouldAcceptACopyWhenEveryPropertyIsKnownAndWithinTheEntry() {
     assertThat(ENTRY.acceptsHlsCopy(fittingCopy().build())).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should refuse to judge a copy when the caller passes none")
+  void shouldRefuseToJudgeACopyWhenTheCallerPassesNone() {
+    assertThatThrownBy(() -> ENTRY.acceptsHlsCopy(null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("copy");
   }
 
   @Test
