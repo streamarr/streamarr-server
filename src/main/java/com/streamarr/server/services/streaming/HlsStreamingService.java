@@ -94,16 +94,12 @@ public class HlsStreamingService implements StreamingService {
     }
 
     var decision = candidate.orElseThrow();
+    var encodeRejection = encodeRejection(request, decision);
+    if (encodeRejection.isPresent()) {
+      return Outcome.rejected(encodeRejection.get());
+    }
+
     var variants = resolveVariants(probe, options, decision);
-    if (requiresVideoTranscode(decision.transcodeMode()) && hasInvalidEncodeSize(probe, variants)) {
-      return Outcome.rejected(new CreateStreamSessionRejection.InvalidPictureSize());
-    }
-
-    // Workers encode at the probed frame rate and refuse an encode without one.
-    if (requiresVideoTranscode(decision.transcodeMode()) && probe.framerate().isEmpty()) {
-      return Outcome.rejected(new CreateStreamSessionRejection.FrameRateUnknown());
-    }
-
     var sessionId = command.streamSessionId();
     var refusal = capacityRefusalFor(decision);
     // A left variant only serves its own player's switch back, so it never keeps a new stream
@@ -147,6 +143,27 @@ public class HlsStreamingService implements StreamingService {
         variants.size());
 
     return Outcome.accepted(session);
+  }
+
+  // Why no worker can run the decision's encode, whatever slots are free.
+  private Optional<CreateStreamSessionRejection> encodeRejection(
+      TranscodeDecisionRequest request, TranscodeDecision decision) {
+    if (!requiresVideoTranscode(decision.transcodeMode())) {
+      return Optional.empty();
+    }
+
+    var probe = request.source();
+    var variants = resolveVariants(probe, request.clientOptions(), decision);
+    if (hasInvalidEncodeSize(probe, variants)) {
+      return Optional.of(new CreateStreamSessionRejection.InvalidPictureSize());
+    }
+
+    // Workers encode at the probed frame rate and refuse an encode without one.
+    if (probe.framerate().isEmpty()) {
+      return Optional.of(new CreateStreamSessionRejection.FrameRateUnknown());
+    }
+
+    return Optional.empty();
   }
 
   private static boolean hasInvalidEncodeSize(MediaProbe probe, List<QualityVariant> variants) {
