@@ -649,6 +649,54 @@ class LiveWorkerConnectionRegistryTest {
     assertThat(targets).hasSize(2).first().isEqualTo(hardwareTarget);
   }
 
+  @Test
+  @DisplayName(
+      "Should start a variant on the software worker when the hardware worker ordered next loses its"
+          + " encoder while the dispatch waits on the first hardware worker")
+  void
+      shouldStartVariantOnSoftwareWorkerWhenHardwareWorkerOrderedNextLosesItsEncoderWhileDispatchWaitsOnFirstHardwareWorker()
+          throws Exception {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var nvenc =
+        keyframeVerifiedHardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc");
+    var gated = new GatedDispatchObserver();
+    var gatedSession = registry.register(WORKER_ID, registration(WORKER_ID, nvenc), gated);
+    var withdrawnWorkerId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    var withdrawnRegistration = registration(withdrawnWorkerId, 2).toBuilder();
+    withdrawnRegistration.getCapabilitiesBuilder().addVideoEncoders(nvenc);
+    var withdrawnSession =
+        registry.register(
+            withdrawnWorkerId, withdrawnRegistration.build(), new CancellableObserver());
+    var softwareWorkerId = UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
+    registry.register(
+        softwareWorkerId,
+        registration(softwareWorkerId, libx264Encoder()),
+        new CancellableObserver());
+    var running = encodeJob("h264");
+    assertThat(
+            registry.dispatchTo(
+                new ExecutionTargetId(withdrawnSession.toString()),
+                running,
+                RemoteEncoderBackendMapper.workerVerifiedEncoder(nvenc).orElseThrow()))
+        .isPresent();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var dispatching = executor.submit(() -> registry.dispatch(encodeJob("h264")));
+      assertThat(gated.dispatchReached.await(5, TimeUnit.SECONDS)).isTrue();
+
+      registry.checkReportedEncoderBackend(
+          withdrawnWorkerId, withdrawnSession, libx264Started(running.getJobAttemptId()));
+      registry.disconnect(WORKER_ID, gatedSession);
+      gated.dispatchRelease.countDown();
+
+      assertThat(dispatching.get(5, TimeUnit.SECONDS))
+          .flatMap(VariantDispatch::encoder)
+          .contains(WorkerVerifiedEncoderFixture.libx264());
+    } finally {
+      gated.dispatchRelease.countDown();
+    }
+  }
+
   private static ExecutionTargetId registerSoftwareThenHardwareAv1Workers(
       LiveWorkerConnectionRegistry registry) {
     var hardwareWorkerId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
