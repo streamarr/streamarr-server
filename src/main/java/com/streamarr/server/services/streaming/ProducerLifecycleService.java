@@ -638,13 +638,12 @@ public class ProducerLifecycleService {
         .filter(playing -> canProduceWithoutRelocation(session, playing, requestedIndex));
   }
 
+  // A job attempt that no longer runs still holds its configured transcode slot until its handle
+  // goes, so only a running job attempt keeps its variant.
   private boolean canProduceWithoutRelocation(
       StreamSession session, String variantLabel, int segmentIndex) {
-    var active =
-        session
-            .getVariantHandle(variantLabel)
-            .filter(handle -> handle.status() == TranscodeStatus.ACTIVE);
-    if (active.isEmpty()) {
+    if (session.getVariantHandle(variantLabel).isEmpty()
+        || !transcodeExecutor.isRunning(session.getSessionId(), variantLabel)) {
       return false;
     }
 

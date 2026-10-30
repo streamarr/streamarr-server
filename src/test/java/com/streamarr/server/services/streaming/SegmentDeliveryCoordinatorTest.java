@@ -1649,6 +1649,57 @@ class SegmentDeliveryCoordinatorTest {
 
   @Test
   @DisplayName(
+      "Should drop the suspended variant that the player left at the next media segment request when an initialization request resumes the switched variant")
+  void
+      shouldDropTheSuspendedVariantThatThePlayerLeftAtTheNextMediaSegmentRequestWhenAnInitializationRequestResumesTheSwitchedVariant()
+          throws Exception {
+    var session = ladderSessionPlayingFirstListedVariant(3);
+    var sessionId = session.getSessionId();
+    lifecycle.prepareRequestedVariant(sessionId, "1080p", "1080p/segment3.m4s");
+    lifecycle.suspend(sessionId);
+    assertThat(session.getVariantHandles().values())
+        .extracting(TranscodeHandle::status)
+        .containsOnly(TranscodeStatus.SUSPENDED)
+        .hasSize(2);
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    var resumed = deliverAsync(sessionId, "1080p", "1080p/init.mp4");
+    transcodeExecutor.awaitStartedRequestCount(startedBefore + 1);
+    upload(sessionId, "1080p/init.mp4", new byte[] {0x66});
+    assertThat(resumed.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(session.getVariantHandles()).containsOnlyKeys("480p", "1080p");
+
+    var next = heldDelivery(sessionId, "1080p", "1080p/segment3.m4s");
+
+    assertThat(session.getVariantHandles()).containsOnlyKeys("1080p");
+    upload(sessionId, "1080p/segment3.m4s", new byte[] {3});
+    assertThat(next.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(startedSince(startedBefore))
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.variantLabel()).isEqualTo("1080p");
+              assertThat(request.startSequenceNumber()).isEqualTo(3);
+            });
+  }
+
+  @Test
+  @DisplayName("Should stop the variant that the player leaves when its job attempt no longer runs")
+  void shouldStopTheVariantThatThePlayerLeavesWhenItsJobAttemptNoLongerRuns() throws Exception {
+    var session = ladderSessionPlayingFirstListedVariant(3);
+    var sessionId = session.getSessionId();
+    transcodeExecutor.markDead(sessionId, "480p");
+
+    var switched = heldDelivery(sessionId, "1080p", "1080p/segment3.m4s");
+
+    assertThat(session.getVariantHandles()).containsOnlyKeys("1080p");
+    assertThat(lifecycle.freeConfiguredTranscodeSlots()).isEqualTo(2);
+    upload(sessionId, "1080p/segment3.m4s", new byte[] {3});
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  @Test
+  @DisplayName(
       "Should keep the variant that the player switched back to running when the switched variant's first media segment is read while the player switches back")
   void
       shouldKeepTheVariantThatThePlayerSwitchedBackToRunningWhenTheSwitchedVariantsFirstMediaSegmentIsReadWhileThePlayerSwitchesBack()
