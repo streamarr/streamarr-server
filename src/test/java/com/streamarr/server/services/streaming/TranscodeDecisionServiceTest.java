@@ -64,6 +64,7 @@ import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -87,6 +88,8 @@ class TranscodeDecisionServiceTest {
       ProbeFixture.keyframesEvery(Duration.ofMillis(10_010), Duration.ofMinutes(120));
 
   private static final Set<String> EVERY_VIDEO_CODEC_FAMILY = Set.of("h264", "hevc", "av1");
+  // A worker encodes AV1 in hardware, so AV1 comes before H.264 when both keep the frame rate.
+  private static final Set<String> HARDWARE_AV1 = Set.of("av1");
 
   private static final String STREAM_COPY_REFUSALS = "streamarr.streaming.stream_copy_refusals";
 
@@ -425,7 +428,7 @@ class TranscodeDecisionServiceTest {
             .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
-    assertThat(decision.videoCodecFamily()).isEqualTo("av1");
+    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
   }
 
   @Test
@@ -710,9 +713,13 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.audioDecision().codec()).isEqualTo("aac");
   }
 
-  @Test
-  @DisplayName("Should prefer AV1 over H264 when client supports both")
-  void shouldPreferAv1OverH264WhenClientSupportsBoth() {
+  @ParameterizedTest(name = "hardware encoders for {0}")
+  @MethodSource("hardwareEncodedFamiliesAndExpectedEncode")
+  @DisplayName(
+      "Should prefer H.264 over AV1 unless a worker that can run the encode encodes AV1 in hardware"
+          + " when the client declares both")
+  void shouldPreferH264OverAv1UnlessAWorkerThatCanRunTheEncodeEncodesAv1InHardware(
+      Set<String> hardwareEncodedFamilies, String expectedCodecFamily) {
     var source = probe("hevc", "aac");
     var declaration = declaring(AV1, H264);
 
@@ -723,21 +730,33 @@ class TranscodeDecisionServiceTest {
                     .source(source)
                     .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .hardwareEncodableVideoCodecFamilies(hardwareEncodedFamilies)
                     .build())
             .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
-    assertThat(decision.videoCodecFamily()).isEqualTo("av1");
+    assertThat(decision.videoCodecFamily()).isEqualTo(expectedCodecFamily);
+  }
+
+  static Stream<Arguments> hardwareEncodedFamiliesAndExpectedEncode() {
+    return Stream.of(
+        Arguments.of(Set.of(), "h264"),
+        Arguments.of(Set.of("h264"), "h264"),
+        Arguments.of(Set.of("av1"), "av1"),
+        Arguments.of(Set.of("h264", "av1"), "av1"));
   }
 
   @ParameterizedTest
-  @CsvSource({"60, h264", "30, av1"})
+  @CsvSource({"30, 60, av1, h264", "60, 30, , av1", "30, 30, av1, av1", "30, 30, , h264"})
   @DisplayName(
-      "Should encode the codec family that keeps the higher frame rate, preferring AV1 on a tie,"
-          + " when the families' entries allow different frame rates")
+      "Should encode the codec family that keeps the higher frame rate before preferring a codec"
+          + " family when the families' entries allow different frame rates")
   void
-      shouldEncodeTheCodecFamilyThatKeepsTheHigherFrameRateWhenTheFamiliesEntriesAllowDifferentRates(
-          double h264MaxFrameRate, String expectedCodecFamily) {
+      shouldEncodeTheCodecFamilyThatKeepsTheHigherFrameRateBeforePreferringACodecFamilyWhenTheFamiliesEntriesAllowDifferentRates(
+          double av1MaxFrameRate,
+          double h264MaxFrameRate,
+          String hardwareEncodedFamily,
+          String expectedCodecFamily) {
     var source =
         probeVersion5H264(
             new PictureSize(1920, 1080),
@@ -746,7 +765,7 @@ class TranscodeDecisionServiceTest {
         defaultDeclarationBuilder()
             .video(
                 List.of(
-                    av1EntryBuilder().maxFrameRate(30).build(),
+                    av1EntryBuilder().maxFrameRate(av1MaxFrameRate).build(),
                     h264EntryBuilder().maxFrameRate(h264MaxFrameRate).build()))
             .build();
 
@@ -758,6 +777,8 @@ class TranscodeDecisionServiceTest {
                     .capabilityDeclaration(declaration)
                     .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .hardwareEncodableVideoCodecFamilies(
+                        Stream.ofNullable(hardwareEncodedFamily).collect(Collectors.toSet()))
                     .build())
             .orElseThrow();
 
@@ -1722,6 +1743,7 @@ class TranscodeDecisionServiceTest {
                     .source(probe("hevc", "aac"))
                     .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .hardwareEncodableVideoCodecFamilies(Set.of(skippedFamily))
                     .build())
             .orElseThrow();
 
@@ -1771,6 +1793,7 @@ class TranscodeDecisionServiceTest {
                     .source(probe("hevc", "aac"))
                     .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .hardwareEncodableVideoCodecFamilies(HARDWARE_AV1)
                     .build())
             .orElseThrow();
 
@@ -1869,6 +1892,7 @@ class TranscodeDecisionServiceTest {
                 .source(source)
                 .capabilityDeclaration(declaration)
                 .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .hardwareEncodableVideoCodecFamilies(HARDWARE_AV1)
                 .build());
 
     assertThat(decision).map(TranscodeDecision::videoCodecFamily).contains("h264");

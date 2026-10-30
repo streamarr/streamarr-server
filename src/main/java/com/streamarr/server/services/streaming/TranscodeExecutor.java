@@ -90,6 +90,12 @@ public interface TranscodeExecutor {
   Set<String> encodableVideoCodecFamilies();
 
   /**
+   * The video codec families that a connected worker with a free slot can encode with a
+   * worker-verified hardware encoder.
+   */
+  Set<String> hardwareEncodableVideoCodecFamilies();
+
+  /**
    * The codec families of connected, source-accessible worker-verified encoders, including busy
    * workers.
    */

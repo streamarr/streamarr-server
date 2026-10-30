@@ -405,6 +405,7 @@ class HlsStreamingServiceTest {
           + " below the smallest picture")
   void
       shouldEncodeTheNextCodecFamilyWhenThePreferredFamilysEntriesShrinkTheSourceBelowTheSmallestPicture() {
+    transcodeExecutor.setHardwareEncodableVideoCodecFamilies(Set.of("av1"));
     probeResults.setDefaultProbe(
         defaultProbeBuilder().videoCodec("hevc").width(4096).height(2).build());
     var declaration =
@@ -1701,7 +1702,7 @@ class HlsStreamingServiceTest {
             PlaybackFormatAttempt.Ready.class,
             ready ->
                 assertThat(ready.session().getTranscodeDecision().videoCodecFamily())
-                    .isEqualTo("av1"));
+                    .isEqualTo("h264"));
 
     var recovered =
         playback
@@ -1719,7 +1720,7 @@ class HlsStreamingServiceTest {
             PlaybackFormatAttempt.Ready.class,
             ready ->
                 assertThat(ready.session().getTranscodeDecision().videoCodecFamily())
-                    .isEqualTo("h264"));
+                    .isEqualTo("av1"));
   }
 
   private PlaybackSessionService logicalPlayback() {
@@ -1894,11 +1895,12 @@ class HlsStreamingServiceTest {
 
   @Test
   @DisplayName(
-      "Should encode AV1 with the whole ladder when one AV1 encode slot is free and workers that encode only H.264 have more")
+      "Should encode AV1 with the whole ladder when one hardware AV1 encode slot is free and workers that encode only H.264 have more")
   void
-      shouldEncodeAv1WithTheWholeLadderWhenOneAv1EncodeSlotIsFreeAndWorkersThatEncodeOnlyH264HaveMore() {
+      shouldEncodeAv1WithTheWholeLadderWhenOneHardwareAv1EncodeSlotIsFreeAndWorkersThatEncodeOnlyH264HaveMore() {
     transcodeExecutor.setAvailableSlots(4);
     transcodeExecutor.setEncodeSlots(Map.of("h264", 3, "av1", 1));
+    transcodeExecutor.setHardwareEncodableVideoCodecFamilies(Set.of("av1"));
     probeResults.setDefaultProbe(
         defaultProbeBuilder()
             .framerate(OptionalDouble.of(23.976))
@@ -1939,6 +1941,36 @@ class HlsStreamingServiceTest {
         .singleElement()
         .extracting(request -> request.transcodeDecision().videoCodecFamily())
         .isEqualTo("h264");
+  }
+
+  // A software AV1 encoder falls behind real time on a large source, while H.264 keeps up.
+  @ParameterizedTest(name = "hardware encoders for {0}")
+  @MethodSource("hardwareEncodedFamiliesAndExpectedEncode")
+  @DisplayName(
+      "Should encode AV1 for a client that declares AV1 and H.264 only when a worker with a free"
+          + " slot encodes AV1 in hardware")
+  void
+      shouldEncodeAv1ForAClientThatDeclaresAv1AndH264OnlyWhenAWorkerWithAFreeSlotEncodesAv1InHardware(
+          Set<String> hardwareEncodedFamilies, String expectedCodecFamily) {
+    transcodeExecutor.setHardwareEncodableVideoCodecFamilies(hardwareEncodedFamilies);
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").width(3840).height(2160).build());
+
+    var session = createSession(seedMediaFile().getId(), av1AndH264Declaration());
+
+    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo(expectedCodecFamily);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(request -> request.transcodeDecision().videoCodecFamily())
+        .isEqualTo(expectedCodecFamily);
+  }
+
+  static Stream<Arguments> hardwareEncodedFamiliesAndExpectedEncode() {
+    return Stream.of(
+        Arguments.of(Set.of(), "h264"),
+        Arguments.of(Set.of("h264"), "h264"),
+        Arguments.of(Set.of("av1"), "av1"),
+        Arguments.of(Set.of("h264", "av1"), "av1"));
   }
 
   @Test

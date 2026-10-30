@@ -485,6 +485,18 @@ final class LiveWorkerConnectionRegistry {
         .collect(Collectors.toUnmodifiableSet());
   }
 
+  Set<String> hardwareEncodableVideoCodecFamilies(UUID sourceNamespaceId) {
+    var sourceNamespace = toProto(sourceNamespaceId);
+    return connections.values().stream()
+        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
+        .filter(connection -> connection.availableSlots() > 0)
+        .flatMap(connection -> connection.countedEncoders.values().stream())
+        .map(WorkerVerifiedEncoder::backend)
+        .filter(backend -> backend.kind() == EncoderBackend.Kind.HARDWARE)
+        .map(EncoderBackend::codecFamily)
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
   private static boolean isCountedForEncodes(WorkerVerifiedEncoder encoder) {
     return encoder.backend().kind() == EncoderBackend.Kind.SOFTWARE || encoder.keyframeVerified();
   }
