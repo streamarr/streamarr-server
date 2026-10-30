@@ -22,6 +22,7 @@ import java.util.OptionalDouble;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
@@ -48,6 +49,11 @@ public class ProducerLifecycleService {
   @Builder.Default private final Clock clock = Clock.systemUTC();
   private final ConcurrentHashMap<VariantKey, VariantDeliveryState> recoveryStates =
       new ConcurrentHashMap<>();
+  private final AtomicLong requestArrivals = new AtomicLong();
+  // The newest request that positioned each variant: started it on demand, relocated it or resumed
+  // it (ADR 0019).
+  private final ConcurrentHashMap<VariantKey, SegmentRequest> newestPositioningRequests =
+      new ConcurrentHashMap<>();
 
   public enum RecoveryResult {
     WAITING,
@@ -56,21 +62,48 @@ public class ProducerLifecycleService {
     SEGMENT_NOT_ADVERTISED,
     // A request for another video variant stopped the variant, or its on-demand start failed.
     // Only a new request for the variant starts it again (ADR 0019).
-    VARIANT_NOT_RUNNING
+    VARIANT_NOT_RUNNING,
+    // A newer request positioned the variant, and the request's segment needs the variant
+    // relocated or resumed. Only a request at least as new may relocate or resume it (ADR 0019).
+    SUPERSEDED
   }
 
   private record VariantKey(UUID sessionId, String variantLabel) {}
 
   @Builder
-  private record PendingSegment(
-      UUID sessionId, String variantLabel, String segmentName, int requestedIndex) {}
+  private record PendingSegment(SegmentRequest request, int requestedIndex) {}
 
   /**
    * Observes progress and decides whether to wait, replace, or exhaust under the same session mutex
-   * as every producer mutation. Recovery bookkeeping is committed before releasing it.
+   * as every producer mutation. Recovery state is committed before releasing it. Once a newer
+   * request has positioned the variant, this request never relocates or resumes it: it ends as
+   * {@link RecoveryResult#SUPERSEDED} when its segment needs either. Any request still replaces a
+   * dead or stalled job attempt.
    */
-  public RecoveryResult recover(UUID sessionId, String variantLabel, String segmentName) {
-    return withSessionLock(sessionId, () -> doRecover(sessionId, variantLabel, segmentName));
+  public RecoveryResult recover(SegmentRequest request) {
+    return withSessionLock(request.sessionId(), () -> doRecover(request));
+  }
+
+  // Also remembered when the relocation or resume fails, so the replacement starts at this
+  // request's segment (ADR 0019).
+  private void rememberNewestPositioningRequest(SegmentRequest request) {
+    newestPositioningRequests.put(variantKeyOf(request), request);
+  }
+
+  // Once a newer request has positioned the variant, an older request that relocated or resumed it
+  // would move the variant away from the newer request's segment.
+  private boolean isSuperseded(SegmentRequest request) {
+    return newestPositioningRequest(request)
+        .filter(newest -> newest.arrival() > request.arrival())
+        .isPresent();
+  }
+
+  private Optional<SegmentRequest> newestPositioningRequest(SegmentRequest request) {
+    return Optional.ofNullable(newestPositioningRequests.get(variantKeyOf(request)));
+  }
+
+  private static VariantKey variantKeyOf(SegmentRequest request) {
+    return new VariantKey(request.sessionId(), request.variantLabel());
   }
 
   /**
@@ -102,10 +135,16 @@ public class ProducerLifecycleService {
   public void forgetRecovery(UUID sessionId) {
     withSessionLock(
         sessionId,
-        () -> recoveryStates.keySet().removeIf(key -> key.sessionId().equals(sessionId)));
+        () -> {
+          recoveryStates.keySet().removeIf(key -> key.sessionId().equals(sessionId));
+          newestPositioningRequests.keySet().removeIf(key -> key.sessionId().equals(sessionId));
+        });
   }
 
-  private RecoveryResult doRecover(UUID sessionId, String variantLabel, String segmentName) {
+  private RecoveryResult doRecover(SegmentRequest request) {
+    var sessionId = request.sessionId();
+    var variantLabel = request.variantLabel();
+    var segmentName = request.segmentName();
     var session = runtimeRegistry.findById(sessionId).orElse(null);
     if (session == null) {
       return RecoveryResult.SESSION_GONE;
@@ -136,16 +175,22 @@ public class ProducerLifecycleService {
       return RecoveryResult.VARIANT_NOT_RUNNING;
     }
 
-    var positioned = tryEnsurePositioned(session, variantLabel, segmentName);
+    if (isSuperseded(request) && needsPositioning(session, variantLabel, segmentName)) {
+      return superseded(request);
+    }
+
+    var positioning = tryEnsurePositioned(session, variantLabel, segmentName);
+    if (positioning != Positioning.UNCHANGED) {
+      rememberNewestPositioningRequest(request);
+    }
+
     var handle = session.getVariantHandle(variantLabel).orElseThrow();
     var state =
         recoveryStates.computeIfAbsent(
             new VariantKey(sessionId, variantLabel), _ -> new VariantDeliveryState());
     var pending =
         PendingSegment.builder()
-            .sessionId(sessionId)
-            .variantLabel(variantLabel)
-            .segmentName(segmentName)
+            .request(request)
             .requestedIndex(SegmentNames.indexOf(segmentName).orElseGet(session::getCurrentSegment))
             .build();
     if (handle.status() == TranscodeStatus.FAILED
@@ -154,39 +199,64 @@ public class ProducerLifecycleService {
       return RecoveryResult.EXHAUSTED;
     }
 
-    return attemptRecovery(state, pending, positioned);
+    return attemptRecovery(state, pending, positioning != Positioning.FAILED);
   }
 
-  private boolean tryEnsurePositioned(
+  private boolean needsPositioning(StreamSession session, String variantLabel, String segmentName) {
+    return session.isSuspended() || requiresRelocation(session, variantLabel, segmentName);
+  }
+
+  private static RecoveryResult superseded(SegmentRequest request) {
+    log.info(
+        "Ended the request for {} of session {}: a newer request positioned variant {}",
+        request.segmentName(),
+        request.sessionId(),
+        request.variantLabel());
+    return RecoveryResult.SUPERSEDED;
+  }
+
+  private enum Positioning {
+    UNCHANGED,
+    MOVED,
+    // The request's relocation or resume failed to start a job attempt. A relocation has already
+    // stopped the earlier job attempt.
+    FAILED
+  }
+
+  private Positioning tryEnsurePositioned(
       StreamSession session, String variantLabel, String segmentName) {
     if (SegmentNames.indexOf(segmentName).isEmpty() && !session.isSuspended()) {
-      return true;
+      return Positioning.UNCHANGED;
     }
 
     try {
-      ensurePositioned(session.getSessionId(), variantLabel, segmentName);
-      return true;
+      if (tryRelocateOrResume(session.getSessionId(), variantLabel, segmentName)) {
+        return Positioning.MOVED;
+      }
+
+      return Positioning.UNCHANGED;
     } catch (TranscodeException e) {
       log.warn(
           "Positioning failed for session {} segment {}: {}",
           session.getSessionId(),
           segmentName,
           e.getMessage());
-      return false;
+      return Positioning.FAILED;
     }
   }
 
   private RecoveryResult attemptRecovery(
       VariantDeliveryState state, PendingSegment pending, boolean positioned) {
+    var request = pending.request();
     while (true) {
-      var session = runtimeRegistry.findById(pending.sessionId()).orElse(null);
+      var session = runtimeRegistry.findById(request.sessionId()).orElse(null);
       if (session == null) {
         return RecoveryResult.SESSION_GONE;
       }
 
-      var handle = session.getVariantHandle(pending.variantLabel()).orElseThrow();
+      var handle = session.getVariantHandle(request.variantLabel()).orElseThrow();
       syncProgress(state, handle, pending);
-      var running = transcodeExecutor.isRunning(pending.sessionId(), pending.variantLabel());
+      var running = transcodeExecutor.isRunning(request.sessionId(), request.variantLabel());
       if (running && !hasStalled(state)) {
         return RecoveryResult.WAITING;
       }
@@ -196,7 +266,7 @@ public class ProducerLifecycleService {
         return RecoveryResult.WAITING;
       }
 
-      var eligibleTargets = eligibleTargets(session, pending.variantLabel());
+      var eligibleTargets = eligibleTargets(session, request.variantLabel());
       // Segment publication is external to the session mutex and may advance during discovery.
       syncProgress(state, handle, pending);
       if (noLongerNeedsRecovery(state, pending, running)) {
@@ -210,10 +280,10 @@ public class ProducerLifecycleService {
 
       var command =
           ReplaceProducerCommand.builder()
-              .sessionId(pending.sessionId())
-              .variantLabel(pending.variantLabel())
-              .segmentName(pending.segmentName())
-              .segmentIndex(pending.requestedIndex())
+              .sessionId(request.sessionId())
+              .variantLabel(request.variantLabel())
+              .segmentName(request.segmentName())
+              .segmentIndex(replacementStart(state, pending))
               .expectedAttemptId(handle.attemptId())
               .reason(reason)
               .target(target.get())
@@ -223,6 +293,29 @@ public class ProducerLifecycleService {
         return outcome.get();
       }
     }
+  }
+
+  // Once a request for a media segment has positioned the variant, a replacement never starts past
+  // that request's segment until the segment is stored, then starts where the replaced job attempt
+  // stopped. A start at a later held request's segment would skip the segment of a superseded
+  // request, which cannot move the variant back (ADR 0019).
+  private int replacementStart(VariantDeliveryState state, PendingSegment pending) {
+    var requestedIndex = pending.requestedIndex();
+    var newest = newestPositioningRequest(pending.request());
+    if (newest.isEmpty()) {
+      return requestedIndex;
+    }
+
+    var newestIndex = SegmentNames.indexOf(newest.get().segmentName());
+    if (newestIndex.isEmpty()) {
+      return requestedIndex;
+    }
+
+    if (!segmentStore.segmentExists(newest.get().sessionId(), newest.get().segmentName())) {
+      return Math.min(requestedIndex, newestIndex.getAsInt());
+    }
+
+    return state.frontier();
   }
 
   // Every later job attempt of a pinned variant runs only where its encoder backend runs.
@@ -235,20 +328,22 @@ public class ProducerLifecycleService {
 
   private boolean noLongerNeedsRecovery(
       VariantDeliveryState state, PendingSegment pending, boolean running) {
-    return segmentStore.segmentExists(pending.sessionId(), pending.segmentName())
+    return segmentStore.segmentExists(
+            pending.request().sessionId(), pending.request().segmentName())
         || (running && !hasStalled(state));
   }
 
   private RecoveryResult exhaust(
       VariantDeliveryState state, PendingSegment pending, UUID expectedAttemptId) {
-    if (!doExhaust(pending.sessionId(), pending.variantLabel(), expectedAttemptId)) {
+    if (!doExhaust(
+        pending.request().sessionId(), pending.request().variantLabel(), expectedAttemptId)) {
       return RecoveryResult.WAITING;
     }
 
     log.warn(
         "Recovery exhausted for session {} variant {}: every eligible execution target in {} was tried",
-        pending.sessionId(),
-        pending.variantLabel(),
+        pending.request().sessionId(),
+        pending.request().variantLabel(),
         state.attemptedTargets());
     return RecoveryResult.EXHAUSTED;
   }
@@ -291,7 +386,8 @@ public class ProducerLifecycleService {
         handle,
         index ->
             segmentStore.segmentExists(
-                pending.sessionId(), SegmentNames.siblingName(pending.segmentName(), index)),
+                pending.request().sessionId(),
+                SegmentNames.siblingName(pending.request().segmentName(), index)),
         clock.instant());
   }
 
@@ -380,17 +476,30 @@ public class ProducerLifecycleService {
    * variant without a job attempt then starts that variant: at the requested media segment, or at
    * the current segment for the initialization segment. A stored media segment starts nothing, and
    * neither does a full transcode limit. A variant that does not start stays without a job attempt,
-   * so recovery answers the request as {@link RecoveryResult#VARIANT_NOT_RUNNING}.
+   * so recovery answers the request as {@link RecoveryResult#VARIANT_NOT_RUNNING}. Returns the
+   * request numbered in order of arrival; the caller passes it to every later {@link #recover}.
    */
-  public void prepareRequestedVariant(UUID sessionId, String variantLabel, String segmentName) {
-    withSessionLock(
+  public SegmentRequest prepareRequestedVariant(
+      UUID sessionId, String variantLabel, String segmentName) {
+    return withSessionLock(
         sessionId,
         () -> {
+          var request =
+              SegmentRequest.builder()
+                  .sessionId(sessionId)
+                  .variantLabel(variantLabel)
+                  .segmentName(segmentName)
+                  .arrival(requestArrivals.incrementAndGet())
+                  .build();
           if (SegmentNames.indexOf(segmentName).isPresent()) {
             doStopOtherVideoVariants(sessionId, variantLabel);
           }
 
-          doStartVariantOnDemand(sessionId, variantLabel, segmentName);
+          if (tryStartVariantOnDemand(sessionId, variantLabel, segmentName)) {
+            rememberNewestPositioningRequest(request);
+          }
+
+          return request;
         });
   }
 
@@ -428,10 +537,10 @@ public class ProducerLifecycleService {
     session.removeVariantHandle(variantLabel);
   }
 
-  private void doStartVariantOnDemand(UUID sessionId, String variantLabel, String segmentName) {
+  private boolean tryStartVariantOnDemand(UUID sessionId, String variantLabel, String segmentName) {
     var session = runtimeRegistry.findById(sessionId).orElse(null);
     if (session == null || !needsOnDemandStart(session, variantLabel, segmentName)) {
-      return;
+      return false;
     }
 
     var startSequenceNumber =
@@ -442,7 +551,7 @@ public class ProducerLifecycleService {
           sessionId,
           variantLabel,
           startSequenceNumber);
-      return;
+      return false;
     }
 
     try {
@@ -454,7 +563,7 @@ public class ProducerLifecycleService {
           variantLabel,
           startSequenceNumber,
           e.getMessage());
-      return;
+      return false;
     }
 
     runtimeRegistry.save(session);
@@ -463,6 +572,7 @@ public class ProducerLifecycleService {
         variantLabel,
         sessionId,
         startSequenceNumber);
+    return true;
   }
 
   private boolean needsOnDemandStart(
@@ -505,25 +615,29 @@ public class ProducerLifecycleService {
   }
 
   public void ensurePositioned(UUID sessionId, String variantLabel, String segmentName) {
+    tryRelocateOrResume(sessionId, variantLabel, segmentName);
+  }
+
+  // Throws TranscodeException when the new job attempt fails to start.
+  private boolean tryRelocateOrResume(UUID sessionId, String variantLabel, String segmentName) {
     var session = runtimeRegistry.findById(sessionId).orElse(null);
     if (session == null || !session.offersVariant(variantLabel)) {
-      return;
+      return false;
     }
 
     if (segmentStore.segmentExists(sessionId, segmentName)) {
-      return;
+      return false;
     }
 
     if (session.isSuspended()) {
-      resumeWithLock(sessionId, variantLabel, segmentName);
-      return;
+      return withSessionLock(sessionId, () -> tryResume(sessionId, variantLabel, segmentName));
     }
 
     if (!requiresRelocation(session, variantLabel, segmentName)) {
-      return;
+      return false;
     }
 
-    relocateWithLock(sessionId, variantLabel, segmentName);
+    return withSessionLock(sessionId, () -> tryRelocate(sessionId, variantLabel, segmentName));
   }
 
   public void suspend(UUID sessionId) {
@@ -678,10 +792,6 @@ public class ProducerLifecycleService {
     return request.build();
   }
 
-  private void resumeWithLock(UUID sessionId, String variantLabel, String segmentName) {
-    withSessionLock(sessionId, () -> doResume(sessionId, variantLabel, segmentName));
-  }
-
   /**
    * A running encoder produces segments sequentially from its start segment. A requested media
    * segment needs the variant's encoder relocated when it lies behind that start (it will never be
@@ -710,19 +820,15 @@ public class ProducerLifecycleService {
         session.getSessionId(), SegmentNames.siblingName(segmentName, probeIndex));
   }
 
-  private void relocateWithLock(UUID sessionId, String variantLabel, String segmentName) {
-    withSessionLock(sessionId, () -> doRelocate(sessionId, variantLabel, segmentName));
-  }
-
   // A relocation restarts only the requested variant (ADR 0019).
-  private void doRelocate(UUID sessionId, String variantLabel, String segmentName) {
+  private boolean tryRelocate(UUID sessionId, String variantLabel, String segmentName) {
     var session = runtimeRegistry.findById(sessionId).orElse(null);
     if (session == null || !requiresRelocation(session, variantLabel, segmentName)) {
-      return;
+      return false;
     }
 
     if (segmentStore.segmentExists(sessionId, segmentName)) {
-      return;
+      return false;
     }
 
     var segmentIndex = SegmentNames.indexOf(segmentName).orElseThrow();
@@ -736,6 +842,7 @@ public class ProducerLifecycleService {
 
     log.info(
         "Relocated variant {} of session {} to segment {}", variantLabel, sessionId, segmentIndex);
+    return true;
   }
 
   private int forwardGapSegments() {
@@ -761,10 +868,10 @@ public class ProducerLifecycleService {
     return MediaSegmentTimelines.of(session, properties);
   }
 
-  private void doResume(UUID sessionId, String variantLabel, String segmentName) {
+  private boolean tryResume(UUID sessionId, String variantLabel, String segmentName) {
     var session = runtimeRegistry.findById(sessionId).orElse(null);
     if (session == null || !session.isSuspended()) {
-      return;
+      return false;
     }
 
     var segmentIndex = SegmentNames.indexOf(segmentName).orElseGet(session::getCurrentSegment);
@@ -778,6 +885,7 @@ public class ProducerLifecycleService {
         variantLabel,
         sessionId,
         segmentIndex);
+    return true;
   }
 
   private void startVariant(StreamSession session, String variantLabel, int startSequenceNumber) {

@@ -20,7 +20,9 @@ public class SegmentDeliveryCoordinator {
    * Answers one segment request. Before the wait, the request applies the on-demand rules of ADR
    * 0019 once: a media-segment request stops the other video variants, and a request for a variant
    * without a job attempt starts that variant. Later passes never start the variant again, so a
-   * held request whose variant another request stopped ends instead of restarting it.
+   * held request whose variant another request stopped ends instead of restarting it. A held
+   * request also ends instead of relocating or resuming its variant once a newer request has
+   * positioned the variant.
    */
   public SegmentDelivery deliver(UUID sessionId, String variantLabel, String segmentName) {
     var refusal = refusal(sessionId, segmentName);
@@ -28,10 +30,10 @@ public class SegmentDeliveryCoordinator {
       return refusal.get();
     }
 
-    producerLifecycle.prepareRequestedVariant(sessionId, variantLabel, segmentName);
+    var request = producerLifecycle.prepareRequestedVariant(sessionId, variantLabel, segmentName);
     while (true) {
       try (var wake = heldRequests.nextWake(sessionId, variantLabel)) {
-        var outcome = deliverOnce(sessionId, variantLabel, segmentName);
+        var outcome = deliverOnce(request);
         if (outcome != null) {
           return outcome;
         }
@@ -70,20 +72,21 @@ public class SegmentDeliveryCoordinator {
    * One delivery pass. Returns a terminal {@link SegmentDelivery} outcome, or {@code null} to mean
    * "re-observe after the next wake".
    */
-  private SegmentDelivery deliverOnce(UUID sessionId, String variantLabel, String segmentName) {
-    var ready = tryRead(sessionId, segmentName);
+  private SegmentDelivery deliverOnce(SegmentRequest request) {
+    var ready = tryRead(request.sessionId(), request.segmentName());
     if (ready != null) {
       return ready;
     }
 
-    return switch (producerLifecycle.recover(sessionId, variantLabel, segmentName)) {
-      case EXHAUSTED, VARIANT_NOT_RUNNING -> exhaustedDelivery(sessionId, segmentName);
+    return switch (producerLifecycle.recover(request)) {
+      case EXHAUSTED, VARIANT_NOT_RUNNING, SUPERSEDED ->
+          unrecoverableDelivery(request.sessionId(), request.segmentName());
       case SESSION_GONE, SEGMENT_NOT_ADVERTISED -> new SegmentDelivery.SessionEnded();
       case WAITING -> null;
     };
   }
 
-  private SegmentDelivery exhaustedDelivery(UUID sessionId, String segmentName) {
+  private SegmentDelivery unrecoverableDelivery(UUID sessionId, String segmentName) {
     var lastPublication = tryRead(sessionId, segmentName);
     if (lastPublication != null) {
       return lastPublication;

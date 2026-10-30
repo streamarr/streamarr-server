@@ -4,6 +4,7 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPAC
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.WORKER_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChannelBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
+import static com.streamarr.server.fixtures.SegmentRequestFixture.earliestArrivingSegmentRequestBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.abrSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
 import static com.streamarr.server.support.ServerSettingsTestSupport.resetServerSettings;
@@ -121,7 +122,12 @@ class EncoderPresetDispatchIT extends AbstractIntegrationTest {
     await()
         .atMost(Duration.ofSeconds(5))
         .until(() -> !server.isRunning(running.getSessionId(), "1080p"));
-    lifecycle.recover(running.getSessionId(), "1080p", "1080p/segment2.m4s");
+    lifecycle.recover(
+        earliestArrivingSegmentRequestBuilder()
+            .sessionId(running.getSessionId())
+            .variantLabel("1080p")
+            .segmentName("1080p/segment2.m4s")
+            .build());
 
     var replacement = worker.nextJobs(1).getFirst();
     assertThat(replacement.getVariant().getVariantLabel()).isEqualTo("1080p");

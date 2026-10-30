@@ -6,6 +6,7 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChanne
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.streamCopyDecision;
+import static com.streamarr.server.fixtures.SegmentRequestFixture.earliestArrivingSegmentRequestBuilder;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -930,7 +931,10 @@ class WorkerSessionServerIT {
 
           var recovery =
               lifecycle.recover(
-                  session.getSessionId(), StreamSession.defaultVariant(), "segment0.m4s");
+                  earliestArrivingSegmentRequestBuilder()
+                      .sessionId(session.getSessionId())
+                      .segmentName("segment0.m4s")
+                      .build());
 
           assertThat(recovery).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
           var replacement = libx264Worker.nextResponse().getStartVariant().getJob();

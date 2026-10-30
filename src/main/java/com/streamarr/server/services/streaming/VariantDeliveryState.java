@@ -48,6 +48,11 @@ final class VariantDeliveryState {
     return lastProgressAt.plus(budget);
   }
 
+  /** The first segment from the tracked job attempt's start that no job attempt has stored. */
+  int frontier() {
+    return frontier;
+  }
+
   List<ExecutionTargetId> attemptedTargets() {
     return List.copyOf(attemptedSinceProgress);
   }

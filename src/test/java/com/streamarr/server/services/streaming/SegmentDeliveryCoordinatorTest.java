@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.SegmentRequestFixture.earliestArrivingSegmentRequestBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultLadderSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.sessionWithDurationBuilder;
@@ -1076,7 +1077,12 @@ class SegmentDeliveryCoordinatorTest {
     var replace =
         CompletableFuture.supplyAsync(
             () ->
-                rig.lifecycle().recover(sessionId, StreamSession.defaultVariant(), "segment1.m4s"));
+                rig.lifecycle()
+                    .recover(
+                        earliestArrivingSegmentRequestBuilder()
+                            .sessionId(sessionId)
+                            .segmentName("segment1.m4s")
+                            .build()));
     gatingExecutor.awaitTargetedStartEntered();
 
     // Destroy must serialize with the in-flight replace instead of losing to its save. The latch
