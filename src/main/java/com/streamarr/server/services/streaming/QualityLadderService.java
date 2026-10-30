@@ -11,6 +11,7 @@ import com.streamarr.server.domain.streaming.VideoQuality;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalLong;
 import lombok.NonNull;
 import org.springframework.stereotype.Service;
 
@@ -27,6 +28,8 @@ public class QualityLadderService {
           new QualityTier(360, 800_000L, 64_000L));
 
   private static final long VIEWER_AND_ENTRY_BOUNDED_AUDIO_BITRATE = 64_000L;
+  // More than any codec level allows, so fitting caps it at the entry level's highest bitrate.
+  private static final long UNCAPPED_BITRATE = Long.MAX_VALUE;
 
   /**
    * The variants that an encode offers, each fitted to one capability entry (ADR 0049). Auto offers
@@ -42,8 +45,7 @@ public class QualityLadderService {
     var viewerBounds = viewerBounds(source, options);
     var maxBitrate = resolveMaxBitrate(options);
     if (!isAutoQuality(options)) {
-      var bitrate = withinMaxBitrate(request.probe().bitrate(), maxBitrate);
-      return fit(request, viewerBounds, bitrate)
+      return fitUntiered(request, viewerBounds, maxBitrate)
           .map(output -> viewerAndEntryBoundedVariant(output, StreamSession.defaultVariant()))
           .stream()
           .toList();
@@ -70,8 +72,7 @@ public class QualityLadderService {
     }
 
     if (variants.isEmpty()) {
-      var bitrate = withinMaxBitrate(request.probe().bitrate(), maxBitrate);
-      return fit(request, viewerBounds, bitrate)
+      return fitUntiered(request, viewerBounds, maxBitrate)
           .map(output -> viewerAndEntryBoundedVariant(output, output.height() + "p"))
           .stream()
           .toList();
@@ -80,12 +81,44 @@ public class QualityLadderService {
     return List.copyOf(variants.values());
   }
 
-  private static long withinMaxBitrate(long bitrate, Integer maxBitrate) {
-    if (maxBitrate == null) {
-      return bitrate;
+  // The untiered variant asks for the source's bitrate within the viewer's maximum. A probe that
+  // names no source bitrate reports 0, so the variant then asks for the viewer's maximum, or else
+  // for the nominal bitrate of the tier at the fitted height. The entry's codec level caps each.
+  private static Optional<EncodedVideoOutput> fitUntiered(
+      QualityLadderRequest request, PictureSize bounds, Integer maxBitrate) {
+    var requestedBitrate = requestedUntieredBitrate(request.probe().bitrate(), maxBitrate);
+    if (requestedBitrate.isPresent()) {
+      return fit(request, bounds, requestedBitrate.getAsLong());
     }
 
-    return Math.min(bitrate, maxBitrate);
+    return fit(request, bounds, UNCAPPED_BITRATE).map(QualityLadderService::atNominalBitrate);
+  }
+
+  private static OptionalLong requestedUntieredBitrate(long sourceBitrate, Integer maxBitrate) {
+    if (sourceBitrate <= 0 && maxBitrate == null) {
+      return OptionalLong.empty();
+    }
+
+    if (sourceBitrate <= 0) {
+      return OptionalLong.of(maxBitrate);
+    }
+
+    if (maxBitrate == null) {
+      return OptionalLong.of(sourceBitrate);
+    }
+
+    return OptionalLong.of(Math.min(sourceBitrate, maxBitrate));
+  }
+
+  // An output fitted at UNCAPPED_BITRATE carries the highest bitrate that its entry's level allows.
+  private static EncodedVideoOutput atNominalBitrate(EncodedVideoOutput output) {
+    var nominalBitrate =
+        STANDARD_TIERS.reversed().stream()
+            .filter(tier -> tier.height() >= output.height())
+            .findFirst()
+            .orElse(STANDARD_TIERS.getFirst())
+            .videoBitrate();
+    return output.toBuilder().bitrate(Math.min(nominalBitrate, output.bitrate())).build();
   }
 
   // The decision encodes only a codec family that one entry fits at the source's size, so one
