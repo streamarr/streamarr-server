@@ -474,26 +474,18 @@ final class LiveWorkerConnectionRegistry {
   }
 
   boolean hasConnectedWorker(UUID sourceNamespaceId) {
-    var sourceNamespace = toProto(sourceNamespaceId);
-    return connections.values().stream()
-        .anyMatch(connection -> connection.canAccessSourceNamespace(sourceNamespace));
+    return connectionsFor(sourceNamespaceId).findAny().isPresent();
   }
 
   Set<String> verifiedVideoCodecFamilies(UUID sourceNamespaceId) {
-    var sourceNamespace = toProto(sourceNamespaceId);
-    return connections.values().stream()
-        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
+    return connectionsFor(sourceNamespaceId)
         .flatMap(connection -> connection.countedEncoders.keySet().stream())
         .collect(Collectors.toUnmodifiableSet());
   }
 
   boolean hasProbeWorker(UUID sourceNamespaceId, int probeVersion) {
-    var sourceNamespace = toProto(sourceNamespaceId);
-    return connections.values().stream()
-        .anyMatch(
-            connection ->
-                connection.canAccessSourceNamespace(sourceNamespace)
-                    && connection.probeVersions.contains(probeVersion));
+    return connectionsFor(sourceNamespaceId)
+        .anyMatch(connection -> connection.probeVersions.contains(probeVersion));
   }
 
   Set<String> encodableVideoCodecFamilies(UUID sourceNamespaceId) {
@@ -527,17 +519,11 @@ final class LiveWorkerConnectionRegistry {
   }
 
   int availableSlots(UUID sourceNamespaceId) {
-    var sourceNamespace = toProto(sourceNamespaceId);
-    return connections.values().stream()
-        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
-        .mapToInt(WorkerConnection::availableSlots)
-        .sum();
+    return connectionsFor(sourceNamespaceId).mapToInt(WorkerConnection::availableSlots).sum();
   }
 
   int availableSlots(UUID sourceNamespaceId, TranscodeDecision decision) {
-    var sourceNamespace = toProto(sourceNamespaceId);
-    return connections.values().stream()
-        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
+    return connectionsFor(sourceNamespaceId)
         .filter(connection -> connection.canEncode(decision))
         .mapToInt(WorkerConnection::availableSlots)
         .sum();
