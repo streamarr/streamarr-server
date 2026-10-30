@@ -804,6 +804,41 @@ class HlsStreamingServiceTest {
                     .isEqualTo(TranscodeMode.REMUX));
   }
 
+  // A phone records portrait video as a portrait picture, so a landscape maximum bounds it turned.
+  @ParameterizedTest
+  @CsvSource({"1080, 1920, REMUX", "1080, 2400, VIDEO_TRANSCODE"})
+  @DisplayName(
+      "Should copy a portrait source only when its picture fits the capability entry's maximum"
+          + " turned on its side")
+  void shouldCopyAPortraitSourceOnlyWhenItsPictureFitsTheCapabilityEntrysMaximumTurnedOnItsSide(
+      int width, int height, TranscodeMode expectedMode) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .width(width)
+            .height(height)
+            .videoPlaybackFacts(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .streamIndex(0)
+                        .frameRateRule(
+                            VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))
+                        .videoProperties(
+                            Optional.of(
+                                VideoPlaybackFactsFixture.h264HighPropertiesBuilder()
+                                    .codecLevel(OptionalInt.of(51))
+                                    .build()))
+                        .build()))
+            .build());
+    var landscapeHd =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().maxWidth(1920).maxHeight(1080).build()))
+            .build();
+
+    var session = createSession(seedMediaFile().getId(), landscapeHd);
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(expectedMode);
+  }
+
   private PlaybackFormatAttempt startPlayback(
       VideoQuality quality, ClientCapabilityDeclaration declaration) {
     var result =
