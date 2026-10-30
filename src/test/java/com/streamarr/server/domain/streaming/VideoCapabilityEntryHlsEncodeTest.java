@@ -71,10 +71,25 @@ class VideoCapabilityEntryHlsEncodeTest {
             new PictureSize(1280, 720),
             new PictureSize(1280, 540)),
         Arguments.of(
-            "9:16 source under a 1080p maximum",
+            "9:16 source under a landscape 1080p maximum",
             new PictureSize(1080, 1920),
             FULL_HD,
-            new PictureSize(608, 1080)),
+            new PictureSize(1080, 1920)),
+        Arguments.of(
+            "9:16 source under a portrait 1080p maximum",
+            new PictureSize(1080, 1920),
+            new PictureSize(1080, 1920),
+            new PictureSize(1080, 1920)),
+        Arguments.of(
+            "16:9 source under a portrait 720p maximum",
+            FULL_HD,
+            new PictureSize(720, 1280),
+            new PictureSize(1280, 720)),
+        Arguments.of(
+            "9:20 source under a landscape 1080p maximum",
+            new PictureSize(1080, 2400),
+            FULL_HD,
+            new PictureSize(864, 1920)),
         Arguments.of(
             "16:9 source under an odd 1000×563 maximum",
             FULL_HD,

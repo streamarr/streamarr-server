@@ -74,9 +74,10 @@ public record VideoCapabilityEntry(
   /**
    * The largest encoded output within the request's bounds that this entry accepts over HLS (ADR
    * 0049), or empty when this entry accepts no encode of the request. The output keeps the source's
-   * aspect ratio. A frame rate above the maximum is divided by the smallest whole number that fits,
-   * never below 10 fps. A picture whose codec level is above the profile's maximum level steps down
-   * in size until the level fits, and a bitrate above what that level allows is capped at it.
+   * aspect ratio, and the entry's maximums bound it in the source's orientation. A frame rate above
+   * the maximum is divided by the smallest whole number that fits, never below 10 fps. A picture
+   * whose codec level is above the profile's maximum level steps down in size until the level fits,
+   * and a bitrate above what that level allows is capped at it.
    */
   public Optional<EncodedVideoOutput> fitHlsEncode(@NonNull EncodedVariantRequest request) {
     if (!acceptsHlsEncode(request.codecProfile())) {
@@ -144,11 +145,12 @@ public record VideoCapabilityEntry(
     }
 
     var bitrate = Math.min(request.bitrate(), highestBitrate.getAsLong());
+    var source = request.source();
+    var entryBox = maximumsOrientedLike(source);
     var bounds =
         new PictureSize(
-            Math.min(request.bounds().width(), maxWidth),
-            Math.min(request.bounds().height(), maxHeight));
-    var source = request.source();
+            Math.min(request.bounds().width(), entryBox.width()),
+            Math.min(request.bounds().height(), entryBox.height()));
     return EncodedPictureSizes.picturesWithin(source, bounds)
         .map(
             size ->
@@ -161,6 +163,18 @@ public record VideoCapabilityEntry(
                     .build())
         .filter(output -> acceptsLevelAndTier(capability, output))
         .findFirst();
+  }
+
+  // The maximums bound a picture in either orientation, so a portrait source is encoded within the
+  // entry's maximums turned to match it.
+  private PictureSize maximumsOrientedLike(PictureSize source) {
+    var larger = Math.max(maxWidth, maxHeight);
+    var smaller = Math.min(maxWidth, maxHeight);
+    if (source.height() > source.width()) {
+      return new PictureSize(smaller, larger);
+    }
+
+    return new PictureSize(larger, smaller);
   }
 
   private static boolean acceptsLevelAndTier(
