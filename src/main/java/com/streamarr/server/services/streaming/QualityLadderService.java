@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.EncodedPictureSizes;
 import com.streamarr.server.domain.streaming.EncodedVariantRequest;
 import com.streamarr.server.domain.streaming.EncodedVideoOutput;
@@ -50,8 +51,8 @@ public class QualityLadderService {
 
     var variants = new ArrayList<QualityVariant>();
     for (var tier : QualityTier.offeredFor(source)) {
-      if (maxBitrate.isPresent()
-          && tier.videoBitrate() + request.audioBitrate() > maxBitrate.getAsLong()) {
+      var tierBitrate = tier.videoBitrate(request.codecProfile());
+      if (maxBitrate.isPresent() && tierBitrate + request.audioBitrate() > maxBitrate.getAsLong()) {
         continue;
       }
 
@@ -60,7 +61,7 @@ public class QualityLadderService {
         continue;
       }
 
-      fit(request, box, tier.videoBitrate())
+      fit(request, box, tierBitrate)
           .filter(output -> QualityTier.containing(pictureOf(output)) == tier)
           .map(output -> labelledVariant(output, source))
           .ifPresent(variants::add);
@@ -136,7 +137,7 @@ public class QualityLadderService {
     }
 
     return fit(request, budget.bounds(), budget.bitrate())
-        .map(QualityLadderService::atNominalBitrate);
+        .map(output -> atNominalBitrate(output, request.codecProfile()));
   }
 
   private record VideoBudget(PictureSize bounds, long bitrate) {}
@@ -152,13 +153,14 @@ public class QualityLadderService {
 
     var remainder = maxBitrate.getAsLong() - request.audioBitrate();
     var smallest = QualityTier.TIER_360P;
-    if (remainder >= smallest.videoBitrate()) {
+    var smallestBitrate = smallest.videoBitrate(request.codecProfile());
+    if (remainder >= smallestBitrate) {
       return new VideoBudget(bounds, remainder);
     }
 
     var box = smallest.box().orientedLike(request.probe().displayedSize());
     return new VideoBudget(
-        bounds.boundedBy(box), Math.min(smallest.videoBitrate(), maxBitrate.getAsLong()));
+        bounds.boundedBy(box), Math.min(smallestBitrate, maxBitrate.getAsLong()));
   }
 
   private static OptionalLong sourceBitrate(QualityLadderRequest request) {
@@ -170,8 +172,9 @@ public class QualityLadderService {
     return OptionalLong.of(bitrate);
   }
 
-  private static EncodedVideoOutput atNominalBitrate(EncodedVideoOutput output) {
-    var nominalBitrate = QualityTier.containing(pictureOf(output)).videoBitrate();
+  private static EncodedVideoOutput atNominalBitrate(
+      EncodedVideoOutput output, EncodeCodecProfile codecProfile) {
+    var nominalBitrate = QualityTier.containing(pictureOf(output)).videoBitrate(codecProfile);
     return output.toBuilder().bitrate(Math.min(nominalBitrate, output.bitrate())).build();
   }
 

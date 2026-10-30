@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.av1EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
@@ -69,12 +70,42 @@ class QualityLadderServiceTest {
             QualityVariant::height,
             QualityVariant::videoBitrate)
         .containsExactly(
-            tuple("2160p", 3840, 2160, 11_600_000L),
-            tuple("1440p", 2560, 1440, 8_100_000L),
+            tuple("2160p", 3840, 2160, 20_000_000L),
+            tuple("1440p", 2560, 1440, 12_000_000L),
             tuple("1080p", 1920, 1080, 5_000_000L),
             tuple("720p", 1280, 720, 3_000_000L),
             tuple("480p", 854, 480, 1_500_000L),
             tuple("360p", 640, 360, 800_000L));
+  }
+
+  @ParameterizedTest
+  @CsvSource({"AV1_MAIN, 11600000, 8100000", "H264_HIGH, 20000000, 12000000"})
+  @DisplayName(
+      "Should give each tier its nominal bitrate for the codec family that the encode uses")
+  void shouldGiveEachTierItsNominalBitrateForTheCodecFamilyThatTheEncodeUses(
+      EncodeCodecProfile codecProfile, long bitrate2160p, long bitrate1440p) {
+    var probe = buildProbe(3840, 2160, 40_000_000L);
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(av1EntryBuilder().build(), h264EntryBuilder().build()))
+            .build();
+
+    var variants =
+        service.generateVariants(
+            ladderRequest(probe, StreamingOptions.builder().build())
+                .capabilityDeclaration(declaration)
+                .codecProfile(codecProfile)
+                .build());
+
+    assertThat(variants)
+        .extracting(QualityVariant::label, QualityVariant::videoBitrate)
+        .containsExactly(
+            tuple("2160p", bitrate2160p),
+            tuple("1440p", bitrate1440p),
+            tuple("1080p", 5_000_000L),
+            tuple("720p", 3_000_000L),
+            tuple("480p", 1_500_000L),
+            tuple("360p", 800_000L));
   }
 
   // The worker keeps each side even, so the 720p and 360p pictures stop a few pixels short of their
@@ -201,8 +232,8 @@ class QualityLadderServiceTest {
 
   @ParameterizedTest
   @CsvSource({
-    "3840, 2160, 11600000",
-    "2560, 1440, 8100000",
+    "3840, 2160, 20000000",
+    "2560, 1440, 12000000",
     "1920, 1080, 5000000",
     "1280, 720, 3000000",
     "1000, 562, 3000000",

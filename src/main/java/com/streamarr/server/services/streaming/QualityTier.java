@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import java.util.Arrays;
@@ -11,25 +12,28 @@ import java.util.Optional;
  * picture in either orientation (ADR 0050).
  */
 enum QualityTier {
-  // The 2160p and 1440p bitrates are the lowest 3840x2160 and the 2560x1440 rates in Apple's HLS
-  // Authoring Specification for Apple Devices, item 1.25.
-  TIER_2160P("2160p", new PictureSize(3840, 2160), 11_600_000L),
-  TIER_1440P("1440p", new PictureSize(2560, 1440), 8_100_000L),
-  TIER_1080P("1080p", new PictureSize(1920, 1080), 5_000_000L),
-  TIER_720P("720p", new PictureSize(1280, 720), 3_000_000L),
-  TIER_480P("480p", new PictureSize(854, 480), 1_500_000L),
-  TIER_360P("360p", new PictureSize(640, 360), 800_000L);
+  // The AV1 2160p and 1440p bitrates are the lowest 3840x2160 and the 2560x1440 rates of the HEVC
+  // ladder in Apple's HLS Authoring Specification for Apple Devices, item 1.25. Apple's H.264
+  // ladder stops at 1080p.
+  TIER_2160P("2160p", new PictureSize(3840, 2160), 11_600_000L, 20_000_000L),
+  TIER_1440P("1440p", new PictureSize(2560, 1440), 8_100_000L, 12_000_000L),
+  TIER_1080P("1080p", new PictureSize(1920, 1080), 5_000_000L, 5_000_000L),
+  TIER_720P("720p", new PictureSize(1280, 720), 3_000_000L, 3_000_000L),
+  TIER_480P("480p", new PictureSize(854, 480), 1_500_000L, 1_500_000L),
+  TIER_360P("360p", new PictureSize(640, 360), 800_000L, 800_000L);
 
   private static final List<QualityTier> LARGEST_FIRST = Arrays.asList(values());
 
   private final String label;
   private final PictureSize box;
-  private final long videoBitrate;
+  private final long av1VideoBitrate;
+  private final long h264VideoBitrate;
 
-  QualityTier(String label, PictureSize box, long videoBitrate) {
+  QualityTier(String label, PictureSize box, long av1VideoBitrate, long h264VideoBitrate) {
     this.label = label;
     this.box = box;
-    this.videoBitrate = videoBitrate;
+    this.av1VideoBitrate = av1VideoBitrate;
+    this.h264VideoBitrate = h264VideoBitrate;
   }
 
   String label() {
@@ -40,8 +44,12 @@ enum QualityTier {
     return box;
   }
 
-  long videoBitrate() {
-    return videoBitrate;
+  /** The tier's nominal video bitrate for the codec family that the encode forces. */
+  long videoBitrate(EncodeCodecProfile codecProfile) {
+    return switch (codecProfile) {
+      case AV1_MAIN -> av1VideoBitrate;
+      case H264_HIGH -> h264VideoBitrate;
+    };
   }
 
   /** The tier whose box a fixed quality has, or empty for Auto and Original. */
