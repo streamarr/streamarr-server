@@ -43,7 +43,6 @@ import io.grpc.stub.StreamObserver;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
-import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -249,9 +248,7 @@ final class LiveWorkerConnectionRegistry {
   private Optional<VariantDispatch> dispatchToFirst(
       VariantJob job, Predicate<WorkerConnection> eligible) {
     var candidates =
-        connections.values().stream()
-            .filter(eligible)
-            .sorted(hardwareEncodersFirst(job.getDecision()))
+        hardwareEncodersFirst(connections.values().stream().filter(eligible), job.getDecision())
             .toList();
     for (var connection : candidates) {
       var dispatched = tryDispatchUnlessDisconnected(connection, job);
@@ -399,9 +396,9 @@ final class LiveWorkerConnectionRegistry {
 
   Set<ExecutionTargetId> eligibleWorkers(UUID sourceNamespaceId, TranscodeDecision decision) {
     return executionTargets(
-        connectionsFor(sourceNamespaceId)
-            .filter(connection -> connection.canEncode(decision))
-            .sorted(hardwareEncodersFirst(decision)));
+        hardwareEncodersFirst(
+            connectionsFor(sourceNamespaceId).filter(connection -> connection.canEncode(decision)),
+            decision));
   }
 
   // Every worker that advertises the pin runs the pinned encoder backend, so no worker comes first.
@@ -426,9 +423,15 @@ final class LiveWorkerConnectionRegistry {
   }
 
   // A worker with a hardware encoder for the decision's codec family takes each variant first, and
-  // a software encoder takes it only when no such worker has a free slot (ADR 0009).
-  private static Comparator<WorkerConnection> hardwareEncodersFirst(TranscodeDecision decision) {
-    return Comparator.comparing(connection -> !connection.encodesInHardware(decision));
+  // a software encoder takes it only when no such worker has a free slot (ADR 0009). Each worker's
+  // encoder is read once: a start report that names another backend can withdraw it concurrently,
+  // and a sort whose keys change mid-sort may throw instead of ordering the workers.
+  private static Stream<WorkerConnection> hardwareEncodersFirst(
+      Stream<WorkerConnection> connections, TranscodeDecision decision) {
+    var byHardware =
+        connections.collect(
+            Collectors.partitioningBy(connection -> connection.encodesInHardware(decision)));
+    return Stream.concat(byHardware.get(true).stream(), byHardware.get(false).stream());
   }
 
   boolean stopVariant(UUID streamSessionId, String variantLabel) {
