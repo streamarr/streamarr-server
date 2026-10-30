@@ -17,6 +17,7 @@ public record TranscodeRequest(
     @NonNull Optional<Duration> keyframeSeekPosition,
     int targetSegmentDuration,
     @NonNull OptionalDouble framerate,
+    Optional<Fraction> outputFrameRate,
     @NonNull TranscodeDecision transcodeDecision,
     int width,
     int height,
@@ -30,11 +31,17 @@ public record TranscodeRequest(
   /**
    * A stream copy attempt after segment 0 carries {@code keyframeSeekPosition}, the decode time of
    * the source keyframe that opens its first segment, and the worker seeks there instead of to
-   * {@code seekPosition} seconds. Every other attempt carries none.
+   * {@code seekPosition} seconds. Every other attempt carries none. {@code outputFrameRate} is the
+   * exact rate at which an encode runs, the source's output frame rate unless the variant names
+   * another; a stream copy keeps the source's timing and carries none.
    */
   public TranscodeRequest {
     if (variantLabel == null) {
       variantLabel = StreamSession.defaultVariant();
+    }
+
+    if (outputFrameRate == null) {
+      outputFrameRate = sourceOutputFrameRate(transcodeDecision);
     }
 
     // The attempt id is minted only here. Dispatched jobs, the TranscodeHandle, and
@@ -59,13 +66,20 @@ public record TranscodeRequest(
                 .codecFamily(transcodeDecision.videoCodecFamily())
                 .width(width)
                 .height(height)
-                .probedFrameRate(
-                    transcodeDecision
-                        .videoSource()
-                        .map(VideoPlaybackFacts::frameRateRule)
-                        .flatMap(FrameRateRule::outputFrameRate))
+                .probedFrameRate(outputFrameRate)
                 .bitrate(bitrate)
                 .build()));
+  }
+
+  private static Optional<Fraction> sourceOutputFrameRate(TranscodeDecision decision) {
+    if (decision.transcodeMode().copiesVideo()) {
+      return Optional.empty();
+    }
+
+    return decision
+        .videoSource()
+        .map(VideoPlaybackFacts::frameRateRule)
+        .flatMap(FrameRateRule::outputFrameRate);
   }
 
   // Lombok skips its own builder() because this one exists.
