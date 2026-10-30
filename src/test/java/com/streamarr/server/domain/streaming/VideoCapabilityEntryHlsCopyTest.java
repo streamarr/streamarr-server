@@ -129,6 +129,7 @@ class VideoCapabilityEntryHlsCopyTest {
         OptionalDouble.of(30_000.0 / 1_001),
         OptionalDouble.of(30.01),
         OptionalDouble.of(30.14),
+        OptionalDouble.of(30.15),
         OptionalDouble.of(30.16),
         OptionalDouble.empty());
   }
