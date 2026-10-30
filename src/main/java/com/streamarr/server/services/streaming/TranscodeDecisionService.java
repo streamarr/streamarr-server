@@ -40,13 +40,10 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class TranscodeDecisionService {
 
-  // An encode forces one codec profile for each codec family (ADR 0013). A software AV1 encoder
-  // falls behind real time on a large source while H.264 keeps up, so AV1 comes first only when a
-  // worker encodes it in hardware.
-  private static final List<EncodeCodecProfile> CODEC_PREFERENCE =
-      List.of(EncodeCodecProfile.H264_HIGH, EncodeCodecProfile.AV1_MAIN);
-  private static final List<EncodeCodecProfile> CODEC_PREFERENCE_WITH_HARDWARE_AV1 =
-      List.of(EncodeCodecProfile.AV1_MAIN, EncodeCodecProfile.H264_HIGH);
+  // An encode forces one codec profile for each codec family (ADR 0013). These codec families
+  // compress better than H.264, best first (ADR 0009).
+  private static final List<EncodeCodecProfile> COMPRESSING_BETTER_THAN_H264 =
+      List.of(EncodeCodecProfile.AV1_MAIN);
   // A multichannel encode prefers the first of these codecs that keeps more than two channels.
   private static final List<String> MULTICHANNEL_ENCODE_PREFERENCE = List.of("eac3", "ac3", "aac");
   // FFmpeg's AC-3 and E-AC-3 encoders stop at 5.1.
@@ -65,10 +62,10 @@ public class TranscodeDecisionService {
    * A copy needs a video capability entry for HLS that accepts the copy, and a source that fits the
    * viewer's limits or has no output frame rate to encode at (ADR 0050). An encode uses, among the
    * codecs that a worker-verified encoder encodes (ADR 0009), the one whose video capability entry
-   * for HLS fits an encoded variant of the source at the highest frame rate (ADR 0049). On a tie it
-   * prefers H.264, or AV1 when a worker that can run the encode encodes AV1 in hardware. The audio
-   * follows the audio capability entries for HLS. Returns empty when neither a copy nor a supported
-   * encode satisfies the request's constraints.
+   * for HLS fits an encoded variant of the source at the highest frame rate (ADR 0049), and the
+   * first in the codec preference on a tie (ADR 0009). The audio follows the audio capability
+   * entries for HLS. Returns empty when neither a copy nor a supported encode satisfies the
+   * request's constraints.
    */
   public Optional<TranscodeDecision> decide(@NonNull TranscodeDecisionRequest request) {
     var source = request.source();
@@ -370,13 +367,20 @@ public class TranscodeDecisionService {
         .map(EncodeCandidate::codecFamily);
   }
 
+  // The codec families that a worker encodes in hardware, then H.264, then the rest (ADR 0009).
   private static List<EncodeCodecProfile> codecPreference(TranscodeDecisionRequest request) {
-    var av1 = EncodeCodecProfile.AV1_MAIN.codecFamilyName();
-    if (request.hardwareEncodableVideoCodecFamilies().contains(av1)) {
-      return CODEC_PREFERENCE_WITH_HARDWARE_AV1;
-    }
-
-    return CODEC_PREFERENCE;
+    var hardwareEncodable = request.hardwareEncodableVideoCodecFamilies();
+    var encodedInHardware =
+        COMPRESSING_BETTER_THAN_H264.stream()
+            .collect(
+                Collectors.partitioningBy(
+                    profile -> hardwareEncodable.contains(profile.codecFamilyName())));
+    return Stream.of(
+            encodedInHardware.get(true),
+            List.of(EncodeCodecProfile.H264_HIGH),
+            encodedInHardware.get(false))
+        .flatMap(List::stream)
+        .toList();
   }
 
   private record EncodeCandidate(String codecFamily, double frameRate) {}
