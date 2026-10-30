@@ -534,6 +534,11 @@ class HeldSegmentRequestConcurrencyIT {
     public Set<String> encodableVideoCodecFamilies() {
       return delegate.encodableVideoCodecFamilies();
     }
+
+    @Override
+    public Set<String> hardwareEncodableVideoCodecFamilies() {
+      return delegate.hardwareEncodableVideoCodecFamilies();
+    }
   }
 
   /** A worker session that the test drives: it receives variant jobs and uploads segments. */
