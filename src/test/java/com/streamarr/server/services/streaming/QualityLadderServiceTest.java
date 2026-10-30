@@ -12,6 +12,7 @@ import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
@@ -24,6 +25,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -36,8 +38,6 @@ import org.junit.jupiter.params.provider.MethodSource;
 @Tag("UnitTest")
 @DisplayName("Quality Ladder Service Tests")
 class QualityLadderServiceTest {
-
-  private static final List<Integer> STANDARD_TIER_HEIGHTS = List.of(1080, 720, 480, 360);
 
   private final QualityLadderService service = new QualityLadderService();
 
@@ -54,6 +54,45 @@ class QualityLadderServiceTest {
     assertThat(variants.get(1).label()).isEqualTo("720p");
     assertThat(variants.get(2).label()).isEqualTo("480p");
     assertThat(variants.get(3).label()).isEqualTo("360p");
+  }
+
+  @Test
+  @DisplayName("Should offer every tier up to 2160p when the source and the entry allow 4K")
+  void shouldOfferEveryTierUpTo2160pWhenTheSourceAndTheEntryAllow4K() {
+    var probe = buildProbe(3840, 2160, 40_000_000L);
+
+    var variants = generateVariants(probe, StreamingOptions.builder().build());
+
+    assertThat(variants)
+        .extracting(
+            QualityVariant::label,
+            QualityVariant::width,
+            QualityVariant::height,
+            QualityVariant::videoBitrate)
+        .containsExactly(
+            tuple("2160p", 3840, 2160, 11_600_000L),
+            tuple("1440p", 2560, 1440, 8_100_000L),
+            tuple("1080p", 1920, 1080, 5_000_000L),
+            tuple("720p", 1280, 720, 3_000_000L),
+            tuple("480p", 854, 480, 1_500_000L),
+            tuple("360p", 640, 360, 800_000L));
+  }
+
+  @Test
+  @DisplayName(
+      "Should fit a wide film to each tier's box when the film is shorter than the tier's height")
+  void shouldFitAWideFilmToEachTiersBoxWhenTheFilmIsShorterThanTheTiersHeight() {
+    var probe = buildProbe(1920, 800, 8_000_000L);
+
+    var variants = generateVariants(probe, StreamingOptions.builder().build());
+
+    assertThat(variants)
+        .extracting(QualityVariant::label, QualityVariant::width, QualityVariant::height)
+        .containsExactly(
+            tuple("1080p", 1920, 800),
+            tuple("720p", 1276, 532),
+            tuple("480p", 854, 356),
+            tuple("360p", 638, 266));
   }
 
   @Test
@@ -129,7 +168,8 @@ class QualityLadderServiceTest {
 
   @ParameterizedTest
   @CsvSource({
-    "3840, 2160, 5000000",
+    "3840, 2160, 11600000",
+    "2560, 1440, 8100000",
     "1920, 1080, 5000000",
     "1280, 720, 3000000",
     "1000, 562, 3000000",
@@ -137,10 +177,10 @@ class QualityLadderServiceTest {
     "320, 180, 800000"
   })
   @DisplayName(
-      "Should encode at the nominal bitrate of the tier at or above the fitted height when the"
-          + " probe names no source bitrate")
+      "Should encode at the nominal bitrate of the smallest tier whose box holds the picture when"
+          + " the probe names no source bitrate")
   void
-      shouldEncodeAtTheNominalBitrateOfTheTierAtOrAboveTheFittedHeightWhenTheProbeNamesNoSourceBitrate(
+      shouldEncodeAtTheNominalBitrateOfTheSmallestTierWhoseBoxHoldsThePictureWhenTheProbeNamesNoSourceBitrate(
           int width, int height, long expectedBitrate) {
     var probe = buildProbe(width, height, 0L);
     var options = StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build();
@@ -265,8 +305,9 @@ class QualityLadderServiceTest {
   }
 
   @Test
-  @DisplayName("Should label a capped variant by its height when no smaller tier has that size")
-  void shouldLabelACappedVariantByItsHeightWhenNoSmallerTierHasThatSize() {
+  @DisplayName(
+      "Should label a capped variant by its tier when the entry shrinks it within the tier's box")
+  void shouldLabelACappedVariantByItsTierWhenTheEntryShrinksItWithinTheTiersBox() {
     var probe = buildProbe(1920, 1080, 8_000_000L);
     var declaration =
         defaultDeclarationBuilder()
@@ -282,7 +323,7 @@ class QualityLadderServiceTest {
     assertThat(variants)
         .extracting(QualityVariant::label, QualityVariant::width, QualityVariant::height)
         .containsExactly(
-            tuple("900p", 1600, 900),
+            tuple("1080p", 1600, 900),
             tuple("720p", 1280, 720),
             tuple("480p", 854, 480),
             tuple("360p", 640, 360));
@@ -303,8 +344,10 @@ class QualityLadderServiceTest {
 
   @ParameterizedTest
   @CsvSource({"CHROMA_444, 316", "CHROMA_422, 314"})
-  @DisplayName("Should round the output height down when a cropped source is below every tier")
-  void shouldRoundTheOutputHeightDownWhenACroppedSourceIsBelowEveryTier(
+  @DisplayName(
+      "Should round the output height down when a cropped source is smaller than the 360p tier's"
+          + " box")
+  void shouldRoundTheOutputHeightDownWhenACroppedSourceIsSmallerThanThe360pTiersBox(
       ChromaSubsampling subsampling, int expectedWidth) {
     var probe =
         defaultProbeBuilder()
@@ -329,7 +372,7 @@ class QualityLadderServiceTest {
 
     assertThat(generateVariants(probe, options))
         .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::label)
-        .containsExactly(tuple(expectedWidth, 236, "236p"));
+        .containsExactly(tuple(expectedWidth, 236, "360p"));
   }
 
   @Test
@@ -364,36 +407,70 @@ class QualityLadderServiceTest {
   @DisplayName(
       "Should compute aspect-ratio-correct dimensions when generating variants for each quality tier")
   void shouldComputeAspectRatioCorrectDimensionsWhenGeneratingVariantsForEachQualityTier(
-      String scenario, int sourceWidth, int sourceHeight, List<Integer> expectedWidths) {
-    var probe = buildProbe(sourceWidth, sourceHeight, 8_000_000L);
+      String scenario, PictureSize source, List<PictureSize> expected) {
+    var probe = buildProbe(source.width(), source.height(), 8_000_000L);
     var options = StreamingOptions.builder().build();
 
     var variants = generateVariants(probe, options);
 
-    var expectedHeights = STANDARD_TIER_HEIGHTS.stream().filter(h -> h <= sourceHeight).toList();
-    assertThat(variants).hasSize(expectedWidths.size());
-    for (int i = 0; i < variants.size(); i++) {
-      assertThat(variants.get(i).width()).isEqualTo(expectedWidths.get(i));
-      assertThat(variants.get(i).height()).isEqualTo(expectedHeights.get(i));
-    }
+    assertThat(variants)
+        .extracting(variant -> new PictureSize(variant.width(), variant.height()))
+        .containsExactlyElementsOf(expected);
   }
 
   // FFmpeg's scale=-2:<height> divides the height times the aspect ratio by 2, rounds half away
-  // from zero, and doubles the result. FFmpeg 8.0.1 wrote these widths from synthetic frames.
+  // from zero, and doubles the result. FFmpeg 8.0.1 wrote the rounded widths from synthetic frames.
   static Stream<Arguments> aspectRatioVariants() {
     return Stream.of(
-        Arguments.of("16:9 source", 1920, 1080, List.of(1920, 1280, 854, 640)),
-        Arguments.of("4:3 source", 1440, 1080, List.of(1440, 960, 640, 480)),
-        Arguments.of("21:9 ultrawide source", 2560, 1080, List.of(2560, 1706, 1138, 854)),
-        Arguments.of("1:1 square source", 1080, 1080, List.of(1080, 720, 480, 360)),
-        Arguments.of("9:16 portrait source", 1080, 1920, List.of(608, 406, 270, 202)),
-        Arguments.of("4:3 at 720p", 960, 720, List.of(960, 640, 480)));
+        Arguments.of(
+            "16:9 source", size(1920, 1080), sizes(1920, 1080, 1280, 720, 854, 480, 640, 360)),
+        Arguments.of(
+            "4:3 source", size(1440, 1080), sizes(1440, 1080, 960, 720, 640, 480, 480, 360)),
+        Arguments.of(
+            "21:9 ultrawide source",
+            size(2560, 1080),
+            sizes(2560, 1080, 1920, 810, 1280, 540, 854, 360, 640, 270)),
+        Arguments.of(
+            "1:1 square source", size(1080, 1080), sizes(1080, 1080, 720, 720, 480, 480, 360, 360)),
+        Arguments.of(
+            "9:16 portrait source",
+            size(1080, 1920),
+            sizes(1080, 1920, 720, 1280, 480, 854, 360, 640)),
+        Arguments.of("4:3 at 720p", size(960, 720), sizes(960, 720, 640, 480, 480, 360)));
+  }
+
+  private static PictureSize size(int width, int height) {
+    return new PictureSize(width, height);
+  }
+
+  private static List<PictureSize> sizes(int... widthsAndHeights) {
+    return IntStream.range(0, widthsAndHeights.length / 2)
+        .mapToObj(index -> size(widthsAndHeights[2 * index], widthsAndHeights[2 * index + 1]))
+        .toList();
   }
 
   @Test
   @DisplayName(
-      "Should size the variants from the rotated picture when a phone recording is upright")
-  void shouldSizeTheVariantsFromTheRotatedPictureWhenAPhoneRecordingIsUpright() {
+      "Should offer every tier up to 2160p when the source is larger than every tier's box")
+  void shouldOfferEveryTierUpTo2160pWhenTheSourceIsLargerThanEveryTiersBox() {
+    var probe = buildProbe(7680, 4320, 80_000_000L);
+
+    var variants = generateVariants(probe, StreamingOptions.builder().build());
+
+    assertThat(variants)
+        .extracting(QualityVariant::label, QualityVariant::width, QualityVariant::height)
+        .containsExactly(
+            tuple("2160p", 3840, 2160),
+            tuple("1440p", 2560, 1440),
+            tuple("1080p", 1920, 1080),
+            tuple("720p", 1280, 720),
+            tuple("480p", 854, 480),
+            tuple("360p", 640, 360));
+  }
+
+  @Test
+  @DisplayName("Should turn each tier's box with the picture when a phone recording is upright")
+  void shouldTurnEachTiersBoxWithThePictureWhenAPhoneRecordingIsUpright() {
     var probe =
         buildProbeBuilder(1920, 1080)
             .videoPlaybackFacts(
@@ -407,8 +484,12 @@ class QualityLadderServiceTest {
     var variants = generateVariants(probe, options);
 
     assertThat(variants)
-        .extracting(QualityVariant::width, QualityVariant::height)
-        .containsExactly(tuple(608, 1080), tuple(406, 720), tuple(270, 480), tuple(202, 360));
+        .extracting(QualityVariant::label, QualityVariant::width, QualityVariant::height)
+        .containsExactly(
+            tuple("1080p", 1080, 1920),
+            tuple("720p", 720, 1280),
+            tuple("480p", 480, 854),
+            tuple("360p", 360, 640));
   }
 
   @Test
@@ -429,12 +510,13 @@ class QualityLadderServiceTest {
 
     assertThat(variants)
         .extracting(QualityVariant::width, QualityVariant::height)
-        .containsExactly(tuple(1728, 720), tuple(1152, 480), tuple(864, 360));
+        .containsExactly(tuple(1920, 800), tuple(1276, 532), tuple(854, 356), tuple(638, 266));
   }
 
   @Test
-  @DisplayName("Should align width to even number when source resolution is below all tiers")
-  void shouldAlignWidthToEvenNumberWhenSourceResolutionIsBelowAllTiers() {
+  @DisplayName(
+      "Should align width to even number when the source is smaller than the 360p tier's box")
+  void shouldAlignWidthToEvenNumberWhenTheSourceIsSmallerThanThe360pTiersBox() {
     var probe = buildProbe(319, 179, 500_000L);
     var options = StreamingOptions.builder().build();
 
@@ -443,7 +525,7 @@ class QualityLadderServiceTest {
     assertThat(variants).hasSize(1);
     assertThat(variants.get(0).width()).isEqualTo(318);
     assertThat(variants.get(0).height()).isEqualTo(178);
-    assertThat(variants.get(0).label()).isEqualTo("178p");
+    assertThat(variants.get(0).label()).isEqualTo("360p");
   }
 
   private List<QualityVariant> generateVariants(MediaProbe probe, StreamingOptions options) {
