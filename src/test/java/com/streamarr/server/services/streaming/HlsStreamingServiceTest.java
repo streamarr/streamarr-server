@@ -1042,23 +1042,7 @@ class HlsStreamingServiceTest {
           + " turned on its side")
   void shouldCopyAPortraitSourceOnlyWhenItsPictureFitsTheCapabilityEntrysMaximumTurnedOnItsSide(
       int width, int height, TranscodeMode expectedMode) {
-    probeResults.setDefaultProbe(
-        defaultProbeBuilder()
-            .width(width)
-            .height(height)
-            .videoPlaybackFacts(
-                Optional.of(
-                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
-                        .streamIndex(0)
-                        .frameRateRule(
-                            VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))
-                        .videoProperties(
-                            Optional.of(
-                                VideoPlaybackFactsFixture.h264HighPropertiesBuilder()
-                                    .codecLevel(OptionalInt.of(51))
-                                    .build()))
-                        .build()))
-            .build());
+    probeResults.setDefaultProbe(h264Level51ProbeAt(width, height).build());
     var landscapeHd =
         defaultDeclarationBuilder()
             .video(List.of(h264EntryBuilder().maxWidth(1920).maxHeight(1080).build()))
@@ -1096,6 +1080,24 @@ class HlsStreamingServiceTest {
               assertThat(request.width()).isEqualTo(1080);
               assertThat(request.height()).isEqualTo(1920);
             });
+  }
+
+  // An 8-bit SDR H.264 High profile source at level 5.1 and 24 fps.
+  private static MediaProbe.MediaProbeBuilder h264Level51ProbeAt(int width, int height) {
+    return defaultProbeBuilder()
+        .width(width)
+        .height(height)
+        .videoPlaybackFacts(
+            Optional.of(
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                    .streamIndex(0)
+                    .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))
+                    .videoProperties(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.h264HighPropertiesBuilder()
+                                .codecLevel(OptionalInt.of(51))
+                                .build()))
+                    .build()));
   }
 
   private PlaybackFormatAttempt startPlayback(
