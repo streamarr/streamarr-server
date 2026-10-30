@@ -22,6 +22,7 @@ import static com.streamarr.server.support.OutcomeTestSupport.rejectionOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.config.StreamingProperties;
@@ -349,6 +350,26 @@ class HlsStreamingServiceTest {
         .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.InvalidPictureSize()));
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
     assertThat(service.getActiveSessionCount()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should encode at the viewer's maximum height when it is below every Auto tier")
+  void shouldEncodeAtTheViewersMaximumHeightWhenItIsBelowEveryAutoTier() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
+    var options = StreamingOptions.builder().quality(VideoQuality.AUTO).maxHeight(300).build();
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::label)
+        .containsExactly(tuple(534, 300, "300p"));
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(534);
+              assertThat(request.height()).isEqualTo(300);
+            });
   }
 
   @Test
