@@ -86,7 +86,7 @@ public class HlsStreamingService implements StreamingService {
             .build();
     var candidate = transcodeDecisionService.decide(request);
     if (candidate.isEmpty()) {
-      candidate = decideAfterStoppingALeftVariant(command, request);
+      candidate = decideAfterStoppingALeftVariant(command.streamSessionId(), request);
     }
 
     if (candidate.isEmpty()) {
@@ -94,12 +94,12 @@ public class HlsStreamingService implements StreamingService {
     }
 
     var decision = candidate.orElseThrow();
-    var encodeRejection = encodeRejection(command, request, decision);
+    var encodeRejection = encodeRejection(request, decision);
     if (encodeRejection.isPresent()) {
       return Outcome.rejected(encodeRejection.get());
     }
 
-    var variants = resolveVariants(command, probe, decision);
+    var variants = resolveVariants(request, decision);
     var sessionId = command.streamSessionId();
     var refusal = capacityRefusalFor(decision);
     // A left variant only serves its own player's switch back, so it never keeps a new stream
@@ -147,9 +147,7 @@ public class HlsStreamingService implements StreamingService {
 
   // Why no worker can run the decision's encode, whatever slots are free.
   private Optional<CreateStreamSessionRejection> encodeRejection(
-      CreateStreamSessionCommand command,
-      TranscodeDecisionRequest request,
-      TranscodeDecision decision) {
+      TranscodeDecisionRequest request, TranscodeDecision decision) {
     if (!requiresVideoTranscode(decision.transcodeMode())) {
       return Optional.empty();
     }
@@ -160,8 +158,7 @@ public class HlsStreamingService implements StreamingService {
     }
 
     // An encode whose ladder has no variant has no picture that the worker encodes.
-    var probe = request.source();
-    var variants = resolveVariants(command, probe, decision);
+    var variants = resolveVariants(request, decision);
     if (variants.isEmpty()) {
       return Optional.of(new CreateStreamSessionRejection.InvalidPictureSize());
     }
@@ -174,17 +171,16 @@ public class HlsStreamingService implements StreamingService {
   // that frees a slot on such a worker and decides once more. An encode that no worker can run
   // whatever slots are free stops nothing.
   private Optional<TranscodeDecision> decideAfterStoppingALeftVariant(
-      CreateStreamSessionCommand command, TranscodeDecisionRequest request) {
+      UUID sessionId, TranscodeDecisionRequest request) {
     var verifiedCandidate =
         verifiedEncodeCandidate(request)
-            .filter(decision -> encodeRejection(command, request, decision).isEmpty());
+            .filter(decision -> encodeRejection(request, decision).isEmpty());
     if (verifiedCandidate.isEmpty()) {
       return Optional.empty();
     }
 
     // The first decision already refused a copy, so only an encode is decided again.
-    producerLifecycle.stopLeftVariantOfAnotherStreamSession(
-        command.streamSessionId(), verifiedCandidate.get());
+    producerLifecycle.stopLeftVariantOfAnotherStreamSession(sessionId, verifiedCandidate.get());
     return transcodeDecisionService.decide(
         request.toBuilder()
             .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
@@ -309,7 +305,7 @@ public class HlsStreamingService implements StreamingService {
 
   // Every encode runs as a variant of the ladder; a copy keeps the source and has no ladder.
   private List<QualityVariant> resolveVariants(
-      CreateStreamSessionCommand command, MediaProbe probe, TranscodeDecision decision) {
+      TranscodeDecisionRequest decisionRequest, TranscodeDecision decision) {
     if (!requiresVideoTranscode(decision.transcodeMode())) {
       return List.of();
     }
@@ -317,9 +313,9 @@ public class HlsStreamingService implements StreamingService {
     // The stream session refuses an encode without an output frame rate before it sizes a variant.
     var request =
         QualityLadderRequest.builder()
-            .probe(probe)
-            .options(command.options())
-            .capabilityDeclaration(command.capabilityDeclaration())
+            .probe(decisionRequest.source())
+            .viewerLimits(decisionRequest.viewerLimits())
+            .capabilityDeclaration(decisionRequest.capabilityDeclaration())
             .codecProfile(EncodeCodecProfile.forCodecFamilyName(decision.videoCodecFamily()))
             .frameRate(decision.outputFrameRate().orElseThrow())
             .audioBitrate(decision.audioDecision().bitrate())

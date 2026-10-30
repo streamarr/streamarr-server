@@ -6,7 +6,6 @@ import com.streamarr.server.domain.streaming.EncodedVideoOutput;
 import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,20 +23,21 @@ public class QualityLadderService {
   /**
    * The variants that an encode offers, each fitted to one capability entry (ADR 0049). Auto offers
    * a standard tier when the source is larger than the next smaller tier's box, scaling the source
-   * to fit the tier's box without enlarging it, or one variant when the viewer's options leave no
+   * to fit the tier's box without enlarging it, or one variant when the viewer's limits leave no
    * tier. A fixed quality offers only the default variant, within its tier's box; Original has no
    * box. Sizes each variant from the picture that a player shows, after cropping and rotation. A
    * tier that an entry shrinks into a smaller tier's box gives way to that tier. Returns no variant
-   * when the viewer's options leave no picture that the worker encodes.
+   * when the viewer's limits leave no picture that the worker encodes.
    */
   public List<QualityVariant> generateVariants(@NonNull QualityLadderRequest request) {
-    var options = request.options();
+    var limits = request.viewerLimits();
     var source = request.probe().displayedSize();
-    var viewerBounds = viewerBounds(source, options);
-    var maxBitrate = resolveMaxBitrate(options);
-    if (!isAutoQuality(options)) {
+    var viewerBounds = limits.maximumPicture();
+    var maxBitrate = limits.maxBitrate();
+    if (limits.quality() != VideoQuality.AUTO) {
       var bounds =
-          QualityTier.ofFixedQuality(options.quality())
+          limits
+              .fixedTier()
               .map(tier -> viewerBounds.boundedBy(tier.box().orientedLike(source)))
               .orElse(viewerBounds);
       return fitUntiered(request, bounds, maxBitrate)
@@ -74,7 +74,7 @@ public class QualityLadderService {
     return List.copyOf(variants);
   }
 
-  // The viewer's options bound the tier's picture before any entry shrinks it.
+  // The viewer's limits bound the tier's picture before any entry shrinks it.
   private static boolean fitsViewerBounds(
       PictureSize source, PictureSize box, PictureSize viewerBounds) {
     return EncodedPictureSizes.picturesWithin(source, box)
@@ -173,32 +173,5 @@ public class QualityLadderService {
         .height(output.height())
         .videoBitrate(output.bitrate())
         .frameRate(output.frameRate());
-  }
-
-  private static boolean isAutoQuality(StreamingOptions options) {
-    return options.quality() == null || options.quality() == VideoQuality.AUTO;
-  }
-
-  // The largest picture that the viewer's options allow, never larger than the source.
-  private static PictureSize viewerBounds(PictureSize source, StreamingOptions options) {
-    var maxWidth = Integer.MAX_VALUE;
-    if (options.maxWidth() != null && options.maxWidth() > 0) {
-      maxWidth = options.maxWidth();
-    }
-
-    var maxHeight = source.height();
-    if (options.maxHeight() != null && options.maxHeight() > 0) {
-      maxHeight = Math.min(options.maxHeight(), source.height());
-    }
-
-    return new PictureSize(maxWidth, maxHeight);
-  }
-
-  private static OptionalLong resolveMaxBitrate(StreamingOptions options) {
-    if (options.maxBitrate() != null && options.maxBitrate() > 0) {
-      return OptionalLong.of(options.maxBitrate());
-    }
-
-    return OptionalLong.empty();
   }
 }
