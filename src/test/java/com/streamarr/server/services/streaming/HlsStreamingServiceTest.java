@@ -2368,11 +2368,43 @@ class HlsStreamingServiceTest {
             .lines()
             .toList();
 
-    // 608x1080 at 60 fps needs 155,040 macroblocks per second: H.264 level 3.2, not 1080p60's 4.2.
+    // The 1080p tier's box turns with the picture. The 360p tier's 360x640 at 60 fps needs 55,200
+    // macroblocks per second: H.264 level 3.1.
     assertThat(playlist.get(playlist.indexOf("1080p/stream.m3u8?t=t") - 1))
-        .contains("RESOLUTION=608x1080,")
-        .contains("CODECS=\"avc1.640020,")
+        .contains("RESOLUTION=1080x1920,")
+        .contains("CODECS=\"avc1.64002A,")
         .contains("FRAME-RATE=60.000");
+    assertThat(playlist.get(playlist.indexOf("360p/stream.m3u8?t=t") - 1))
+        .contains("RESOLUTION=360x640,")
+        .contains("CODECS=\"avc1.64001F,");
+  }
+
+  @Test
+  @DisplayName(
+      "Should offer the 1080p tier at the source's size when a wide film is shorter than 1080 lines")
+  void shouldOfferThe1080pTierAtTheSourcesSizeWhenAWideFilmIsShorterThan1080Lines() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").width(1920).height(800).build());
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label, QualityVariant::width, QualityVariant::height)
+        .contains(tuple("1080p", 1920, 800));
+  }
+
+  @Test
+  @DisplayName(
+      "Should offer the 2160p and 1440p tiers when the source and the capability entry allow 4K")
+  void shouldOfferThe2160pAnd1440pTiersWhenTheSourceAndTheCapabilityEntryAllow4K() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").width(3840).height(2160).build());
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label, QualityVariant::width, QualityVariant::height)
+        .contains(tuple("2160p", 3840, 2160), tuple("1440p", 2560, 1440));
   }
 
   @Test
