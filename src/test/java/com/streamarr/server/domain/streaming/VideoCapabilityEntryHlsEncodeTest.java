@@ -141,7 +141,7 @@ class VideoCapabilityEntryHlsEncodeTest {
   }
 
   @ParameterizedTest
-  @CsvSource({"60, 1, 0.1", "60, 1, 9", "30000, 1001, 10", "24, 1, 11", "24, 1, 1e-9"})
+  @CsvSource({"60, 1, 0.1", "60, 1, 9", "24, 1, 11", "24, 1, 1e-9"})
   @DisplayName("Should fit no encode when only a frame rate below 10 fps fits the entry")
   void shouldFitNoEncodeWhenOnlyAFrameRateBelow10FpsFitsTheEntry(
       int numerator, int denominator, double maxFrameRate) {
@@ -154,7 +154,12 @@ class VideoCapabilityEntryHlsEncodeTest {
   }
 
   @ParameterizedTest
-  @CsvSource({"60, 1, 10, 10, 1", "24, 1, 12, 12, 1", "30, 1, 10, 10, 1"})
+  @CsvSource({
+    "60, 1, 10, 10, 1",
+    "24, 1, 12, 12, 1",
+    "30, 1, 10, 10, 1",
+    "30000, 1001, 10, 10000, 1001"
+  })
   @DisplayName("Should keep a divided frame rate of 10 fps or more when it fits the entry")
   void shouldKeepADividedFrameRateOf10FpsOrMoreWhenItFitsTheEntry(
       int numerator,
