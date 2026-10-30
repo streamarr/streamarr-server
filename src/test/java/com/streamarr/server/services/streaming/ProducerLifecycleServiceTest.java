@@ -811,6 +811,55 @@ class ProducerLifecycleServiceTest {
 
   @Test
   @DisplayName(
+      "Should replace the job attempt at the newer request's segment when the newer request's relocation stops the job attempt and its new job attempt fails to start")
+  void
+      shouldReplaceTheJobAttemptAtTheNewerRequestsSegmentWhenTheNewerRequestsRelocationStopsTheJobAttemptAndItsNewJobAttemptFailsToStart() {
+    var session = startedSession();
+    var sessionId = session.getSessionId();
+    var older =
+        lifecycle.prepareRequestedVariant(
+            sessionId, StreamSession.defaultVariant(), "segment100.m4s");
+    lifecycle.recover(older);
+    transcodeExecutor.failUntargetedStarts();
+    var newer =
+        lifecycle.prepareRequestedVariant(
+            sessionId, StreamSession.defaultVariant(), "segment300.m4s");
+
+    var result = lifecycle.recover(newer);
+
+    assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::startSequenceNumber)
+        .containsExactly(0, 100, 300);
+  }
+
+  @Test
+  @DisplayName(
+      "Should replace the job attempt at the newer request's segment when the newer request's resume fails to start a job attempt")
+  void
+      shouldReplaceTheJobAttemptAtTheNewerRequestsSegmentWhenTheNewerRequestsResumeFailsToStartAJobAttempt() {
+    var session = startedSession();
+    var sessionId = session.getSessionId();
+    var older =
+        lifecycle.prepareRequestedVariant(
+            sessionId, StreamSession.defaultVariant(), "segment100.m4s");
+    lifecycle.recover(older);
+    lifecycle.suspend(sessionId);
+    transcodeExecutor.failUntargetedStarts();
+    var newer =
+        lifecycle.prepareRequestedVariant(
+            sessionId, StreamSession.defaultVariant(), "segment300.m4s");
+
+    var result = lifecycle.recover(newer);
+
+    assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::startSequenceNumber)
+        .containsExactly(0, 100, 300);
+  }
+
+  @Test
+  @DisplayName(
       "Should relocate the variant to an older held request's segment when the newer of two held requests replaced their stalled job attempt at its own segment")
   void
       shouldRelocateTheVariantToAnOlderHeldRequestsSegmentWhenTheNewerOfTwoHeldRequestsReplacedTheirStalledJobAttemptAtItsOwnSegment() {

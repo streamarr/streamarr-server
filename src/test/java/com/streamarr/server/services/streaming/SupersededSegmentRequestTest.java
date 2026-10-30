@@ -264,6 +264,28 @@ class SupersededSegmentRequestTest {
 
   @Test
   @DisplayName(
+      "Should replace the job attempt at the newer request's segment when the newer request's relocation stops the job attempt and its new job attempt fails to start")
+  void
+      shouldReplaceTheJobAttemptAtTheNewerRequestsSegmentWhenTheNewerRequestsRelocationStopsTheJobAttemptAndItsNewJobAttemptFailsToStart()
+          throws Exception {
+    var session = startedLadderSession();
+    var sessionId = session.getSessionId();
+    var older = relocatingDelivery(sessionId, 100);
+    transcodeExecutor.failUntargetedStarts();
+    var replacements = transcodeExecutor.getStartedTargets().size();
+
+    var newer = deliverAsync(sessionId, 300);
+
+    transcodeExecutor.awaitStartedTargetCount(replacements + 1);
+    upload(sessionId, 300);
+    assertThat(answer(newer)).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(answer(older)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(startSegments(sessionId)).containsExactly(0, 100, 300);
+    assertThat(runningStartSegment(session)).isEqualTo(300);
+  }
+
+  @Test
+  @DisplayName(
       "Should answer an older held request with its segment when the job attempt that a newer request started produces that segment")
   void
       shouldAnswerAnOlderHeldRequestWithItsSegmentWhenTheJobAttemptThatANewerRequestStartedProducesThatSegment()
