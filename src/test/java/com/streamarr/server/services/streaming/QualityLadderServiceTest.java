@@ -113,6 +113,20 @@ class QualityLadderServiceTest {
 
   @Test
   @DisplayName(
+      "Should encode a fixed quality within the viewer's maximum bitrate when the source's bitrate"
+          + " is higher")
+  void shouldEncodeAFixedQualityWithinTheViewersMaximumBitrateWhenTheSourcesBitrateIsHigher() {
+    var probe = buildProbe(1920, 1080, 8_000_000L);
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.HIGH_720P).maxBitrate(1_000_000).build();
+
+    var variants = generateVariants(probe, options);
+
+    assertThat(variants).extracting(QualityVariant::videoBitrate).containsExactly(1_000_000L);
+  }
+
+  @Test
+  @DisplayName(
       "Should skip every tier wider than the viewer's maximum width when the viewer sets one")
   void shouldSkipEveryTierWiderThanTheViewersMaximumWidthWhenTheViewerSetsOne() {
     var probe = buildProbe(1920, 1080, 8_000_000L);
