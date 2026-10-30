@@ -9,6 +9,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSes
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
@@ -56,6 +57,7 @@ class OnDemandVariantsIT {
   private static final byte[] SEGMENT_BYTES = {1};
 
   private final FakeSegmentStore segmentStore = new FakeSegmentStore();
+  private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
   private WorkerSessionServer server;
   private ManagedChannel channel;
   private LoopbackWorker worker;
@@ -70,7 +72,7 @@ class OnDemandVariantsIT {
             .eventPublisher(new CapturingEventPublisher())
             .configuration(serverConfigurationBuilder().build())
             .segmentStore(segmentStore)
-            .meterRegistry(new SimpleMeterRegistry())
+            .meterRegistry(meterRegistry)
             .build();
     server.start();
     channel = plaintextChannelBuilder(server.port(), WORKER_ID).build();
@@ -143,9 +145,10 @@ class OnDemandVariantsIT {
 
   @Test
   @DisplayName(
-      "Should run only the variant that the player fetches when a stream session starts, switches up and seeks")
-  void shouldRunOnlyTheVariantThatThePlayerFetchesWhenAStreamSessionStartsSwitchesUpAndSeeks()
-      throws Exception {
+      "Should run only the variant that the player fetches, and the variant it leaves until the switch delivers, when a stream session starts, switches up and seeks")
+  void
+      shouldRunOnlyTheVariantThatThePlayerFetchesAndTheVariantItLeavesUntilTheSwitchDeliversWhenAStreamSessionStartsSwitchesUpAndSeeks()
+          throws Exception {
     registerWorker(8);
     var sessionId = startedSession().getSessionId();
     worker.awaitRunningJobs(Map.of("480p", 0));
@@ -156,8 +159,10 @@ class OnDemandVariantsIT {
     worker.awaitRunningJobs(Map.of("480p", 0, "1080p", 1));
     assertThat(storeAndAwait(switchUpInit)).isInstanceOf(SegmentDelivery.Ready.class);
     var switchUpSegment = request(sessionId, "1080p", "1080p/segment1.m4s");
-    worker.awaitRunningJobs(Map.of("1080p", 1));
+    awaitHeldRequests(1);
+    assertThat(server.isRunning(sessionId, "480p")).isTrue();
     assertThat(storeAndAwait(switchUpSegment)).isInstanceOf(SegmentDelivery.Ready.class);
+    worker.awaitRunningJobs(Map.of("1080p", 1));
 
     var seek = request(sessionId, "1080p", "1080p/segment100.m4s");
     worker.awaitRunningJobs(Map.of("1080p", 100));
@@ -165,6 +170,25 @@ class OnDemandVariantsIT {
     assertThat(List.of("480p", "720p", "360p"))
         .noneMatch(variantLabel -> server.isRunning(sessionId, variantLabel));
     assertThat(server.isRunning(sessionId, "1080p")).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop the variant that the player leaves to start the switched variant when the worker has no free job slot")
+  void
+      shouldStopTheVariantThatThePlayerLeavesToStartTheSwitchedVariantWhenTheWorkerHasNoFreeJobSlot()
+          throws Exception {
+    registerWorker(1);
+    var sessionId = startedSession().getSessionId();
+    worker.awaitRunningJobs(Map.of("480p", 0));
+    assertThat(storeAndAwait(request(sessionId, "480p", "480p/segment0.m4s")))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+
+    var switchUp = request(sessionId, "1080p", "1080p/segment1.m4s");
+
+    worker.awaitRunningJobs(Map.of("1080p", 1));
+    assertThat(storeAndAwait(switchUp)).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(server.isRunning(sessionId, "480p")).isFalse();
   }
 
   private void registerWorker(int availableSlots) throws InterruptedException {
@@ -181,6 +205,16 @@ class OnDemandVariantsIT {
     return accepted(
         streamingService.createSession(
             createStreamSessionCommand(mediaFile.getId(), UUID.randomUUID(), options)));
+  }
+
+  // A request is held only after the server has applied the on-demand rules to it.
+  private void awaitHeldRequests(int count) {
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .until(
+            () ->
+                meterRegistry.get("streamarr.streaming.held_segment_requests").gauge().value()
+                    == count);
   }
 
   private PendingRequest request(UUID sessionId, String variantLabel, String segmentName) {

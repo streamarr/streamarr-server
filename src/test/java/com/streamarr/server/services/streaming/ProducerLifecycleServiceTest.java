@@ -386,6 +386,41 @@ class ProducerLifecycleServiceTest {
 
   @Test
   @DisplayName(
+      "Should stop no video variant when a media segment of a variant that the player has since left is delivered")
+  void shouldStopNoVideoVariantWhenAMediaSegmentOfAVariantThatThePlayerHasSinceLeftIsDelivered() {
+    var session = startedLadderSession();
+    var sessionId = session.getSessionId();
+    var played = lifecycle.prepareRequestedVariant(sessionId, "480p", "480p/segment0.m4s");
+    lifecycle.completeVariantSwitch(played);
+    lifecycle.prepareRequestedVariant(sessionId, "1080p", "1080p/segment1.m4s");
+
+    lifecycle.completeVariantSwitch(played);
+
+    assertThat(session.getVariantHandles()).containsOnlyKeys("480p", "1080p");
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop only the stream session's own variant that the player leaves when the transcode limit leaves no room for the switched variant")
+  void
+      shouldStopOnlyTheStreamSessionsOwnVariantThatThePlayerLeavesWhenTheTranscodeLimitLeavesNoRoomForTheSwitchedVariant() {
+    var others = List.of(startedLadderSession(), startedLadderSession());
+    var session = startedLadderSession();
+    var sessionId = session.getSessionId();
+    var played = lifecycle.prepareRequestedVariant(sessionId, "480p", "480p/segment0.m4s");
+    lifecycle.completeVariantSwitch(played);
+
+    lifecycle.prepareRequestedVariant(sessionId, "1080p", "1080p/init.mp4");
+    assertThat(session.getVariantHandles()).containsOnlyKeys("480p");
+    lifecycle.prepareRequestedVariant(sessionId, "1080p", "1080p/segment1.m4s");
+
+    assertThat(session.getVariantHandles()).containsOnlyKeys("1080p");
+    assertThat(others)
+        .allSatisfy(other -> assertThat(other.getVariantHandles()).containsOnlyKeys("480p"));
+  }
+
+  @Test
+  @DisplayName(
       "Should start nothing when positioning a variant that the stream session does not offer")
   void shouldStartNothingWhenPositioningAVariantThatTheStreamSessionDoesNotOffer() {
     var session = startedLadderSession();

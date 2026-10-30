@@ -17,6 +17,7 @@ import com.streamarr.server.services.serversettings.ServerSettingsService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
@@ -61,6 +62,9 @@ public class ProducerLifecycleService {
   // The newest media-segment request of each stream session, for any variant: where the player is.
   private final ConcurrentHashMap<UUID, SegmentRequest> newestMediaSegmentRequests =
       new ConcurrentHashMap<>();
+  // The variant that each stream session's player plays: the variant of the last media segment
+  // delivered while that variant was the variant of the newest media-segment request (ADR 0019).
+  private final ConcurrentHashMap<UUID, String> playingVariants = new ConcurrentHashMap<>();
 
   public enum RecoveryResult {
     WAITING,
@@ -148,6 +152,7 @@ public class ProducerLifecycleService {
           recoveryStates.keySet().removeIf(key -> key.sessionId().equals(sessionId));
           newestPositioningRequests.keySet().removeIf(key -> key.sessionId().equals(sessionId));
           newestMediaSegmentRequests.remove(sessionId);
+          playingVariants.remove(sessionId);
         });
   }
 
@@ -497,9 +502,12 @@ public class ProducerLifecycleService {
 
   /**
    * Applies the on-demand rules of ADR 0019 to one segment request under one session lock. A
-   * media-segment request stops the job attempts of the other video variants. A request for a
-   * variant without a job attempt then starts that variant: at the requested media segment, or at
-   * the current segment for the initialization segment. A stored media segment starts nothing, and
+   * media-segment request stops the job attempts of the other video variants, except the variant
+   * that the player plays while that variant's running job attempt can produce the requested
+   * segment without a relocation. A request for a variant without a job attempt then starts that
+   * variant: at the requested media segment, or at the current segment for the initialization
+   * segment. When the start of a media-segment request's variant fails, the variant that the player
+   * plays stops and the start is tried once more. A stored media segment starts nothing, and
    * neither does a full transcode limit. A variant that does not start stays without a job attempt,
    * so recovery answers the request as {@link RecoveryResult#VARIANT_NOT_RUNNING}. Returns the
    * request numbered in order of arrival; the caller passes it to every later {@link #recover}.
@@ -518,10 +526,10 @@ public class ProducerLifecycleService {
                   .build();
           if (SegmentNames.indexOf(segmentName).isPresent()) {
             rememberNewestMediaSegmentRequest(request);
-            doStopOtherVideoVariants(sessionId, variantLabel);
+            doStopVariantsTheSwitchLeaves(request);
           }
 
-          if (tryStartVariantOnDemand(sessionId, variantLabel, segmentName)) {
+          if (tryStartVariantOnDemand(request)) {
             rememberNewestPositioningRequest(request);
           }
 
@@ -561,13 +569,53 @@ public class ProducerLifecycleService {
     return next;
   }
 
-  private void doStopOtherVideoVariants(UUID sessionId, String requestedVariantLabel) {
-    var session = runtimeRegistry.findById(sessionId).orElse(null);
-    if (session == null || !session.offersVariant(requestedVariantLabel)) {
+  /**
+   * Once the player has received the request's media segment, stops every other video variant when
+   * the request's variant is the variant of the stream session's newest media-segment request: the
+   * player then plays that variant, so the variant that the player left stops (ADR 0019). A
+   * delivered segment of a variant that the player has since left changes nothing.
+   */
+  public void completeVariantSwitch(SegmentRequest delivered) {
+    if (SegmentNames.indexOf(delivered.segmentName()).isEmpty()) {
       return;
     }
 
-    var stopped = doStopVideoVariantsExcept(session, Set.of(requestedVariantLabel));
+    withSessionLock(delivered.sessionId(), () -> doCompleteVariantSwitch(delivered));
+  }
+
+  private void doCompleteVariantSwitch(SegmentRequest delivered) {
+    var session = runtimeRegistry.findById(delivered.sessionId()).orElse(null);
+    var newest = newestMediaSegmentRequests.get(delivered.sessionId());
+    if (session == null
+        || newest == null
+        || !newest.variantLabel().equals(delivered.variantLabel())) {
+      return;
+    }
+
+    playingVariants.put(delivered.sessionId(), delivered.variantLabel());
+    var stopped = doStopVideoVariantsExcept(session, Set.of(delivered.variantLabel()));
+    if (stopped.isEmpty()) {
+      return;
+    }
+
+    log.info(
+        "Stopped variants {} of session {} once variant {} delivered {}",
+        stopped,
+        delivered.sessionId(),
+        delivered.variantLabel(),
+        delivered.segmentName());
+  }
+
+  private void doStopVariantsTheSwitchLeaves(SegmentRequest request) {
+    var session = runtimeRegistry.findById(request.sessionId()).orElse(null);
+    if (session == null || !session.offersVariant(request.variantLabel())) {
+      return;
+    }
+
+    var kept = new HashSet<String>();
+    kept.add(request.variantLabel());
+    variantToKeepForSwitchBack(session, request).ifPresent(kept::add);
+    var stopped = doStopVideoVariantsExcept(session, kept);
     if (stopped.isEmpty()) {
       return;
     }
@@ -575,8 +623,33 @@ public class ProducerLifecycleService {
     log.info(
         "Stopped variants {} of session {} for a request of variant {}",
         stopped,
-        sessionId,
-        requestedVariantLabel);
+        request.sessionId(),
+        request.variantLabel());
+  }
+
+  // The variant that the player plays keeps running beside the requested variant while its job
+  // attempt can produce the requested segment without a relocation, so the player can switch back
+  // to it (ADR 0019).
+  private Optional<String> variantToKeepForSwitchBack(
+      StreamSession session, SegmentRequest request) {
+    var requestedIndex = SegmentNames.indexOf(request.segmentName()).orElseThrow();
+    return Optional.ofNullable(playingVariants.get(request.sessionId()))
+        .filter(playing -> !playing.equals(request.variantLabel()))
+        .filter(playing -> canProduceWithoutRelocation(session, playing, requestedIndex));
+  }
+
+  private boolean canProduceWithoutRelocation(
+      StreamSession session, String variantLabel, int segmentIndex) {
+    var active =
+        session
+            .getVariantHandle(variantLabel)
+            .filter(handle -> handle.status() == TranscodeStatus.ACTIVE);
+    if (active.isEmpty()) {
+      return false;
+    }
+
+    var segmentName = variantLabel + "/" + SegmentNames.mediaSegmentName(segmentIndex);
+    return !requiresRelocation(session, variantLabel, segmentName);
   }
 
   // Answers the labels of the variants it stopped.
@@ -605,32 +678,24 @@ public class ProducerLifecycleService {
     session.removeVariantHandle(variantLabel);
   }
 
-  private boolean tryStartVariantOnDemand(UUID sessionId, String variantLabel, String segmentName) {
+  private boolean tryStartVariantOnDemand(SegmentRequest request) {
+    var sessionId = request.sessionId();
+    var variantLabel = request.variantLabel();
     var session = runtimeRegistry.findById(sessionId).orElse(null);
-    if (session == null || !needsOnDemandStart(session, variantLabel, segmentName)) {
+    if (session == null || !needsOnDemandStart(session, variantLabel, request.segmentName())) {
       return false;
     }
 
     var startSequenceNumber =
-        SegmentNames.indexOf(segmentName).orElseGet(() -> currentSegment(session));
-    if (!hasConfiguredTranscodeSlotFor(session)) {
+        SegmentNames.indexOf(request.segmentName()).orElseGet(() -> currentSegment(session));
+    var refusal = startOnDemand(session, request, startSequenceNumber);
+    if (refusal.isPresent()) {
       log.warn(
-          "Transcode limit reached: session {} variant {} did not start at segment {}",
-          sessionId,
+          "Variant {} of session {} did not start on demand at segment {}: {}",
           variantLabel,
-          startSequenceNumber);
-      return false;
-    }
-
-    try {
-      startVariant(session, variantLabel, startSequenceNumber);
-    } catch (TranscodeException e) {
-      log.warn(
-          "On-demand start failed for session {} variant {} at segment {}: {}",
           sessionId,
-          variantLabel,
           startSequenceNumber,
-          e.getMessage());
+          refusal.get());
       return false;
     }
 
@@ -641,6 +706,44 @@ public class ProducerLifecycleService {
         sessionId,
         startSequenceNumber);
     return true;
+  }
+
+  // The variant that the player plays must not keep the requested variant from starting: when the
+  // start fails beside it, that variant stops and the start is tried once more (ADR 0019). Answers
+  // why the variant did not start.
+  private Optional<String> startOnDemand(
+      StreamSession session, SegmentRequest request, int startSequenceNumber) {
+    var refusal = attemptOnDemandStart(session, request.variantLabel(), startSequenceNumber);
+    if (refusal.isEmpty() || SegmentNames.indexOf(request.segmentName()).isEmpty()) {
+      return refusal;
+    }
+
+    var stopped = doStopVideoVariantsExcept(session, Set.of(request.variantLabel()));
+    if (stopped.isEmpty()) {
+      return refusal;
+    }
+
+    log.info(
+        "Stopped variants {} of session {} to make room for variant {}: {}",
+        stopped,
+        request.sessionId(),
+        request.variantLabel(),
+        refusal.get());
+    return attemptOnDemandStart(session, request.variantLabel(), startSequenceNumber);
+  }
+
+  private Optional<String> attemptOnDemandStart(
+      StreamSession session, String variantLabel, int startSequenceNumber) {
+    if (!hasConfiguredTranscodeSlotFor(session)) {
+      return Optional.of("the transcode limit is reached");
+    }
+
+    try {
+      startVariant(session, variantLabel, startSequenceNumber);
+      return Optional.empty();
+    } catch (TranscodeException e) {
+      return Optional.of(e.getMessage());
+    }
   }
 
   private boolean needsOnDemandStart(

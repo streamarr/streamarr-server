@@ -18,11 +18,12 @@ public class SegmentDeliveryCoordinator {
 
   /**
    * Answers one segment request. Before the wait, the request applies the on-demand rules of ADR
-   * 0019 once: a media-segment request stops the other video variants, and a request for a variant
-   * without a job attempt starts that variant. Later passes never start the variant again, so a
-   * held request whose variant another request stopped ends instead of restarting it. A held
-   * request also ends instead of relocating or resuming its variant once a newer request has
-   * positioned the variant.
+   * 0019 once: a media-segment request stops the other video variants except the variant that the
+   * player plays, and a request for a variant without a job attempt starts that variant. Later
+   * passes never start the variant again, so a held request whose variant another request stopped
+   * ends instead of restarting it. A held request also ends instead of relocating or resuming its
+   * variant once a newer request has positioned the variant. A delivered media segment of the
+   * newest media-segment request's variant stops the variant that the player left.
    */
   public SegmentDelivery deliver(UUID sessionId, String variantLabel, String segmentName) {
     var refusal = refusal(sessionId, segmentName);
@@ -35,7 +36,7 @@ public class SegmentDeliveryCoordinator {
       try (var wake = heldRequests.nextWake(sessionId, variantLabel)) {
         var outcome = deliverOnce(request);
         if (outcome != null) {
-          return outcome;
+          return completed(request, outcome);
         }
 
         // A stored segment, an ended job attempt or a destroyed session fires the wake. Only a
@@ -46,6 +47,14 @@ public class SegmentDeliveryCoordinator {
         }
       }
     }
+  }
+
+  private SegmentDelivery completed(SegmentRequest request, SegmentDelivery outcome) {
+    if (outcome instanceof SegmentDelivery.Ready) {
+      producerLifecycle.completeVariantSwitch(request);
+    }
+
+    return outcome;
   }
 
   private Optional<SegmentDelivery> refusal(UUID sessionId, String segmentName) {
