@@ -1768,10 +1768,11 @@ class TranscodeDecisionServiceTest {
   }
 
   @ParameterizedTest
-  @CsvSource({"0, 1080", "1920, 0"})
+  @CsvSource({"0, 1080", "1920, 0", "1920, 1", "1, 3"})
   @DisplayName(
-      "Should choose an encode codec by its codec profile when the source has no picture to fit")
-  void shouldChooseAnEncodeCodecByItsCodecProfileWhenTheSourceHasNoPictureToFit(
+      "Should choose an encode codec by its codec profile when no encoder can encode the source's"
+          + " picture at any size")
+  void shouldChooseAnEncodeCodecByItsCodecProfileWhenNoEncoderCanEncodeTheSourcesPictureAtAnySize(
       int width, int height) {
     var source = probeBuilder("hevc", "aac").width(width).height(height).build();
 
@@ -1804,26 +1805,6 @@ class TranscodeDecisionServiceTest {
             TranscodeDecisionRequest.builder()
                 .source(source)
                 .capabilityDeclaration(declaration)
-                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
-                .build());
-
-    assertThat(decision).map(TranscodeDecision::videoCodecFamily).contains("h264");
-  }
-
-  @ParameterizedTest
-  @CsvSource({"1920, 1", "1, 3"})
-  @DisplayName(
-      "Should choose an encode codec by its codec profile when no encoder can encode the source's"
-          + " picture at any size")
-  void shouldChooseAnEncodeCodecByItsCodecProfileWhenNoEncoderCanEncodeTheSourcesPictureAtAnySize(
-      int width, int height) {
-    var source = probeBuilder("hevc", "aac").width(width).height(height).build();
-
-    var decision =
-        service.decide(
-            TranscodeDecisionRequest.builder()
-                .source(source)
-                .capabilityDeclaration(declaring(H264))
                 .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                 .build());
 
