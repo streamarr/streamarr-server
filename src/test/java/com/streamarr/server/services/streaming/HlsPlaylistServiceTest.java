@@ -71,6 +71,30 @@ class HlsPlaylistServiceTest {
     return createSessionWithDuration(mode, Duration.ofSeconds(durationSeconds));
   }
 
+  // The default variant of a session without a ladder of its own, at the source's 5 Mb/s.
+  private static QualityVariant.QualityVariantBuilder defaultVariantAt(int width, int height) {
+    return StreamSessionFixture.defaultVariantBuilder()
+        .width(width)
+        .height(height)
+        .videoBitrate(5_000_000L)
+        .label(StreamSession.defaultVariant());
+  }
+
+  private static List<QualityVariant> atFrameRate(List<QualityVariant> ladder, Fraction rate) {
+    return ladder.stream()
+        .map(
+            variant ->
+                StreamSessionFixture.defaultVariantBuilder()
+                    .width(variant.width())
+                    .height(variant.height())
+                    .videoBitrate(variant.videoBitrate())
+                    .audioBitrate(variant.audioBitrate())
+                    .label(variant.label())
+                    .frameRate(rate)
+                    .build())
+        .toList();
+  }
+
   private static TranscodeDecision encodedDecision(String videoCodecFamily, Fraction rate) {
     return TranscodeDecision.builder()
         .transcodeMode(TranscodeMode.FULL_TRANSCODE)
@@ -158,21 +182,21 @@ class HlsPlaylistServiceTest {
     var source = VideoPlaybackFactsFixture.sdrH264FactsBuilder().build();
     var variants =
         List.of(
-            QualityVariant.builder()
+            StreamSessionFixture.defaultVariantBuilder()
                 .width(1920)
                 .height(1080)
                 .videoBitrate(5_000_000L)
                 .audioBitrate(128_000L)
                 .label("1080p")
                 .build(),
-            QualityVariant.builder()
+            StreamSessionFixture.defaultVariantBuilder()
                 .width(1280)
                 .height(720)
                 .videoBitrate(3_000_000L)
                 .audioBitrate(128_000L)
                 .label("720p")
                 .build(),
-            QualityVariant.builder()
+            StreamSessionFixture.defaultVariantBuilder()
                 .width(854)
                 .height(480)
                 .videoBitrate(1_500_000L)
@@ -579,6 +603,7 @@ class HlsPlaylistServiceTest {
                       .subtitleDecision(SubtitleDecision.exclude())
                       .videoSource(Optional.of(source))
                       .build())
+              .variants(List.of(defaultVariantAt(7502, 4042).frameRate(rate).build()))
               .build();
 
       var playlist = service.generateMultivariantPlaylist(session, "test-token");
@@ -587,6 +612,7 @@ class HlsPlaylistServiceTest {
     }
 
     private StreamSession encodedLadderAt(String videoCodecFamily, Fraction frameRate) {
+      var ladder = StreamSessionFixture.abrSessionBuilder().build().getVariants();
       return StreamSessionFixture.abrSessionBuilder()
           .mediaProbe(
               StreamSessionFixture.defaultProbeBuilder()
@@ -594,6 +620,7 @@ class HlsPlaylistServiceTest {
                   .videoPlaybackFacts(encodedDecision(videoCodecFamily, frameRate).videoSource())
                   .build())
           .transcodeDecision(encodedDecision(videoCodecFamily, frameRate))
+          .variants(atFrameRate(ladder, frameRate))
           .build();
     }
 
@@ -664,8 +691,8 @@ class HlsPlaylistServiceTest {
 
     @Test
     @DisplayName(
-        "Should advertise the source-sized encode's codec string when the encode has no ladder")
-    void shouldAdvertiseTheSourceSizedEncodesCodecStringWhenTheEncodeHasNoLadder() {
+        "Should advertise the source-sized encode's codec string when a fixed quality encodes")
+    void shouldAdvertiseTheSourceSizedEncodesCodecStringWhenAFixedQualityEncodes() {
       var session =
           StreamSessionFixture.defaultSessionBuilder()
               .mediaProbe(
@@ -676,6 +703,8 @@ class HlsPlaylistServiceTest {
                       .bitrate(5_000_000L)
                       .build())
               .transcodeDecision(encodedDecision("h264", new Fraction(60, 1)))
+              .variants(
+                  List.of(defaultVariantAt(1920, 1080).frameRate(new Fraction(60, 1)).build()))
               .build();
 
       var playlist = service.generateMultivariantPlaylist(session, "test-token");
@@ -973,7 +1002,7 @@ class HlsPlaylistServiceTest {
               .sourceCodecString(Optional.of("ac-3"))
               .build();
       var variant =
-          QualityVariant.builder()
+          StreamSessionFixture.defaultVariantBuilder()
               .width(1920)
               .height(1080)
               .videoBitrate(5_000_000L)
@@ -1197,6 +1226,7 @@ class HlsPlaylistServiceTest {
         int numerator, int denominator, String frameRate) {
       var rate = new Fraction(numerator, denominator);
       var decision = encodedDecision("h264", rate);
+      var ladder = StreamSessionFixture.defaultLadderSessionBuilder().build().getVariants();
       var session =
           StreamSessionFixture.defaultLadderSessionBuilder()
               .mediaProbe(
@@ -1205,6 +1235,7 @@ class HlsPlaylistServiceTest {
                       .videoPlaybackFacts(decision.videoSource())
                       .build())
               .transcodeDecision(decision)
+              .variants(atFrameRate(ladder, rate))
               .build();
 
       assertThat(streamInf(session))
