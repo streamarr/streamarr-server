@@ -76,6 +76,19 @@ class QualityLadderServiceTest {
   }
 
   @Test
+  @DisplayName("Should size the only variant at the maximum height when it is below every tier")
+  void shouldSizeTheOnlyVariantAtTheMaximumHeightWhenItIsBelowEveryTier() {
+    var probe = buildProbe(1920, 1080, 8_000_000L);
+    var options = StreamingOptions.builder().maxHeight(300).build();
+
+    var variants = service.generateVariants(probe, options);
+
+    assertThat(variants)
+        .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::label)
+        .containsExactly(tuple(534, 300, "300p"));
+  }
+
+  @Test
   @DisplayName("Should return single variant when source resolution is low")
   void shouldReturnSingleVariantWhenSourceResolutionIsLow() {
     var probe = buildProbe(320, 180, 500_000L);
