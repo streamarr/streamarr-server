@@ -18,14 +18,14 @@ import org.springframework.stereotype.Service;
 @Service
 public class QualityLadderService {
 
-  private record QualityTier(int height, long videoBitrate, long audioBitrate) {}
+  private record QualityTier(PictureSize box, long videoBitrate, long audioBitrate) {}
 
   private static final List<QualityTier> STANDARD_TIERS =
       List.of(
-          new QualityTier(1080, 5_000_000L, 128_000L),
-          new QualityTier(720, 3_000_000L, 128_000L),
-          new QualityTier(480, 1_500_000L, 96_000L),
-          new QualityTier(360, 800_000L, 64_000L));
+          new QualityTier(new PictureSize(1920, 1080), 5_000_000L, 128_000L),
+          new QualityTier(new PictureSize(1280, 720), 3_000_000L, 128_000L),
+          new QualityTier(new PictureSize(854, 480), 1_500_000L, 96_000L),
+          new QualityTier(new PictureSize(640, 360), 800_000L, 64_000L));
 
   private static final long VIEWER_AND_ENTRY_BOUNDED_AUDIO_BITRATE = 64_000L;
   // More than any codec level allows, so fitting caps it at the entry level's highest bitrate.
@@ -53,7 +53,7 @@ public class QualityLadderService {
 
     var variants = new LinkedHashMap<String, QualityVariant>();
     for (var tier : STANDARD_TIERS) {
-      if (tier.height() > viewerBounds.height()) {
+      if (tier.box().height() > viewerBounds.height()) {
         continue;
       }
 
@@ -61,11 +61,12 @@ public class QualityLadderService {
         continue;
       }
 
-      if (EncodedPictureSizes.atHeight(source, tier.height()).width() > viewerBounds.width()) {
+      if (EncodedPictureSizes.atHeight(source, tier.box().height()).width()
+          > viewerBounds.width()) {
         continue;
       }
 
-      var bounds = new PictureSize(viewerBounds.width(), tier.height());
+      var bounds = new PictureSize(viewerBounds.width(), tier.box().height());
       fit(request, bounds, tier.videoBitrate())
           .map(output -> tierVariant(output, tier))
           .ifPresent(variant -> variants.put(variant.label(), variant));
@@ -107,7 +108,7 @@ public class QualityLadderService {
   private static EncodedVideoOutput atNominalBitrate(EncodedVideoOutput output) {
     var nominalBitrate =
         STANDARD_TIERS.reversed().stream()
-            .filter(tier -> tier.height() >= output.height())
+            .filter(tier -> tier.box().height() >= output.height())
             .findFirst()
             .orElse(STANDARD_TIERS.getFirst())
             .videoBitrate();
