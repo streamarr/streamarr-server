@@ -1848,6 +1848,41 @@ class SegmentDeliveryCoordinatorTest {
     assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
   }
 
+  @Test
+  @DisplayName(
+      "Should keep a variant that an initialization request started running when a held media segment of the played variant is delivered")
+  void
+      shouldKeepAVariantThatAnInitializationRequestStartedRunningWhenAHeldMediaSegmentOfThePlayedVariantIsDelivered()
+          throws Exception {
+    var session = ladderSessionPlayingFirstListedVariant(3);
+    var sessionId = session.getSessionId();
+    var playing = heldDelivery(sessionId, "480p", "480p/segment3.m4s");
+    var initialization = heldDelivery(sessionId, "1080p", "1080p/init.mp4");
+    upload(sessionId, "1080p/init.mp4", new byte[] {0x66});
+    assertThat(initialization.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+
+    upload(sessionId, "480p/segment3.m4s", new byte[] {3});
+
+    assertThat(playing.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(runningVariants(session)).containsExactlyInAnyOrder("480p", "1080p");
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the switched variant's first media segment when the variant that the player left cannot be stopped")
+  void
+      shouldDeliverTheSwitchedVariantsFirstMediaSegmentWhenTheVariantThatThePlayerLeftCannotBeStopped()
+          throws Exception {
+    var session = ladderSessionPlayingFirstListedVariant(3);
+    var sessionId = session.getSessionId();
+    var switched = heldDelivery(sessionId, "1080p", "1080p/segment3.m4s");
+    transcodeExecutor.failOnStopVariant(sessionId);
+
+    upload(sessionId, "1080p/segment3.m4s", new byte[] {3});
+
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
   /**
    * Holds one request's thread at the session mutex once the given condition holds, so a second
    * request can run between the first request's steps.

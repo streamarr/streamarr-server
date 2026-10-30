@@ -730,11 +730,20 @@ public class ProducerLifecycleService {
    * changes nothing.
    */
   public void completeVariantSwitch(SegmentRequest delivered) {
-    if (SegmentNames.indexOf(delivered.segmentName()).isEmpty()) {
+    if (SegmentNames.indexOf(delivered.segmentName()).isEmpty() || hasNoSwitchPending(delivered)) {
       return;
     }
 
     withSessionLock(delivered.sessionId(), () -> doCompleteVariantSwitch(delivered));
+  }
+
+  // Read without the session mutex, so most deliveries skip it. When the player already plays the
+  // delivered variant and keeps no left variant, the locked step could stop only variants that an
+  // initialization request started, which run until the next media-segment request. A stale read
+  // only sends the delivery to the locked step, which decides again.
+  private boolean hasNoSwitchPending(SegmentRequest delivered) {
+    return delivered.variantLabel().equals(playingVariants.get(delivered.sessionId()))
+        && !sessionsKeepingLeftVariant.contains(delivered.sessionId());
   }
 
   private void doCompleteVariantSwitch(SegmentRequest delivered) {
@@ -749,7 +758,21 @@ public class ProducerLifecycleService {
 
     playingVariants.put(delivered.sessionId(), delivered.variantLabel());
     sessionsKeepingLeftVariant.remove(delivered.sessionId());
-    var stopped = doStopVideoVariantsExcept(session, Set.of(delivered.variantLabel()));
+    List<String> stopped;
+    try {
+      stopped = doStopVideoVariantsExcept(session, Set.of(delivered.variantLabel()));
+    } catch (IllegalStateException | TranscodeException e) {
+      // The player already has its segment, so a stop that fails, as one during shutdown does,
+      // must not fail the delivery.
+      log.warn(
+          "Could not stop the variants that session {} left once variant {} delivered {}: {}",
+          delivered.sessionId(),
+          delivered.variantLabel(),
+          delivered.segmentName(),
+          e.getMessage());
+      return;
+    }
+
     if (stopped.isEmpty()) {
       return;
     }
