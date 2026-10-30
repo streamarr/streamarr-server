@@ -26,6 +26,19 @@ class EncodedPictureSizesTest {
     assertThat(largest).contains(new PictureSize(1000, 1778));
   }
 
+  @Test
+  @DisplayName(
+      "Should skip a height whose width the encoder rounds up past the bound when the bound width"
+          + " is odd")
+  void shouldSkipAHeightWhoseWidthTheEncoderRoundsUpPastTheBoundWhenTheBoundWidthIsOdd() {
+    var source = new PictureSize(1920, 1080);
+    var bounds = new PictureSize(1279, 720);
+
+    var largest = EncodedPictureSizes.picturesWithin(source, bounds).findFirst();
+
+    assertThat(largest).contains(new PictureSize(1276, 718));
+  }
+
   @ParameterizedTest
   @CsvSource({
     "4096, 2, 1280, 720",
