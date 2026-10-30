@@ -667,6 +667,40 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.videoCodecFamily()).isEqualTo("av1");
   }
 
+  @ParameterizedTest
+  @CsvSource({"60, h264", "30, av1"})
+  @DisplayName(
+      "Should encode the codec family that keeps the higher frame rate, preferring AV1 on a tie,"
+          + " when the families' entries allow different frame rates")
+  void
+      shouldEncodeTheCodecFamilyThatKeepsTheHigherFrameRateWhenTheFamiliesEntriesAllowDifferentRates(
+          double h264MaxFrameRate, String expectedCodecFamily) {
+    var source =
+        probeVersion5H264(
+            new PictureSize(1920, 1080),
+            VideoPlaybackFactsFixture.declaredRateRule(new Fraction(60, 1)));
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    av1EntryBuilder().maxFrameRate(30).build(),
+                    h264EntryBuilder().maxFrameRate(h264MaxFrameRate).build()))
+            .build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaration)
+                    .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.videoCodecFamily()).isEqualTo(expectedCodecFamily);
+  }
+
   @Test
   @DisplayName(
       "Should encode H.264 when the client prefers AV1 and no worker-verified encoder encodes AV1")

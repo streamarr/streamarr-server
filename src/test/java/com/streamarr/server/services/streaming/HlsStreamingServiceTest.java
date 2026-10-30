@@ -1281,6 +1281,28 @@ class HlsStreamingServiceTest {
         .satisfies(request -> assertThat(request.outputFrameRate()).contains(new Fraction(30, 1)));
   }
 
+  @Test
+  @DisplayName(
+      "Should encode H.264 at the source's frame rate when the client's AV1 entry allows only half"
+          + " of it")
+  void shouldEncodeH264AtTheSourcesFrameRateWhenTheClientsAv1EntryAllowsOnlyHalfOfIt() {
+    probeResults.setDefaultProbe(probeAt(new Fraction(60, 1)).videoCodec("hevc").build());
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    av1EntryBuilder().maxFrameRate(30).build(),
+                    h264EntryBuilder().maxWidth(1920).maxHeight(1080).maxFrameRate(60).build()))
+            .build();
+
+    var session = createSession(seedMediaFile().getId(), declaration);
+
+    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo("h264");
+    assertThat(transcodeExecutor.getStartedRequests())
+        .isNotEmpty()
+        .allSatisfy(request -> assertThat(request.outputFrameRate()).contains(new Fraction(60, 1)));
+  }
+
   // A player that plays H.264 High up to level 3.1 at 1280×720 and 30 fps.
   private static ClientCapabilityDeclaration hdAt30Declaration() {
     return defaultDeclarationBuilder()
