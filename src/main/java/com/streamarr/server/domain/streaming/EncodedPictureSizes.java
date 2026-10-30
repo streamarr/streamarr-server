@@ -52,6 +52,17 @@ public final class EncodedPictureSizes {
         .takeWhile(picture -> picture.width() >= SMALLEST_DIMENSION);
   }
 
+  /**
+   * Whether a picture of the source reaches the box: the picture fits the box in either orientation
+   * and the next larger picture of the source that the worker encodes would not. Even sides can
+   * leave a picture that reaches its box a few pixels short of the box's side.
+   */
+  public static boolean reaches(
+      @NonNull PictureSize source, @NonNull PictureSize picture, @NonNull PictureSize box) {
+    var nextLarger = atHeight(source, picture.height() + 2);
+    return picture.fitsWithinEitherOrientation(box) && !nextLarger.fitsWithinEitherOrientation(box);
+  }
+
   /** Whether the worker encodes the source at any size. */
   public static boolean hasEncodablePicture(@NonNull PictureSize source) {
     return picturesWithin(source, NO_BOUNDS).findAny().isPresent();
