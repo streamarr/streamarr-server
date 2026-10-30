@@ -4,7 +4,9 @@ import com.streamarr.server.domain.streaming.EncodedPictureSizes;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.QualityVariant;
+import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.VideoQuality;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.stereotype.Service;
@@ -21,10 +23,18 @@ public class QualityLadderService {
           new QualityTier(480, 1_500_000L, 96_000L, "480p"),
           new QualityTier(360, 800_000L, 64_000L, "360p"));
 
-  /** Sizes each variant from the picture that a player shows, after cropping and rotation. */
+  /**
+   * The variants that an encode offers. Auto offers the standard tiers, or one variant when the
+   * source or the viewer's options leave no tier. A fixed quality offers only the default variant.
+   * Sizes each variant from the picture that a player shows, after cropping and rotation.
+   */
   public List<QualityVariant> generateVariants(MediaProbe probe, StreamingOptions options) {
     var source = probe.displayedSize();
     var maxHeight = resolveMaxHeight(source, options);
+    if (!isAutoQuality(options)) {
+      return List.of(sourceSizedVariant(probe, maxHeight, StreamSession.defaultVariant()));
+    }
+
     var maxBitrate = resolveMaxBitrate(options);
 
     var variants = new ArrayList<QualityVariant>();
@@ -54,18 +64,27 @@ public class QualityLadderService {
     }
 
     if (variants.isEmpty()) {
-      var size = EncodedPictureSizes.atHeight(source, maxHeight);
-      variants.add(
-          QualityVariant.builder()
-              .width(size.width())
-              .height(size.height())
-              .videoBitrate(probe.bitrate())
-              .audioBitrate(64_000L)
-              .label(size.height() + "p")
-              .build());
+      var height = EncodedPictureSizes.atHeight(source, maxHeight).height();
+      variants.add(sourceSizedVariant(probe, maxHeight, height + "p"));
     }
 
     return List.copyOf(variants);
+  }
+
+  // The variant keeps the source's bitrate at the largest height that the viewer allows.
+  private static QualityVariant sourceSizedVariant(MediaProbe probe, int maxHeight, String label) {
+    var size = EncodedPictureSizes.atHeight(probe.displayedSize(), maxHeight);
+    return QualityVariant.builder()
+        .width(size.width())
+        .height(size.height())
+        .videoBitrate(probe.bitrate())
+        .audioBitrate(64_000L)
+        .label(label)
+        .build();
+  }
+
+  private static boolean isAutoQuality(StreamingOptions options) {
+    return options.quality() == null || options.quality() == VideoQuality.AUTO;
   }
 
   private int resolveMaxHeight(PictureSize source, StreamingOptions options) {
