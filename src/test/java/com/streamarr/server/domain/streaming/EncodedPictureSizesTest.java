@@ -19,9 +19,8 @@ class EncodedPictureSizesTest {
     var source = new PictureSize(1080, 1920);
     var bounds = new PictureSize(1000, 1920);
 
-    var height = EncodedPictureSizes.largestHeightWithin(source, bounds);
+    var largest = EncodedPictureSizes.picturesWithin(source, bounds).findFirst();
 
-    assertThat(height).isEqualTo(1778);
-    assertThat(EncodedPictureSizes.atHeight(source, height)).isEqualTo(new PictureSize(1000, 1778));
+    assertThat(largest).contains(new PictureSize(1000, 1778));
   }
 }
