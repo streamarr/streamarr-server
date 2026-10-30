@@ -1053,6 +1053,159 @@ class HlsStreamingServiceTest {
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(expectedMode);
   }
 
+  // ADR 0050: outside Original, the server copies the video only when the source fits every one
+  // of the viewer's limits.
+  @Test
+  @DisplayName(
+      "Should encode the fixed quality's picture box when a copyable source is larger than the box")
+  void shouldEncodeTheFixedQualitysPictureBoxWhenACopyableSourceIsLargerThanTheBox() {
+    var options = StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build();
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(1280);
+              assertThat(request.height()).isEqualTo(720);
+            });
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "1919, , , 5000000, '720p, 480p, 360p'",
+    ", 1079, , 5000000, '720p, 480p, 360p'",
+    ", , 4000000, 40000000, '720p, 480p, 360p'"
+  })
+  @DisplayName(
+      "Should encode the video in Auto when a copyable source exceeds one of the viewer's limits")
+  void shouldEncodeTheVideoInAutoWhenACopyableSourceExceedsOneOfTheViewersLimits(
+      Integer maxWidth,
+      Integer maxHeight,
+      Integer maxBitrate,
+      long sourceBitrate,
+      String expectedLabels) {
+    probeResults.setDefaultProbe(defaultProbeBuilder().bitrate(sourceBitrate).build());
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.AUTO)
+            .maxWidth(maxWidth)
+            .maxHeight(maxHeight)
+            .maxBitrate(maxBitrate)
+            .build();
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label)
+        .containsExactlyInAnyOrder(expectedLabels.split(", "));
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "AUTO, 1920, 1080, 5000000, 5000000",
+    "AUTO, , , 4000000, 0",
+    "FULL_HD_1080P, , , , 5000000"
+  })
+  @DisplayName(
+      "Should copy the video when the source fits every one of the viewer's limits or its"
+          + " bitrate is unknown")
+  void shouldCopyTheVideoWhenTheSourceFitsEveryOneOfTheViewersLimitsOrItsBitrateIsUnknown(
+      VideoQuality quality,
+      Integer maxWidth,
+      Integer maxHeight,
+      Integer maxBitrate,
+      long sourceBitrate) {
+    probeResults.setDefaultProbe(defaultProbeBuilder().bitrate(sourceBitrate).build());
+    var options =
+        StreamingOptions.builder()
+            .quality(quality)
+            .maxWidth(maxWidth)
+            .maxHeight(maxHeight)
+            .maxBitrate(maxBitrate)
+            .build();
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+    assertThat(session.getVariants()).isEmpty();
+  }
+
+  // The fixed quality's box holds a picture in either orientation; the client's maximum width and
+  // height apply as it gives them.
+  @ParameterizedTest
+  @CsvSource({
+    "FULL_HD_1080P, , , true",
+    "HIGH_720P, , , false",
+    "AUTO, 1080, 1920, true",
+    "AUTO, 1920, 1080, false"
+  })
+  @DisplayName(
+      "Should copy a portrait source only when it fits the fixed quality's box in either"
+          + " orientation and the viewer's maximum width and height as given")
+  void shouldCopyAPortraitSourceOnlyWhenItFitsTheFixedQualitysBoxAndTheViewersMaximumsAsGiven(
+      VideoQuality quality, Integer maxWidth, Integer maxHeight, boolean copiesVideo) {
+    probeResults.setDefaultProbe(h264Level51ProbeAt(1080, 1920).build());
+    var landscapeHd =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().maxWidth(1920).maxHeight(1080).build()))
+            .build();
+    var options =
+        StreamingOptions.builder().quality(quality).maxWidth(maxWidth).maxHeight(maxHeight).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                    .options(options)
+                    .capabilityDeclaration(landscapeHd)
+                    .build()));
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isEqualTo(copiesVideo);
+  }
+
+  @Test
+  @DisplayName(
+      "Should copy the video in Original when the source exceeds every one of the viewer's limits")
+  void shouldCopyTheVideoInOriginalWhenTheSourceExceedsEveryOneOfTheViewersLimits() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().bitrate(40_000_000L).build());
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.ORIGINAL)
+            .maxWidth(640)
+            .maxHeight(360)
+            .maxBitrate(4_000_000)
+            .build();
+
+    var attempt = accepted(logicalPlayback().start(logicalStart().options(options).build()));
+
+    assertThat(attempt.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready ->
+                assertThat(ready.session().getTranscodeDecision().transcodeMode().copiesVideo())
+                    .isTrue());
+  }
+
+  @Test
+  @DisplayName(
+      "Should report transient capacity when the viewer's limits refuse a copy and every video"
+          + " encoder is busy")
+  void shouldReportTransientCapacityWhenTheViewersLimitsRefuseACopyAndEveryVideoEncoderIsBusy() {
+    transcodeExecutor.setEncodeSlots(Map.of("h264", 0));
+    var options = StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build();
+    var command = createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    assertThat(service.createSession(command))
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(capacityRefusals("no_encoder_with_free_slot")).isOne();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
   @Test
   @DisplayName(
       "Should encode a portrait source at its full size when the capability entry's maximum fits"
