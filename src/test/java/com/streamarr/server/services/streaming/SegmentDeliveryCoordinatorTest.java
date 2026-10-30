@@ -1651,10 +1651,10 @@ class SegmentDeliveryCoordinatorTest {
 
     var switched = deliverAsync(sessionId, "1080p", "1080p/segment3.m4s");
     transcodeExecutor.awaitStartedRequestCount(startedBefore + 1);
-
-    assertThat(session.getVariantHandles()).containsOnlyKeys("1080p");
     upload(sessionId, "1080p/segment3.m4s", new byte[] {3});
+
     assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(session.getVariantHandles()).containsOnlyKeys("1080p");
   }
 
   @Test
