@@ -12,7 +12,8 @@ public record TranscodeDecisionRequest(
     @NonNull ClientCapabilityDeclaration capabilityDeclaration,
     @NonNull Set<String> encodableVideoCodecFamilies,
     @NonNull VideoFormatConstraint videoFormatConstraint,
-    @NonNull Set<String> excludedEncodeCodecFamilies) {
+    @NonNull Set<String> excludedEncodeCodecFamilies,
+    @NonNull ViewerLimits viewerLimits) {
 
   public TranscodeDecisionRequest {
     excludedEncodeCodecFamilies = Set.copyOf(excludedEncodeCodecFamilies);
@@ -23,6 +24,7 @@ public record TranscodeDecisionRequest(
   public static class TranscodeDecisionRequestBuilder {
     private VideoFormatConstraint videoFormatConstraint = VideoFormatConstraint.COPY_OR_ENCODE;
     private Set<String> excludedEncodeCodecFamilies = Set.of();
+    private ViewerLimits viewerLimits = ViewerLimits.none();
 
     public TranscodeDecisionRequest build() {
       return new TranscodeDecisionRequest(
@@ -30,7 +32,8 @@ public record TranscodeDecisionRequest(
           capabilityDeclaration,
           encodableVideoCodecFamilies,
           videoFormatConstraint,
-          excludedEncodeCodecFamilies);
+          excludedEncodeCodecFamilies,
+          viewerLimits);
     }
   }
 }
