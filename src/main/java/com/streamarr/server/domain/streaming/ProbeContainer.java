@@ -13,7 +13,8 @@ public record ProbeContainer(
     @NonNull OptionalLong bitrate,
     @NonNull ChapterKnowledge chapters) {
 
-  @SuppressWarnings("java:S1068") // Lombok builder defaults — fields are used by generated code
+  // Lombok builder defaults — its generated setters assign them
+  @SuppressWarnings({"java:S1068", "java:S9438"})
   public static class ProbeContainerBuilder {
     private Optional<String> format = Optional.empty();
     private Optional<Duration> duration = Optional.empty();

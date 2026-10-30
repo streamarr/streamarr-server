@@ -14,7 +14,8 @@ public record FrameRateRuleInputs(
     @NonNull Optional<MatroskaStatistics> matroskaStatistics,
     @NonNull Optional<FrameRatePacketScan> packetScan) {
 
-  @SuppressWarnings("java:S1068") // Lombok builder defaults — fields are used by generated code
+  // Lombok builder defaults — its generated setters assign them
+  @SuppressWarnings({"java:S1068", "java:S9438"})
   public static class FrameRateRuleInputsBuilder {
     private Optional<Fraction> baseRate = Optional.empty();
     private Optional<Fraction> averageRate = Optional.empty();

@@ -42,7 +42,8 @@ public record StreamInfo(
     @NonNull Optional<Boolean> hearingImpaired,
     @NonNull Optional<VideoStreamProperties> videoProperties) {
 
-  @SuppressWarnings("java:S1068") // Lombok builder defaults — fields are used by generated code
+  // Lombok builder defaults — its generated setters assign them
+  @SuppressWarnings({"java:S1068", "java:S9438"})
   public static class StreamInfoBuilder {
     private Optional<String> codec = Optional.empty();
     private Optional<String> language = Optional.empty();
