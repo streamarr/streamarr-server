@@ -20,7 +20,9 @@ public class SegmentDeliveryCoordinator {
    * Answers one segment request. Before the wait, the request applies the on-demand rules of ADR
    * 0019 once: a media-segment request stops the other video variants, and a request for a variant
    * without a job attempt starts that variant. Later passes never start the variant again, so a
-   * held request whose variant another request stopped ends instead of restarting it.
+   * held request whose variant another request stopped ends instead of restarting it. A held
+   * request also ends instead of moving its variant once a newer request has started the variant's
+   * job attempt.
    */
   public SegmentDelivery deliver(UUID sessionId, String variantLabel, String segmentName) {
     var refusal = refusal(sessionId, segmentName);
@@ -77,7 +79,7 @@ public class SegmentDeliveryCoordinator {
     }
 
     return switch (producerLifecycle.recover(request)) {
-      case EXHAUSTED, VARIANT_NOT_RUNNING ->
+      case EXHAUSTED, VARIANT_NOT_RUNNING, SUPERSEDED ->
           exhaustedDelivery(request.sessionId(), request.segmentName());
       case SESSION_GONE, SEGMENT_NOT_ADVERTISED -> new SegmentDelivery.SessionEnded();
       case WAITING -> null;

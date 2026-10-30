@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountScopedBuilder;
 import static com.streamarr.server.fixtures.SegmentRequestFixture.segmentRequest;
+import static com.streamarr.server.fixtures.SegmentRequestFixture.segmentRequestBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.abrSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultLadderSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
@@ -752,6 +753,57 @@ class ProducerLifecycleServiceTest {
 
   @Test
   @DisplayName(
+      "Should leave the job attempt at the newer request's segment when an older request recovers after the newer request relocated the variant")
+  void
+      shouldLeaveTheJobAttemptAtTheNewerRequestsSegmentWhenAnOlderRequestRecoversAfterTheNewerRequestRelocatedTheVariant() {
+    var session = startedSession();
+    var sessionId = session.getSessionId();
+    var older =
+        lifecycle.prepareRequestedVariant(
+            sessionId, StreamSession.defaultVariant(), "segment1.m4s");
+    var newer =
+        lifecycle.prepareRequestedVariant(
+            sessionId, StreamSession.defaultVariant(), "segment100.m4s");
+    lifecycle.recover(newer);
+
+    var result = lifecycle.recover(older);
+
+    assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.SUPERSEDED);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::startSequenceNumber)
+        .containsExactly(0, 100);
+    assertThat(session.getHandle().orElseThrow().startSequenceNumber()).isEqualTo(100);
+  }
+
+  @Test
+  @DisplayName(
+      "Should start no replacement attempt for an older request when the job attempt that a newer request started dies")
+  void
+      shouldStartNoReplacementAttemptForAnOlderRequestWhenTheJobAttemptThatANewerRequestStartedDies() {
+    var session = startedSession();
+    var sessionId = session.getSessionId();
+    var older =
+        lifecycle.prepareRequestedVariant(
+            sessionId, StreamSession.defaultVariant(), "segment101.m4s");
+    lifecycle.recover(older);
+    var newer =
+        lifecycle.prepareRequestedVariant(
+            sessionId, StreamSession.defaultVariant(), "segment100.m4s");
+    lifecycle.recover(newer);
+    transcodeExecutor.markDead(sessionId);
+
+    var olderResult = lifecycle.recover(older);
+    var newerResult = lifecycle.recover(newer);
+
+    assertThat(olderResult).isEqualTo(ProducerLifecycleService.RecoveryResult.SUPERSEDED);
+    assertThat(newerResult).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::startSequenceNumber)
+        .containsExactly(0, 101, 100, 100);
+  }
+
+  @Test
+  @DisplayName(
       "Should report the variant not running when recovery finds a variant without a job attempt")
   void shouldReportTheVariantNotRunningWhenRecoveryFindsAVariantWithoutAJobAttempt() {
     var session = startedLadderSession();
@@ -770,12 +822,12 @@ class ProducerLifecycleServiceTest {
   void shouldReplaceADeadVariantAtTheCurrentSegmentWhenItsInitializationSegmentIsRequested() {
     var session = startedLadderSession();
     var sessionId = session.getSessionId();
-    lifecycle.prepareRequestedVariant(sessionId, "1080p", "1080p/init.mp4");
+    var request = lifecycle.prepareRequestedVariant(sessionId, "1080p", "1080p/init.mp4");
     lifecycle.ensurePositioned(sessionId, "480p", "480p/segment50.m4s");
     transcodeExecutor.markDead(sessionId, "1080p");
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
-    var result = lifecycle.recover(segmentRequest(sessionId, "1080p", "1080p/init.mp4"));
+    var result = lifecycle.recover(request);
 
     assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
     assertThat(startedSince(startedBefore))
@@ -830,7 +882,8 @@ class ProducerLifecycleServiceTest {
   @DisplayName("Should recover a suspended variant when its siblings keep the session live")
   void shouldRecoverSuspendedVariantWhenItsSiblingsKeepSessionLive() {
     var session = startedLadderSession();
-    lifecycle.prepareRequestedVariant(session.getSessionId(), "1080p", "1080p/init.mp4");
+    var starting =
+        lifecycle.prepareRequestedVariant(session.getSessionId(), "1080p", "1080p/init.mp4");
     var sibling = session.getVariantHandle("480p").orElseThrow();
     var suspended =
         session.getVariantHandle("1080p").orElseThrow().withStatus(TranscodeStatus.SUSPENDED);
@@ -838,7 +891,10 @@ class ProducerLifecycleServiceTest {
     transcodeExecutor.markDead(session.getSessionId(), "1080p");
 
     var result =
-        lifecycle.recover(segmentRequest(session.getSessionId(), "1080p", "1080p/segment2.m4s"));
+        lifecycle.recover(
+            segmentRequestBuilder(session.getSessionId(), "1080p", "1080p/segment2.m4s")
+                .arrival(starting.arrival() + 1)
+                .build());
 
     assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
     assertThat(session.getVariantHandle("1080p").orElseThrow().status())

@@ -22,6 +22,7 @@ import java.util.OptionalDouble;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
@@ -48,6 +49,10 @@ public class ProducerLifecycleService {
   @Builder.Default private final Clock clock = Clock.systemUTC();
   private final ConcurrentHashMap<VariantKey, VariantDeliveryState> recoveryStates =
       new ConcurrentHashMap<>();
+  private final AtomicLong requestArrivals = new AtomicLong();
+  // The arrival of the newest request that started each variant's job attempt (ADR 0019).
+  private final ConcurrentHashMap<VariantKey, Long> newestStartingArrivals =
+      new ConcurrentHashMap<>();
 
   public enum RecoveryResult {
     WAITING,
@@ -56,21 +61,56 @@ public class ProducerLifecycleService {
     SEGMENT_NOT_ADVERTISED,
     // A request for another video variant stopped the variant, or its on-demand start failed.
     // Only a new request for the variant starts it again (ADR 0019).
-    VARIANT_NOT_RUNNING
+    VARIANT_NOT_RUNNING,
+    // A newer request for the variant started its job attempt, and the request's segment needs
+    // another job attempt. Only a request at least as new may start one (ADR 0019).
+    SUPERSEDED
   }
 
   private record VariantKey(UUID sessionId, String variantLabel) {}
 
   @Builder
   private record PendingSegment(
-      UUID sessionId, String variantLabel, String segmentName, int requestedIndex) {}
+      UUID sessionId, String variantLabel, String segmentName, int requestedIndex, long arrival) {}
 
   /**
    * Observes progress and decides whether to wait, replace, or exhaust under the same session mutex
-   * as every producer mutation. Recovery bookkeeping is committed before releasing it.
+   * as every producer mutation. Recovery bookkeeping is committed before releasing it. Once a newer
+   * request has started the variant's job attempt, this request starts no job attempt: it waits
+   * while that job attempt can produce its segment and ends as {@link RecoveryResult#SUPERSEDED}
+   * otherwise.
    */
   public RecoveryResult recover(SegmentRequest request) {
-    return withSessionLock(request.sessionId(), () -> doRecover(request));
+    return withSessionLock(
+        request.sessionId(), () -> claimingStartedJobAttempt(request, () -> doRecover(request)));
+  }
+
+  // A job attempt that a request's pass starts runs from that request's segment, so the request
+  // becomes the newest request that started the variant's job attempt.
+  private <T> T claimingStartedJobAttempt(SegmentRequest request, Supplier<T> pass) {
+    var attemptBefore = jobAttemptIdOf(request);
+    var result = pass.get();
+    var attemptAfter = jobAttemptIdOf(request);
+    if (attemptAfter.isPresent() && !attemptAfter.equals(attemptBefore)) {
+      newestStartingArrivals.put(
+          new VariantKey(request.sessionId(), request.variantLabel()), request.arrival());
+    }
+
+    return result;
+  }
+
+  private Optional<UUID> jobAttemptIdOf(SegmentRequest request) {
+    return runtimeRegistry
+        .findById(request.sessionId())
+        .flatMap(session -> session.getVariantHandle(request.variantLabel()))
+        .map(TranscodeHandle::attemptId);
+  }
+
+  // Once a newer request has started the variant's job attempt, an older request that would start
+  // another one would move the variant away from the newer request's segment.
+  private boolean isSuperseded(UUID sessionId, String variantLabel, long arrival) {
+    var newestStartingArrival = newestStartingArrivals.get(new VariantKey(sessionId, variantLabel));
+    return newestStartingArrival != null && newestStartingArrival > arrival;
   }
 
   /**
@@ -102,7 +142,10 @@ public class ProducerLifecycleService {
   public void forgetRecovery(UUID sessionId) {
     withSessionLock(
         sessionId,
-        () -> recoveryStates.keySet().removeIf(key -> key.sessionId().equals(sessionId)));
+        () -> {
+          recoveryStates.keySet().removeIf(key -> key.sessionId().equals(sessionId));
+          newestStartingArrivals.keySet().removeIf(key -> key.sessionId().equals(sessionId));
+        });
   }
 
   private RecoveryResult doRecover(SegmentRequest request) {
@@ -139,6 +182,11 @@ public class ProducerLifecycleService {
       return RecoveryResult.VARIANT_NOT_RUNNING;
     }
 
+    if (isSuperseded(sessionId, variantLabel, request.arrival())
+        && needsPositioning(session, variantLabel, segmentName)) {
+      return superseded(sessionId, variantLabel, segmentName);
+    }
+
     var positioned = tryEnsurePositioned(session, variantLabel, segmentName);
     var handle = session.getVariantHandle(variantLabel).orElseThrow();
     var state =
@@ -150,6 +198,7 @@ public class ProducerLifecycleService {
             .variantLabel(variantLabel)
             .segmentName(segmentName)
             .requestedIndex(SegmentNames.indexOf(segmentName).orElseGet(session::getCurrentSegment))
+            .arrival(request.arrival())
             .build();
     if (handle.status() == TranscodeStatus.FAILED
         && !state.resetForFreshTargets(
@@ -158,6 +207,20 @@ public class ProducerLifecycleService {
     }
 
     return attemptRecovery(state, pending, positioned);
+  }
+
+  private boolean needsPositioning(StreamSession session, String variantLabel, String segmentName) {
+    return session.isSuspended() || requiresRelocation(session, variantLabel, segmentName);
+  }
+
+  private static RecoveryResult superseded(
+      UUID sessionId, String variantLabel, String segmentName) {
+    log.info(
+        "Ended the request for {} of session {}: a newer request started variant {}",
+        segmentName,
+        sessionId,
+        variantLabel);
+    return RecoveryResult.SUPERSEDED;
   }
 
   private boolean tryEnsurePositioned(
@@ -204,6 +267,10 @@ public class ProducerLifecycleService {
       syncProgress(state, handle, pending);
       if (noLongerNeedsRecovery(state, pending, running)) {
         return RecoveryResult.WAITING;
+      }
+
+      if (isSuperseded(pending.sessionId(), pending.variantLabel(), pending.arrival())) {
+        return superseded(pending.sessionId(), pending.variantLabel(), pending.segmentName());
       }
 
       var target = state.nextTarget(eligibleTargets);
@@ -384,23 +451,30 @@ public class ProducerLifecycleService {
    * the current segment for the initialization segment. A stored media segment starts nothing, and
    * neither does a full transcode limit. A variant that does not start stays without a job attempt,
    * so recovery answers the request as {@link RecoveryResult#VARIANT_NOT_RUNNING}. Answers the
-   * request that later recovery passes name.
+   * request, stamped with its arrival, that later recovery passes name.
    */
   public SegmentRequest prepareRequestedVariant(
       UUID sessionId, String variantLabel, String segmentName) {
     return withSessionLock(
         sessionId,
         () -> {
+          var request =
+              SegmentRequest.builder()
+                  .sessionId(sessionId)
+                  .variantLabel(variantLabel)
+                  .segmentName(segmentName)
+                  .arrival(requestArrivals.incrementAndGet())
+                  .build();
           if (SegmentNames.indexOf(segmentName).isPresent()) {
             doStopOtherVideoVariants(sessionId, variantLabel);
           }
 
-          doStartVariantOnDemand(sessionId, variantLabel, segmentName);
-          return SegmentRequest.builder()
-              .sessionId(sessionId)
-              .variantLabel(variantLabel)
-              .segmentName(segmentName)
-              .build();
+          return claimingStartedJobAttempt(
+              request,
+              () -> {
+                doStartVariantOnDemand(sessionId, variantLabel, segmentName);
+                return request;
+              });
         });
   }
 
