@@ -2160,8 +2160,31 @@ class HlsStreamingServiceTest {
 
     var session = createSession(file.getId(), UUID.randomUUID(), options);
 
-    assertThat(session.getVariants()).isEmpty();
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::label)
+        .containsExactly(tuple(1920, 1080, StreamSession.defaultVariant()));
     assertThat(session.getHandle()).isPresent();
+  }
+
+  @Test
+  @DisplayName("Should encode a fixed quality within the viewer's maximum height")
+  void shouldEncodeAFixedQualityWithinTheViewersMaximumHeight() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P).maxHeight(300).build();
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(534);
+              assertThat(request.height()).isEqualTo(300);
+            });
+    assertThat(playlist).contains(",RESOLUTION=534x300,");
   }
 
   @Test

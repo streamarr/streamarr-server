@@ -1,7 +1,6 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
-import com.streamarr.server.domain.streaming.EncodedPictureSizes;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
@@ -1377,14 +1376,11 @@ public class ProducerLifecycleService {
       return request.build();
     }
 
+    // Only a copy runs without a ladder, and it keeps the displayed source picture.
     var probe = session.getMediaProbe();
     var source = probe.displayedSize();
-    var size =
-        session.getTranscodeDecision().transcodeMode().copiesVideo()
-            ? source
-            : EncodedPictureSizes.atHeight(source, source.height());
-    request.width(size.width());
-    request.height(size.height());
+    request.width(source.width());
+    request.height(source.height());
     request.bitrate(probe.bitrate());
     return request.build();
   }

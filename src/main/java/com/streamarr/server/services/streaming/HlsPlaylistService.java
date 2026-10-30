@@ -5,7 +5,6 @@ import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecimalSeconds;
 import com.streamarr.server.domain.streaming.DolbyVision;
-import com.streamarr.server.domain.streaming.EncodedPictureSizes;
 import com.streamarr.server.domain.streaming.EncodedVideoOutput;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
@@ -75,15 +74,11 @@ public class HlsPlaylistService {
     return sb.toString();
   }
 
-  // A stream session without a ladder keeps the source bitrate and sizes an encode for the
-  // worker's output format. A copy retains the displayed source dimensions.
+  // Only a copy runs without a ladder. It keeps the source bitrate and the displayed source
+  // dimensions.
   private static QualityVariant sourceSizedVariant(StreamSession session) {
     var probe = session.getMediaProbe();
-    var source = probe.displayedSize();
-    var size =
-        session.getTranscodeDecision().transcodeMode().copiesVideo()
-            ? source
-            : EncodedPictureSizes.atHeight(source, source.height());
+    var size = probe.displayedSize();
     return QualityVariant.builder()
         .width(size.width())
         .height(size.height())

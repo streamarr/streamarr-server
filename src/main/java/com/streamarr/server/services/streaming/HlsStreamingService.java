@@ -2,7 +2,6 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
-import com.streamarr.server.domain.streaming.EncodedPictureSizes;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.MediaProbe;
@@ -12,7 +11,6 @@ import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
-import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
@@ -165,21 +163,15 @@ public class HlsStreamingService implements StreamingService {
 
     var probe = request.source();
     var variants = resolveVariants(probe, command.options(), decision);
-    if (hasInvalidEncodeSize(probe, variants)) {
+    if (hasInvalidEncodeSize(variants)) {
       return Optional.of(new CreateStreamSessionRejection.InvalidPictureSize());
     }
 
     return Optional.empty();
   }
 
-  private static boolean hasInvalidEncodeSize(MediaProbe probe, List<QualityVariant> variants) {
-    if (!variants.isEmpty()) {
-      return variants.stream().anyMatch(variant -> variant.width() <= 0 || variant.height() <= 0);
-    }
-
-    var source = probe.displayedSize();
-    var output = EncodedPictureSizes.atHeight(source, source.height());
-    return output.width() <= 0 || output.height() <= 0;
+  private static boolean hasInvalidEncodeSize(List<QualityVariant> variants) {
+    return variants.stream().anyMatch(variant -> variant.width() <= 0 || variant.height() <= 0);
   }
 
   // An encode whose encoders all run on workers with no free slot is decided only once a slot is
@@ -320,9 +312,10 @@ public class HlsStreamingService implements StreamingService {
     return runtimeRegistry.count();
   }
 
+  // Every encode runs as a variant of the ladder; a copy keeps the source and has no ladder.
   private List<QualityVariant> resolveVariants(
       MediaProbe probe, StreamingOptions options, TranscodeDecision decision) {
-    if (!isAutoQuality(options) || !requiresVideoTranscode(decision.transcodeMode())) {
+    if (!requiresVideoTranscode(decision.transcodeMode())) {
       return List.of();
     }
 
@@ -339,10 +332,6 @@ public class HlsStreamingService implements StreamingService {
 
   private boolean requiresVideoTranscode(TranscodeMode mode) {
     return mode == TranscodeMode.VIDEO_TRANSCODE || mode == TranscodeMode.FULL_TRANSCODE;
-  }
-
-  private boolean isAutoQuality(StreamingOptions options) {
-    return options.quality() == null || options.quality() == VideoQuality.AUTO;
   }
 
   // Creating a stream session starts one job attempt, so a session needs one free slot whatever
