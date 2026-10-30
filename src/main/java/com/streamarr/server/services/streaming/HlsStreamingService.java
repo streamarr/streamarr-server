@@ -322,6 +322,7 @@ public class HlsStreamingService implements StreamingService {
             .capabilityDeclaration(command.capabilityDeclaration())
             .codecProfile(EncodeCodecProfile.forCodecFamilyName(decision.videoCodecFamily()))
             .frameRate(decision.outputFrameRate().orElseThrow())
+            .audioBitrate(decision.audioDecision().bitrate())
             .build();
     return MultivariantPlaylistOrder.of(
         qualityLadderService.generateVariants(request), decision.audioDecision().bitrate());
