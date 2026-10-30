@@ -7,6 +7,7 @@ import static org.awaitility.Awaitility.await;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
+import com.streamarr.server.fakes.AdvanceableSystemClock;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
@@ -34,12 +35,14 @@ class SupersededSegmentRequestTest {
 
   private static final String VARIANT = "480p";
   private static final int RACE_ROUNDS = 25;
+  private static final Duration STALL_THRESHOLD = Duration.ofMinutes(10);
 
   private final List<UUID> sessionIds = new ArrayList<>();
   private final ExecutorService requests = Executors.newVirtualThreadPerTaskExecutor();
   private FakeTranscodeExecutor transcodeExecutor;
   private FakeSegmentStore segmentStore;
   private FakeRuntimeStreamSessionRegistry runtimeRegistry;
+  private AdvanceableSystemClock clock;
   private ProducerLifecycleService lifecycle;
   private SegmentDeliveryCoordinator coordinator;
 
@@ -65,6 +68,7 @@ class SupersededSegmentRequestTest {
     transcodeExecutor = new FakeTranscodeExecutor();
     segmentStore = new FakeSegmentStore();
     runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
+    clock = new AdvanceableSystemClock();
     var rig =
         StreamingRigFixture.streamingRigBuilder()
             .transcodeExecutor(transcodeExecutor)
@@ -72,9 +76,10 @@ class SupersededSegmentRequestTest {
             .properties(
                 StreamingProperties.builder()
                     .targetSegmentDuration(segmentDuration)
-                    .producerStallThreshold(Duration.ofMinutes(10))
+                    .producerStallThreshold(STALL_THRESHOLD)
                     .build())
             .runtimeRegistry(runtimeRegistry)
+            .clock(clock)
             .heldRequests(transcodeExecutor.heldSegmentRequests())
             .build();
     lifecycle = rig.lifecycle();
