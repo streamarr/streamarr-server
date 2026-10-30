@@ -122,13 +122,17 @@ public record VideoCapabilityEntry(
 
   // Every segment interval needs a frame to start it, and the segment list stays the same however
   // slow a variant runs (ADR 0037). Dividing never goes below the frame-rate rule's lowest rate, so
-  // the divided denominator also stays within an int.
+  // the divided denominator also stays within an int. The floor takes the same margin as the
+  // maximum, so an exact NTSC 30000/1001 divided by 3 still counts as 10 fps.
   private static boolean isBelowLowestEncodedFrameRate(Fraction rate, BigDecimal divisor) {
     var lowestNumerator =
         LOWEST_ENCODED_FRAME_RATE
             .multiply(BigDecimal.valueOf(rate.denominator()))
             .multiply(divisor);
-    return BigDecimal.valueOf(rate.numerator()).compareTo(lowestNumerator) < 0;
+    return BigDecimal.valueOf(rate.numerator())
+            .multiply(FRAME_RATE_MARGIN)
+            .compareTo(lowestNumerator)
+        < 0;
   }
 
   private Optional<EncodedVideoOutput> fitWithinLevel(
