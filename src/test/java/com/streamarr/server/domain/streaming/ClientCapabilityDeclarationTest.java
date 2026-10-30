@@ -166,6 +166,20 @@ class ClientCapabilityDeclarationTest {
   }
 
   @Test
+  @DisplayName("Should refuse to judge a copy when the caller passes none")
+  void shouldRefuseToJudgeACopyWhenTheCallerPassesNone() {
+    var declaration =
+        ClientCapabilityDeclaration.builder()
+            .video(List.of(hevcEntryBuilder().build()))
+            .audio(List.of(aacEntryBuilder().build()))
+            .build();
+
+    assertThatThrownBy(() -> declaration.acceptsHlsCopy(null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("copy");
+  }
+
+  @Test
   @DisplayName("Should name each audio codec by its probed name when a decision compares codecs")
   void shouldNameEachAudioCodecByItsProbedNameWhenADecisionComparesCodecs() {
     assertThat(List.of(AudioCodec.values()).stream().map(AudioCodec::probedName))
