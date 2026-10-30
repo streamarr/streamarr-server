@@ -16,6 +16,11 @@ public record PictureSize(int width, int height) {
     return new PictureSize(longer, shorter);
   }
 
+  /** This size with each side cut to the bounds' side in the same direction. */
+  public PictureSize boundedBy(@NonNull PictureSize bounds) {
+    return new PictureSize(Math.min(width, bounds.width()), Math.min(height, bounds.height()));
+  }
+
   /** Whether this picture fits within the bounds in either orientation. */
   public boolean fitsWithinEitherOrientation(@NonNull PictureSize bounds) {
     var oriented = bounds.orientedLike(this);
