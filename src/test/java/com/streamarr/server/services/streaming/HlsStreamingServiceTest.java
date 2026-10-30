@@ -1173,6 +1173,22 @@ class HlsStreamingServiceTest {
 
   @Test
   @DisplayName(
+      "Should reject the stream session when only dividing the frame rate below 10 fps fits the"
+          + " entry")
+  void shouldRejectTheStreamSessionWhenOnlyDividingTheFrameRateBelow10FpsFitsTheEntry() {
+    probeResults.setDefaultProbe(probeAt(new Fraction(60, 1)).videoCodec("hevc").build());
+    var declaration =
+        defaultDeclarationBuilder().video(List.of(h264EntryBuilder().maxFrameRate(0.1).build()));
+
+    var result = service.createSession(createCommandDeclaring(declaration.build()));
+
+    assertThat(result)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
       "Should encode each Auto variant in the entry that keeps its frame rate when two entries"
           + " trade size for frame rate")
   void
