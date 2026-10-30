@@ -520,11 +520,14 @@ final class LiveWorkerConnectionRegistry {
     terminalFailures.clear();
   }
 
-  Optional<VariantJob> failJobAttempt(
+  ReportedJobAttemptEnd failJobAttempt(
       UUID workerId, UUID workerSessionId, JobAttemptFailed failed) {
-    var released = acceptJobAttemptFailure(workerId, workerSessionId, failed);
-    released.ifPresent(job -> publishTerminalFailure(job, failed));
-    return released;
+    var end = acceptJobAttemptFailure(workerId, workerSessionId, failed);
+    if (end instanceof ReportedJobAttemptEnd.Released(var job)) {
+      publishTerminalFailure(job, failed);
+    }
+
+    return end;
   }
 
   private void publishTerminalFailure(VariantJob job, JobAttemptFailed failed) {
@@ -551,10 +554,11 @@ final class LiveWorkerConnectionRegistry {
             .build());
   }
 
-  private synchronized Optional<VariantJob> acceptJobAttemptFailure(
+  private synchronized ReportedJobAttemptEnd acceptJobAttemptFailure(
       UUID workerId, UUID workerSessionId, JobAttemptFailed failed) {
     return currentConnection(workerId, workerSessionId)
-        .flatMap(connection -> connection.failJobAttempt(failed));
+        .map(connection -> connection.failJobAttempt(failed))
+        .orElseGet(ReportedJobAttemptEnd.Unknown::new);
   }
 
   Optional<VariantJob> releaseJobAttempt(UUID workerId, UUID workerSessionId, UUID jobAttemptId) {
@@ -981,16 +985,18 @@ final class LiveWorkerConnectionRegistry {
       }
     }
 
-    private synchronized Optional<VariantJob> failJobAttempt(JobAttemptFailed failed) {
+    private synchronized ReportedJobAttemptEnd failJobAttempt(JobAttemptFailed failed) {
       var attemptId = fromProto(failed.getJobAttemptId());
       var job = activeVariants.get(attemptId);
       if (job == null) {
-        return Optional.empty();
+        return new ReportedJobAttemptEnd.Unknown();
       }
 
       terminalFailure(failed)
           .ifPresent(failure -> terminalFailures.put(fromProto(job.getStreamSessionId()), failure));
-      return releaseJobAttempt(attemptId);
+      return releaseJobAttempt(attemptId)
+          .<ReportedJobAttemptEnd>map(ReportedJobAttemptEnd.Released::new)
+          .orElseGet(ReportedJobAttemptEnd.Unknown::new);
     }
 
     // The worker contract says that a replacement attempt with the same decision repeats an output

@@ -261,22 +261,21 @@ final class WorkerSessionGrpcService
     }
 
     private void reportFailedJobAttempt(JobAttemptFailed failed) {
-      workerConnections
-          .failJobAttempt(authenticatedWorkerId, workerSessionId, failed)
-          .ifPresentOrElse(
-              job ->
-                  log.warn(
-                      "Worker {} failed variant {} of stream session {}: {}",
-                      authenticatedWorkerId,
-                      job.getVariant().getVariantLabel(),
-                      fromProto(job.getStreamSessionId()),
-                      failed.getFailure()),
-              () ->
-                  log.warn(
-                      "Worker {} failed unknown job attempt {}: {}",
-                      authenticatedWorkerId,
-                      fromProto(failed.getJobAttemptId()),
-                      failed.getFailure()));
+      switch (workerConnections.failJobAttempt(authenticatedWorkerId, workerSessionId, failed)) {
+        case ReportedJobAttemptEnd.Released(var job) ->
+            log.warn(
+                "Worker {} failed variant {} of stream session {}: {}",
+                authenticatedWorkerId,
+                job.getVariant().getVariantLabel(),
+                fromProto(job.getStreamSessionId()),
+                failed.getFailure());
+        case ReportedJobAttemptEnd.StoppedByServer(), ReportedJobAttemptEnd.Unknown() ->
+            log.warn(
+                "Worker {} failed unknown job attempt {}: {}",
+                authenticatedWorkerId,
+                fromProto(failed.getJobAttemptId()),
+                failed.getFailure());
+      }
     }
 
     private void finishOrWarn(Uuid jobAttemptId, String detail) {
