@@ -6,7 +6,6 @@ import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecimalSeconds;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.EncodedVideoOutput;
-import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -49,12 +48,13 @@ public class HlsPlaylistService {
       appendAudioRendition(sb, audio.channels());
     }
 
+    // Only a copy runs without a ladder. It keeps the source bitrate and the displayed source
+    // dimensions, and leaves FRAME-RATE out.
     if (session.getVariants().isEmpty()) {
-      var variant = sourceSizedVariant(session);
-      var codecs = codecs(session, variant);
-      appendStreamInf(
-          sb, variant.videoBitrate(), variant.width(), variant.height(), codecs, hasAudio);
-      appendFrameRate(sb, session);
+      var probe = session.getMediaProbe();
+      var size = probe.displayedSize();
+      var codecs = codecs(session, copiedVideoCodecString(session));
+      appendStreamInf(sb, probe.bitrate(), size.width(), size.height(), codecs, hasAudio);
       appendVideoRange(sb, session);
       sb.append("\n");
       sb.append("stream.m3u8?t=").append(token).append("\n");
@@ -63,9 +63,9 @@ public class HlsPlaylistService {
 
     for (var variant : session.getVariants()) {
       var averageBandwidth = variant.averageBandwidth(audio.bitrate());
-      var codecs = codecs(session, variant);
+      var codecs = codecs(session, videoCodecString(session, variant));
       appendStreamInf(sb, averageBandwidth, variant.width(), variant.height(), codecs, hasAudio);
-      appendFrameRate(sb, session);
+      appendFrameRate(sb, session, variant);
       appendVideoRange(sb, session);
       sb.append("\n");
       sb.append(variant.label()).append("/stream.m3u8?t=").append(token).append("\n");
@@ -74,21 +74,7 @@ public class HlsPlaylistService {
     return sb.toString();
   }
 
-  // Only a copy runs without a ladder. It keeps the source bitrate and the displayed source
-  // dimensions.
-  private static QualityVariant sourceSizedVariant(StreamSession session) {
-    var probe = session.getMediaProbe();
-    var size = probe.displayedSize();
-    return QualityVariant.builder()
-        .width(size.width())
-        .height(size.height())
-        .videoBitrate(probe.bitrate())
-        .label(StreamSession.defaultVariant())
-        .build();
-  }
-
-  private static String codecs(StreamSession session, QualityVariant variant) {
-    var videoCodecString = videoCodecString(session, variant);
+  private static String codecs(StreamSession session, String videoCodecString) {
     var audioCodecString = session.getTranscodeDecision().audioDecision().hlsCodecString();
     if (audioCodecString.isEmpty()) {
       return videoCodecString;
@@ -102,7 +88,7 @@ public class HlsPlaylistService {
   private static String videoCodecString(StreamSession session, QualityVariant variant) {
     var decision = session.getTranscodeDecision();
     if (decision.transcodeMode().copiesVideo()) {
-      return decision.videoSource().flatMap(VideoPlaybackFacts::codecString).orElseThrow();
+      return copiedVideoCodecString(session);
     }
 
     return VideoEncodeDecision.of(
@@ -110,14 +96,18 @@ public class HlsPlaylistService {
                 .codecFamily(decision.videoCodecFamily())
                 .width(variant.width())
                 .height(variant.height())
-                .probedFrameRate(
-                    decision
-                        .videoSource()
-                        .map(VideoPlaybackFacts::frameRateRule)
-                        .flatMap(FrameRateRule::outputFrameRate))
+                .frameRate(variant.frameRate())
                 .bitrate(variant.videoBitrate())
                 .build())
         .codecString();
+  }
+
+  private static String copiedVideoCodecString(StreamSession session) {
+    return session
+        .getTranscodeDecision()
+        .videoSource()
+        .flatMap(VideoPlaybackFacts::codecString)
+        .orElseThrow();
   }
 
   // ADR 0037: the tag is true only for a variant pinned to a keyframe-verified encoder backend. A
@@ -173,27 +163,20 @@ public class HlsPlaylistService {
     }
   }
 
-  // RFC 8216 section 4.3.4.2 gives FRAME-RATE as the maximum rate, to three decimals. An encode
-  // runs at the session's frame rate. A copy keeps the source's timing, whose maximum rate the
+  // RFC 8216 section 4.3.4.2 gives FRAME-RATE as the maximum rate, to three decimals. An encoded
+  // variant runs at its own frame rate. A copy keeps the source's timing, whose maximum rate the
   // probe does not measure, so its entry leaves FRAME-RATE out.
-  private static void appendFrameRate(StringBuilder sb, StreamSession session) {
-    var frameRate =
-        session
-            .getTranscodeDecision()
-            .videoSource()
-            .map(VideoPlaybackFacts::frameRateRule)
-            .flatMap(FrameRateRule::outputFrameRate);
-    if (session.getTranscodeDecision().transcodeMode().copiesVideo() || frameRate.isEmpty()) {
+  private static void appendFrameRate(
+      StringBuilder sb, StreamSession session, QualityVariant variant) {
+    if (session.getTranscodeDecision().transcodeMode().copiesVideo()) {
       return;
     }
 
+    var frameRate = variant.frameRate();
     sb.append(",FRAME-RATE=")
         .append(
-            BigDecimal.valueOf(frameRate.orElseThrow().numerator())
-                .divide(
-                    BigDecimal.valueOf(frameRate.orElseThrow().denominator()),
-                    3,
-                    RoundingMode.HALF_UP)
+            BigDecimal.valueOf(frameRate.numerator())
+                .divide(BigDecimal.valueOf(frameRate.denominator()), 3, RoundingMode.HALF_UP)
                 .toPlainString());
   }
 

@@ -1370,9 +1370,12 @@ public class ProducerLifecycleService {
             .filter(candidate -> candidate.label().equals(variantLabel))
             .findFirst();
     if (variant.isPresent()) {
+      var frameRate = variant.get().frameRate();
       request.width(variant.get().width());
       request.height(variant.get().height());
       request.bitrate(variant.get().videoBitrate());
+      request.framerate(OptionalDouble.of(frameRate.toDouble()));
+      request.outputFrameRate(Optional.of(frameRate));
       return request.build();
     }
 
