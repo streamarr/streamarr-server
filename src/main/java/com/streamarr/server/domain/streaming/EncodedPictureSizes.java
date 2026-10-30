@@ -3,6 +3,7 @@ package com.streamarr.server.domain.streaming;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import lombok.NonNull;
 
 /** The picture sizes that the worker encodes a variant at. */
@@ -21,10 +22,11 @@ public final class EncodedPictureSizes {
   }
 
   /**
-   * The height of the largest picture with the source's aspect ratio that the worker encodes within
-   * the bounds, never taller than the source.
+   * The pictures with the source's aspect ratio that the worker encodes within the bounds, never
+   * taller than the source, largest first.
    */
-  public static int largestHeightWithin(@NonNull PictureSize source, @NonNull PictureSize bounds) {
+  public static Stream<PictureSize> picturesWithin(
+      @NonNull PictureSize source, @NonNull PictureSize bounds) {
     // FFmpeg rounds the width to the nearest multiple of two, so a height whose exact width is
     // up to one pixel past the bound can still fit. No taller height fits.
     var tallestHeightThatCanFit = ((long) bounds.width() + 1) * source.height() / source.width();
@@ -32,8 +34,7 @@ public final class EncodedPictureSizes {
         (int) Math.min(Math.min(bounds.height(), source.height()), tallestHeightThatCanFit);
     return IntStream.iterate(
             largestHeight - largestHeight % 2, height -> height >= 0, height -> height - 2)
-        .filter(height -> atHeight(source, height).width() <= bounds.width())
-        .findFirst()
-        .orElseThrow();
+        .mapToObj(height -> atHeight(source, height))
+        .filter(picture -> picture.width() <= bounds.width());
   }
 }
