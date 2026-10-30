@@ -87,7 +87,7 @@ public class ProducerLifecycleService {
   // A request that starts the variant on demand, relocates it or resumes it becomes the newest
   // request that positioned the variant, also when its relocation or resume fails to start a job
   // attempt (ADR 0019).
-  private void claimPositioning(SegmentRequest request) {
+  private void rememberNewestPositioningRequest(SegmentRequest request) {
     newestPositioningRequests.put(variantKeyOf(request), request);
   }
 
@@ -182,7 +182,7 @@ public class ProducerLifecycleService {
 
     var positioning = tryEnsurePositioned(session, variantLabel, segmentName);
     if (positioning != Positioning.UNCHANGED) {
-      claimPositioning(request);
+      rememberNewestPositioningRequest(request);
     }
 
     var handle = session.getVariantHandle(variantLabel).orElseThrow();
@@ -494,7 +494,7 @@ public class ProducerLifecycleService {
           }
 
           if (tryStartVariantOnDemand(sessionId, variantLabel, segmentName)) {
-            claimPositioning(request);
+            rememberNewestPositioningRequest(request);
           }
 
           return request;
