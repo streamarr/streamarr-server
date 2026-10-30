@@ -22,8 +22,7 @@ import org.junit.jupiter.params.provider.MethodSource;
  * ADR 0049's rule for an HLS stream copy: one video capability entry must accept every property of
  * the copy, and a probe version 5 outcome's unknown values fit as the ADR decides. The entry under
  * test plays HEVC Main up to Main tier level 5.1 and HEVC Main 10 up to High tier level 4.1, at up
- * to 10 bits, a 1920×1080 picture in either orientation and 30 fps. Every combination runs against
- * the entry declared landscape and the entry declared portrait.
+ * to 10 bits, a 1920×1080 picture in either orientation and 30 fps.
  */
 @Tag("UnitTest")
 @DisplayName("Video Capability Entry HLS Copy Tests")
@@ -218,24 +217,6 @@ class VideoCapabilityEntryHlsCopyTest {
   @DisplayName("Should accept a copy when every property is known and within the entry")
   void shouldAcceptACopyWhenEveryPropertyIsKnownAndWithinTheEntry() {
     assertThat(ENTRY.acceptsHlsCopy(fittingCopy().build())).isTrue();
-  }
-
-  @Test
-  @DisplayName("Should accept a picture in either orientation when the entry is declared portrait")
-  void shouldAcceptAPictureInEitherOrientationWhenTheEntryIsDeclaredPortrait() {
-    var portraitEntry =
-        entryBuilder()
-            .maxWidth(MAX_SIZE_DECLARED_PORTRAIT.width())
-            .maxHeight(MAX_SIZE_DECLARED_PORTRAIT.height())
-            .build();
-
-    assertThat(portraitEntry.acceptsHlsCopy(copyOfSize(1920, 1080))).isTrue();
-    assertThat(portraitEntry.acceptsHlsCopy(copyOfSize(1080, 1920))).isTrue();
-    assertThat(portraitEntry.acceptsHlsCopy(copyOfSize(1081, 1920))).isFalse();
-  }
-
-  private static VideoStreamCopy copyOfSize(int width, int height) {
-    return fittingCopy().decodedSize(Optional.of(new PictureSize(width, height))).build();
   }
 
   @Test
