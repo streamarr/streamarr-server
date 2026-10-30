@@ -425,7 +425,7 @@ final class LiveWorkerConnectionRegistry {
   }
 
   // A worker with a hardware encoder for the decision's codec family takes each variant first, and
-  // a software encoder takes it only when no such worker has a free slot (ADR 0044).
+  // a software encoder takes it only when no such worker has a free slot (ADR 0009).
   private static Comparator<WorkerConnection> hardwareEncodersFirst(TranscodeDecision decision) {
     return Comparator.comparing(connection -> !connection.encodesInHardware(decision));
   }
