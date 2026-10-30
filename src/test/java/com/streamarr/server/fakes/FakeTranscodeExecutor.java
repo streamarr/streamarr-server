@@ -12,6 +12,7 @@ import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -33,6 +34,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private record ProcessKey(UUID sessionId, String variantLabel) {}
 
   private final Set<ProcessKey> running = ConcurrentHashMap.newKeySet();
+  private final Map<ProcessKey, ExecutionTargetId> runningTargets = new ConcurrentHashMap<>();
   private final Set<ProcessKey> started = ConcurrentHashMap.newKeySet();
   private final Set<UUID> stopped = ConcurrentHashMap.newKeySet();
   private final Map<UUID, TranscodeFailure> terminalFailures = new ConcurrentHashMap<>();
@@ -50,10 +52,16 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final Map<ExecutionTargetId, Map<String, WorkerVerifiedEncoder>> encodersByTarget =
       new ConcurrentHashMap<>();
   private final AtomicLong livenessChecks = new AtomicLong();
+  private final AtomicLong jobSlotRefusals = new AtomicLong();
+  private final Map<ProcessKey, AtomicLong> livenessChecksByVariant = new ConcurrentHashMap<>();
+  private final Set<UUID> failingOnStopVariant = ConcurrentHashMap.newKeySet();
+  private final Set<ProcessKey> endingAfterNextLivenessCheck = ConcurrentHashMap.newKeySet();
   private final HeldSegmentRequests heldRequests =
       new HeldSegmentRequests(new SimpleMeterRegistry());
   private final Object observationMonitor = new Object();
   private int availableSlots = TranscodeExecutor.UNBOUNDED_SLOTS;
+  private volatile int jobSlots = TranscodeExecutor.UNBOUNDED_SLOTS;
+  private final Map<ExecutionTargetId, Integer> jobSlotsByTarget = new ConcurrentHashMap<>();
   private final Map<String, Integer> encodeSlotsByVideoCodecFamily =
       new ConcurrentHashMap<>(unboundedEncodeSlots(Set.of("h264", "hevc", "av1")));
   private boolean healthy = true;
@@ -70,7 +78,9 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       throw new TranscodeException("No connected transcode worker runs the pinned encoder");
     }
 
-    var handle = doStart(request);
+    // A start that no target advertises an encoder for runs on an eligible target.
+    var runningTarget = accepting.or(() -> firstWithFreeJobSlot(candidateTargets(request)));
+    var handle = doStart(request, runningTarget);
     return accepting
         .flatMap(target -> advertisedEncoder(target, request.transcodeDecision()))
         .map(handle::withEncoder)
@@ -79,14 +89,25 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   // The first target, in failover order, that advertises an encoder the request can run on.
   private Optional<ExecutionTargetId> acceptingTarget(TranscodeRequest request) {
-    var candidates =
-        request
-            .pinnedEncoder()
-            .map(this::executionTargets)
-            .orElseGet(() -> executionTargets(request.transcodeDecision()));
-    return candidates.stream()
-        .filter(target -> advertisedEncoder(target, request.transcodeDecision()).isPresent())
-        .findFirst();
+    return firstWithFreeJobSlot(
+        candidateTargets(request).stream()
+            .filter(target -> advertisedEncoder(target, request.transcodeDecision()).isPresent())
+            .toList());
+  }
+
+  // Prefers a target with a free job slot. When every target is full, the first refuses the start.
+  private Optional<ExecutionTargetId> firstWithFreeJobSlot(Collection<ExecutionTargetId> targets) {
+    return targets.stream()
+        .filter(target -> freeJobSlotsOn(target) > 0)
+        .findFirst()
+        .or(() -> targets.stream().findFirst());
+  }
+
+  private Set<ExecutionTargetId> candidateTargets(TranscodeRequest request) {
+    return request
+        .pinnedEncoder()
+        .map(this::executionTargets)
+        .orElseGet(() -> executionTargets(request.transcodeDecision()));
   }
 
   @Override
@@ -96,7 +117,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
         || !request.pinnedEncoder().map(pinned -> advertises(target, pinned)).orElse(true)) {
       throw new TranscodeException("Target " + target.value() + " refused the transcode");
     }
-    var handle = doStart(request);
+    var handle = doStart(request, Optional.of(target));
     // A recorded start names a job that already runs, so a test that awaits it can end the job.
     startedTargets.add(target);
     signalObservation();
@@ -115,13 +136,19 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
         encodersByTarget.getOrDefault(target, Map.of()).get(decision.videoCodecFamily()));
   }
 
-  private TranscodeHandle doStart(TranscodeRequest request) {
+  private TranscodeHandle doStart(
+      TranscodeRequest request, Optional<ExecutionTargetId> runningTarget) {
     if (encodesVideo(request.transcodeDecision()) && !tryTakeEncodeSlot(request)) {
       throw new TranscodeException("No connected transcode worker can encode this variant");
     }
 
     var key = new ProcessKey(request.sessionId(), request.variantLabel());
-    running.add(key);
+    if (!tryTakeJobSlot(key, runningTarget)) {
+      jobSlotRefusals.incrementAndGet();
+      signalObservation();
+      throw new TranscodeException("No connected transcode worker has a free job slot");
+    }
+
     started.add(key);
     startedRequests.add(request);
     var handle =
@@ -159,6 +186,10 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public void stopVariant(UUID sessionId, String variantLabel) {
+    if (failingOnStopVariant.contains(sessionId)) {
+      throw new IllegalStateException("Simulated variant stop failure for session: " + sessionId);
+    }
+
     end(new ProcessKey(sessionId, variantLabel));
     stoppedVariants.add(sessionId + "/" + variantLabel);
   }
@@ -176,6 +207,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   }
 
   private void end(ProcessKey key) {
+    runningTargets.remove(key);
     if (running.remove(key)) {
       heldRequests.wakeVariant(key.sessionId(), key.variantLabel());
     }
@@ -189,12 +221,41 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     failingOnStop.add(sessionId);
   }
 
+  /** Every later stop of one of the session's variants throws, as a server that shuts down does. */
+  public void failOnStopVariant(UUID sessionId) {
+    failingOnStopVariant.add(sessionId);
+  }
+
   @Override
   public boolean isRunning(UUID sessionId, String variantLabel) {
+    var key = new ProcessKey(sessionId, variantLabel);
     livenessChecks.incrementAndGet();
-    var result = running.contains(new ProcessKey(sessionId, variantLabel));
+    livenessChecksByVariant.computeIfAbsent(key, _ -> new AtomicLong()).incrementAndGet();
+    var result = running.contains(key);
+    if (endingAfterNextLivenessCheck.remove(key)) {
+      end(key);
+    }
+
     signalObservation();
     return result;
+  }
+
+  /**
+   * The variant's job attempt ends right after the next look at its liveness, which still finds it
+   * running, as a job attempt that reaches the end of its file between two looks does.
+   */
+  public void endAfterNextLivenessCheck(UUID sessionId, String variantLabel) {
+    endingAfterNextLivenessCheck.add(new ProcessKey(sessionId, variantLabel));
+  }
+
+  @Override
+  public Optional<ExecutionTargetId> runningExecutionTarget(UUID sessionId, String variantLabel) {
+    var key = new ProcessKey(sessionId, variantLabel);
+    if (!running.contains(key)) {
+      return Optional.empty();
+    }
+
+    return Optional.ofNullable(runningTargets.get(key));
   }
 
   /**
@@ -208,6 +269,31 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   public void awaitLivenessCheckCount(long count) {
     awaitObservation(() -> livenessChecks.get() >= count, "liveness check count " + count);
+  }
+
+  /**
+   * The liveness checks of one variant observed so far. A request checks the liveness of other
+   * variants while it applies the on-demand rules, so only a check of its own variant shows that it
+   * has looked for its segment.
+   */
+  public long livenessChecks(UUID sessionId, String variantLabel) {
+    var checks = livenessChecksByVariant.get(new ProcessKey(sessionId, variantLabel));
+    if (checks == null) {
+      return 0;
+    }
+
+    return checks.get();
+  }
+
+  public void awaitLivenessCheckCount(UUID sessionId, String variantLabel, long count) {
+    awaitObservation(
+        () -> livenessChecks(sessionId, variantLabel) >= count,
+        "liveness check count " + count + " of variant " + variantLabel);
+  }
+
+  /** The starts refused so far because every job slot was taken. */
+  public long jobSlotRefusals() {
+    return jobSlotRefusals.get();
   }
 
   public void awaitStartedRequestCount(int count) {
@@ -267,21 +353,86 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public int availableSlots() {
-    return availableSlots;
+    return Math.min(Math.min(availableSlots, freeJobSlots()), freeJobSlotsOn(executionTargets));
   }
 
   @Override
   public int availableSlots(TranscodeDecision decision) {
+    var slots = Math.min(availableSlots(), freeJobSlotsOn(executionTargets(decision)));
     if (!encodesVideo(decision)) {
-      return availableSlots;
+      return slots;
     }
 
-    var encodeSlots = encodeSlotsByVideoCodecFamily.getOrDefault(decision.videoCodecFamily(), 0);
-    return Math.min(availableSlots, encodeSlots);
+    return Math.min(slots, encodeSlots(decision.videoCodecFamily()));
+  }
+
+  @Override
+  public int availableSlots(WorkerVerifiedEncoder pinnedEncoder) {
+    var slots = Math.min(availableSlots(), freeJobSlotsOn(executionTargets(pinnedEncoder)));
+    return Math.min(slots, encodeSlots(pinnedEncoder.backend().codecFamily()));
+  }
+
+  private int encodeSlots(String videoCodecFamily) {
+    return encodeSlotsByVideoCodecFamily.getOrDefault(videoCodecFamily, 0);
   }
 
   public void setAvailableSlots(int availableSlots) {
     this.availableSlots = availableSlots;
+  }
+
+  /**
+   * The workers have this many job slots in all. Each running job attempt takes one, and a start
+   * finds no worker when every slot is taken. Ending a job attempt frees its slot.
+   */
+  public void limitJobSlots(int jobSlots) {
+    this.jobSlots = jobSlots;
+  }
+
+  /**
+   * The target has this many job slots. Each job attempt that runs on it takes one, and a start on
+   * it is refused when every slot is taken. A target left unset has unbounded job slots.
+   */
+  public void limitJobSlots(ExecutionTargetId target, int jobSlots) {
+    jobSlotsByTarget.put(target, jobSlots);
+  }
+
+  private synchronized int freeJobSlots() {
+    if (jobSlots == UNBOUNDED_SLOTS) {
+      return UNBOUNDED_SLOTS;
+    }
+
+    return Math.max(0, jobSlots - running.size());
+  }
+
+  private synchronized int freeJobSlotsOn(ExecutionTargetId target) {
+    var limit = jobSlotsByTarget.get(target);
+    if (limit == null) {
+      return UNBOUNDED_SLOTS;
+    }
+
+    var taken = runningTargets.values().stream().filter(target::equals).count();
+    return (int) Math.max(0, limit - taken);
+  }
+
+  private synchronized int freeJobSlotsOn(Collection<ExecutionTargetId> targets) {
+    if (jobSlotsByTarget.isEmpty()) {
+      return UNBOUNDED_SLOTS;
+    }
+
+    var free = targets.stream().mapToLong(this::freeJobSlotsOn).sum();
+    return (int) Math.min(UNBOUNDED_SLOTS, free);
+  }
+
+  private synchronized boolean tryTakeJobSlot(
+      ProcessKey key, Optional<ExecutionTargetId> runningTarget) {
+    if (freeJobSlots() <= 0 || runningTarget.filter(t -> freeJobSlotsOn(t) <= 0).isPresent()) {
+      return false;
+    }
+
+    running.add(key);
+    runningTarget.ifPresentOrElse(
+        target -> runningTargets.put(key, target), () -> runningTargets.remove(key));
+    return true;
   }
 
   @Override
@@ -431,6 +582,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   public void reset() {
     running.clear();
+    runningTargets.clear();
     started.clear();
     stopped.clear();
     startedRequests.clear();

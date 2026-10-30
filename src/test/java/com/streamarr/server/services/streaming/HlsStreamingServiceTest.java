@@ -9,9 +9,11 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest;
 import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libx264;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
+import static com.streamarr.server.support.OutcomeTestSupport.rejectionOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
@@ -49,6 +51,7 @@ import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
+import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -94,6 +97,7 @@ class HlsStreamingServiceTest {
   private HlsStreamingService service;
   private SegmentDeliveryCoordinator coordinator;
   private SimpleMeterRegistry meters;
+  private final MutexFactory<UUID> sessionMutex = new MutexFactory<>();
 
   @Test
   @DisplayName("Should reject session creation when the media file has no persisted probe outcome")
@@ -656,6 +660,7 @@ class HlsStreamingServiceTest {
             .properties(properties)
             .runtimeRegistry(registry)
             .heldRequests(executor.heldSegmentRequests())
+            .sessionMutex(sessionMutex)
             .build();
     coordinator = rig.coordinator();
     return HlsStreamingService.builder()
@@ -2077,6 +2082,88 @@ class HlsStreamingServiceTest {
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     assertThat(first.getVariantHandles()).containsOnlyKeys("1080p");
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop another stream session's left variant to admit a stream session when the transcode limit is reached")
+  void
+      shouldStopAnotherStreamSessionsLeftVariantToAdmitAStreamSessionWhenTheTranscodeLimitIsReached()
+          throws Exception {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .framerate(OptionalDouble.of(23.976))
+            .videoCodec("hevc")
+            .bitrate(8_000_000L)
+            .build());
+    var switching = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    var switchingId = switching.getSessionId();
+    upload(switchingId, "480p", "480p/segment0.m4s");
+    assertThat(coordinator.deliver(switchingId, "480p", "480p/segment0.m4s"))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+    var looks = transcodeExecutor.livenessChecks(switchingId, "1080p");
+    var switched =
+        CompletableFuture.supplyAsync(
+            () -> coordinator.deliver(switchingId, "1080p", "1080p/segment1.m4s"));
+    transcodeExecutor.awaitLivenessCheckCount(switchingId, "1080p", looks + 1);
+    var switchingMutex = sessionMutex.getMutex(switchingId);
+    await()
+        .pollDelay(Duration.ZERO)
+        .pollInterval(Duration.ofMillis(1))
+        .atMost(Duration.ofSeconds(5))
+        .until(() -> !switchingMutex.isLocked());
+    var other = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    assertThat(switching.getVariantHandles()).containsOnlyKeys("480p", "1080p");
+
+    var admitted = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(admitted.getVariantHandles()).containsOnlyKeys("480p");
+    assertThat(switching.getVariantHandles()).containsOnlyKeys("1080p");
+    assertThat(transcodeExecutor.isRunning(other.getSessionId(), "480p")).isTrue();
+    assertThat(capacityRefusals("no_free_configured_transcode_slot")).isZero();
+    upload(switchingId, "1080p", "1080p/segment1.m4s");
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep another stream session's left variant when a stream session whose encode has no frame rate is refused while no encoder has a free slot")
+  void
+      shouldKeepAnotherStreamSessionsLeftVariantWhenAStreamSessionWhoseEncodeHasNoFrameRateIsRefusedWhileNoEncoderHasAFreeSlot()
+          throws Exception {
+    var probe = defaultProbeBuilder().videoCodec("hevc").bitrate(8_000_000L);
+    probeResults.setDefaultProbe(probe.framerate(OptionalDouble.of(23.976)).build());
+    transcodeExecutor.setEncodeSlots(Map.of("h264", 2));
+    var switching = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    var switchingId = switching.getSessionId();
+    upload(switchingId, "480p", "480p/segment0.m4s");
+    assertThat(coordinator.deliver(switchingId, "480p", "480p/segment0.m4s"))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+    var looks = transcodeExecutor.livenessChecks(switchingId, "1080p");
+    var switched =
+        CompletableFuture.supplyAsync(
+            () -> coordinator.deliver(switchingId, "1080p", "1080p/segment1.m4s"));
+    transcodeExecutor.awaitLivenessCheckCount(switchingId, "1080p", looks + 1);
+    var switchingMutex = sessionMutex.getMutex(switchingId);
+    await()
+        .pollDelay(Duration.ZERO)
+        .pollInterval(Duration.ofMillis(1))
+        .atMost(Duration.ofSeconds(5))
+        .until(() -> !switchingMutex.isLocked());
+    assertThat(transcodeExecutor.encodableVideoCodecFamilies()).isEmpty();
+    probeResults.setDefaultProbe(probe.framerate(OptionalDouble.empty()).build());
+
+    var outcome =
+        service.createSession(
+            createStreamSessionCommand(
+                seedMediaFile().getId(), UUID.randomUUID(), defaultOptions()));
+
+    assertThat(rejectionOf(outcome))
+        .isInstanceOf(CreateStreamSessionRejection.TranscodeCapacityUnavailable.class);
+    assertThat(transcodeExecutor.isRunning(switchingId, "480p")).isTrue();
+    assertThat(switching.getVariantHandles()).containsOnlyKeys("480p", "1080p");
+    upload(switchingId, "1080p", "1080p/segment1.m4s");
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
   }
 
   @Test

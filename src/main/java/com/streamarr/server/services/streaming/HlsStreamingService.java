@@ -86,26 +86,33 @@ public class HlsStreamingService implements StreamingService {
             .build();
     var candidate = transcodeDecisionService.decide(request);
     if (candidate.isEmpty()) {
+      candidate = decideAfterStoppingALeftVariant(command.streamSessionId(), request);
+    }
+
+    if (candidate.isEmpty()) {
       return Outcome.rejected(unavailableVideoFormat(request));
     }
 
     var decision = candidate.orElseThrow();
+    var encodeRejection = encodeRejection(request, decision);
+    if (encodeRejection.isPresent()) {
+      return Outcome.rejected(encodeRejection.get());
+    }
+
     var variants = resolveVariants(probe, options, decision);
-    if (requiresVideoTranscode(decision.transcodeMode()) && hasInvalidEncodeSize(probe, variants)) {
-      return Outcome.rejected(new CreateStreamSessionRejection.InvalidPictureSize());
-    }
-
-    // Workers encode at the probed frame rate and refuse an encode without one.
-    if (requiresVideoTranscode(decision.transcodeMode()) && probe.framerate().isEmpty()) {
-      return Outcome.rejected(new CreateStreamSessionRejection.FrameRateUnknown());
-    }
-
+    var sessionId = command.streamSessionId();
     var refusal = capacityRefusalFor(decision);
+    // A left variant only serves its own player's switch back, so it never keeps a new stream
+    // session out (ADR 0019).
+    if (refusal.isPresent() && isSlotShortage(refusal.get())) {
+      producerLifecycle.stopLeftVariantOfAnotherStreamSession(sessionId, decision);
+      refusal = capacityRefusalFor(decision);
+    }
+
     if (refusal.isPresent()) {
       return Outcome.rejected(refuseForLackOfCapacity(refusal.get()));
     }
 
-    var sessionId = command.streamSessionId();
     var now = Instant.now();
 
     var session =
@@ -138,6 +145,27 @@ public class HlsStreamingService implements StreamingService {
     return Outcome.accepted(session);
   }
 
+  // Why no worker can run the decision's encode, whatever slots are free.
+  private Optional<CreateStreamSessionRejection> encodeRejection(
+      TranscodeDecisionRequest request, TranscodeDecision decision) {
+    if (!requiresVideoTranscode(decision.transcodeMode())) {
+      return Optional.empty();
+    }
+
+    var probe = request.source();
+    var variants = resolveVariants(probe, request.clientOptions(), decision);
+    if (hasInvalidEncodeSize(probe, variants)) {
+      return Optional.of(new CreateStreamSessionRejection.InvalidPictureSize());
+    }
+
+    // Workers encode at the probed frame rate and refuse an encode without one.
+    if (probe.framerate().isEmpty()) {
+      return Optional.of(new CreateStreamSessionRejection.FrameRateUnknown());
+    }
+
+    return Optional.empty();
+  }
+
   private static boolean hasInvalidEncodeSize(MediaProbe probe, List<QualityVariant> variants) {
     if (!variants.isEmpty()) {
       return variants.stream().anyMatch(variant -> variant.width() <= 0 || variant.height() <= 0);
@@ -148,26 +176,52 @@ public class HlsStreamingService implements StreamingService {
     return output.width() <= 0 || output.height() <= 0;
   }
 
+  // An encode whose encoders all run on workers with no free slot is decided only once a slot is
+  // free. A left variant never keeps a new stream session out (ADR 0019), so the server stops one
+  // that frees a slot on such a worker and decides once more. An encode that no worker can run
+  // whatever slots are free stops nothing.
+  private Optional<TranscodeDecision> decideAfterStoppingALeftVariant(
+      UUID sessionId, TranscodeDecisionRequest request) {
+    var verifiedCandidate =
+        verifiedEncodeCandidate(request)
+            .filter(decision -> encodeRejection(request, decision).isEmpty());
+    if (verifiedCandidate.isEmpty()) {
+      return Optional.empty();
+    }
+
+    // The first decision already refused a copy, so only an encode is decided again.
+    producerLifecycle.stopLeftVariantOfAnotherStreamSession(sessionId, verifiedCandidate.get());
+    return transcodeDecisionService.decide(
+        request.toBuilder()
+            .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+            .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())
+            .build());
+  }
+
   private CreateStreamSessionRejection unavailableVideoFormat(TranscodeDecisionRequest request) {
     if (!transcodeExecutor.isHealthy()) {
       return refuseForLackOfCapacity(CapacityRefusal.NO_CONNECTED_WORKER);
     }
 
-    if (request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
-      return new CreateStreamSessionRejection.NoEligibleVideoFormat();
-    }
-
-    var verifiedCandidate =
-        transcodeDecisionService.decide(
-            request.toBuilder()
-                .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
-                .encodableVideoCodecFamilies(transcodeExecutor.verifiedVideoCodecFamilies())
-                .build());
-    if (verifiedCandidate.isPresent()) {
+    if (verifiedEncodeCandidate(request).isPresent()) {
       return refuseForLackOfCapacity(CapacityRefusal.NO_ENCODER_WITH_FREE_SLOT);
     }
 
     return new CreateStreamSessionRejection.NoEligibleVideoFormat();
+  }
+
+  // The encode that a connected worker's verified encoder could run once it had a free slot.
+  private Optional<TranscodeDecision> verifiedEncodeCandidate(TranscodeDecisionRequest request) {
+    if (!transcodeExecutor.isHealthy()
+        || request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
+      return Optional.empty();
+    }
+
+    return transcodeDecisionService.decide(
+        request.toBuilder()
+            .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+            .encodableVideoCodecFamilies(transcodeExecutor.verifiedVideoCodecFamilies())
+            .build());
   }
 
   private CreateStreamSessionRejection refuseForLackOfCapacity(CapacityRefusal refusal) {
@@ -294,6 +348,13 @@ public class HlsStreamingService implements StreamingService {
     }
 
     return Optional.empty();
+  }
+
+  private static boolean isSlotShortage(CapacityRefusal refusal) {
+    return switch (refusal) {
+      case NO_FREE_WORKER_SLOT, NO_FREE_CONFIGURED_TRANSCODE_SLOT -> true;
+      case NO_CONNECTED_WORKER, NO_ENCODER_WITH_FREE_SLOT -> false;
+    };
   }
 
   // Why a stream session could not start now, as the capacity refusal metric names it.

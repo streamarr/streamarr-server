@@ -31,8 +31,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
- * A worker that registers over a real worker session with one libx264 encoder and eight job slots.
- * The test reads the commands that the server sends and reports job attempt outcomes.
+ * A worker that registers over a real worker session with one libx264 encoder and eight job slots,
+ * or the job slots that the test chooses. The test reads the commands that the server sends and
+ * reports job attempt outcomes.
  */
 final class LoopbackWorker implements AutoCloseable {
 
@@ -50,6 +51,10 @@ final class LoopbackWorker implements AutoCloseable {
   }
 
   static LoopbackWorker register(ManagedChannel channel) {
+    return register(channel, 8);
+  }
+
+  static LoopbackWorker register(ManagedChannel channel, int availableSlots) {
     var responses = new LinkedBlockingQueue<EstablishWorkerSessionResponse>();
     var requests =
         TranscodeWorkerServiceGrpc.newStub(channel)
@@ -68,7 +73,7 @@ final class LoopbackWorker implements AutoCloseable {
                             .addVideoEncoders(
                                 softwareEncoder(
                                     VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264")))
-                    .setAvailableSlots(8))
+                    .setAvailableSlots(availableSlots))
             .build());
     return new LoopbackWorker(requests, responses);
   }

@@ -11,4 +11,9 @@ public class MutexFactory<K> {
   public ReentrantLock getMutex(K key) {
     return map.compute(key, (k, v) -> v == null ? new ReentrantLock() : v);
   }
+
+  /** Whether the current thread holds one of this factory's mutexes. */
+  public boolean isAnyMutexHeldByCurrentThread() {
+    return map.values().stream().anyMatch(ReentrantLock::isHeldByCurrentThread);
+  }
 }

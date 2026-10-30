@@ -40,6 +40,12 @@ public interface TranscodeExecutor {
   boolean isRunning(UUID sessionId, String variantLabel);
 
   /**
+   * The execution target that runs the variant's job attempt. Empty when no job attempt of the
+   * variant runs.
+   */
+  Optional<ExecutionTargetId> runningExecutionTarget(UUID sessionId, String variantLabel);
+
+  /**
    * Remains available until the stream session is destroyed, including before its handle is
    * installed.
    */
@@ -54,6 +60,13 @@ public interface TranscodeExecutor {
    * and for an encode only a worker that can encode the decision's video codec family.
    */
   int availableSlots(TranscodeDecision decision);
+
+  /**
+   * Free slots on the workers that can run a later job attempt of a variant pinned to this
+   * worker-verified encoder: only workers that advertise the same encoder backend with the same
+   * keyframe-verified flag for its codec family.
+   */
+  int availableSlots(WorkerVerifiedEncoder pinnedEncoder);
 
   /**
    * Identities eligible to run a producer with this decision right now: any worker for a copy, and

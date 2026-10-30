@@ -461,6 +461,11 @@ class HeldSegmentRequestConcurrencyIT {
     }
 
     @Override
+    public Optional<ExecutionTargetId> runningExecutionTarget(UUID sessionId, String variantLabel) {
+      return delegate.runningExecutionTarget(sessionId, variantLabel);
+    }
+
+    @Override
     public TranscodeHandle start(TranscodeRequest request) {
       return delegate.start(request);
     }
@@ -503,6 +508,11 @@ class HeldSegmentRequestConcurrencyIT {
     @Override
     public int availableSlots(TranscodeDecision decision) {
       return delegate.availableSlots(decision);
+    }
+
+    @Override
+    public int availableSlots(WorkerVerifiedEncoder pinnedEncoder) {
+      return delegate.availableSlots(pinnedEncoder);
     }
 
     @Override

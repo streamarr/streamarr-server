@@ -86,6 +86,11 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
+  public Optional<ExecutionTargetId> runningExecutionTarget(UUID sessionId, String variantLabel) {
+    return workerServer.runningExecutionTarget(sessionId, variantLabel);
+  }
+
+  @Override
   public Optional<TranscodeFailure> terminalFailure(UUID sessionId) {
     return workerServer.terminalFailure(sessionId);
   }
@@ -104,6 +109,11 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   public int availableSlots(TranscodeDecision decision) {
     return workerServer.availableSlots(
         sourceNamespaceId, RemoteVariantJobMapper.decision(decision));
+  }
+
+  @Override
+  public int availableSlots(@NonNull WorkerVerifiedEncoder pinnedEncoder) {
+    return workerServer.availableSlots(sourceNamespaceId, pinnedEncoder);
   }
 
   @Override

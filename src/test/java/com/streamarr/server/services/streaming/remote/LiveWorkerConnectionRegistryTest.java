@@ -208,6 +208,20 @@ class LiveWorkerConnectionRegistryTest {
     assertThat(held.isRunning()).isFalse();
   }
 
+  @Test
+  @DisplayName(
+      "Should name the worker that runs a variant's job attempt until the job attempt stops")
+  void shouldNameTheWorkerThatRunsAVariantsJobAttemptUntilTheJobAttemptStops() {
+    var held = HeldVariant.dispatch();
+    var variantLabel = held.job().getVariant().getVariantLabel();
+    var runningTarget = held.registry().runningExecutionTarget(held.sessionId(), variantLabel);
+
+    held.registry().stopVariant(held.sessionId(), variantLabel);
+
+    assertThat(runningTarget).contains(new ExecutionTargetId(held.workerSessionId().toString()));
+    assertThat(held.registry().runningExecutionTarget(held.sessionId(), variantLabel)).isEmpty();
+  }
+
   // A variant job running on a registered worker, with the wake that its held requests took.
   @Builder
   private record HeldVariant(
@@ -1032,6 +1046,35 @@ class LiveWorkerConnectionRegistryTest {
     assertThat(targets).containsExactly(new ExecutionTargetId(libx264WorkerSessionId.toString()));
     assertThat(registry.eligibleWorkers(UUID.randomUUID(), WorkerVerifiedEncoderFixture.libx264()))
         .isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should count a pinned encode's free slots only on workers that advertise the pinned encoder backend")
+  void shouldCountAPinnedEncodesFreeSlotsOnlyOnWorkersThatAdvertiseThePinnedEncoderBackend() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var libx264WorkerId = UUID.randomUUID();
+    registry.register(
+        WORKER_ID,
+        registration(
+            WORKER_ID,
+            keyframeVerifiedHardwareEncoder(
+                VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc")),
+        new CancellableObserver());
+    registry.register(
+        libx264WorkerId,
+        registration(libx264WorkerId, libx264Encoder()),
+        new CancellableObserver());
+    var pinned = WorkerVerifiedEncoderFixture.libx264();
+    var freeSlots = registry.availableSlots(SOURCE_NAMESPACE_ID, pinned);
+
+    registry.dispatch(encodeJob("h264"), pinned);
+
+    assertThat(freeSlots).isOne();
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, pinned)).isZero();
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, encodeJob("h264").getDecision()))
+        .isOne();
+    assertThat(registry.availableSlots(UUID.randomUUID(), pinned)).isZero();
   }
 
   @Test

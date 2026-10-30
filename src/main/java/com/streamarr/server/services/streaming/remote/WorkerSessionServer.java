@@ -189,6 +189,12 @@ public final class WorkerSessionServer
     return workerConnections.isRunning(streamSessionId, variantLabel);
   }
 
+  public synchronized Optional<ExecutionTargetId> runningExecutionTarget(
+      UUID streamSessionId, String variantLabel) {
+    requireStarted();
+    return workerConnections.runningExecutionTarget(streamSessionId, variantLabel);
+  }
+
   public synchronized Optional<TranscodeFailure> terminalFailure(UUID streamSessionId) {
     requireStarted();
     return workerConnections.terminalFailure(streamSessionId);
@@ -225,6 +231,12 @@ public final class WorkerSessionServer
       UUID sourceNamespaceId, com.streamarr.transcode.v1.TranscodeDecision decision) {
     requireStarted();
     return workerConnections.availableSlots(sourceNamespaceId, decision);
+  }
+
+  public synchronized int availableSlots(
+      UUID sourceNamespaceId, @NonNull WorkerVerifiedEncoder pinnedEncoder) {
+    requireStarted();
+    return workerConnections.availableSlots(sourceNamespaceId, pinnedEncoder);
   }
 
   private void requireStarted() {
