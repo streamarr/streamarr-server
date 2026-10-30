@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming;
 import com.streamarr.server.domain.streaming.StreamSession;
 import java.util.OptionalInt;
 import java.util.regex.Pattern;
+import lombok.NonNull;
 
 /**
  * Naming scheme for HLS artifacts, which are fMP4 only: media segments are {@code
@@ -33,7 +34,8 @@ public final class SegmentNames {
    * The name under which the segment store keeps a variant's segment: the default variant's
    * segments sit at the top of the stream session, and every other variant's sit under its label.
    */
-  public static String storedSegmentName(String variantLabel, String segmentName) {
+  public static String storedSegmentName(
+      @NonNull String variantLabel, @NonNull String segmentName) {
     if (StreamSession.defaultVariant().equals(variantLabel)) {
       return segmentName;
     }
