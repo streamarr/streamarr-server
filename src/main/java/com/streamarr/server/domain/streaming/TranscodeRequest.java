@@ -17,7 +17,7 @@ public record TranscodeRequest(
     @NonNull Optional<Duration> keyframeSeekPosition,
     int targetSegmentDuration,
     @NonNull OptionalDouble framerate,
-    Optional<Fraction> outputFrameRate,
+    @NonNull Optional<Fraction> outputFrameRate,
     @NonNull TranscodeDecision transcodeDecision,
     int width,
     int height,
@@ -40,7 +40,7 @@ public record TranscodeRequest(
       variantLabel = StreamSession.defaultVariant();
     }
 
-    if (outputFrameRate == null) {
+    if (outputFrameRate.isEmpty()) {
       outputFrameRate = sourceOutputFrameRate(transcodeDecision);
     }
 
@@ -84,6 +84,7 @@ public record TranscodeRequest(
     return new TranscodeRequestBuilder()
         .framerate(OptionalDouble.empty())
         .keyframeSeekPosition(Optional.empty())
+        .outputFrameRate(Optional.empty())
         .pinnedEncoder(Optional.empty());
   }
 }
