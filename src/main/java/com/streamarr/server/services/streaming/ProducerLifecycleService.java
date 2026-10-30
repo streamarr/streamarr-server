@@ -62,6 +62,10 @@ public class ProducerLifecycleService {
   // The newest media-segment request of each stream session, for any variant: where the player is.
   private final ConcurrentHashMap<UUID, SegmentRequest> newestMediaSegmentRequests =
       new ConcurrentHashMap<>();
+  // The arrival of the media-segment request that last changed the variant of each stream
+  // session's newest media-segment request. An older request of that variant belongs to an earlier
+  // switch, which a switch back has abandoned.
+  private final ConcurrentHashMap<UUID, Long> newestVariantArrivals = new ConcurrentHashMap<>();
   // The variant that each stream session's player plays: the variant of the last media segment
   // delivered while that variant was the variant of the newest media-segment request (ADR 0019).
   private final ConcurrentHashMap<UUID, String> playingVariants = new ConcurrentHashMap<>();
@@ -152,6 +156,7 @@ public class ProducerLifecycleService {
           recoveryStates.keySet().removeIf(key -> key.sessionId().equals(sessionId));
           newestPositioningRequests.keySet().removeIf(key -> key.sessionId().equals(sessionId));
           newestMediaSegmentRequests.remove(sessionId);
+          newestVariantArrivals.remove(sessionId);
           playingVariants.remove(sessionId);
         });
   }
@@ -542,8 +547,13 @@ public class ProducerLifecycleService {
         runtimeRegistry
             .findById(request.sessionId())
             .filter(session -> session.offersVariant(request.variantLabel()));
-    if (offered.isPresent()) {
-      newestMediaSegmentRequests.put(request.sessionId(), request);
+    if (offered.isEmpty()) {
+      return;
+    }
+
+    var previous = newestMediaSegmentRequests.put(request.sessionId(), request);
+    if (previous == null || !previous.variantLabel().equals(request.variantLabel())) {
+      newestVariantArrivals.put(request.sessionId(), request.arrival());
     }
   }
 
@@ -571,9 +581,11 @@ public class ProducerLifecycleService {
 
   /**
    * Once the player has received the request's media segment, stops every other video variant when
-   * the request's variant is the variant of the stream session's newest media-segment request: the
-   * player then plays that variant, so the variant that the player left stops (ADR 0019). A
-   * delivered segment of a variant that the player has since left changes nothing.
+   * the request's variant is the variant of the stream session's newest media-segment request, and
+   * the request arrived no earlier than the request that made it that variant: the player then
+   * plays that variant, so the variant that the player left stops (ADR 0019). A delivered segment
+   * of a variant that the player has since left, or of an earlier switch to the same variant,
+   * changes nothing.
    */
   public void completeVariantSwitch(SegmentRequest delivered) {
     if (SegmentNames.indexOf(delivered.segmentName()).isEmpty()) {
@@ -588,7 +600,8 @@ public class ProducerLifecycleService {
     var newest = newestMediaSegmentRequests.get(delivered.sessionId());
     if (session == null
         || newest == null
-        || !newest.variantLabel().equals(delivered.variantLabel())) {
+        || !newest.variantLabel().equals(delivered.variantLabel())
+        || delivered.arrival() < newestVariantArrivals.getOrDefault(delivered.sessionId(), 0L)) {
       return;
     }
 

@@ -1744,6 +1744,50 @@ class SegmentDeliveryCoordinatorTest {
         .containsExactly("1080p");
   }
 
+  @Test
+  @DisplayName(
+      "Should keep the variant that the player switched back to running when an older request's media segment of the newest request's variant is delivered after the player switched back and away again")
+  void
+      shouldKeepTheVariantThatThePlayerSwitchedBackToRunningWhenAnOlderRequestsMediaSegmentOfTheNewestRequestsVariantIsDeliveredAfterThePlayerSwitchedBackAndAwayAgain()
+          throws Exception {
+    var gatedSessionId = new AtomicReference<UUID>();
+    var gate =
+        new SwitchGate(
+            () -> segmentStore.segmentExists(gatedSessionId.get(), "1080p/segment3.m4s"));
+    var rig = rigBuilder(transcodeExecutor, segmentStore).sessionMutex(gate.mutexFactory()).build();
+    lifecycle = rig.lifecycle();
+    coordinator = rig.coordinator();
+    var session = ladderSessionPlayingFirstListedVariant(3);
+    var sessionId = session.getSessionId();
+    gatedSessionId.set(sessionId);
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var looks = transcodeExecutor.livenessChecks(sessionId, "1080p");
+      var olderSwitch =
+          executor.submit(
+              () ->
+                  gate.gateCurrentThread(
+                      () -> coordinator.deliver(sessionId, "1080p", "1080p/segment3.m4s")));
+      transcodeExecutor.awaitLivenessCheckCount(sessionId, "1080p", looks + 1);
+      upload(sessionId, "1080p/segment3.m4s", new byte[] {3});
+      gate.awaitGatedOrStarted(transcodeExecutor, Integer.MAX_VALUE);
+
+      var switchBack = heldDelivery(sessionId, "480p", "480p/segment3.m4s");
+      var switchAwayAgain = heldDelivery(sessionId, "1080p", "1080p/segment4.m4s");
+      gate.releaseAndAwaitHeldStep();
+
+      assertThat(olderSwitch.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+      assertThat(runningVariants(session)).containsExactlyInAnyOrder("480p", "1080p");
+      upload(sessionId, "480p/segment3.m4s", new byte[] {3});
+      assertThat(switchBack.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+      upload(sessionId, "1080p/segment4.m4s", new byte[] {4});
+      assertThat(switchAwayAgain.get(2, TimeUnit.SECONDS))
+          .isInstanceOf(SegmentDelivery.Ready.class);
+    }
+
+    assertThat(runningVariants(session)).containsExactly("1080p");
+  }
+
   /**
    * Holds one request's thread at the session mutex once the given condition holds, so a second
    * request can run between the first request's steps.
