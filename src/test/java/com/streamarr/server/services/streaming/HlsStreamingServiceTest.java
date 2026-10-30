@@ -325,7 +325,7 @@ class HlsStreamingServiceTest {
   void shouldPlanEvenOutputDimensionsWhenAFixedQualityEncodesAnOddCroppedPicture(
       ChromaSubsampling subsampling, int expectedWidth) {
     probeResults.setDefaultProbe(oddCroppedProbe(subsampling).build());
-    var options = StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build();
+    var options = StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P).build();
 
     var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
     var playlist =
@@ -2644,8 +2644,39 @@ class HlsStreamingServiceTest {
 
     assertThat(session.getVariants())
         .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::label)
-        .containsExactly(tuple(1920, 1080, StreamSession.defaultVariant()));
+        .containsExactly(tuple(1280, 720, StreamSession.defaultVariant()));
     assertThat(session.getHandle()).isPresent();
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "3840, 2160, FULL_HD_1080P, 1920, 1080",
+    "3840, 2160, UHD_4K, 3840, 2160",
+    "1920, 1080, UHD_4K, 1920, 1080",
+    "3840, 2160, LOW_360P, 640, 360"
+  })
+  @DisplayName(
+      "Should encode a fixed quality within its picture box when the source is larger, never"
+          + " enlarging it")
+  void shouldEncodeAFixedQualityWithinItsPictureBoxWhenTheSourceIsLargerNeverEnlargingIt(
+      int sourceWidth,
+      int sourceHeight,
+      VideoQuality quality,
+      int expectedWidth,
+      int expectedHeight) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").width(sourceWidth).height(sourceHeight).build());
+    var options = StreamingOptions.builder().quality(quality).build();
+
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(expectedWidth);
+              assertThat(request.height()).isEqualTo(expectedHeight);
+            });
   }
 
   @Test
