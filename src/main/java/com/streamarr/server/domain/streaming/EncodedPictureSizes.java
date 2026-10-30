@@ -9,6 +9,11 @@ import lombok.NonNull;
 /** The picture sizes that the worker encodes a variant at. */
 public final class EncodedPictureSizes {
 
+  /** Bounds that leave a picture as large as its source allows. */
+  public static final PictureSize NO_BOUNDS = new PictureSize(Integer.MAX_VALUE, Integer.MAX_VALUE);
+
+  private static final int SMALLEST_DIMENSION = 2;
+
   private EncodedPictureSizes() {}
 
   // The worker produces 4:2:0 and scales with scale=-2:<height>. Keep the height even and
@@ -22,19 +27,33 @@ public final class EncodedPictureSizes {
   }
 
   /**
-   * The pictures with the source's aspect ratio that the worker encodes within the bounds, never
-   * taller than the source, largest first.
+   * The pictures with the source's aspect ratio that the worker encodes within the bounds, largest
+   * first, never taller than the source and never wider than its width rounded up to even. Each is
+   * at least two pixels in each direction, the smallest picture that holds a 4:2:0 chroma sample.
    */
   public static Stream<PictureSize> picturesWithin(
       @NonNull PictureSize source, @NonNull PictureSize bounds) {
+    if (source.width() <= 0 || source.height() <= 0) {
+      return Stream.empty();
+    }
+
+    var widthBound = Math.min(bounds.width(), source.width() + source.width() % 2);
     // FFmpeg rounds the width to the nearest multiple of two, so a height whose exact width is
     // up to one pixel past the bound can still fit. No taller height fits.
-    var tallestHeightThatCanFit = ((long) bounds.width() + 1) * source.height() / source.width();
+    var tallestHeightThatCanFit = ((long) widthBound + 1) * source.height() / source.width();
     var largestHeight =
         (int) Math.min(Math.min(bounds.height(), source.height()), tallestHeightThatCanFit);
     return IntStream.iterate(
-            largestHeight - largestHeight % 2, height -> height >= 0, height -> height - 2)
+            largestHeight - largestHeight % 2,
+            height -> height >= SMALLEST_DIMENSION,
+            height -> height - 2)
         .mapToObj(height -> atHeight(source, height))
-        .filter(picture -> picture.width() <= bounds.width());
+        .filter(picture -> picture.width() <= widthBound)
+        .takeWhile(picture -> picture.width() >= SMALLEST_DIMENSION);
+  }
+
+  /** Whether the worker encodes the source at any size. */
+  public static boolean hasEncodablePicture(@NonNull PictureSize source) {
+    return picturesWithin(source, NO_BOUNDS).findAny().isPresent();
   }
 }
