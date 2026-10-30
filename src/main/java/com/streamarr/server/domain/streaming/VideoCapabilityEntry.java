@@ -101,13 +101,14 @@ public record VideoCapabilityEntry(
         && ENCODED_BIT_DEPTH <= maxBitDepth;
   }
 
-  // An encode runs at an exact rate, so no measuring margin applies. Dividing by a whole number
-  // keeps motion even.
+  // The margin also lets a declared 29.97 or 59.94 accept the exact NTSC rate 30000/1001 or
+  // 60000/1001, which lies just above it. Dividing by a whole number keeps motion even.
   private Optional<Fraction> encodedFrameRate(Fraction rate) {
+    var fastestAcceptedRate = BigDecimal.valueOf(maxFrameRate).multiply(MEASURED_FRAME_RATE_MARGIN);
     var divisor =
         BigDecimal.valueOf(rate.numerator())
             .divide(
-                BigDecimal.valueOf(rate.denominator()).multiply(BigDecimal.valueOf(maxFrameRate)),
+                BigDecimal.valueOf(rate.denominator()).multiply(fastestAcceptedRate),
                 0,
                 RoundingMode.CEILING)
             .max(BigDecimal.ONE);
