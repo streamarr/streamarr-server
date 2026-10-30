@@ -129,8 +129,8 @@ final class LiveWorkerConnectionRegistry {
     unknownJobAttemptReports =
         Counter.builder(UNKNOWN_JOB_ATTEMPT_REPORTS_METRIC)
             .description(
-                "Reports that a job attempt completed or stopped, for a job attempt that the"
-                    + " worker's current session neither runs nor was told to stop")
+                "Reports that a job attempt completed, stopped or failed, for a job attempt that"
+                    + " the worker's current session neither runs nor was told to stop")
             .register(meterRegistry);
     capacityMeters = new WorkerCapacityMeters(meterRegistry);
   }
@@ -523,6 +523,7 @@ final class LiveWorkerConnectionRegistry {
   ReportedJobAttemptEnd failJobAttempt(
       UUID workerId, UUID workerSessionId, JobAttemptFailed failed) {
     var end = acceptJobAttemptFailure(workerId, workerSessionId, failed);
+    countIfUnknown(end);
     if (end instanceof ReportedJobAttemptEnd.Released(var job)) {
       publishTerminalFailure(job, failed);
     }
@@ -566,7 +567,7 @@ final class LiveWorkerConnectionRegistry {
         .flatMap(connection -> connection.releaseJobAttempt(jobAttemptId));
   }
 
-  /** How a worker's report that a job attempt completed or stopped matched the server's state. */
+  /** How a worker's report that a job attempt ended matched the server's state. */
   sealed interface ReportedJobAttemptEnd {
     /** The worker's session ran the job attempt, which the report ends. */
     record Released(VariantJob job) implements ReportedJobAttemptEnd {}
@@ -580,8 +581,9 @@ final class LiveWorkerConnectionRegistry {
 
   /**
    * Ends the job attempt that a worker reports completed or stopped. The worker reports the end of
-   * a job attempt that the server told it to stop, so that report is expected. Every other report
-   * for a job attempt that the session does not run counts as unknown.
+   * a job attempt that the server told it to stop, so that report is expected; a failure report can
+   * stand in for it ({@link #failJobAttempt}). Every other report for a job attempt that the
+   * session does not run counts as unknown.
    */
   ReportedJobAttemptEnd endReportedJobAttempt(
       UUID workerId, UUID workerSessionId, UUID jobAttemptId) {
@@ -589,11 +591,14 @@ final class LiveWorkerConnectionRegistry {
         currentConnection(workerId, workerSessionId)
             .map(connection -> connection.endReportedJobAttempt(jobAttemptId))
             .orElseGet(ReportedJobAttemptEnd.Unknown::new);
+    countIfUnknown(end);
+    return end;
+  }
+
+  private void countIfUnknown(ReportedJobAttemptEnd end) {
     if (end instanceof ReportedJobAttemptEnd.Unknown) {
       unknownJobAttemptReports.increment();
     }
-
-    return end;
   }
 
   void checkReportedEncoderBackend(UUID workerId, UUID workerSessionId, JobAttemptStarted started) {
@@ -985,18 +990,19 @@ final class LiveWorkerConnectionRegistry {
       }
     }
 
+    // A worker that failed an attempt before it saw the server's stop reports only the failure.
+    // The server stopped that attempt on purpose, so its failure reaches neither the stream
+    // session nor the attempt that replaced it.
     private synchronized ReportedJobAttemptEnd failJobAttempt(JobAttemptFailed failed) {
       var attemptId = fromProto(failed.getJobAttemptId());
       var job = activeVariants.get(attemptId);
-      if (job == null) {
-        return new ReportedJobAttemptEnd.Unknown();
+      if (job != null) {
+        terminalFailure(failed)
+            .ifPresent(
+                failure -> terminalFailures.put(fromProto(job.getStreamSessionId()), failure));
       }
 
-      terminalFailure(failed)
-          .ifPresent(failure -> terminalFailures.put(fromProto(job.getStreamSessionId()), failure));
-      return releaseJobAttempt(attemptId)
-          .<ReportedJobAttemptEnd>map(ReportedJobAttemptEnd.Released::new)
-          .orElseGet(ReportedJobAttemptEnd.Unknown::new);
+      return endReportedJobAttempt(attemptId);
     }
 
     // The worker contract says that a replacement attempt with the same decision repeats an output

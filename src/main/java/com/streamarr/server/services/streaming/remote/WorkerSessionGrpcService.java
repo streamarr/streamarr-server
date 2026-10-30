@@ -269,7 +269,13 @@ final class WorkerSessionGrpcService
                 job.getVariant().getVariantLabel(),
                 fromProto(job.getStreamSessionId()),
                 failed.getFailure());
-        case ReportedJobAttemptEnd.StoppedByServer(), ReportedJobAttemptEnd.Unknown() ->
+        case ReportedJobAttemptEnd.StoppedByServer() ->
+            log.debug(
+                "Worker {} reported failure {} for job attempt {}, which the server stopped",
+                authenticatedWorkerId,
+                failed.getFailure(),
+                fromProto(failed.getJobAttemptId()));
+        case ReportedJobAttemptEnd.Unknown() ->
             log.warn(
                 "Worker {} failed unknown job attempt {}: {}",
                 authenticatedWorkerId,

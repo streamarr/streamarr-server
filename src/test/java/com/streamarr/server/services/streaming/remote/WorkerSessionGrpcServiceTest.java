@@ -500,6 +500,78 @@ class WorkerSessionGrpcServiceTest {
 
   @Test
   @DisplayName(
+      "Should count no unknown job attempt report when a worker reports the failure of a job"
+          + " attempt that the server stopped")
+  void shouldCountNoUnknownJobAttemptReportWhenWorkerReportsFailureOfJobAttemptThatServerStopped()
+      throws Exception {
+    var meterRegistry = new SimpleMeterRegistry();
+    var started = startedEncode(meterRegistry);
+    var job = started.job();
+    assertThat(
+            started
+                .registry()
+                .stopVariant(
+                    fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel()))
+        .isTrue();
+
+    started.session().onNext(failureReport(job.getJobAttemptId()));
+
+    assertThat(meterRegistry.get(UNKNOWN_JOB_ATTEMPT_REPORTS_METRIC).counter().count()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should count an unknown job attempt report when a worker reports the failure of a job"
+          + " attempt that the server neither runs nor stopped")
+  void
+      shouldCountUnknownJobAttemptReportWhenWorkerReportsFailureOfJobAttemptServerNeitherRunsNorStopped()
+          throws Exception {
+    var meterRegistry = new SimpleMeterRegistry();
+    var started = startedEncode(meterRegistry);
+    var job = started.job();
+    started
+        .registry()
+        .stopVariant(fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel());
+    var failureReport = failureReport(job.getJobAttemptId());
+    started.session().onNext(failureReport);
+
+    started.session().onNext(failureReport);
+    started.session().onNext(failureReport(toProto(UUID.randomUUID())));
+
+    assertThat(meterRegistry.get(UNKNOWN_JOB_ATTEMPT_REPORTS_METRIC).counter().count())
+        .isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the replacement running and the stream session playable when a worker"
+          + " reports an output mismatch for a job attempt that the server stopped")
+  void
+      shouldKeepReplacementRunningAndSessionPlayableWhenWorkerReportsOutputMismatchForStoppedJobAttempt()
+          throws Exception {
+    var started = startedEncode(new SimpleMeterRegistry());
+    var job = started.job();
+    var streamSessionId = fromProto(job.getStreamSessionId());
+    started.registry().stopVariant(streamSessionId, job.getVariant().getVariantLabel());
+    var replacement = job.toBuilder().setJobAttemptId(toProto(UUID.randomUUID())).build();
+    assertThat(started.registry().dispatch(replacement)).isPresent();
+
+    started
+        .session()
+        .onNext(
+            EstablishWorkerSessionRequest.newBuilder()
+                .setJobAttemptFailed(
+                    JobAttemptFailed.newBuilder()
+                        .setJobAttemptId(job.getJobAttemptId())
+                        .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH))
+                .build());
+
+    assertThat(started.isRunning()).isTrue();
+    assertThat(started.registry().terminalFailure(streamSessionId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
       "Should keep the established session and its running job when a worker repeats"
           + " registration")
   void shouldKeepEstablishedSessionAndRunningJobWhenWorkerRepeatsRegistration() throws Exception {
@@ -1052,6 +1124,15 @@ class WorkerSessionGrpcServiceTest {
     assertThat(registry.terminalFailure(fromProto(job.getStreamSessionId()))).isEmpty();
     assertThat(events.getEventsOfType(VideoCopyOutputMismatchEvent.class)).isEmpty();
     assertThat(registry.hasConnectedWorker(sourceNamespaceId)).isFalse();
+  }
+
+  private static EstablishWorkerSessionRequest failureReport(Uuid jobAttemptId) {
+    return EstablishWorkerSessionRequest.newBuilder()
+        .setJobAttemptFailed(
+            JobAttemptFailed.newBuilder()
+                .setJobAttemptId(jobAttemptId)
+                .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED))
+        .build();
   }
 
   private static boolean isStartOf(EstablishWorkerSessionResponse response, VariantJob job) {
