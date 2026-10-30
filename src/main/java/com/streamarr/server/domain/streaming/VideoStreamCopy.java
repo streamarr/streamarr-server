@@ -3,6 +3,7 @@ package com.streamarr.server.domain.streaming;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
+import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.NonNull;
 
@@ -74,16 +75,11 @@ public record VideoStreamCopy(
   // The rule's fallback snaps the average rate, or the base rate when the average rate is not
   // usable.
   private static Optional<Double> usableDeclaredRate(FrameRateRuleInputs inputs) {
-    return inputs
-        .averageRate()
+    return Stream.of(inputs.averageRate(), inputs.baseRate())
+        .flatMap(Optional::stream)
         .map(Fraction::toDouble)
         .filter(VideoStreamCopy::isUsableDeclaredRate)
-        .or(
-            () ->
-                inputs
-                    .baseRate()
-                    .map(Fraction::toDouble)
-                    .filter(VideoStreamCopy::isUsableDeclaredRate));
+        .findFirst();
   }
 
   private static boolean isUsableDeclaredRate(double rate) {
