@@ -22,7 +22,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * ADR 0049's rule for an HLS stream copy: one video capability entry must accept every property of
  * the copy, and a probe version 5 outcome's unknown values fit as the ADR decides. The entry under
  * test plays HEVC Main up to Main tier level 5.1 and HEVC Main 10 up to High tier level 4.1, at up
- * to 10 bits, a 1920×1080 picture in either orientation and 30 fps.
+ * to 10 bits, a 1920×1080 picture in either orientation and 30 fps. Every combination runs against
+ * the entry declared landscape and the entry declared portrait.
  */
 @Tag("UnitTest")
 @DisplayName("Video Capability Entry HLS Copy Tests")
@@ -34,6 +35,7 @@ class VideoCapabilityEntryHlsCopyTest {
           VideoCodecProfile.HEVC_MAIN_10, new ProfileLimit(41, VideoCodecTier.HIGH));
   private static final int MAX_BIT_DEPTH = 10;
   private static final PictureSize MAX_SIZE = new PictureSize(1920, 1080);
+  private static final PictureSize MAX_SIZE_DECLARED_PORTRAIT = new PictureSize(1080, 1920);
   private static final double MAX_FRAME_RATE = 30;
   // A measured frame rate fits up to 0.5 % above the maximum.
   private static final double MAX_MEASURED_FRAME_RATE = 30.15;
@@ -62,7 +64,13 @@ class VideoCapabilityEntryHlsCopyTest {
   @MethodSource("everyCombination")
   @DisplayName("Should accept a copy only when the entry accepts every property of the copy")
   void shouldAcceptACopyOnlyWhenTheEntryAcceptsEveryPropertyOfTheCopy(CopyCase copyCase) {
-    assertThat(ENTRY.acceptsHlsCopy(copyCase.copy())).isEqualTo(copyCase.fits());
+    var entry =
+        entryBuilder()
+            .maxWidth(copyCase.entrySize().width())
+            .maxHeight(copyCase.entrySize().height())
+            .build();
+
+    assertThat(entry.acceptsHlsCopy(copyCase.copy())).isEqualTo(copyCase.fits());
   }
 
   static Stream<CopyCase> everyCombination() {
@@ -70,7 +78,8 @@ class VideoCapabilityEntryHlsCopyTest {
         .map(VideoCapabilityEntryHlsCopyTest::withinTheEntryCodedAs)
         .flatMap(VideoCapabilityEntryHlsCopyTest::atEveryBitDepth)
         .flatMap(VideoCapabilityEntryHlsCopyTest::atEverySize)
-        .flatMap(VideoCapabilityEntryHlsCopyTest::atEveryFrameRate);
+        .flatMap(VideoCapabilityEntryHlsCopyTest::atEveryFrameRate)
+        .flatMap(VideoCapabilityEntryHlsCopyTest::atEveryDeclaredOrientation);
   }
 
   // A probe that cannot name the codec profile reports no level or tier either.
@@ -112,6 +121,7 @@ class VideoCapabilityEntryHlsCopyTest {
         .bitDepth(OptionalInt.of(MAX_BIT_DEPTH))
         .decodedSize(Optional.of(MAX_SIZE))
         .frameRate(OptionalDouble.of(MAX_FRAME_RATE))
+        .entrySize(MAX_SIZE)
         .build();
   }
 
@@ -142,6 +152,11 @@ class VideoCapabilityEntryHlsCopyTest {
             OptionalDouble.of(30.16),
             OptionalDouble.empty())
         .map(frameRate -> copyCase.toBuilder().frameRate(frameRate).build());
+  }
+
+  private static Stream<CopyCase> atEveryDeclaredOrientation(CopyCase copyCase) {
+    return Stream.of(MAX_SIZE, MAX_SIZE_DECLARED_PORTRAIT)
+        .map(entrySize -> copyCase.toBuilder().entrySize(entrySize).build());
   }
 
   @ParameterizedTest(name = "{0}")
@@ -203,6 +218,24 @@ class VideoCapabilityEntryHlsCopyTest {
   @DisplayName("Should accept a copy when every property is known and within the entry")
   void shouldAcceptACopyWhenEveryPropertyIsKnownAndWithinTheEntry() {
     assertThat(ENTRY.acceptsHlsCopy(fittingCopy().build())).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should accept a picture in either orientation when the entry is declared portrait")
+  void shouldAcceptAPictureInEitherOrientationWhenTheEntryIsDeclaredPortrait() {
+    var portraitEntry =
+        entryBuilder()
+            .maxWidth(MAX_SIZE_DECLARED_PORTRAIT.width())
+            .maxHeight(MAX_SIZE_DECLARED_PORTRAIT.height())
+            .build();
+
+    assertThat(portraitEntry.acceptsHlsCopy(copyOfSize(1920, 1080))).isTrue();
+    assertThat(portraitEntry.acceptsHlsCopy(copyOfSize(1080, 1920))).isTrue();
+    assertThat(portraitEntry.acceptsHlsCopy(copyOfSize(1081, 1920))).isFalse();
+  }
+
+  private static VideoStreamCopy copyOfSize(int width, int height) {
+    return fittingCopy().decodedSize(Optional.of(new PictureSize(width, height))).build();
   }
 
   @Test
@@ -328,7 +361,8 @@ class VideoCapabilityEntryHlsCopyTest {
       @NonNull Coding coding,
       @NonNull OptionalInt bitDepth,
       @NonNull Optional<PictureSize> decodedSize,
-      @NonNull OptionalDouble frameRate) {
+      @NonNull OptionalDouble frameRate,
+      @NonNull PictureSize entrySize) {
 
     VideoStreamCopy copy() {
       return fittingCopy()
@@ -347,14 +381,14 @@ class VideoCapabilityEntryHlsCopyTest {
       return bitDepth.isPresent() && bitDepth.getAsInt() <= MAX_BIT_DEPTH;
     }
 
-    // A picture fits in either orientation: its longer side within the longer maximum and its
-    // shorter side within the shorter one.
     private boolean sizeFits() {
+      var longerMaximum = Math.max(entrySize.width(), entrySize.height());
+      var shorterMaximum = Math.min(entrySize.width(), entrySize.height());
       return decodedSize
           .filter(
               size ->
-                  Math.max(size.width(), size.height()) <= MAX_SIZE.width()
-                      && Math.min(size.width(), size.height()) <= MAX_SIZE.height())
+                  Math.max(size.width(), size.height()) <= longerMaximum
+                      && Math.min(size.width(), size.height()) <= shorterMaximum)
           .isPresent();
     }
 
@@ -370,7 +404,8 @@ class VideoCapabilityEntryHlsCopyTest {
           coding.toString(),
           "bitDepth=" + bitDepth,
           "size=" + decodedSize,
-          "frameRate=" + frameRate);
+          "frameRate=" + frameRate,
+          "entrySize=" + entrySize);
     }
   }
 }
