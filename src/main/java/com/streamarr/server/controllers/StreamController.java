@@ -152,7 +152,9 @@ public class StreamController {
     }
 
     return serveSegment(
-        sessionId, variantLabel, variantLabel + "/" + SegmentNames.INITIALIZATION_SEGMENT_NAME);
+        sessionId,
+        variantLabel,
+        SegmentNames.storedSegmentName(variantLabel, SegmentNames.INITIALIZATION_SEGMENT_NAME));
   }
 
   @GetMapping("/{sessionId}/{variantLabel}/" + MEDIA_SEGMENT_PATH_VARIABLE)
@@ -179,9 +181,8 @@ public class StreamController {
       return ResponseEntity.notFound().build();
     }
 
-    var qualifiedName = variantLabel + "/" + segmentName;
-
-    return serveSegment(sessionId, variantLabel, qualifiedName);
+    return serveSegment(
+        sessionId, variantLabel, SegmentNames.storedSegmentName(variantLabel, segmentName));
   }
 
   private ResponseEntity<byte[]> serveSegment(

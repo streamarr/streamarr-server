@@ -28,6 +28,7 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
+import java.net.URI;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -482,6 +483,99 @@ class StreamControllerTest {
             .andReturn();
 
     assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(segmentData);
+  }
+
+  @Test
+  @DisplayName(
+      "Should serve a fixed quality's segments at the URLs that its playlists advertise when the"
+          + " worker uploaded them")
+  void shouldServeFixedQualitysSegmentsAtUrlsThatItsPlaylistsAdvertiseWhenWorkerUploadedThem()
+      throws Exception {
+    streamingService.setSession(buildFixedQualitySession());
+    var initData = new byte[] {0x00, 0x00, 0x00, 0x20};
+    var segmentData = new byte[] {0x47, 0x00};
+    // The names under which the worker's uploads store the default variant's segments.
+    segmentStore.addSegment(SESSION_ID, "init.mp4", initData);
+    segmentStore.addSegment(SESSION_ID, "segment0.m4s", segmentData);
+    var multivariantUri = URI.create("/api/stream/" + SESSION_ID + "/multivariant.m3u8");
+
+    var mediaPlaylistUri = multivariantUri.resolve(firstUriLine(fetchText(multivariantUri)));
+    var mediaPlaylist = fetchText(mediaPlaylistUri);
+    var initUri = mediaPlaylistUri.resolve(mapUri(mediaPlaylist));
+    var segmentUri = mediaPlaylistUri.resolve(firstUriLine(mediaPlaylist));
+
+    assertThat(fetchBytes(initUri)).isEqualTo(initData);
+    assertThat(fetchBytes(segmentUri)).isEqualTo(segmentData);
+  }
+
+  @Test
+  @DisplayName(
+      "Should serve the default variant's initialization segment at its variant URL when the"
+          + " ladder lists the default variant")
+  void shouldServeDefaultVariantsInitializationSegmentAtItsVariantUrlWhenLadderListsIt()
+      throws Exception {
+    streamingService.setSession(buildFixedQualitySession());
+    var initData = new byte[] {0x00, 0x00, 0x00, 0x20};
+    segmentStore.addSegment(SESSION_ID, "init.mp4", initData);
+
+    var result =
+        mockMvc
+            .perform(
+                get(
+                    "/api/stream/{sessionId}/{variantLabel}/init.mp4",
+                    SESSION_ID,
+                    StreamSession.defaultVariant()))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(initData);
+  }
+
+  // A fixed quality encodes one variant, the default variant, as its whole ladder.
+  private StreamSession buildFixedQualitySession() {
+    var session =
+        defaultSessionBuilder()
+            .sessionId(SESSION_ID)
+            .mediaProbe(defaultProbeBuilder().videoCodec("hevc").bitrate(8_000_000).build())
+            .transcodeDecision(fullTranscodeDecision("h264"))
+            .variants(
+                List.of(
+                    defaultVariantBuilder()
+                        .width(1920)
+                        .height(1080)
+                        .videoBitrate(8_000_000L)
+                        .label(StreamSession.defaultVariant())
+                        .build()))
+            .build();
+    return withActiveVariantHandles(session);
+  }
+
+  private String fetchText(URI uri) throws Exception {
+    return mockMvc
+        .perform(get(uri))
+        .andExpect(status().isOk())
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
+  }
+
+  private byte[] fetchBytes(URI uri) throws Exception {
+    return mockMvc
+        .perform(get(uri))
+        .andExpect(status().isOk())
+        .andReturn()
+        .getResponse()
+        .getContentAsByteArray();
+  }
+
+  private static String firstUriLine(String playlist) {
+    return playlist.lines().filter(line -> !line.startsWith("#")).findFirst().orElseThrow();
+  }
+
+  private static String mapUri(String playlist) {
+    var prefix = "#EXT-X-MAP:URI=\"";
+    var line = playlist.lines().filter(l -> l.startsWith(prefix)).findFirst().orElseThrow();
+    return line.substring(prefix.length(), line.length() - 1);
   }
 
   @Test
