@@ -1658,6 +1658,122 @@ class TranscodeDecisionServiceTest {
             "av1"));
   }
 
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("av1EntriesThatFitNoEncode")
+  @DisplayName(
+      "Should skip an encode codec when none of its entries fits an encoded variant of the source")
+  void shouldSkipAnEncodeCodecWhenNoneOfItsEntriesFitsAnEncodedVariantOfTheSource(
+      String scenario, VideoCapabilityEntry av1Entry) {
+    var declaration =
+        defaultDeclarationBuilder().video(List.of(av1Entry, h264EntryBuilder().build())).build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(probe("hevc", "aac"))
+                    .capabilityDeclaration(declaration)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+  }
+
+  static Stream<Arguments> av1EntriesThatFitNoEncode() {
+    return Stream.of(
+        Arguments.of(
+            "an AV1 entry without SDR",
+            av1EntryBuilder().compatibleBases(List.of(CompatibleBase.PQ)).build()),
+        Arguments.of("an AV1 entry below 8 bits", av1EntryBuilder().maxBitDepth(7).build()),
+        Arguments.of(
+            "an AV1 entry whose maximum level is below every AV1 level",
+            av1EntryBuilder()
+                .codecProfiles(
+                    List.of(
+                        VideoCodecProfileCapability.builder()
+                            .profile(VideoCodecProfile.AV1_MAIN)
+                            .maxLevel(19)
+                            .maxTier(Optional.of(VideoCodecTier.MAIN))
+                            .build()))
+                .build()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode a family whose entries are smaller and slower than the source when it sizes"
+          + " and divides the variant to fit")
+  void
+      shouldEncodeAFamilyWhoseEntriesAreSmallerAndSlowerThanTheSourceWhenItSizesAndDividesTheVariantToFit() {
+    var source =
+        probeBuilder("hevc", "aac")
+            .framerate(OptionalDouble.of(60))
+            .videoPlaybackFacts(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .streamIndex(0)
+                        .frameRateRule(
+                            VideoPlaybackFactsFixture.declaredRateRule(new Fraction(60, 1)))
+                        .build()))
+            .build();
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(h264EntryBuilder().maxWidth(1280).maxHeight(720).maxFrameRate(30).build()))
+            .build();
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .capabilityDeclaration(declaration)
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .build());
+
+    assertThat(decision).map(TranscodeDecision::videoCodecFamily).contains("h264");
+  }
+
+  @ParameterizedTest
+  @CsvSource({"0, 1080", "1920, 0"})
+  @DisplayName(
+      "Should choose an encode codec by its codec profile when the source has no picture to fit")
+  void shouldChooseAnEncodeCodecByItsCodecProfileWhenTheSourceHasNoPictureToFit(
+      int width, int height) {
+    var source = probeBuilder("hevc", "aac").width(width).height(height).build();
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .capabilityDeclaration(declaring(H264))
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .build());
+
+    assertThat(decision).map(TranscodeDecision::videoCodecFamily).contains("h264");
+  }
+
+  @Test
+  @DisplayName("Should return no decision when no entry of any family fits an encoded variant")
+  void shouldReturnNoDecisionWhenNoEntryOfAnyFamilyFitsAnEncodedVariant() {
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    h264EntryBuilder().compatibleBases(List.of(CompatibleBase.PQ)).build(),
+                    av1EntryBuilder().maxBitDepth(7).build()))
+            .build();
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(probe("hevc", "aac"))
+                .capabilityDeclaration(declaration)
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .build());
+
+    assertThat(decision).isEmpty();
+  }
+
   @Test
   @DisplayName("Should encode a 5.1 Opus track when the client declares Opus at two channels")
   void shouldEncodeA51OpusTrackWhenTheClientDeclaresOpusAtTwoChannels() {
