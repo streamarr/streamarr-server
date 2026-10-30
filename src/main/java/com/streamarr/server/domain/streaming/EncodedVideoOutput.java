@@ -32,10 +32,6 @@ public record EncodedVideoOutput(
     }
   }
 
-  public PictureSize size() {
-    return new PictureSize(width, height);
-  }
-
   int widthInMacroblocks() {
     return Math.ceilDiv(width, 16);
   }
