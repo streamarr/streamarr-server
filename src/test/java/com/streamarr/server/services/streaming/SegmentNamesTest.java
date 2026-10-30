@@ -15,8 +15,9 @@ import org.junit.jupiter.params.provider.ValueSource;
 class SegmentNamesTest {
 
   @Test
-  @DisplayName("Should store the default variant's segments at the top of the stream session")
-  void shouldStoreDefaultVariantsSegmentsAtTopOfStreamSession() {
+  @DisplayName(
+      "Should store a segment at the top of the stream session when its variant is the default")
+  void shouldStoreASegmentAtTheTopOfTheStreamSessionWhenItsVariantIsTheDefault() {
     assertThat(SegmentNames.storedSegmentName(StreamSession.defaultVariant(), "init.mp4"))
         .isEqualTo("init.mp4");
     assertThat(SegmentNames.storedSegmentName(StreamSession.defaultVariant(), "segment3.m4s"))
@@ -24,8 +25,9 @@ class SegmentNamesTest {
   }
 
   @Test
-  @DisplayName("Should store a labelled variant's segments under its label")
-  void shouldStoreLabelledVariantsSegmentsUnderItsLabel() {
+  @DisplayName(
+      "Should store a segment under its variant's label when the variant is not the default")
+  void shouldStoreASegmentUnderItsVariantsLabelWhenTheVariantIsNotTheDefault() {
     assertThat(SegmentNames.storedSegmentName("720p", "init.mp4")).isEqualTo("720p/init.mp4");
     assertThat(SegmentNames.storedSegmentName("720p", "segment3.m4s"))
         .isEqualTo("720p/segment3.m4s");
