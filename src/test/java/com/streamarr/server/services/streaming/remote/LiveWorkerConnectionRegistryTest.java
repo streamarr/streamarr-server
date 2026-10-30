@@ -619,6 +619,56 @@ class LiveWorkerConnectionRegistryTest {
     assertThat(registry.hardwareEncodableVideoCodecFamilies(SOURCE_NAMESPACE_ID)).isEmpty();
   }
 
+  @Test
+  @DisplayName(
+      "Should start AV1 variants on the hardware AV1 worker until it has no free slot when a"
+          + " software AV1 worker registered first")
+  void
+      shouldStartAv1VariantsOnTheHardwareAv1WorkerUntilItHasNoFreeSlotWhenASoftwareAv1WorkerRegisteredFirst() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    registerSoftwareThenHardwareAv1Workers(registry);
+
+    var first = registry.dispatch(encodeJob("av1")).orElseThrow();
+    var second = registry.dispatch(encodeJob("av1")).orElseThrow();
+
+    assertThat(first.encoder()).map(encoder -> encoder.backend().encoder()).contains("av1_nvenc");
+    assertThat(second.encoder()).map(encoder -> encoder.backend().encoder()).contains("libsvtav1");
+  }
+
+  @Test
+  @DisplayName(
+      "Should list the hardware AV1 worker first among an AV1 variant's execution targets when a"
+          + " software AV1 worker registered first")
+  void
+      shouldListTheHardwareAv1WorkerFirstAmongAnAv1VariantsExecutionTargetsWhenASoftwareAv1WorkerRegisteredFirst() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var hardwareTarget = registerSoftwareThenHardwareAv1Workers(registry);
+
+    var targets = registry.eligibleWorkers(SOURCE_NAMESPACE_ID, encodeJob("av1").getDecision());
+
+    assertThat(targets).hasSize(2).first().isEqualTo(hardwareTarget);
+  }
+
+  /** Registers a libsvtav1 worker, then an av1_nvenc worker, and returns the latter's target. */
+  private static ExecutionTargetId registerSoftwareThenHardwareAv1Workers(
+      LiveWorkerConnectionRegistry registry) {
+    var hardwareWorkerId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    registry.register(
+        WORKER_ID,
+        registration(
+            WORKER_ID, softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "libsvtav1")),
+        new CancellableObserver());
+    var hardwareSession =
+        registry.register(
+            hardwareWorkerId,
+            registration(
+                hardwareWorkerId,
+                keyframeVerifiedHardwareEncoder(
+                    VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "av1_nvenc")),
+            new CancellableObserver());
+    return new ExecutionTargetId(hardwareSession.toString());
+  }
+
   @ParameterizedTest(name = "{2} encode with only {1}")
   @CsvSource({
     "VIDEO_CODEC_FAMILY_AV1, av1_nvenc, av1",

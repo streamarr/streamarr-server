@@ -43,6 +43,7 @@ import io.grpc.stub.StreamObserver;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -247,7 +248,12 @@ final class LiveWorkerConnectionRegistry {
 
   private Optional<VariantDispatch> dispatchToFirst(
       VariantJob job, Predicate<WorkerConnection> eligible) {
-    for (var connection : connections.values().stream().filter(eligible).toList()) {
+    var candidates =
+        connections.values().stream()
+            .filter(eligible)
+            .sorted(hardwareEncodersFirst(job.getDecision()))
+            .toList();
+    for (var connection : candidates) {
       var dispatched = tryDispatchUnlessDisconnected(connection, job);
       if (dispatched.isPresent()) {
         return dispatched;
@@ -393,9 +399,12 @@ final class LiveWorkerConnectionRegistry {
 
   Set<ExecutionTargetId> eligibleWorkers(UUID sourceNamespaceId, TranscodeDecision decision) {
     return executionTargets(
-        connectionsFor(sourceNamespaceId).filter(connection -> connection.canEncode(decision)));
+        connectionsFor(sourceNamespaceId)
+            .filter(connection -> connection.canEncode(decision))
+            .sorted(hardwareEncodersFirst(decision)));
   }
 
+  // Every worker that advertises the pin runs the pinned encoder backend, so no worker comes first.
   Set<ExecutionTargetId> eligibleWorkers(
       UUID sourceNamespaceId, WorkerVerifiedEncoder pinnedEncoder) {
     return executionTargets(
@@ -414,6 +423,12 @@ final class LiveWorkerConnectionRegistry {
     return eligibleConnections
         .map(WorkerConnection::executionTargetId)
         .collect(Collectors.toCollection(LinkedHashSet::new));
+  }
+
+  // A worker with a hardware encoder for the decision's codec family takes each variant first, and
+  // a software encoder takes it only when no such worker has a free slot (ADR 0044).
+  private static Comparator<WorkerConnection> hardwareEncodersFirst(TranscodeDecision decision) {
+    return Comparator.comparing(connection -> !connection.encodesInHardware(decision));
   }
 
   boolean stopVariant(UUID streamSessionId, String variantLabel) {
@@ -970,6 +985,13 @@ final class LiveWorkerConnectionRegistry {
     private Optional<WorkerVerifiedEncoder> encoderFor(TranscodeDecision decision) {
       return RemoteEncoderBackendMapper.videoCodecFamilyName(decision.getVideo().getCodecFamily())
           .map(countedEncoders::get);
+    }
+
+    private boolean encodesInHardware(TranscodeDecision decision) {
+      return encodesVideo(decision)
+          && encoderFor(decision)
+              .filter(encoder -> encoder.backend().kind() == EncoderBackend.Kind.HARDWARE)
+              .isPresent();
     }
 
     // The keyframe-verified flag must match too: a playlist that carries
