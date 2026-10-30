@@ -26,6 +26,11 @@ public record TranscodeDecision(
     }
   }
 
+  /** The output frame rate of the video source that the decision read, empty without one. */
+  public Optional<Fraction> outputFrameRate() {
+    return videoSource.flatMap(VideoPlaybackFacts::outputFrameRate);
+  }
+
   // Lombok builder default — its generated setter assigns it
   @SuppressWarnings({"java:S1068", "java:S9438"})
   public static class TranscodeDecisionBuilder {
