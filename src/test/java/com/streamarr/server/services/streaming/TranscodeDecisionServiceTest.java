@@ -37,6 +37,7 @@ import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.OutputFrameRateBasis;
 import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
@@ -139,6 +140,43 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.map(TranscodeDecision::transcodeMode))
         .isEqualTo(Optional.ofNullable(expectedMode));
     assertThat(meterRegistry.find(STREAM_COPY_REFUSALS).counter()).isNull();
+  }
+
+  @Test
+  @DisplayName(
+      "Should copy the video when the source exceeds the viewer's limits and has no usable frame"
+          + " rate")
+  void shouldCopyTheVideoWhenTheSourceExceedsTheViewersLimitsAndHasNoUsableFrameRate() {
+    var limits =
+        ViewerLimits.of(StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build());
+    var refusedRule =
+        FrameRateRule.builder()
+            .outputFrameRate(Optional.empty())
+            .basis(OutputFrameRateBasis.REFUSED)
+            .inputs(FrameRateRuleInputs.builder().build())
+            .build();
+    var source =
+        probeBuilder("h264", "aac")
+            .framerate(OptionalDouble.empty())
+            .videoPlaybackFacts(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .streamIndex(0)
+                        .codecString(Optional.of(SDR_CODEC_STRINGS.get("h264")))
+                        .frameRateRule(refusedRule)
+                        .build()))
+            .build();
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .capabilityDeclaration(declaring(H264))
+                .encodableVideoCodecFamilies(Set.of("h264"))
+                .viewerLimits(limits)
+                .build());
+
+    assertThat(decision.map(TranscodeDecision::transcodeMode)).contains(TranscodeMode.REMUX);
   }
 
   @Test
