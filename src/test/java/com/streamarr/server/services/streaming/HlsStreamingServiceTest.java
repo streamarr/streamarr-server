@@ -1251,6 +1251,32 @@ class HlsStreamingServiceTest {
 
   @Test
   @DisplayName(
+      "Should encode Original within the viewer's limits when no capability entry accepts a copy")
+  void shouldEncodeOriginalWithinTheViewersLimitsWhenNoCapabilityEntryAcceptsACopy() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").bitrate(8_000_000L).build());
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.ORIGINAL)
+            .maxWidth(1280)
+            .maxBitrate(2_000_000)
+            .build();
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    assertThat(session.getTranscodeDecision().audioDecision().bitrate()).isEqualTo(128_000L);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(1280);
+              assertThat(request.height()).isEqualTo(720);
+              assertThat(request.bitrate()).isEqualTo(1_872_000L);
+            });
+  }
+
+  @Test
+  @DisplayName(
       "Should report transient capacity when the viewer's limits refuse a copy and every video"
           + " encoder is busy")
   void shouldReportTransientCapacityWhenTheViewersLimitsRefuseACopyAndEveryVideoEncoderIsBusy() {
