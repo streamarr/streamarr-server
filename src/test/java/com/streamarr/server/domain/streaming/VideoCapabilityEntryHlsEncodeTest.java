@@ -120,7 +120,12 @@ class VideoCapabilityEntryHlsEncodeTest {
     "60000, 1001, 59.94, 60000, 1001",
     "60, 1, 59.94, 60, 1",
     "201, 4, 50, 201, 4",
-    "20101, 400, 50, 20101, 800"
+    "20101, 400, 50, 20101, 800",
+    // Division stops at 10 fps, with the same half-percent margin.
+    "60, 1, 10, 10, 1",
+    "24, 1, 12, 12, 1",
+    "30, 1, 10, 10, 1",
+    "30000, 1001, 10, 10000, 1001"
   })
   @DisplayName(
       "Should divide the frame rate by the smallest whole number that fits when it is above the"
@@ -151,29 +156,6 @@ class VideoCapabilityEntryHlsEncodeTest {
         entry.fitHlsEncode(fullHdRequest().frameRate(new Fraction(numerator, denominator)).build());
 
     assertThat(output).isEmpty();
-  }
-
-  @ParameterizedTest
-  @CsvSource({
-    "60, 1, 10, 10, 1",
-    "24, 1, 12, 12, 1",
-    "30, 1, 10, 10, 1",
-    "30000, 1001, 10, 10000, 1001"
-  })
-  @DisplayName("Should keep a divided frame rate of 10 fps or more when it fits the entry")
-  void shouldKeepADividedFrameRateOf10FpsOrMoreWhenItFitsTheEntry(
-      int numerator,
-      int denominator,
-      double maxFrameRate,
-      int expectedNumerator,
-      int expectedDenominator) {
-    var entry = h264EntryBuilder().maxFrameRate(maxFrameRate).build();
-
-    var output =
-        entry.fitHlsEncode(fullHdRequest().frameRate(new Fraction(numerator, denominator)).build());
-
-    assertThat(output.map(EncodedVideoOutput::frameRate))
-        .contains(new Fraction(expectedNumerator, expectedDenominator));
   }
 
   @ParameterizedTest
