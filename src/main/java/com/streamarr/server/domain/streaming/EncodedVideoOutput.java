@@ -10,7 +10,7 @@ import lombok.NonNull;
  * The planned output of one encoded variant that its codec level must allow: the picture size, the
  * frame rate and the bitrate that the worker caps the encode at.
  */
-@Builder
+@Builder(toBuilder = true)
 public record EncodedVideoOutput(
     @NonNull String codecFamily, int width, int height, @NonNull Fraction frameRate, long bitrate) {
 

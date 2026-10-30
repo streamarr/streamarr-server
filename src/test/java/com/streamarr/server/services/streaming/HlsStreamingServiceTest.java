@@ -484,6 +484,37 @@ class HlsStreamingServiceTest {
             });
   }
 
+  @ParameterizedTest
+  @CsvSource({
+    "FULL_HD_1080P, 0, 0, 5000000",
+    "FULL_HD_1080P, 0, 2000000, 2000000",
+    "AUTO, 300, 0, 800000",
+    "AUTO, 300, 1000000, 1000000"
+  })
+  @DisplayName(
+      "Should dispatch a positive bitrate and advertise it in the playlist when the probe names no"
+          + " source bitrate")
+  void shouldDispatchAPositiveBitrateAndAdvertiseItInThePlaylistWhenTheProbeNamesNoSourceBitrate(
+      VideoQuality quality, int maxHeight, int maxBitrate, long expectedBitrate) {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").bitrate(0).build());
+    var options =
+        StreamingOptions.builder()
+            .quality(quality)
+            .maxHeight(maxHeight)
+            .maxBitrate(maxBitrate)
+            .build();
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    var audioBitrate = session.getTranscodeDecision().audioDecision().bitrate();
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(request -> assertThat(request.bitrate()).isEqualTo(expectedBitrate));
+    assertThat(playlist).contains(",AVERAGE-BANDWIDTH=" + (expectedBitrate + audioBitrate) + ",");
+  }
+
   @Test
   @DisplayName(
       "Should encode a fixed quality within the viewer's maximum bitrate when the source's bitrate"

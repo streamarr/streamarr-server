@@ -15,6 +15,8 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.VideoCodecProfile;
+import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import java.time.Duration;
@@ -123,6 +125,58 @@ class QualityLadderServiceTest {
     var variants = generateVariants(probe, options);
 
     assertThat(variants).extracting(QualityVariant::videoBitrate).containsExactly(1_000_000L);
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "3840, 2160, 5000000",
+    "1920, 1080, 5000000",
+    "1280, 720, 3000000",
+    "1000, 562, 3000000",
+    "854, 480, 1500000",
+    "320, 180, 800000"
+  })
+  @DisplayName(
+      "Should encode at the nominal bitrate of the tier at or above the fitted height when the"
+          + " probe names no source bitrate")
+  void
+      shouldEncodeAtTheNominalBitrateOfTheTierAtOrAboveTheFittedHeightWhenTheProbeNamesNoSourceBitrate(
+          int width, int height, long expectedBitrate) {
+    var probe = buildProbe(width, height, 0L);
+    var options = StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build();
+
+    var variants = generateVariants(probe, options);
+
+    assertThat(variants).extracting(QualityVariant::videoBitrate).containsExactly(expectedBitrate);
+  }
+
+  @Test
+  @DisplayName(
+      "Should cap the nominal bitrate at the entry's codec level when the probe names no source"
+          + " bitrate")
+  void shouldCapTheNominalBitrateAtTheEntrysCodecLevelWhenTheProbeNamesNoSourceBitrate() {
+    var probe = buildProbe(1920, 1080, 0L);
+    var options = StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build();
+    var levelTwelveOnly =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    h264EntryBuilder()
+                        .codecProfiles(
+                            List.of(
+                                VideoCodecProfileCapability.builder()
+                                    .profile(VideoCodecProfile.H264_HIGH)
+                                    .maxLevel(12)
+                                    .build()))
+                        .build()))
+            .build();
+
+    var variants =
+        service.generateVariants(
+            ladderRequest(probe, options).capabilityDeclaration(levelTwelveOnly).build());
+
+    // Level 1.2 allows a 480 kb/s High profile rate, below the 360p tier's 800 kb/s.
+    assertThat(variants).extracting(QualityVariant::videoBitrate).containsExactly(480_000L);
   }
 
   @Test
