@@ -1,7 +1,7 @@
 package com.streamarr.server.fixtures;
 
+import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.services.streaming.SegmentRequest;
-import java.util.UUID;
 
 public final class SegmentRequestFixture {
 
@@ -9,19 +9,13 @@ public final class SegmentRequestFixture {
 
   private SegmentRequestFixture() {}
 
-  /** A request that reached the server before every request that the lifecycle prepares. */
-  public static SegmentRequest earliestArrivingSegmentRequest(
-      UUID sessionId, String variantLabel, String segmentName) {
-    return segmentRequestBuilder(sessionId, variantLabel, segmentName)
-        .arrival(BEFORE_EVERY_PREPARED_REQUEST)
-        .build();
-  }
-
-  public static SegmentRequest.SegmentRequestBuilder segmentRequestBuilder(
-      UUID sessionId, String variantLabel, String segmentName) {
+  /**
+   * A request for the default variant that reached the server before every request that the
+   * lifecycle prepares. The caller names the session and the segment.
+   */
+  public static SegmentRequest.SegmentRequestBuilder earliestArrivingSegmentRequestBuilder() {
     return SegmentRequest.builder()
-        .sessionId(sessionId)
-        .variantLabel(variantLabel)
-        .segmentName(segmentName);
+        .variantLabel(StreamSession.defaultVariant())
+        .arrival(BEFORE_EVERY_PREPARED_REQUEST);
   }
 }

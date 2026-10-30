@@ -1,6 +1,6 @@
 package com.streamarr.server.services.streaming;
 
-import static com.streamarr.server.fixtures.SegmentRequestFixture.earliestArrivingSegmentRequest;
+import static com.streamarr.server.fixtures.SegmentRequestFixture.earliestArrivingSegmentRequestBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -72,7 +72,10 @@ class SegmentRecoveryConcurrencyTest {
     executor.markDead(sessionId);
     rig.lifecycle()
         .recover(
-            earliestArrivingSegmentRequest(sessionId, StreamSession.defaultVariant(), "init.mp4"));
+            earliestArrivingSegmentRequestBuilder()
+                .sessionId(sessionId)
+                .segmentName("init.mp4")
+                .build());
     var replacementAttempt = session.getHandle().orElseThrow().attemptId();
     clock.advance(properties.producerStallThreshold().plus(properties.targetSegmentDuration()));
     executor.onNextLookup = () -> store.addSegment(sessionId, "init.mp4", new byte[] {1});
@@ -80,8 +83,10 @@ class SegmentRecoveryConcurrencyTest {
     var result =
         rig.lifecycle()
             .recover(
-                earliestArrivingSegmentRequest(
-                    sessionId, StreamSession.defaultVariant(), "init.mp4"));
+                earliestArrivingSegmentRequestBuilder()
+                    .sessionId(sessionId)
+                    .segmentName("init.mp4")
+                    .build());
 
     assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
     assertThat(session.getHandle().orElseThrow().attemptId()).isEqualTo(replacementAttempt);
@@ -104,15 +109,20 @@ class SegmentRecoveryConcurrencyTest {
     var originalAttempt = session.getHandle().orElseThrow().attemptId();
     rig.lifecycle()
         .recover(
-            earliestArrivingSegmentRequest(sessionId, StreamSession.defaultVariant(), "init.mp4"));
+            earliestArrivingSegmentRequestBuilder()
+                .sessionId(sessionId)
+                .segmentName("init.mp4")
+                .build());
     clock.advance(properties.producerStallThreshold().plus(properties.targetSegmentDuration()));
     executor.onNextLookup = () -> store.addSegment(sessionId, "segment0.m4s", new byte[] {0x47});
 
     var result =
         rig.lifecycle()
             .recover(
-                earliestArrivingSegmentRequest(
-                    sessionId, StreamSession.defaultVariant(), "init.mp4"));
+                earliestArrivingSegmentRequestBuilder()
+                    .sessionId(sessionId)
+                    .segmentName("init.mp4")
+                    .build());
 
     assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
     assertThat(session.getHandle().orElseThrow().attemptId()).isEqualTo(originalAttempt);
@@ -143,8 +153,10 @@ class SegmentRecoveryConcurrencyTest {
                 () ->
                     rig.lifecycle()
                         .recover(
-                            earliestArrivingSegmentRequest(
-                                sessionId, StreamSession.defaultVariant(), "segment0.m4s")));
+                            earliestArrivingSegmentRequestBuilder()
+                                .sessionId(sessionId)
+                                .segmentName("segment0.m4s")
+                                .build()));
         await(executor.starting);
         var seeking = new CountDownLatch(1);
         var seek =
@@ -167,8 +179,10 @@ class SegmentRecoveryConcurrencyTest {
         assertThat(
                 rig.lifecycle()
                     .recover(
-                        earliestArrivingSegmentRequest(
-                            sessionId, StreamSession.defaultVariant(), "segment50.m4s")))
+                        earliestArrivingSegmentRequestBuilder()
+                            .sessionId(sessionId)
+                            .segmentName("segment50.m4s")
+                            .build()))
             .isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
         assertThat(executor.isRunning(sessionId, StreamSession.defaultVariant())).isTrue();
         store.addSegment(sessionId, "segment50.m4s", new byte[] {0x47});
@@ -210,7 +224,10 @@ class SegmentRecoveryConcurrencyTest {
     registry.save(session);
     lifecycle.startFirstListedVariant(session);
     lifecycle.recover(
-        earliestArrivingSegmentRequest(sessionId, StreamSession.defaultVariant(), "segment0.m4s"));
+        earliestArrivingSegmentRequestBuilder()
+            .sessionId(sessionId)
+            .segmentName("segment0.m4s")
+            .build());
     if (stalled) {
       clock.advance(properties.producerStallThreshold().plus(properties.targetSegmentDuration()));
     }
