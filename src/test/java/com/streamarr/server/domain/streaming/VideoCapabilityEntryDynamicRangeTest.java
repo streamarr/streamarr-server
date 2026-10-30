@@ -84,21 +84,29 @@ class VideoCapabilityEntryDynamicRangeTest {
   @ParameterizedTest(name = "{0}")
   @MethodSource("dolbyVisionCopies")
   @DisplayName(
-      "Should accept Dolby Vision only through an entry that lists its profile at or above its level")
-  void shouldAcceptDolbyVisionOnlyThroughAnEntryThatListsItsProfileAtOrAboveItsLevel(
+      "Should accept Dolby Vision only when the entry lists its profile at or above its level")
+  void shouldAcceptDolbyVisionOnlyWhenTheEntryListsItsProfileAtOrAboveItsLevel(
       String scenario, VideoCapabilityEntry entry, VideoStreamCopy copy, boolean accepted) {
     assertThat(entry.acceptsHlsCopy(copy)).isEqualTo(accepted);
   }
 
   static Stream<Arguments> dolbyVisionCopies() {
     var pqWith81AtLevel6 = pqEntryListing(DolbyVisionProfile.PROFILE_8_1, 6);
-    var profile81AtLevel6 = hevcCopy(dolbyVision(CompatibleBase.PQ, record(8, 1, 6)));
+    var profile81AtLevel6 =
+        hevcCopy(
+            declaredDolbyVision(
+                CompatibleBase.PQ, configuration(8).baseLayerCompatibilityId(OptionalInt.of(1))));
     return Stream.of(
         Arguments.of("8.1 at its declared level", pqWith81AtLevel6, profile81AtLevel6, true),
         Arguments.of(
             "8.1 above its declared level while its HEVC level fits",
             pqWith81AtLevel6,
-            hevcCopy(dolbyVision(CompatibleBase.PQ, record(8, 1, 7))),
+            hevcCopy(
+                declaredDolbyVision(
+                    CompatibleBase.PQ,
+                    configuration(8)
+                        .baseLayerCompatibilityId(OptionalInt.of(1))
+                        .level(OptionalInt.of(7)))),
             false),
         Arguments.of(
             "8.1, PQ entry without Dolby Vision",
@@ -130,24 +138,36 @@ class VideoCapabilityEntryDynamicRangeTest {
                 .dolbyVisionProfiles(
                     List.of(dolbyVisionCapability(DolbyVisionProfile.PROFILE_8_4, 6)))
                 .build(),
-            hevcCopy(dolbyVision(CompatibleBase.HLG, record(8, 4, 6))),
+            hevcCopy(
+                declaredDolbyVision(
+                    CompatibleBase.HLG,
+                    configuration(8).baseLayerCompatibilityId(OptionalInt.of(4)))),
             true),
         Arguments.of(
             "5 through its Dolby Vision profile alone",
             baselessEntryListing(DolbyVisionProfile.PROFILE_5, 6),
-            hevcCopy(dolbyVision(CompatibleBase.NONE, record(5, 0, 6))),
+            hevcCopy(
+                declaredDolbyVision(
+                    CompatibleBase.NONE,
+                    configuration(5).baseLayerCompatibilityId(OptionalInt.of(0)))),
             true),
         Arguments.of(
             "5 above its declared level",
             baselessEntryListing(DolbyVisionProfile.PROFILE_5, 5),
-            hevcCopy(dolbyVision(CompatibleBase.NONE, record(5, 0, 6))),
+            hevcCopy(
+                declaredDolbyVision(
+                    CompatibleBase.NONE,
+                    configuration(5).baseLayerCompatibilityId(OptionalInt.of(0)))),
             false),
         Arguments.of(
             "5, SDR and PQ entry without Dolby Vision",
             hevcEntryBuilder()
                 .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
                 .build(),
-            hevcCopy(dolbyVision(CompatibleBase.NONE, record(5, 0, 6))),
+            hevcCopy(
+                declaredDolbyVision(
+                    CompatibleBase.NONE,
+                    configuration(5).baseLayerCompatibilityId(OptionalInt.of(0)))),
             false),
         Arguments.of(
             "SDR copy, entry listing only profile 5",
@@ -161,7 +181,10 @@ class VideoCapabilityEntryDynamicRangeTest {
                 .dolbyVisionProfiles(
                     List.of(dolbyVisionCapability(DolbyVisionProfile.PROFILE_10_0, 6)))
                 .build(),
-            av1Copy(dolbyVision(CompatibleBase.NONE, record(10, 0, 6))),
+            av1Copy(
+                declaredDolbyVision(
+                    CompatibleBase.NONE,
+                    configuration(10).baseLayerCompatibilityId(OptionalInt.of(0)))),
             true),
         Arguments.of(
             "10.1 at its declared level",
@@ -170,17 +193,26 @@ class VideoCapabilityEntryDynamicRangeTest {
                 .dolbyVisionProfiles(
                     List.of(dolbyVisionCapability(DolbyVisionProfile.PROFILE_10_1, 6)))
                 .build(),
-            av1Copy(dolbyVision(CompatibleBase.PQ, record(10, 1, 6))),
+            av1Copy(
+                declaredDolbyVision(
+                    CompatibleBase.PQ,
+                    configuration(10).baseLayerCompatibilityId(OptionalInt.of(1)))),
             true),
         Arguments.of(
             "10 on an SDR base, which no entry can name",
             av1EntryBuilder().build(),
-            av1Copy(dolbyVision(CompatibleBase.SDR, record(10, 2, 6))),
+            av1Copy(
+                declaredDolbyVision(
+                    CompatibleBase.SDR,
+                    configuration(10).baseLayerCompatibilityId(OptionalInt.of(2)))),
             false),
         Arguments.of(
             "7 on a PQ base",
             pqWith81AtLevel6,
-            hevcCopy(dolbyVision(CompatibleBase.PQ, record(7, 6, 6))),
+            hevcCopy(
+                declaredDolbyVision(
+                    CompatibleBase.PQ,
+                    configuration(7).baseLayerCompatibilityId(OptionalInt.of(6)))),
             false),
         Arguments.of(
             "7 named by its RPU header",
@@ -192,9 +224,9 @@ class VideoCapabilityEntryDynamicRangeTest {
   @ParameterizedTest(name = "{0}")
   @MethodSource("sdrBaseDolbyVisionCopies")
   @DisplayName(
-      "Should accept an SDR-base Dolby Vision copy through the base codec and SDR whatever the"
-          + " entry declares about Dolby Vision")
-  void shouldAcceptAnSdrBaseDolbyVisionCopyThroughTheBaseCodecAndSdr(
+      "Should accept an SDR-base Dolby Vision copy only when the entry accepts its base codec and"
+          + " SDR, whatever it declares about Dolby Vision")
+  void shouldAcceptAnSdrBaseDolbyVisionCopyOnlyWhenTheEntryAcceptsItsBaseCodecAndSdr(
       String scenario, VideoCapabilityEntry entry, VideoStreamCopy copy, boolean accepted) {
     assertThat(entry.acceptsHlsCopy(copy)).isEqualTo(accepted);
   }
@@ -204,7 +236,10 @@ class VideoCapabilityEntryDynamicRangeTest {
         Arguments.of(
             "8.2 from its record",
             hevcEntryBuilder().build(),
-            hevcCopy(dolbyVision(CompatibleBase.SDR, record(8, 2, 6))),
+            hevcCopy(
+                declaredDolbyVision(
+                    CompatibleBase.SDR,
+                    configuration(8).baseLayerCompatibilityId(OptionalInt.of(2)))),
             true),
         Arguments.of(
             "8.2 from its RPU header",
@@ -214,12 +249,18 @@ class VideoCapabilityEntryDynamicRangeTest {
         Arguments.of(
             "8.2, PQ entry",
             hevcEntryBuilder().compatibleBases(List.of(CompatibleBase.PQ)).build(),
-            hevcCopy(dolbyVision(CompatibleBase.SDR, record(8, 2, 6))),
+            hevcCopy(
+                declaredDolbyVision(
+                    CompatibleBase.SDR,
+                    configuration(8).baseLayerCompatibilityId(OptionalInt.of(2)))),
             false),
         Arguments.of(
             "9 from its record",
             h264EntryBuilder().build(),
-            h264Copy(dolbyVision(CompatibleBase.SDR, record(9, 2, 6))),
+            h264Copy(
+                declaredDolbyVision(
+                    CompatibleBase.SDR,
+                    configuration(9).baseLayerCompatibilityId(OptionalInt.of(2)))),
             true),
         Arguments.of(
             "9 from its RPU header",
@@ -311,21 +352,27 @@ class VideoCapabilityEntryDynamicRangeTest {
     return new VideoDynamicRange(base, Presence.ABSENT, present);
   }
 
-  // A configuration record that names the profile, the base-layer compatibility identifier and the
-  // Dolby Vision level.
-  private static DolbyVision.Present record(int profile, int compatibilityId, int level) {
-    return new DolbyVision.Present(
-        Optional.of(
-            DolbyVisionConfiguration.builder()
-                .profile(OptionalInt.of(profile))
-                .level(OptionalInt.of(level))
-                .baseLayerCompatibilityId(OptionalInt.of(compatibilityId))
-                .baseLayer(true)
-                .rpu(true)
-                .build()),
-        Presence.PRESENT,
-        Optional.empty(),
-        DolbyVisionRpuPlacement.AFTER_OWN_PICTURE);
+  // Dolby Vision whose configuration record the caller completes with the base-layer
+  // compatibility identifier.
+  private static VideoDynamicRange declaredDolbyVision(
+      CompatibleBase base, DolbyVisionConfiguration.DolbyVisionConfigurationBuilder configuration) {
+    return dolbyVision(
+        base,
+        new DolbyVision.Present(
+            Optional.of(configuration.build()),
+            Presence.PRESENT,
+            Optional.empty(),
+            DolbyVisionRpuPlacement.AFTER_OWN_PICTURE));
+  }
+
+  // A configuration record that names the profile at Dolby Vision level 6.
+  private static DolbyVisionConfiguration.DolbyVisionConfigurationBuilder configuration(
+      int profile) {
+    return DolbyVisionConfiguration.builder()
+        .profile(OptionalInt.of(profile))
+        .level(OptionalInt.of(6))
+        .baseLayer(true)
+        .rpu(true);
   }
 
   // Without a record, an RPU header with vdr_rpu_profile 1 and no enhancement layer names a single
