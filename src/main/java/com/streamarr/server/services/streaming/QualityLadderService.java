@@ -18,27 +18,6 @@ import org.springframework.stereotype.Service;
 @Service
 public class QualityLadderService {
 
-  // A tier's box bounds its variant in either orientation.
-  private record QualityTier(String label, PictureSize box, long videoBitrate, long audioBitrate) {}
-
-  // The 2160p and 1440p bitrates are the lowest 3840x2160 and the 2560x1440 rates in Apple's HLS
-  // Authoring Specification for Apple Devices, item 1.25.
-  private static final QualityTier TIER_2160P =
-      new QualityTier("2160p", new PictureSize(3840, 2160), 11_600_000L, 128_000L);
-  private static final QualityTier TIER_1440P =
-      new QualityTier("1440p", new PictureSize(2560, 1440), 8_100_000L, 128_000L);
-  private static final QualityTier TIER_1080P =
-      new QualityTier("1080p", new PictureSize(1920, 1080), 5_000_000L, 128_000L);
-  private static final QualityTier TIER_720P =
-      new QualityTier("720p", new PictureSize(1280, 720), 3_000_000L, 128_000L);
-  private static final QualityTier TIER_480P =
-      new QualityTier("480p", new PictureSize(854, 480), 1_500_000L, 96_000L);
-  private static final QualityTier TIER_360P =
-      new QualityTier("360p", new PictureSize(640, 360), 800_000L, 64_000L);
-
-  private static final List<QualityTier> STANDARD_TIERS =
-      List.of(TIER_2160P, TIER_1440P, TIER_1080P, TIER_720P, TIER_480P, TIER_360P);
-
   private static final long VIEWER_AND_ENTRY_BOUNDED_AUDIO_BITRATE = 64_000L;
   // More than any codec level allows, so fitting caps it at the entry level's highest bitrate.
   private static final long UNCAPPED_BITRATE = Long.MAX_VALUE;
@@ -59,7 +38,7 @@ public class QualityLadderService {
     var maxBitrate = resolveMaxBitrate(options);
     if (!isAutoQuality(options)) {
       var bounds =
-          fixedQualityTier(options.quality())
+          QualityTier.ofFixedQuality(options.quality())
               .map(tier -> within(viewerBounds, tier.box().orientedLike(source)))
               .orElse(viewerBounds);
       return fitUntiered(request, bounds, maxBitrate)
@@ -69,7 +48,7 @@ public class QualityLadderService {
     }
 
     var variants = new ArrayList<QualityVariant>();
-    for (var tier : tiersOffered(source)) {
+    for (var tier : QualityTier.offeredFor(source)) {
       if (maxBitrate.isPresent() && tier.videoBitrate() > maxBitrate.getAsLong()) {
         continue;
       }
@@ -80,7 +59,7 @@ public class QualityLadderService {
       }
 
       fit(request, box, tier.videoBitrate())
-          .filter(output -> tierContaining(pictureOf(output)) == tier)
+          .filter(output -> QualityTier.containing(pictureOf(output)) == tier)
           .map(output -> tierVariant(output, tier))
           .ifPresent(variants::add);
     }
@@ -95,35 +74,9 @@ public class QualityLadderService {
     return List.copyOf(variants);
   }
 
-  private static Optional<QualityTier> fixedQualityTier(VideoQuality quality) {
-    return switch (quality) {
-      case LOW_360P -> Optional.of(TIER_360P);
-      case MEDIUM_480P -> Optional.of(TIER_480P);
-      case HIGH_720P -> Optional.of(TIER_720P);
-      case FULL_HD_1080P -> Optional.of(TIER_1080P);
-      case UHD_4K -> Optional.of(TIER_2160P);
-      case AUTO, ORIGINAL -> Optional.empty();
-    };
-  }
-
   private static PictureSize within(PictureSize bounds, PictureSize box) {
     return new PictureSize(
         Math.min(bounds.width(), box.width()), Math.min(bounds.height(), box.height()));
-  }
-
-  // The tier whose box holds the source and every smaller tier. The smallest tier has no smaller
-  // box, so every source is offered it.
-  private static List<QualityTier> tiersOffered(PictureSize source) {
-    var sourceTier = STANDARD_TIERS.indexOf(tierContaining(source));
-    return STANDARD_TIERS.subList(sourceTier, STANDARD_TIERS.size());
-  }
-
-  // The smallest tier whose box holds the picture, or the largest tier when none does.
-  private static QualityTier tierContaining(PictureSize picture) {
-    return STANDARD_TIERS.reversed().stream()
-        .filter(tier -> picture.fitsWithinEitherOrientation(tier.box()))
-        .findFirst()
-        .orElse(STANDARD_TIERS.getFirst());
   }
 
   // The viewer's options bound the tier's picture before any entry shrinks it.
@@ -167,7 +120,7 @@ public class QualityLadderService {
   }
 
   private static EncodedVideoOutput atNominalBitrate(EncodedVideoOutput output) {
-    var nominalBitrate = tierContaining(pictureOf(output)).videoBitrate();
+    var nominalBitrate = QualityTier.containing(pictureOf(output)).videoBitrate();
     return output.toBuilder().bitrate(Math.min(nominalBitrate, output.bitrate())).build();
   }
 
