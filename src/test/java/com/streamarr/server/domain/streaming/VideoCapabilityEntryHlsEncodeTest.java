@@ -55,7 +55,7 @@ class VideoCapabilityEntryHlsEncodeTest {
 
     var output = entry.fitHlsEncode(fullHdRequest().source(source).bounds(source).build());
 
-    assertThat(output.map(EncodedVideoOutput::size)).contains(expected);
+    assertThat(pictureOf(output)).contains(expected);
   }
 
   static Stream<Arguments> pictureSizeCaps() {
@@ -89,7 +89,7 @@ class VideoCapabilityEntryHlsEncodeTest {
 
     var output = entry.fitHlsEncode(fullHdRequest().bounds(new PictureSize(1280, 1080)).build());
 
-    assertThat(output.map(EncodedVideoOutput::size)).contains(new PictureSize(1280, 720));
+    assertThat(pictureOf(output)).contains(new PictureSize(1280, 720));
   }
 
   @ParameterizedTest
@@ -146,8 +146,7 @@ class VideoCapabilityEntryHlsEncodeTest {
 
     var output = entry.fitHlsEncode(fullHdRequest().frameRate(new Fraction(frameRate, 1)).build());
 
-    assertThat(output.map(EncodedVideoOutput::size))
-        .contains(new PictureSize(expectedWidth, expectedHeight));
+    assertThat(pictureOf(output)).contains(new PictureSize(expectedWidth, expectedHeight));
     assertThat(output.map(VideoEncodeDecision::of).map(VideoEncodeDecision::level)).contains(31);
   }
 
@@ -163,7 +162,7 @@ class VideoCapabilityEntryHlsEncodeTest {
     // Level 4.0 allows a 25 Mb/s rate but a 31.25 Mb coded picture buffer, which the worker fills
     // with twice the bitrate.
     assertThat(output.map(EncodedVideoOutput::bitrate)).contains(15_625_000L);
-    assertThat(output.map(EncodedVideoOutput::size)).contains(FULL_HD);
+    assertThat(pictureOf(output)).contains(FULL_HD);
   }
 
   @Test
@@ -195,7 +194,7 @@ class VideoCapabilityEntryHlsEncodeTest {
                 .frameRate(new Fraction(60, 1))
                 .build());
 
-    assertThat(output.map(EncodedVideoOutput::size)).contains(new PictureSize(1448, 814));
+    assertThat(pictureOf(output)).contains(new PictureSize(1448, 814));
     assertThat(output.map(VideoEncodeDecision::of))
         .hasValueSatisfying(
             decision -> {
@@ -258,7 +257,7 @@ class VideoCapabilityEntryHlsEncodeTest {
     assertThat(output)
         .hasValueSatisfying(
             fitted -> {
-              assertThat(fitted.size()).isEqualTo(UHD);
+              assertThat(pictureOf(fitted)).isEqualTo(UHD);
               assertThat(fitted.frameRate()).isEqualTo(new Fraction(30, 1));
             });
   }
@@ -274,7 +273,7 @@ class VideoCapabilityEntryHlsEncodeTest {
     assertThat(output)
         .hasValueSatisfying(
             fitted -> {
-              assertThat(fitted.size()).isEqualTo(FULL_HD);
+              assertThat(pictureOf(fitted)).isEqualTo(FULL_HD);
               assertThat(fitted.frameRate()).isEqualTo(new Fraction(60, 1));
             });
   }
@@ -298,7 +297,7 @@ class VideoCapabilityEntryHlsEncodeTest {
 
     var output = declaration.fitHlsEncode(fullHdRequest().build());
 
-    assertThat(output.map(EncodedVideoOutput::size)).contains(new PictureSize(1280, 720));
+    assertThat(pictureOf(output)).contains(new PictureSize(1280, 720));
   }
 
   @Test
@@ -327,6 +326,14 @@ class VideoCapabilityEntryHlsEncodeTest {
         .profile(VideoCodecProfile.H264_HIGH)
         .maxLevel(maxLevel)
         .build();
+  }
+
+  private static Optional<PictureSize> pictureOf(Optional<EncodedVideoOutput> output) {
+    return output.map(VideoCapabilityEntryHlsEncodeTest::pictureOf);
+  }
+
+  private static PictureSize pictureOf(EncodedVideoOutput output) {
+    return new PictureSize(output.width(), output.height());
   }
 
   // An H.264 High encode of a 1920×1080 source at 24 fps and 5 Mb/s, unbounded by the viewer.
