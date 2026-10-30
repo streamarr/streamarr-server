@@ -90,7 +90,7 @@ public record VideoCapabilityEntry(
         .filter(capability -> capability.profile() == request.codecProfile().codecProfile())
         .map(capability -> fitWithinLevel(capability, request, frameRate.get()))
         .flatMap(Optional::stream)
-        .max(EncodedVideoOutput.LARGER_PICTURE_THEN_FASTER_FRAME_RATE);
+        .max(EncodedVideoOutput.FASTER_FRAME_RATE_THEN_LARGER_PICTURE_THEN_HIGHER_BITRATE);
   }
 
   private boolean acceptsHlsEncode(EncodeCodecProfile codecProfile) {
