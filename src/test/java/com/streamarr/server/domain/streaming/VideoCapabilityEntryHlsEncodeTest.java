@@ -140,8 +140,6 @@ class VideoCapabilityEntryHlsEncodeTest {
         .contains(new Fraction(expectedNumerator, expectedDenominator));
   }
 
-  // A segment interval holds a keyframe only when it holds a frame, and ADR 0037's frame-rate rule
-  // never chooses a rate below 10 fps.
   @ParameterizedTest
   @CsvSource({"60, 1, 0.1", "60, 1, 9", "30000, 1001, 10", "24, 1, 11", "24, 1, 1e-9"})
   @DisplayName("Should fit no encode when only a frame rate below 10 fps fits the entry")
