@@ -101,8 +101,13 @@ class VideoCapabilityEntryHlsEncodeTest {
     "60, 1, 20, 20, 1",
     "24000, 1001, 30, 24000, 1001",
     "60, 1, 60, 60, 1",
-    // An encode's rate is exact, so 30000/1001 is above a maximum of 29.97.
-    "60000, 1001, 29.97, 20000, 1001"
+    // A rate fits up to half a percent above the maximum, so a declared 29.97 or 59.94 accepts the
+    // exact NTSC rate 30000/1001 or 60000/1001.
+    "60000, 1001, 29.97, 30000, 1001",
+    "60000, 1001, 59.94, 60000, 1001",
+    "60, 1, 59.94, 60, 1",
+    "201, 4, 50, 201, 4",
+    "20101, 400, 50, 20101, 800"
   })
   @DisplayName(
       "Should divide the frame rate by the smallest whole number that fits when it is above the"
