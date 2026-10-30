@@ -93,9 +93,17 @@ public record VideoCapabilityEntry(
     return bitDepth.isPresent() && bitDepth.getAsInt() <= maxBitDepth;
   }
 
+  // The maximums bound a picture in either orientation, so a portrait phone video fits an entry
+  // declared as landscape. The codec level still bounds the picture's total size.
   private boolean acceptsPictureSize(Optional<PictureSize> size) {
-    return size.filter(known -> known.width() <= maxWidth && known.height() <= maxHeight)
-        .isPresent();
+    return size.filter(this::fitsInEitherOrientation).isPresent();
+  }
+
+  private boolean fitsInEitherOrientation(PictureSize size) {
+    var longerSide = Math.max(size.width(), size.height());
+    var shorterSide = Math.min(size.width(), size.height());
+    return longerSide <= Math.max(maxWidth, maxHeight)
+        && shorterSide <= Math.min(maxWidth, maxHeight);
   }
 
   // A stream without a usable frame rate cannot be encoded (#446), so a copy is its only path.
