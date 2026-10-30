@@ -20,6 +20,15 @@ public enum DolbyVisionProfile {
     };
   }
 
+  /** The number that a configuration record names for this profile: 5, 8 or 10. */
+  int profileNumber() {
+    return switch (this) {
+      case PROFILE_5 -> 5;
+      case PROFILE_8_1, PROFILE_8_4 -> 8;
+      case PROFILE_10_0, PROFILE_10_1, PROFILE_10_4 -> 10;
+    };
+  }
+
   /** The compatible base of this profile's streams (ADR 0036): none for 5 and 10.0. */
   public CompatibleBase compatibleBase() {
     return switch (this) {
