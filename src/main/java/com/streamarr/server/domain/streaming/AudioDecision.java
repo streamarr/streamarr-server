@@ -80,7 +80,7 @@ public record AudioDecision(
     };
   }
 
-  public static long bitrateForChannels(int channels) {
+  public static long bitrateFor(@NonNull String codec, int channels) {
     return switch (channels) {
       case 1 -> 64_000L;
       case 6 -> 384_000L;
