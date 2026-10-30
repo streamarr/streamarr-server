@@ -5,6 +5,7 @@ import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AccountRemovalConflictException;
+import com.streamarr.server.exceptions.ResourceBusyException;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
@@ -175,19 +176,24 @@ public class AccountLifecycleService {
     }
 
     var account = userAccountRepository.findById(identity.accountId()).orElseThrow();
-    return mutationTransactions.write(
-        () -> {
-          erase(
-              account,
-              AdministrativelyDeleteAccountCommand.builder()
-                  .accountId(account.getId())
-                  .profileCleanup(ProfileCleanup.ERASE_PROFILE)
-                  .reason("self-deletion")
-                  .build());
-          audit(identity, "deleteMyAccount", ACCOUNT_ID, account.getId(), "self-deletion");
-          return account.getId();
-        },
-        this::selfDeletionConstraint);
+    try {
+      return mutationTransactions.write(
+          () -> {
+            erase(
+                account,
+                AdministrativelyDeleteAccountCommand.builder()
+                    .accountId(account.getId())
+                    .profileCleanup(ProfileCleanup.ERASE_PROFILE)
+                    .reason("self-deletion")
+                    .build());
+            audit(identity, "deleteMyAccount", ACCOUNT_ID, account.getId(), "self-deletion");
+            return account.getId();
+          },
+          this::selfDeletionConstraint);
+    } catch (AccountRemovalConflictException conflict) {
+      // An administrator moved the Account after it was read: contention the caller may retry.
+      throw new ResourceBusyException(conflict);
+    }
   }
 
   private void erase(UserAccount account, AdministrativelyDeleteAccountCommand command) {

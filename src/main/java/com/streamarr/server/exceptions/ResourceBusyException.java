@@ -1,8 +1,8 @@
 package com.streamarr.server.exceptions;
 
 /**
- * A bounded row-lock wait ran out: another transaction still holds a row this one needs. The caller
- * may retry; nothing about the request itself was wrong.
+ * Another transaction holds, or has just changed, a row this one needs. The caller may retry;
+ * nothing about the request itself was wrong.
  */
 public class ResourceBusyException extends RuntimeException {
 
