@@ -3,6 +3,7 @@ package com.streamarr.server.domain.streaming;
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.OptionalLong;
 
 // The AV1 specification's Annex A.3, in the Main tier. Levels without defined limits are left out.
 // Levels 5.3 and 6.3 differ from levels 5.2 and 6.2 only in limits that the table does not check.
@@ -47,6 +48,14 @@ enum Av1Level {
 
   static Optional<Av1Level> smallestAllowing(EncodedVideoOutput output) {
     return Arrays.stream(values()).filter(level -> level.allows(output)).findFirst();
+  }
+
+  /** The highest Main tier bitrate that a level at or below {@code maxLevel} allows an encode. */
+  static OptionalLong highestBitrateAtOrBelow(int maxLevel) {
+    return Arrays.stream(values())
+        .filter(level -> level.level() <= maxLevel)
+        .mapToLong(level -> level.maxMainTierBitrate)
+        .max();
   }
 
   /** The level as major x 10 + minor, the form that SVT-AV1 takes. */
