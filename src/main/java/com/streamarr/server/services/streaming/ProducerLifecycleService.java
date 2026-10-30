@@ -84,9 +84,8 @@ public class ProducerLifecycleService {
     return withSessionLock(request.sessionId(), () -> doRecover(request));
   }
 
-  // A request that starts the variant on demand, relocates it or resumes it becomes the newest
-  // request that positioned the variant, also when its relocation or resume fails to start a job
-  // attempt (ADR 0019).
+  // Also remembered when the relocation or resume fails, so the replacement starts at this
+  // request's segment (ADR 0019).
   private void rememberNewestPositioningRequest(SegmentRequest request) {
     newestPositioningRequests.put(variantKeyOf(request), request);
   }
@@ -218,7 +217,6 @@ public class ProducerLifecycleService {
 
   private enum Positioning {
     UNCHANGED,
-    // The request relocated or resumed the variant.
     MOVED,
     // The request's relocation or resume failed to start a job attempt. A relocation has already
     // stopped the earlier job attempt.
