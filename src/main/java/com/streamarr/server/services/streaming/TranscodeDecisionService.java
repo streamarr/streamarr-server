@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -57,11 +58,11 @@ public class TranscodeDecisionService {
   private final MeterRegistry meterRegistry;
 
   /**
-   * A copy needs a video capability entry for HLS that accepts the copy. An encode uses the first
-   * codec in the preference for which a video capability entry for HLS fits an encoded variant of
-   * the source (ADR 0049), and that a worker-verified encoder encodes (ADR 0009). The audio follows
-   * the audio capability entries for HLS. Returns empty when neither a copy nor a supported encode
-   * satisfies the request's constraints.
+   * A copy needs a video capability entry for HLS that accepts the copy. An encode uses, among the
+   * codecs that a worker-verified encoder encodes (ADR 0009), the one whose video capability entry
+   * for HLS fits an encoded variant of the source at the highest frame rate, and the first in the
+   * preference on a tie (ADR 0049). The audio follows the audio capability entries for HLS. Returns
+   * empty when neither a copy nor a supported encode satisfies the request's constraints.
    */
   public Optional<TranscodeDecision> decide(@NonNull TranscodeDecisionRequest request) {
     var source = request.source();
@@ -102,14 +103,25 @@ public class TranscodeDecisionService {
     return refusal.isEmpty();
   }
 
-  // A source without an output frame rate or a picture that the worker encodes at any size has no
-  // encoded variant, and the stream session refuses its encode for that reason, so only the codec
-  // profile is checked.
-  private static boolean fitsHlsEncode(
+  // The frame rate at which one entry encodes the source-sized variant, or empty when no entry
+  // fits. A source without an output frame rate or a picture that the worker encodes at any size
+  // has no encoded variant, and the stream session refuses its encode for that reason, so only the
+  // codec profile is checked, at a frame rate of 0 for every family.
+  private static OptionalDouble encodedFrameRate(
       ClientCapabilityDeclaration declaration, MediaProbe source, EncodeCodecProfile profile) {
-    return encodedVariantRequest(source, profile)
-        .map(request -> declaration.fitHlsEncode(request).isPresent())
-        .orElseGet(() -> declaresHlsCodecProfile(declaration, profile.codecProfile()));
+    var variantRequest = encodedVariantRequest(source, profile);
+    if (variantRequest.isPresent()) {
+      return declaration
+          .fitHlsEncode(variantRequest.get())
+          .map(output -> OptionalDouble.of(output.frameRate().toDouble()))
+          .orElseGet(OptionalDouble::empty);
+    }
+
+    if (declaresHlsCodecProfile(declaration, profile.codecProfile())) {
+      return OptionalDouble.of(0);
+    }
+
+    return OptionalDouble.empty();
   }
 
   // Every variant of a stream session is at most the source's size, so an entry that fits the
@@ -320,12 +332,20 @@ public class TranscodeDecisionService {
   }
 
   private Optional<String> selectPreferredCodec(TranscodeDecisionRequest request) {
+    var declaration = request.capabilityDeclaration();
+    var source = request.source();
     return CODEC_PREFERENCE.stream()
         .filter(
-            profile -> fitsHlsEncode(request.capabilityDeclaration(), request.source(), profile))
-        .map(EncodeCodecProfile::codecFamilyName)
-        .filter(request.encodableVideoCodecFamilies()::contains)
-        .filter(family -> !request.excludedEncodeCodecFamilies().contains(family))
-        .findFirst();
+            profile -> request.encodableVideoCodecFamilies().contains(profile.codecFamilyName()))
+        .filter(
+            profile -> !request.excludedEncodeCodecFamilies().contains(profile.codecFamilyName()))
+        .flatMap(
+            profile ->
+                encodedFrameRate(declaration, source, profile).stream()
+                    .mapToObj(rate -> new EncodeCandidate(profile.codecFamilyName(), rate)))
+        .reduce((preferred, next) -> next.frameRate() > preferred.frameRate() ? next : preferred)
+        .map(EncodeCandidate::codecFamily);
   }
+
+  private record EncodeCandidate(String codecFamily, double frameRate) {}
 }
