@@ -52,6 +52,8 @@ import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.domain.streaming.VideoCodecProfile;
+import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
@@ -928,6 +930,138 @@ class HlsStreamingServiceTest {
                             VideoPlaybackFactsFixture.h264HighPropertiesBuilder()
                                 .codecLevel(OptionalInt.of(52))
                                 .build()))
+                    .build()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should cap Auto's variants at the largest size the only entry accepts when the source is"
+          + " larger")
+  void shouldCapAutosVariantsAtTheLargestSizeTheOnlyEntryAcceptsWhenTheSourceIsLarger() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
+
+    var session = createSession(seedMediaFile().getId(), hdAt30Declaration());
+
+    assertThat(session.getVariants())
+        .extracting(
+            QualityVariant::label,
+            QualityVariant::width,
+            QualityVariant::height,
+            QualityVariant::videoBitrate)
+        .containsExactlyInAnyOrder(
+            tuple("720p", 1280, 720, 3_000_000L),
+            tuple("480p", 854, 480, 1_500_000L),
+            tuple("360p", 640, 360, 800_000L));
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode a fixed quality at the largest size the only entry accepts when the source is"
+          + " larger")
+  void shouldEncodeAFixedQualityAtTheLargestSizeTheOnlyEntryAcceptsWhenTheSourceIsLarger() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
+    var command =
+        createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+            .options(StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P).build())
+            .capabilityDeclaration(hdAt30Declaration())
+            .build();
+
+    var session = accepted(service.createSession(command));
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(1280);
+              assertThat(request.height()).isEqualTo(720);
+            });
+    assertThat(playlist).contains(",RESOLUTION=1280x720,");
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode a 60 fps source at 30 fps in the job and the playlist when the only entry"
+          + " allows 30 fps")
+  void shouldEncodeA60FpsSourceAt30FpsInTheJobAndThePlaylistWhenTheOnlyEntryAllows30Fps() {
+    probeResults.setDefaultProbe(probeAt(new Fraction(60, 1)).videoCodec("hevc").build());
+
+    var session = createSession(seedMediaFile().getId(), hdAt30Declaration());
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::frameRate)
+        .containsOnly(new Fraction(30, 1));
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.outputFrameRate()).contains(new Fraction(30, 1));
+              assertThat(request.framerate()).hasValue(30.0);
+              assertThat(request.videoEncodeDecision().orElseThrow().level())
+                  .isLessThanOrEqualTo(31);
+            });
+    assertThat(playlist.lines().filter(line -> line.startsWith("#EXT-X-STREAM-INF:")))
+        .isNotEmpty()
+        .allSatisfy(line -> assertThat(line).contains(",FRAME-RATE=30.000"));
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode each Auto variant in the entry that keeps its frame rate when two entries"
+          + " trade size for frame rate")
+  void
+      shouldEncodeEachAutoVariantInTheEntryThatKeepsItsFrameRateWhenTwoEntriesTradeSizeForFrameRate() {
+    probeResults.setDefaultProbe(probeAt(new Fraction(60, 1)).videoCodec("hevc").build());
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    h264EntryBuilder().maxWidth(1920).maxHeight(1080).maxFrameRate(30).build(),
+                    h264EntryBuilder().maxWidth(1280).maxHeight(720).maxFrameRate(60).build()))
+            .build();
+
+    var session = createSession(seedMediaFile().getId(), declaration);
+
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label, QualityVariant::frameRate)
+        .containsExactlyInAnyOrder(
+            tuple("1080p", new Fraction(30, 1)),
+            tuple("720p", new Fraction(60, 1)),
+            tuple("480p", new Fraction(60, 1)),
+            tuple("360p", new Fraction(60, 1)));
+  }
+
+  // A player that plays H.264 High up to level 3.1 at 1280×720 and 30 fps.
+  private static ClientCapabilityDeclaration hdAt30Declaration() {
+    return defaultDeclarationBuilder()
+        .video(
+            List.of(
+                h264EntryBuilder()
+                    .maxWidth(1280)
+                    .maxHeight(720)
+                    .maxFrameRate(30)
+                    .codecProfiles(
+                        List.of(
+                            VideoCodecProfileCapability.builder()
+                                .profile(VideoCodecProfile.H264_HIGH)
+                                .maxLevel(31)
+                                .build()))
+                    .build()))
+        .build();
+  }
+
+  // The default 1920×1080 source whose frame-rate rule chose this output frame rate.
+  private static MediaProbe.MediaProbeBuilder probeAt(Fraction rate) {
+    return defaultProbeBuilder()
+        .framerate(OptionalDouble.of(rate.toDouble()))
+        .videoPlaybackFacts(
+            Optional.of(
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                    .streamIndex(0)
+                    .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(rate))
                     .build()));
   }
 
