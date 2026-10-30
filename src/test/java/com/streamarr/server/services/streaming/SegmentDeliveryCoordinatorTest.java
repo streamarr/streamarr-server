@@ -1241,6 +1241,7 @@ class SegmentDeliveryCoordinatorTest {
       assertThat(coordinator.deliver(sessionId, "480p", segmentName))
           .isInstanceOf(SegmentDelivery.Ready.class);
     }
+
     storeInitializationSegments(session);
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
@@ -1270,6 +1271,7 @@ class SegmentDeliveryCoordinatorTest {
     for (var index = 0; index < 9; index++) {
       upload(sessionId, "480p/" + SegmentNames.mediaSegmentName(index), new byte[] {1});
     }
+
     var abandoned = heldDelivery(sessionId, "480p", "480p/segment9.m4s");
     storeInitializationSegments(session);
     var startedBefore = transcodeExecutor.getStartedRequests().size();
