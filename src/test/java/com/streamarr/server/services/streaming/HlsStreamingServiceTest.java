@@ -534,15 +534,16 @@ class HlsStreamingServiceTest {
     "AUTO, , 500000, 640, 360, 500000"
   })
   @DisplayName(
-      "Should encode a single variant within the viewer's maximum bitrate less the audio, and in"
-          + " the 360p box when less than the 360p tier's video bitrate remains")
-  void shouldEncodeASingleVariantWithinTheViewersMaximumBitrateLessTheAudio(
-      VideoQuality quality,
-      Integer maxWidth,
-      int maxBitrate,
-      int expectedWidth,
-      int expectedHeight,
-      long expectedVideoBitrate) {
+      "Should encode the single variant within the maximum bitrate less the audio, or in the 360p"
+          + " box, when the viewer sets a maximum bitrate")
+  void
+      shouldEncodeTheSingleVariantWithinTheMaximumBitrateLessTheAudioOrInThe360pBoxWhenTheViewerSetsAMaximumBitrate(
+          VideoQuality quality,
+          Integer maxWidth,
+          int maxBitrate,
+          int expectedWidth,
+          int expectedHeight,
+          long expectedVideoBitrate) {
     probeResults.setDefaultProbe(
         defaultProbeBuilder().videoCodec("hevc").bitrate(8_000_000L).build());
     var options =
