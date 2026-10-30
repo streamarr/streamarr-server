@@ -1,6 +1,7 @@
 package com.streamarr.server.domain.streaming;
 
 import java.util.List;
+import java.util.Optional;
 import lombok.Builder;
 import lombok.NonNull;
 
@@ -21,5 +22,17 @@ public record ClientCapabilityDeclaration(
   /** Whether one video capability entry accepts the stream copy over HLS. */
   public boolean acceptsHlsCopy(@NonNull VideoStreamCopy copy) {
     return video.stream().anyMatch(entry -> entry.acceptsHlsCopy(copy));
+  }
+
+  /**
+   * The encoded output that one video capability entry accepts over HLS (ADR 0049), or empty when
+   * no entry accepts an encode of the request. Among the entries' fitted outputs, the larger
+   * picture wins, then the faster frame rate.
+   */
+  public Optional<EncodedVideoOutput> fitHlsEncode(@NonNull EncodedVariantRequest request) {
+    return video.stream()
+        .map(entry -> entry.fitHlsEncode(request))
+        .flatMap(Optional::stream)
+        .max(EncodedVideoOutput.LARGER_PICTURE_THEN_FASTER_FRAME_RATE);
   }
 }

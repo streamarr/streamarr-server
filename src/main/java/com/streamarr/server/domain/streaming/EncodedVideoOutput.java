@@ -1,6 +1,7 @@
 package com.streamarr.server.domain.streaming;
 
 import com.streamarr.server.exceptions.UnsupportedVideoEncodeException;
+import java.util.Comparator;
 import java.util.Optional;
 import lombok.Builder;
 import lombok.NonNull;
@@ -13,6 +14,13 @@ import lombok.NonNull;
 public record EncodedVideoOutput(
     @NonNull String codecFamily, int width, int height, @NonNull Fraction frameRate, long bitrate) {
 
+  // The fitting of an encode to the capability entries prefers the larger picture, then the faster
+  // frame rate (ADR 0049).
+  static final Comparator<EncodedVideoOutput> LARGER_PICTURE_THEN_FASTER_FRAME_RATE =
+      Comparator.comparingLong(EncodedVideoOutput::pictureSize)
+          .thenComparingDouble(output -> output.frameRate().toDouble())
+          .thenComparingLong(EncodedVideoOutput::bitrate);
+
   public static class EncodedVideoOutputBuilder {
 
     /** An encode runs at the probed frame rate, so a source without one has no planned output. */
@@ -22,6 +30,10 @@ public record EncodedVideoOutput(
               () ->
                   new UnsupportedVideoEncodeException("An encode needs the source's frame rate")));
     }
+  }
+
+  public PictureSize size() {
+    return new PictureSize(width, height);
   }
 
   int widthInMacroblocks() {

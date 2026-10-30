@@ -1,11 +1,13 @@
 package com.streamarr.server.domain.streaming;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
+import java.util.stream.IntStream;
 import lombok.Builder;
 import lombok.NonNull;
 
@@ -35,6 +37,8 @@ public record VideoCapabilityEntry(
   // Decimal arithmetic keeps a rate exactly at the margin inside it: 50 × 1.005 in binary floating
   // point is 50.24999999999999.
   private static final BigDecimal MEASURED_FRAME_RATE_MARGIN = new BigDecimal("1.005");
+  // Every encode is 8-bit SDR video without Dolby Vision or HDR10+ information.
+  private static final int ENCODED_BIT_DEPTH = 8;
 
   public VideoCapabilityEntry {
     if (codecFamily == ProbedCodecFamily.OTHER) {
@@ -64,6 +68,96 @@ public record VideoCapabilityEntry(
     return copy.videoProperties()
         .map(properties -> acceptsEveryProperty(copy, properties))
         .orElse(true);
+  }
+
+  /**
+   * The largest encoded output within the request's bounds that this entry accepts over HLS (ADR
+   * 0049), or empty when this entry accepts no encode of the request. The output keeps the source's
+   * aspect ratio. A frame rate above the maximum is divided by the smallest whole number that fits.
+   * A picture whose codec level is above the profile's maximum level steps down in size until the
+   * level fits, and a bitrate above what that level allows is capped at it.
+   */
+  public Optional<EncodedVideoOutput> fitHlsEncode(@NonNull EncodedVariantRequest request) {
+    if (!acceptsHlsEncode(request.codecProfile())) {
+      return Optional.empty();
+    }
+
+    var frameRate = encodedFrameRate(request.frameRate());
+    if (frameRate.isEmpty()) {
+      return Optional.empty();
+    }
+
+    return codecProfiles.stream()
+        .filter(capability -> capability.profile() == request.codecProfile().codecProfile())
+        .map(capability -> fitWithinLevel(capability, request, frameRate.get()))
+        .flatMap(Optional::stream)
+        .max(EncodedVideoOutput.LARGER_PICTURE_THEN_FASTER_FRAME_RATE);
+  }
+
+  private boolean acceptsHlsEncode(EncodeCodecProfile codecProfile) {
+    return hls
+        && codecProfile.codecProfile().codecFamily() == codecFamily
+        && compatibleBases.contains(CompatibleBase.SDR)
+        && ENCODED_BIT_DEPTH <= maxBitDepth;
+  }
+
+  // An encode runs at an exact rate, so no measuring margin applies. Dividing by a whole number
+  // keeps motion even.
+  private Optional<Fraction> encodedFrameRate(Fraction rate) {
+    var divisor =
+        BigDecimal.valueOf(rate.numerator())
+            .divide(
+                BigDecimal.valueOf(rate.denominator()).multiply(BigDecimal.valueOf(maxFrameRate)),
+                0,
+                RoundingMode.CEILING)
+            .max(BigDecimal.ONE);
+    var largestDivisor = BigDecimal.valueOf(Integer.MAX_VALUE / rate.denominator());
+    if (divisor.compareTo(largestDivisor) > 0) {
+      return Optional.empty();
+    }
+
+    return Optional.of(rate.dividedBy(divisor.intValueExact()));
+  }
+
+  private Optional<EncodedVideoOutput> fitWithinLevel(
+      VideoCodecProfileCapability capability, EncodedVariantRequest request, Fraction frameRate) {
+    var codecProfile = request.codecProfile();
+    var highestBitrate = codecProfile.highestBitrateAtOrBelow(capability.maxLevel());
+    if (highestBitrate.isEmpty()) {
+      return Optional.empty();
+    }
+
+    var bitrate = Math.min(request.bitrate(), highestBitrate.getAsLong());
+    var bounds =
+        new PictureSize(
+            Math.min(request.bounds().width(), maxWidth),
+            Math.min(request.bounds().height(), maxHeight));
+    var source = request.source();
+    return IntStream.iterate(
+            EncodedPictureSizes.largestHeightWithin(source, bounds),
+            height -> height >= 0,
+            height -> height - 2)
+        .mapToObj(height -> EncodedPictureSizes.atHeight(source, height))
+        .map(
+            size ->
+                EncodedVideoOutput.builder()
+                    .codecFamily(codecProfile.codecFamilyName())
+                    .width(size.width())
+                    .height(size.height())
+                    .frameRate(frameRate)
+                    .bitrate(bitrate)
+                    .build())
+        .filter(output -> acceptsLevelAndTier(capability, output))
+        .findFirst();
+  }
+
+  private static boolean acceptsLevelAndTier(
+      VideoCodecProfileCapability capability, EncodedVideoOutput output) {
+    return VideoEncodeDecision.allowing(output)
+        .filter(
+            decision ->
+                capability.acceptsLevelAndTier(OptionalInt.of(decision.level()), decision.tier()))
+        .isPresent();
   }
 
   // An unknown codec level or tier fits wherever the known picture size and frame rate fit, so it

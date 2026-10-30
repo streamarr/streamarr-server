@@ -3,6 +3,7 @@ package com.streamarr.server.domain.streaming;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.Optional;
+import java.util.OptionalLong;
 
 // ITU-T H.264 Table A-1. Level 1.1 allows everything that level 1b allows, so level 1b is left out.
 enum H264Level {
@@ -64,6 +65,14 @@ enum H264Level {
     return Arrays.stream(values()).filter(level -> level.allows(output)).findFirst();
   }
 
+  /** The highest bitrate that a level at or below {@code maxLevelIdc} allows an encode. */
+  static OptionalLong highestBitrateAtOrBelow(int maxLevelIdc) {
+    return Arrays.stream(values())
+        .filter(level -> level.levelIdc <= maxLevelIdc)
+        .mapToLong(H264Level::highestBitrate)
+        .max();
+  }
+
   /** The level as level_idc, which is major x 10 + minor. */
   int levelIdc() {
     return levelIdc;
@@ -72,6 +81,12 @@ enum H264Level {
   String highProfileCodecString() {
     return HIGH_PROFILE_CODEC_STRING_PREFIX
         + HexFormat.of().withUpperCase().toHexDigits((byte) levelIdc);
+  }
+
+  private long highestBitrate() {
+    return Math.min(
+        maxBitrateUnits * HIGH_PROFILE_BITS_PER_UNIT,
+        maxCodedPictureBufferUnits * HIGH_PROFILE_BITS_PER_UNIT / BUFFER_SIZE_PER_BITRATE);
   }
 
   private boolean allows(EncodedVideoOutput output) {
