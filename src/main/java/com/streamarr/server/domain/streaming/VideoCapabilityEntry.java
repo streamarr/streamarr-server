@@ -32,11 +32,11 @@ public record VideoCapabilityEntry(
 
   private static final EnumSet<CompatibleBase> DECLARABLE_COMPATIBLE_BASES =
       EnumSet.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG);
-  // Timestamp rounding can put a measured rate slightly above the source's standard rate, such as
-  // 60.2 fps for a 60 fps stream with millisecond timestamps.
-  // Decimal arithmetic keeps a rate exactly at the margin inside it: 50 × 1.005 in binary floating
-  // point is 50.24999999999999.
-  private static final BigDecimal MEASURED_FRAME_RATE_MARGIN = new BigDecimal("1.005");
+  // A frame rate fits up to half a percent above the maximum. Timestamp rounding can put a measured
+  // rate slightly above the source's standard rate, such as 60.2 fps for a 60 fps stream with
+  // millisecond timestamps. Decimal arithmetic keeps a rate exactly at the margin inside it:
+  // 50 × 1.005 in binary floating point is 50.24999999999999.
+  private static final BigDecimal FRAME_RATE_MARGIN = new BigDecimal("1.005");
   // Every encode is 8-bit SDR video without Dolby Vision or HDR10+ information.
   private static final int ENCODED_BIT_DEPTH = 8;
 
@@ -104,7 +104,7 @@ public record VideoCapabilityEntry(
   // The margin also lets a declared 29.97 or 59.94 accept the exact NTSC rate 30000/1001 or
   // 60000/1001, which lies just above it. Dividing by a whole number keeps motion even.
   private Optional<Fraction> encodedFrameRate(Fraction rate) {
-    var fastestAcceptedRate = BigDecimal.valueOf(maxFrameRate).multiply(MEASURED_FRAME_RATE_MARGIN);
+    var fastestAcceptedRate = BigDecimal.valueOf(maxFrameRate).multiply(FRAME_RATE_MARGIN);
     var divisor =
         BigDecimal.valueOf(rate.numerator())
             .divide(
@@ -207,7 +207,7 @@ public record VideoCapabilityEntry(
       return true;
     }
 
-    var fastestAcceptedRate = BigDecimal.valueOf(maxFrameRate).multiply(MEASURED_FRAME_RATE_MARGIN);
+    var fastestAcceptedRate = BigDecimal.valueOf(maxFrameRate).multiply(FRAME_RATE_MARGIN);
     return BigDecimal.valueOf(frameRate.getAsDouble()).compareTo(fastestAcceptedRate) <= 0;
   }
 
