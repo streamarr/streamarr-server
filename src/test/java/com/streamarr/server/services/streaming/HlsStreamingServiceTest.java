@@ -92,6 +92,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.dao.DataAccessException;
@@ -756,29 +757,63 @@ class HlsStreamingServiceTest {
     assertThat(service.getAllSessions()).isEmpty();
   }
 
-  @Test
-  @DisplayName("Should copy the video in Original when one capability entry accepts the copy")
-  void shouldCopyTheVideoInOriginalWhenOneCapabilityEntryAcceptsTheCopy() {
+  // Auto and a fixed quality start playback that may copy or encode the video.
+  @ParameterizedTest
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"AUTO", "UHD_4K"})
+  @DisplayName(
+      "Should encode the video in Auto or a fixed quality when only two capability entries"
+          + " together accept the copy")
+  void shouldEncodeTheVideoInAutoOrAFixedQualityWhenOnlyTwoCapabilityEntriesTogetherAcceptTheCopy(
+      VideoQuality quality) {
+    probeResults.setDefaultProbe(probeVersion5UhdAt60().build());
+
+    var attempt = startPlayback(quality, uhdAt30AndHdAt60Declaration());
+
+    assertThat(attempt)
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready ->
+                assertThat(ready.session().getTranscodeDecision().transcodeMode())
+                    .isEqualTo(TranscodeMode.VIDEO_TRANSCODE));
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"AUTO", "UHD_4K", "ORIGINAL"})
+  @DisplayName(
+      "Should copy the video in Auto, a fixed quality or Original when one capability entry accepts"
+          + " the copy")
+  void shouldCopyTheVideoInAutoAFixedQualityOrOriginalWhenOneCapabilityEntryAcceptsTheCopy(
+      VideoQuality quality) {
     probeResults.setDefaultProbe(probeVersion5UhdAt60().build());
     var declaration =
         defaultDeclarationBuilder()
             .video(List.of(h264EntryBuilder().maxWidth(3840).maxHeight(2160).build()))
             .build();
 
-    var result =
-        logicalPlayback()
-            .start(
-                logicalStart()
-                    .options(StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build())
-                    .capabilityDeclaration(declaration)
-                    .build());
+    var attempt = startPlayback(quality, declaration);
 
-    assertThat(accepted(result).currentFormatAttempt())
+    assertThat(attempt)
         .isInstanceOfSatisfying(
             PlaybackFormatAttempt.Ready.class,
             ready ->
                 assertThat(ready.session().getTranscodeDecision().transcodeMode())
                     .isEqualTo(TranscodeMode.REMUX));
+  }
+
+  private PlaybackFormatAttempt startPlayback(
+      VideoQuality quality, ClientCapabilityDeclaration declaration) {
+    var result =
+        logicalPlayback()
+            .start(
+                logicalStart()
+                    .options(StreamingOptions.builder().quality(quality).build())
+                    .capabilityDeclaration(declaration)
+                    .build());
+    return accepted(result).currentFormatAttempt();
   }
 
   // An 8-bit SDR H.264 High profile source at 3840×2160 and 60 fps that probe version 5 described.
