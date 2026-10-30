@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ContainerCropping;
+import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.QualityVariant;
@@ -41,7 +42,7 @@ class QualityLadderServiceTest {
     var probe = buildProbe(1920, 1080, 8_000_000L);
     var options = StreamingOptions.builder().build();
 
-    var variants = service.generateVariants(probe, options);
+    var variants = generateVariants(probe, options);
 
     assertThat(variants).hasSize(4);
     assertThat(variants.get(0).label()).isEqualTo("1080p");
@@ -56,7 +57,7 @@ class QualityLadderServiceTest {
     var probe = buildProbe(1280, 720, 4_000_000L);
     var options = StreamingOptions.builder().build();
 
-    var variants = service.generateVariants(probe, options);
+    var variants = generateVariants(probe, options);
 
     assertThat(variants).hasSize(3);
     assertThat(variants.get(0).label()).isEqualTo("720p");
@@ -70,7 +71,7 @@ class QualityLadderServiceTest {
     var probe = buildProbe(1920, 1080, 8_000_000L);
     var options = StreamingOptions.builder().maxHeight(480).build();
 
-    var variants = service.generateVariants(probe, options);
+    var variants = generateVariants(probe, options);
 
     assertThat(variants).hasSize(2);
     assertThat(variants.get(0).label()).isEqualTo("480p");
@@ -83,7 +84,7 @@ class QualityLadderServiceTest {
     var probe = buildProbe(1920, 1080, 8_000_000L);
     var options = StreamingOptions.builder().maxHeight(300).build();
 
-    var variants = service.generateVariants(probe, options);
+    var variants = generateVariants(probe, options);
 
     assertThat(variants)
         .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::label)
@@ -96,7 +97,7 @@ class QualityLadderServiceTest {
     var probe = buildProbe(1920, 1080, 8_000_000L);
     var options = StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build();
 
-    var variants = service.generateVariants(probe, options);
+    var variants = generateVariants(probe, options);
 
     assertThat(variants)
         .extracting(
@@ -113,7 +114,7 @@ class QualityLadderServiceTest {
     var probe = buildProbe(320, 180, 500_000L);
     var options = StreamingOptions.builder().build();
 
-    var variants = service.generateVariants(probe, options);
+    var variants = generateVariants(probe, options);
 
     assertThat(variants).hasSize(1);
     assertThat(variants.get(0).width()).isEqualTo(320);
@@ -146,7 +147,7 @@ class QualityLadderServiceTest {
             .build();
     var options = StreamingOptions.builder().build();
 
-    assertThat(service.generateVariants(probe, options))
+    assertThat(generateVariants(probe, options))
         .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::label)
         .containsExactly(tuple(expectedWidth, 236, "236p"));
   }
@@ -157,7 +158,7 @@ class QualityLadderServiceTest {
     var probe = buildProbe(1920, 1080, 8_000_000L);
     var options = StreamingOptions.builder().maxBitrate(2_000_000).build();
 
-    var variants = service.generateVariants(probe, options);
+    var variants = generateVariants(probe, options);
 
     assertThat(variants)
         .isNotEmpty()
@@ -170,7 +171,7 @@ class QualityLadderServiceTest {
     var probe = buildProbe(1920, 1080, 8_000_000L);
     var options = StreamingOptions.builder().build();
 
-    var variants = service.generateVariants(probe, options);
+    var variants = generateVariants(probe, options);
 
     assertThat(variants.get(0).videoBitrate()).isEqualTo(5_000_000L);
     assertThat(variants.get(1).videoBitrate()).isEqualTo(3_000_000L);
@@ -187,7 +188,7 @@ class QualityLadderServiceTest {
     var probe = buildProbe(sourceWidth, sourceHeight, 8_000_000L);
     var options = StreamingOptions.builder().build();
 
-    var variants = service.generateVariants(probe, options);
+    var variants = generateVariants(probe, options);
 
     var expectedHeights = STANDARD_TIER_HEIGHTS.stream().filter(h -> h <= sourceHeight).toList();
     assertThat(variants).hasSize(expectedWidths.size());
@@ -223,7 +224,7 @@ class QualityLadderServiceTest {
             .build();
     var options = StreamingOptions.builder().build();
 
-    var variants = service.generateVariants(probe, options);
+    var variants = generateVariants(probe, options);
 
     assertThat(variants)
         .extracting(QualityVariant::width, QualityVariant::height)
@@ -244,7 +245,7 @@ class QualityLadderServiceTest {
             .build();
     var options = StreamingOptions.builder().build();
 
-    var variants = service.generateVariants(probe, options);
+    var variants = generateVariants(probe, options);
 
     assertThat(variants)
         .extracting(QualityVariant::width, QualityVariant::height)
@@ -257,12 +258,21 @@ class QualityLadderServiceTest {
     var probe = buildProbe(319, 179, 500_000L);
     var options = StreamingOptions.builder().build();
 
-    var variants = service.generateVariants(probe, options);
+    var variants = generateVariants(probe, options);
 
     assertThat(variants).hasSize(1);
     assertThat(variants.get(0).width()).isEqualTo(318);
     assertThat(variants.get(0).height()).isEqualTo(178);
     assertThat(variants.get(0).label()).isEqualTo("178p");
+  }
+
+  private List<QualityVariant> generateVariants(MediaProbe probe, StreamingOptions options) {
+    return service.generateVariants(
+        QualityLadderRequest.builder()
+            .probe(probe)
+            .options(options)
+            .frameRate(new Fraction(24, 1))
+            .build());
   }
 
   private MediaProbe buildProbe(int width, int height, long bitrate) {
