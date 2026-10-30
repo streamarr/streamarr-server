@@ -16,14 +16,14 @@ import org.springframework.stereotype.Service;
 @Service
 public class QualityLadderService {
 
-  private record QualityTier(int height, long videoBitrate, long audioBitrate, String label) {}
+  private record QualityTier(int height, long videoBitrate, long audioBitrate) {}
 
   private static final List<QualityTier> STANDARD_TIERS =
       List.of(
-          new QualityTier(1080, 5_000_000L, 128_000L, "1080p"),
-          new QualityTier(720, 3_000_000L, 128_000L, "720p"),
-          new QualityTier(480, 1_500_000L, 96_000L, "480p"),
-          new QualityTier(360, 800_000L, 64_000L, "360p"));
+          new QualityTier(1080, 5_000_000L, 128_000L),
+          new QualityTier(720, 3_000_000L, 128_000L),
+          new QualityTier(480, 1_500_000L, 96_000L),
+          new QualityTier(360, 800_000L, 64_000L));
 
   private static final long SOURCE_SIZED_AUDIO_BITRATE = 64_000L;
 
