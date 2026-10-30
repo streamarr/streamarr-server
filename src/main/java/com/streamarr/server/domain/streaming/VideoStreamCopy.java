@@ -24,10 +24,7 @@ public record VideoStreamCopy(
     @NonNull VideoDynamicRange dynamicRange) {
 
   // ADR 0037's frame-rate rule snaps the rate that the source's frames run at to a listed rate,
-  // which only an encode runs at. A copy keeps every source frame at that unsnapped rate, except
-  // that the rule counts a rate from 60 to 60.3 fps as 60.
-  private static final double RATE_60 = 60;
-  private static final double FASTEST_RATE_COUNTED_AS_60 = 60.3;
+  // which only an encode runs at. A copy keeps every source frame at that unsnapped rate.
   // The rule's fallback passes over a declared rate of 1000 fps or faster as unusable.
   private static final double FASTEST_USABLE_DECLARED_RATE = 1000;
 
@@ -61,7 +58,6 @@ public record VideoStreamCopy(
           case DECLARED_RATES, MATROSKA_STATISTICS, REFUSED -> Optional.<Double>empty();
         };
     return sourceRate
-        .map(VideoStreamCopy::countedAs60)
         .or(() -> outputFrameRate)
         .map(OptionalDouble::of)
         .orElse(OptionalDouble.empty());
@@ -92,14 +88,6 @@ public record VideoStreamCopy(
 
   private static boolean isUsableDeclaredRate(double rate) {
     return rate < FASTEST_USABLE_DECLARED_RATE;
-  }
-
-  private static double countedAs60(double rate) {
-    if (rate > RATE_60 && rate <= FASTEST_RATE_COUNTED_AS_60) {
-      return RATE_60;
-    }
-
-    return rate;
   }
 
   // A probe that could not read a width or a height stores zero for it.

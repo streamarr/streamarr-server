@@ -37,6 +37,8 @@ class VideoCapabilityEntryHlsCopyTest {
   private static final int MAX_BIT_DEPTH = 10;
   private static final PictureSize MAX_SIZE = new PictureSize(1920, 1080);
   private static final double MAX_FRAME_RATE = 30;
+  // A measured frame rate fits up to 0.5 % above the maximum.
+  private static final double MAX_MEASURED_FRAME_RATE = 30.15;
 
   private static final VideoCapabilityEntry ENTRY = entryBuilder().build();
 
@@ -126,6 +128,8 @@ class VideoCapabilityEntryHlsCopyTest {
         OptionalDouble.of(30),
         OptionalDouble.of(30_000.0 / 1_001),
         OptionalDouble.of(30.01),
+        OptionalDouble.of(30.14),
+        OptionalDouble.of(30.16),
         OptionalDouble.empty());
   }
 
@@ -325,7 +329,7 @@ class VideoCapabilityEntryHlsCopyTest {
           && decodedSize.isPresent()
           && decodedSize.get().width() <= MAX_SIZE.width()
           && decodedSize.get().height() <= MAX_SIZE.height()
-          && (frameRate.isEmpty() || frameRate.getAsDouble() <= MAX_FRAME_RATE);
+          && (frameRate.isEmpty() || frameRate.getAsDouble() <= MAX_MEASURED_FRAME_RATE);
     }
 
     @Override

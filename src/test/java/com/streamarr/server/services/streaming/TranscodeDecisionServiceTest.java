@@ -1227,6 +1227,61 @@ class TranscodeDecisionServiceTest {
             "Original, 2160p60", VideoFormatConstraint.COPY_ONLY, uhdAt60, Optional.empty()));
   }
 
+  // Timestamp rounding lets a measured rate sit slightly above the source's standard rate.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("sourcesMeasuredWithinHalfAPercentAboveTheEntrysMaximum")
+  @DisplayName(
+      "Should copy video when its measured frame rate is within half a percent above the entry's"
+          + " maximum")
+  void shouldCopyVideoWhenItsMeasuredFrameRateIsWithinHalfAPercentAboveTheEntrysMaximum(
+      String scenario, FrameRateRule frameRateRule, VideoFormatConstraint constraint) {
+    var outputFrameRate = frameRateRule.outputFrameRate().orElseThrow().toDouble();
+    var source = probeVersion5H264(new PictureSize(1920, 1080), frameRateRule);
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    h264EntryBuilder()
+                        .maxWidth(1920)
+                        .maxHeight(1080)
+                        .maxFrameRate(outputFrameRate)
+                        .build()))
+            .build();
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .capabilityDeclaration(declaration)
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .videoFormatConstraint(constraint)
+                .build());
+
+    assertThat(decision.map(TranscodeDecision::transcodeMode)).contains(TranscodeMode.REMUX);
+  }
+
+  static Stream<Arguments> sourcesMeasuredWithinHalfAPercentAboveTheEntrysMaximum() {
+    var rules =
+        Stream.of(
+            Map.entry(
+                "60.25 fps motion against 60",
+                VideoPlaybackFactsFixture.packetScanRule(60.25, new Fraction(60, 1))),
+            Map.entry(
+                "30.1 fps motion against 30",
+                VideoPlaybackFactsFixture.packetScanRule(30.1, new Fraction(30, 1))));
+    return rules.flatMap(
+        rule ->
+            Stream.of(
+                Arguments.of(
+                    "Auto, " + rule.getKey(),
+                    rule.getValue(),
+                    VideoFormatConstraint.COPY_OR_ENCODE),
+                Arguments.of(
+                    "Original, " + rule.getKey(),
+                    rule.getValue(),
+                    VideoFormatConstraint.COPY_ONLY)));
+  }
+
   // ADR 0037's frame-rate rule snaps the rate that the source's frames run at to a listed output
   // frame rate, which only an encode runs at. A copy keeps every source frame at its own rate.
   @ParameterizedTest(name = "{0}")
