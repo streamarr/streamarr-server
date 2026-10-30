@@ -40,14 +40,15 @@ public class QualityLadderService {
     var options = request.options();
     var source = request.probe().displayedSize();
     var viewerBounds = viewerBounds(source, options);
+    var maxBitrate = resolveMaxBitrate(options);
     if (!isAutoQuality(options)) {
-      return fit(request, viewerBounds, request.probe().bitrate())
+      var bitrate = withinMaxBitrate(request.probe().bitrate(), maxBitrate);
+      return fit(request, viewerBounds, bitrate)
           .map(output -> viewerAndEntryBoundedVariant(output, StreamSession.defaultVariant()))
           .stream()
           .toList();
     }
 
-    var maxBitrate = resolveMaxBitrate(options);
     var variants = new LinkedHashMap<String, QualityVariant>();
     for (var tier : STANDARD_TIERS) {
       if (tier.height() > viewerBounds.height()) {
