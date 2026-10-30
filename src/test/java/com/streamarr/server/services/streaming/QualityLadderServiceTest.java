@@ -140,6 +140,21 @@ class QualityLadderServiceTest {
 
   @Test
   @DisplayName(
+      "Should encode the only variant within the viewer's maximum bitrate when the viewer's limits"
+          + " leave no tier")
+  void shouldEncodeTheOnlyVariantWithinTheViewersMaximumBitrateWhenTheViewersLimitsLeaveNoTier() {
+    var probe = buildProbe(1920, 1080, 8_000_000L);
+    var options = StreamingOptions.builder().maxWidth(500).maxBitrate(1_000_000).build();
+
+    var variants = generateVariants(probe, options);
+
+    assertThat(variants)
+        .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::videoBitrate)
+        .containsExactly(tuple(498, 280, 1_000_000L));
+  }
+
+  @Test
+  @DisplayName(
       "Should keep the smaller tier's bitrate when an entry shrinks a larger tier to the smaller"
           + " tier's size")
   void shouldKeepTheSmallerTiersBitrateWhenAnEntryShrinksALargerTierToTheSmallerTiersSize() {
