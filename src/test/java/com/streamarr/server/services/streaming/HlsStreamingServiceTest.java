@@ -32,6 +32,7 @@ import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
+import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
@@ -1000,6 +1001,13 @@ class HlsStreamingServiceTest {
                 .build()));
   }
 
+  private CreateStreamSessionCommand createCommandDeclaring(
+      ClientCapabilityDeclaration declaration) {
+    return createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+        .capabilityDeclaration(declaration)
+        .build();
+  }
+
   private Optional<StreamSession> accessSession(StreamSession session) {
     return service.accessSession(playbackRequest(session));
   }
@@ -1181,6 +1189,27 @@ class HlsStreamingServiceTest {
             Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
     assertThat(capacityRefusals("no_encoder_with_free_slot")).isOne();
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject the session as having no eligible format when a busy encoder's family fits no"
+          + " entry")
+  void shouldRejectTheSessionAsHavingNoEligibleFormatWhenABusyEncodersFamilyFitsNoEntry() {
+    transcodeExecutor.setAvailableSlots(2);
+    transcodeExecutor.setEncodeSlots(Map.of("h264", 0));
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().compatibleBases(List.of(CompatibleBase.PQ)).build()))
+            .build();
+
+    var outcome = service.createSession(createCommandDeclaring(declaration));
+
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(capacityRefusals("no_encoder_with_free_slot")).isZero();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
 
   @Test
