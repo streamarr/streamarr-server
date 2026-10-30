@@ -77,6 +77,8 @@ class QualityLadderServiceTest {
             tuple("360p", 640, 360, 800_000L));
   }
 
+  // The worker keeps each side even, so the 720p and 360p pictures stop a few pixels short of their
+  // box's width. The next larger picture would not fit the box, so each still reaches it.
   @Test
   @DisplayName(
       "Should fit a wide film to each tier's box when the film is shorter than the tier's height")
@@ -340,8 +342,9 @@ class QualityLadderServiceTest {
 
   @Test
   @DisplayName(
-      "Should label a capped variant by its tier when the entry shrinks it within the tier's box")
-  void shouldLabelACappedVariantByItsTierWhenTheEntryShrinksItWithinTheTiersBox() {
+      "Should label a variant by its shorter side when the entry shrinks it short of its tier's"
+          + " box")
+  void shouldLabelAVariantByItsShorterSideWhenTheEntryShrinksItShortOfItsTiersBox() {
     var probe = buildProbe(1920, 1080, 8_000_000L);
     var declaration =
         defaultDeclarationBuilder()
@@ -357,7 +360,7 @@ class QualityLadderServiceTest {
     assertThat(variants)
         .extracting(QualityVariant::label, QualityVariant::width, QualityVariant::height)
         .containsExactly(
-            tuple("1080p", 1600, 900),
+            tuple("900p", 1600, 900),
             tuple("720p", 1280, 720),
             tuple("480p", 854, 480),
             tuple("360p", 640, 360));
@@ -406,7 +409,7 @@ class QualityLadderServiceTest {
 
     assertThat(generateVariants(probe, options))
         .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::label)
-        .containsExactly(tuple(expectedWidth, 236, "360p"));
+        .containsExactly(tuple(expectedWidth, 236, "236p"));
   }
 
   // ADR 0050: a variant costs its video bitrate plus the stream session's audio bitrate.
@@ -638,7 +641,73 @@ class QualityLadderServiceTest {
     assertThat(variants).hasSize(1);
     assertThat(variants.get(0).width()).isEqualTo(318);
     assertThat(variants.get(0).height()).isEqualTo(178);
-    assertThat(variants.get(0).label()).isEqualTo("360p");
+    assertThat(variants.get(0).label()).isEqualTo("178p");
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "640, 360, 360p",
+    "360, 640, 360p",
+    "638, 360, 360p",
+    "320, 180, 180p",
+    "180, 320, 180p",
+    "1920, 800, 1080p",
+    "2560, 1072, 1440p"
+  })
+  @DisplayName(
+      "Should label the variant by the tier whose box it reaches, or else by its shorter side, when"
+          + " the source is the variant's size")
+  void
+      shouldLabelTheVariantByTheTierWhoseBoxItReachesOrElseByItsShorterSideWhenTheSourceIsTheVariantsSize(
+          int width, int height, String expectedLabel) {
+    var probe = buildProbe(width, height, 8_000_000L);
+
+    var variants = generateVariants(probe, StreamingOptions.builder().build());
+
+    assertThat(variants.getFirst())
+        .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::label)
+        .containsExactly(width, height, expectedLabel);
+  }
+
+  @Test
+  @DisplayName(
+      "Should label the only variant by its shorter side when the viewer's maximum width bounds a"
+          + " portrait picture")
+  void shouldLabelTheOnlyVariantByItsShorterSideWhenTheViewersMaximumWidthBoundsAPortraitPicture() {
+    var probe = buildProbe(1080, 1920, 8_000_000L);
+    var options = StreamingOptions.builder().maxWidth(300).build();
+
+    var variants = generateVariants(probe, options);
+
+    assertThat(variants)
+        .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::label)
+        .containsExactly(tuple(300, 534, "300p"));
+  }
+
+  @Test
+  @DisplayName(
+      "Should drop a variant labelled by its shorter side when another variant's tier has the same"
+          + " label")
+  void shouldDropAVariantLabelledByItsShorterSideWhenAnotherVariantsTierHasTheSameLabel() {
+    var probe = buildProbe(3996, 2160, 40_000_000L);
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().maxWidth(2048).maxHeight(1080).build()))
+            .build();
+
+    var variants =
+        service.generateVariants(
+            ladderRequest(probe, StreamingOptions.builder().build())
+                .capabilityDeclaration(declaration)
+                .build());
+
+    assertThat(variants)
+        .extracting(QualityVariant::label, QualityVariant::width, QualityVariant::height)
+        .containsExactly(
+            tuple("1080p", 1920, 1038),
+            tuple("720p", 1280, 692),
+            tuple("480p", 854, 462),
+            tuple("360p", 640, 346));
   }
 
   private List<QualityVariant> generateVariants(MediaProbe probe, StreamingOptions options) {

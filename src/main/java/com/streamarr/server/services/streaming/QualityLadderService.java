@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.stream.Collectors;
 import lombok.NonNull;
 import org.springframework.stereotype.Service;
 
@@ -26,8 +27,9 @@ public class QualityLadderService {
    * to fit the tier's box without enlarging it, or one variant when the viewer's limits leave no
    * tier. A fixed quality offers only the default variant, within its tier's box; Original has no
    * box. Sizes each variant from the picture that a player shows, after cropping and rotation. A
-   * tier that an entry shrinks into a smaller tier's box gives way to that tier. Returns no variant
-   * when the viewer's limits leave no picture that the worker encodes.
+   * tier that an entry shrinks into a smaller tier's box gives way to that tier. Auto labels each
+   * variant by the tier whose box it reaches, or else by its shorter side. Returns no variant when
+   * the viewer's limits leave no picture that the worker encodes.
    */
   public List<QualityVariant> generateVariants(@NonNull QualityLadderRequest request) {
     var limits = request.viewerLimits();
@@ -41,7 +43,7 @@ public class QualityLadderService {
               .map(tier -> viewerBounds.boundedBy(tier.box().orientedLike(source)))
               .orElse(viewerBounds);
       return fitUntiered(request, bounds, maxBitrate)
-          .map(output -> viewerAndEntryBoundedVariant(output, StreamSession.defaultVariant()))
+          .map(QualityLadderService::defaultVariant)
           .stream()
           .toList();
     }
@@ -60,18 +62,49 @@ public class QualityLadderService {
 
       fit(request, box, tier.videoBitrate())
           .filter(output -> QualityTier.containing(pictureOf(output)) == tier)
-          .map(output -> tierVariant(output, tier))
+          .map(output -> labelledVariant(output, source))
           .ifPresent(variants::add);
     }
 
     if (variants.isEmpty()) {
       return fitUntiered(request, viewerBounds, maxBitrate)
-          .map(output -> viewerAndEntryBoundedVariant(output, output.height() + "p"))
+          .map(output -> labelledVariant(output, source))
           .stream()
           .toList();
     }
 
-    return List.copyOf(variants);
+    return withoutRepeatedLabels(variants, source);
+  }
+
+  // A variant takes the label of the tier whose box it reaches, or else its shorter side's
+  // (ADR 0050).
+  private static QualityVariant labelledVariant(EncodedVideoOutput output, PictureSize source) {
+    var picture = pictureOf(output);
+    var tier = QualityTier.containing(picture);
+    if (EncodedPictureSizes.reaches(source, picture, tier.box())) {
+      return variantBuilder(output).label(tier.label()).build();
+    }
+
+    return variantBuilder(output).label(Math.min(picture.width(), picture.height()) + "p").build();
+  }
+
+  // A label names a variant's playlist, so a variant that only its shorter side labels gives way
+  // to the variant whose tier has the same label.
+  private static List<QualityVariant> withoutRepeatedLabels(
+      List<QualityVariant> variants, PictureSize source) {
+    var tierLabels =
+        variants.stream()
+            .filter(variant -> reachesItsTier(variant, source))
+            .map(QualityVariant::label)
+            .collect(Collectors.toSet());
+    return variants.stream()
+        .filter(variant -> reachesItsTier(variant, source) || !tierLabels.contains(variant.label()))
+        .toList();
+  }
+
+  private static boolean reachesItsTier(QualityVariant variant, PictureSize source) {
+    var picture = new PictureSize(variant.width(), variant.height());
+    return EncodedPictureSizes.reaches(source, picture, QualityTier.containing(picture).box());
   }
 
   // The viewer's limits bound the tier's picture before any entry shrinks it.
@@ -158,13 +191,8 @@ public class QualityLadderService {
     return request.capabilityDeclaration().fitHlsEncode(variantRequest);
   }
 
-  private static QualityVariant tierVariant(EncodedVideoOutput output, QualityTier tier) {
-    return variantBuilder(output).label(tier.label()).build();
-  }
-
-  private static QualityVariant viewerAndEntryBoundedVariant(
-      EncodedVideoOutput output, String label) {
-    return variantBuilder(output).label(label).build();
+  private static QualityVariant defaultVariant(EncodedVideoOutput output) {
+    return variantBuilder(output).label(StreamSession.defaultVariant()).build();
   }
 
   private static QualityVariant.QualityVariantBuilder variantBuilder(EncodedVideoOutput output) {
