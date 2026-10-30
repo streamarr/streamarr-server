@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming.remote;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 
 import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.server.services.streaming.remote.LiveWorkerConnectionRegistry.ReportedJobAttemptEnd;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptFailed;
@@ -14,11 +15,9 @@ import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.UploadSegmentResponse;
 import com.streamarr.transcode.v1.Uuid;
-import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
-import java.util.Optional;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 
@@ -280,31 +279,31 @@ final class WorkerSessionGrpcService
                       failed.getFailure()));
     }
 
-    private Optional<VariantJob> finish(Uuid jobAttemptId, String detail) {
-      var released =
-          workerConnections.releaseJobAttempt(
-              authenticatedWorkerId, workerSessionId, fromProto(jobAttemptId));
-      released.ifPresent(
-          job ->
-              log.debug(
-                  "Worker {} ended job attempt {} for stream session {} variant {} ({})",
-                  authenticatedWorkerId,
-                  fromProto(jobAttemptId),
-                  fromProto(job.getStreamSessionId()),
-                  job.getVariant().getVariantLabel(),
-                  detail));
-      return released;
-    }
-
     private void finishOrWarn(Uuid jobAttemptId, String detail) {
-      if (finish(jobAttemptId, detail).isPresent()) {
-        return;
+      var attemptId = fromProto(jobAttemptId);
+      switch (workerConnections.endReportedJobAttempt(
+          authenticatedWorkerId, workerSessionId, attemptId)) {
+        case ReportedJobAttemptEnd.Released(var job) ->
+            log.debug(
+                "Worker {} ended job attempt {} for stream session {} variant {} ({})",
+                authenticatedWorkerId,
+                attemptId,
+                fromProto(job.getStreamSessionId()),
+                job.getVariant().getVariantLabel(),
+                detail);
+        case ReportedJobAttemptEnd.StoppedByServer() ->
+            log.debug(
+                "Worker {} reported {} for job attempt {}, which the server stopped",
+                authenticatedWorkerId,
+                detail,
+                attemptId);
+        case ReportedJobAttemptEnd.Unknown() ->
+            log.warn(
+                "Worker {} reported {} for unknown job attempt {}",
+                authenticatedWorkerId,
+                detail,
+                attemptId);
       }
-      log.warn(
-          "Worker {} reported {} for unknown job attempt {}",
-          authenticatedWorkerId,
-          detail,
-          fromProto(jobAttemptId));
     }
 
     private void reject(Status status) {

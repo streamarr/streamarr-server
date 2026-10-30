@@ -75,6 +75,8 @@ final class LiveWorkerConnectionRegistry {
   private static final String ENCODER_BACKEND_MISMATCH_METRIC =
       "streamarr.streaming.encoder_backend_mismatches";
   private static final String DEFERRED_PROBES_METRIC = "streamarr.probes.deferred";
+  private static final String UNKNOWN_JOB_ATTEMPT_REPORTS_METRIC =
+      "streamarr.streaming.unknown_job_attempt_reports";
   // A probe refused for one of these reasons runs again later, when a worker can take it.
   private static final Set<ProbeRefusal> WAITING_FOR_WORKER =
       EnumSet.of(
@@ -90,6 +92,7 @@ final class LiveWorkerConnectionRegistry {
   private final long startReportTimeoutNanos;
   private final Counter initializationSegmentMismatches;
   private final Counter encoderBackendMismatches;
+  private final Counter unknownJobAttemptReports;
   private final HeldSegmentRequests heldRequests;
   private final ApplicationEventPublisher eventPublisher;
   private final MeterRegistry meterRegistry;
@@ -122,6 +125,12 @@ final class LiveWorkerConnectionRegistry {
             .description(
                 "Job attempts stopped because the worker reported an encoder backend other than"
                     + " the one pinned for the variant")
+            .register(meterRegistry);
+    unknownJobAttemptReports =
+        Counter.builder(UNKNOWN_JOB_ATTEMPT_REPORTS_METRIC)
+            .description(
+                "Reports that a job attempt completed or stopped, for a job attempt that the"
+                    + " worker's current session neither runs nor was told to stop")
             .register(meterRegistry);
     capacityMeters = new WorkerCapacityMeters(meterRegistry);
   }
@@ -553,6 +562,36 @@ final class LiveWorkerConnectionRegistry {
         .flatMap(connection -> connection.releaseJobAttempt(jobAttemptId));
   }
 
+  /** How a worker's report that a job attempt completed or stopped matched the server's state. */
+  sealed interface ReportedJobAttemptEnd {
+    /** The worker's session ran the job attempt, which the report ends. */
+    record Released(VariantJob job) implements ReportedJobAttemptEnd {}
+
+    /** The server had stopped the job attempt and was waiting for the worker to report its end. */
+    record StoppedByServer() implements ReportedJobAttemptEnd {}
+
+    /** The worker's current session neither ran the job attempt nor was told to stop it. */
+    record Unknown() implements ReportedJobAttemptEnd {}
+  }
+
+  /**
+   * Ends the job attempt that a worker reports completed or stopped. The worker reports the end of
+   * a job attempt that the server told it to stop, so that report is expected. Every other report
+   * for a job attempt that the session does not run counts as unknown.
+   */
+  ReportedJobAttemptEnd endReportedJobAttempt(
+      UUID workerId, UUID workerSessionId, UUID jobAttemptId) {
+    var end =
+        currentConnection(workerId, workerSessionId)
+            .map(connection -> connection.endReportedJobAttempt(jobAttemptId))
+            .orElseGet(ReportedJobAttemptEnd.Unknown::new);
+    if (end instanceof ReportedJobAttemptEnd.Unknown) {
+      unknownJobAttemptReports.increment();
+    }
+
+    return end;
+  }
+
   void checkReportedEncoderBackend(UUID workerId, UUID workerSessionId, JobAttemptStarted started) {
     currentConnection(workerId, workerSessionId)
         .ifPresent(connection -> connection.checkReportedEncoderBackend(started));
@@ -613,6 +652,8 @@ final class LiveWorkerConnectionRegistry {
     // start report must name that encoder's backend before any of its uploads publishes.
     private final Map<UUID, EncodeAttempt> encodeAttempts = new ConcurrentHashMap<>();
     private final Map<UUID, PendingProbe> activeProbes = new ConcurrentHashMap<>();
+    // The job attempts that this server stopped and whose end the worker has not reported yet.
+    private final Set<UUID> stoppedJobAttempts = ConcurrentHashMap.newKeySet();
 
     private WorkerConnection(
         UUID workerSessionId,
@@ -905,6 +946,7 @@ final class LiveWorkerConnectionRegistry {
         return false;
       }
 
+      stoppedJobAttempts.add(jobAttemptId);
       wakeHeldRequests(stopped);
 
       var command =
@@ -976,6 +1018,19 @@ final class LiveWorkerConnectionRegistry {
         case TRANSCODE_MODE_REMUX, TRANSCODE_MODE_AUDIO_TRANSCODE -> true;
         default -> false;
       };
+    }
+
+    private synchronized ReportedJobAttemptEnd endReportedJobAttempt(UUID jobAttemptId) {
+      var released = releaseJobAttempt(jobAttemptId);
+      if (released.isPresent()) {
+        return new ReportedJobAttemptEnd.Released(released.get());
+      }
+
+      if (stoppedJobAttempts.remove(jobAttemptId)) {
+        return new ReportedJobAttemptEnd.StoppedByServer();
+      }
+
+      return new ReportedJobAttemptEnd.Unknown();
     }
 
     private synchronized Optional<VariantJob> releaseJobAttempt(UUID jobAttemptId) {

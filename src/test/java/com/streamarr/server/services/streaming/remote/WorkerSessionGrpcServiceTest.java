@@ -83,6 +83,8 @@ class WorkerSessionGrpcServiceTest {
   private static final int MAXIMUM_ENTRIES_PER_PART = 4_096;
   private static final String ENCODER_BACKEND_MISMATCH_METRIC =
       "streamarr.streaming.encoder_backend_mismatches";
+  private static final String UNKNOWN_JOB_ATTEMPT_REPORTS_METRIC =
+      "streamarr.streaming.unknown_job_attempt_reports";
   private static final WorkerVerifiedVideoEncoder LIBX264 =
       softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264");
 
@@ -434,6 +436,66 @@ class WorkerSessionGrpcServiceTest {
     assertThat(registry.hasConnectedWorker(sourceNamespaceId)).isTrue();
     assertThat(registry.isRunning(streamSessionId, job.getVariant().getVariantLabel())).isTrue();
     assertThat(registry.availableSlots(sourceNamespaceId)).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should count no unknown job attempt report when a worker reports the end of a job attempt"
+          + " that the server stopped")
+  void shouldCountNoUnknownJobAttemptReportWhenWorkerReportsEndOfJobAttemptThatServerStopped()
+      throws Exception {
+    var meterRegistry = new SimpleMeterRegistry();
+    var started = startedEncode(meterRegistry);
+    var job = started.job();
+    assertThat(
+            started
+                .registry()
+                .stopVariant(
+                    fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel()))
+        .isTrue();
+
+    started
+        .session()
+        .onNext(
+            EstablishWorkerSessionRequest.newBuilder()
+                .setJobAttemptStopped(
+                    JobAttemptStopped.newBuilder().setJobAttemptId(job.getJobAttemptId()))
+                .build());
+
+    assertThat(meterRegistry.get(UNKNOWN_JOB_ATTEMPT_REPORTS_METRIC).counter().count()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should count an unknown job attempt report when a worker reports the end of a job attempt"
+          + " that the server neither runs nor stopped")
+  void
+      shouldCountUnknownJobAttemptReportWhenWorkerReportsEndOfJobAttemptServerNeitherRunsNorStopped()
+          throws Exception {
+    var meterRegistry = new SimpleMeterRegistry();
+    var started = startedEncode(meterRegistry);
+    var job = started.job();
+    started
+        .registry()
+        .stopVariant(fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel());
+    var stopReport =
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptStopped(
+                JobAttemptStopped.newBuilder().setJobAttemptId(job.getJobAttemptId()))
+            .build();
+    started.session().onNext(stopReport);
+
+    started.session().onNext(stopReport);
+    started
+        .session()
+        .onNext(
+            EstablishWorkerSessionRequest.newBuilder()
+                .setJobAttemptCompleted(
+                    JobAttemptCompleted.newBuilder().setJobAttemptId(toProto(UUID.randomUUID())))
+                .build());
+
+    assertThat(meterRegistry.get(UNKNOWN_JOB_ATTEMPT_REPORTS_METRIC).counter().count())
+        .isEqualTo(2);
   }
 
   @Test
