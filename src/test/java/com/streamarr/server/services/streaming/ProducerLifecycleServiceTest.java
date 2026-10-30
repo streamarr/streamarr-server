@@ -423,6 +423,7 @@ class ProducerLifecycleServiceTest {
 
     assertThat(session.getVariantHandles()).containsOnlyKeys("1080p");
     assertThat(others)
+        .hasSize(2)
         .allSatisfy(other -> assertThat(other.getVariantHandles()).containsOnlyKeys("480p"));
   }
 
@@ -574,13 +575,13 @@ class ProducerLifecycleServiceTest {
     var session = switchingLadderSession(guardedLifecycle);
     var sessionId = session.getSessionId();
     var held = sessionMutex.getMutex(sessionId);
+    var requestingId = UUID.randomUUID();
+    var decision = session.getTranscodeDecision();
 
     held.lock();
     try {
       assertThatThrownBy(
-              () ->
-                  guardedLifecycle.stopLeftVariantOfAnotherStreamSession(
-                      UUID.randomUUID(), session.getTranscodeDecision()))
+              () -> guardedLifecycle.stopLeftVariantOfAnotherStreamSession(requestingId, decision))
           .isInstanceOf(IllegalStateException.class);
     } finally {
       held.unlock();

@@ -2188,8 +2188,7 @@ class SegmentDeliveryCoordinatorTest {
       "Should answer a request without waiting when the only other stream session that keeps a left variant is busy")
   void shouldAnswerARequestWithoutWaitingWhenTheOnlyOtherStreamSessionThatKeepsALeftVariantIsBusy()
       throws Exception {
-    var sessionMutex = new MutexFactory<UUID>();
-    rebuildRig(3, sessionMutex);
+    rebuildRig(3, new MutexFactory<>());
     var requesting = suspendedLadderSession();
     var busy = switchingLadderSession();
     startedLadderSession();
@@ -2215,8 +2214,7 @@ class SegmentDeliveryCoordinatorTest {
   void
       shouldStopTheLeftVariantOfAStreamSessionThatIsNotBusyWhenAnotherStreamSessionThatKeepsALeftVariantIsBusy()
           throws Exception {
-    var sessionMutex = new MutexFactory<UUID>();
-    rebuildRig(4, sessionMutex);
+    rebuildRig(4, new MutexFactory<>());
     var requesting = suspendedLadderSession();
     var requestingId = requesting.getSessionId();
     var busy = switchingLadderSession();
