@@ -76,10 +76,7 @@ public record TranscodeRequest(
       return Optional.empty();
     }
 
-    return decision
-        .videoSource()
-        .map(VideoPlaybackFacts::frameRateRule)
-        .flatMap(FrameRateRule::outputFrameRate);
+    return decision.outputFrameRate();
   }
 
   // Lombok skips its own builder() because this one exists.
