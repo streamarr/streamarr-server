@@ -259,14 +259,36 @@ class QualityLadderServiceTest {
     "LOW_360P, 800000",
     "HIGH_720P, 3000000",
     "FULL_HD_1080P, 5000000",
-    "UHD_4K, 20000000"
+    "UHD_4K, 5000000"
   })
   @DisplayName(
-      "Should encode a fixed quality at its tier's nominal bitrate when the probe names no source"
-          + " bitrate")
-  void shouldEncodeAFixedQualityAtItsTiersNominalBitrateWhenTheProbeNamesNoSourceBitrate(
-      VideoQuality quality, long expectedBitrate) {
+      "Should encode a fixed quality at the nominal bitrate of the tier that holds the encoded"
+          + " picture when the probe names no source bitrate")
+  void
+      shouldEncodeAFixedQualityAtTheNominalBitrateOfTheTierThatHoldsTheEncodedPictureWhenTheProbeNamesNoSourceBitrate(
+          VideoQuality quality, long expectedBitrate) {
     var probe = buildProbe(1920, 1080, 0L);
+    var options = StreamingOptions.builder().quality(quality).build();
+
+    var variants = generateVariants(probe, options);
+
+    assertThat(variants).extracting(QualityVariant::videoBitrate).containsExactly(expectedBitrate);
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "1920, 1080, UHD_4K, 5000000",
+    "1080, 1920, UHD_4K, 5000000",
+    "1280, 536, FULL_HD_1080P, 3000000",
+    "3840, 2160, UHD_4K, 20000000"
+  })
+  @DisplayName(
+      "Should encode a fixed quality at the nominal bitrate of the smallest tier whose box holds"
+          + " the encoded picture in either orientation when the source names a higher bitrate")
+  void
+      shouldEncodeAFixedQualityAtTheNominalBitrateOfTheSmallestTierWhoseBoxHoldsTheEncodedPictureInEitherOrientationWhenTheSourceNamesAHigherBitrate(
+          int width, int height, VideoQuality quality, long expectedBitrate) {
+    var probe = buildProbe(width, height, 40_000_000L);
     var options = StreamingOptions.builder().quality(quality).build();
 
     var variants = generateVariants(probe, options);

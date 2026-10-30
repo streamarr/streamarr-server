@@ -522,22 +522,31 @@ class HlsStreamingServiceTest {
     assertThat(playlist).contains(",AVERAGE-BANDWIDTH=" + (expectedBitrate + audioBitrate) + ",");
   }
 
+  // The 2160p tier's H.264 nominal bitrate is 20 Mb/s, and the 1080p tier's is 5 Mb/s.
   @ParameterizedTest
   @CsvSource({
-    "LOW_360P, 8000000, 800000",
-    "HIGH_720P, 8000000, 3000000",
-    "FULL_HD_1080P, 2000000, 2000000",
-    "UHD_4K, 8000000, 8000000",
-    "UHD_4K, 0, 20000000"
+    "LOW_360P, 1920, 1080, 8000000, 800000",
+    "HIGH_720P, 1920, 1080, 8000000, 3000000",
+    "FULL_HD_1080P, 1920, 1080, 2000000, 2000000",
+    "UHD_4K, 1920, 1080, 8000000, 5000000",
+    "UHD_4K, 1920, 1080, 0, 5000000",
+    "UHD_4K, 3840, 2160, 40000000, 20000000",
+    "UHD_4K, 3840, 2160, 8000000, 8000000"
   })
   @DisplayName(
-      "Should encode a fixed quality at its tier's nominal bitrate, capped by the source's known"
-          + " bitrate, when the viewer sets no maximum bitrate")
+      "Should encode a fixed quality at the nominal bitrate of the tier that holds the encoded"
+          + " picture, capped by the source's known bitrate, when the viewer sets no maximum"
+          + " bitrate")
   void
-      shouldEncodeAFixedQualityAtItsTiersNominalBitrateCappedByTheSourcesKnownBitrateWhenTheViewerSetsNoMaximumBitrate(
-          VideoQuality quality, long sourceBitrate, long expectedBitrate) {
+      shouldEncodeAFixedQualityAtTheNominalBitrateOfTheTierThatHoldsTheEncodedPictureCappedByTheSourcesKnownBitrateWhenTheViewerSetsNoMaximumBitrate(
+          VideoQuality quality, int width, int height, long sourceBitrate, long expectedBitrate) {
     probeResults.setDefaultProbe(
-        defaultProbeBuilder().videoCodec("hevc").bitrate(sourceBitrate).build());
+        defaultProbeBuilder()
+            .videoCodec("hevc")
+            .width(width)
+            .height(height)
+            .bitrate(sourceBitrate)
+            .build());
     var options = StreamingOptions.builder().quality(quality).build();
 
     var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
