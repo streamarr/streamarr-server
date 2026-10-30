@@ -70,13 +70,13 @@ final class LoopbackWorker implements AutoCloseable {
     return register(channel, registration(workerId, DEFAULT_AVAILABLE_SLOTS, encoders));
   }
 
-  private static LoopbackWorker register(
-      ManagedChannel channel, WorkerRegistration registration) {
+  private static LoopbackWorker register(ManagedChannel channel, WorkerRegistration registration) {
     var responses = new LinkedBlockingQueue<EstablishWorkerSessionResponse>();
     var requests =
         TranscodeWorkerServiceGrpc.newStub(channel)
             .establishWorkerSession(new QueueingObserver(responses));
-    requests.onNext(EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build());
+    requests.onNext(
+        EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build());
     return new LoopbackWorker(requests, responses);
   }
 
