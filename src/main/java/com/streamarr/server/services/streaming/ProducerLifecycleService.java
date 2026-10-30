@@ -707,13 +707,17 @@ public class ProducerLifecycleService {
     return true;
   }
 
-  // The variant that the player plays must not keep the requested variant from starting: when the
-  // start fails beside it, that variant stops and the start is tried once more (ADR 0019). Answers
-  // why the variant did not start.
+  // The variant that the player plays must not keep the requested variant from starting: when no
+  // slot was free and the start fails beside it, that variant stops and the start is tried once
+  // more (ADR 0019). A start that fails for another reason leaves it running. Answers why the
+  // variant did not start.
   private Optional<String> startOnDemand(
       StreamSession session, SegmentRequest request, int startSequenceNumber) {
+    var slotShortage = hasSlotShortage(session);
     var refusal = attemptOnDemandStart(session, request.variantLabel(), startSequenceNumber);
-    if (refusal.isEmpty() || SegmentNames.indexOf(request.segmentName()).isEmpty()) {
+    if (refusal.isEmpty()
+        || !slotShortage
+        || SegmentNames.indexOf(request.segmentName()).isEmpty()) {
       return refusal;
     }
 
@@ -755,6 +759,12 @@ public class ProducerLifecycleService {
 
     return SegmentNames.indexOf(segmentName).isEmpty()
         || !segmentStore.segmentExists(session.getSessionId(), segmentName);
+  }
+
+  // No configured transcode slot or no worker job slot is free for the stream session's decision.
+  private boolean hasSlotShortage(StreamSession session) {
+    return !hasConfiguredTranscodeSlotFor(session)
+        || transcodeExecutor.availableSlots(session.getTranscodeDecision()) <= 0;
   }
 
   private boolean hasConfiguredTranscodeSlotFor(StreamSession session) {

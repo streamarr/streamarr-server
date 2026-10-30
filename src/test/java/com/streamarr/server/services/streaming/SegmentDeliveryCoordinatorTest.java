@@ -1625,6 +1625,22 @@ class SegmentDeliveryCoordinatorTest {
 
   @Test
   @DisplayName(
+      "Should keep the variant that the player leaves running when the switched variant fails to start for a reason other than a full slot")
+  void
+      shouldKeepTheVariantThatThePlayerLeavesRunningWhenTheSwitchedVariantFailsToStartForAReasonOtherThanAFullSlot() {
+    var session = ladderSessionPlayingFirstListedVariant(3);
+    var sessionId = session.getSessionId();
+    transcodeExecutor.failUntargetedStarts();
+
+    var switched = coordinator.deliver(sessionId, "1080p", "1080p/segment3.m4s");
+
+    assertThat(switched).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(session.getVariantHandles()).containsOnlyKeys("480p");
+    assertThat(runningVariants(session)).containsExactly("480p");
+  }
+
+  @Test
+  @DisplayName(
       "Should drop the suspended variant that the player left when a suspended stream session resumes the switched variant")
   void
       shouldDropTheSuspendedVariantThatThePlayerLeftWhenASuspendedStreamSessionResumesTheSwitchedVariant()
