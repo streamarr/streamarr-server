@@ -64,11 +64,20 @@ public class QualityLadderService {
     }
 
     if (variants.isEmpty()) {
-      var output = fit(request, viewerBounds, request.probe().bitrate());
+      var bitrate = withinMaxBitrate(request.probe().bitrate(), maxBitrate);
+      var output = fit(request, viewerBounds, bitrate);
       return List.of(sourceSizedVariant(output, output.height() + "p"));
     }
 
     return List.copyOf(variants.values());
+  }
+
+  private static long withinMaxBitrate(long bitrate, Integer maxBitrate) {
+    if (maxBitrate == null) {
+      return bitrate;
+    }
+
+    return Math.min(bitrate, maxBitrate);
   }
 
   // The decision encodes only a codec family that one entry fits at the source's size, so one

@@ -415,6 +415,30 @@ class HlsStreamingServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should encode Auto's only variant within the viewer's maximum bitrate when the viewer's"
+          + " maximum width and bitrate leave no tier")
+  void shouldEncodeAutosOnlyVariantWithinTheViewersMaximumBitrateWhenTheViewersLimitsLeaveNoTier() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").bitrate(8_000_000L).build());
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.AUTO)
+            .maxWidth(500)
+            .maxBitrate(1_000_000)
+            .build();
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::width, QualityVariant::videoBitrate)
+        .containsExactly(tuple(498, 1_000_000L));
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(request -> assertThat(request.bitrate()).isEqualTo(1_000_000L));
+  }
+
+  @Test
   @DisplayName("Should encode a narrow picture when its planned output has positive dimensions")
   void shouldEncodeANarrowPictureWhenItsPlannedOutputHasPositiveDimensions() {
     probeResults.setDefaultProbe(
