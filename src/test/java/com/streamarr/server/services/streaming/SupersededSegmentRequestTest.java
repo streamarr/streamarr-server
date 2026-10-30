@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultLadderSessionBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -113,6 +114,19 @@ class SupersededSegmentRequestTest {
   private void upload(UUID sessionId, int segmentIndex) {
     segmentStore.addSegment(sessionId, segmentName(segmentIndex), new byte[] {1});
     transcodeExecutor.heldSegmentRequests().wakeVariant(sessionId, VARIANT);
+  }
+
+  // Looks run one at a time under the session lock, so a second look after this call begins only
+  // once the look running now, such as a relocating request's, has ended.
+  private void awaitEndOfCurrentLook() {
+    transcodeExecutor.awaitLivenessCheckCount(transcodeExecutor.livenessChecks() + 2);
+  }
+
+  // Ends the variant's job attempt and returns once a held request has started its replacement.
+  private void endJobAttemptAndAwaitReplacement(UUID sessionId) {
+    var replacements = transcodeExecutor.getStartedTargets().size();
+    transcodeExecutor.markDead(sessionId, VARIANT);
+    transcodeExecutor.awaitStartedTargetCount(replacements + 1);
   }
 
   private static String segmentName(int segmentIndex) {
@@ -270,9 +284,9 @@ class SupersededSegmentRequestTest {
 
   @Test
   @DisplayName(
-      "Should answer an older held request as unrecoverable without a replacement attempt when the job attempt that a newer request started dies")
+      "Should answer an older held request with its segment from a replacement when the job attempt that a newer request started dies after producing the newer request's segment")
   void
-      shouldAnswerAnOlderHeldRequestAsUnrecoverableWithoutAReplacementAttemptWhenTheJobAttemptThatANewerRequestStartedDies()
+      shouldAnswerAnOlderHeldRequestWithItsSegmentFromAReplacementWhenTheJobAttemptThatANewerRequestStartedDiesAfterProducingTheNewerRequestsSegment()
           throws Exception {
     var session = startedLadderSession();
     var sessionId = session.getSessionId();
@@ -281,10 +295,69 @@ class SupersededSegmentRequestTest {
     upload(sessionId, 100);
     assertThat(answer(newer)).isInstanceOf(SegmentDelivery.Ready.class);
 
-    transcodeExecutor.markDead(sessionId, VARIANT);
+    endJobAttemptAndAwaitReplacement(sessionId);
 
-    assertThat(answer(older)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
-    assertThat(startSegments(sessionId)).containsExactly(0, 101, 100);
-    assertThat(transcodeExecutor.getStartedTargets()).isEmpty();
+    upload(sessionId, 101);
+    assertThat(answer(older)).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(startSegments(sessionId)).containsExactly(0, 101, 100, 101);
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer both held requests when the job attempt that the newer request started dies before producing either segment")
+  void
+      shouldAnswerBothHeldRequestsWhenTheJobAttemptThatTheNewerRequestStartedDiesBeforeProducingEitherSegment()
+          throws Exception {
+    for (var round = 0; round < RACE_ROUNDS; round++) {
+      var session = startedLadderSession();
+      var sessionId = session.getSessionId();
+      var older = relocatingDelivery(sessionId, 101);
+      var newer = relocatingDelivery(sessionId, 100);
+
+      // Either request may look first once the job attempt ends.
+      try (var _ = wakingContinuously(sessionId)) {
+        awaitEndOfCurrentLook();
+        endJobAttemptAndAwaitReplacement(sessionId);
+
+        upload(sessionId, 100);
+        upload(sessionId, 101);
+        assertThat(answer(newer)).isInstanceOf(SegmentDelivery.Ready.class);
+        assertThat(answer(older)).isInstanceOf(SegmentDelivery.Ready.class);
+      }
+
+      assertThat(startSegments(sessionId)).containsExactly(0, 101, 100, 100);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer both held requests when the job attempt producing their consecutive segments dies")
+  void shouldAnswerBothHeldRequestsWhenTheJobAttemptProducingTheirConsecutiveSegmentsDies()
+      throws Exception {
+    for (var round = 0; round < RACE_ROUNDS; round++) {
+      var session = startedLadderSession();
+      var sessionId = session.getSessionId();
+      for (var produced = 0; produced < 5; produced++) {
+        upload(sessionId, produced);
+      }
+
+      var older = heldDelivery(sessionId, 5);
+      var newer = heldDelivery(sessionId, 6);
+
+      // Either request may look first once the job attempt ends.
+      try (var _ = wakingContinuously(sessionId)) {
+        awaitEndOfCurrentLook();
+        endJobAttemptAndAwaitReplacement(sessionId);
+
+        // A replacement at segment 6 leaves segment 5 to a relocation by the older request.
+        await().atMost(Duration.ofSeconds(5)).until(() -> runningStartSegment(session) == 5);
+        upload(sessionId, 5);
+        upload(sessionId, 6);
+        assertThat(answer(older)).isInstanceOf(SegmentDelivery.Ready.class);
+        assertThat(answer(newer)).isInstanceOf(SegmentDelivery.Ready.class);
+      }
+
+      assertThat(startSegments(sessionId)).isIn(List.of(0, 5), List.of(0, 6, 5));
+    }
   }
 }

@@ -50,8 +50,9 @@ public class ProducerLifecycleService {
   private final ConcurrentHashMap<VariantKey, VariantDeliveryState> recoveryStates =
       new ConcurrentHashMap<>();
   private final AtomicLong requestArrivals = new AtomicLong();
-  // The arrival of the newest request that started each variant's job attempt (ADR 0019).
-  private final ConcurrentHashMap<VariantKey, Long> newestStartingArrivals =
+  // The newest request that positioned each variant: started it on demand, relocated it or resumed
+  // it (ADR 0019).
+  private final ConcurrentHashMap<VariantKey, SegmentRequest> newestPositioningRequests =
       new ConcurrentHashMap<>();
 
   public enum RecoveryResult {
@@ -62,8 +63,8 @@ public class ProducerLifecycleService {
     // A request for another video variant stopped the variant, or its on-demand start failed.
     // Only a new request for the variant starts it again (ADR 0019).
     VARIANT_NOT_RUNNING,
-    // A newer request for the variant started its job attempt, and the request's segment needs
-    // another job attempt. Only a request at least as new may start one (ADR 0019).
+    // A newer request positioned the variant, and the request's segment needs the variant
+    // relocated or resumed. Only a request at least as new may position it (ADR 0019).
     SUPERSEDED
   }
 
@@ -74,25 +75,23 @@ public class ProducerLifecycleService {
 
   /**
    * Observes progress and decides whether to wait, replace, or exhaust under the same session mutex
-   * as every producer mutation. Recovery bookkeeping is committed before releasing it. Once a newer
-   * request has started the variant's job attempt, this request starts no job attempt: it waits
-   * while that job attempt can produce its segment and ends as {@link RecoveryResult#SUPERSEDED}
-   * otherwise.
+   * as every producer mutation. Recovery state is committed before releasing it. Once a newer
+   * request has positioned the variant, this request never relocates or resumes it: it ends as
+   * {@link RecoveryResult#SUPERSEDED} when its segment needs either. Any request still replaces a
+   * dead or stalled job attempt.
    */
   public RecoveryResult recover(SegmentRequest request) {
-    return withSessionLock(
-        request.sessionId(), () -> claimingStartedJobAttempt(request, () -> doRecover(request)));
+    return withSessionLock(request.sessionId(), () -> doRecover(request));
   }
 
-  // A job attempt that a request's pass starts runs from that request's segment, so the request
-  // becomes the newest request that started the variant's job attempt.
-  private <T> T claimingStartedJobAttempt(SegmentRequest request, Supplier<T> pass) {
+  // A job attempt that a request starts on demand, relocates or resumes runs from that request's
+  // segment, so the request becomes the newest request that positioned the variant.
+  private <T> T claimingPositioning(SegmentRequest request, Supplier<T> positioning) {
     var attemptBefore = jobAttemptIdOf(request);
-    var result = pass.get();
+    var result = positioning.get();
     var attemptAfter = jobAttemptIdOf(request);
     if (attemptAfter.isPresent() && !attemptAfter.equals(attemptBefore)) {
-      newestStartingArrivals.put(
-          new VariantKey(request.sessionId(), request.variantLabel()), request.arrival());
+      newestPositioningRequests.put(variantKeyOf(request), request);
     }
 
     return result;
@@ -105,12 +104,20 @@ public class ProducerLifecycleService {
         .map(TranscodeHandle::attemptId);
   }
 
-  // Once a newer request has started the variant's job attempt, an older request that would start
-  // another one would move the variant away from the newer request's segment.
+  // Once a newer request has positioned the variant, an older request that relocated or resumed it
+  // would move the variant away from the newer request's segment.
   private boolean isSuperseded(SegmentRequest request) {
-    var newestStartingArrival =
-        newestStartingArrivals.get(new VariantKey(request.sessionId(), request.variantLabel()));
-    return newestStartingArrival != null && newestStartingArrival > request.arrival();
+    return newestPositioningRequest(request)
+        .filter(newest -> newest.arrival() > request.arrival())
+        .isPresent();
+  }
+
+  private Optional<SegmentRequest> newestPositioningRequest(SegmentRequest request) {
+    return Optional.ofNullable(newestPositioningRequests.get(variantKeyOf(request)));
+  }
+
+  private static VariantKey variantKeyOf(SegmentRequest request) {
+    return new VariantKey(request.sessionId(), request.variantLabel());
   }
 
   /**
@@ -144,7 +151,7 @@ public class ProducerLifecycleService {
         sessionId,
         () -> {
           recoveryStates.keySet().removeIf(key -> key.sessionId().equals(sessionId));
-          newestStartingArrivals.keySet().removeIf(key -> key.sessionId().equals(sessionId));
+          newestPositioningRequests.keySet().removeIf(key -> key.sessionId().equals(sessionId));
         });
   }
 
@@ -186,7 +193,8 @@ public class ProducerLifecycleService {
       return superseded(request);
     }
 
-    var positioned = tryEnsurePositioned(session, variantLabel, segmentName);
+    var positioned =
+        claimingPositioning(request, () -> tryEnsurePositioned(session, variantLabel, segmentName));
     var handle = session.getVariantHandle(variantLabel).orElseThrow();
     var state =
         recoveryStates.computeIfAbsent(
@@ -211,7 +219,7 @@ public class ProducerLifecycleService {
 
   private static RecoveryResult superseded(SegmentRequest request) {
     log.info(
-        "Ended the request for {} of session {}: a newer request started variant {}",
+        "Ended the request for {} of session {}: a newer request positioned variant {}",
         request.segmentName(),
         request.sessionId(),
         request.variantLabel());
@@ -265,10 +273,6 @@ public class ProducerLifecycleService {
         return RecoveryResult.WAITING;
       }
 
-      if (isSuperseded(request)) {
-        return superseded(request);
-      }
-
       var target = state.nextTarget(eligibleTargets);
       if (target.isEmpty()) {
         return exhaust(state, pending, handle.attemptId());
@@ -279,7 +283,7 @@ public class ProducerLifecycleService {
               .sessionId(request.sessionId())
               .variantLabel(request.variantLabel())
               .segmentName(request.segmentName())
-              .segmentIndex(pending.requestedIndex())
+              .segmentIndex(replacementStart(pending))
               .expectedAttemptId(handle.attemptId())
               .reason(reason)
               .target(target.get())
@@ -289,6 +293,25 @@ public class ProducerLifecycleService {
         return outcome.get();
       }
     }
+  }
+
+  // A replacement starts at the request's segment, but never past the segment of the newest request
+  // that positioned the variant while that segment is not stored, so a replacement that an older
+  // request starts never moves the variant away from the newer request (ADR 0019).
+  private int replacementStart(PendingSegment pending) {
+    var requestedIndex = pending.requestedIndex();
+    var newest = newestPositioningRequest(pending.request());
+    if (newest.isEmpty()
+        || segmentStore.segmentExists(newest.get().sessionId(), newest.get().segmentName())) {
+      return requestedIndex;
+    }
+
+    var newestIndex = SegmentNames.indexOf(newest.get().segmentName());
+    if (newestIndex.isEmpty()) {
+      return requestedIndex;
+    }
+
+    return Math.min(requestedIndex, newestIndex.getAsInt());
   }
 
   // Every later job attempt of a pinned variant runs only where its encoder backend runs.
@@ -468,7 +491,7 @@ public class ProducerLifecycleService {
             doStopOtherVideoVariants(sessionId, variantLabel);
           }
 
-          return claimingStartedJobAttempt(
+          return claimingPositioning(
               request,
               () -> {
                 doStartVariantOnDemand(sessionId, variantLabel, segmentName);

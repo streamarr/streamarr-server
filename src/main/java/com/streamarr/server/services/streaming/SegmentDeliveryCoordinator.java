@@ -21,8 +21,8 @@ public class SegmentDeliveryCoordinator {
    * 0019 once: a media-segment request stops the other video variants, and a request for a variant
    * without a job attempt starts that variant. Later passes never start the variant again, so a
    * held request whose variant another request stopped ends instead of restarting it. A held
-   * request also ends instead of moving its variant once a newer request has started the variant's
-   * job attempt.
+   * request also ends instead of relocating or resuming its variant once a newer request has
+   * positioned the variant.
    */
   public SegmentDelivery deliver(UUID sessionId, String variantLabel, String segmentName) {
     var refusal = refusal(sessionId, segmentName);

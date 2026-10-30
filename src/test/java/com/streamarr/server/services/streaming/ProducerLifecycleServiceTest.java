@@ -779,9 +779,9 @@ class ProducerLifecycleServiceTest {
 
   @Test
   @DisplayName(
-      "Should start no replacement attempt for an older request when the job attempt that a newer request started dies")
+      "Should replace the job attempt at the newer request's segment when an older request recovers first after the job attempt that the newer request started dies")
   void
-      shouldStartNoReplacementAttemptForAnOlderRequestWhenTheJobAttemptThatANewerRequestStartedDies() {
+      shouldReplaceTheJobAttemptAtTheNewerRequestsSegmentWhenAnOlderRequestRecoversFirstAfterTheJobAttemptThatTheNewerRequestStartedDies() {
     var session = startedSession();
     var sessionId = session.getSessionId();
     var older =
@@ -797,11 +797,41 @@ class ProducerLifecycleServiceTest {
     var olderResult = lifecycle.recover(older);
     var newerResult = lifecycle.recover(newer);
 
-    assertThat(olderResult).isEqualTo(ProducerLifecycleService.RecoveryResult.SUPERSEDED);
+    assertThat(olderResult).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
     assertThat(newerResult).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
     assertThat(transcodeExecutor.getStartedRequests())
         .extracting(TranscodeRequest::startSequenceNumber)
         .containsExactly(0, 101, 100, 100);
+  }
+
+  @Test
+  @DisplayName(
+      "Should relocate the variant to an older held request's segment when the newer of two held requests replaced their stalled job attempt at its own segment")
+  void
+      shouldRelocateTheVariantToAnOlderHeldRequestsSegmentWhenTheNewerOfTwoHeldRequestsReplacedTheirStalledJobAttemptAtItsOwnSegment() {
+    var session = startedSession();
+    var sessionId = session.getSessionId();
+    for (var produced = 0; produced < 5; produced++) {
+      segmentStore.addSegment(sessionId, "segment" + produced + ".m4s", new byte[] {1});
+    }
+    var older =
+        lifecycle.prepareRequestedVariant(
+            sessionId, StreamSession.defaultVariant(), "segment5.m4s");
+    var newer =
+        lifecycle.prepareRequestedVariant(
+            sessionId, StreamSession.defaultVariant(), "segment6.m4s");
+    lifecycle.recover(older);
+    lifecycle.recover(newer);
+    clock.advance(Duration.ofSeconds(11));
+
+    var newerResult = lifecycle.recover(newer);
+    var olderResult = lifecycle.recover(older);
+
+    assertThat(newerResult).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
+    assertThat(olderResult).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::startSequenceNumber)
+        .containsExactly(0, 6, 5);
   }
 
   @Test
