@@ -50,10 +50,13 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final Map<ExecutionTargetId, Map<String, WorkerVerifiedEncoder>> encodersByTarget =
       new ConcurrentHashMap<>();
   private final AtomicLong livenessChecks = new AtomicLong();
+  private final Map<ProcessKey, AtomicLong> livenessChecksByVariant = new ConcurrentHashMap<>();
+  private final Set<UUID> failingOnStopVariant = ConcurrentHashMap.newKeySet();
   private final HeldSegmentRequests heldRequests =
       new HeldSegmentRequests(new SimpleMeterRegistry());
   private final Object observationMonitor = new Object();
   private int availableSlots = TranscodeExecutor.UNBOUNDED_SLOTS;
+  private volatile int jobSlots = TranscodeExecutor.UNBOUNDED_SLOTS;
   private final Map<String, Integer> encodeSlotsByVideoCodecFamily =
       new ConcurrentHashMap<>(unboundedEncodeSlots(Set.of("h264", "hevc", "av1")));
   private boolean healthy = true;
@@ -121,7 +124,10 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     }
 
     var key = new ProcessKey(request.sessionId(), request.variantLabel());
-    running.add(key);
+    if (!tryTakeJobSlot(key)) {
+      throw new TranscodeException("No connected transcode worker has a free job slot");
+    }
+
     started.add(key);
     startedRequests.add(request);
     var handle =
@@ -159,6 +165,10 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public void stopVariant(UUID sessionId, String variantLabel) {
+    if (failingOnStopVariant.contains(sessionId)) {
+      throw new IllegalStateException("Simulated variant stop failure for session: " + sessionId);
+    }
+
     end(new ProcessKey(sessionId, variantLabel));
     stoppedVariants.add(sessionId + "/" + variantLabel);
   }
@@ -189,10 +199,17 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     failingOnStop.add(sessionId);
   }
 
+  /** Every later stop of one of the session's variants throws, as a server that shuts down does. */
+  public void failOnStopVariant(UUID sessionId) {
+    failingOnStopVariant.add(sessionId);
+  }
+
   @Override
   public boolean isRunning(UUID sessionId, String variantLabel) {
+    var key = new ProcessKey(sessionId, variantLabel);
     livenessChecks.incrementAndGet();
-    var result = running.contains(new ProcessKey(sessionId, variantLabel));
+    livenessChecksByVariant.computeIfAbsent(key, _ -> new AtomicLong()).incrementAndGet();
+    var result = running.contains(key);
     signalObservation();
     return result;
   }
@@ -208,6 +225,26 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   public void awaitLivenessCheckCount(long count) {
     awaitObservation(() -> livenessChecks.get() >= count, "liveness check count " + count);
+  }
+
+  /**
+   * The liveness checks of one variant observed so far. A request checks the liveness of other
+   * variants while it applies the on-demand rules, so only a check of its own variant shows that it
+   * has looked for its segment.
+   */
+  public long livenessChecks(UUID sessionId, String variantLabel) {
+    var checks = livenessChecksByVariant.get(new ProcessKey(sessionId, variantLabel));
+    if (checks == null) {
+      return 0;
+    }
+
+    return checks.get();
+  }
+
+  public void awaitLivenessCheckCount(UUID sessionId, String variantLabel, long count) {
+    awaitObservation(
+        () -> livenessChecks(sessionId, variantLabel) >= count,
+        "liveness check count " + count + " of variant " + variantLabel);
   }
 
   public void awaitStartedRequestCount(int count) {
@@ -267,21 +304,46 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public int availableSlots() {
-    return availableSlots;
+    return Math.min(availableSlots, freeJobSlots());
   }
 
   @Override
   public int availableSlots(TranscodeDecision decision) {
     if (!encodesVideo(decision)) {
-      return availableSlots;
+      return availableSlots();
     }
 
     var encodeSlots = encodeSlotsByVideoCodecFamily.getOrDefault(decision.videoCodecFamily(), 0);
-    return Math.min(availableSlots, encodeSlots);
+    return Math.min(availableSlots(), encodeSlots);
   }
 
   public void setAvailableSlots(int availableSlots) {
     this.availableSlots = availableSlots;
+  }
+
+  /**
+   * The workers have this many job slots in all. Each running job attempt takes one, and a start
+   * finds no worker when every slot is taken. Ending a job attempt frees its slot.
+   */
+  public void limitJobSlots(int jobSlots) {
+    this.jobSlots = jobSlots;
+  }
+
+  private synchronized int freeJobSlots() {
+    if (jobSlots == UNBOUNDED_SLOTS) {
+      return UNBOUNDED_SLOTS;
+    }
+
+    return Math.max(0, jobSlots - running.size());
+  }
+
+  private synchronized boolean tryTakeJobSlot(ProcessKey key) {
+    if (freeJobSlots() <= 0) {
+      return false;
+    }
+
+    running.add(key);
+    return true;
   }
 
   @Override

@@ -177,9 +177,9 @@ class SegmentDeliveryCoordinatorTest {
 
   private CompletableFuture<SegmentDelivery> heldDelivery(
       UUID sessionId, String variantLabel, String segmentName) {
-    var looks = transcodeExecutor.livenessChecks();
+    var looks = transcodeExecutor.livenessChecks(sessionId, variantLabel);
     var delivery = deliverAsync(sessionId, variantLabel, segmentName);
-    transcodeExecutor.awaitLivenessCheckCount(looks + 1);
+    transcodeExecutor.awaitLivenessCheckCount(sessionId, variantLabel, looks + 1);
     return delivery;
   }
 
