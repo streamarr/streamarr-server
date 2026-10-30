@@ -45,12 +45,9 @@ public class QualityLadderService {
     var variants = new ArrayList<LabelledVariant>();
     for (var tier : QualityTier.offeredFor(source)) {
       var tierBitrate = tier.videoBitrate(request.codecProfile());
-      if (maxBitrate.isPresent() && tierBitrate + request.audioBitrate() > maxBitrate.getAsLong()) {
-        continue;
-      }
-
       var box = tier.box().orientedLike(source);
-      if (!fitsViewerBounds(source, box, viewerBounds)) {
+      if (exceeds(maxBitrate, tierBitrate + request.audioBitrate())
+          || !fitsViewerBounds(source, box, viewerBounds)) {
         continue;
       }
 
@@ -97,6 +94,10 @@ public class QualityLadderService {
                 labelled.reachesItsTier() || !tierLabels.contains(labelled.variant().label()))
         .map(LabelledVariant::variant)
         .toList();
+  }
+
+  private static boolean exceeds(OptionalLong maxBitrate, long bitrate) {
+    return maxBitrate.isPresent() && bitrate > maxBitrate.getAsLong();
   }
 
   // The viewer's limits bound the tier's picture before any entry shrinks it.
