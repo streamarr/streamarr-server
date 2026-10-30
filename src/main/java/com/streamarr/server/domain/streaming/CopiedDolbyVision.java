@@ -27,16 +27,19 @@ sealed interface CopiedDolbyVision {
   record Undeclarable() implements CopiedDolbyVision {}
 
   static CopiedDolbyVision of(ProbedCodecFamily codecFamily, VideoDynamicRange range) {
-    if (!(range.dolbyVision() instanceof DolbyVision.Present present)) {
-      return new None();
-    }
+    return switch (range.dolbyVision()) {
+      case DolbyVision.Unspecified _, DolbyVision.Absent _ -> new None();
+      case DolbyVision.Present present -> ofPresent(codecFamily, range.compatibleBase(), present);
+    };
+  }
 
-    var profileNumber = profileNumber(codecFamily, present);
+  private static CopiedDolbyVision ofPresent(
+      ProbedCodecFamily codecFamily, CompatibleBase base, DolbyVision.Present present) {
+    var profileNumber = profileNumberFromRecordOrRpuHeader(codecFamily, present);
     if (profileNumber.isEmpty()) {
       return new Undeclarable();
     }
 
-    var base = range.compatibleBase();
     if (base == CompatibleBase.SDR && isSdrBaseProfile(codecFamily, profileNumber.getAsInt())) {
       return new KeptUnderSdrBase();
     }
@@ -50,26 +53,26 @@ sealed interface CopiedDolbyVision {
     return new Declarable(profile.get(), level.getAsInt());
   }
 
-  private static OptionalInt profileNumber(
+  private static OptionalInt profileNumberFromRecordOrRpuHeader(
       ProbedCodecFamily codecFamily, DolbyVision.Present present) {
-    var recorded =
+    var declaredProfile =
         present.declared().map(DolbyVisionConfiguration::profile).orElse(OptionalInt.empty());
-    if (recorded.isPresent()) {
-      return recorded;
+    if (declaredProfile.isPresent()) {
+      return declaredProfile;
     }
 
     return present
         .firstRpuHeader()
-        .map(header -> profileNumber(codecFamily, header))
+        .map(header -> profileNumberFromRpuHeader(codecFamily, header))
         .orElse(OptionalInt.empty());
   }
 
   // Without a record, the worker contract names the profile from the first RPU header as FFmpeg 8.1
   // guesses it.
-  private static OptionalInt profileNumber(
+  private static OptionalInt profileNumberFromRpuHeader(
       ProbedCodecFamily codecFamily, DolbyVisionRpuHeader header) {
     return switch (codecFamily) {
-      case HEVC -> hevcProfileNumber(header);
+      case HEVC -> hevcProfileNumberFromRpuHeader(header);
       case AV1 -> OptionalInt.of(10);
       case H264 -> OptionalInt.of(9);
       case OTHER -> OptionalInt.empty();
@@ -77,7 +80,7 @@ sealed interface CopiedDolbyVision {
   }
 
   // An enhancement layer means profile 7 or 4, which no entry can name.
-  private static OptionalInt hevcProfileNumber(DolbyVisionRpuHeader header) {
+  private static OptionalInt hevcProfileNumberFromRpuHeader(DolbyVisionRpuHeader header) {
     if (header.vdrRpuProfile() == 0 && header.baseLayerFullRange()) {
       return OptionalInt.of(5);
     }
@@ -105,15 +108,7 @@ sealed interface CopiedDolbyVision {
     return Arrays.stream(DolbyVisionProfile.values())
         .filter(profile -> profile.codecFamily() == codecFamily)
         .filter(profile -> profile.compatibleBase() == base)
-        .filter(profile -> profileNumber(profile) == profileNumber)
+        .filter(profile -> profile.profileNumber() == profileNumber)
         .findFirst();
-  }
-
-  private static int profileNumber(DolbyVisionProfile profile) {
-    return switch (profile) {
-      case PROFILE_5 -> 5;
-      case PROFILE_8_1, PROFILE_8_4 -> 8;
-      case PROFILE_10_0, PROFILE_10_1, PROFILE_10_4 -> 10;
-    };
   }
 }
