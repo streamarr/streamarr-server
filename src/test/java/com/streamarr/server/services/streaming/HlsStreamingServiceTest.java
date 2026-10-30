@@ -522,6 +522,32 @@ class HlsStreamingServiceTest {
     assertThat(playlist).contains(",AVERAGE-BANDWIDTH=" + (expectedBitrate + audioBitrate) + ",");
   }
 
+  @ParameterizedTest
+  @CsvSource({
+    "LOW_360P, 8000000, 800000",
+    "HIGH_720P, 8000000, 3000000",
+    "FULL_HD_1080P, 2000000, 2000000",
+    "UHD_4K, 8000000, 8000000",
+    "UHD_4K, 0, 20000000"
+  })
+  @DisplayName(
+      "Should encode a fixed quality at its tier's nominal bitrate, capped by the source's known"
+          + " bitrate, when the viewer sets no maximum bitrate")
+  void
+      shouldEncodeAFixedQualityAtItsTiersNominalBitrateCappedByTheSourcesKnownBitrateWhenTheViewerSetsNoMaximumBitrate(
+          VideoQuality quality, long sourceBitrate, long expectedBitrate) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").bitrate(sourceBitrate).build());
+    var options = StreamingOptions.builder().quality(quality).build();
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo("h264");
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(request -> assertThat(request.bitrate()).isEqualTo(expectedBitrate));
+  }
+
   // ADR 0050: a variant costs its video bitrate plus the stream session's audio bitrate, here a
   // 128 kb/s stereo AAC encode.
   @ParameterizedTest

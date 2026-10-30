@@ -169,18 +169,18 @@ class QualityLadderServiceTest {
 
   @ParameterizedTest
   @CsvSource({
-    "LOW_360P, 640, 360",
-    "MEDIUM_480P, 854, 480",
-    "HIGH_720P, 1280, 720",
-    "FULL_HD_1080P, 1920, 1080",
-    "UHD_4K, 3840, 2160",
-    "ORIGINAL, 3840, 2160"
+    "LOW_360P, 640, 360, 800000",
+    "MEDIUM_480P, 854, 480, 1500000",
+    "HIGH_720P, 1280, 720, 3000000",
+    "FULL_HD_1080P, 1920, 1080, 5000000",
+    "UHD_4K, 3840, 2160, 8000000",
+    "ORIGINAL, 3840, 2160, 8000000"
   })
   @DisplayName(
       "Should offer only a default variant within the fixed quality's box when the quality is"
           + " fixed")
   void shouldOfferOnlyADefaultVariantWithinTheFixedQualitysBoxWhenTheQualityIsFixed(
-      VideoQuality quality, int expectedWidth, int expectedHeight) {
+      VideoQuality quality, int expectedWidth, int expectedHeight, long expectedBitrate) {
     var probe = buildProbe(3840, 2160, 8_000_000L);
     var options = StreamingOptions.builder().quality(quality).build();
 
@@ -193,7 +193,7 @@ class QualityLadderServiceTest {
             QualityVariant::videoBitrate,
             QualityVariant::label)
         .containsExactly(
-            tuple(expectedWidth, expectedHeight, 8_000_000L, StreamSession.defaultVariant()));
+            tuple(expectedWidth, expectedHeight, expectedBitrate, StreamSession.defaultVariant()));
   }
 
   @ParameterizedTest
@@ -247,7 +247,27 @@ class QualityLadderServiceTest {
       shouldEncodeAtTheNominalBitrateOfTheSmallestTierWhoseBoxHoldsThePictureWhenTheProbeNamesNoSourceBitrate(
           int width, int height, long expectedBitrate) {
     var probe = buildProbe(width, height, 0L);
-    var options = StreamingOptions.builder().quality(VideoQuality.UHD_4K).build();
+    var options = StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build();
+
+    var variants = generateVariants(probe, options);
+
+    assertThat(variants).extracting(QualityVariant::videoBitrate).containsExactly(expectedBitrate);
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "LOW_360P, 800000",
+    "HIGH_720P, 3000000",
+    "FULL_HD_1080P, 5000000",
+    "UHD_4K, 20000000"
+  })
+  @DisplayName(
+      "Should encode a fixed quality at its tier's nominal bitrate when the probe names no source"
+          + " bitrate")
+  void shouldEncodeAFixedQualityAtItsTiersNominalBitrateWhenTheProbeNamesNoSourceBitrate(
+      VideoQuality quality, long expectedBitrate) {
+    var probe = buildProbe(1920, 1080, 0L);
+    var options = StreamingOptions.builder().quality(quality).build();
 
     var variants = generateVariants(probe, options);
 
