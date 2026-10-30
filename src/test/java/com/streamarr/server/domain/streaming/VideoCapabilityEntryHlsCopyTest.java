@@ -22,7 +22,7 @@ import org.junit.jupiter.params.provider.MethodSource;
  * ADR 0049's rule for an HLS stream copy: one video capability entry must accept every property of
  * the copy, and a probe version 5 outcome's unknown values fit as the ADR decides. The entry under
  * test plays HEVC Main up to Main tier level 5.1 and HEVC Main 10 up to High tier level 4.1, at up
- * to 10 bits, 1920×1080 and 30 fps.
+ * to 10 bits, a 1920×1080 picture in either orientation and 30 fps.
  */
 @Tag("UnitTest")
 @DisplayName("Video Capability Entry HLS Copy Tests")
@@ -125,6 +125,9 @@ class VideoCapabilityEntryHlsCopyTest {
             Optional.of(MAX_SIZE),
             Optional.of(new PictureSize(1921, 1080)),
             Optional.of(new PictureSize(1920, 1081)),
+            Optional.of(new PictureSize(1080, 1920)),
+            Optional.of(new PictureSize(1081, 1920)),
+            Optional.of(new PictureSize(1080, 1921)),
             Optional.<PictureSize>empty())
         .map(size -> copyCase.toBuilder().decodedSize(size).build());
   }
@@ -344,9 +347,14 @@ class VideoCapabilityEntryHlsCopyTest {
       return bitDepth.isPresent() && bitDepth.getAsInt() <= MAX_BIT_DEPTH;
     }
 
+    // A picture fits in either orientation: its longer side within the longer maximum and its
+    // shorter side within the shorter one.
     private boolean sizeFits() {
       return decodedSize
-          .filter(size -> size.width() <= MAX_SIZE.width() && size.height() <= MAX_SIZE.height())
+          .filter(
+              size ->
+                  Math.max(size.width(), size.height()) <= MAX_SIZE.width()
+                      && Math.min(size.width(), size.height()) <= MAX_SIZE.height())
           .isPresent();
     }
 
