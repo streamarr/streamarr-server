@@ -17,6 +17,7 @@ import com.streamarr.server.services.serversettings.ServerSettingsService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.Set;
@@ -566,24 +567,34 @@ public class ProducerLifecycleService {
       return;
     }
 
-    var otherVariantLabels =
-        session.getVariantHandles().keySet().stream()
-            .filter(label -> !label.equals(requestedVariantLabel))
-            .toList();
-    if (otherVariantLabels.isEmpty()) {
+    var stopped = doStopVideoVariantsExcept(session, Set.of(requestedVariantLabel));
+    if (stopped.isEmpty()) {
       return;
     }
 
-    for (var variantLabel : otherVariantLabels) {
+    log.info(
+        "Stopped variants {} of session {} for a request of variant {}",
+        stopped,
+        sessionId,
+        requestedVariantLabel);
+  }
+
+  // Answers the labels of the variants it stopped.
+  private List<String> doStopVideoVariantsExcept(StreamSession session, Set<String> keptLabels) {
+    var stopped =
+        session.getVariantHandles().keySet().stream()
+            .filter(label -> !keptLabels.contains(label))
+            .toList();
+    if (stopped.isEmpty()) {
+      return stopped;
+    }
+
+    for (var variantLabel : stopped) {
       stopVariant(session, variantLabel);
     }
 
     runtimeRegistry.save(session);
-    log.info(
-        "Stopped variants {} of session {} for a request of variant {}",
-        otherVariantLabels,
-        sessionId,
-        requestedVariantLabel);
+    return stopped;
   }
 
   private void stopVariant(StreamSession session, String variantLabel) {

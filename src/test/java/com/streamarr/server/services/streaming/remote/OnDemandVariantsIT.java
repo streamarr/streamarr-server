@@ -74,8 +74,6 @@ class OnDemandVariantsIT {
             .build();
     server.start();
     channel = plaintextChannelBuilder(server.port(), WORKER_ID).build();
-    worker = LoopbackWorker.register(channel);
-    assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
 
     var properties =
         StreamingProperties.builder()
@@ -148,6 +146,7 @@ class OnDemandVariantsIT {
       "Should run only the variant that the player fetches when a stream session starts, switches up and seeks")
   void shouldRunOnlyTheVariantThatThePlayerFetchesWhenAStreamSessionStartsSwitchesUpAndSeeks()
       throws Exception {
+    registerWorker(8);
     var sessionId = startedSession().getSessionId();
     worker.awaitRunningJobs(Map.of("480p", 0));
     assertThat(storeAndAwait(request(sessionId, "480p", "480p/segment0.m4s")))
@@ -166,6 +165,11 @@ class OnDemandVariantsIT {
     assertThat(List.of("480p", "720p", "360p"))
         .noneMatch(variantLabel -> server.isRunning(sessionId, variantLabel));
     assertThat(server.isRunning(sessionId, "1080p")).isTrue();
+  }
+
+  private void registerWorker(int availableSlots) throws InterruptedException {
+    worker = LoopbackWorker.register(channel, availableSlots);
+    assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
   }
 
   private StreamSession startedSession() {
