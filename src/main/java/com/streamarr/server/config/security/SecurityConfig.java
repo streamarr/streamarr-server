@@ -28,9 +28,10 @@ public class SecurityConfig {
   private final AuthCookiePolicy cookiePolicy;
 
   /**
-   * The permit matrix: pre-auth endpoints (shared with the bearer resolver, so the two lists cannot
-   * drift) and health stay open; non-health actuator endpoints are refused for everyone; streams
-   * demand SCOPE_PLAYBACK carried in the playback-URL token (outside the hierarchy); images demand
+   * The permit matrix: the container's error forward passes, so a failed request keeps its own
+   * status; pre-auth endpoints (shared with the bearer resolver, so the two lists cannot drift) and
+   * health stay open; non-health actuator endpoints are refused for everyone; streams demand
+   * SCOPE_PLAYBACK carried in the playback-URL token (outside the hierarchy); images demand
    * SCOPE_PROFILE; everything else — GraphQL including introspection and future surfaces — demands
    * SCOPE_ACCOUNT, which profile tokens satisfy through the scope hierarchy.
    *
@@ -48,10 +49,9 @@ public class SecurityConfig {
         .authorizeHttpRequests(
             authorize ->
                 authorize
-                    // The container forwards a failed request to the error page after its own
-                    // authorization; judging that forward again by the error page's path would
-                    // turn a stream failure into a 403. A direct request to the error page still
-                    // falls to anyRequest().
+                    // Judging the container's error forward by the error page's path would turn a
+                    // failed stream request into a 403. The forward renders only Boot's error
+                    // page; a direct request to that page still falls to anyRequest().
                     .dispatcherTypeMatchers(DispatcherType.ERROR)
                     .permitAll()
                     .requestMatchers(
