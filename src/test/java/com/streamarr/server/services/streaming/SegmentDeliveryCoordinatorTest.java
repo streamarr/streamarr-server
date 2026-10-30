@@ -5,6 +5,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultLadderSe
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.sessionWithDurationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.QualityVariant;
@@ -118,8 +119,12 @@ class SegmentDeliveryCoordinatorTest {
   // Wakes the requests held on the default variant, then waits until one has looked again. A
   // request looks again only after its previous pass has returned.
   private void awaitNextLook(UUID sessionId) {
+    awaitNextLook(sessionId, StreamSession.defaultVariant());
+  }
+
+  private void awaitNextLook(UUID sessionId, String variantLabel) {
     var looks = transcodeExecutor.livenessChecks();
-    heldRequests().wakeVariant(sessionId, StreamSession.defaultVariant());
+    heldRequests().wakeVariant(sessionId, variantLabel);
     transcodeExecutor.awaitLivenessCheckCount(looks + 1);
   }
 
@@ -832,6 +837,47 @@ class SegmentDeliveryCoordinatorTest {
   }
 
   @Test
+  @DisplayName(
+      "Should keep an encoded job attempt that starts after the first segment until its preroll and first segment are overdue")
+  void
+      shouldKeepAnEncodedJobAttemptThatStartsAfterTheFirstSegmentUntilItsPrerollAndFirstSegmentAreOverdue()
+          throws Exception {
+    var session = startedLadderSession();
+    var sessionId = session.getSessionId();
+    var startsBefore = transcodeExecutor.getStartedRequests().size();
+    var startupBudget =
+        properties
+            .producerStallThreshold()
+            .plus(properties.targetSegmentDuration().multipliedBy(2));
+
+    var delivery = heldDelivery(sessionId, "1080p", "1080p/segment20.m4s");
+    try {
+      // Moving the clock before recovery first looks at the job attempt would start its stall
+      // clock late.
+      awaitNextLook(sessionId, "1080p");
+      clock.advance(startupBudget.minusMillis(1));
+      awaitNextLook(sessionId, "1080p");
+      // A request looks again only after its previous pass has returned.
+      awaitNextLook(sessionId, "1080p");
+      assertThat(delivery).isNotDone();
+      assertThat(transcodeExecutor.getStartedRequests()).hasSize(startsBefore + 1);
+
+      clock.advance(Duration.ofMillis(1));
+      heldRequests().wakeVariant(sessionId, "1080p");
+      transcodeExecutor.awaitStartedRequestCount(startsBefore + 2);
+      upload(sessionId, "1080p/segment20.m4s", new byte[] {20});
+
+      assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+      assertThat(startedSince(startsBefore))
+          .extracting(TranscodeRequest::variantLabel, TranscodeRequest::startSequenceNumber)
+          .containsExactly(tuple("1080p", 20), tuple("1080p", 20));
+    } finally {
+      destroy(sessionId);
+      delivery.get(2, TimeUnit.SECONDS);
+    }
+  }
+
+  @Test
   @DisplayName("Should start exactly one replacement when two waiters observe one death")
   void shouldStartExactlyOneReplacementWhenTwoWaitersObserveOneDeath() throws Exception {
     var session = startedSession();
@@ -1156,9 +1202,9 @@ class SegmentDeliveryCoordinatorTest {
 
   @Test
   @DisplayName(
-      "Should start the variant at the current segment and stop no job attempt when the initialization segment of a variant with no job attempt is requested")
+      "Should start the variant after the newest requested segment and stop no job attempt when the initialization segment of a variant with no job attempt is requested")
   void
-      shouldStartTheVariantAtTheCurrentSegmentAndStopNoJobAttemptWhenTheInitializationSegmentOfAVariantWithNoJobAttemptIsRequested()
+      shouldStartTheVariantAfterTheNewestRequestedSegmentAndStopNoJobAttemptWhenTheInitializationSegmentOfAVariantWithNoJobAttemptIsRequested()
           throws Exception {
     var session = startedLadderSession();
     var sessionId = session.getSessionId();
@@ -1176,9 +1222,75 @@ class SegmentDeliveryCoordinatorTest {
         .satisfies(
             request -> {
               assertThat(request.variantLabel()).isEqualTo("1080p");
-              assertThat(request.startSequenceNumber()).isEqualTo(20);
+              assertThat(request.startSequenceNumber()).isEqualTo(21);
             });
     assertThat(runningVariants(session)).containsExactlyInAnyOrder("480p", "1080p");
+  }
+
+  @Test
+  @DisplayName(
+      "Should start a switched variant once when the player requests its initialization segment and then the segment after the last one it received")
+  void
+      shouldStartASwitchedVariantOnceWhenThePlayerRequestsItsInitializationSegmentAndThenTheSegmentAfterTheLastOneItReceived()
+          throws Exception {
+    var session = startedLadderSession();
+    var sessionId = session.getSessionId();
+    for (var index = 0; index < 10; index++) {
+      var segmentName = "480p/" + SegmentNames.mediaSegmentName(index);
+      upload(sessionId, segmentName, new byte[] {1});
+      assertThat(coordinator.deliver(sessionId, "480p", segmentName))
+          .isInstanceOf(SegmentDelivery.Ready.class);
+    }
+
+    storeInitializationSegments(session);
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    assertThat(coordinator.deliver(sessionId, "1080p", "1080p/init.mp4"))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+    var delivery = heldDelivery(sessionId, "1080p", "1080p/segment10.m4s");
+    upload(sessionId, "1080p/segment10.m4s", new byte[] {10});
+
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(startedSince(startedBefore))
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.variantLabel()).isEqualTo("1080p");
+              assertThat(request.startSequenceNumber()).isEqualTo(10);
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should start a switched variant once at the held segment when the player leaves a variant before that segment is stored")
+  void
+      shouldStartASwitchedVariantOnceAtTheHeldSegmentWhenThePlayerLeavesAVariantBeforeThatSegmentIsStored()
+          throws Exception {
+    var session = startedLadderSession();
+    var sessionId = session.getSessionId();
+    for (var index = 0; index < 9; index++) {
+      upload(sessionId, "480p/" + SegmentNames.mediaSegmentName(index), new byte[] {1});
+    }
+
+    var abandoned = heldDelivery(sessionId, "480p", "480p/segment9.m4s");
+    storeInitializationSegments(session);
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    assertThat(coordinator.deliver(sessionId, "360p", "360p/init.mp4"))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+    var delivery = heldDelivery(sessionId, "360p", "360p/segment9.m4s");
+    upload(sessionId, "360p/segment9.m4s", new byte[] {9});
+
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(abandoned.get(2, TimeUnit.SECONDS))
+        .isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(startedSince(startedBefore))
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.variantLabel()).isEqualTo("360p");
+              assertThat(request.startSequenceNumber()).isEqualTo(9);
+            });
   }
 
   @Test

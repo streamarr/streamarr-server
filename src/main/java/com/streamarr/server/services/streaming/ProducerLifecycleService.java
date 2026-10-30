@@ -40,6 +40,9 @@ public class ProducerLifecycleService {
   /** Beyond this lead, restarting the encoder beats waiting for it to catch up. */
   private static final Duration FORWARD_RELOCATION_GAP = Duration.ofSeconds(24);
 
+  private static final int FIRST_SEGMENT_ONLY = 1;
+  private static final int FIRST_SEGMENT_AND_PREROLL = 2;
+
   private final TranscodeExecutor transcodeExecutor;
   private final SegmentStore segmentStore;
   private final StreamingProperties properties;
@@ -53,6 +56,9 @@ public class ProducerLifecycleService {
   // The newest request that positioned each variant: started it on demand, relocated it or resumed
   // it (ADR 0019).
   private final ConcurrentHashMap<VariantKey, SegmentRequest> newestPositioningRequests =
+      new ConcurrentHashMap<>();
+  // The newest media-segment request of each stream session, for any variant: where the player is.
+  private final ConcurrentHashMap<UUID, SegmentRequest> newestMediaSegmentRequests =
       new ConcurrentHashMap<>();
 
   public enum RecoveryResult {
@@ -118,12 +124,14 @@ public class ProducerLifecycleService {
 
   private Duration doTimeUntilStall(VariantKey key) {
     var state = recoveryStates.get(key);
-    if (state == null) {
-      return startupStallThreshold();
+    var session = runtimeRegistry.findById(key.sessionId());
+    if (state == null || session.isEmpty()) {
+      return startupStallThreshold(FIRST_SEGMENT_ONLY);
     }
 
     var deadline =
-        state.stallDeadline(properties.producerStallThreshold(), startupStallThreshold());
+        state.stallDeadline(
+            properties.producerStallThreshold(), startupStallThreshold(session.get(), state));
     var remaining = Duration.between(clock.instant(), deadline);
     if (remaining.isNegative()) {
       return Duration.ZERO;
@@ -138,6 +146,7 @@ public class ProducerLifecycleService {
         () -> {
           recoveryStates.keySet().removeIf(key -> key.sessionId().equals(sessionId));
           newestPositioningRequests.keySet().removeIf(key -> key.sessionId().equals(sessionId));
+          newestMediaSegmentRequests.remove(sessionId);
         });
   }
 
@@ -191,7 +200,8 @@ public class ProducerLifecycleService {
     var pending =
         PendingSegment.builder()
             .request(request)
-            .requestedIndex(SegmentNames.indexOf(segmentName).orElseGet(session::getCurrentSegment))
+            .requestedIndex(
+                SegmentNames.indexOf(segmentName).orElseGet(() -> currentSegment(session)))
             .build();
     if (handle.status() == TranscodeStatus.FAILED
         && !state.resetForFreshTargets(
@@ -257,7 +267,7 @@ public class ProducerLifecycleService {
       var handle = session.getVariantHandle(request.variantLabel()).orElseThrow();
       syncProgress(state, handle, pending);
       var running = transcodeExecutor.isRunning(request.sessionId(), request.variantLabel());
-      if (running && !hasStalled(state)) {
+      if (running && !hasStalled(state, session)) {
         return RecoveryResult.WAITING;
       }
 
@@ -269,7 +279,7 @@ public class ProducerLifecycleService {
       var eligibleTargets = eligibleTargets(session, request.variantLabel());
       // Segment publication is external to the session mutex and may advance during discovery.
       syncProgress(state, handle, pending);
-      if (noLongerNeedsRecovery(state, pending, running)) {
+      if (noLongerNeedsRecovery(pending, running && !hasStalled(state, session))) {
         return RecoveryResult.WAITING;
       }
 
@@ -326,11 +336,10 @@ public class ProducerLifecycleService {
         .orElseGet(() -> transcodeExecutor.executionTargets(session.getTranscodeDecision()));
   }
 
-  private boolean noLongerNeedsRecovery(
-      VariantDeliveryState state, PendingSegment pending, boolean running) {
-    return segmentStore.segmentExists(
-            pending.request().sessionId(), pending.request().segmentName())
-        || (running && !hasStalled(state));
+  private boolean noLongerNeedsRecovery(PendingSegment pending, boolean runningWithoutStall) {
+    return runningWithoutStall
+        || segmentStore.segmentExists(
+            pending.request().sessionId(), pending.request().segmentName());
   }
 
   private RecoveryResult exhaust(
@@ -391,13 +400,28 @@ public class ProducerLifecycleService {
         clock.instant());
   }
 
-  private boolean hasStalled(VariantDeliveryState state) {
+  private boolean hasStalled(VariantDeliveryState state, StreamSession session) {
     return state.hasStalled(
-        properties.producerStallThreshold(), startupStallThreshold(), clock.instant());
+        properties.producerStallThreshold(),
+        startupStallThreshold(session, state),
+        clock.instant());
   }
 
-  private Duration startupStallThreshold() {
-    return properties.producerStallThreshold().plus(properties.targetSegmentDuration());
+  // Before its first media segment is stored, a job attempt gets the stall threshold plus one
+  // target segment duration for each segment it encodes: its first segment and, when it encodes
+  // video from after segment 0, the preroll segment before it, where the worker starts encoding.
+  private Duration startupStallThreshold(StreamSession session, VariantDeliveryState state) {
+    if (session.getTranscodeDecision().transcodeMode().copiesVideo() || state.runStart() == 0) {
+      return startupStallThreshold(FIRST_SEGMENT_ONLY);
+    }
+
+    return startupStallThreshold(FIRST_SEGMENT_AND_PREROLL);
+  }
+
+  private Duration startupStallThreshold(int segmentsEncodedBeforeFirstStored) {
+    return properties
+        .producerStallThreshold()
+        .plus(properties.targetSegmentDuration().multipliedBy(segmentsEncodedBeforeFirstStored));
   }
 
   private static ReplacementReason replacementReason(
@@ -492,6 +516,7 @@ public class ProducerLifecycleService {
                   .arrival(requestArrivals.incrementAndGet())
                   .build();
           if (SegmentNames.indexOf(segmentName).isPresent()) {
+            rememberNewestMediaSegmentRequest(request);
             doStopOtherVideoVariants(sessionId, variantLabel);
           }
 
@@ -501,6 +526,38 @@ public class ProducerLifecycleService {
 
           return request;
         });
+  }
+
+  private void rememberNewestMediaSegmentRequest(SegmentRequest request) {
+    var offered =
+        runtimeRegistry
+            .findById(request.sessionId())
+            .filter(session -> session.offersVariant(request.variantLabel()));
+    if (offered.isPresent()) {
+      newestMediaSegmentRequests.put(request.sessionId(), request);
+    }
+  }
+
+  /**
+   * The current segment (ADR 0019): the media segment that the player needs next. That is the
+   * segment of the stream session's newest media-segment request until that segment is stored, and
+   * the segment after it once it is stored, unless it is the last advertised segment. Before any
+   * media-segment request, it is the segment at which the stream session starts.
+   */
+  private int currentSegment(StreamSession session) {
+    var newest = newestMediaSegmentRequests.get(session.getSessionId());
+    if (newest == null) {
+      return session.getCurrentSegment();
+    }
+
+    var index = SegmentNames.indexOf(newest.segmentName()).orElseThrow();
+    var next = index + 1;
+    if (!segmentStore.segmentExists(session.getSessionId(), newest.segmentName())
+        || !timelineOf(session).advertises(next)) {
+      return index;
+    }
+
+    return next;
   }
 
   private void doStopOtherVideoVariants(UUID sessionId, String requestedVariantLabel) {
@@ -544,7 +601,7 @@ public class ProducerLifecycleService {
     }
 
     var startSequenceNumber =
-        SegmentNames.indexOf(segmentName).orElseGet(session::getCurrentSegment);
+        SegmentNames.indexOf(segmentName).orElseGet(() -> currentSegment(session));
     if (!hasConfiguredTranscodeSlotFor(session)) {
       log.warn(
           "Transcode limit reached: session {} variant {} did not start at segment {}",
@@ -874,7 +931,7 @@ public class ProducerLifecycleService {
       return false;
     }
 
-    var segmentIndex = SegmentNames.indexOf(segmentName).orElseGet(session::getCurrentSegment);
+    var segmentIndex = SegmentNames.indexOf(segmentName).orElseGet(() -> currentSegment(session));
 
     startVariant(session, variantLabel, segmentIndex);
     session.setLastAccessedAt(Instant.now());
@@ -894,7 +951,8 @@ public class ProducerLifecycleService {
   }
 
   // The first job attempt that reports an encoder pins the variant to that encoder backend. Every
-  // started job attempt moves the current segment to its first media segment (ADR 0019).
+  // started job attempt moves the session's start segment, which the current segment falls back to
+  // before the player requests a media segment, to its first media segment.
   private static void installHandle(
       StreamSession session, String variantLabel, TranscodeHandle handle) {
     session.setVariantHandle(variantLabel, handle);

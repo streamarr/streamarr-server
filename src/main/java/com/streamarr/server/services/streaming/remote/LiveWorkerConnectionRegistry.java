@@ -75,6 +75,8 @@ final class LiveWorkerConnectionRegistry {
   private static final String ENCODER_BACKEND_MISMATCH_METRIC =
       "streamarr.streaming.encoder_backend_mismatches";
   private static final String DEFERRED_PROBES_METRIC = "streamarr.probes.deferred";
+  private static final String UNKNOWN_JOB_ATTEMPT_REPORTS_METRIC =
+      "streamarr.streaming.unknown_job_attempt_reports";
   // A probe refused for one of these reasons runs again later, when a worker can take it.
   private static final Set<ProbeRefusal> WAITING_FOR_WORKER =
       EnumSet.of(
@@ -90,6 +92,7 @@ final class LiveWorkerConnectionRegistry {
   private final long startReportTimeoutNanos;
   private final Counter initializationSegmentMismatches;
   private final Counter encoderBackendMismatches;
+  private final Counter unknownJobAttemptReports;
   private final HeldSegmentRequests heldRequests;
   private final ApplicationEventPublisher eventPublisher;
   private final MeterRegistry meterRegistry;
@@ -122,6 +125,12 @@ final class LiveWorkerConnectionRegistry {
             .description(
                 "Job attempts stopped because the worker reported an encoder backend other than"
                     + " the one pinned for the variant")
+            .register(meterRegistry);
+    unknownJobAttemptReports =
+        Counter.builder(UNKNOWN_JOB_ATTEMPT_REPORTS_METRIC)
+            .description(
+                "Reports that a job attempt completed, stopped or failed, for a job attempt that"
+                    + " the worker's current session neither runs nor was told to stop")
             .register(meterRegistry);
     capacityMeters = new WorkerCapacityMeters(meterRegistry);
   }
@@ -511,11 +520,15 @@ final class LiveWorkerConnectionRegistry {
     terminalFailures.clear();
   }
 
-  Optional<VariantJob> failJobAttempt(
+  ReportedJobAttemptEnd failJobAttempt(
       UUID workerId, UUID workerSessionId, JobAttemptFailed failed) {
-    var released = acceptJobAttemptFailure(workerId, workerSessionId, failed);
-    released.ifPresent(job -> publishTerminalFailure(job, failed));
-    return released;
+    var end = acceptJobAttemptFailure(workerId, workerSessionId, failed);
+    countIfUnknown(end);
+    if (end instanceof ReportedJobAttemptEnd.Released(var job)) {
+      publishTerminalFailure(job, failed);
+    }
+
+    return end;
   }
 
   private void publishTerminalFailure(VariantJob job, JobAttemptFailed failed) {
@@ -542,15 +555,50 @@ final class LiveWorkerConnectionRegistry {
             .build());
   }
 
-  private synchronized Optional<VariantJob> acceptJobAttemptFailure(
+  private synchronized ReportedJobAttemptEnd acceptJobAttemptFailure(
       UUID workerId, UUID workerSessionId, JobAttemptFailed failed) {
     return currentConnection(workerId, workerSessionId)
-        .flatMap(connection -> connection.failJobAttempt(failed));
+        .map(connection -> connection.failJobAttempt(failed))
+        .orElseGet(ReportedJobAttemptEnd.Unknown::new);
   }
 
   Optional<VariantJob> releaseJobAttempt(UUID workerId, UUID workerSessionId, UUID jobAttemptId) {
     return currentConnection(workerId, workerSessionId)
         .flatMap(connection -> connection.releaseJobAttempt(jobAttemptId));
+  }
+
+  /** How a worker's report that a job attempt ended matched the server's state. */
+  sealed interface ReportedJobAttemptEnd {
+    /** The worker's session ran the job attempt, which the report ends. */
+    record Released(VariantJob job) implements ReportedJobAttemptEnd {}
+
+    /** The server had stopped the job attempt and was waiting for the worker to report its end. */
+    record StoppedByServer() implements ReportedJobAttemptEnd {}
+
+    /** The worker's current session neither ran the job attempt nor was told to stop it. */
+    record Unknown() implements ReportedJobAttemptEnd {}
+  }
+
+  /**
+   * Ends the job attempt that a worker reports completed or stopped. The worker reports the end of
+   * a job attempt that the server told it to stop, so that report is expected; a failure report can
+   * stand in for it ({@link #failJobAttempt}). Every other report for a job attempt that the
+   * session does not run counts as unknown.
+   */
+  ReportedJobAttemptEnd endReportedJobAttempt(
+      UUID workerId, UUID workerSessionId, UUID jobAttemptId) {
+    var end =
+        currentConnection(workerId, workerSessionId)
+            .map(connection -> connection.endReportedJobAttempt(jobAttemptId))
+            .orElseGet(ReportedJobAttemptEnd.Unknown::new);
+    countIfUnknown(end);
+    return end;
+  }
+
+  private void countIfUnknown(ReportedJobAttemptEnd end) {
+    if (end instanceof ReportedJobAttemptEnd.Unknown) {
+      unknownJobAttemptReports.increment();
+    }
   }
 
   void checkReportedEncoderBackend(UUID workerId, UUID workerSessionId, JobAttemptStarted started) {
@@ -613,6 +661,8 @@ final class LiveWorkerConnectionRegistry {
     // start report must name that encoder's backend before any of its uploads publishes.
     private final Map<UUID, EncodeAttempt> encodeAttempts = new ConcurrentHashMap<>();
     private final Map<UUID, PendingProbe> activeProbes = new ConcurrentHashMap<>();
+    // The job attempts that this server stopped and whose end the worker has not reported yet.
+    private final Set<UUID> stoppedJobAttempts = ConcurrentHashMap.newKeySet();
 
     private WorkerConnection(
         UUID workerSessionId,
@@ -905,6 +955,7 @@ final class LiveWorkerConnectionRegistry {
         return false;
       }
 
+      stoppedJobAttempts.add(jobAttemptId);
       wakeHeldRequests(stopped);
 
       var command =
@@ -939,16 +990,19 @@ final class LiveWorkerConnectionRegistry {
       }
     }
 
-    private synchronized Optional<VariantJob> failJobAttempt(JobAttemptFailed failed) {
+    // A worker that failed an attempt before it saw the server's stop reports only the failure.
+    // The server stopped that attempt on purpose, so its failure reaches neither the stream
+    // session nor the attempt that replaced it.
+    private synchronized ReportedJobAttemptEnd failJobAttempt(JobAttemptFailed failed) {
       var attemptId = fromProto(failed.getJobAttemptId());
       var job = activeVariants.get(attemptId);
-      if (job == null) {
-        return Optional.empty();
+      if (job != null) {
+        terminalFailure(failed)
+            .ifPresent(
+                failure -> terminalFailures.put(fromProto(job.getStreamSessionId()), failure));
       }
 
-      terminalFailure(failed)
-          .ifPresent(failure -> terminalFailures.put(fromProto(job.getStreamSessionId()), failure));
-      return releaseJobAttempt(attemptId);
+      return endReportedJobAttempt(attemptId);
     }
 
     // The worker contract says that a replacement attempt with the same decision repeats an output
@@ -976,6 +1030,19 @@ final class LiveWorkerConnectionRegistry {
         case TRANSCODE_MODE_REMUX, TRANSCODE_MODE_AUDIO_TRANSCODE -> true;
         default -> false;
       };
+    }
+
+    private synchronized ReportedJobAttemptEnd endReportedJobAttempt(UUID jobAttemptId) {
+      var released = releaseJobAttempt(jobAttemptId);
+      if (released.isPresent()) {
+        return new ReportedJobAttemptEnd.Released(released.get());
+      }
+
+      if (stoppedJobAttempts.remove(jobAttemptId)) {
+        return new ReportedJobAttemptEnd.StoppedByServer();
+      }
+
+      return new ReportedJobAttemptEnd.Unknown();
     }
 
     private synchronized Optional<VariantJob> releaseJobAttempt(UUID jobAttemptId) {

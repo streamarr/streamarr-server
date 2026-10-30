@@ -534,6 +534,31 @@ class ProducerLifecycleServiceTest {
     assertThat(timeUntilStall(session)).isEqualTo(Duration.ofSeconds(16));
   }
 
+  @ParameterizedTest(name = "{0} at segment {1}")
+  @CsvSource({"480p, 2, 16", "480p, 20, 22", "default, 20, 16"})
+  @DisplayName(
+      "Should give a fresh job attempt one target segment duration for each segment it encodes before its first stored segment")
+  void shouldGiveFreshJobAttemptOneTargetSegmentDurationForEachSegmentItEncodesBeforeItsFirstStored(
+      String variantLabel, int segmentIndex, long expectedSeconds) {
+    var session = variantLabel.equals("480p") ? startedLadderSession() : startedSession();
+    var segmentName = SegmentNames.mediaSegmentName(segmentIndex);
+    if (!variantLabel.equals(StreamSession.defaultVariant())) {
+      segmentName = variantLabel + "/" + segmentName;
+    }
+
+    lifecycle.recover(
+        earliestArrivingSegmentRequestBuilder()
+            .sessionId(session.getSessionId())
+            .variantLabel(variantLabel)
+            .segmentName(segmentName)
+            .build());
+
+    // The default 10 s stall threshold, plus 6 s for the first segment, plus 6 s for the preroll
+    // segment that an encoded job attempt starting after segment 0 encodes before it.
+    assertThat(lifecycle.timeUntilStall(session.getSessionId(), variantLabel))
+        .isEqualTo(Duration.ofSeconds(expectedSeconds));
+  }
+
   @Test
   @DisplayName(
       "Should bound a held request's wait by the time left before the tracked job attempt stalls")
@@ -962,6 +987,55 @@ class ProducerLifecycleServiceTest {
             });
   }
 
+  @ParameterizedTest(name = "stored: {0}")
+  @CsvSource({"false, 30", "true, 31"})
+  @DisplayName(
+      "Should start a variant where the player needs its next segment when its initialization segment is requested")
+  void shouldStartAVariantWhereThePlayerNeedsItsNextSegmentWhenItsInitializationSegmentIsRequested(
+      boolean newestRequestedSegmentStored, int expectedStart) {
+    var session = startedLadderSession();
+    var sessionId = session.getSessionId();
+    lifecycle.prepareRequestedVariant(sessionId, "480p", "480p/segment30.m4s");
+    if (newestRequestedSegmentStored) {
+      segmentStore.addSegment(sessionId, "480p/segment30.m4s", new byte[] {1});
+    }
+
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    lifecycle.prepareRequestedVariant(sessionId, "1080p", "1080p/init.mp4");
+
+    assertThat(startedSince(startedBefore))
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.variantLabel()).isEqualTo("1080p");
+              assertThat(request.startSequenceNumber()).isEqualTo(expectedStart);
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should start a variant at the last advertised segment when its initialization segment is requested after the player received that segment")
+  void
+      shouldStartAVariantAtTheLastAdvertisedSegmentWhenItsInitializationSegmentIsRequestedAfterThePlayerReceivedThatSegment() {
+    var session =
+        defaultLadderSessionBuilder()
+            .mediaProbe(defaultProbeBuilder().duration(Duration.ofSeconds(60)).build())
+            .build();
+    runtimeRegistry.save(session);
+    lifecycle.startFirstListedVariant(session);
+    var sessionId = session.getSessionId();
+    segmentStore.addSegment(sessionId, "480p/segment9.m4s", new byte[] {1});
+    lifecycle.prepareRequestedVariant(sessionId, "480p", "480p/segment9.m4s");
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    lifecycle.prepareRequestedVariant(sessionId, "1080p", "1080p/init.mp4");
+
+    assertThat(startedSince(startedBefore))
+        .singleElement()
+        .satisfies(request -> assertThat(request.startSequenceNumber()).isEqualTo(9));
+  }
+
   @Test
   @DisplayName("Should report session gone when recovery follows destruction")
   void shouldReportSessionGoneWhenRecoveryFollowsDestruction() {
@@ -1054,7 +1128,9 @@ class ProducerLifecycleServiceTest {
     recover(session);
     clock.advance(Duration.ofSeconds(16));
     recover(session);
-    clock.advance(Duration.ofSeconds(16));
+    // The replacement encodes from segment 2, so its preroll segment adds 6 s to its startup
+    // budget.
+    clock.advance(Duration.ofSeconds(22));
     assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.EXHAUSTED);
     var h264OnlyTarget = new ExecutionTargetId("h264-only-worker");
     transcodeExecutor.setTargetEncodableVideoCodecFamilies(h264OnlyTarget, Set.of("h264"));

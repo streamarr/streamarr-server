@@ -48,6 +48,11 @@ final class VariantDeliveryState {
     return lastProgressAt.plus(budget);
   }
 
+  /** The first media segment of the tracked job attempt. */
+  int runStart() {
+    return runStart;
+  }
+
   /** The first segment from the tracked job attempt's start that no job attempt has stored. */
   int frontier() {
     return frontier;

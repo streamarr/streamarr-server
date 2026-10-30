@@ -154,10 +154,10 @@ class OnDemandVariantsIT {
         .isInstanceOf(SegmentDelivery.Ready.class);
 
     var switchUpInit = request(sessionId, "1080p", "1080p/init.mp4");
-    worker.awaitRunningJobs(Map.of("480p", 0, "1080p", 0));
+    worker.awaitRunningJobs(Map.of("480p", 0, "1080p", 1));
     assertThat(storeAndAwait(switchUpInit)).isInstanceOf(SegmentDelivery.Ready.class);
     var switchUpSegment = request(sessionId, "1080p", "1080p/segment1.m4s");
-    worker.awaitRunningJobs(Map.of("1080p", 0));
+    worker.awaitRunningJobs(Map.of("1080p", 1));
     assertThat(storeAndAwait(switchUpSegment)).isInstanceOf(SegmentDelivery.Ready.class);
 
     var seek = request(sessionId, "1080p", "1080p/segment100.m4s");
