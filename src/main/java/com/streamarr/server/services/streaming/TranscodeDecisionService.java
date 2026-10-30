@@ -5,6 +5,8 @@ import com.streamarr.server.domain.streaming.AudioCapabilityEntry;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
+import com.streamarr.server.domain.streaming.EncodeCodecProfile;
+import com.streamarr.server.domain.streaming.EncodedVariantRequest;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
@@ -36,8 +38,8 @@ import org.springframework.stereotype.Service;
 public class TranscodeDecisionService {
 
   // An encode forces one codec profile for each codec family (ADR 0013).
-  private static final List<VideoCodecProfile> CODEC_PREFERENCE =
-      List.of(VideoCodecProfile.AV1_MAIN, VideoCodecProfile.H264_HIGH);
+  private static final List<EncodeCodecProfile> CODEC_PREFERENCE =
+      List.of(EncodeCodecProfile.AV1_MAIN, EncodeCodecProfile.H264_HIGH);
   // A multichannel encode prefers the first of these codecs that keeps more than two channels.
   private static final List<String> MULTICHANNEL_ENCODE_PREFERENCE = List.of("eac3", "ac3", "aac");
   // FFmpeg's AC-3 and E-AC-3 encoders stop at 5.1.
@@ -54,10 +56,10 @@ public class TranscodeDecisionService {
 
   /**
    * A copy needs a video capability entry for HLS that accepts the copy. An encode uses the first
-   * codec in the preference whose encode codec profile a video capability entry for HLS lists, and
-   * that a worker-verified encoder encodes (ADR 0009). The audio follows the audio capability
-   * entries for HLS. Returns empty when neither a copy nor a supported encode satisfies the
-   * request's constraints.
+   * codec in the preference for which a video capability entry for HLS fits an encoded variant of
+   * the source (ADR 0049), and that a worker-verified encoder encodes (ADR 0009). The audio follows
+   * the audio capability entries for HLS. Returns empty when neither a copy nor a supported encode
+   * satisfies the request's constraints.
    */
   public Optional<TranscodeDecision> decide(@NonNull TranscodeDecisionRequest request) {
     var source = request.source();
@@ -70,12 +72,7 @@ public class TranscodeDecisionService {
     }
 
     var videoCodecFamily =
-        videoCopyable
-            ? Optional.of(source.videoCodec())
-            : selectPreferredCodec(
-                declaration,
-                request.encodableVideoCodecFamilies(),
-                request.excludedEncodeCodecFamilies());
+        videoCopyable ? Optional.of(source.videoCodec()) : selectPreferredCodec(request);
     var audioDecision = decideAudio(source, declaration);
     var subtitleDecision = SubtitleDecision.exclude();
 
@@ -101,6 +98,38 @@ public class TranscodeDecisionService {
     var refusal = streamCopyRefusal(source);
     refusal.ifPresent(this::countStreamCopyRefusal);
     return refusal.isEmpty();
+  }
+
+  // A source without an output frame rate or a picture has no encoded variant, and the stream
+  // session refuses its encode for that reason, so only the codec profile is checked.
+  private static boolean fitsHlsEncode(
+      ClientCapabilityDeclaration declaration, MediaProbe source, EncodeCodecProfile profile) {
+    return encodedVariantRequest(source, profile)
+        .map(request -> declaration.fitHlsEncode(request).isPresent())
+        .orElseGet(() -> declaresHlsCodecProfile(declaration, profile.codecProfile()));
+  }
+
+  // Every variant of a stream session is at most the source's size, so an entry that fits the
+  // source-sized variant fits every variant (ADR 0049).
+  private static Optional<EncodedVariantRequest> encodedVariantRequest(
+      MediaProbe source, EncodeCodecProfile profile) {
+    var picture = source.displayedSize();
+    if (picture.width() <= 0 || picture.height() <= 0) {
+      return Optional.empty();
+    }
+
+    return source
+        .videoPlaybackFacts()
+        .flatMap(facts -> facts.frameRateRule().outputFrameRate())
+        .map(
+            frameRate ->
+                EncodedVariantRequest.builder()
+                    .codecProfile(profile)
+                    .source(picture)
+                    .bounds(picture)
+                    .frameRate(frameRate)
+                    .bitrate(source.bitrate())
+                    .build());
   }
 
   private static boolean declaresHlsCodecProfile(
@@ -297,15 +326,13 @@ public class TranscodeDecisionService {
         .build();
   }
 
-  private Optional<String> selectPreferredCodec(
-      ClientCapabilityDeclaration declaration,
-      Set<String> encodableVideoCodecFamilies,
-      Set<String> excludedEncodeCodecFamilies) {
+  private Optional<String> selectPreferredCodec(TranscodeDecisionRequest request) {
     return CODEC_PREFERENCE.stream()
-        .filter(profile -> declaresHlsCodecProfile(declaration, profile))
-        .map(profile -> profile.codecFamily().name().toLowerCase(Locale.ROOT))
-        .filter(encodableVideoCodecFamilies::contains)
-        .filter(family -> !excludedEncodeCodecFamilies.contains(family))
+        .filter(
+            profile -> fitsHlsEncode(request.capabilityDeclaration(), request.source(), profile))
+        .map(EncodeCodecProfile::codecFamilyName)
+        .filter(request.encodableVideoCodecFamilies()::contains)
+        .filter(family -> !request.excludedEncodeCodecFamilies().contains(family))
         .findFirst();
   }
 }
