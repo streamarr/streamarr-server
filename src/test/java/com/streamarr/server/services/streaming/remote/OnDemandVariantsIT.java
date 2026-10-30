@@ -24,6 +24,7 @@ import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.QualityLadderService;
 import com.streamarr.server.services.streaming.SegmentDelivery;
@@ -58,6 +59,7 @@ class OnDemandVariantsIT {
 
   private final FakeSegmentStore segmentStore = new FakeSegmentStore();
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+  private final MutexFactory<UUID> sessionMutex = new MutexFactory<>();
   private WorkerSessionServer server;
   private ManagedChannel channel;
   private LoopbackWorker worker;
@@ -91,6 +93,7 @@ class OnDemandVariantsIT {
             .properties(properties)
             .runtimeRegistry(registry)
             .heldRequests(server.heldSegmentRequests())
+            .sessionMutex(sessionMutex)
             .build();
     coordinator = rig.coordinator();
 
@@ -189,6 +192,32 @@ class OnDemandVariantsIT {
     worker.awaitRunningJobs(Map.of("1080p", 1));
     assertThat(storeAndAwait(switchUp)).isInstanceOf(SegmentDelivery.Ready.class);
     assertThat(server.isRunning(sessionId, "480p")).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop another stream session's left variant to admit a stream session when the worker has no free job slot")
+  void
+      shouldStopAnotherStreamSessionsLeftVariantToAdmitAStreamSessionWhenTheWorkerHasNoFreeJobSlot()
+          throws Exception {
+    registerWorker(3);
+    var switchingId = startedSession().getSessionId();
+    worker.awaitRunningJobs(Map.of("480p", 0));
+    assertThat(storeAndAwait(request(switchingId, "480p", "480p/segment0.m4s")))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+    var switchUp = request(switchingId, "1080p", "1080p/segment1.m4s");
+    worker.awaitRunningJobs(Map.of("480p", 0, "1080p", 1));
+    awaitHeldRequests(1);
+    var switchingMutex = sessionMutex.getMutex(switchingId);
+    await().atMost(Duration.ofSeconds(5)).until(() -> !switchingMutex.isLocked());
+    var otherId = startedSession().getSessionId();
+
+    var admittedId = startedSession().getSessionId();
+
+    assertThat(server.isRunning(switchingId, "480p")).isFalse();
+    assertThat(server.isRunning(admittedId, "480p")).isTrue();
+    assertThat(server.isRunning(otherId, "480p")).isTrue();
+    assertThat(storeAndAwait(switchUp)).isInstanceOf(SegmentDelivery.Ready.class);
   }
 
   private void registerWorker(int availableSlots) throws InterruptedException {

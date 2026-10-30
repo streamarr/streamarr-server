@@ -86,6 +86,10 @@ public class HlsStreamingService implements StreamingService {
             .build();
     var candidate = transcodeDecisionService.decide(request);
     if (candidate.isEmpty()) {
+      candidate = decideAfterStoppingALeftVariant(command.streamSessionId(), request);
+    }
+
+    if (candidate.isEmpty()) {
       return Outcome.rejected(unavailableVideoFormat(request));
     }
 
@@ -155,26 +159,49 @@ public class HlsStreamingService implements StreamingService {
     return output.width() <= 0 || output.height() <= 0;
   }
 
+  // An encode whose encoders all run on workers with no free slot is decided only once a slot is
+  // free. A left variant never keeps a new stream session out (ADR 0019), so the server stops one
+  // that frees a slot on such a worker and decides once more.
+  private Optional<TranscodeDecision> decideAfterStoppingALeftVariant(
+      UUID sessionId, TranscodeDecisionRequest request) {
+    var verifiedCandidate = verifiedEncodeCandidate(request);
+    if (verifiedCandidate.isEmpty()) {
+      return Optional.empty();
+    }
+
+    // The first decision already refused a copy, so only an encode is decided again.
+    producerLifecycle.stopLeftVariantOfAnotherStreamSession(sessionId, verifiedCandidate.get());
+    return transcodeDecisionService.decide(
+        request.toBuilder()
+            .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+            .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())
+            .build());
+  }
+
   private CreateStreamSessionRejection unavailableVideoFormat(TranscodeDecisionRequest request) {
     if (!transcodeExecutor.isHealthy()) {
       return refuseForLackOfCapacity(CapacityRefusal.NO_CONNECTED_WORKER);
     }
 
-    if (request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
-      return new CreateStreamSessionRejection.NoEligibleVideoFormat();
-    }
-
-    var verifiedCandidate =
-        transcodeDecisionService.decide(
-            request.toBuilder()
-                .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
-                .encodableVideoCodecFamilies(transcodeExecutor.verifiedVideoCodecFamilies())
-                .build());
-    if (verifiedCandidate.isPresent()) {
+    if (verifiedEncodeCandidate(request).isPresent()) {
       return refuseForLackOfCapacity(CapacityRefusal.NO_ENCODER_WITH_FREE_SLOT);
     }
 
     return new CreateStreamSessionRejection.NoEligibleVideoFormat();
+  }
+
+  // The encode that a connected worker's verified encoder could run once it had a free slot.
+  private Optional<TranscodeDecision> verifiedEncodeCandidate(TranscodeDecisionRequest request) {
+    if (!transcodeExecutor.isHealthy()
+        || request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
+      return Optional.empty();
+    }
+
+    return transcodeDecisionService.decide(
+        request.toBuilder()
+            .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+            .encodableVideoCodecFamilies(transcodeExecutor.verifiedVideoCodecFamilies())
+            .build());
   }
 
   private CreateStreamSessionRejection refuseForLackOfCapacity(CapacityRefusal refusal) {
