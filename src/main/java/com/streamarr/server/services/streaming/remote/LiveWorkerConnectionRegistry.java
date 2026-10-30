@@ -534,9 +534,7 @@ final class LiveWorkerConnectionRegistry {
   }
 
   int availableSlots(UUID sourceNamespaceId, WorkerVerifiedEncoder pinnedEncoder) {
-    var sourceNamespace = toProto(sourceNamespaceId);
-    return connections.values().stream()
-        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
+    return connectionsFor(sourceNamespaceId)
         .filter(connection -> connection.advertises(pinnedEncoder))
         .mapToInt(WorkerConnection::availableSlots)
         .sum();
