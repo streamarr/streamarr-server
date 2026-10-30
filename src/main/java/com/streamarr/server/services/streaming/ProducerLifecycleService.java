@@ -472,8 +472,8 @@ public class ProducerLifecycleService {
    * variant without a job attempt then starts that variant: at the requested media segment, or at
    * the current segment for the initialization segment. A stored media segment starts nothing, and
    * neither does a full transcode limit. A variant that does not start stays without a job attempt,
-   * so recovery answers the request as {@link RecoveryResult#VARIANT_NOT_RUNNING}. Answers the
-   * request, stamped with its arrival, that later recovery passes name.
+   * so recovery answers the request as {@link RecoveryResult#VARIANT_NOT_RUNNING}. Returns the
+   * request numbered in order of arrival; the caller passes it to every later {@link #recover}.
    */
   public SegmentRequest prepareRequestedVariant(
       UUID sessionId, String variantLabel, String segmentName) {
