@@ -3,12 +3,15 @@ package com.streamarr.server.services.streaming;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.streaming.EncodedPictureSizes;
+import com.streamarr.server.domain.streaming.Fraction;
+import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
+import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -155,15 +158,15 @@ public class HlsStreamingService implements StreamingService {
       return Optional.empty();
     }
 
+    // Workers encode at the frame-rate rule's output frame rate and refuse an encode without one.
+    if (outputFrameRate(decision).isEmpty()) {
+      return Optional.of(new CreateStreamSessionRejection.FrameRateUnknown());
+    }
+
     var probe = request.source();
     var variants = resolveVariants(probe, command.options(), decision);
     if (hasInvalidEncodeSize(probe, variants)) {
       return Optional.of(new CreateStreamSessionRejection.InvalidPictureSize());
-    }
-
-    // Workers encode at the probed frame rate and refuse an encode without one.
-    if (probe.framerate().isEmpty()) {
-      return Optional.of(new CreateStreamSessionRejection.FrameRateUnknown());
     }
 
     return Optional.empty();
@@ -325,6 +328,13 @@ public class HlsStreamingService implements StreamingService {
 
     return MultivariantPlaylistOrder.of(
         qualityLadderService.generateVariants(probe, options), decision.audioDecision().bitrate());
+  }
+
+  private static Optional<Fraction> outputFrameRate(TranscodeDecision decision) {
+    return decision
+        .videoSource()
+        .map(VideoPlaybackFacts::frameRateRule)
+        .flatMap(FrameRateRule::outputFrameRate);
   }
 
   private boolean requiresVideoTranscode(TranscodeMode mode) {

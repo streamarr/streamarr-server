@@ -253,6 +253,45 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStartedRequests()).isEqualTo(startedRequests);
   }
 
+  @Test
+  @DisplayName(
+      "Should refuse an encode for its unknown frame rate when the probe outcome names no output"
+          + " frame rate")
+  void shouldRefuseAnEncodeForItsUnknownFrameRateWhenTheProbeOutcomeNamesNoOutputFrameRate() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").videoPlaybackFacts(Optional.empty()).build());
+    var command =
+        createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(service.createSession(command))
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.FrameRateUnknown()));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"AUTO", "HIGH_720P"})
+  @DisplayName(
+      "Should refuse an encode for its unknown frame rate before sizing a variant when the picture"
+          + " is also too short to encode")
+  void
+      shouldRefuseAnEncodeForItsUnknownFrameRateBeforeSizingAVariantWhenThePictureIsAlsoTooShortToEncode(
+          VideoQuality quality) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .videoCodec("hevc")
+            .height(1)
+            .framerate(OptionalDouble.empty())
+            .build());
+    var options = StreamingOptions.builder().quality(quality).build();
+    var command = createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    assertThat(service.createSession(command))
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.FrameRateUnknown()));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
   @ParameterizedTest
   @CsvSource({
     "0, 0, AUTO",
