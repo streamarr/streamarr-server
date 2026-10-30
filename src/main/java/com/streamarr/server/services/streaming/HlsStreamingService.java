@@ -100,12 +100,20 @@ public class HlsStreamingService implements StreamingService {
       return Outcome.rejected(new CreateStreamSessionRejection.FrameRateUnknown());
     }
 
+    var sessionId = command.streamSessionId();
     var refusal = capacityRefusalFor(decision);
+    // A left variant only serves its own player's switch back, so it never keeps a new stream
+    // session out (ADR 0019).
+    if (refusal.isPresent()
+        && isSlotShortage(refusal.get())
+        && producerLifecycle.stopLeftVariantOfAnotherStreamSession(sessionId)) {
+      refusal = capacityRefusalFor(decision);
+    }
+
     if (refusal.isPresent()) {
       return Outcome.rejected(refuseForLackOfCapacity(refusal.get()));
     }
 
-    var sessionId = command.streamSessionId();
     var now = Instant.now();
 
     var session =
@@ -294,6 +302,13 @@ public class HlsStreamingService implements StreamingService {
     }
 
     return Optional.empty();
+  }
+
+  private static boolean isSlotShortage(CapacityRefusal refusal) {
+    return switch (refusal) {
+      case NO_FREE_WORKER_SLOT, NO_FREE_CONFIGURED_TRANSCODE_SLOT -> true;
+      case NO_CONNECTED_WORKER, NO_ENCODER_WITH_FREE_SLOT -> false;
+    };
   }
 
   // Why a stream session could not start now, as the capacity refusal metric names it.

@@ -33,7 +33,9 @@ import lombok.extern.slf4j.Slf4j;
  * Owns every producer (transcode process) mutation for a stream session: initial start, resume of a
  * suspended session, relocation to a distant segment, replacement, and suspension. Every mutation
  * serializes on the per-session mutex this service holds, including initial startup because the
- * session is published before its producers finish starting.
+ * session is published before its producers finish starting. A thread holds at most one stream
+ * session's mutex: a stream session that stops another stream session's left variant releases its
+ * own mutex first and takes the other session's mutex alone.
  */
 @Slf4j
 @Builder
@@ -69,6 +71,9 @@ public class ProducerLifecycleService {
   // The variant that each stream session's player plays: the variant of the last media segment
   // delivered while that variant was the variant of the newest media-segment request (ADR 0019).
   private final ConcurrentHashMap<UUID, String> playingVariants = new ConcurrentHashMap<>();
+  // The stream sessions whose left variant runs beside the newest media-segment request's variant.
+  // A start or a replacement in any stream session that finds no free slot may stop one of them.
+  private final Set<UUID> sessionsKeepingLeftVariant = ConcurrentHashMap.newKeySet();
 
   public enum RecoveryResult {
     WAITING,
@@ -86,17 +91,53 @@ public class ProducerLifecycleService {
   private record VariantKey(UUID sessionId, String variantLabel) {}
 
   @Builder
-  private record PendingSegment(SegmentRequest request, int requestedIndex) {}
+  private record PendingSegment(
+      SegmentRequest request, int requestedIndex, LeftVariantReclaim reclaim) {}
+
+  // Whether a replacement that found no free worker job slot asks its caller to stop another
+  // stream session's left variant and try once more. The caller stops it only after it has
+  // released its own session mutex.
+  private static final class LeftVariantReclaim {
+
+    private final boolean allowed;
+    private boolean requested;
+
+    private LeftVariantReclaim(boolean allowed) {
+      this.allowed = allowed;
+    }
+
+    private static LeftVariantReclaim allowed() {
+      return new LeftVariantReclaim(true);
+    }
+
+    private static LeftVariantReclaim spent() {
+      return new LeftVariantReclaim(false);
+    }
+
+    private boolean tryRequest() {
+      requested = allowed;
+      return requested;
+    }
+  }
 
   /**
    * Observes progress and decides whether to wait, replace, or exhaust under the same session mutex
    * as every producer mutation. Recovery state is committed before releasing it. Once a newer
    * request has positioned the variant, this request never relocates or resumes it: it ends as
    * {@link RecoveryResult#SUPERSEDED} when its segment needs either. Any request still replaces a
-   * dead or stalled job attempt.
+   * dead or stalled job attempt. When a replacement finds no free worker job slot, recovery stops
+   * another stream session's left variant and tries once more.
    */
   public RecoveryResult recover(SegmentRequest request) {
-    return withSessionLock(request.sessionId(), () -> doRecover(request));
+    var reclaim = LeftVariantReclaim.allowed();
+    var result = withSessionLock(request.sessionId(), () -> doRecover(request, reclaim));
+    if (!reclaim.requested) {
+      return result;
+    }
+
+    stopLeftVariantOfAnotherStreamSession(request.sessionId());
+    return withSessionLock(
+        request.sessionId(), () -> doRecover(request, LeftVariantReclaim.spent()));
   }
 
   // Also remembered when the relocation or resume fails, so the replacement starts at this
@@ -158,10 +199,11 @@ public class ProducerLifecycleService {
           newestMediaSegmentRequests.remove(sessionId);
           newestVariantArrivals.remove(sessionId);
           playingVariants.remove(sessionId);
+          sessionsKeepingLeftVariant.remove(sessionId);
         });
   }
 
-  private RecoveryResult doRecover(SegmentRequest request) {
+  private RecoveryResult doRecover(SegmentRequest request, LeftVariantReclaim reclaim) {
     var sessionId = request.sessionId();
     var variantLabel = request.variantLabel();
     var segmentName = request.segmentName();
@@ -213,6 +255,7 @@ public class ProducerLifecycleService {
             .request(request)
             .requestedIndex(
                 SegmentNames.indexOf(segmentName).orElseGet(() -> currentSegment(session)))
+            .reclaim(reclaim)
             .build();
     if (handle.status() == TranscodeStatus.FAILED
         && !state.resetForFreshTargets(
@@ -308,6 +351,7 @@ public class ProducerLifecycleService {
               .expectedAttemptId(handle.attemptId())
               .reason(reason)
               .target(target.get())
+              .reclaim(pending.reclaim())
               .build();
       var outcome = replaceAndTrack(state, session, command);
       if (outcome.isPresent()) {
@@ -395,6 +439,13 @@ public class ProducerLifecycleService {
             refusal);
         yield Optional.empty();
       }
+      case ReplaceResult.NoFreeSlot() -> {
+        log.info(
+            "No job slot is free to replace the producer of session {} variant {}: stopping another stream session's left variant",
+            command.sessionId(),
+            command.variantLabel());
+        yield Optional.of(RecoveryResult.WAITING);
+      }
       case ReplaceResult.Superseded() -> Optional.of(RecoveryResult.WAITING);
       case ReplaceResult.SessionGone() -> Optional.of(RecoveryResult.SESSION_GONE);
     };
@@ -462,12 +513,16 @@ public class ProducerLifecycleService {
       int segmentIndex,
       UUID expectedAttemptId,
       ReplacementReason reason,
-      ExecutionTargetId target) {}
+      ExecutionTargetId target,
+      LeftVariantReclaim reclaim) {}
 
   private sealed interface ReplaceResult {
     record Replaced(UUID newAttemptId) implements ReplaceResult {}
 
     record Refused(String reason) implements ReplaceResult {}
+
+    // No worker job slot was free, and another stream session keeps a left variant.
+    record NoFreeSlot() implements ReplaceResult {}
 
     record Superseded() implements ReplaceResult {}
 
@@ -511,35 +566,122 @@ public class ProducerLifecycleService {
    * that the player plays while that variant's running job attempt can produce the requested
    * segment without a relocation. A request for a variant without a job attempt then starts that
    * variant: at the requested media segment, or at the current segment for the initialization
-   * segment. When the start of a media-segment request's variant fails, the variant that the player
-   * plays stops and the start is tried once more. A stored media segment starts nothing, and
-   * neither does a full transcode limit. A variant that does not start stays without a job attempt,
-   * so recovery answers the request as {@link RecoveryResult#VARIANT_NOT_RUNNING}. Returns the
-   * request numbered in order of arrival; the caller passes it to every later {@link #recover}.
+   * segment. When no slot is free and the start of a media-segment request's variant fails, the
+   * variant that the player plays stops and the start is tried once more. When the start still
+   * finds no free slot, another stream session's left variant stops and the start is tried once
+   * more. A stored media segment starts nothing, and neither does a full transcode limit. A variant
+   * that does not start stays without a job attempt, so recovery answers the request as {@link
+   * RecoveryResult#VARIANT_NOT_RUNNING}. Returns the request numbered in order of arrival; the
+   * caller passes it to every later {@link #recover}.
    */
   public SegmentRequest prepareRequestedVariant(
       UUID sessionId, String variantLabel, String segmentName) {
-    return withSessionLock(
-        sessionId,
-        () -> {
-          var request =
-              SegmentRequest.builder()
-                  .sessionId(sessionId)
-                  .variantLabel(variantLabel)
-                  .segmentName(segmentName)
-                  .arrival(requestArrivals.incrementAndGet())
-                  .build();
-          if (SegmentNames.indexOf(segmentName).isPresent()) {
-            rememberNewestMediaSegmentRequest(request);
-            doStopVariantsTheSwitchLeaves(request);
-          }
+    var prepared =
+        withSessionLock(
+            sessionId, () -> doPrepareRequestedVariant(sessionId, variantLabel, segmentName));
+    if (prepared.start() == OnDemandStart.NO_FREE_SLOT
+        && stopLeftVariantOfAnotherStreamSession(sessionId)) {
+      withSessionLock(sessionId, () -> retryOnDemandStart(prepared.request()));
+    }
 
-          if (tryStartVariantOnDemand(request)) {
-            rememberNewestPositioningRequest(request);
-          }
+    return prepared.request();
+  }
 
-          return request;
-        });
+  private enum OnDemandStart {
+    STARTED,
+    NOT_STARTED,
+    NO_FREE_SLOT
+  }
+
+  @Builder
+  private record PreparedRequest(SegmentRequest request, OnDemandStart start) {}
+
+  private PreparedRequest doPrepareRequestedVariant(
+      UUID sessionId, String variantLabel, String segmentName) {
+    var request =
+        SegmentRequest.builder()
+            .sessionId(sessionId)
+            .variantLabel(variantLabel)
+            .segmentName(segmentName)
+            .arrival(requestArrivals.incrementAndGet())
+            .build();
+    if (SegmentNames.indexOf(segmentName).isPresent()) {
+      rememberNewestMediaSegmentRequest(request);
+      doStopVariantsTheSwitchLeaves(request);
+    }
+
+    var start = tryStartVariantOnDemand(request);
+    if (start == OnDemandStart.STARTED) {
+      rememberNewestPositioningRequest(request);
+    }
+
+    return PreparedRequest.builder().request(request).start(start).build();
+  }
+
+  // A newer media-segment request decides which variants run, so the retry starts nothing after
+  // one.
+  private void retryOnDemandStart(SegmentRequest request) {
+    var newest = newestMediaSegmentRequests.get(request.sessionId());
+    if (newest != null && newest.arrival() > request.arrival()) {
+      return;
+    }
+
+    if (tryStartVariantOnDemand(request) == OnDemandStart.STARTED) {
+      rememberNewestPositioningRequest(request);
+    }
+  }
+
+  /**
+   * Stops the left variant of one stream session other than the given one, and answers whether it
+   * stopped one. A left variant only serves a switch back, so it never keeps another stream session
+   * from starting or replacing a variant (ADR 0019). The caller must hold no session mutex: this
+   * takes the other stream session's mutex alone.
+   */
+  public boolean stopLeftVariantOfAnotherStreamSession(UUID sessionId) {
+    for (var other : List.copyOf(sessionsKeepingLeftVariant)) {
+      if (!other.equals(sessionId) && withSessionLock(other, () -> doStopLeftVariant(other))) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private boolean anotherStreamSessionKeepsLeftVariant(UUID sessionId) {
+    return sessionsKeepingLeftVariant.stream().anyMatch(other -> !other.equals(sessionId));
+  }
+
+  private boolean doStopLeftVariant(UUID sessionId) {
+    sessionsKeepingLeftVariant.remove(sessionId);
+    var session = runtimeRegistry.findById(sessionId).orElse(null);
+    if (session == null) {
+      return false;
+    }
+
+    var left = leftVariant(session);
+    if (left.isEmpty()) {
+      return false;
+    }
+
+    stopVariant(session, left.get());
+    runtimeRegistry.save(session);
+    log.info(
+        "Stopped left variant {} of session {} to free a slot for another stream session",
+        left.get(),
+        sessionId);
+    return true;
+  }
+
+  // The played variant while the newest media-segment request asks for another variant.
+  private Optional<String> leftVariant(StreamSession session) {
+    var newest = newestMediaSegmentRequests.get(session.getSessionId());
+    if (newest == null) {
+      return Optional.empty();
+    }
+
+    return Optional.ofNullable(playingVariants.get(session.getSessionId()))
+        .filter(played -> !played.equals(newest.variantLabel()))
+        .filter(played -> session.getVariantHandle(played).isPresent());
   }
 
   private void rememberNewestMediaSegmentRequest(SegmentRequest request) {
@@ -606,6 +748,7 @@ public class ProducerLifecycleService {
     }
 
     playingVariants.put(delivered.sessionId(), delivered.variantLabel());
+    sessionsKeepingLeftVariant.remove(delivered.sessionId());
     var stopped = doStopVideoVariantsExcept(session, Set.of(delivered.variantLabel()));
     if (stopped.isEmpty()) {
       return;
@@ -627,7 +770,14 @@ public class ProducerLifecycleService {
 
     var kept = new HashSet<String>();
     kept.add(request.variantLabel());
-    variantToKeepForSwitchBack(session, request).ifPresent(kept::add);
+    var left = variantToKeepForSwitchBack(session, request);
+    left.ifPresent(kept::add);
+    if (left.isPresent()) {
+      sessionsKeepingLeftVariant.add(request.sessionId());
+    } else {
+      sessionsKeepingLeftVariant.remove(request.sessionId());
+    }
+
     var stopped = doStopVideoVariantsExcept(session, kept);
     if (stopped.isEmpty()) {
       return;
@@ -690,17 +840,25 @@ public class ProducerLifecycleService {
     session.removeVariantHandle(variantLabel);
   }
 
-  private boolean tryStartVariantOnDemand(SegmentRequest request) {
+  private OnDemandStart tryStartVariantOnDemand(SegmentRequest request) {
     var sessionId = request.sessionId();
     var variantLabel = request.variantLabel();
     var session = runtimeRegistry.findById(sessionId).orElse(null);
     if (session == null || !needsOnDemandStart(session, variantLabel, request.segmentName())) {
-      return false;
+      return OnDemandStart.NOT_STARTED;
     }
 
     var startSequenceNumber =
         SegmentNames.indexOf(request.segmentName()).orElseGet(() -> currentSegment(session));
-    var refusal = startOnDemand(session, request, startSequenceNumber);
+    // The variant that the player plays must not keep the requested variant from starting: when no
+    // slot was free and the start fails beside it, that variant stops and the start is tried once
+    // more (ADR 0019). A start that fails for another reason leaves it running.
+    var slotShortage = hasSlotShortage(session);
+    var refusal = attemptOnDemandStart(session, variantLabel, startSequenceNumber);
+    if (refusal.isPresent() && slotShortage && stopOwnVariantsToMakeRoom(session, request)) {
+      refusal = attemptOnDemandStart(session, variantLabel, startSequenceNumber);
+    }
+
     if (refusal.isPresent()) {
       log.warn(
           "Variant {} of session {} did not start on demand at segment {}: {}",
@@ -708,7 +866,7 @@ public class ProducerLifecycleService {
           sessionId,
           startSequenceNumber,
           refusal.get());
-      return false;
+      return refusedStart(slotShortage);
     }
 
     runtimeRegistry.save(session);
@@ -717,35 +875,36 @@ public class ProducerLifecycleService {
         variantLabel,
         sessionId,
         startSequenceNumber);
-    return true;
+    return OnDemandStart.STARTED;
   }
 
-  // The variant that the player plays must not keep the requested variant from starting: when no
-  // slot was free and the start fails beside it, that variant stops and the start is tried once
-  // more (ADR 0019). A start that fails for another reason leaves it running. Answers why the
-  // variant did not start.
-  private Optional<String> startOnDemand(
-      StreamSession session, SegmentRequest request, int startSequenceNumber) {
-    var slotShortage = hasSlotShortage(session);
-    var refusal = attemptOnDemandStart(session, request.variantLabel(), startSequenceNumber);
-    if (refusal.isEmpty()
-        || !slotShortage
-        || SegmentNames.indexOf(request.segmentName()).isEmpty()) {
-      return refusal;
+  private static OnDemandStart refusedStart(boolean slotShortage) {
+    if (slotShortage) {
+      return OnDemandStart.NO_FREE_SLOT;
+    }
+
+    return OnDemandStart.NOT_STARTED;
+  }
+
+  // Only a media-segment request stops the stream session's other variants, so an initialization
+  // request never stops the variant that the player plays. Answers whether it stopped any.
+  private boolean stopOwnVariantsToMakeRoom(StreamSession session, SegmentRequest request) {
+    if (SegmentNames.indexOf(request.segmentName()).isEmpty()) {
+      return false;
     }
 
     var stopped = doStopVideoVariantsExcept(session, Set.of(request.variantLabel()));
+    sessionsKeepingLeftVariant.remove(request.sessionId());
     if (stopped.isEmpty()) {
-      return refusal;
+      return false;
     }
 
     log.info(
-        "Stopped variants {} of session {} to make room for variant {}: {}",
+        "Stopped variants {} of session {} to make room for variant {}",
         stopped,
         request.sessionId(),
-        request.variantLabel(),
-        refusal.get());
-    return attemptOnDemandStart(session, request.variantLabel(), startSequenceNumber);
+        request.variantLabel());
+    return true;
   }
 
   private Optional<String> attemptOnDemandStart(
@@ -844,6 +1003,7 @@ public class ProducerLifecycleService {
     }
 
     transcodeExecutor.stop(session.getSessionId());
+    sessionsKeepingLeftVariant.remove(sessionId);
     for (var entry : session.getVariantHandles().entrySet()) {
       var handle = entry.getValue();
       if (handle.status() != TranscodeStatus.ACTIVE) {
@@ -902,6 +1062,7 @@ public class ProducerLifecycleService {
       transcodeExecutor.stopVariant(command.sessionId(), command.variantLabel());
     }
 
+    var noFreeSlot = transcodeExecutor.availableSlots(session.getTranscodeDecision()) <= 0;
     TranscodeHandle replacement;
     try {
       replacement =
@@ -909,6 +1070,12 @@ public class ProducerLifecycleService {
               jobAttemptRequest(session, command.variantLabel(), command.segmentIndex()),
               command.target());
     } catch (TranscodeException refusal) {
+      if (noFreeSlot
+          && anotherStreamSessionKeepsLeftVariant(command.sessionId())
+          && command.reclaim().tryRequest()) {
+        return new ReplaceResult.NoFreeSlot();
+      }
+
       return new ReplaceResult.Refused(refusal.getMessage());
     }
 

@@ -2080,6 +2080,41 @@ class HlsStreamingServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should stop another stream session's left variant to admit a stream session when the transcode limit is reached")
+  void
+      shouldStopAnotherStreamSessionsLeftVariantToAdmitAStreamSessionWhenTheTranscodeLimitIsReached()
+          throws Exception {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .framerate(OptionalDouble.of(23.976))
+            .videoCodec("hevc")
+            .bitrate(8_000_000L)
+            .build());
+    var switching = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    var switchingId = switching.getSessionId();
+    upload(switchingId, "480p", "480p/segment0.m4s");
+    assertThat(coordinator.deliver(switchingId, "480p", "480p/segment0.m4s"))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+    var looks = transcodeExecutor.livenessChecks(switchingId, "1080p");
+    var switched =
+        CompletableFuture.supplyAsync(
+            () -> coordinator.deliver(switchingId, "1080p", "1080p/segment1.m4s"));
+    transcodeExecutor.awaitLivenessCheckCount(switchingId, "1080p", looks + 1);
+    var other = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    assertThat(switching.getVariantHandles()).containsOnlyKeys("480p", "1080p");
+
+    var admitted = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(admitted.getVariantHandles()).containsOnlyKeys("480p");
+    assertThat(switching.getVariantHandles()).containsOnlyKeys("1080p");
+    assertThat(transcodeExecutor.isRunning(other.getSessionId(), "480p")).isTrue();
+    assertThat(capacityRefusals("no_free_configured_transcode_slot")).isZero();
+    upload(switchingId, "1080p", "1080p/segment1.m4s");
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  @Test
   @DisplayName("Should reject ABR session when all transcode slots are full")
   void shouldRejectAbrSessionWhenAllTranscodeSlotsAreFull() {
     probeResults.setDefaultProbe(

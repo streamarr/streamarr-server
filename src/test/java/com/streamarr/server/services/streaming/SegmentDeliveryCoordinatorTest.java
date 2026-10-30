@@ -1788,6 +1788,66 @@ class SegmentDeliveryCoordinatorTest {
     assertThat(runningVariants(session)).containsExactly("1080p");
   }
 
+  @Test
+  @DisplayName(
+      "Should stop another stream session's left variant to start a variant on demand when the transcode limit leaves no room")
+  void
+      shouldStopAnotherStreamSessionsLeftVariantToStartAVariantOnDemandWhenTheTranscodeLimitLeavesNoRoom()
+          throws Exception {
+    var switching = ladderSessionPlayingFirstListedVariant(3);
+    var switchingId = switching.getSessionId();
+    var switched = heldDelivery(switchingId, "1080p", "1080p/segment3.m4s");
+    var other = startedLadderSession();
+    var otherId = other.getSessionId();
+    assertThat(lifecycle.freeConfiguredTranscodeSlots()).isZero();
+
+    var initialization = heldDelivery(otherId, "1080p", "1080p/init.mp4");
+
+    assertThat(runningVariants(switching)).containsExactly("1080p");
+    assertThat(runningVariants(other)).containsExactlyInAnyOrder("480p", "1080p");
+    upload(otherId, "1080p/init.mp4", new byte[] {0x66});
+    assertThat(initialization.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    upload(switchingId, "1080p/segment3.m4s", new byte[] {3});
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop another stream session's left variant to replace a dead job attempt when no worker job slot is free")
+  void shouldStopAnotherStreamSessionsLeftVariantToReplaceADeadJobAttemptWhenNoWorkerJobSlotIsFree()
+      throws Exception {
+    properties =
+        StreamingProperties.builder()
+            .maxConcurrentTranscodes(10)
+            .targetSegmentDuration(Duration.ofSeconds(6))
+            .sessionTimeout(Duration.ofSeconds(60))
+            .producerStallThreshold(STALL_THRESHOLD)
+            .build();
+    var rig = rigWith(transcodeExecutor);
+    lifecycle = rig.lifecycle();
+    coordinator = rig.coordinator();
+    transcodeExecutor.limitJobSlots(3);
+    var switching = ladderSessionPlayingFirstListedVariant(3);
+    var switchingId = switching.getSessionId();
+    var switched = heldDelivery(switchingId, "1080p", "1080p/segment3.m4s");
+    var recovering = startedLadderSession();
+    var recoveringId = recovering.getSessionId();
+    transcodeExecutor.markDead(recoveringId, "480p");
+    var third = startedLadderSession();
+    assertThat(transcodeExecutor.availableSlots()).isZero();
+
+    var recovery = deliverAsync(recoveringId, "480p", "480p/segment0.m4s");
+    transcodeExecutor.awaitStartedTarget(ExecutionTargetId.LOCAL);
+
+    assertThat(runningVariants(switching)).containsExactly("1080p");
+    assertThat(runningVariants(recovering)).containsExactly("480p");
+    assertThat(runningVariants(third)).containsExactly("480p");
+    upload(recoveringId, "480p/segment0.m4s", new byte[] {0});
+    assertThat(recovery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    upload(switchingId, "1080p/segment3.m4s", new byte[] {3});
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
   /**
    * Holds one request's thread at the session mutex once the given condition holds, so a second
    * request can run between the first request's steps.
