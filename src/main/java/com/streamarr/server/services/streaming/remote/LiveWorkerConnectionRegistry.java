@@ -392,20 +392,26 @@ final class LiveWorkerConnectionRegistry {
   }
 
   Set<ExecutionTargetId> eligibleWorkers(UUID sourceNamespaceId, TranscodeDecision decision) {
-    return eligibleWorkers(sourceNamespaceId, connection -> connection.canEncode(decision));
+    return executionTargets(
+        connectionsFor(sourceNamespaceId).filter(connection -> connection.canEncode(decision)));
   }
 
   Set<ExecutionTargetId> eligibleWorkers(
       UUID sourceNamespaceId, WorkerVerifiedEncoder pinnedEncoder) {
-    return eligibleWorkers(sourceNamespaceId, connection -> connection.advertises(pinnedEncoder));
+    return executionTargets(
+        connectionsFor(sourceNamespaceId)
+            .filter(connection -> connection.advertises(pinnedEncoder)));
   }
 
-  private Set<ExecutionTargetId> eligibleWorkers(
-      UUID sourceNamespaceId, Predicate<WorkerConnection> eligible) {
+  private Stream<WorkerConnection> connectionsFor(UUID sourceNamespaceId) {
     var sourceNamespace = toProto(sourceNamespaceId);
     return connections.values().stream()
-        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
-        .filter(eligible)
+        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace));
+  }
+
+  private static Set<ExecutionTargetId> executionTargets(
+      Stream<WorkerConnection> eligibleConnections) {
+    return eligibleConnections
         .map(WorkerConnection::executionTargetId)
         .collect(Collectors.toCollection(LinkedHashSet::new));
   }
@@ -492,9 +498,7 @@ final class LiveWorkerConnectionRegistry {
   }
 
   private Stream<WorkerVerifiedEncoder> encodersOfWorkersWithFreeSlot(UUID sourceNamespaceId) {
-    var sourceNamespace = toProto(sourceNamespaceId);
-    return connections.values().stream()
-        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
+    return connectionsFor(sourceNamespaceId)
         .filter(connection -> connection.availableSlots() > 0)
         .flatMap(connection -> connection.countedEncoders.values().stream());
   }
