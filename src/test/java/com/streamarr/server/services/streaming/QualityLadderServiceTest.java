@@ -410,6 +410,63 @@ class QualityLadderServiceTest {
         .containsExactly(tuple(expectedWidth, 236, "360p"));
   }
 
+  // ADR 0050: a variant costs its video bitrate plus the stream session's audio bitrate.
+  @ParameterizedTest
+  @CsvSource({
+    "0, 3100000, '720p, 480p, 360p'",
+    "128000, 3100000, '480p, 360p'",
+    "384000, 1800000, '360p'"
+  })
+  @DisplayName(
+      "Should offer a tier only when its video bitrate plus the session's audio bitrate is within"
+          + " the viewer's maximum bitrate")
+  void shouldOfferATierOnlyWhenItsVideoPlusAudioBitrateIsWithinTheViewersMaximumBitrate(
+      long audioBitrate, int maxBitrate, String expectedLabels) {
+    var probe = buildProbe(1920, 1080, 8_000_000L);
+    var options = StreamingOptions.builder().maxBitrate(maxBitrate).build();
+
+    var variants =
+        service.generateVariants(ladderRequest(probe, options).audioBitrate(audioBitrate).build());
+
+    assertThat(variants)
+        .extracting(QualityVariant::label)
+        .containsExactly(expectedLabels.split(", "));
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "FULL_HD_1080P, 8000000, 128000, 2000000, 1920, 1080, 1872000",
+    "FULL_HD_1080P, 8000000, 128000, 928000, 1920, 1080, 800000",
+    "FULL_HD_1080P, 8000000, 128000, 927999, 640, 360, 800000",
+    "FULL_HD_1080P, 8000000, 128000, 700000, 640, 360, 700000",
+    "FULL_HD_1080P, 8000000, 128000, 128000, 640, 360, 128000",
+    "FULL_HD_1080P, 8000000, 384000, 100000, 640, 360, 100000",
+    "FULL_HD_1080P, 300000, 128000, 500000, 640, 360, 300000",
+    "FULL_HD_1080P, 0, 128000, 500000, 640, 360, 500000",
+    "AUTO, 8000000, 128000, 500000, 640, 360, 500000"
+  })
+  @DisplayName(
+      "Should bound a single variant's video bitrate by the viewer's maximum less the audio, and"
+          + " by the 360p box and the 360p tier's bitrate when less than that remains")
+  void shouldBoundASingleVariantsVideoBitrateByTheViewersMaximumLessTheAudio(
+      VideoQuality quality,
+      long sourceBitrate,
+      long audioBitrate,
+      int maxBitrate,
+      int expectedWidth,
+      int expectedHeight,
+      long expectedVideoBitrate) {
+    var probe = buildProbe(1920, 1080, sourceBitrate);
+    var options = StreamingOptions.builder().quality(quality).maxBitrate(maxBitrate).build();
+
+    var variants =
+        service.generateVariants(ladderRequest(probe, options).audioBitrate(audioBitrate).build());
+
+    assertThat(variants)
+        .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::videoBitrate)
+        .containsExactly(tuple(expectedWidth, expectedHeight, expectedVideoBitrate));
+  }
+
   @Test
   @DisplayName("Should filter tiers when client specifies max bitrate")
   void shouldFilterTiersWhenClientSpecifiesMaxBitrate() {
