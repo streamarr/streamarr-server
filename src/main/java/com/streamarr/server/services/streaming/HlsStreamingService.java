@@ -178,10 +178,13 @@ public class HlsStreamingService implements StreamingService {
 
   // An encode whose encoders all run on workers with no free slot is decided only once a slot is
   // free. A left variant never keeps a new stream session out (ADR 0019), so the server stops one
-  // that frees a slot on such a worker and decides once more.
+  // that frees a slot on such a worker and decides once more. An encode that no worker can run
+  // whatever slots are free stops nothing.
   private Optional<TranscodeDecision> decideAfterStoppingALeftVariant(
       UUID sessionId, TranscodeDecisionRequest request) {
-    var verifiedCandidate = verifiedEncodeCandidate(request);
+    var verifiedCandidate =
+        verifiedEncodeCandidate(request)
+            .filter(decision -> encodeRejection(request, decision).isEmpty());
     if (verifiedCandidate.isEmpty()) {
       return Optional.empty();
     }

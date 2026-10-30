@@ -8,6 +8,7 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigura
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
+import static com.streamarr.server.support.OutcomeTestSupport.rejectionOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
@@ -25,6 +26,8 @@ import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
+import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.QualityLadderService;
 import com.streamarr.server.services.streaming.SegmentDelivery;
@@ -60,6 +63,8 @@ class OnDemandVariantsIT {
   private final FakeSegmentStore segmentStore = new FakeSegmentStore();
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
   private final MutexFactory<UUID> sessionMutex = new MutexFactory<>();
+  private final FakeMediaFileContainerInfoRepository probeResults =
+      new FakeMediaFileContainerInfoRepository();
   private WorkerSessionServer server;
   private ManagedChannel channel;
   private LoopbackWorker worker;
@@ -106,7 +111,6 @@ class OnDemandVariantsIT {
                 .status(MediaFileStatus.MATCHED)
                 .size(1_000_000L)
                 .build());
-    var probeResults = new FakeMediaFileContainerInfoRepository();
     probeResults.setDefaultProbe(
         defaultProbeBuilder()
             .videoCodec("hevc")
@@ -220,20 +224,54 @@ class OnDemandVariantsIT {
     assertThat(storeAndAwait(switchUp)).isInstanceOf(SegmentDelivery.Ready.class);
   }
 
+  @Test
+  @DisplayName(
+      "Should keep another stream session's left variant when a stream session whose encode has no frame rate is refused while the worker has no free job slot")
+  void
+      shouldKeepAnotherStreamSessionsLeftVariantWhenAStreamSessionWhoseEncodeHasNoFrameRateIsRefusedWhileTheWorkerHasNoFreeJobSlot()
+          throws Exception {
+    registerWorker(3);
+    var switchingId = startedSession().getSessionId();
+    worker.awaitRunningJobs(Map.of("480p", 0));
+    assertThat(storeAndAwait(request(switchingId, "480p", "480p/segment0.m4s")))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+    var switchUp = request(switchingId, "1080p", "1080p/segment1.m4s");
+    worker.awaitRunningJobs(Map.of("480p", 0, "1080p", 1));
+    awaitHeldRequests(1);
+    var switchingMutex = sessionMutex.getMutex(switchingId);
+    await().atMost(Duration.ofSeconds(5)).until(() -> !switchingMutex.isLocked());
+    startedSession();
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .videoCodec("hevc")
+            .framerate(OptionalDouble.empty())
+            .bitrate(8_000_000L)
+            .build());
+
+    var outcome = streamingService.createSession(sessionCommand());
+
+    assertThat(rejectionOf(outcome))
+        .isInstanceOf(CreateStreamSessionRejection.TranscodeCapacityUnavailable.class);
+    assertThat(server.isRunning(switchingId, "480p")).isTrue();
+    assertThat(storeAndAwait(switchUp)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
   private void registerWorker(int availableSlots) throws InterruptedException {
     worker = LoopbackWorker.register(channel, availableSlots);
     assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
   }
 
   private StreamSession startedSession() {
+    return accepted(streamingService.createSession(sessionCommand()));
+  }
+
+  private CreateStreamSessionCommand sessionCommand() {
     var options =
         StreamingOptions.builder()
             .quality(VideoQuality.AUTO)
             .supportedCodecs(List.of("h264"))
             .build();
-    return accepted(
-        streamingService.createSession(
-            createStreamSessionCommand(mediaFile.getId(), UUID.randomUUID(), options)));
+    return createStreamSessionCommand(mediaFile.getId(), UUID.randomUUID(), options);
   }
 
   // A request is held only after the server has applied the on-demand rules to it.
