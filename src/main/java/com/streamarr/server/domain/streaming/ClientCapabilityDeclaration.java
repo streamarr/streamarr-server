@@ -26,13 +26,13 @@ public record ClientCapabilityDeclaration(
 
   /**
    * The encoded output that one video capability entry accepts over HLS (ADR 0049), or empty when
-   * no entry accepts an encode of the request. Among the entries' fitted outputs, the larger
-   * picture wins, then the faster frame rate.
+   * no entry accepts an encode of the request. Among the entries' fitted outputs, the faster frame
+   * rate wins, then the larger picture, then the higher bitrate.
    */
   public Optional<EncodedVideoOutput> fitHlsEncode(@NonNull EncodedVariantRequest request) {
     return video.stream()
         .map(entry -> entry.fitHlsEncode(request))
         .flatMap(Optional::stream)
-        .max(EncodedVideoOutput.LARGER_PICTURE_THEN_FASTER_FRAME_RATE);
+        .max(EncodedVideoOutput.FASTER_FRAME_RATE_THEN_LARGER_PICTURE_THEN_HIGHER_BITRATE);
   }
 }
