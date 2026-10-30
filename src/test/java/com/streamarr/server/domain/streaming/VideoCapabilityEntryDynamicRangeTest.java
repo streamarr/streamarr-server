@@ -218,6 +218,15 @@ class VideoCapabilityEntryDynamicRangeTest {
             "7 named by its RPU header",
             pqWith81AtLevel6,
             hevcCopy(dolbyVision(CompatibleBase.PQ, enhancementLayerRpuHeader())),
+            false),
+        Arguments.of(
+            "10.1 named by its RPU header, without a record level",
+            av1EntryBuilder()
+                .compatibleBases(List.of(CompatibleBase.PQ))
+                .dolbyVisionProfiles(
+                    List.of(dolbyVisionCapability(DolbyVisionProfile.PROFILE_10_1, 6)))
+                .build(),
+            av1Copy(dolbyVision(CompatibleBase.PQ, singleLayerRpuHeader())),
             false));
   }
 
@@ -267,6 +276,36 @@ class VideoCapabilityEntryDynamicRangeTest {
             h264EntryBuilder().build(),
             h264Copy(dolbyVision(CompatibleBase.SDR, singleLayerRpuHeader())),
             true),
+        Arguments.of(
+            "8.2 from an RPU header that sets the resampling filter flag but disables residuals",
+            hevcEntryBuilder().build(),
+            hevcCopy(
+                dolbyVision(
+                    CompatibleBase.SDR,
+                    rpuHeader(
+                        DolbyVisionRpuHeader.builder()
+                            .vdrRpuProfile(1)
+                            .enhancementLayerSpatialResamplingFilter(true)
+                            .disableResidual(true)
+                            .vdrBitDepth(12)
+                            .build()))),
+            true),
+        Arguments.of(
+            "4 from its record on an SDR base",
+            hevcEntryBuilder().build(),
+            hevcCopy(
+                declaredDolbyVision(
+                    CompatibleBase.SDR,
+                    configuration(4).baseLayerCompatibilityId(OptionalInt.of(2)))),
+            false),
+        Arguments.of(
+            "H.264 whose record names profile 8 on an SDR base",
+            h264EntryBuilder().build(),
+            h264Copy(
+                declaredDolbyVision(
+                    CompatibleBase.SDR,
+                    configuration(8).baseLayerCompatibilityId(OptionalInt.of(2)))),
+            false),
         Arguments.of(
             "7 named by its RPU header on an SDR base",
             hevcEntryBuilder().build(),
