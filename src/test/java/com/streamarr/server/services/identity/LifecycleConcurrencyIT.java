@@ -16,6 +16,7 @@ import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.AccountRemovalConflictException;
 import com.streamarr.server.exceptions.ResourceBusyException;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
@@ -551,8 +552,7 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should report self-deletion busy and keep the Account when an administrator transfers it"
           + " meanwhile")
-  void shouldReportSelfDeletionBusyAndKeepAccountWhenAdministratorTransfersItMeanwhile()
-      throws Exception {
+  void shouldReportSelfDeletionBusyAndKeepAccountWhenAdministratorTransfersItMeanwhile() {
     var actor = authTestSupport.createAdminIdentity();
     var source = authTestSupport.createIdentity();
     var self = authTestSupport.createHouseholdMemberIdentity(source);
@@ -588,7 +588,8 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
                           .build()))
           .isInstanceOf(ExecutionException.class)
           .cause()
-          .isInstanceOf(ResourceBusyException.class);
+          .isInstanceOf(ResourceBusyException.class)
+          .hasCauseInstanceOf(AccountRemovalConflictException.class);
 
       assertThat(accountRepository.findById(self.account().getId()))
           .get()
