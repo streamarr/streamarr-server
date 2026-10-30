@@ -83,6 +83,19 @@ class VideoCapabilityEntryHlsEncodeTest {
   }
 
   @Test
+  @DisplayName(
+      "Should refuse the encode when the entry's maximums shrink the source below the smallest"
+          + " picture")
+  void shouldRefuseTheEncodeWhenTheEntrysMaximumsShrinkTheSourceBelowTheSmallestPicture() {
+    var entry = h264EntryBuilder().maxWidth(1280).maxHeight(720).build();
+    var source = new PictureSize(4096, 2);
+
+    var output = entry.fitHlsEncode(fullHdRequest().source(source).bounds(source).build());
+
+    assertThat(output).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should keep the variant within the request's bounds when the entry allows more")
   void shouldKeepTheVariantWithinTheRequestsBoundsWhenTheEntryAllowsMore() {
     var entry = h264EntryBuilder().build();

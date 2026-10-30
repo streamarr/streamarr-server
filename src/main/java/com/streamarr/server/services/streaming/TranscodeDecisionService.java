@@ -6,6 +6,7 @@ import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
+import com.streamarr.server.domain.streaming.EncodedPictureSizes;
 import com.streamarr.server.domain.streaming.EncodedVariantRequest;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePositions;
@@ -101,8 +102,9 @@ public class TranscodeDecisionService {
     return refusal.isEmpty();
   }
 
-  // A source without an output frame rate or a picture has no encoded variant, and the stream
-  // session refuses its encode for that reason, so only the codec profile is checked.
+  // A source without an output frame rate or a picture that the worker encodes at any size has no
+  // encoded variant, and the stream session refuses its encode for that reason, so only the codec
+  // profile is checked.
   private static boolean fitsHlsEncode(
       ClientCapabilityDeclaration declaration, MediaProbe source, EncodeCodecProfile profile) {
     return encodedVariantRequest(source, profile)
@@ -115,7 +117,7 @@ public class TranscodeDecisionService {
   private static Optional<EncodedVariantRequest> encodedVariantRequest(
       MediaProbe source, EncodeCodecProfile profile) {
     var picture = source.displayedSize();
-    if (picture.width() <= 0 || picture.height() <= 0) {
+    if (!EncodedPictureSizes.hasEncodablePicture(picture)) {
       return Optional.empty();
     }
 
@@ -127,7 +129,7 @@ public class TranscodeDecisionService {
                 EncodedVariantRequest.builder()
                     .codecProfile(profile)
                     .source(picture)
-                    .bounds(picture)
+                    .bounds(EncodedPictureSizes.NO_BOUNDS)
                     .frameRate(frameRate)
                     .bitrate(source.bitrate())
                     .build());
