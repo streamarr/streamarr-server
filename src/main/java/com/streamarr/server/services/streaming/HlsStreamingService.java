@@ -3,14 +3,11 @@ package com.streamarr.server.services.streaming;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
-import com.streamarr.server.domain.streaming.Fraction;
-import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
-import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
@@ -157,7 +154,7 @@ public class HlsStreamingService implements StreamingService {
     }
 
     // Workers encode at the frame-rate rule's output frame rate and refuse an encode without one.
-    if (outputFrameRate(decision).isEmpty()) {
+    if (decision.outputFrameRate().isEmpty()) {
       return Optional.of(new CreateStreamSessionRejection.FrameRateUnknown());
     }
 
@@ -326,17 +323,10 @@ public class HlsStreamingService implements StreamingService {
             .options(command.options())
             .capabilityDeclaration(command.capabilityDeclaration())
             .codecProfile(EncodeCodecProfile.forCodecFamilyName(decision.videoCodecFamily()))
-            .frameRate(outputFrameRate(decision).orElseThrow())
+            .frameRate(decision.outputFrameRate().orElseThrow())
             .build();
     return MultivariantPlaylistOrder.of(
         qualityLadderService.generateVariants(request), decision.audioDecision().bitrate());
-  }
-
-  private static Optional<Fraction> outputFrameRate(TranscodeDecision decision) {
-    return decision
-        .videoSource()
-        .map(VideoPlaybackFacts::frameRateRule)
-        .flatMap(FrameRateRule::outputFrameRate);
   }
 
   private boolean requiresVideoTranscode(TranscodeMode mode) {
