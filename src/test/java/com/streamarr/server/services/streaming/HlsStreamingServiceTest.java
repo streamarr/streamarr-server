@@ -1067,6 +1067,35 @@ class HlsStreamingServiceTest {
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(expectedMode);
   }
 
+  @Test
+  @DisplayName(
+      "Should encode a portrait source at its full size when the capability entry's maximum fits"
+          + " it turned on its side")
+  void
+      shouldEncodeAPortraitSourceAtItsFullSizeWhenTheCapabilityEntrysMaximumFitsItTurnedOnItsSide() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").width(1080).height(1920).build());
+    var landscapeHd =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().maxWidth(1920).maxHeight(1080).build()))
+            .build();
+
+    accepted(
+        service.createSession(
+            createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                .options(StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P).build())
+                .capabilityDeclaration(landscapeHd)
+                .build()));
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(1080);
+              assertThat(request.height()).isEqualTo(1920);
+            });
+  }
+
   private PlaybackFormatAttempt startPlayback(
       VideoQuality quality, ClientCapabilityDeclaration declaration) {
     var result =
