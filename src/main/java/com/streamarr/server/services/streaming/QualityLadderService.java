@@ -8,7 +8,6 @@ import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import lombok.NonNull;
@@ -69,7 +68,7 @@ public class QualityLadderService {
       return List.of(sourceSizedVariant(output, output.height() + "p"));
     }
 
-    return List.copyOf(new ArrayList<>(variants.values()));
+    return List.copyOf(variants.values());
   }
 
   // The decision encodes only a codec family that one entry fits at the source's size, so one
