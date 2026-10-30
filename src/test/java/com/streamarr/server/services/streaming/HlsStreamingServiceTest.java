@@ -1302,6 +1302,28 @@ class HlsStreamingServiceTest {
             });
   }
 
+  @ParameterizedTest
+  @CsvSource({"HIGH_720P, , ", "AUTO, 720, ", "AUTO, , 1000000"})
+  @DisplayName(
+      "Should copy a source that has no usable frame rate when the viewer's limits refuse its copy")
+  void shouldCopyASourceThatHasNoUsableFrameRateWhenTheViewersLimitsRefuseItsCopy(
+      VideoQuality quality, Integer maxHeight, Integer maxBitrate) {
+    probeResults.setDefaultProbe(defaultProbeBuilder().framerate(OptionalDouble.empty()).build());
+    var options =
+        StreamingOptions.builder()
+            .quality(quality)
+            .maxHeight(maxHeight)
+            .maxBitrate(maxBitrate)
+            .build();
+
+    var outcome =
+        service.createSession(
+            createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), options));
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(accepted(outcome).getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+  }
+
   @Test
   @DisplayName(
       "Should report transient capacity when the viewer's limits refuse a copy and every video"
