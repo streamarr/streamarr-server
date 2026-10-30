@@ -8,8 +8,8 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * A named picture box that the quality ladder offers and that labels its variant. The box bounds a
- * picture in either orientation (ADR 0050).
+ * A named picture box that the quality ladder offers. The box bounds a picture in either
+ * orientation, and Auto labels a variant that reaches the box with the tier's name (ADR 0050).
  */
 enum QualityTier {
   // The AV1 2160p and 1440p bitrates are the lowest 3840x2160 and the 2560x1440 rates of the HEVC
