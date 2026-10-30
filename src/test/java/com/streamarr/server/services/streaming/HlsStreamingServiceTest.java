@@ -2693,6 +2693,31 @@ class HlsStreamingServiceTest {
         .contains(tuple("2160p", 3840, 2160), tuple("1440p", 2560, 1440));
   }
 
+  @ParameterizedTest
+  @CsvSource({"av1, 11600000, 8100000", "h264, 20000000, 12000000"})
+  @DisplayName(
+      "Should give the 2160p and 1440p tiers the nominal bitrates of the codec family that the"
+          + " encode uses")
+  void shouldGiveThe2160pAnd1440pTiersTheNominalBitratesOfTheCodecFamilyThatTheEncodeUses(
+      String codecFamily, long bitrate2160p, long bitrate1440p) {
+    transcodeExecutor.setEncodeSlots(Map.of(codecFamily, 3));
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .videoCodec("hevc")
+            .width(3840)
+            .height(2160)
+            .bitrate(40_000_000L)
+            .build());
+
+    var session = createSession(seedMediaFile().getId(), av1AndH264Declaration());
+
+    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo(codecFamily);
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label, QualityVariant::videoBitrate)
+        .contains(
+            tuple("2160p", bitrate2160p), tuple("1440p", bitrate1440p), tuple("1080p", 5_000_000L));
+  }
+
   @Test
   @DisplayName(
       "Should start only the 480p variant when an Auto stream session uses the default ladder")
