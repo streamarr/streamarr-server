@@ -40,6 +40,9 @@ public class ProducerLifecycleService {
   /** Beyond this lead, restarting the encoder beats waiting for it to catch up. */
   private static final Duration FORWARD_RELOCATION_GAP = Duration.ofSeconds(24);
 
+  private static final int FIRST_SEGMENT_ONLY = 1;
+  private static final int FIRST_SEGMENT_AND_PREROLL = 2;
+
   private final TranscodeExecutor transcodeExecutor;
   private final SegmentStore segmentStore;
   private final StreamingProperties properties;
@@ -121,12 +124,14 @@ public class ProducerLifecycleService {
 
   private Duration doTimeUntilStall(VariantKey key) {
     var state = recoveryStates.get(key);
-    if (state == null) {
-      return startupStallThreshold();
+    var session = runtimeRegistry.findById(key.sessionId());
+    if (state == null || session.isEmpty()) {
+      return startupStallThreshold(FIRST_SEGMENT_ONLY);
     }
 
     var deadline =
-        state.stallDeadline(properties.producerStallThreshold(), startupStallThreshold());
+        state.stallDeadline(
+            properties.producerStallThreshold(), startupStallThreshold(session.get(), state));
     var remaining = Duration.between(clock.instant(), deadline);
     if (remaining.isNegative()) {
       return Duration.ZERO;
@@ -262,7 +267,7 @@ public class ProducerLifecycleService {
       var handle = session.getVariantHandle(request.variantLabel()).orElseThrow();
       syncProgress(state, handle, pending);
       var running = transcodeExecutor.isRunning(request.sessionId(), request.variantLabel());
-      if (running && !hasStalled(state)) {
+      if (running && !hasStalled(state, session)) {
         return RecoveryResult.WAITING;
       }
 
@@ -274,7 +279,7 @@ public class ProducerLifecycleService {
       var eligibleTargets = eligibleTargets(session, request.variantLabel());
       // Segment publication is external to the session mutex and may advance during discovery.
       syncProgress(state, handle, pending);
-      if (noLongerNeedsRecovery(state, pending, running)) {
+      if (noLongerNeedsRecovery(pending, running && !hasStalled(state, session))) {
         return RecoveryResult.WAITING;
       }
 
@@ -331,11 +336,10 @@ public class ProducerLifecycleService {
         .orElseGet(() -> transcodeExecutor.executionTargets(session.getTranscodeDecision()));
   }
 
-  private boolean noLongerNeedsRecovery(
-      VariantDeliveryState state, PendingSegment pending, boolean running) {
-    return segmentStore.segmentExists(
-            pending.request().sessionId(), pending.request().segmentName())
-        || (running && !hasStalled(state));
+  private boolean noLongerNeedsRecovery(PendingSegment pending, boolean runningWithoutStall) {
+    return runningWithoutStall
+        || segmentStore.segmentExists(
+            pending.request().sessionId(), pending.request().segmentName());
   }
 
   private RecoveryResult exhaust(
@@ -396,13 +400,28 @@ public class ProducerLifecycleService {
         clock.instant());
   }
 
-  private boolean hasStalled(VariantDeliveryState state) {
+  private boolean hasStalled(VariantDeliveryState state, StreamSession session) {
     return state.hasStalled(
-        properties.producerStallThreshold(), startupStallThreshold(), clock.instant());
+        properties.producerStallThreshold(),
+        startupStallThreshold(session, state),
+        clock.instant());
   }
 
-  private Duration startupStallThreshold() {
-    return properties.producerStallThreshold().plus(properties.targetSegmentDuration());
+  // Before its first media segment is stored, a job attempt gets the stall threshold plus one
+  // target segment duration for each segment it encodes: its first segment and, when it encodes
+  // video from after segment 0, the preroll segment before it, where the worker starts encoding.
+  private Duration startupStallThreshold(StreamSession session, VariantDeliveryState state) {
+    if (session.getTranscodeDecision().transcodeMode().copiesVideo() || state.runStart() == 0) {
+      return startupStallThreshold(FIRST_SEGMENT_ONLY);
+    }
+
+    return startupStallThreshold(FIRST_SEGMENT_AND_PREROLL);
+  }
+
+  private Duration startupStallThreshold(int segmentsEncodedBeforeFirstStored) {
+    return properties
+        .producerStallThreshold()
+        .plus(properties.targetSegmentDuration().multipliedBy(segmentsEncodedBeforeFirstStored));
   }
 
   private static ReplacementReason replacementReason(

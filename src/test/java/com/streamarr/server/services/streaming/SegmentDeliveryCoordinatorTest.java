@@ -5,6 +5,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultLadderSe
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.sessionWithDurationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.QualityVariant;
@@ -118,8 +119,12 @@ class SegmentDeliveryCoordinatorTest {
   // Wakes the requests held on the default variant, then waits until one has looked again. A
   // request looks again only after its previous pass has returned.
   private void awaitNextLook(UUID sessionId) {
+    awaitNextLook(sessionId, StreamSession.defaultVariant());
+  }
+
+  private void awaitNextLook(UUID sessionId, String variantLabel) {
     var looks = transcodeExecutor.livenessChecks();
-    heldRequests().wakeVariant(sessionId, StreamSession.defaultVariant());
+    heldRequests().wakeVariant(sessionId, variantLabel);
     transcodeExecutor.awaitLivenessCheckCount(looks + 1);
   }
 
@@ -825,6 +830,47 @@ class SegmentDeliveryCoordinatorTest {
       assertThat(transcodeExecutor.getStartedRequests()).hasSize(startsBefore + 1);
       assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
       assertThat(transcodeExecutor.isRunning(sessionId, StreamSession.defaultVariant())).isFalse();
+    } finally {
+      destroy(sessionId);
+      delivery.get(2, TimeUnit.SECONDS);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep an encoded job attempt that starts after the first segment until its preroll and first segment are overdue")
+  void
+      shouldKeepAnEncodedJobAttemptThatStartsAfterTheFirstSegmentUntilItsPrerollAndFirstSegmentAreOverdue()
+          throws Exception {
+    var session = startedLadderSession();
+    var sessionId = session.getSessionId();
+    var startsBefore = transcodeExecutor.getStartedRequests().size();
+    var startupBudget =
+        properties
+            .producerStallThreshold()
+            .plus(properties.targetSegmentDuration().multipliedBy(2));
+
+    var delivery = heldDelivery(sessionId, "1080p", "1080p/segment20.m4s");
+    try {
+      // Moving the clock before recovery first looks at the job attempt would start its stall
+      // clock late.
+      awaitNextLook(sessionId, "1080p");
+      clock.advance(startupBudget.minusMillis(1));
+      awaitNextLook(sessionId, "1080p");
+      // A request looks again only after its previous pass has returned.
+      awaitNextLook(sessionId, "1080p");
+      assertThat(delivery).isNotDone();
+      assertThat(transcodeExecutor.getStartedRequests()).hasSize(startsBefore + 1);
+
+      clock.advance(Duration.ofMillis(1));
+      heldRequests().wakeVariant(sessionId, "1080p");
+      transcodeExecutor.awaitStartedRequestCount(startsBefore + 2);
+      upload(sessionId, "1080p/segment20.m4s", new byte[] {20});
+
+      assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+      assertThat(startedSince(startsBefore))
+          .extracting(TranscodeRequest::variantLabel, TranscodeRequest::startSequenceNumber)
+          .containsExactly(tuple("1080p", 20), tuple("1080p", 20));
     } finally {
       destroy(sessionId);
       delivery.get(2, TimeUnit.SECONDS);
