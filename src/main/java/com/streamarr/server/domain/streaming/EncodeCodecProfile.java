@@ -4,6 +4,7 @@ import com.streamarr.server.exceptions.UnsupportedVideoEncodeException;
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.OptionalLong;
+import lombok.NonNull;
 
 /** The codec profile that an encoded variant forces (ADR 0013). */
 public enum EncodeCodecProfile {
@@ -17,7 +18,7 @@ public enum EncodeCodecProfile {
   }
 
   /** The codec profile that an encode of the codec family, by its probed name, forces. */
-  public static EncodeCodecProfile forCodecFamilyName(String codecFamilyName) {
+  public static EncodeCodecProfile forCodecFamilyName(@NonNull String codecFamilyName) {
     return Arrays.stream(values())
         .filter(profile -> profile.codecFamilyName().equals(codecFamilyName))
         .findFirst()
