@@ -489,7 +489,9 @@ class HlsStreamingServiceTest {
     "FULL_HD_1080P, 0, 0, 5000000",
     "FULL_HD_1080P, 0, 2000000, 2000000",
     "AUTO, 300, 0, 800000",
-    "AUTO, 300, 1000000, 1000000"
+    "AUTO, 300, 1000000, 800000",
+    "FULL_HD_1080P, 0, 20000000, 5000000",
+    "AUTO, 300, 20000000, 800000"
   })
   @DisplayName(
       "Should dispatch a positive bitrate and advertise it in the playlist when the probe names no"

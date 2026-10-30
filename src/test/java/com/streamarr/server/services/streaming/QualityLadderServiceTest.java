@@ -150,6 +150,23 @@ class QualityLadderServiceTest {
     assertThat(variants).extracting(QualityVariant::videoBitrate).containsExactly(expectedBitrate);
   }
 
+  @ParameterizedTest
+  @CsvSource({"20000000, 5000000", "2000000, 2000000"})
+  @DisplayName(
+      "Should encode at the lower of the nominal bitrate and the viewer's maximum when the probe"
+          + " names no source bitrate")
+  void
+      shouldEncodeAtTheLowerOfTheNominalBitrateAndTheViewersMaximumWhenTheProbeNamesNoSourceBitrate(
+          int maxBitrate, long expectedBitrate) {
+    var probe = buildProbe(1920, 1080, 0L);
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.HIGH_720P).maxBitrate(maxBitrate).build();
+
+    var variants = generateVariants(probe, options);
+
+    assertThat(variants).extracting(QualityVariant::videoBitrate).containsExactly(expectedBitrate);
+  }
+
   @Test
   @DisplayName(
       "Should cap the nominal bitrate at the entry's codec level when the probe names no source"
