@@ -1034,6 +1034,37 @@ class HlsStreamingServiceTest {
             tuple("360p", new Fraction(60, 1)));
   }
 
+  @Test
+  @DisplayName(
+      "Should keep the source's frame rate when the entry that allows it accepts the largest"
+          + " picture after the encoder rounds its width")
+  void
+      shouldKeepTheSourcesFrameRateWhenTheEntryThatAllowsItAcceptsTheLargestPictureAfterRounding() {
+    probeResults.setDefaultProbe(
+        probeAt(new Fraction(30, 1)).videoCodec("hevc").width(1080).height(1920).build());
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    h264EntryBuilder().maxWidth(1000).maxHeight(1920).maxFrameRate(30).build(),
+                    h264EntryBuilder().maxWidth(1002).maxHeight(1778).maxFrameRate(15).build()))
+            .build();
+
+    var attempt = startPlayback(VideoQuality.FULL_HD_1080P, declaration);
+
+    assertThat(attempt)
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready ->
+                assertThat(ready.session().getVariants())
+                    .extracting(
+                        QualityVariant::width, QualityVariant::height, QualityVariant::frameRate)
+                    .containsExactly(tuple(1000, 1778, new Fraction(30, 1))));
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(request -> assertThat(request.outputFrameRate()).contains(new Fraction(30, 1)));
+  }
+
   // A player that plays H.264 High up to level 3.1 at 1280×720 and 30 fps.
   private static ClientCapabilityDeclaration hdAt30Declaration() {
     return defaultDeclarationBuilder()
