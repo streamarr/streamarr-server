@@ -1137,10 +1137,45 @@ class HlsStreamingServiceTest {
     assertThat(session.getVariants())
         .extracting(QualityVariant::label, QualityVariant::frameRate)
         .containsExactlyInAnyOrder(
-            tuple("1080p", new Fraction(30, 1)),
             tuple("720p", new Fraction(60, 1)),
             tuple("480p", new Fraction(60, 1)),
             tuple("360p", new Fraction(60, 1)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode a fixed quality at the smaller picture that keeps the frame rate when two"
+          + " entries trade size for frame rate")
+  void
+      shouldEncodeAFixedQualityAtTheSmallerPictureThatKeepsTheFrameRateWhenTwoEntriesTradeSizeForFrameRate() {
+    probeResults.setDefaultProbe(
+        probeAt(new Fraction(60, 1)).videoCodec("hevc").width(3840).height(2160).build());
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    h264EntryBuilder().maxWidth(3840).maxHeight(2160).maxFrameRate(30).build(),
+                    h264EntryBuilder().maxWidth(1920).maxHeight(1080).maxFrameRate(60).build()))
+            .build();
+    var command =
+        createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+            .options(StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P).build())
+            .capabilityDeclaration(declaration)
+            .build();
+
+    var session = accepted(service.createSession(command));
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(1920);
+              assertThat(request.height()).isEqualTo(1080);
+              assertThat(request.outputFrameRate()).contains(new Fraction(60, 1));
+            });
+    assertThat(playlist).contains(",RESOLUTION=1920x1080,").contains(",FRAME-RATE=60.000");
   }
 
   @Test

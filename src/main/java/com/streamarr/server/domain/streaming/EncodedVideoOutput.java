@@ -14,12 +14,13 @@ import lombok.NonNull;
 public record EncodedVideoOutput(
     @NonNull String codecFamily, int width, int height, @NonNull Fraction frameRate, long bitrate) {
 
-  // The fitting of an encode to the capability entries prefers the larger picture, then the faster
-  // frame rate (ADR 0049).
-  static final Comparator<EncodedVideoOutput> LARGER_PICTURE_THEN_FASTER_FRAME_RATE =
-      Comparator.comparingLong(EncodedVideoOutput::pictureSize)
-          .thenComparingDouble(output -> output.frameRate().toDouble())
-          .thenComparingLong(EncodedVideoOutput::bitrate);
+  // The fitting of an encode to the capability entries keeps the frame rate before the picture
+  // size (ADR 0049), then prefers the larger picture, then the higher bitrate.
+  static final Comparator<EncodedVideoOutput>
+      FASTER_FRAME_RATE_THEN_LARGER_PICTURE_THEN_HIGHER_BITRATE =
+          Comparator.<EncodedVideoOutput>comparingDouble(output -> output.frameRate().toDouble())
+              .thenComparingLong(EncodedVideoOutput::pictureSize)
+              .thenComparingLong(EncodedVideoOutput::bitrate);
 
   public static class EncodedVideoOutputBuilder {
 
