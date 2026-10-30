@@ -14,6 +14,7 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.d
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioCapabilityEntry;
@@ -146,6 +147,19 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.videoSource()).isEqualTo(source.videoPlaybackFacts());
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
     assertThat(decision.audioDecision().codec()).isEqualTo("aac");
+  }
+
+  @Test
+  @DisplayName("Should refuse a decision request when it carries no capability declaration")
+  void shouldRefuseADecisionRequestWhenItCarriesNoCapabilityDeclaration() {
+    var request =
+        TranscodeDecisionRequest.builder()
+            .source(probe("h264", "aac"))
+            .encodableVideoCodecFamilies(Set.of("h264"));
+
+    assertThatThrownBy(request::build)
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("capabilityDeclaration");
   }
 
   @ParameterizedTest
