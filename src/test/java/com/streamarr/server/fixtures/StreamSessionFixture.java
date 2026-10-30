@@ -203,7 +203,7 @@ public final class StreamSessionFixture {
 
   /** A variant that encodes at the default probe's 24 fps output frame rate. */
   public static QualityVariant.QualityVariantBuilder defaultVariantBuilder() {
-    return QualityVariant.builder().audioBitrate(128_000L).frameRate(new Fraction(24, 1));
+    return QualityVariant.builder().frameRate(new Fraction(24, 1));
   }
 
   public static TranscodeHandle mintHandle(long processId, TranscodeStatus status) {

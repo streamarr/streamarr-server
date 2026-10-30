@@ -87,7 +87,6 @@ class MultivariantPlaylistOrderTest {
     return StreamSessionFixture.defaultVariantBuilder()
         .label(label)
         .videoBitrate(videoBitrate)
-        .audioBitrate(STEREO_AAC_BITRATE)
         .build();
   }
 }
