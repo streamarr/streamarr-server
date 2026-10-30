@@ -26,12 +26,12 @@ public class QualityLadderService {
    * The variants that an encode offers, each fitted to one capability entry (ADR 0049). Auto offers
    * a standard tier when the source is larger than the next smaller tier's box, scaling the source
    * to fit the tier's box without enlarging it, or one variant when the viewer's limits leave no
-   * tier. A fixed quality offers only the default variant, within its tier's box and at most its
-   * tier's nominal bitrate; Original has no box. Sizes each variant from the picture that a player
-   * shows, after cropping and rotation. A tier that an entry shrinks into a smaller tier's box
-   * gives way to that tier. Auto labels each variant by the tier whose box it reaches, or else by
-   * its shorter side. Returns no variant when the viewer's limits leave no picture that the worker
-   * encodes.
+   * tier. A fixed quality offers only the default variant, within its tier's box and at most the
+   * nominal bitrate of the smallest tier whose box holds the encoded picture; Original has no box.
+   * Sizes each variant from the picture that a player shows, after cropping and rotation. A tier
+   * that an entry shrinks into a smaller tier's box gives way to that tier. Auto labels each
+   * variant by the tier whose box it reaches, or else by its shorter side. Returns no variant when
+   * the viewer's limits leave no picture that the worker encodes.
    */
   public List<QualityVariant> generateVariants(@NonNull QualityLadderRequest request) {
     var limits = request.viewerLimits();
@@ -126,21 +126,23 @@ public class QualityLadderService {
     return fitFixedQuality(request, fixedTier.get());
   }
 
-  // A fixed quality asks for its tier's nominal bitrate, capped by the source's known bitrate and
-  // the video budget (ADR 0050). The entry's codec level caps it too.
+  // A fixed quality asks for the nominal bitrate of the smallest tier whose box holds the encoded
+  // picture, so a source smaller than the quality's box encodes at its own tier's bitrate. The
+  // source's known bitrate, the video budget and the entry's codec level cap it.
   private static Optional<EncodedVideoOutput> fitFixedQuality(
       QualityLadderRequest request, QualityTier tier) {
     var limits = request.viewerLimits();
     var source = request.probe().displayedSize();
     var bounds = limits.maximumPicture().boundedBy(tier.box().orientedLike(source));
     var budget = videoBudget(request, bounds, limits.maxBitrate());
-    var bitrate = Math.min(tier.videoBitrate(request.codecProfile()), budget.bitrate());
+    var bitrate = budget.bitrate();
     var sourceBitrate = sourceBitrate(request);
     if (sourceBitrate.isPresent()) {
       bitrate = Math.min(bitrate, sourceBitrate.getAsLong());
     }
 
-    return fit(request, budget.bounds(), bitrate);
+    return fit(request, budget.bounds(), bitrate)
+        .map(output -> atNominalBitrate(output, request.codecProfile()));
   }
 
   // The untiered variant asks for the source's bitrate within its video budget. A probe that
