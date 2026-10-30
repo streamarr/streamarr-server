@@ -25,7 +25,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
-import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -446,16 +445,17 @@ class QualityLadderServiceTest {
     "AUTO, 8000000, 128000, 500000, 640, 360, 500000"
   })
   @DisplayName(
-      "Should bound a single variant's video bitrate by the viewer's maximum less the audio, and"
-          + " by the 360p box and the 360p tier's bitrate when less than that remains")
-  void shouldBoundASingleVariantsVideoBitrateByTheViewersMaximumLessTheAudio(
-      VideoQuality quality,
-      long sourceBitrate,
-      long audioBitrate,
-      int maxBitrate,
-      int expectedWidth,
-      int expectedHeight,
-      long expectedVideoBitrate) {
+      "Should bound the single variant by the maximum bitrate less the audio, or by the 360p box"
+          + " and the 360p tier's bitrate, when the viewer sets a maximum bitrate")
+  void
+      shouldBoundTheSingleVariantByTheMaximumBitrateLessTheAudioOrByThe360pBoxWhenTheViewerSetsAMaximumBitrate(
+          VideoQuality quality,
+          long sourceBitrate,
+          long audioBitrate,
+          int maxBitrate,
+          int expectedWidth,
+          int expectedHeight,
+          long expectedVideoBitrate) {
     var probe = buildProbe(1920, 1080, sourceBitrate);
     var options = StreamingOptions.builder().quality(quality).maxBitrate(maxBitrate).build();
 
@@ -515,30 +515,51 @@ class QualityLadderServiceTest {
   static Stream<Arguments> aspectRatioVariants() {
     return Stream.of(
         Arguments.of(
-            "16:9 source", size(1920, 1080), sizes(1920, 1080, 1280, 720, 854, 480, 640, 360)),
+            "16:9 source",
+            new PictureSize(1920, 1080),
+            List.of(
+                new PictureSize(1920, 1080),
+                new PictureSize(1280, 720),
+                new PictureSize(854, 480),
+                new PictureSize(640, 360))),
         Arguments.of(
-            "4:3 source", size(1440, 1080), sizes(1440, 1080, 960, 720, 640, 480, 480, 360)),
+            "4:3 source",
+            new PictureSize(1440, 1080),
+            List.of(
+                new PictureSize(1440, 1080),
+                new PictureSize(960, 720),
+                new PictureSize(640, 480),
+                new PictureSize(480, 360))),
         Arguments.of(
             "21:9 ultrawide source",
-            size(2560, 1080),
-            sizes(2560, 1080, 1920, 810, 1280, 540, 854, 360, 640, 270)),
+            new PictureSize(2560, 1080),
+            List.of(
+                new PictureSize(2560, 1080),
+                new PictureSize(1920, 810),
+                new PictureSize(1280, 540),
+                new PictureSize(854, 360),
+                new PictureSize(640, 270))),
         Arguments.of(
-            "1:1 square source", size(1080, 1080), sizes(1080, 1080, 720, 720, 480, 480, 360, 360)),
+            "1:1 square source",
+            new PictureSize(1080, 1080),
+            List.of(
+                new PictureSize(1080, 1080),
+                new PictureSize(720, 720),
+                new PictureSize(480, 480),
+                new PictureSize(360, 360))),
         Arguments.of(
             "9:16 portrait source",
-            size(1080, 1920),
-            sizes(1080, 1920, 720, 1280, 480, 854, 360, 640)),
-        Arguments.of("4:3 at 720p", size(960, 720), sizes(960, 720, 640, 480, 480, 360)));
-  }
-
-  private static PictureSize size(int width, int height) {
-    return new PictureSize(width, height);
-  }
-
-  private static List<PictureSize> sizes(int... widthsAndHeights) {
-    return IntStream.range(0, widthsAndHeights.length / 2)
-        .mapToObj(index -> size(widthsAndHeights[2 * index], widthsAndHeights[2 * index + 1]))
-        .toList();
+            new PictureSize(1080, 1920),
+            List.of(
+                new PictureSize(1080, 1920),
+                new PictureSize(720, 1280),
+                new PictureSize(480, 854),
+                new PictureSize(360, 640))),
+        Arguments.of(
+            "4:3 at 720p",
+            new PictureSize(960, 720),
+            List.of(
+                new PictureSize(960, 720), new PictureSize(640, 480), new PictureSize(480, 360))));
   }
 
   @Test
