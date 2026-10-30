@@ -22,7 +22,8 @@ public record ViewerLimits(
     @NonNull OptionalInt maxHeight,
     @NonNull OptionalLong maxBitrate) {
 
-  @SuppressWarnings("java:S1068") // Lombok builder defaults — fields are used by generated code
+  // Lombok builder defaults — its generated setters assign them
+  @SuppressWarnings({"java:S1068", "java:S9438"})
   public static class ViewerLimitsBuilder {
     private VideoQuality quality = VideoQuality.AUTO;
     private OptionalInt maxWidth = OptionalInt.empty();
