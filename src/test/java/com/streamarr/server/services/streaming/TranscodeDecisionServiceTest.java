@@ -1268,7 +1268,19 @@ class TranscodeDecisionServiceTest {
                 VideoPlaybackFactsFixture.packetScanRule(60.25, new Fraction(60, 1))),
             Map.entry(
                 "30.1 fps motion against 30",
-                VideoPlaybackFactsFixture.packetScanRule(30.1, new Fraction(30, 1))));
+                VideoPlaybackFactsFixture.packetScanRule(30.1, new Fraction(30, 1))),
+            Map.entry(
+                "25.125 fps motion exactly half a percent above 25",
+                VideoPlaybackFactsFixture.packetScanRule(25.125, new Fraction(25, 1))),
+            Map.entry(
+                "50.25 fps motion exactly half a percent above 50",
+                VideoPlaybackFactsFixture.packetScanRule(50.25, new Fraction(50, 1))),
+            Map.entry(
+                "30.15 fps motion exactly half a percent above 30",
+                VideoPlaybackFactsFixture.packetScanRule(30.15, new Fraction(30, 1))),
+            Map.entry(
+                "60.3 fps motion exactly half a percent above 60",
+                VideoPlaybackFactsFixture.packetScanRule(60.3, new Fraction(60, 1))));
     return rules.flatMap(
         rule ->
             Stream.of(
@@ -1329,6 +1341,9 @@ class TranscodeDecisionServiceTest {
             Map.entry(
                 "37.5 fps motion rounded to 30",
                 VideoPlaybackFactsFixture.packetScanRule(37.5, new Fraction(30, 1))),
+            Map.entry(
+                "50.26 fps motion just over half a percent above 50",
+                VideoPlaybackFactsFixture.packetScanRule(50.26, new Fraction(50, 1))),
             Map.entry(
                 "120 fps average rate divided to 60 after a scan found fewer than 2 frames",
                 VideoPlaybackFactsFixture.declaredRateFallbackRule(
