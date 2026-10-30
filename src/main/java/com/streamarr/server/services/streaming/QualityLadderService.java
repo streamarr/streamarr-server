@@ -82,16 +82,17 @@ public class QualityLadderService {
   }
 
   // The untiered variant asks for the source's bitrate within the viewer's maximum. A probe that
-  // names no source bitrate reports 0, so the variant then asks for the viewer's maximum, or else
-  // for the nominal bitrate of the tier at the fitted height. The entry's codec level caps each.
+  // names no source bitrate reports 0, so the variant then asks for the nominal bitrate of the tier
+  // at the fitted height, within the viewer's maximum. The entry's codec level caps each.
   private static Optional<EncodedVideoOutput> fitUntiered(
       QualityLadderRequest request, PictureSize bounds, OptionalLong maxBitrate) {
-    var requestedBitrate = requestedUntieredBitrate(sourceBitrate(request), maxBitrate);
-    if (requestedBitrate.isPresent()) {
-      return fit(request, bounds, requestedBitrate.getAsLong());
+    var bitrateLimit = maxBitrate.orElse(UNCAPPED_BITRATE);
+    var sourceBitrate = sourceBitrate(request);
+    if (sourceBitrate.isPresent()) {
+      return fit(request, bounds, Math.min(sourceBitrate.getAsLong(), bitrateLimit));
     }
 
-    return fit(request, bounds, UNCAPPED_BITRATE).map(QualityLadderService::atNominalBitrate);
+    return fit(request, bounds, bitrateLimit).map(QualityLadderService::atNominalBitrate);
   }
 
   private static OptionalLong sourceBitrate(QualityLadderRequest request) {
@@ -103,20 +104,6 @@ public class QualityLadderService {
     return OptionalLong.of(bitrate);
   }
 
-  private static OptionalLong requestedUntieredBitrate(
-      OptionalLong sourceBitrate, OptionalLong maxBitrate) {
-    if (sourceBitrate.isEmpty()) {
-      return maxBitrate;
-    }
-
-    if (maxBitrate.isEmpty()) {
-      return sourceBitrate;
-    }
-
-    return OptionalLong.of(Math.min(sourceBitrate.getAsLong(), maxBitrate.getAsLong()));
-  }
-
-  // An output fitted at UNCAPPED_BITRATE carries the highest bitrate that its entry's level allows.
   private static EncodedVideoOutput atNominalBitrate(EncodedVideoOutput output) {
     var nominalBitrate =
         STANDARD_TIERS.reversed().stream()
