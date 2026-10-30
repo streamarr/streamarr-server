@@ -17,14 +17,14 @@ import lombok.NonNull;
  */
 @Builder
 public record ViewerLimits(
-    @NonNull Optional<PictureSize> pictureBox,
+    @NonNull VideoQuality quality,
     @NonNull OptionalInt maxWidth,
     @NonNull OptionalInt maxHeight,
     @NonNull OptionalLong maxBitrate) {
 
   @SuppressWarnings("java:S1068") // Lombok builder defaults — fields are used by generated code
   public static class ViewerLimitsBuilder {
-    private Optional<PictureSize> pictureBox = Optional.empty();
+    private VideoQuality quality = VideoQuality.AUTO;
     private OptionalInt maxWidth = OptionalInt.empty();
     private OptionalInt maxHeight = OptionalInt.empty();
     private OptionalLong maxBitrate = OptionalLong.empty();
@@ -35,18 +35,13 @@ public record ViewerLimits(
   }
 
   /**
-   * The viewer's limits in the options. Original ignores them, and a maximum at or below zero is no
-   * maximum.
+   * The viewer's limits in the options. A missing quality is Auto, and a maximum at or below zero
+   * is no maximum.
    */
   public static ViewerLimits of(@NonNull StreamingOptions options) {
-    var quality = Optional.ofNullable(options.quality()).orElse(VideoQuality.AUTO);
-    if (quality == VideoQuality.ORIGINAL) {
-      return none();
-    }
-
     var builder =
         ViewerLimits.builder()
-            .pictureBox(QualityTier.ofFixedQuality(quality).map(QualityTier::box))
+            .quality(Optional.ofNullable(options.quality()).orElse(VideoQuality.AUTO))
             .maxWidth(positive(options.maxWidth()))
             .maxHeight(positive(options.maxHeight()));
     positive(options.maxBitrate())
@@ -62,14 +57,29 @@ public record ViewerLimits(
     return OptionalInt.of(maximum);
   }
 
+  /** The tier of the fixed quality that the viewer picked, or empty for Auto and Original. */
+  Optional<QualityTier> fixedTier() {
+    return QualityTier.ofFixedQuality(quality);
+  }
+
+  /** The largest picture that the maximum width and height allow, as the client gives them. */
+  PictureSize maximumPicture() {
+    return new PictureSize(maxWidth.orElse(Integer.MAX_VALUE), maxHeight.orElse(Integer.MAX_VALUE));
+  }
+
   /**
-   * Whether a copy of the source fits these limits: the displayed picture fits the picture box in
-   * either orientation and the maximum width and height as given, and the container bitrate, when
-   * the probe knows it, is at or below the maximum bitrate.
+   * Whether a copy of the source fits these limits: the displayed picture fits the fixed quality's
+   * picture box in either orientation and the maximum width and height as given, and the container
+   * bitrate, when the probe knows it, is at or below the maximum bitrate. A copy in Original
+   * ignores the limits.
    */
   public boolean allowsCopyOf(@NonNull MediaProbe source) {
+    if (quality == VideoQuality.ORIGINAL) {
+      return true;
+    }
+
     var picture = source.displayedSize();
-    if (pictureBox.filter(box -> !picture.fitsWithinEitherOrientation(box)).isPresent()) {
+    if (fixedTier().filter(tier -> !picture.fitsWithinEitherOrientation(tier.box())).isPresent()) {
       return false;
     }
 
