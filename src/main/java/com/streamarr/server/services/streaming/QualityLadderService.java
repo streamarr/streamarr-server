@@ -57,7 +57,7 @@ public class QualityLadderService {
         continue;
       }
 
-      if (maxBitrate != null && tier.videoBitrate() > maxBitrate) {
+      if (maxBitrate.isPresent() && tier.videoBitrate() > maxBitrate.getAsLong()) {
         continue;
       }
 
@@ -85,8 +85,8 @@ public class QualityLadderService {
   // names no source bitrate reports 0, so the variant then asks for the viewer's maximum, or else
   // for the nominal bitrate of the tier at the fitted height. The entry's codec level caps each.
   private static Optional<EncodedVideoOutput> fitUntiered(
-      QualityLadderRequest request, PictureSize bounds, Integer maxBitrate) {
-    var requestedBitrate = requestedUntieredBitrate(request.probe().bitrate(), maxBitrate);
+      QualityLadderRequest request, PictureSize bounds, OptionalLong maxBitrate) {
+    var requestedBitrate = requestedUntieredBitrate(sourceBitrate(request), maxBitrate);
     if (requestedBitrate.isPresent()) {
       return fit(request, bounds, requestedBitrate.getAsLong());
     }
@@ -94,20 +94,26 @@ public class QualityLadderService {
     return fit(request, bounds, UNCAPPED_BITRATE).map(QualityLadderService::atNominalBitrate);
   }
 
-  private static OptionalLong requestedUntieredBitrate(long sourceBitrate, Integer maxBitrate) {
-    if (sourceBitrate <= 0 && maxBitrate == null) {
+  private static OptionalLong sourceBitrate(QualityLadderRequest request) {
+    var bitrate = request.probe().bitrate();
+    if (bitrate <= 0) {
       return OptionalLong.empty();
     }
 
-    if (sourceBitrate <= 0) {
-      return OptionalLong.of(maxBitrate);
+    return OptionalLong.of(bitrate);
+  }
+
+  private static OptionalLong requestedUntieredBitrate(
+      OptionalLong sourceBitrate, OptionalLong maxBitrate) {
+    if (sourceBitrate.isEmpty()) {
+      return maxBitrate;
     }
 
-    if (maxBitrate == null) {
-      return OptionalLong.of(sourceBitrate);
+    if (maxBitrate.isEmpty()) {
+      return sourceBitrate;
     }
 
-    return OptionalLong.of(Math.min(sourceBitrate, maxBitrate));
+    return OptionalLong.of(Math.min(sourceBitrate.getAsLong(), maxBitrate.getAsLong()));
   }
 
   // An output fitted at UNCAPPED_BITRATE carries the highest bitrate that its entry's level allows.
@@ -179,11 +185,11 @@ public class QualityLadderService {
     return new PictureSize(maxWidth, maxHeight);
   }
 
-  private Integer resolveMaxBitrate(StreamingOptions options) {
+  private static OptionalLong resolveMaxBitrate(StreamingOptions options) {
     if (options.maxBitrate() != null && options.maxBitrate() > 0) {
-      return options.maxBitrate();
+      return OptionalLong.of(options.maxBitrate());
     }
 
-    return null;
+    return OptionalLong.empty();
   }
 }
