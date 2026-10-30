@@ -503,6 +503,23 @@ class ProducerLifecycleServiceTest {
 
   @Test
   @DisplayName(
+      "Should stop another stream session's left variant to start the first-listed variant when no worker job slot is free")
+  void
+      shouldStopAnotherStreamSessionsLeftVariantToStartTheFirstListedVariantWhenNoWorkerJobSlotIsFree() {
+    var switching = switchingLadderSession(lifecycle);
+    transcodeExecutor.limitJobSlots(2);
+    var session = defaultLadderSessionBuilder().build();
+    runtimeRegistry.save(session);
+
+    lifecycle.startFirstListedVariant(session);
+
+    assertThat(session.getVariantHandles()).containsOnlyKeys("480p");
+    assertThat(transcodeExecutor.isRunning(session.getSessionId(), "480p")).isTrue();
+    assertThat(switching.getVariantHandles()).containsOnlyKeys("1080p");
+  }
+
+  @Test
+  @DisplayName(
       "Should refuse to look for another stream session's left variant when the caller holds a stream session mutex")
   void
       shouldRefuseToLookForAnotherStreamSessionsLeftVariantWhenTheCallerHoldsAStreamSessionMutex() {

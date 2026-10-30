@@ -1806,21 +1806,118 @@ class SegmentDeliveryCoordinatorTest {
   void
       shouldStopAnotherStreamSessionsLeftVariantToStartAVariantOnDemandWhenTheTranscodeLimitLeavesNoRoom()
           throws Exception {
-    var switching = ladderSessionPlayingFirstListedVariant(3);
-    var switchingId = switching.getSessionId();
-    var switched = heldDelivery(switchingId, "1080p", "1080p/segment3.m4s");
+    var requesting = suspendedLadderSession();
+    var requestingId = requesting.getSessionId();
+    var switching = switchingLadderSession();
     var other = startedLadderSession();
-    var otherId = other.getSessionId();
     assertThat(lifecycle.freeConfiguredTranscodeSlots()).isZero();
 
-    var initialization = heldDelivery(otherId, "1080p", "1080p/init.mp4");
+    var delivery = heldDelivery(requestingId, "1080p", "1080p/segment0.m4s");
 
-    assertThat(runningVariants(switching)).containsExactly("1080p");
-    assertThat(runningVariants(other)).containsExactlyInAnyOrder("480p", "1080p");
-    upload(otherId, "1080p/init.mp4", new byte[] {0x66});
-    assertThat(initialization.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
-    upload(switchingId, "1080p/segment3.m4s", new byte[] {3});
-    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(runningVariants(switching.session())).containsExactly("1080p");
+    assertThat(runningVariants(requesting)).containsExactly("1080p");
+    assertThat(runningVariants(other)).containsExactly("480p");
+    upload(requestingId, "1080p/segment0.m4s", new byte[] {0});
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    deliverSwitch(switching);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep another stream session's left variant when an initialization request finds no free slot")
+  void shouldKeepAnotherStreamSessionsLeftVariantWhenAnInitializationRequestFindsNoFreeSlot()
+      throws Exception {
+    var requesting = suspendedLadderSession();
+    var switching = switchingLadderSession();
+    startedLadderSession();
+    assertThat(lifecycle.freeConfiguredTranscodeSlots()).isZero();
+
+    var delivery = deliverAsync(requesting.getSessionId(), "1080p", "1080p/init.mp4");
+
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(runningVariants(switching.session())).containsExactlyInAnyOrder("480p", "1080p");
+    deliverSwitch(switching);
+  }
+
+  @Test
+  @DisplayName(
+      "Should start a variant on demand when a slot frees after its start found no free slot and no left variant to stop")
+  void shouldStartAVariantOnDemandWhenASlotFreesAfterItsStartFoundNoFreeSlotAndNoLeftVariantToStop()
+      throws Exception {
+    var gate = new SwitchGate(() -> transcodeExecutor.jobSlotRefusals() > 0);
+    var rig = rigBuilder(transcodeExecutor, segmentStore).sessionMutex(gate.mutexFactory()).build();
+    lifecycle = rig.lifecycle();
+    coordinator = rig.coordinator();
+    var requesting = suspendedLadderSession();
+    var requestingId = requesting.getSessionId();
+    startedLadderSession();
+    var freeing = startedLadderSession();
+    transcodeExecutor.limitJobSlots(2);
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var delivery =
+          executor.submit(
+              () ->
+                  gate.gateCurrentThread(
+                      () -> coordinator.deliver(requestingId, "1080p", "1080p/segment0.m4s")));
+      gate.awaitGatedOrStarted(transcodeExecutor, Integer.MAX_VALUE);
+      transcodeExecutor.markDead(freeing.getSessionId(), "480p");
+      gate.releaseAndAwaitHeldStep();
+
+      upload(requestingId, "1080p/segment0.m4s", new byte[] {0});
+      assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    }
+
+    assertThat(runningVariants(requesting)).containsExactly("1080p");
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop another stream session's left variant to resume a suspended stream session when no worker job slot is free")
+  void
+      shouldStopAnotherStreamSessionsLeftVariantToResumeASuspendedStreamSessionWhenNoWorkerJobSlotIsFree()
+          throws Exception {
+    rebuildRig(10, new MutexFactory<>());
+    var resuming = suspendedLadderSession();
+    var resumingId = resuming.getSessionId();
+    var switching = switchingLadderSession();
+    transcodeExecutor.limitJobSlots(2);
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    var resumed = deliverAsync(resumingId, "480p", "480p/segment0.m4s");
+    transcodeExecutor.awaitStartedRequestCount(startedBefore + 1);
+
+    assertThat(runningVariants(switching.session())).containsExactly("1080p");
+    assertThat(runningVariants(resuming)).containsExactly("480p");
+    upload(resumingId, "480p/segment0.m4s", new byte[] {0});
+    assertThat(resumed.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    deliverSwitch(switching);
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop the stream session's own left variant to replace the switched variant's dead job attempt when no worker job slot is free")
+  void
+      shouldStopTheStreamSessionsOwnLeftVariantToReplaceTheSwitchedVariantsDeadJobAttemptWhenNoWorkerJobSlotIsFree()
+          throws Exception {
+    rebuildRig(10, new MutexFactory<>());
+    var switching = switchingLadderSession();
+    var switchingMutex = sessionMutex.getMutex(switching.sessionId());
+    startedLadderSession();
+    transcodeExecutor.limitJobSlots(3);
+
+    switchingMutex.lock();
+    try {
+      transcodeExecutor.markDead(switching.sessionId(), "1080p");
+      await().atMost(Duration.ofSeconds(5)).until(switchingMutex::hasQueuedThreads);
+      startedLadderSession();
+    } finally {
+      switchingMutex.unlock();
+    }
+
+    transcodeExecutor.awaitStartedTarget(ExecutionTargetId.LOCAL);
+    assertThat(runningVariants(switching.session())).containsExactly("1080p");
+    deliverSwitch(switching);
   }
 
   @Test
