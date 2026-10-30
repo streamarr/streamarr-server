@@ -5,6 +5,8 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultLadderSe
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.sessionWithDurationBuilder;
+import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.h264Nvenc;
+import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libx264;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.awaitility.Awaitility.await;
@@ -2047,6 +2049,100 @@ class SegmentDeliveryCoordinatorTest {
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
     assertThat(runningVariants(switching.session())).containsExactlyInAnyOrder("480p", "1080p");
     deliverSwitch(switching);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the variant that the player leaves when it runs on a worker that cannot run the switched variant's pinned encoder")
+  void
+      shouldKeepTheVariantThatThePlayerLeavesWhenItRunsOnAWorkerThatCannotRunTheSwitchedVariantsPinnedEncoder()
+          throws Exception {
+    var session = sessionPlaying1080pOnTargetBWith480pPinnedToTargetA(1);
+    var other = startedLadderSession();
+    assertThat(transcodeExecutor.runningExecutionTarget(other.getSessionId(), "480p"))
+        .contains(TARGET_A);
+
+    var switched = deliverAsync(session.getSessionId(), "480p", "480p/segment5.m4s");
+
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(runningVariants(session)).containsExactly("1080p");
+    assertThat(runningVariants(other)).containsExactly("480p");
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop another stream session's left variant on the worker that runs the pinned encoder when only a worker that cannot run it has a free slot")
+  void
+      shouldStopAnotherStreamSessionsLeftVariantOnTheWorkerThatRunsThePinnedEncoderWhenOnlyAWorkerThatCannotRunItHasAFreeSlot()
+          throws Exception {
+    var session = sessionPlaying1080pOnTargetBWith480pPinnedToTargetA(3);
+    var switching = switchingLadderSession();
+    assertThat(transcodeExecutor.runningExecutionTarget(switching.sessionId(), "480p"))
+        .contains(TARGET_A);
+    assertThat(transcodeExecutor.availableSlots(session.getTranscodeDecision())).isOne();
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    var switched = deliverAsync(session.getSessionId(), "480p", "480p/segment5.m4s");
+    transcodeExecutor.awaitStartedRequestCount(startedBefore + 1);
+
+    assertThat(runningVariants(switching.session())).containsExactly("1080p");
+    assertThat(transcodeExecutor.runningExecutionTarget(session.getSessionId(), "480p"))
+        .contains(TARGET_A);
+    upload(session.getSessionId(), "480p/segment5.m4s", new byte[] {5});
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    deliverSwitch(switching);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the variant that the player leaves when it runs on a worker that cannot run the replacement of the switched variant's dead job attempt")
+  void
+      shouldKeepTheVariantThatThePlayerLeavesWhenItRunsOnAWorkerThatCannotRunTheReplacementOfTheSwitchedVariantsDeadJobAttempt()
+          throws Exception {
+    var session = sessionPlaying1080pOnTargetBWith480pPinnedToTargetA(1);
+    var sessionId = session.getSessionId();
+    var switched = heldDelivery(sessionId, "480p", "480p/segment5.m4s");
+    assertThat(runningVariants(session)).containsExactlyInAnyOrder("480p", "1080p");
+    var mutex = sessionMutex.getMutex(sessionId);
+
+    StreamSession other;
+    mutex.lock();
+    try {
+      transcodeExecutor.markDead(sessionId, "480p");
+      await().atMost(Duration.ofSeconds(5)).until(mutex::hasQueuedThreads);
+      other = startedLadderSession();
+    } finally {
+      mutex.unlock();
+    }
+
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(runningVariants(session)).containsExactly("1080p");
+    assertThat(transcodeExecutor.runningExecutionTarget(other.getSessionId(), "480p"))
+        .contains(TARGET_A);
+  }
+
+  // TARGET_A runs only libx264 with one job slot, and TARGET_B only h264_nvenc with the given job
+  // slots. The stream session plays 480p on TARGET_A, then switches to 1080p, which finds TARGET_A
+  // full and starts on TARGET_B. Once 1080p delivers, 480p stops, pinned to libx264.
+  private StreamSession sessionPlaying1080pOnTargetBWith480pPinnedToTargetA(int targetBJobSlots)
+      throws Exception {
+    rebuildRig(10, new MutexFactory<>());
+    transcodeExecutor.setExecutionTargets(List.of(TARGET_A, TARGET_B));
+    transcodeExecutor.setTargetEncoders(TARGET_A, List.of(libx264()));
+    transcodeExecutor.setTargetEncoders(TARGET_B, List.of(h264Nvenc()));
+    transcodeExecutor.limitJobSlots(TARGET_A, 1);
+    transcodeExecutor.limitJobSlots(TARGET_B, targetBJobSlots);
+    var session = ladderSessionPlayingFirstListedVariant(3);
+    var sessionId = session.getSessionId();
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+    var switched = deliverAsync(sessionId, "1080p", "1080p/segment3.m4s");
+    transcodeExecutor.awaitStartedRequestCount(startedBefore + 1);
+    upload(sessionId, "1080p/segment3.m4s", new byte[] {3});
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(runningVariants(session)).containsExactly("1080p");
+    assertThat(transcodeExecutor.runningExecutionTarget(sessionId, "1080p")).contains(TARGET_B);
+    assertThat(session.getPinnedEncoder("480p")).contains(libx264());
+    return session;
   }
 
   @Test

@@ -27,6 +27,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 
@@ -130,7 +131,7 @@ public class ProducerLifecycleService {
 
   // The slots that a start found taken, and the execution targets that can run the start. Stopping
   // a left variant helps the start only when it frees each taken slot.
-  @Builder
+  @Builder(toBuilder = true)
   private record SlotShortage(
       boolean configuredTranscodeSlot,
       boolean workerJobSlot,
@@ -148,8 +149,8 @@ public class ProducerLifecycleService {
    * {@link RecoveryResult#SUPERSEDED} when its segment needs either. Any request still replaces a
    * dead or stalled job attempt. When a media-segment request's replacement of the requested
    * variant finds no free worker job slot, it stops the stream session's own other video variants
-   * and tries once more, then looks for another stream session's left variant to stop and tries
-   * once more.
+   * that run on the replacement's worker and tries once more, then looks for another stream
+   * session's left variant to stop and tries once more.
    */
   public RecoveryResult recover(SegmentRequest request) {
     var reclaim = LeftVariantReclaim.allowed();
@@ -599,14 +600,14 @@ public class ProducerLifecycleService {
    * segment without a relocation. A request for a variant without a job attempt then starts that
    * variant: at the requested media segment, or at the current segment for the initialization
    * segment. When no slot is free and the start of a media-segment request's variant fails, the
-   * variant that the player plays stops and the start is tried once more. When the start still
-   * finds no free slot, the server looks for another stream session's left variant to stop and
-   * tries the start once more, since another stream session may also have freed a slot. Only the
-   * stream session's newest media-segment request makes room: an initialization request never does.
-   * A stored media segment starts nothing, and neither does a full transcode limit. A variant that
-   * does not start stays without a job attempt, so recovery answers the request as {@link
-   * RecoveryResult#VARIANT_NOT_RUNNING}. Returns the request numbered in order of arrival; the
-   * caller passes it to every later {@link #recover}.
+   * variant that the player plays stops if its stop frees the slot that the start lacks, and the
+   * start is tried once more. When the start still finds no free slot, the server looks for another
+   * stream session's left variant to stop and tries the start once more, since another stream
+   * session may also have freed a slot. Only the stream session's newest media-segment request
+   * makes room: an initialization request never does. A stored media segment starts nothing, and
+   * neither does a full transcode limit. A variant that does not start stays without a job attempt,
+   * so recovery answers the request as {@link RecoveryResult#VARIANT_NOT_RUNNING}. Returns the
+   * request numbered in order of arrival; the caller passes it to every later {@link #recover}.
    */
   public SegmentRequest prepareRequestedVariant(
       UUID sessionId, String variantLabel, String segmentName) {
@@ -770,14 +771,21 @@ public class ProducerLifecycleService {
   }
 
   // While the variant that the player switched to has no running job attempt, the left variant is
-  // the only variant that can serve the player. Otherwise the left variant frees a slot for the
-  // start only while its own job attempt runs: in a transcoding stream session for a configured
-  // transcode slot, and on a worker that can run the start for a worker job slot.
+  // the only variant that can serve the player.
   private boolean freesSlotFor(StreamSession session, String leftVariant, SlotShortage shortage) {
     var sessionId = session.getSessionId();
     var switchedVariant = newestMediaSegmentRequests.get(sessionId).variantLabel();
-    var target = transcodeExecutor.runningExecutionTarget(sessionId, leftVariant);
-    if (target.isEmpty() || !transcodeExecutor.isRunning(sessionId, switchedVariant)) {
+    return transcodeExecutor.isRunning(sessionId, switchedVariant)
+        && freesTakenSlots(session, leftVariant, shortage);
+  }
+
+  // A variant frees a slot for the start only while its own job attempt runs: in a transcoding
+  // stream session for a configured transcode slot, and on a worker that can run the start for a
+  // worker job slot.
+  private boolean freesTakenSlots(
+      StreamSession session, String variantLabel, SlotShortage shortage) {
+    var target = transcodeExecutor.runningExecutionTarget(session.getSessionId(), variantLabel);
+    if (target.isEmpty()) {
       return false;
     }
 
@@ -1006,14 +1014,15 @@ public class ProducerLifecycleService {
     var startSequenceNumber =
         SegmentNames.indexOf(request.segmentName()).orElseGet(() -> currentSegment(session));
     // The variant that the player plays must not keep the requested variant from starting: when no
-    // slot was free and the start fails beside it, that variant stops and the start is tried once
-    // more (ADR 0019). A start that fails for another reason leaves it running.
-    var slotShortage = slotShortage(session, variantLabel).any();
+    // slot was free and the start fails beside it, that variant stops if its stop frees the slot
+    // that the start lacks, and the start is tried once more (ADR 0019). A start that fails for
+    // another reason leaves it running.
+    var shortage = slotShortage(session, variantLabel);
     var refusal = attemptOnDemandStart(session, variantLabel, startSequenceNumber);
     if (refusal.isPresent()
-        && slotShortage
+        && shortage.any()
         && isNewestMediaSegmentRequest(request)
-        && stopOwnVariantsToMakeRoom(session, variantLabel)) {
+        && stopOwnVariantsToMakeRoom(session, variantLabel, shortage)) {
       refusal = attemptOnDemandStart(session, variantLabel, startSequenceNumber);
     }
 
@@ -1024,7 +1033,7 @@ public class ProducerLifecycleService {
           sessionId,
           startSequenceNumber,
           refusal.get());
-      return refusedStart(slotShortage);
+      return refusedStart(shortage.any());
     }
 
     runtimeRegistry.save(session);
@@ -1044,11 +1053,20 @@ public class ProducerLifecycleService {
     return OnDemandStart.NOT_STARTED;
   }
 
-  // Stops every other video variant of the stream session, the left variant among them. Answers
-  // whether it stopped any.
-  private boolean stopOwnVariantsToMakeRoom(StreamSession session, String variantLabel) {
-    var stopped = doStopVideoVariantsExcept(session, Set.of(variantLabel));
-    sessionsKeepingLeftVariant.remove(session.getSessionId());
+  // Stops the stream session's other video variants, the left variant among them, whose stop frees
+  // the slots that the start lacks. Answers whether it stopped any.
+  private boolean stopOwnVariantsToMakeRoom(
+      StreamSession session, String variantLabel, SlotShortage shortage) {
+    var kept =
+        session.getVariantHandles().keySet().stream()
+            .filter(
+                label -> label.equals(variantLabel) || !freesTakenSlots(session, label, shortage))
+            .collect(Collectors.toSet());
+    var stopped = doStopVideoVariantsExcept(session, kept);
+    if (leftVariant(session).isEmpty()) {
+      sessionsKeepingLeftVariant.remove(session.getSessionId());
+    }
+
     if (stopped.isEmpty()) {
       return false;
     }
@@ -1091,9 +1109,20 @@ public class ProducerLifecycleService {
   private SlotShortage slotShortage(StreamSession session, String variantLabel) {
     return SlotShortage.builder()
         .configuredTranscodeSlot(!hasConfiguredTranscodeSlotFor(session))
-        .workerJobSlot(transcodeExecutor.availableSlots(session.getTranscodeDecision()) <= 0)
+        .workerJobSlot(!hasFreeWorkerJobSlotFor(session, variantLabel))
         .usableTargets(eligibleTargets(session, variantLabel))
         .build();
+  }
+
+  // Only a worker that can run the variant's job attempt offers it a slot: for a pinned variant,
+  // a worker that advertises its pinned encoder.
+  private boolean hasFreeWorkerJobSlotFor(StreamSession session, String variantLabel) {
+    var freeSlots =
+        session
+            .getPinnedEncoder(variantLabel)
+            .map(transcodeExecutor::availableSlots)
+            .orElseGet(() -> transcodeExecutor.availableSlots(session.getTranscodeDecision()));
+    return freeSlots > 0;
   }
 
   private boolean hasConfiguredTranscodeSlotFor(StreamSession session) {
@@ -1219,7 +1248,7 @@ public class ProducerLifecycleService {
       transcodeExecutor.stopVariant(command.sessionId(), command.variantLabel());
     }
 
-    var noFreeSlot = transcodeExecutor.availableSlots(session.getTranscodeDecision()) <= 0;
+    var noFreeSlot = !hasFreeWorkerJobSlotFor(session, command.variantLabel());
     var result = startReplacement(session, command);
     if (result instanceof ReplaceResult.Refused && noFreeSlot && command.makesRoom()) {
       return makeRoomForReplacement(session, command, result);
@@ -1245,11 +1274,16 @@ public class ProducerLifecycleService {
   }
 
   // Like an on-demand start, a replacement that finds no free slot stops the stream session's own
-  // left variant first, then asks its caller to look for another stream session's left variant.
+  // left variant first when that frees a slot on the replacement's target, then asks its caller to
+  // look for another stream session's left variant.
   private ReplaceResult makeRoomForReplacement(
       StreamSession session, ReplaceProducerCommand command, ReplaceResult refused) {
     var result = refused;
-    if (stopOwnVariantsToMakeRoom(session, command.variantLabel())) {
+    var onTarget =
+        replacementShortage(session, command.variantLabel()).toBuilder()
+            .usableTargets(Set.of(command.target()))
+            .build();
+    if (stopOwnVariantsToMakeRoom(session, command.variantLabel(), onTarget)) {
       result = startReplacement(session, command);
     }
 

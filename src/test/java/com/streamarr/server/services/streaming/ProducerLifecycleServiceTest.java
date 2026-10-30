@@ -426,6 +426,32 @@ class ProducerLifecycleServiceTest {
         .allSatisfy(other -> assertThat(other.getVariantHandles()).containsOnlyKeys("480p"));
   }
 
+  @Test
+  @DisplayName(
+      "Should keep the stream session's own left variant when the worker that it runs on cannot run the switched variant's pinned encoder")
+  void
+      shouldKeepTheStreamSessionsOwnLeftVariantWhenTheWorkerThatItRunsOnCannotRunTheSwitchedVariantsPinnedEncoder() {
+    transcodeExecutor.setTargetEncoders(LIBX264_WORKER, List.of(libx264()));
+    transcodeExecutor.setTargetEncoders(NVENC_WORKER, List.of(h264Nvenc()));
+    transcodeExecutor.setExecutionTargets(List.of(LIBX264_WORKER, NVENC_WORKER));
+    transcodeExecutor.limitJobSlots(LIBX264_WORKER, 1);
+    transcodeExecutor.limitJobSlots(NVENC_WORKER, 1);
+    var session = defaultLadderSessionBuilder().build();
+    var sessionId = session.getSessionId();
+    runtimeRegistry.save(session);
+    lifecycle.startFirstListedVariant(session);
+    var played = lifecycle.prepareRequestedVariant(sessionId, "480p", "480p/segment0.m4s");
+    lifecycle.completeVariantSwitch(played);
+    var switchedUp = lifecycle.prepareRequestedVariant(sessionId, "1080p", "1080p/segment1.m4s");
+    lifecycle.completeVariantSwitch(switchedUp);
+    startedLadderSession();
+
+    lifecycle.prepareRequestedVariant(sessionId, "480p", "480p/segment2.m4s");
+
+    assertThat(session.getVariantHandles()).containsOnlyKeys("1080p");
+    assertThat(transcodeExecutor.runningExecutionTarget(sessionId, "1080p")).contains(NVENC_WORKER);
+  }
+
   private ProducerLifecycleService lifecycleWith(
       MutexFactory<UUID> sessionMutex, int maxConcurrentTranscodes) {
     return StreamingRigFixture.streamingRigBuilder()
