@@ -629,7 +629,7 @@ class QualityLadderServiceTest {
       MediaProbe probe, StreamingOptions options) {
     return QualityLadderRequest.builder()
         .probe(probe)
-        .options(options)
+        .viewerLimits(ViewerLimits.of(options))
         .capabilityDeclaration(defaultDeclarationBuilder().build())
         .codecProfile(EncodeCodecProfile.H264_HIGH)
         .frameRate(new Fraction(24, 1));
