@@ -259,8 +259,9 @@ class VideoCapabilityEntryHlsEncodeTest {
 
   @Test
   @DisplayName(
-      "Should choose the largest size one entry accepts when two entries trade size for frame rate")
-  void shouldChooseTheLargestSizeOneEntryAcceptsWhenTwoEntriesTradeSizeForFrameRate() {
+      "Should keep the faster frame rate at the smaller size when two entries trade size for frame"
+          + " rate")
+  void shouldKeepTheFasterFrameRateAtTheSmallerSizeWhenTwoEntriesTradeSizeForFrameRate() {
     var declaration = uhdAt30AndFullHdAt60Declaration();
 
     var output =
@@ -270,9 +271,46 @@ class VideoCapabilityEntryHlsEncodeTest {
     assertThat(output)
         .hasValueSatisfying(
             fitted -> {
-              assertThat(pictureOf(fitted)).isEqualTo(UHD);
-              assertThat(fitted.frameRate()).isEqualTo(new Fraction(30, 1));
+              assertThat(pictureOf(fitted)).isEqualTo(FULL_HD);
+              assertThat(fitted.frameRate()).isEqualTo(new Fraction(60, 1));
             });
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the frame rate and shrink the picture when the entry's level allows the picture"
+          + " only at a lower rate")
+  void
+      shouldKeepTheFrameRateAndShrinkThePictureWhenTheEntrysLevelAllowsThePictureOnlyAtALowerRate() {
+    var entry = h264EntryBuilder().codecProfiles(List.of(h264High(41))).build();
+
+    var output = entry.fitHlsEncode(fullHdRequest().frameRate(new Fraction(60, 1)).build());
+
+    assertThat(output)
+        .hasValueSatisfying(
+            fitted -> {
+              assertThat(pictureOf(fitted)).isEqualTo(new PictureSize(1358, 764));
+              assertThat(fitted.frameRate()).isEqualTo(new Fraction(60, 1));
+              assertThat(VideoEncodeDecision.of(fitted).level()).isLessThanOrEqualTo(41);
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the higher bitrate when two entries accept the same picture at the same frame"
+          + " rate")
+  void shouldKeepTheHigherBitrateWhenTwoEntriesAcceptTheSamePictureAtTheSameFrameRate() {
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    h264EntryBuilder().codecProfiles(List.of(h264High(40))).build(),
+                    h264EntryBuilder().codecProfiles(List.of(h264High(51))).build()))
+            .build();
+
+    var output = declaration.fitHlsEncode(fullHdRequest().bitrate(20_000_000L).build());
+
+    assertThat(output.map(EncodedVideoOutput::bitrate)).contains(20_000_000L);
   }
 
   @Test
