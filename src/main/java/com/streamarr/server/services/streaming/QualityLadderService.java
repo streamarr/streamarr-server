@@ -23,14 +23,21 @@ public class QualityLadderService {
 
   // The 2160p and 1440p bitrates are the lowest 3840x2160 and the 2560x1440 rates in Apple's HLS
   // Authoring Specification for Apple Devices, item 1.25.
+  private static final QualityTier TIER_2160P =
+      new QualityTier("2160p", new PictureSize(3840, 2160), 11_600_000L, 128_000L);
+  private static final QualityTier TIER_1440P =
+      new QualityTier("1440p", new PictureSize(2560, 1440), 8_100_000L, 128_000L);
+  private static final QualityTier TIER_1080P =
+      new QualityTier("1080p", new PictureSize(1920, 1080), 5_000_000L, 128_000L);
+  private static final QualityTier TIER_720P =
+      new QualityTier("720p", new PictureSize(1280, 720), 3_000_000L, 128_000L);
+  private static final QualityTier TIER_480P =
+      new QualityTier("480p", new PictureSize(854, 480), 1_500_000L, 96_000L);
+  private static final QualityTier TIER_360P =
+      new QualityTier("360p", new PictureSize(640, 360), 800_000L, 64_000L);
+
   private static final List<QualityTier> STANDARD_TIERS =
-      List.of(
-          new QualityTier("2160p", new PictureSize(3840, 2160), 11_600_000L, 128_000L),
-          new QualityTier("1440p", new PictureSize(2560, 1440), 8_100_000L, 128_000L),
-          new QualityTier("1080p", new PictureSize(1920, 1080), 5_000_000L, 128_000L),
-          new QualityTier("720p", new PictureSize(1280, 720), 3_000_000L, 128_000L),
-          new QualityTier("480p", new PictureSize(854, 480), 1_500_000L, 96_000L),
-          new QualityTier("360p", new PictureSize(640, 360), 800_000L, 64_000L));
+      List.of(TIER_2160P, TIER_1440P, TIER_1080P, TIER_720P, TIER_480P, TIER_360P);
 
   private static final long VIEWER_AND_ENTRY_BOUNDED_AUDIO_BITRATE = 64_000L;
   // More than any codec level allows, so fitting caps it at the entry level's highest bitrate.
@@ -40,10 +47,10 @@ public class QualityLadderService {
    * The variants that an encode offers, each fitted to one capability entry (ADR 0049). Auto offers
    * a standard tier when the source is larger than the next smaller tier's box, scaling the source
    * to fit the tier's box without enlarging it, or one variant when the viewer's options leave no
-   * tier. A fixed quality offers only the default variant. Sizes each variant from the picture that
-   * a player shows, after cropping and rotation. A tier that an entry shrinks into a smaller tier's
-   * box gives way to that tier. Returns no variant when the viewer's options leave no picture that
-   * the worker encodes.
+   * tier. A fixed quality offers only the default variant, within its tier's box; Original has no
+   * box. Sizes each variant from the picture that a player shows, after cropping and rotation. A
+   * tier that an entry shrinks into a smaller tier's box gives way to that tier. Returns no variant
+   * when the viewer's options leave no picture that the worker encodes.
    */
   public List<QualityVariant> generateVariants(@NonNull QualityLadderRequest request) {
     var options = request.options();
@@ -51,7 +58,11 @@ public class QualityLadderService {
     var viewerBounds = viewerBounds(source, options);
     var maxBitrate = resolveMaxBitrate(options);
     if (!isAutoQuality(options)) {
-      return fitUntiered(request, viewerBounds, maxBitrate)
+      var bounds =
+          fixedQualityTier(options.quality())
+              .map(tier -> within(viewerBounds, tier.box().orientedLike(source)))
+              .orElse(viewerBounds);
+      return fitUntiered(request, bounds, maxBitrate)
           .map(output -> viewerAndEntryBoundedVariant(output, StreamSession.defaultVariant()))
           .stream()
           .toList();
@@ -82,6 +93,22 @@ public class QualityLadderService {
     }
 
     return List.copyOf(variants);
+  }
+
+  private static Optional<QualityTier> fixedQualityTier(VideoQuality quality) {
+    return switch (quality) {
+      case LOW_360P -> Optional.of(TIER_360P);
+      case MEDIUM_480P -> Optional.of(TIER_480P);
+      case HIGH_720P -> Optional.of(TIER_720P);
+      case FULL_HD_1080P -> Optional.of(TIER_1080P);
+      case UHD_4K -> Optional.of(TIER_2160P);
+      case AUTO, ORIGINAL -> Optional.empty();
+    };
+  }
+
+  private static PictureSize within(PictureSize bounds, PictureSize box) {
+    return new PictureSize(
+        Math.min(bounds.width(), box.width()), Math.min(bounds.height(), box.height()));
   }
 
   // The tier whose box holds the source and every smaller tier. The smallest tier has no smaller
