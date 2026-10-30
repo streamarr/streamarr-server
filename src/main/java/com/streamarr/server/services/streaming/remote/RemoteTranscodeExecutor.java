@@ -86,6 +86,11 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
+  public Optional<ExecutionTargetId> runningExecutionTarget(UUID sessionId, String variantLabel) {
+    return workerServer.runningExecutionTarget(sessionId, variantLabel);
+  }
+
+  @Override
   public Optional<TranscodeFailure> terminalFailure(UUID sessionId) {
     return workerServer.terminalFailure(sessionId);
   }

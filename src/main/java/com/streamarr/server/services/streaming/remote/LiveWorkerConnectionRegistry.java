@@ -446,6 +446,13 @@ final class LiveWorkerConnectionRegistry {
         .anyMatch(connection -> connection.isRunning(streamSessionId, variantLabel));
   }
 
+  Optional<ExecutionTargetId> runningExecutionTarget(UUID streamSessionId, String variantLabel) {
+    return connections.values().stream()
+        .filter(connection -> connection.isRunning(streamSessionId, variantLabel))
+        .map(WorkerConnection::executionTargetId)
+        .findFirst();
+  }
+
   boolean hasConnectedWorker(UUID sourceNamespaceId) {
     var sourceNamespace = toProto(sourceNamespaceId);
     return connections.values().stream()

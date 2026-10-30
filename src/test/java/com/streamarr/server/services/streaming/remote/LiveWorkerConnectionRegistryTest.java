@@ -208,6 +208,20 @@ class LiveWorkerConnectionRegistryTest {
     assertThat(held.isRunning()).isFalse();
   }
 
+  @Test
+  @DisplayName(
+      "Should name the worker that runs a variant's job attempt until the job attempt stops")
+  void shouldNameTheWorkerThatRunsAVariantsJobAttemptUntilTheJobAttemptStops() {
+    var held = HeldVariant.dispatch();
+    var variantLabel = held.job().getVariant().getVariantLabel();
+    var runningTarget = held.registry().runningExecutionTarget(held.sessionId(), variantLabel);
+
+    held.registry().stopVariant(held.sessionId(), variantLabel);
+
+    assertThat(runningTarget).contains(new ExecutionTargetId(held.workerSessionId().toString()));
+    assertThat(held.registry().runningExecutionTarget(held.sessionId(), variantLabel)).isEmpty();
+  }
+
   // A variant job running on a registered worker, with the wake that its held requests took.
   @Builder
   private record HeldVariant(

@@ -40,6 +40,12 @@ public interface TranscodeExecutor {
   boolean isRunning(UUID sessionId, String variantLabel);
 
   /**
+   * The execution target that runs the variant's job attempt. Empty when no job attempt of the
+   * variant runs.
+   */
+  Optional<ExecutionTargetId> runningExecutionTarget(UUID sessionId, String variantLabel);
+
+  /**
    * Remains available until the stream session is destroyed, including before its handle is
    * installed.
    */

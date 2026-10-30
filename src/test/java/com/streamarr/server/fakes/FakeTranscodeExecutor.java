@@ -33,6 +33,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private record ProcessKey(UUID sessionId, String variantLabel) {}
 
   private final Set<ProcessKey> running = ConcurrentHashMap.newKeySet();
+  private final Map<ProcessKey, ExecutionTargetId> runningTargets = new ConcurrentHashMap<>();
   private final Set<ProcessKey> started = ConcurrentHashMap.newKeySet();
   private final Set<UUID> stopped = ConcurrentHashMap.newKeySet();
   private final Map<UUID, TranscodeFailure> terminalFailures = new ConcurrentHashMap<>();
@@ -50,6 +51,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final Map<ExecutionTargetId, Map<String, WorkerVerifiedEncoder>> encodersByTarget =
       new ConcurrentHashMap<>();
   private final AtomicLong livenessChecks = new AtomicLong();
+  private final AtomicLong jobSlotRefusals = new AtomicLong();
   private final Map<ProcessKey, AtomicLong> livenessChecksByVariant = new ConcurrentHashMap<>();
   private final Set<UUID> failingOnStopVariant = ConcurrentHashMap.newKeySet();
   private final HeldSegmentRequests heldRequests =
@@ -73,7 +75,9 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       throw new TranscodeException("No connected transcode worker runs the pinned encoder");
     }
 
-    var handle = doStart(request);
+    // A start that no target advertises an encoder for runs on the first eligible target.
+    var runningTarget = accepting.or(() -> candidateTargets(request).stream().findFirst());
+    var handle = doStart(request, runningTarget);
     return accepting
         .flatMap(target -> advertisedEncoder(target, request.transcodeDecision()))
         .map(handle::withEncoder)
@@ -82,14 +86,16 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   // The first target, in failover order, that advertises an encoder the request can run on.
   private Optional<ExecutionTargetId> acceptingTarget(TranscodeRequest request) {
-    var candidates =
-        request
-            .pinnedEncoder()
-            .map(this::executionTargets)
-            .orElseGet(() -> executionTargets(request.transcodeDecision()));
-    return candidates.stream()
+    return candidateTargets(request).stream()
         .filter(target -> advertisedEncoder(target, request.transcodeDecision()).isPresent())
         .findFirst();
+  }
+
+  private Set<ExecutionTargetId> candidateTargets(TranscodeRequest request) {
+    return request
+        .pinnedEncoder()
+        .map(this::executionTargets)
+        .orElseGet(() -> executionTargets(request.transcodeDecision()));
   }
 
   @Override
@@ -99,7 +105,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
         || !request.pinnedEncoder().map(pinned -> advertises(target, pinned)).orElse(true)) {
       throw new TranscodeException("Target " + target.value() + " refused the transcode");
     }
-    var handle = doStart(request);
+    var handle = doStart(request, Optional.of(target));
     // A recorded start names a job that already runs, so a test that awaits it can end the job.
     startedTargets.add(target);
     signalObservation();
@@ -118,16 +124,21 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
         encodersByTarget.getOrDefault(target, Map.of()).get(decision.videoCodecFamily()));
   }
 
-  private TranscodeHandle doStart(TranscodeRequest request) {
+  private TranscodeHandle doStart(
+      TranscodeRequest request, Optional<ExecutionTargetId> runningTarget) {
     if (encodesVideo(request.transcodeDecision()) && !tryTakeEncodeSlot(request)) {
       throw new TranscodeException("No connected transcode worker can encode this variant");
     }
 
     var key = new ProcessKey(request.sessionId(), request.variantLabel());
     if (!tryTakeJobSlot(key)) {
+      jobSlotRefusals.incrementAndGet();
+      signalObservation();
       throw new TranscodeException("No connected transcode worker has a free job slot");
     }
 
+    runningTarget.ifPresentOrElse(
+        target -> runningTargets.put(key, target), () -> runningTargets.remove(key));
     started.add(key);
     startedRequests.add(request);
     var handle =
@@ -186,6 +197,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   }
 
   private void end(ProcessKey key) {
+    runningTargets.remove(key);
     if (running.remove(key)) {
       heldRequests.wakeVariant(key.sessionId(), key.variantLabel());
     }
@@ -212,6 +224,16 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     var result = running.contains(key);
     signalObservation();
     return result;
+  }
+
+  @Override
+  public Optional<ExecutionTargetId> runningExecutionTarget(UUID sessionId, String variantLabel) {
+    var key = new ProcessKey(sessionId, variantLabel);
+    if (!running.contains(key)) {
+      return Optional.empty();
+    }
+
+    return Optional.ofNullable(runningTargets.get(key));
   }
 
   /**
@@ -245,6 +267,11 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     awaitObservation(
         () -> livenessChecks(sessionId, variantLabel) >= count,
         "liveness check count " + count + " of variant " + variantLabel);
+  }
+
+  /** The starts refused so far because every job slot was taken. */
+  public long jobSlotRefusals() {
+    return jobSlotRefusals.get();
   }
 
   public void awaitStartedRequestCount(int count) {
@@ -493,6 +520,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   public void reset() {
     running.clear();
+    runningTargets.clear();
     started.clear();
     stopped.clear();
     startedRequests.clear();
