@@ -9,12 +9,7 @@ import lombok.NonNull;
  */
 @Builder
 public record QualityVariant(
-    int width,
-    int height,
-    long videoBitrate,
-    long audioBitrate,
-    String label,
-    @NonNull Fraction frameRate) {
+    int width, int height, long videoBitrate, String label, @NonNull Fraction frameRate) {
 
   /** The variant's AVERAGE-BANDWIDTH in a multivariant playlist whose audio has this bitrate. */
   public long averageBandwidth(long playlistAudioBitrate) {
