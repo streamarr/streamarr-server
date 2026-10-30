@@ -7,15 +7,63 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.UnaryOperator;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Client Capability Declaration Tests")
 class ClientCapabilityDeclarationTest {
+
+  private static final Map<
+          String, UnaryOperator<ClientCapabilityDeclaration.ClientCapabilityDeclarationBuilder>>
+      REQUIRED_DECLARATION_LISTS =
+          Map.of(
+              "video", builder -> builder.video(List.of(h264EntryBuilder().build())),
+              "audio", builder -> builder.audio(List.of(aacEntryBuilder().build())));
+
+  private static final Map<String, UnaryOperator<VideoCapabilityEntry.VideoCapabilityEntryBuilder>>
+      REQUIRED_VIDEO_ENTRY_VALUES =
+          Map.of(
+              "codecFamily", builder -> builder.codecFamily(ProbedCodecFamily.H264),
+              "codecProfiles",
+                  builder -> builder.codecProfiles(h264EntryBuilder().build().codecProfiles()),
+              "compatibleBases", builder -> builder.compatibleBases(List.of(CompatibleBase.SDR)),
+              "dolbyVisionProfiles", builder -> builder.dolbyVisionProfiles(List.of()));
+
+  @ParameterizedTest
+  @MethodSource("requiredDeclarationLists")
+  @DisplayName("Should refuse a declaration when it leaves out its video or audio entries")
+  void shouldRefuseADeclarationWhenItLeavesOutItsVideoOrAudioEntries(String omitted) {
+    var declaration = ClientCapabilityDeclaration.builder();
+    REQUIRED_DECLARATION_LISTS.entrySet().stream()
+        .filter(required -> !required.getKey().equals(omitted))
+        .forEach(required -> required.getValue().apply(declaration));
+
+    assertThatThrownBy(declaration::build)
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining(omitted);
+  }
+
+  @ParameterizedTest
+  @MethodSource("requiredVideoEntryValues")
+  @DisplayName("Should refuse a video capability entry when it leaves out a required value")
+  void shouldRefuseAVideoCapabilityEntryWhenItLeavesOutARequiredValue(String omitted) {
+    var entry = VideoCapabilityEntry.builder().maxBitDepth(8).maxWidth(1920).maxHeight(1080);
+    REQUIRED_VIDEO_ENTRY_VALUES.entrySet().stream()
+        .filter(required -> !required.getKey().equals(omitted))
+        .forEach(required -> required.getValue().apply(entry));
+
+    assertThatThrownBy(entry::build)
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining(omitted);
+  }
 
   @Test
   @DisplayName("Should keep its capability entries when the caller changes its lists afterwards")
@@ -94,5 +142,13 @@ class ClientCapabilityDeclarationTest {
   void shouldNameEachAudioCodecByItsProbedNameWhenADecisionComparesCodecs() {
     assertThat(List.of(AudioCodec.values()).stream().map(AudioCodec::probedName))
         .containsExactly("aac", "ac3", "eac3", "opus", "flac", "alac");
+  }
+
+  static Stream<String> requiredDeclarationLists() {
+    return REQUIRED_DECLARATION_LISTS.keySet().stream().sorted();
+  }
+
+  static Stream<String> requiredVideoEntryValues() {
+    return REQUIRED_VIDEO_ENTRY_VALUES.keySet().stream().sorted();
   }
 }
