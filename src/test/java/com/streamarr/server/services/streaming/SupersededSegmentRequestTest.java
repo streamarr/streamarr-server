@@ -134,6 +134,14 @@ class SupersededSegmentRequestTest {
     transcodeExecutor.awaitStartedTargetCount(replacements + 1);
   }
 
+  // Lets the variant's job attempt go without progress past the stall threshold and returns once a
+  // held request has started its replacement.
+  private void stallJobAttemptAndAwaitReplacement() {
+    var replacements = transcodeExecutor.getStartedTargets().size();
+    clock.advance(STALL_THRESHOLD.plusSeconds(1));
+    transcodeExecutor.awaitStartedTargetCount(replacements + 1);
+  }
+
   private static String segmentName(int segmentIndex) {
     return VARIANT + "/segment" + segmentIndex + ".m4s";
   }
@@ -384,6 +392,66 @@ class SupersededSegmentRequestTest {
       }
 
       assertThat(startSegments(sessionId)).isIn(List.of(0, 5), List.of(0, 6, 5));
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer both superseded held requests when the job attempt that a newer request started dies after producing only the newer request's segment")
+  void
+      shouldAnswerBothSupersededHeldRequestsWhenTheJobAttemptThatANewerRequestStartedDiesAfterProducingOnlyTheNewerRequestsSegment()
+          throws Exception {
+    for (var round = 0; round < RACE_ROUNDS; round++) {
+      var session = startedLadderSession();
+      var sessionId = session.getSessionId();
+      var first = relocatingDelivery(sessionId, 101);
+      var second = heldDelivery(sessionId, 102);
+      var seek = relocatingDelivery(sessionId, 100);
+      upload(sessionId, 100);
+      assertThat(answer(seek)).isInstanceOf(SegmentDelivery.Ready.class);
+
+      // Either held request may look first once the job attempt ends.
+      try (var _ = wakingContinuously(sessionId)) {
+        awaitEndOfCurrentLook();
+        endJobAttemptAndAwaitReplacement(sessionId);
+
+        upload(sessionId, 101);
+        upload(sessionId, 102);
+        assertThat(answer(first)).isInstanceOf(SegmentDelivery.Ready.class);
+        assertThat(answer(second)).isInstanceOf(SegmentDelivery.Ready.class);
+      }
+
+      assertThat(startSegments(sessionId)).containsExactly(0, 101, 100, 101);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer both superseded held requests when the job attempt that a newer request started stalls after producing only the newer request's segment")
+  void
+      shouldAnswerBothSupersededHeldRequestsWhenTheJobAttemptThatANewerRequestStartedStallsAfterProducingOnlyTheNewerRequestsSegment()
+          throws Exception {
+    for (var round = 0; round < RACE_ROUNDS; round++) {
+      var session = startedLadderSession();
+      var sessionId = session.getSessionId();
+      var first = relocatingDelivery(sessionId, 101);
+      var second = heldDelivery(sessionId, 102);
+      var seek = relocatingDelivery(sessionId, 100);
+      upload(sessionId, 100);
+      assertThat(answer(seek)).isInstanceOf(SegmentDelivery.Ready.class);
+
+      // Either held request may look first once the job attempt counts as stalled.
+      try (var _ = wakingContinuously(sessionId)) {
+        awaitEndOfCurrentLook();
+        stallJobAttemptAndAwaitReplacement();
+
+        upload(sessionId, 101);
+        upload(sessionId, 102);
+        assertThat(answer(first)).isInstanceOf(SegmentDelivery.Ready.class);
+        assertThat(answer(second)).isInstanceOf(SegmentDelivery.Ready.class);
+      }
+
+      assertThat(startSegments(sessionId)).containsExactly(0, 101, 100, 101);
     }
   }
 }

@@ -283,7 +283,7 @@ public class ProducerLifecycleService {
               .sessionId(request.sessionId())
               .variantLabel(request.variantLabel())
               .segmentName(request.segmentName())
-              .segmentIndex(replacementStart(pending))
+              .segmentIndex(replacementStart(state, pending))
               .expectedAttemptId(handle.attemptId())
               .reason(reason)
               .target(target.get())
@@ -295,14 +295,14 @@ public class ProducerLifecycleService {
     }
   }
 
-  // A replacement starts at the request's segment, but never past the segment of the newest request
-  // that positioned the variant while that segment is not stored, so a replacement that an older
-  // request starts never moves the variant away from the newer request (ADR 0019).
-  private int replacementStart(PendingSegment pending) {
+  // Once a request for a media segment has positioned the variant, a replacement never starts past
+  // that request's segment until the segment is stored, then starts where the replaced job attempt
+  // stopped. A start at a later held request's segment would skip the segment of a superseded
+  // request, which cannot move the variant back (ADR 0019).
+  private int replacementStart(VariantDeliveryState state, PendingSegment pending) {
     var requestedIndex = pending.requestedIndex();
     var newest = newestPositioningRequest(pending.request());
-    if (newest.isEmpty()
-        || segmentStore.segmentExists(newest.get().sessionId(), newest.get().segmentName())) {
+    if (newest.isEmpty()) {
       return requestedIndex;
     }
 
@@ -311,7 +311,11 @@ public class ProducerLifecycleService {
       return requestedIndex;
     }
 
-    return Math.min(requestedIndex, newestIndex.getAsInt());
+    if (!segmentStore.segmentExists(newest.get().sessionId(), newest.get().segmentName())) {
+      return Math.min(requestedIndex, newestIndex.getAsInt());
+    }
+
+    return state.frontier();
   }
 
   // Every later job attempt of a pinned variant runs only where its encoder backend runs.

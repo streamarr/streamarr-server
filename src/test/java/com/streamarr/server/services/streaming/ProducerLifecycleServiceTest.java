@@ -811,6 +811,38 @@ class ProducerLifecycleServiceTest {
 
   @Test
   @DisplayName(
+      "Should replace the job attempt at the first segment it did not store when a later superseded request recovers first after the job attempt dies")
+  void
+      shouldReplaceTheJobAttemptAtTheFirstSegmentItDidNotStoreWhenALaterSupersededRequestRecoversFirstAfterTheJobAttemptDies() {
+    var session = startedSession();
+    var sessionId = session.getSessionId();
+    var first =
+        lifecycle.prepareRequestedVariant(
+            sessionId, StreamSession.defaultVariant(), "segment101.m4s");
+    lifecycle.recover(first);
+    var second =
+        lifecycle.prepareRequestedVariant(
+            sessionId, StreamSession.defaultVariant(), "segment102.m4s");
+    lifecycle.recover(second);
+    var seek =
+        lifecycle.prepareRequestedVariant(
+            sessionId, StreamSession.defaultVariant(), "segment100.m4s");
+    lifecycle.recover(seek);
+    segmentStore.addSegment(sessionId, "segment100.m4s", new byte[] {1});
+    transcodeExecutor.markDead(sessionId);
+
+    var secondResult = lifecycle.recover(second);
+    var firstResult = lifecycle.recover(first);
+
+    assertThat(secondResult).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
+    assertThat(firstResult).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::startSequenceNumber)
+        .containsExactly(0, 101, 100, 101);
+  }
+
+  @Test
+  @DisplayName(
       "Should replace the job attempt at the newer request's segment when the newer request's relocation stops the job attempt and its new job attempt fails to start")
   void
       shouldReplaceTheJobAttemptAtTheNewerRequestsSegmentWhenTheNewerRequestsRelocationStopsTheJobAttemptAndItsNewJobAttemptFailsToStart() {
