@@ -23,7 +23,6 @@ import lombok.extern.slf4j.Slf4j;
 final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest> {
 
   private static final int MAXIMUM_SEGMENT_BYTES = 128 * 1024 * 1024;
-  private static final String DEFAULT_VARIANT_LABEL = "default";
 
   private final UUID authenticatedWorkerId;
   private final LiveWorkerConnectionRegistry workerConnections;
@@ -115,7 +114,8 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
       reject(Status.INVALID_ARGUMENT.withDescription("Segment upload is incomplete"));
       return;
     }
-    var segmentName = qualifiedSegmentName();
+    var segmentName =
+        SegmentNames.storedSegmentName(metadata.getVariantLabel(), metadata.getSegmentName());
     Optional<SegmentPublication> outcome;
     try (var prepared =
         segmentStore.prepareSegment(
@@ -161,13 +161,6 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
           Status.FAILED_PRECONDITION.withDescription(
               "Initialization segment differs from the one stored for the variant");
     };
-  }
-
-  private String qualifiedSegmentName() {
-    if (DEFAULT_VARIANT_LABEL.equals(metadata.getVariantLabel())) {
-      return metadata.getSegmentName();
-    }
-    return metadata.getVariantLabel() + "/" + metadata.getSegmentName();
   }
 
   private static boolean isValidMetadata(SegmentUploadMetadata metadata) {
