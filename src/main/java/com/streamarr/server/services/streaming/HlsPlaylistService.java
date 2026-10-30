@@ -63,9 +63,9 @@ public class HlsPlaylistService {
 
     for (var variant : session.getVariants()) {
       var averageBandwidth = variant.averageBandwidth(audio.bitrate());
-      var codecs = codecs(session, videoCodecString(session, variant));
+      var codecs = codecs(session, encodedVideoCodecString(session, variant));
       appendStreamInf(sb, averageBandwidth, variant.width(), variant.height(), codecs, hasAudio);
-      appendFrameRate(sb, session, variant);
+      appendFrameRate(sb, variant);
       appendVideoRange(sb, session);
       sb.append("\n");
       sb.append(variant.label()).append("/stream.m3u8?t=").append(token).append("\n");
@@ -83,14 +83,9 @@ public class HlsPlaylistService {
     return videoCodecString + "," + audioCodecString;
   }
 
-  // An encoded variant advertises the codec string that its job attempts force. A copy advertises
-  // the codec string that the probe stored, which names the sample entry that the copy carries.
-  private static String videoCodecString(StreamSession session, QualityVariant variant) {
+  // An encoded variant advertises the codec string that its job attempts force.
+  private static String encodedVideoCodecString(StreamSession session, QualityVariant variant) {
     var decision = session.getTranscodeDecision();
-    if (decision.transcodeMode().copiesVideo()) {
-      return copiedVideoCodecString(session);
-    }
-
     return VideoEncodeDecision.of(
             EncodedVideoOutput.builder()
                 .codecFamily(decision.videoCodecFamily())
@@ -102,6 +97,8 @@ public class HlsPlaylistService {
         .codecString();
   }
 
+  // A copy advertises the codec string that the probe stored, which names the sample entry that
+  // the copy carries.
   private static String copiedVideoCodecString(StreamSession session) {
     return session
         .getTranscodeDecision()
@@ -166,12 +163,7 @@ public class HlsPlaylistService {
   // RFC 8216 section 4.3.4.2 gives FRAME-RATE as the maximum rate, to three decimals. An encoded
   // variant runs at its own frame rate. A copy keeps the source's timing, whose maximum rate the
   // probe does not measure, so its entry leaves FRAME-RATE out.
-  private static void appendFrameRate(
-      StringBuilder sb, StreamSession session, QualityVariant variant) {
-    if (session.getTranscodeDecision().transcodeMode().copiesVideo()) {
-      return;
-    }
-
+  private static void appendFrameRate(StringBuilder sb, QualityVariant variant) {
     var frameRate = variant.frameRate();
     sb.append(",FRAME-RATE=")
         .append(
