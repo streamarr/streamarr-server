@@ -9,7 +9,8 @@ import lombok.NonNull;
 
 /**
  * What a video copy costs beside the stream session's audio: the AVERAGE-BANDWIDTH that the
- * multivariant playlist advertises for the copy (ADR 0050).
+ * multivariant playlist advertises for the copy and the cost that the viewer's maximum bitrate
+ * bounds (ADR 0050).
  */
 final class VideoCopyBandwidth {
 
@@ -37,6 +38,11 @@ final class VideoCopyBandwidth {
     }
 
     return averageBandwidth;
+  }
+
+  /** Whether the probe knows the copied video's bitrate or the container bitrate. */
+  static boolean isKnown(@NonNull MediaProbe source) {
+    return copiedStreamBitrate(source).isPresent() || source.bitrate() > 0;
   }
 
   private static OptionalLong copiedStreamBitrate(MediaProbe source) {

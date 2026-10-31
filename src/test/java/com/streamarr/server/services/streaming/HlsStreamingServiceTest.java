@@ -1089,6 +1089,91 @@ class HlsStreamingServiceTest {
     assertThat(playlist).contains("BANDWIDTH=2640000,AVERAGE-BANDWIDTH=2200000,");
   }
 
+  // ADR 0050: a copy of 4.5 Mb/s video beside 768 kb/s E-AC-3 5.1 costs 5,268 kb/s. Under a lower
+  // maximum the audio steps down first, so the video copy keeps the source's full quality. The
+  // video is encoded only when no audio step fits.
+  @ParameterizedTest
+  @CsvSource({
+    "AUTO, 5268000, AUDIO_TRANSCODE, eac3, 6, 768000",
+    "AUTO, 5267999, AUDIO_TRANSCODE, eac3, 6, 640000",
+    "AUTO, 4950000, AUDIO_TRANSCODE, eac3, 6, 448000",
+    "AUTO, 4884000, AUDIO_TRANSCODE, eac3, 6, 384000",
+    "AUTO, 4628000, AUDIO_TRANSCODE, aac, 2, 128000",
+    "AUTO, 4564000, AUDIO_TRANSCODE, aac, 2, 64000",
+    "FULL_HD_1080P, 4950000, AUDIO_TRANSCODE, eac3, 6, 448000",
+    "AUTO, 4563999, FULL_TRANSCODE, eac3, 6, 768000"
+  })
+  @DisplayName(
+      "Should lower the audio to keep a video copy within the maximum bitrate and encode the video"
+          + " only when no audio step fits")
+  void
+      shouldLowerTheAudioToKeepAVideoCopyWithinTheMaximumBitrateAndEncodeTheVideoOnlyWhenNoAudioStepFits(
+          VideoQuality quality,
+          int maxBitrate,
+          TranscodeMode expectedMode,
+          String codec,
+          int channels,
+          long bitrate) {
+    var options = StreamingOptions.builder().quality(quality).maxBitrate(maxBitrate).build();
+
+    var session = createCopySessionWithSurroundOpus(options, OptionalLong.of(4_500_000L));
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(expectedMode);
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
+        .containsExactly(codec, channels, bitrate);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request ->
+                assertThat(request.transcodeDecision().audioDecision())
+                    .isEqualTo(session.getTranscodeDecision().audioDecision()));
+    assertThat(averageBandwidths(playlist))
+        .isNotEmpty()
+        .allSatisfy(bandwidth -> assertThat(bandwidth).isLessThanOrEqualTo(maxBitrate));
+  }
+
+  // A Matroska source names no bitrate for its 5 Mb/s video stream. Encoded 768 kb/s E-AC-3 5.1
+  // adds its bitrate to the container bitrate, which also holds the source's own audio tracks, so
+  // under 5,500 kb/s the copy takes 448 kb/s.
+  @Test
+  @DisplayName(
+      "Should lower encoded audio beside a copy whose video bitrate the probe does not know when the"
+          + " container bitrate plus the audio exceeds the maximum bitrate")
+  void
+      shouldLowerEncodedAudioBesideACopyWhoseVideoBitrateTheProbeDoesNotKnowWhenTheContainerBitratePlusTheAudioExceedsTheMaximumBitrate() {
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(5_500_000).build();
+
+    var session = createCopySessionWithSurroundOpus(options, OptionalLong.empty());
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
+    assertThat(session.getTranscodeDecision().audioDecision().bitrate()).isEqualTo(448_000L);
+  }
+
+  // The container bitrate of a Matroska source holds the copied stereo AAC track, so a copy costs
+  // its 5 Mb/s alone and fits a 5 Mb/s maximum without changing the audio. Below that, no encoded
+  // audio step lowers that cost, so the video is encoded beside the copied track.
+  @ParameterizedTest
+  @CsvSource({"5000000, REMUX, COPY", "4999999, VIDEO_TRANSCODE, COPY"})
+  @DisplayName(
+      "Should check a copy whose video bitrate the probe does not know against the container"
+          + " bitrate alone when the session copies an audio track that it holds")
+  void
+      shouldCheckACopyWhoseVideoBitrateTheProbeDoesNotKnowAgainstTheContainerBitrateAloneWhenTheSessionCopiesAnAudioTrackThatItHolds(
+          int maxBitrate, TranscodeMode expectedMode, AudioMode expectedAudioMode) {
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(maxBitrate).build();
+
+    var session = createCopySessionWithCopiedStereoAac(options, OptionalLong.of(192_000L));
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(expectedMode);
+    assertThat(session.getTranscodeDecision().audioDecision().mode()).isEqualTo(expectedAudioMode);
+  }
+
   // A Matroska source names no bitrate for its video stream, so its 5 Mb/s container bitrate stands
   // in for the copied video. That rate already holds the copied stereo AAC track, so the copy costs
   // the container bitrate alone, whether the probe knows the track's 192 kb/s or not.
@@ -1135,6 +1220,12 @@ class HlsStreamingServiceTest {
   // The declaration lists stereo AAC and 7.1 E-AC-3 but no Opus, so the session encodes the audio.
   private StreamSession createCopySessionWithSurroundOpus(
       VideoQuality quality, OptionalLong videoBitrate) {
+    return createCopySessionWithSurroundOpus(
+        StreamingOptions.builder().quality(quality).build(), videoBitrate);
+  }
+
+  private StreamSession createCopySessionWithSurroundOpus(
+      StreamingOptions options, OptionalLong videoBitrate) {
     var probe = defaultProbeBuilder().bitrate(5_000_000L).build();
     var streams =
         List.of(
@@ -1157,7 +1248,7 @@ class HlsStreamingServiceTest {
     return accepted(
         service.createSession(
             createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
-                .options(StreamingOptions.builder().quality(quality).build())
+                .options(options)
                 .capabilityDeclaration(declaration)
                 .build()));
   }

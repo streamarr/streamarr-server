@@ -1,5 +1,7 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.AudioSteps;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.StreamingOptions;
@@ -69,12 +71,11 @@ public record ViewerLimits(
   }
 
   /**
-   * Whether a copy of the source fits these limits: the displayed picture fits the fixed quality's
-   * picture box in either orientation and the maximum width and height as given, and the container
-   * bitrate, when the probe knows it, is at or below the maximum bitrate. A copy in Original
+   * Whether a copy's picture fits these limits: the displayed picture fits the fixed quality's
+   * picture box in either orientation and the maximum width and height as given. A copy in Original
    * ignores the limits.
    */
-  public boolean allowsCopyOf(@NonNull MediaProbe source) {
+  public boolean allowsCopyPictureOf(@NonNull MediaProbe source) {
     if (quality == VideoQuality.ORIGINAL) {
       return true;
     }
@@ -88,12 +89,24 @@ public record ViewerLimits(
       return false;
     }
 
-    if (maxHeight.isPresent() && picture.height() > maxHeight.getAsInt()) {
-      return false;
+    return maxHeight.isEmpty() || picture.height() <= maxHeight.getAsInt();
+  }
+
+  /**
+   * The first audio step beside which a copy of the source costs at most the maximum bitrate, or
+   * empty when none does (ADR 0050). A copy in Original, a copy without a maximum bitrate and a
+   * copy whose video bitrate and container bitrate are both unknown keep the session's audio.
+   */
+  public Optional<AudioDecision> audioStepBesideCopyOf(
+      @NonNull MediaProbe source, @NonNull AudioSteps steps) {
+    if (quality == VideoQuality.ORIGINAL
+        || maxBitrate.isEmpty()
+        || !VideoCopyBandwidth.isKnown(source)) {
+      return Optional.of(steps.sessionAudio());
     }
 
-    return maxBitrate.isEmpty()
-        || source.bitrate() <= 0
-        || source.bitrate() <= maxBitrate.getAsLong();
+    return steps.highestFirst().stream()
+        .filter(step -> VideoCopyBandwidth.averageBandwidth(source, step) <= maxBitrate.getAsLong())
+        .findFirst();
   }
 }
