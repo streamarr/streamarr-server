@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.assertj.core.api.Assertions.within;
 import static org.awaitility.Awaitility.await;
 
@@ -28,6 +29,7 @@ import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
+import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
@@ -61,6 +63,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
@@ -219,6 +222,42 @@ class ProbeVersion6WorkerIT extends AbstractIntegrationTest {
                         new VideoDynamicRange(
                             CompatibleBase.SDR, Presence.ABSENT, new DolbyVision.Absent()));
               });
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should store each stream's bitrate from its statistics tags when the worker probes a file that mkvmerge wrote")
+  void shouldStoreEachStreamsBitrateFromItsStatisticsTagsWhenTheWorkerProbesAFileThatMkvmergeWrote()
+      throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    var fixture = getClass().getResource("/matroska-statistics/statistics-tags.mkv");
+    assertThat(fixture).isNotNull();
+    var source = Files.copy(Path.of(fixture.toURI()), mediaRoot.resolve("statistics-tags.mkv"));
+
+    try (var server = server(new LocalSegmentStore(tempDir.resolve("server-segments")));
+        var worker = workerBuilder(server, mediaRoot).build()) {
+      server.start();
+      worker.start();
+      var file = createMediaFile("statistics-tags.mkv");
+      publish(file, probe(server, mediaRoot, source));
+
+      var stored =
+          containerInfoRepository
+              .findByMediaFileId(file.getId())
+              .orElseThrow()
+              .getOutcome(KeyframeKnowledge.NotReported::new, ChapterKnowledge.NotReported::new);
+
+      // The BPS tags that mkvmerge wrote. ffprobe reports no bitrate for either stream.
+      assertThat(stored)
+          .isInstanceOfSatisfying(
+              ProbeOutcome.Success.class,
+              success ->
+                  assertThat(success.streams())
+                      .extracting(StreamInfo::codecType, StreamInfo::bitrate)
+                      .containsExactly(
+                          tuple("video", OptionalLong.of(15_596)),
+                          tuple("audio", OptionalLong.of(64_314))));
     }
   }
 
