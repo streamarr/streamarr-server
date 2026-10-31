@@ -1130,6 +1130,60 @@ class HlsStreamingServiceTest {
     assertThat(session.getVariants()).extracting(QualityVariant::label).containsExactly("360p");
   }
 
+  // A copied AAC 7.1 track at 512 kb/s leaves 638 kb/s under 1,150 kb/s and its 448 kb/s step
+  // leaves 702. Beside E-AC-3 5.1, the 384 kb/s E-AC-3 step leaves 766. AAC 5.1 at 320 kb/s leaves
+  // 830 and comes before stereo; under 1,184 kb/s the E-AC-3 step already leaves 800.
+  @ParameterizedTest
+  @CsvSource({
+    "false, 1150000, aac, 320000",
+    "true, 1150000, aac, 320000",
+    "true, 1184000, eac3, 384000"
+  })
+  @DisplayName(
+      "Should step a copied AAC 7.1 track through AAC 5.1 after E-AC-3 5.1 and before stereo when"
+          + " the copy leaves less than the 360p tier's video bitrate")
+  void
+      shouldStepACopiedAac71TrackThroughAac51AfterEac351AndBeforeStereoWhenTheCopyLeavesLessThanThe360pTiersVideoBitrate(
+          boolean declaresEac3, int maxBitrate, String expectedCodec, long expectedBitrate) {
+    var probe = defaultProbeBuilder().videoCodec("hevc").build();
+    var streams =
+        List.of(
+            ProbeFixture.videoStreamBuilder(probe).build(),
+            ProbeFixture.audioStreamBuilder("aac")
+                .index(1)
+                .channels(OptionalInt.of(8))
+                .bitrate(OptionalLong.of(512_000L))
+                .build());
+    probeResults.setDefaultOutcome(
+        ProbeFixture.completeProbe(
+            defaultProbeBuilder().videoCodec("hevc").streams(streams).build()));
+    var entries = new ArrayList<>(List.of(aacEntryBuilder().maxChannels(8).build()));
+    if (declaresEac3) {
+      entries.add(audioEntryBuilder(AudioCodec.EAC3).maxChannels(6).build());
+    }
+
+    var declaration = defaultDeclarationBuilder().audio(entries).build();
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(maxBitrate).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                    .options(options)
+                    .capabilityDeclaration(declaration)
+                    .build()));
+
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(
+            AudioDecision::mode,
+            AudioDecision::codec,
+            AudioDecision::channels,
+            AudioDecision::bitrate)
+        .containsExactly(AudioMode.TRANSCODE, expectedCodec, 6, expectedBitrate);
+    assertThat(session.getVariants()).extracting(QualityVariant::label).containsExactly("360p");
+  }
+
   // Original copies the H.264 video whatever the viewer's limits, and the server keeps a copied
   // 640 kb/s AC-3 5.1 track beside that copy.
   @Test
