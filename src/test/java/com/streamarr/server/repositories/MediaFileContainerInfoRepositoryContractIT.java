@@ -21,7 +21,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Tag("IntegrationTest")
 @DisplayName("Media File Container Info Repository Contract Integration Tests")
 class MediaFileContainerInfoRepositoryContractIT extends AbstractIntegrationTest
-    implements MediaFileContainerInfoRepositoryContract, ProbePlaybackFactsRepositoryContract {
+    implements MediaFileContainerInfoRepositoryContract,
+        ProbePlaybackFactsRepositoryContract,
+        StreamMeasurementRepositoryContract {
 
   @Autowired private MediaFileContainerInfoRepository repository;
   @Autowired private MediaFileRepository mediaFileRepository;

@@ -146,6 +146,22 @@ public class MediaFileKeyframePositionsRecord extends UpdatableRecordImpl<MediaF
         return (String) get(7);
     }
 
+    /**
+     * Setter for
+     * <code>public.media_file_keyframe_positions.positions_digest</code>.
+     */
+    public void setPositionsDigest(byte[] value) {
+        set(8, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_keyframe_positions.positions_digest</code>.
+     */
+    public byte[] getPositionsDigest() {
+        return (byte[]) get(8);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -169,7 +185,7 @@ public class MediaFileKeyframePositionsRecord extends UpdatableRecordImpl<MediaF
     /**
      * Create a detached, initialised MediaFileKeyframePositionsRecord
      */
-    public MediaFileKeyframePositionsRecord(UUID mediaFileId, String keyframeStatus, Integer streamIndex, Integer timeBaseNumerator, Integer timeBaseDenominator, Integer keyframeCount, byte[] encodedTimes, String source) {
+    public MediaFileKeyframePositionsRecord(UUID mediaFileId, String keyframeStatus, Integer streamIndex, Integer timeBaseNumerator, Integer timeBaseDenominator, Integer keyframeCount, byte[] encodedTimes, String source, byte[] positionsDigest) {
         super(MediaFileKeyframePositions.MEDIA_FILE_KEYFRAME_POSITIONS);
 
         setMediaFileId(mediaFileId);
@@ -180,6 +196,7 @@ public class MediaFileKeyframePositionsRecord extends UpdatableRecordImpl<MediaF
         setKeyframeCount(keyframeCount);
         setEncodedTimes(encodedTimes);
         setSource(source);
+        setPositionsDigest(positionsDigest);
         resetTouchedOnNotNull();
     }
 }

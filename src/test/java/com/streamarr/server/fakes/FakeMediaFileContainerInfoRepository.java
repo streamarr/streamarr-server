@@ -7,6 +7,7 @@ import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.ProbeAttemptFailure;
 import com.streamarr.server.domain.task.ProbeInputs;
@@ -34,6 +35,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   private final Map<UUID, ProbeAttemptFailure> failures = new ConcurrentHashMap<>();
   private final Map<UUID, KeyframeKnowledge> keyframes = new ConcurrentHashMap<>();
   private final Map<UUID, ChapterKnowledge> chapters = new ConcurrentHashMap<>();
+  private final Map<UUID, StoredMeasurement> measurements = new ConcurrentHashMap<>();
   private final List<ProbePublication> publications = new ArrayList<>();
   private Optional<ProbeOutcome.Success> defaultProbe = Optional.empty();
   private final Set<UUID> deletedMediaFiles = ConcurrentHashMap.newKeySet();
@@ -55,6 +57,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     failures.clear();
     keyframes.clear();
     chapters.clear();
+    measurements.clear();
   }
 
   @Override
@@ -101,9 +104,19 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     failures.remove(publication.mediaFileId());
     keyframes.remove(publication.mediaFileId());
     chapters.remove(publication.mediaFileId());
+    dropMeasurementUnlessSnapshotMatches(publication.mediaFileId(), publication.snapshot());
     if (publication.outcome() instanceof ProbeOutcome.Success success) {
       keyframes.put(publication.mediaFileId(), success.keyframes());
       chapters.put(publication.mediaFileId(), success.container().chapters());
+      success
+          .streamMeasurements()
+          .filter(_ -> success.keyframes() instanceof KeyframeKnowledge.Known)
+          .ifPresent(
+              measured ->
+                  measurements.put(
+                      publication.mediaFileId(),
+                      new StoredMeasurement(
+                          publication.snapshot(), success.keyframes(), measured)));
     }
 
     return true;
@@ -139,6 +152,27 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
 
     return defaultProbe.map(ProbeOutcome.Success::keyframes);
   }
+
+  @Override
+  public synchronized Optional<StreamMeasurements> findStreamMeasurements(UUID mediaFileId) {
+    var row = rows.get(mediaFileId);
+    if (row == null) {
+      return defaultProbe.flatMap(ProbeOutcome.Success::streamMeasurements);
+    }
+
+    return Optional.ofNullable(measurements.get(mediaFileId))
+        .filter(stored -> stored.snapshot().equals(row.getSnapshot()))
+        .filter(stored -> stored.keyframes().equals(keyframes.get(mediaFileId)))
+        .map(StoredMeasurement::measurements);
+  }
+
+  private void dropMeasurementUnlessSnapshotMatches(UUID mediaFileId, SourceFileSnapshot snapshot) {
+    measurements.computeIfPresent(
+        mediaFileId, (_, stored) -> stored.snapshot().equals(snapshot) ? stored : null);
+  }
+
+  private record StoredMeasurement(
+      SourceFileSnapshot snapshot, KeyframeKnowledge keyframes, StreamMeasurements measurements) {}
 
   @Override
   public synchronized Map<UUID, ChapterKnowledge> findChapterKnowledge(
@@ -180,6 +214,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     }
 
     invalidateOutcomeUnlessSnapshotMatches(mediaFileId, inputs.snapshot());
+    dropMeasurementUnlessSnapshotMatches(mediaFileId, inputs.snapshot());
     return true;
   }
 

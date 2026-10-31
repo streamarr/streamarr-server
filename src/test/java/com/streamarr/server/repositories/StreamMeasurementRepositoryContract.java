@@ -1,0 +1,123 @@
+package com.streamarr.server.repositories;
+
+import static com.streamarr.server.fixtures.StreamMeasurementFixture.measured;
+import static com.streamarr.server.fixtures.StreamMeasurementFixture.measurement;
+import static com.streamarr.server.fixtures.StreamMeasurementFixture.positions;
+import static com.streamarr.server.fixtures.StreamMeasurementFixture.success;
+import static com.streamarr.server.fixtures.StreamMeasurementFixture.unmeasured;
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.StreamMeasurementSource;
+import com.streamarr.server.domain.streaming.StreamMeasurements;
+import com.streamarr.server.domain.task.ProbeInputs;
+import com.streamarr.server.domain.task.ProbePublication;
+import com.streamarr.server.fixtures.StreamMeasurementFixture;
+import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+/**
+ * The stream measurement rules that every {@link MediaFileContainerInfoRepository} keeps (ADR
+ * 0054), so the fake that unit tests use behaves as the PostgreSQL repository does.
+ */
+public interface StreamMeasurementRepositoryContract {
+
+  SourceFileSnapshot MEASURED_SNAPSHOT =
+      new SourceFileSnapshot(1234, Instant.parse("2026-10-30T10:00:00Z"));
+  SourceFileSnapshot CHANGED_SNAPSHOT =
+      new SourceFileSnapshot(5678, Instant.parse("2026-10-31T10:00:00Z"));
+
+  MediaFileContainerInfoRepository repository();
+
+  /** Creates a media file the repository can hold probe results for. */
+  UUID createMediaFile();
+
+  @Test
+  @DisplayName("Should read each stream's measurement when a probe publishes a measurement")
+  default void shouldReadEachStreamsMeasurementWhenProbePublishesMeasurement() {
+    var mediaFileId = createMediaFile();
+
+    repository().publish(publication(mediaFileId, 1, measured(positions(90_000))));
+
+    assertThat(repository().findStreamMeasurements(mediaFileId)).contains(measurement());
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the measurement when a new probe version reports the same keyframe positions"
+          + " without one")
+  default void shouldKeepMeasurementWhenNewProbeVersionReportsSameKeyframePositionsWithoutOne() {
+    var mediaFileId = createMediaFile();
+    repository().publish(publication(mediaFileId, 1, measured(positions(90_000))));
+
+    repository().publish(publication(mediaFileId, 2, unmeasured(positions(90_000))));
+
+    assertThat(repository().findStreamMeasurements(mediaFileId)).contains(measurement());
+  }
+
+  @Test
+  @DisplayName(
+      "Should read no measurement when a new probe outcome stores other keyframe positions")
+  default void shouldReadNoMeasurementWhenNewProbeOutcomeStoresOtherKeyframePositions() {
+    var mediaFileId = createMediaFile();
+    repository().publish(publication(mediaFileId, 1, measured(positions(90_000))));
+
+    repository().publish(publication(mediaFileId, 2, unmeasured(positions(45_000))));
+
+    assertThat(repository().findStreamMeasurements(mediaFileId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should read no measurement when the source changes, even once the old snapshot returns")
+  default void shouldReadNoMeasurementWhenSourceChangesEvenOnceOldSnapshotReturns() {
+    var mediaFileId = createMediaFile();
+    repository().publish(publication(mediaFileId, 1, measured(positions(90_000))));
+
+    repository().trySaveProbeRequest(mediaFileId, new ProbeInputs(CHANGED_SNAPSHOT, 1));
+    repository().trySaveProbeRequest(mediaFileId, new ProbeInputs(MEASURED_SNAPSHOT, 1));
+    repository().publish(publication(mediaFileId, 1, unmeasured(positions(90_000))));
+
+    assertThat(repository().findStreamMeasurements(mediaFileId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should replace the measurement when a later probe publishes a new measurement")
+  default void shouldReplaceMeasurementWhenLaterProbePublishesNewMeasurement() {
+    var mediaFileId = createMediaFile();
+    repository().publish(publication(mediaFileId, 1, measured(positions(90_000))));
+    var videoOnly =
+        new StreamMeasurements(
+            StreamMeasurementSource.KEYFRAME_PACKET_SCAN,
+            List.of(StreamMeasurementFixture.video()));
+
+    repository()
+        .publish(publication(mediaFileId, 2, success(positions(90_000), Optional.of(videoOnly))));
+
+    assertThat(repository().findStreamMeasurements(mediaFileId)).contains(videoOnly);
+  }
+
+  @Test
+  @DisplayName("Should read no measurement when no outcome is stored")
+  default void shouldReadNoMeasurementWhenNoOutcomeIsStored() {
+    var mediaFileId = createMediaFile();
+
+    assertThat(repository().findStreamMeasurements(mediaFileId)).isEmpty();
+  }
+
+  private static ProbePublication publication(
+      UUID mediaFileId, int probeVersion, ProbeOutcome.Success outcome) {
+    return ProbePublication.builder()
+        .mediaFileId(mediaFileId)
+        .snapshot(MEASURED_SNAPSHOT)
+        .probeVersion(probeVersion)
+        .outcome(outcome)
+        .build();
+  }
+}
