@@ -29,7 +29,8 @@ public record AuthenticatedIdentity(
     @NonNull Optional<Instant> reauthenticatedAt,
     @NonNull Optional<UUID> registrationId) {
 
-  @SuppressWarnings("java:S1068") // Lombok builder default — field is used by generated code
+  // Lombok builder defaults — its generated setters assign them
+  @SuppressWarnings({"java:S1068", "java:S9438"})
   public static class AuthenticatedIdentityBuilder {
     private Optional<Instant> reauthenticatedAt = Optional.empty();
     private Optional<UUID> registrationId = Optional.empty();

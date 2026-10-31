@@ -16,7 +16,8 @@ public record FrameRatePacketScan(
     int scannedFrameCount,
     @NonNull Optional<Duration> scannedDuration) {
 
-  @SuppressWarnings("java:S1068") // Lombok builder defaults — fields are used by generated code
+  // Lombok builder defaults — its generated setters assign them
+  @SuppressWarnings({"java:S1068", "java:S9438"})
   public static class FrameRatePacketScanBuilder {
     private OptionalDouble motionRate = OptionalDouble.empty();
     private Optional<Duration> scannedDuration = Optional.empty();

@@ -20,6 +20,8 @@ public record CreateStreamSessionCommand(
     excludedEncodeCodecFamilies = Set.copyOf(excludedEncodeCodecFamilies);
   }
 
+  // Lombok builder defaults — its generated setters assign them
+  @SuppressWarnings("java:S9438")
   public static class CreateStreamSessionCommandBuilder {
     private VideoFormatConstraint videoFormatConstraint = VideoFormatConstraint.COPY_OR_ENCODE;
     private Set<String> excludedEncodeCodecFamilies = Set.of();

@@ -21,7 +21,8 @@ public record TokenContext(
     @NonNull Optional<UUID> profileId,
     @NonNull Optional<Instant> reauthenticatedAt) {
 
-  @SuppressWarnings("java:S1068") // Lombok builder defaults — fields are used by generated code
+  // Lombok builder defaults — its generated setters assign them
+  @SuppressWarnings({"java:S1068", "java:S9438"})
   public static class TokenContextBuilder {
     private Optional<UUID> profileId = Optional.empty();
     private Optional<Instant> reauthenticatedAt = Optional.empty();

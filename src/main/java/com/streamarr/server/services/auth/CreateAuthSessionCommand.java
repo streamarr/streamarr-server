@@ -13,7 +13,8 @@ public record CreateAuthSessionCommand(
     UUID selectedProfileId,
     @NonNull Optional<UUID> registrationId) {
 
-  @SuppressWarnings("java:S1068") // Lombok builder default — field is used by generated code
+  // Lombok builder default — its generated setter assigns it
+  @SuppressWarnings({"java:S1068", "java:S9438"})
   public static class CreateAuthSessionCommandBuilder {
     private Optional<UUID> registrationId = Optional.empty();
   }
