@@ -117,6 +117,7 @@ These metrics report the same facts:
 * `streamarr.streaming.playback_slots` and `streamarr.streaming.playback_slots_in_use` report each worker's playback slots and the job attempts that use them. They carry the `worker` tag.
 * `streamarr.streaming.production_speed` reports the media seconds that a worker produced per second of production time, for each media segment it uploads. It carries the `worker` tag.
 * `streamarr.streaming.capacity_refusals` counts the stream sessions refused for lack of capacity. Its `cause` tag is `no_connected_worker`, `no_free_worker_slot`, `no_free_configured_transcode_slot`, or `no_encoder_with_free_slot`.
+* `streamarr.streaming.missing_encoder_sessions` counts the stream sessions that need an encode in a codec family for which no connected worker has a worker-verified encoder. Its `codec_family` tag is `h264` or `av1`: the codec family that the server would encode the session in. `createStreamSession` returns `NoEligibleVideoFormatError` for such a session. See <<_workers_missing_an_encoder>>.
 
 The `observability` profile exports these metrics to the OpenTelemetry collector, as the observability section of `docs/dev-setup.adoc` describes.
 Under Docker Compose, Prometheus stores them, as <<_docker_compose>> describes.
@@ -185,6 +186,8 @@ It answers `503` with status `DOWN` while no connected worker can read the sourc
 It answers `503` with status `DEGRADED` while a connected worker lacks such an encoder.
 The executor's `workersMissingEncoders` detail then maps each such worker's UUID to the codec families that it lacks, for example `{"3f0c9a52-6f1e-4b8e-9d4a-2c7e5b1a9f60": ["av1"]}`.
 A missing encoder alone leaves the aggregate `/actuator/health` at `UP`, because `DEGRADED` ranks below `UP` there.
+Each stream session that the missing encoder refuses increments `streamarr.streaming.missing_encoder_sessions`.
+A busy worker or no connected worker never counts there: the server refuses those sessions for lack of capacity instead.
 
 A worker counts an encoder only when the encoder's test encode at worker startup succeeded.
 A software encoder then always counts. A hardware encoder counts only when it is keyframe-verified.

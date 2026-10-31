@@ -82,6 +82,7 @@ import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.URI;
 import java.nio.file.Path;
@@ -122,6 +123,9 @@ class HlsStreamingServiceTest {
 
   private static final StreamingOptions OVER_THE_MAXIMUM_BITRATE =
       StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(14_333_000).build();
+
+  private static final String MISSING_ENCODER_SESSIONS_METRIC =
+      "streamarr.streaming.missing_encoder_sessions";
 
   private FakeMediaFileRepository mediaFileRepository;
   private FakeTranscodeExecutor transcodeExecutor;
@@ -165,6 +169,7 @@ class HlsStreamingServiceTest {
     assertThat(service.getActiveSessionCount()).isZero();
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
     assertThat(capacityRefusals("no_connected_worker")).isOne();
+    assertThat(missingEncoderSessions()).isZero();
   }
 
   @Test
@@ -223,6 +228,7 @@ class HlsStreamingServiceTest {
     assertThat(service.createSession(command)).isEqualTo(Outcome.rejected(expectedRejection));
     assertThat(meters.get("streamarr.streaming.stream_copy_refusals").counter().count())
         .isEqualTo(1.0);
+    assertThat(missingEncoderSessions()).isZero();
     assertThat(service.getActiveSessionCount()).isZero();
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
@@ -242,8 +248,47 @@ class HlsStreamingServiceTest {
 
     assertThat(outcome)
         .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(missingEncoderSessions()).isZero();
     assertThat(service.getActiveSessionCount()).isZero();
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  @ParameterizedTest
+  @CsvSource(
+      delimiter = '|',
+      value = {"h264|av1|h264", "av1|h264|av1", "av1,h264||h264", "av1,h264|hevc|h264"})
+  @DisplayName(
+      "Should count the missing encoder of the codec family the server would encode when no connected worker has one")
+  void shouldCountTheMissingEncoderOfTheCodecFamilyTheServerWouldEncodeWhenNoConnectedWorkerHasOne(
+      String acceptedCodecs, String verifiedFamilies, String expectedFamily) {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("vp9").build());
+    transcodeExecutor.setEncodableVideoCodecFamilies(familiesOf(verifiedFamilies));
+
+    var outcome =
+        service.createSession(createCommandDeclaring(declarationAccepting(acceptedCodecs)));
+
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(missingEncoderSessions(expectedFamily)).isOne();
+    assertThat(missingEncoderSessions()).isOne();
+  }
+
+  @Test
+  @DisplayName(
+      "Should not count a missing encoder when the encode it would run has no probed frame rate")
+  void shouldNotCountAMissingEncoderWhenTheEncodeItWouldRunHasNoProbedFrameRate() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("vp9").framerate(OptionalDouble.empty()).build());
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of());
+
+    var outcome =
+        service.createSession(
+            createStreamSessionCommand(
+                seedMediaFile().getId(), UUID.randomUUID(), defaultOptions()));
+
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(missingEncoderSessions()).isZero();
   }
 
   @ParameterizedTest(name = "{0}")
@@ -2470,6 +2515,39 @@ class HlsStreamingServiceTest {
     }
 
     return counter.count();
+  }
+
+  private double missingEncoderSessions(String codecFamily) {
+    return meters
+        .find(MISSING_ENCODER_SESSIONS_METRIC)
+        .tag("codec_family", codecFamily)
+        .counters()
+        .stream()
+        .mapToDouble(Counter::count)
+        .sum();
+  }
+
+  private double missingEncoderSessions() {
+    return meters.find(MISSING_ENCODER_SESSIONS_METRIC).counters().stream()
+        .mapToDouble(Counter::count)
+        .sum();
+  }
+
+  // One video capability entry for each comma-separated probed codec family name.
+  private static ClientCapabilityDeclaration declarationAccepting(String commaSeparated) {
+    return declarationBuilderFor(
+            Arrays.stream(commaSeparated.split(","))
+                .map(ProbedCodecFamily::fromProbedName)
+                .toArray(ProbedCodecFamily[]::new))
+        .build();
+  }
+
+  private static Set<String> familiesOf(String commaSeparated) {
+    if (commaSeparated == null) {
+      return Set.of();
+    }
+
+    return Set.of(commaSeparated.split(","));
   }
 
   @Test

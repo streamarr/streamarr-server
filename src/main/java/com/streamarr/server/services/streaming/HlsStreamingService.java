@@ -13,6 +13,7 @@ import com.streamarr.server.exceptions.TranscodeLimitReachedException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.mutation.Outcome;
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Instant;
 import java.util.Collection;
@@ -31,6 +32,8 @@ import lombok.extern.slf4j.Slf4j;
 public class HlsStreamingService implements StreamingService {
 
   private static final String CAPACITY_REFUSALS_METRIC = "streamarr.streaming.capacity_refusals";
+  private static final String MISSING_ENCODER_SESSIONS_METRIC =
+      "streamarr.streaming.missing_encoder_sessions";
 
   private final MediaFileRepository mediaFileRepository;
   private final TranscodeExecutor transcodeExecutor;
@@ -236,7 +239,27 @@ public class HlsStreamingService implements StreamingService {
       return refuseForLackOfCapacity(CapacityRefusal.NO_ENCODER_WITH_FREE_SLOT);
     }
 
+    encodeCandidateMissingAnEncoder(request).ifPresent(this::countMissingEncoderSession);
     return new CreateStreamSessionRejection.NoEligibleVideoFormat();
+  }
+
+  // The encode that connected workers would run if each had an encoder for every codec family
+  // that the server encodes. No worker has an encoder for its codec family, or the session would
+  // have had a verified encode candidate.
+  private Optional<TranscodeDecision> encodeCandidateMissingAnEncoder(
+      TranscodeDecisionRequest request) {
+    return encodeCandidate(request, Set.copyOf(EncodeCodecProfile.codecFamilyNames()))
+        .filter(decision -> encodeRejection(request, decision).isEmpty());
+  }
+
+  private void countMissingEncoderSession(TranscodeDecision decision) {
+    Counter.builder(MISSING_ENCODER_SESSIONS_METRIC)
+        .description(
+            "Stream sessions that need an encode in a codec family for which no connected worker"
+                + " has a worker-verified encoder")
+        .tag("codec_family", decision.videoCodecFamily())
+        .register(meterRegistry)
+        .increment();
   }
 
   // The encode that a connected worker's verified encoder could run once it had a free slot. Busy
