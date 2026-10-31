@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.AudioSteps;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.EncodedPictureSizes;
@@ -65,10 +66,9 @@ public class TranscodeDecisionService {
   public Optional<TranscodeDecision> decide(@NonNull TranscodeDecisionRequest request) {
     var source = request.source();
     var declaration = request.capabilityDeclaration();
-    boolean videoCopyable =
-        request.videoFormatConstraint() != VideoFormatConstraint.ENCODE_ONLY
-            && (request.viewerLimits().allowsCopyOf(source) || hasNoOutputFrameRate(source))
-            && decideVideoCopy(source, declaration);
+    var sessionAudio = decideAudio(source, declaration);
+    var audioBesideCopy = audioBesideVideoCopy(request, sessionAudio);
+    boolean videoCopyable = audioBesideCopy.isPresent();
     if (!videoCopyable && request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
       return Optional.empty();
     }
@@ -79,7 +79,7 @@ public class TranscodeDecisionService {
       return Optional.empty();
     }
 
-    var audioDecision = decideAudio(source, declaration);
+    var audioDecision = audioBesideCopy.orElse(sessionAudio);
     var subtitleDecision = SubtitleDecision.exclude();
 
     var mode = resolveTranscodeMode(videoCopyable, audioDecision, subtitleDecision);
@@ -96,6 +96,33 @@ public class TranscodeDecisionService {
             .subtitleDecision(subtitleDecision)
             .videoSource(source.videoPlaybackFacts())
             .build());
+  }
+
+  // A copy needs a source within the viewer's limits beside the first audio step at which the
+  // copy's cost fits the maximum bitrate, so the audio steps down before the video is encoded (ADR
+  // 0050). A source without an output frame rate cannot be encoded (#446), so a copy over the
+  // viewer's limits beats refusing playback. It takes the first step that fits, or else keeps the
+  // session's audio, because a lower step would not bring it within the maximum either.
+  private Optional<AudioDecision> audioBesideVideoCopy(
+      TranscodeDecisionRequest request, AudioDecision sessionAudio) {
+    if (request.videoFormatConstraint() == VideoFormatConstraint.ENCODE_ONLY) {
+      return Optional.empty();
+    }
+
+    var source = request.source();
+    var limits = request.viewerLimits();
+    var steps = AudioSteps.below(sessionAudio, request.capabilityDeclaration());
+    var stepWithinMaximum = limits.audioStepBesideCopyOf(source, steps);
+    var withinLimits = limits.allowsCopyPictureOf(source) && stepWithinMaximum.isPresent();
+    if (!withinLimits && !hasNoOutputFrameRate(source)) {
+      return Optional.empty();
+    }
+
+    if (!decideVideoCopy(source, request.capabilityDeclaration())) {
+      return Optional.empty();
+    }
+
+    return Optional.of(stepWithinMaximum.orElse(sessionAudio));
   }
 
   // A source without an output frame rate cannot be encoded (#446), so a copy over the viewer's

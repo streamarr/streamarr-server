@@ -179,6 +179,51 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.map(TranscodeDecision::transcodeMode)).contains(TranscodeMode.REMUX);
   }
 
+  // A source without a usable frame rate cannot be encoded, so it copies over a maximum bitrate
+  // that no audio step fits. Lowering the audio would not bring it within the maximum, so the
+  // copied track stays. Its 5 Mb/s container bitrate holds the video and that track.
+  @ParameterizedTest
+  @CsvSource({"1000000, REMUX, aac, 128000", "5000000, REMUX, aac, 128000"})
+  @DisplayName(
+      "Should copy the video beside the session's audio when the source has no usable frame rate"
+          + " and no audio step fits the maximum bitrate")
+  void
+      shouldCopyTheVideoBesideTheSessionsAudioWhenTheSourceHasNoUsableFrameRateAndNoAudioStepFitsTheMaximumBitrate(
+          int maxBitrate, TranscodeMode expectedMode, String codec, long bitrate) {
+    var limits =
+        ViewerLimits.of(
+            StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(maxBitrate).build());
+    var source =
+        probeBuilder("h264", "aac")
+            .bitrate(5_000_000L)
+            .framerate(OptionalDouble.empty())
+            .videoPlaybackFacts(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .streamIndex(0)
+                        .codecString(Optional.of(SDR_CODEC_STRINGS.get("h264")))
+                        .frameRateRule(VideoPlaybackFactsFixture.refusedRule())
+                        .build()))
+            .build();
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .capabilityDeclaration(declaring(H264))
+                .encodableVideoCodecFamilies(Set.of("h264"))
+                .viewerLimits(limits)
+                .build());
+
+    assertThat(decision.map(TranscodeDecision::transcodeMode)).contains(expectedMode);
+    assertThat(decision.map(TranscodeDecision::audioDecision))
+        .hasValueSatisfying(
+            audio -> {
+              assertThat(audio.codec()).isEqualTo(codec);
+              assertThat(audio.bitrate()).isEqualTo(bitrate);
+            });
+  }
+
   @Test
   @DisplayName(
       "Should return no decision when copy-only video has no usable copy segment boundaries")
