@@ -152,7 +152,7 @@ public class HlsStreamingService implements StreamingService {
   // Why no worker can run the decision's encode, whatever slots are free.
   private Optional<CreateStreamSessionRejection> encodeRejection(
       TranscodeDecisionRequest request, TranscodeDecision decision) {
-    if (!requiresVideoTranscode(decision.transcodeMode())) {
+    if (decision.encodeCodecProfile().isEmpty()) {
       return Optional.empty();
     }
 
@@ -330,26 +330,29 @@ public class HlsStreamingService implements StreamingService {
   // Every encode runs as a variant of the ladder; a copy keeps the source and has no ladder.
   private List<QualityVariant> resolveVariants(
       TranscodeDecisionRequest decisionRequest, TranscodeDecision decision) {
-    if (!requiresVideoTranscode(decision.transcodeMode())) {
-      return List.of();
-    }
+    return decision
+        .encodeCodecProfile()
+        .map(codecProfile -> encodedVariants(decisionRequest, decision, codecProfile))
+        .orElseGet(List::of);
+  }
 
-    // The stream session refuses an encode without an output frame rate before it sizes a variant.
+  private List<QualityVariant> encodedVariants(
+      TranscodeDecisionRequest decisionRequest,
+      TranscodeDecision decision,
+      EncodeCodecProfile codecProfile) {
     var request =
         QualityLadderRequest.builder()
             .probe(decisionRequest.source())
             .viewerLimits(decisionRequest.viewerLimits())
             .capabilityDeclaration(decisionRequest.capabilityDeclaration())
-            .codecProfile(EncodeCodecProfile.forCodecFamilyName(decision.videoCodecFamily()))
+            .codecProfile(codecProfile)
+            // The stream session refuses an encode without an output frame rate before it sizes a
+            // variant.
             .frameRate(decision.outputFrameRate().orElseThrow())
             .audioBitrate(decision.audioDecision().bitrate())
             .build();
     return MultivariantPlaylistOrder.of(
         qualityLadderService.generateVariants(request), decision.audioDecision().bitrate());
-  }
-
-  private boolean requiresVideoTranscode(TranscodeMode mode) {
-    return mode == TranscodeMode.VIDEO_TRANSCODE || mode == TranscodeMode.FULL_TRANSCODE;
   }
 
   // Creating a stream session starts one job attempt, so a session needs one free slot whatever
