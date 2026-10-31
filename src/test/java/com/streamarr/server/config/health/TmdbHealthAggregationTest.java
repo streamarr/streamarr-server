@@ -3,6 +3,7 @@ package com.streamarr.server.config.health;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.fakes.FakeHttpClient;
+import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import java.io.IOException;
 import java.net.http.HttpClient;
 import java.time.Clock;
@@ -67,6 +68,11 @@ class TmdbHealthAggregationTest {
         Clock clock,
         @Value("${tmdb.api.base-url}") String tmdbApiBaseUrl) {
       return new TmdbHealthIndicator(client, properties, clock, tmdbApiBaseUrl);
+    }
+
+    @Bean
+    TranscodeExecutorHealthIndicator transcodeExecutorHealthIndicator() {
+      return new TranscodeExecutorHealthIndicator(new FakeTranscodeExecutor());
     }
   }
 
