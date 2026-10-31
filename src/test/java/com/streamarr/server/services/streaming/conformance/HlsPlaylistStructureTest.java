@@ -1,14 +1,20 @@
 package com.streamarr.server.services.streaming.conformance;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.CompatibleBase;
+import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
+import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.fixtures.StreamSessionFixture;
+import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import java.time.Duration;
 import java.util.List;
@@ -17,16 +23,23 @@ import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Spec-cited HLS playlist structure suite. Each case parses a playlist actually produced by {@link
  * HlsPlaylistService} and asserts a structural obligation from RFC 8216 (and its 8216bis revision),
- * citing the relevant section in its {@code @DisplayName} and an inline comment.
+ * citing the relevant section in its {@code @DisplayName} and an inline comment. One case checks
+ * the AVPlayer frame-rate check on hand-written lines instead, because no produced playlist
+ * announces HDR yet.
  *
  * <p>Tagged {@code HlsConformance} in addition to {@code UnitTest} so it runs inside the standard
  * {@code ./mvnw verify} CI gate. ADR 0019 records the intentional advertise-ahead deviation;
@@ -59,7 +72,7 @@ class HlsPlaylistStructureTest {
         .build();
   }
 
-  private StreamSession abrSession() {
+  private static StreamSession abrSession() {
     var variants =
         List.of(
             StreamSessionFixture.defaultVariantBuilder()
@@ -239,6 +252,97 @@ class HlsPlaylistStructureTest {
                         .isLessThanOrEqualTo(streamInf.bandwidth().getAsLong()));
       }
     }
+
+    // A player can match the display to a variant's frame rate only when FRAME-RATE gives it.
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("sessionsAtAKnownFrameRate")
+    @DisplayName("Should give FRAME-RATE to every STREAM-INF when the video's frame rate is known")
+    void shouldGiveFrameRateToEveryStreamInfWhenTheVideosFrameRateIsKnown(
+        String videoShape, StreamSession session) {
+      var playlist =
+          MultivariantPlaylist.parse(service.generateMultivariantPlaylist(session, TOKEN));
+
+      assertThat(playlist.streamInfs())
+          .isNotEmpty()
+          .allSatisfy(streamInf -> assertThat(streamInf.hasFrameRate()).isTrue());
+    }
+
+    // RFC 8216 §4.3.4.2 makes FRAME-RATE optional, but AVPlayer drops a VIDEO-RANGE=PQ or HLG
+    // variant without it and fails the item with NSURLErrorDomain -1002 before it fetches the media
+    // playlist (AetherEngine, CHANGELOG #130). A variant with SUPPLEMENTAL-CODECS announces an
+    // enhancement layer and is held to the same rule. No variant announces PQ, HLG or a
+    // supplemental codec until #396 copies HDR; the HDR copies whose frame rate the rule refused
+    // then fail here until #396 decides what they announce.
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("sessionsOfEveryVideoShape")
+    @DisplayName(
+        "Should give FRAME-RATE to every STREAM-INF when it announces HDR or a supplemental codec")
+    void shouldGiveFrameRateToEveryStreamInfWhenItAnnouncesHdrOrASupplementalCodec(
+        String videoShape, StreamSession session) {
+      var playlist = service.generateMultivariantPlaylist(session, TOKEN);
+
+      assertFrameRateWhereAvPlayerRequiresIt(playlist);
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+        strings = {"VIDEO-RANGE=PQ", "VIDEO-RANGE=HLG", "SUPPLEMENTAL-CODECS=\"dvh1.08.06/db1p\""})
+    @DisplayName(
+        "Should reject a STREAM-INF that announces HDR or a supplemental codec only when it lacks"
+            + " FRAME-RATE")
+    void shouldRejectAStreamInfThatAnnouncesHdrOrASupplementalCodecOnlyWhenItLacksFrameRate(
+        String announcement) {
+      var streamInf = "#EXT-X-STREAM-INF:BANDWIDTH=1,CODECS=\"hvc1.2.4.L150.B0\"," + announcement;
+
+      assertThatExceptionOfType(AssertionError.class)
+          .isThrownBy(() -> assertFrameRateWhereAvPlayerRequiresIt(streamInf + "\nstream.m3u8\n"));
+      assertFrameRateWhereAvPlayerRequiresIt(streamInf + ",FRAME-RATE=23.976\nstream.m3u8\n");
+    }
+
+    private static void assertFrameRateWhereAvPlayerRequiresIt(String rawPlaylist) {
+      assertThat(MultivariantPlaylist.parse(rawPlaylist).streamInfs())
+          .isNotEmpty()
+          .filteredOn(StreamInf::announcesHdrOrSupplementalCodec)
+          .allSatisfy(streamInf -> assertThat(streamInf.hasFrameRate()).isTrue());
+    }
+
+    static Stream<Arguments> sessionsAtAKnownFrameRate() {
+      var copies =
+          copiedRanges()
+              .map(
+                  copied ->
+                      Arguments.of(
+                          copied.name() + " copy at a known frame rate",
+                          copySession(
+                              copied.range(),
+                              VideoPlaybackFactsFixture.declaredRateRule(
+                                  VideoPlaybackFactsFixture.FILM_RATE))));
+      return Stream.concat(Stream.of(Arguments.of("encoded ladder", abrSession())), copies);
+    }
+
+    static Stream<Arguments> sessionsOfEveryVideoShape() {
+      var refusedCopies =
+          copiedRanges()
+              .map(
+                  copied ->
+                      Arguments.of(
+                          copied.name() + " copy whose frame rate the rule refused",
+                          copySession(copied.range(), VideoPlaybackFactsFixture.refusedRule())));
+      return Stream.concat(sessionsAtAKnownFrameRate(), refusedCopies);
+    }
+
+    private static Stream<CopiedRange> copiedRanges() {
+      return Stream.of(
+          new CopiedRange("SDR", VideoPlaybackFactsFixture.SDR),
+          new CopiedRange(
+              "PQ", VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ)),
+          new CopiedRange(
+              "HLG", VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.HLG)),
+          new CopiedRange("Dolby Vision 8.2", VideoPlaybackFactsFixture.dolbyVisionProfile82()),
+          new CopiedRange("Dolby Vision 5", VideoPlaybackFactsFixture.dolbyVisionProfile5()));
+    }
+
+    private record CopiedRange(String name, VideoDynamicRange range) {}
   }
 
   /** Minimal parser over the media playlist text Streamarr produces, for spec assertions. */
@@ -328,13 +432,23 @@ class HlsPlaylistStructureTest {
     }
   }
 
-  private record StreamInf(OptionalLong bandwidth, OptionalLong averageBandwidth) {
+  private record StreamInf(OptionalLong bandwidth, OptionalLong averageBandwidth, String line) {
 
     private static final Pattern BANDWIDTH = Pattern.compile("(?<![-A-Z])BANDWIDTH=(\\d+)");
     private static final Pattern AVERAGE_BANDWIDTH = Pattern.compile("AVERAGE-BANDWIDTH=(\\d+)");
+    private static final Pattern HDR_VIDEO_RANGE = Pattern.compile("VIDEO-RANGE=(PQ|HLG)(,|$)");
+    private static final Pattern FRAME_RATE = Pattern.compile("FRAME-RATE=\\d+\\.\\d{3}(,|$)");
 
     static StreamInf parse(String line) {
-      return new StreamInf(match(BANDWIDTH, line), match(AVERAGE_BANDWIDTH, line));
+      return new StreamInf(match(BANDWIDTH, line), match(AVERAGE_BANDWIDTH, line), line);
+    }
+
+    boolean announcesHdrOrSupplementalCodec() {
+      return HDR_VIDEO_RANGE.matcher(line).find() || line.contains("SUPPLEMENTAL-CODECS=");
+    }
+
+    boolean hasFrameRate() {
+      return FRAME_RATE.matcher(line).find();
     }
 
     private static OptionalLong match(Pattern pattern, String line) {
@@ -344,6 +458,23 @@ class HlsPlaylistStructureTest {
       }
       return OptionalLong.of(Long.parseLong(matcher.group(1)));
     }
+  }
+
+  private static StreamSession copySession(VideoDynamicRange range, FrameRateRule rule) {
+    var facts =
+        VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+            .streamIndex(0)
+            .codecFamily(Optional.of(ProbedCodecFamily.HEVC))
+            .codecString(Optional.of("hvc1.2.4.L150.B0"))
+            .bitDepth(OptionalInt.of(10))
+            .dynamicRange(range)
+            .frameRateRule(rule);
+    return StreamSessionFixture.copySessionBuilder(
+            StreamSessionFixture.defaultProbeBuilder()
+                .videoCodec("hevc")
+                .videoPlaybackFacts(Optional.of(facts.build()))
+                .build())
+        .build();
   }
 
   private static KeyframeKnowledge irregularKeyframes() {

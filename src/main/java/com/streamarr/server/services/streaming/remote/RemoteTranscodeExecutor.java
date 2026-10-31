@@ -133,7 +133,17 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
+  public Set<String> hardwareEncodableVideoCodecFamilies() {
+    return workerServer.hardwareEncodableVideoCodecFamilies(sourceNamespaceId);
+  }
+
+  @Override
   public Set<String> verifiedVideoCodecFamilies() {
     return workerServer.verifiedVideoCodecFamilies(sourceNamespaceId);
+  }
+
+  @Override
+  public Set<String> verifiedHardwareVideoCodecFamilies() {
+    return workerServer.verifiedHardwareVideoCodecFamilies(sourceNamespaceId);
   }
 }

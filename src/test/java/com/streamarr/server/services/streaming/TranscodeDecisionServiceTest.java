@@ -27,6 +27,7 @@ import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
+import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
@@ -40,6 +41,7 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
+import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
@@ -47,7 +49,9 @@ import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
+import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
+import com.streamarr.server.fixtures.HardwareEncodedFamiliesAndExpectedEncode;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -67,6 +71,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.ArgumentsSource;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -84,6 +89,8 @@ class TranscodeDecisionServiceTest {
       ProbeFixture.keyframesEvery(Duration.ofMillis(10_010), Duration.ofMinutes(120));
 
   private static final Set<String> EVERY_VIDEO_CODEC_FAMILY = Set.of("h264", "hevc", "av1");
+  // A worker encodes AV1 in hardware, so AV1 comes before H.264 when both keep the frame rate.
+  private static final Set<String> HARDWARE_AV1 = Set.of("av1");
 
   private static final String STREAM_COPY_REFUSALS = "streamarr.streaming.stream_copy_refusals";
 
@@ -112,8 +119,64 @@ class TranscodeDecisionServiceTest {
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
     assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+    assertThat(decision.encodeCodecProfile()).contains(EncodeCodecProfile.H264_HIGH);
     assertThat(decision.videoSource()).isEqualTo(source.videoPlaybackFacts());
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
+  }
+
+  @ParameterizedTest
+  @CsvSource({"COPY_OR_ENCODE, VIDEO_TRANSCODE", "COPY_ONLY, "})
+  @DisplayName("Should not copy the video when the source exceeds the viewer's limits")
+  void shouldNotCopyTheVideoWhenTheSourceExceedsTheViewersLimits(
+      VideoFormatConstraint constraint, TranscodeMode expectedMode) {
+    var limits =
+        ViewerLimits.of(StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build());
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(probe("h264", "aac"))
+                .capabilityDeclaration(declaring(H264))
+                .encodableVideoCodecFamilies(Set.of("h264"))
+                .videoFormatConstraint(constraint)
+                .viewerLimits(limits)
+                .build());
+
+    assertThat(decision.map(TranscodeDecision::transcodeMode))
+        .isEqualTo(Optional.ofNullable(expectedMode));
+    assertThat(meterRegistry.find(STREAM_COPY_REFUSALS).counter()).isNull();
+  }
+
+  @Test
+  @DisplayName(
+      "Should copy the video when the source exceeds the viewer's limits and has no usable frame"
+          + " rate")
+  void shouldCopyTheVideoWhenTheSourceExceedsTheViewersLimitsAndHasNoUsableFrameRate() {
+    var limits =
+        ViewerLimits.of(StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build());
+    var refusedRule = VideoPlaybackFactsFixture.refusedRule();
+    var source =
+        probeBuilder("h264", "aac")
+            .framerate(OptionalDouble.empty())
+            .videoPlaybackFacts(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .streamIndex(0)
+                        .codecString(Optional.of(SDR_CODEC_STRINGS.get("h264")))
+                        .frameRateRule(refusedRule)
+                        .build()))
+            .build();
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .capabilityDeclaration(declaring(H264))
+                .encodableVideoCodecFamilies(Set.of("h264"))
+                .viewerLimits(limits)
+                .build());
+
+    assertThat(decision.map(TranscodeDecision::transcodeMode)).contains(TranscodeMode.REMUX);
   }
 
   @Test
@@ -362,7 +425,7 @@ class TranscodeDecisionServiceTest {
             .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
-    assertThat(decision.videoCodecFamily()).isEqualTo("av1");
+    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
   }
 
   @Test
@@ -647,9 +710,13 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.audioDecision().codec()).isEqualTo("aac");
   }
 
-  @Test
-  @DisplayName("Should prefer AV1 over H264 when client supports both")
-  void shouldPreferAv1OverH264WhenClientSupportsBoth() {
+  @ParameterizedTest(name = "hardware encoders for {0}")
+  @ArgumentsSource(HardwareEncodedFamiliesAndExpectedEncode.class)
+  @DisplayName(
+      "Should prefer H.264 over AV1 unless a worker that can run the encode encodes AV1 in hardware"
+          + " when the client declares both")
+  void shouldPreferH264OverAv1UnlessAWorkerEncodesAv1InHardwareWhenTheClientDeclaresBoth(
+      Set<String> hardwareEncodedFamilies, String expectedCodecFamily) {
     var source = probe("hevc", "aac");
     var declaration = declaring(AV1, H264);
 
@@ -660,11 +727,58 @@ class TranscodeDecisionServiceTest {
                     .source(source)
                     .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .hardwareEncodableVideoCodecFamilies(hardwareEncodedFamilies)
                     .build())
             .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
-    assertThat(decision.videoCodecFamily()).isEqualTo("av1");
+    assertThat(decision.videoCodecFamily()).isEqualTo(expectedCodecFamily);
+  }
+
+  @ParameterizedTest
+  @MethodSource("entryFrameRatesHardwareEncodedFamiliesAndExpectedEncode")
+  @DisplayName(
+      "Should encode the codec family that keeps the higher frame rate before preferring a codec"
+          + " family when the families' entries allow different frame rates")
+  void
+      shouldEncodeTheCodecFamilyThatKeepsTheHigherFrameRateBeforePreferringACodecFamilyWhenTheFamiliesEntriesAllowDifferentRates(
+          double av1MaxFrameRate,
+          double h264MaxFrameRate,
+          Set<String> hardwareEncodedFamilies,
+          String expectedCodecFamily) {
+    var source =
+        probeVersion5H264(
+            new PictureSize(1920, 1080),
+            VideoPlaybackFactsFixture.declaredRateRule(new Fraction(60, 1)));
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    av1EntryBuilder().maxFrameRate(av1MaxFrameRate).build(),
+                    h264EntryBuilder().maxFrameRate(h264MaxFrameRate).build()))
+            .build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaration)
+                    .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .hardwareEncodableVideoCodecFamilies(hardwareEncodedFamilies)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.videoCodecFamily()).isEqualTo(expectedCodecFamily);
+  }
+
+  static Stream<Arguments> entryFrameRatesHardwareEncodedFamiliesAndExpectedEncode() {
+    return Stream.of(
+        Arguments.of(30.0, 60.0, Set.of("av1"), "h264"),
+        Arguments.of(60.0, 30.0, Set.of(), "av1"),
+        Arguments.of(30.0, 30.0, Set.of("av1"), "av1"),
+        Arguments.of(30.0, 30.0, Set.of(), "h264"));
   }
 
   @Test
@@ -725,6 +839,7 @@ class TranscodeDecisionServiceTest {
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(decision.videoCodecFamily()).isEqualTo("av1");
+    assertThat(decision.encodeCodecProfile()).isEmpty();
   }
 
   @Test
@@ -1234,6 +1349,7 @@ class TranscodeDecisionServiceTest {
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
     assertThat(decision.videoCodecFamily()).isEqualTo("av1");
+    assertThat(decision.encodeCodecProfile()).contains(EncodeCodecProfile.AV1_MAIN);
   }
 
   @Test
@@ -1625,6 +1741,7 @@ class TranscodeDecisionServiceTest {
                     .source(probe("hevc", "aac"))
                     .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .hardwareEncodableVideoCodecFamilies(Set.of(skippedFamily))
                     .build())
             .orElseThrow();
 
@@ -1656,6 +1773,149 @@ class TranscodeDecisionServiceTest {
                             .build()))
                 .build(),
             "av1"));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("av1EntriesThatFitNoEncode")
+  @DisplayName(
+      "Should skip an encode codec when none of its entries fits an encoded variant of the source")
+  void shouldSkipAnEncodeCodecWhenNoneOfItsEntriesFitsAnEncodedVariantOfTheSource(
+      String scenario, VideoCapabilityEntry av1Entry) {
+    var declaration =
+        defaultDeclarationBuilder().video(List.of(av1Entry, h264EntryBuilder().build())).build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(probe("hevc", "aac"))
+                    .capabilityDeclaration(declaration)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .hardwareEncodableVideoCodecFamilies(HARDWARE_AV1)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+  }
+
+  static Stream<Arguments> av1EntriesThatFitNoEncode() {
+    return Stream.of(
+        Arguments.of(
+            "an AV1 entry without SDR",
+            av1EntryBuilder().compatibleBases(List.of(CompatibleBase.PQ)).build()),
+        Arguments.of("an AV1 entry below 8 bits", av1EntryBuilder().maxBitDepth(7).build()),
+        Arguments.of(
+            "an AV1 entry whose maximum level is below every AV1 level",
+            av1EntryBuilder()
+                .codecProfiles(
+                    List.of(
+                        VideoCodecProfileCapability.builder()
+                            .profile(VideoCodecProfile.AV1_MAIN)
+                            .maxLevel(19)
+                            .maxTier(Optional.of(VideoCodecTier.MAIN))
+                            .build()))
+                .build()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode a family whose entries are smaller and slower than the source when it sizes"
+          + " and divides the variant to fit")
+  void
+      shouldEncodeAFamilyWhoseEntriesAreSmallerAndSlowerThanTheSourceWhenItSizesAndDividesTheVariantToFit() {
+    var source =
+        probeBuilder("hevc", "aac")
+            .framerate(OptionalDouble.of(60))
+            .videoPlaybackFacts(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .streamIndex(0)
+                        .frameRateRule(
+                            VideoPlaybackFactsFixture.declaredRateRule(new Fraction(60, 1)))
+                        .build()))
+            .build();
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(h264EntryBuilder().maxWidth(1280).maxHeight(720).maxFrameRate(30).build()))
+            .build();
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .capabilityDeclaration(declaration)
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .build());
+
+    assertThat(decision).map(TranscodeDecision::videoCodecFamily).contains("h264");
+  }
+
+  @ParameterizedTest
+  @CsvSource({"0, 1080", "1920, 0", "1920, 1", "1, 3"})
+  @DisplayName(
+      "Should choose an encode codec by its codec profile when no encoder can encode the source's"
+          + " picture at any size")
+  void shouldChooseAnEncodeCodecByItsCodecProfileWhenNoEncoderCanEncodeTheSourcesPictureAtAnySize(
+      int width, int height) {
+    var source = probeBuilder("hevc", "aac").width(width).height(height).build();
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .capabilityDeclaration(declaring(H264))
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .build());
+
+    assertThat(decision).map(TranscodeDecision::videoCodecFamily).contains("h264");
+  }
+
+  @Test
+  @DisplayName(
+      "Should skip an encode codec when its entries shrink the source below the smallest picture")
+  void shouldSkipAnEncodeCodecWhenItsEntriesShrinkTheSourceBelowTheSmallestPicture() {
+    var source = probeBuilder("hevc", "aac").width(4096).height(2).build();
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    av1EntryBuilder().maxWidth(1280).maxHeight(720).build(),
+                    h264EntryBuilder().maxWidth(4096).build()))
+            .build();
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .capabilityDeclaration(declaration)
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .hardwareEncodableVideoCodecFamilies(HARDWARE_AV1)
+                .build());
+
+    assertThat(decision).map(TranscodeDecision::videoCodecFamily).contains("h264");
+  }
+
+  @Test
+  @DisplayName("Should return no decision when no entry of any family fits an encoded variant")
+  void shouldReturnNoDecisionWhenNoEntryOfAnyFamilyFitsAnEncodedVariant() {
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    h264EntryBuilder().compatibleBases(List.of(CompatibleBase.PQ)).build(),
+                    av1EntryBuilder().maxBitDepth(7).build()))
+            .build();
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(probe("hevc", "aac"))
+                .capabilityDeclaration(declaration)
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .build());
+
+    assertThat(decision).isEmpty();
   }
 
   @Test

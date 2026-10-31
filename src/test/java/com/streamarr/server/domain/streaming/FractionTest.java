@@ -28,4 +28,14 @@ class FractionTest {
 
     assertThat(filmRate.toDouble()).isEqualTo(24_000.0 / 1_001);
   }
+
+  @ParameterizedTest
+  @CsvSource({"60, 1, 2, 30, 1", "60000, 1001, 2, 30000, 1001", "60000, 1001, 3, 20000, 1001"})
+  @DisplayName("Should keep the quotient in lowest terms when a rate is divided by a whole number")
+  void shouldKeepTheQuotientInLowestTermsWhenARateIsDividedByAWholeNumber(
+      int numerator, int denominator, int divisor, int expectedNumerator, int expectedDenominator) {
+    var quotient = new Fraction(numerator, denominator).dividedBy(divisor);
+
+    assertThat(quotient).isEqualTo(new Fraction(expectedNumerator, expectedDenominator));
+  }
 }

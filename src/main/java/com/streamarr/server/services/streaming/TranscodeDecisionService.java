@@ -5,6 +5,9 @@ import com.streamarr.server.domain.streaming.AudioCapabilityEntry;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
+import com.streamarr.server.domain.streaming.EncodeCodecProfile;
+import com.streamarr.server.domain.streaming.EncodedPictureSizes;
+import com.streamarr.server.domain.streaming.EncodedVariantRequest;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
@@ -17,6 +20,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
+import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoStreamCopy;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -24,6 +28,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -35,9 +40,10 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class TranscodeDecisionService {
 
-  // An encode forces one codec profile for each codec family (ADR 0013).
-  private static final List<VideoCodecProfile> CODEC_PREFERENCE =
-      List.of(VideoCodecProfile.AV1_MAIN, VideoCodecProfile.H264_HIGH);
+  // An encode forces one codec profile for each codec family (ADR 0013). These codec families
+  // compress better than H.264, best first (ADR 0009).
+  private static final List<EncodeCodecProfile> COMPRESSING_BETTER_THAN_H264 =
+      List.of(EncodeCodecProfile.AV1_MAIN);
   // A multichannel encode prefers the first of these codecs that keeps more than two channels.
   private static final List<String> MULTICHANNEL_ENCODE_PREFERENCE = List.of("eac3", "ac3", "aac");
   // FFmpeg's AC-3 and E-AC-3 encoders stop at 5.1.
@@ -53,9 +59,11 @@ public class TranscodeDecisionService {
   private final MeterRegistry meterRegistry;
 
   /**
-   * A copy needs a video capability entry for HLS that accepts the copy. An encode uses the first
-   * codec in the preference whose encode codec profile a video capability entry for HLS lists, and
-   * that a worker-verified encoder encodes (ADR 0009). The audio follows the audio capability
+   * A copy needs a video capability entry for HLS that accepts the copy, and a source that fits the
+   * viewer's limits or has no output frame rate to encode at (ADR 0050). An encode uses, among the
+   * codecs that a worker-verified encoder encodes (ADR 0009), the one whose video capability entry
+   * for HLS fits an encoded variant of the source at the highest frame rate (ADR 0049), and the
+   * first in the codec preference on a tie (ADR 0009). The audio follows the audio capability
    * entries for HLS. Returns empty when neither a copy nor a supported encode satisfies the
    * request's constraints.
    */
@@ -64,32 +72,41 @@ public class TranscodeDecisionService {
     var declaration = request.capabilityDeclaration();
     boolean videoCopyable =
         request.videoFormatConstraint() != VideoFormatConstraint.ENCODE_ONLY
+            && (request.viewerLimits().allowsCopyOf(source) || hasNoOutputFrameRate(source))
             && decideVideoCopy(source, declaration);
     if (!videoCopyable && request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
       return Optional.empty();
     }
 
-    var videoCodecFamily =
-        videoCopyable
-            ? Optional.of(source.videoCodec())
-            : selectPreferredCodec(
-                declaration,
-                request.encodableVideoCodecFamilies(),
-                request.excludedEncodeCodecFamilies());
+    var encodeCodecProfile =
+        videoCopyable ? Optional.<EncodeCodecProfile>empty() : selectEncodeCodecProfile(request);
+    if (!videoCopyable && encodeCodecProfile.isEmpty()) {
+      return Optional.empty();
+    }
+
     var audioDecision = decideAudio(source, declaration);
     var subtitleDecision = SubtitleDecision.exclude();
 
     var mode = resolveTranscodeMode(videoCopyable, audioDecision, subtitleDecision);
 
-    return videoCodecFamily.map(
-        codec ->
-            TranscodeDecision.builder()
-                .transcodeMode(mode)
-                .videoCodecFamily(codec)
-                .audioDecision(audioDecision)
-                .subtitleDecision(subtitleDecision)
-                .videoSource(source.videoPlaybackFacts())
-                .build());
+    return Optional.of(
+        TranscodeDecision.builder()
+            .transcodeMode(mode)
+            .videoCodecFamily(
+                encodeCodecProfile
+                    .map(EncodeCodecProfile::codecFamilyName)
+                    .orElse(source.videoCodec()))
+            .encodeCodecProfile(encodeCodecProfile)
+            .audioDecision(audioDecision)
+            .subtitleDecision(subtitleDecision)
+            .videoSource(source.videoPlaybackFacts())
+            .build());
+  }
+
+  // A source without an output frame rate cannot be encoded (#446), so a copy over the viewer's
+  // limits beats refusing playback (ADR 0050).
+  private static boolean hasNoOutputFrameRate(MediaProbe source) {
+    return source.videoPlaybackFacts().flatMap(VideoPlaybackFacts::outputFrameRate).isEmpty();
   }
 
   private boolean decideVideoCopy(MediaProbe source, ClientCapabilityDeclaration declaration) {
@@ -101,6 +118,50 @@ public class TranscodeDecisionService {
     var refusal = streamCopyRefusal(source);
     refusal.ifPresent(this::countStreamCopyRefusal);
     return refusal.isEmpty();
+  }
+
+  // The frame rate at which one entry encodes the source-sized variant, or empty when no entry
+  // fits. A source without an output frame rate or a picture that the worker encodes at any size
+  // has no encoded variant, and the stream session refuses its encode for that reason, so only the
+  // codec profile is checked, at a frame rate of 0 for every family.
+  private static OptionalDouble encodedFrameRate(
+      ClientCapabilityDeclaration declaration, MediaProbe source, EncodeCodecProfile profile) {
+    var variantRequest = encodedVariantRequest(source, profile);
+    if (variantRequest.isPresent()) {
+      return declaration
+          .fitHlsEncode(variantRequest.get())
+          .map(output -> OptionalDouble.of(output.frameRate().toDouble()))
+          .orElseGet(OptionalDouble::empty);
+    }
+
+    if (declaresHlsCodecProfile(declaration, profile.codecProfile())) {
+      return OptionalDouble.of(0);
+    }
+
+    return OptionalDouble.empty();
+  }
+
+  // Every variant of a stream session is at most the source's size, so an entry that fits the
+  // source-sized variant fits every variant (ADR 0049).
+  private static Optional<EncodedVariantRequest> encodedVariantRequest(
+      MediaProbe source, EncodeCodecProfile profile) {
+    var picture = source.displayedSize();
+    if (!EncodedPictureSizes.hasEncodablePicture(picture)) {
+      return Optional.empty();
+    }
+
+    return source
+        .videoPlaybackFacts()
+        .flatMap(VideoPlaybackFacts::outputFrameRate)
+        .map(
+            frameRate ->
+                EncodedVariantRequest.builder()
+                    .codecProfile(profile)
+                    .source(picture)
+                    .bounds(EncodedPictureSizes.NO_BOUNDS)
+                    .frameRate(frameRate)
+                    .bitrate(source.bitrate())
+                    .build());
   }
 
   private static boolean declaresHlsCodecProfile(
@@ -297,15 +358,37 @@ public class TranscodeDecisionService {
         .build();
   }
 
-  private Optional<String> selectPreferredCodec(
-      ClientCapabilityDeclaration declaration,
-      Set<String> encodableVideoCodecFamilies,
-      Set<String> excludedEncodeCodecFamilies) {
-    return CODEC_PREFERENCE.stream()
-        .filter(profile -> declaresHlsCodecProfile(declaration, profile))
-        .map(profile -> profile.codecFamily().name().toLowerCase(Locale.ROOT))
-        .filter(encodableVideoCodecFamilies::contains)
-        .filter(family -> !excludedEncodeCodecFamilies.contains(family))
-        .findFirst();
+  private Optional<EncodeCodecProfile> selectEncodeCodecProfile(TranscodeDecisionRequest request) {
+    var declaration = request.capabilityDeclaration();
+    var source = request.source();
+    return codecPreference(request).stream()
+        .filter(
+            profile -> request.encodableVideoCodecFamilies().contains(profile.codecFamilyName()))
+        .filter(
+            profile -> !request.excludedEncodeCodecFamilies().contains(profile.codecFamilyName()))
+        .flatMap(
+            profile ->
+                encodedFrameRate(declaration, source, profile).stream()
+                    .mapToObj(rate -> new EncodeCandidate(profile, rate)))
+        .reduce((preferred, next) -> next.frameRate() > preferred.frameRate() ? next : preferred)
+        .map(EncodeCandidate::codecProfile);
   }
+
+  // The codec families that a worker encodes in hardware, then H.264, then the rest (ADR 0009).
+  private static List<EncodeCodecProfile> codecPreference(TranscodeDecisionRequest request) {
+    var hardwareEncodable = request.hardwareEncodableVideoCodecFamilies();
+    var encodedInHardware =
+        COMPRESSING_BETTER_THAN_H264.stream()
+            .collect(
+                Collectors.partitioningBy(
+                    profile -> hardwareEncodable.contains(profile.codecFamilyName())));
+    return Stream.of(
+            encodedInHardware.get(true),
+            List.of(EncodeCodecProfile.H264_HIGH),
+            encodedInHardware.get(false))
+        .flatMap(List::stream)
+        .toList();
+  }
+
+  private record EncodeCandidate(EncodeCodecProfile codecProfile, double frameRate) {}
 }

@@ -6,6 +6,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.abrSessionBuild
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultLadderSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.defaultVariantBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static com.streamarr.server.fixtures.StreamSessionFixture.sessionWithDurationBuilder;
@@ -132,6 +133,15 @@ class ProducerLifecycleServiceTest {
                     .subtitleDecision(SubtitleDecision.exclude())
                     .videoSource(Optional.of(source))
                     .build())
+            .variants(
+                List.of(
+                    defaultVariantBuilder()
+                        .width(1920)
+                        .height(1080)
+                        .videoBitrate(5_000_000L)
+                        .label(StreamSession.defaultVariant())
+                        .frameRate(rate)
+                        .build()))
             .build();
     runtimeRegistry.save(session);
     var playlists = new HlsPlaylistService(StreamingProperties.builder().build());

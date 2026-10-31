@@ -2,13 +2,12 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
-import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
@@ -16,9 +15,11 @@ import com.streamarr.server.services.mutation.Outcome;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Instant;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
@@ -83,10 +84,13 @@ public class HlsStreamingService implements StreamingService {
             .videoFormatConstraint(command.videoFormatConstraint())
             .excludedEncodeCodecFamilies(command.excludedEncodeCodecFamilies())
             .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())
+            .hardwareEncodableVideoCodecFamilies(
+                transcodeExecutor.hardwareEncodableVideoCodecFamilies())
+            .viewerLimits(ViewerLimits.of(options))
             .build();
     var candidate = transcodeDecisionService.decide(request);
     if (candidate.isEmpty()) {
-      candidate = decideAfterStoppingALeftVariant(command, request);
+      candidate = decideAfterStoppingALeftVariant(command.streamSessionId(), request);
     }
 
     if (candidate.isEmpty()) {
@@ -94,12 +98,12 @@ public class HlsStreamingService implements StreamingService {
     }
 
     var decision = candidate.orElseThrow();
-    var encodeRejection = encodeRejection(command, request, decision);
+    var encodeRejection = encodeRejection(request, decision);
     if (encodeRejection.isPresent()) {
       return Outcome.rejected(encodeRejection.get());
     }
 
-    var variants = resolveVariants(probe, options, decision);
+    var variants = resolveVariants(request, decision);
     var sessionId = command.streamSessionId();
     var refusal = capacityRefusalFor(decision);
     // A left variant only serves its own player's switch back, so it never keeps a new stream
@@ -147,35 +151,23 @@ public class HlsStreamingService implements StreamingService {
 
   // Why no worker can run the decision's encode, whatever slots are free.
   private Optional<CreateStreamSessionRejection> encodeRejection(
-      CreateStreamSessionCommand command,
-      TranscodeDecisionRequest request,
-      TranscodeDecision decision) {
-    if (!requiresVideoTranscode(decision.transcodeMode())) {
+      TranscodeDecisionRequest request, TranscodeDecision decision) {
+    if (decision.encodeCodecProfile().isEmpty()) {
       return Optional.empty();
     }
 
-    var probe = request.source();
-    var variants = resolveVariants(probe, command.options(), decision);
-    if (hasInvalidEncodeSize(probe, variants)) {
-      return Optional.of(new CreateStreamSessionRejection.InvalidPictureSize());
-    }
-
-    // Workers encode at the probed frame rate and refuse an encode without one.
-    if (probe.framerate().isEmpty()) {
+    // Workers encode at the frame-rate rule's output frame rate and refuse an encode without one.
+    if (decision.outputFrameRate().isEmpty()) {
       return Optional.of(new CreateStreamSessionRejection.FrameRateUnknown());
     }
 
-    return Optional.empty();
-  }
-
-  private static boolean hasInvalidEncodeSize(MediaProbe probe, List<QualityVariant> variants) {
-    if (!variants.isEmpty()) {
-      return variants.stream().anyMatch(variant -> variant.width() <= 0 || variant.height() <= 0);
+    // An encode whose ladder has no variant has no picture that the worker encodes.
+    var variants = resolveVariants(request, decision);
+    if (variants.isEmpty()) {
+      return Optional.of(new CreateStreamSessionRejection.InvalidPictureSize());
     }
 
-    var source = probe.displayedSize();
-    var output = EncodedPictureSizes.atHeight(source, source.height());
-    return output.width() <= 0 || output.height() <= 0;
+    return Optional.empty();
   }
 
   // An encode whose encoders all run on workers with no free slot is decided only once a slot is
@@ -183,22 +175,37 @@ public class HlsStreamingService implements StreamingService {
   // that frees a slot on such a worker and decides once more. An encode that no worker can run
   // whatever slots are free stops nothing.
   private Optional<TranscodeDecision> decideAfterStoppingALeftVariant(
-      CreateStreamSessionCommand command, TranscodeDecisionRequest request) {
-    var verifiedCandidate =
-        verifiedEncodeCandidate(request)
-            .filter(decision -> encodeRejection(command, request, decision).isEmpty());
-    if (verifiedCandidate.isEmpty()) {
+      UUID sessionId, TranscodeDecisionRequest request) {
+    var excludedFamilies = new HashSet<>(request.excludedEncodeCodecFamilies());
+    var candidate = stoppableEncodeCandidate(request, excludedFamilies);
+    if (candidate.isEmpty()) {
       return Optional.empty();
     }
 
-    // The first decision already refused a copy, so only an encode is decided again.
-    producerLifecycle.stopLeftVariantOfAnotherStreamSession(
-        command.streamSessionId(), verifiedCandidate.get());
+    // When no left variant runs on a worker that encodes the preferred family, the next family's
+    // workers may still hold one.
+    while (candidate.isPresent()
+        && !producerLifecycle.stopLeftVariantOfAnotherStreamSession(sessionId, candidate.get())) {
+      excludedFamilies.add(candidate.get().videoCodecFamily());
+      candidate = stoppableEncodeCandidate(request, excludedFamilies);
+    }
+
+    // The first decision already refused a copy, so only an encode is decided again. The stopped
+    // variant's worker may encode a family in hardware that no free worker encoded before.
     return transcodeDecisionService.decide(
         request.toBuilder()
             .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
             .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())
+            .hardwareEncodableVideoCodecFamilies(
+                transcodeExecutor.hardwareEncodableVideoCodecFamilies())
             .build());
+  }
+
+  private Optional<TranscodeDecision> stoppableEncodeCandidate(
+      TranscodeDecisionRequest request, Set<String> excludedFamilies) {
+    return verifiedEncodeCandidate(
+            request.toBuilder().excludedEncodeCodecFamilies(excludedFamilies).build())
+        .filter(decision -> encodeRejection(request, decision).isEmpty());
   }
 
   private CreateStreamSessionRejection unavailableVideoFormat(TranscodeDecisionRequest request) {
@@ -213,7 +220,9 @@ public class HlsStreamingService implements StreamingService {
     return new CreateStreamSessionRejection.NoEligibleVideoFormat();
   }
 
-  // The encode that a connected worker's verified encoder could run once it had a free slot.
+  // The encode that a connected worker's verified encoder could run once it had a free slot. Busy
+  // workers' hardware encoders count too, so the encode is the one that the server would decide
+  // once those workers had a free slot.
   private Optional<TranscodeDecision> verifiedEncodeCandidate(TranscodeDecisionRequest request) {
     if (!transcodeExecutor.isHealthy()
         || request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
@@ -224,6 +233,8 @@ public class HlsStreamingService implements StreamingService {
         request.toBuilder()
             .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
             .encodableVideoCodecFamilies(transcodeExecutor.verifiedVideoCodecFamilies())
+            .hardwareEncodableVideoCodecFamilies(
+                transcodeExecutor.verifiedHardwareVideoCodecFamilies())
             .build());
   }
 
@@ -316,22 +327,32 @@ public class HlsStreamingService implements StreamingService {
     return runtimeRegistry.count();
   }
 
+  // Every encode runs as a variant of the ladder; a copy keeps the source and has no ladder.
   private List<QualityVariant> resolveVariants(
-      MediaProbe probe, StreamingOptions options, TranscodeDecision decision) {
-    if (!isAutoQuality(options) || !requiresVideoTranscode(decision.transcodeMode())) {
-      return List.of();
-    }
+      TranscodeDecisionRequest decisionRequest, TranscodeDecision decision) {
+    return decision
+        .encodeCodecProfile()
+        .map(codecProfile -> encodedVariants(decisionRequest, decision, codecProfile))
+        .orElseGet(List::of);
+  }
 
+  private List<QualityVariant> encodedVariants(
+      TranscodeDecisionRequest decisionRequest,
+      TranscodeDecision decision,
+      EncodeCodecProfile codecProfile) {
+    var request =
+        QualityLadderRequest.builder()
+            .probe(decisionRequest.source())
+            .viewerLimits(decisionRequest.viewerLimits())
+            .capabilityDeclaration(decisionRequest.capabilityDeclaration())
+            .codecProfile(codecProfile)
+            // The stream session refuses an encode without an output frame rate before it sizes a
+            // variant.
+            .frameRate(decision.outputFrameRate().orElseThrow())
+            .audioBitrate(decision.audioDecision().bitrate())
+            .build();
     return MultivariantPlaylistOrder.of(
-        qualityLadderService.generateVariants(probe, options), decision.audioDecision().bitrate());
-  }
-
-  private boolean requiresVideoTranscode(TranscodeMode mode) {
-    return mode == TranscodeMode.VIDEO_TRANSCODE || mode == TranscodeMode.FULL_TRANSCODE;
-  }
-
-  private boolean isAutoQuality(StreamingOptions options) {
-    return options.quality() == null || options.quality() == VideoQuality.AUTO;
+        qualityLadderService.generateVariants(request), decision.audioDecision().bitrate());
   }
 
   // Creating a stream session starts one job attempt, so a session needs one free slot whatever

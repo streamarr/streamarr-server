@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
+import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
@@ -418,7 +419,7 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
    */
   private static final class HeldWorker implements FfprobeService {
 
-    private final FakeFfprobeService results = new FakeFfprobeService();
+    private final FakeFfprobeService results = resultsNamingTheChosenVideoStream();
     private final List<Path> started = new CopyOnWriteArrayList<>();
     private final Semaphore starts = new Semaphore(0);
     private final List<Path> finished = new CopyOnWriteArrayList<>();
@@ -472,6 +473,14 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
       } catch (ExecutionException exception) {
         throw new IllegalStateException(exception);
       }
+    }
+
+    // Every probe since version 4 names the chosen video stream and its frame-rate rule, which
+    // gives an encode its output frame rate.
+    private static FakeFfprobeService resultsNamingTheChosenVideoStream() {
+      var results = new FakeFfprobeService();
+      results.setDefaultProbe(defaultProbeBuilder().build());
+      return results;
     }
 
     void answerAtOnce(ProbeTaskRequest file) {

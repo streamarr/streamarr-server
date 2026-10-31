@@ -10,6 +10,7 @@ import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
+import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
@@ -69,6 +70,29 @@ class HlsPlaylistServiceTest {
 
   private StreamSession createSession(TranscodeMode mode, int durationSeconds) {
     return createSessionWithDuration(mode, Duration.ofSeconds(durationSeconds));
+  }
+
+  // The default variant of a session without a ladder of its own, at the source's 5 Mb/s.
+  private static QualityVariant.QualityVariantBuilder defaultVariantAt(int width, int height) {
+    return StreamSessionFixture.defaultVariantBuilder()
+        .width(width)
+        .height(height)
+        .videoBitrate(5_000_000L)
+        .label(StreamSession.defaultVariant());
+  }
+
+  private static List<QualityVariant> atFrameRate(List<QualityVariant> ladder, Fraction rate) {
+    return ladder.stream()
+        .map(
+            variant ->
+                StreamSessionFixture.defaultVariantBuilder()
+                    .width(variant.width())
+                    .height(variant.height())
+                    .videoBitrate(variant.videoBitrate())
+                    .label(variant.label())
+                    .frameRate(rate)
+                    .build())
+        .toList();
   }
 
   private static TranscodeDecision encodedDecision(String videoCodecFamily, Fraction rate) {
@@ -158,25 +182,22 @@ class HlsPlaylistServiceTest {
     var source = VideoPlaybackFactsFixture.sdrH264FactsBuilder().build();
     var variants =
         List.of(
-            QualityVariant.builder()
+            StreamSessionFixture.defaultVariantBuilder()
                 .width(1920)
                 .height(1080)
                 .videoBitrate(5_000_000L)
-                .audioBitrate(128_000L)
                 .label("1080p")
                 .build(),
-            QualityVariant.builder()
+            StreamSessionFixture.defaultVariantBuilder()
                 .width(1280)
                 .height(720)
                 .videoBitrate(3_000_000L)
-                .audioBitrate(128_000L)
                 .label("720p")
                 .build(),
-            QualityVariant.builder()
+            StreamSessionFixture.defaultVariantBuilder()
                 .width(854)
                 .height(480)
                 .videoBitrate(1_500_000L)
-                .audioBitrate(96_000L)
                 .label("480p")
                 .build());
 
@@ -579,6 +600,7 @@ class HlsPlaylistServiceTest {
                       .subtitleDecision(SubtitleDecision.exclude())
                       .videoSource(Optional.of(source))
                       .build())
+              .variants(List.of(defaultVariantAt(7502, 4042).frameRate(rate).build()))
               .build();
 
       var playlist = service.generateMultivariantPlaylist(session, "test-token");
@@ -587,6 +609,7 @@ class HlsPlaylistServiceTest {
     }
 
     private StreamSession encodedLadderAt(String videoCodecFamily, Fraction frameRate) {
+      var ladder = StreamSessionFixture.abrSessionBuilder().build().getVariants();
       return StreamSessionFixture.abrSessionBuilder()
           .mediaProbe(
               StreamSessionFixture.defaultProbeBuilder()
@@ -594,6 +617,7 @@ class HlsPlaylistServiceTest {
                   .videoPlaybackFacts(encodedDecision(videoCodecFamily, frameRate).videoSource())
                   .build())
           .transcodeDecision(encodedDecision(videoCodecFamily, frameRate))
+          .variants(atFrameRate(ladder, frameRate))
           .build();
     }
 
@@ -664,8 +688,8 @@ class HlsPlaylistServiceTest {
 
     @Test
     @DisplayName(
-        "Should advertise the source-sized encode's codec string when the encode has no ladder")
-    void shouldAdvertiseTheSourceSizedEncodesCodecStringWhenTheEncodeHasNoLadder() {
+        "Should advertise the source-sized encode's codec string when a fixed quality encodes")
+    void shouldAdvertiseTheSourceSizedEncodesCodecStringWhenAFixedQualityEncodes() {
       var session =
           StreamSessionFixture.defaultSessionBuilder()
               .mediaProbe(
@@ -676,6 +700,8 @@ class HlsPlaylistServiceTest {
                       .bitrate(5_000_000L)
                       .build())
               .transcodeDecision(encodedDecision("h264", new Fraction(60, 1)))
+              .variants(
+                  List.of(defaultVariantAt(1920, 1080).frameRate(new Fraction(60, 1)).build()))
               .build();
 
       var playlist = service.generateMultivariantPlaylist(session, "test-token");
@@ -973,11 +999,10 @@ class HlsPlaylistServiceTest {
               .sourceCodecString(Optional.of("ac-3"))
               .build();
       var variant =
-          QualityVariant.builder()
+          StreamSessionFixture.defaultVariantBuilder()
               .width(1920)
               .height(1080)
               .videoBitrate(5_000_000L)
-              .audioBitrate(128_000L)
               .label("1080p")
               .build();
 
@@ -1197,6 +1222,7 @@ class HlsPlaylistServiceTest {
         int numerator, int denominator, String frameRate) {
       var rate = new Fraction(numerator, denominator);
       var decision = encodedDecision("h264", rate);
+      var ladder = StreamSessionFixture.defaultLadderSessionBuilder().build().getVariants();
       var session =
           StreamSessionFixture.defaultLadderSessionBuilder()
               .mediaProbe(
@@ -1205,6 +1231,7 @@ class HlsPlaylistServiceTest {
                       .videoPlaybackFacts(decision.videoSource())
                       .build())
               .transcodeDecision(decision)
+              .variants(atFrameRate(ladder, rate))
               .build();
 
       assertThat(streamInf(session))
@@ -1212,13 +1239,49 @@ class HlsPlaylistServiceTest {
           .allSatisfy(line -> assertThat(line).contains(",FRAME-RATE=" + frameRate));
     }
 
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("copiedFrameRates")
+    @DisplayName(
+        "Should advertise the copied frame rate to three decimals when the session copies the"
+            + " video")
+    void shouldAdvertiseTheCopiedFrameRateToThreeDecimalsWhenTheSessionCopiesTheVideo(
+        String rateSource, FrameRateRule rule, String frameRate) {
+      assertThat(streamInf(copySessionWithRule(rule)))
+          .singleElement()
+          .asString()
+          .contains(",FRAME-RATE=" + frameRate);
+    }
+
+    static Stream<Arguments> copiedFrameRates() {
+      return Stream.of(
+          Arguments.of(
+              "declared rates that agree",
+              VideoPlaybackFactsFixture.declaredRateRule(new Fraction(25, 1)),
+              "25.000"),
+          Arguments.of(
+              "declared NTSC rates that agree",
+              VideoPlaybackFactsFixture.declaredRateRule(new Fraction(30_000, 1_001)),
+              "29.970"),
+          Arguments.of(
+              "packet scan whose motion rate snaps to a listed rate",
+              VideoPlaybackFactsFixture.packetScanRule(59.94005994, new Fraction(60, 1)),
+              "59.940"),
+          Arguments.of(
+              "declared-rate fallback",
+              VideoPlaybackFactsFixture.declaredRateFallbackRule(
+                  FrameRateRuleInputs.builder()
+                      .averageRate(Optional.of(new Fraction(75, 2)))
+                      .build(),
+                  new Fraction(30, 1)),
+              "37.500"));
+    }
+
     @Test
     @DisplayName(
-        "Should advertise no frame rate when the session copies a stream whose declared rates"
-            + " agree")
-    void shouldAdvertiseNoFrameRateWhenTheSessionCopiesAStreamWhoseDeclaredRatesAgree() {
-      var session =
-          copySessionWithRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(25, 1)));
+        "Should advertise no frame rate when the session copies a stream whose frame rate the rule"
+            + " refused")
+    void shouldAdvertiseNoFrameRateWhenTheSessionCopiesAStreamWhoseFrameRateTheRuleRefused() {
+      var session = copySessionWithRule(VideoPlaybackFactsFixture.refusedRule());
 
       assertThat(streamInf(session)).singleElement().asString().doesNotContain("FRAME-RATE");
     }
@@ -1226,13 +1289,7 @@ class HlsPlaylistServiceTest {
     private StreamSession copySessionWithRule(FrameRateRule rule) {
       var facts =
           VideoPlaybackFactsFixture.sdrH264FactsBuilder().streamIndex(0).frameRateRule(rule);
-      return StreamSessionFixture.defaultSessionBuilder()
-          .mediaProbe(probeWithFacts(facts))
-          .transcodeDecision(
-              StreamSessionFixture.remuxDecisionBuilder()
-                  .videoSource(Optional.of(facts.build()))
-                  .build())
-          .build();
+      return StreamSessionFixture.copySessionBuilder(probeWithFacts(facts)).build();
     }
 
     private static MediaProbe probeWithFacts(VideoPlaybackFacts.VideoPlaybackFactsBuilder facts) {

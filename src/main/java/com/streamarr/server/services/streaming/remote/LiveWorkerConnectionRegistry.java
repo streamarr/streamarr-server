@@ -247,7 +247,10 @@ final class LiveWorkerConnectionRegistry {
 
   private Optional<VariantDispatch> dispatchToFirst(
       VariantJob job, Predicate<WorkerConnection> eligible) {
-    for (var connection : connections.values().stream().filter(eligible).toList()) {
+    var candidates =
+        hardwareEncodersFirst(connections.values().stream().filter(eligible), job.getDecision())
+            .toList();
+    for (var connection : candidates) {
       var dispatched = tryDispatchUnlessDisconnected(connection, job);
       if (dispatched.isPresent()) {
         return dispatched;
@@ -392,22 +395,43 @@ final class LiveWorkerConnectionRegistry {
   }
 
   Set<ExecutionTargetId> eligibleWorkers(UUID sourceNamespaceId, TranscodeDecision decision) {
-    return eligibleWorkers(sourceNamespaceId, connection -> connection.canEncode(decision));
+    return executionTargets(
+        hardwareEncodersFirst(
+            connectionsFor(sourceNamespaceId).filter(connection -> connection.canEncode(decision)),
+            decision));
   }
 
+  // Every worker that advertises the pin runs the pinned encoder backend, so no worker comes first.
   Set<ExecutionTargetId> eligibleWorkers(
       UUID sourceNamespaceId, WorkerVerifiedEncoder pinnedEncoder) {
-    return eligibleWorkers(sourceNamespaceId, connection -> connection.advertises(pinnedEncoder));
+    return executionTargets(
+        connectionsFor(sourceNamespaceId)
+            .filter(connection -> connection.advertises(pinnedEncoder)));
   }
 
-  private Set<ExecutionTargetId> eligibleWorkers(
-      UUID sourceNamespaceId, Predicate<WorkerConnection> eligible) {
+  private Stream<WorkerConnection> connectionsFor(UUID sourceNamespaceId) {
     var sourceNamespace = toProto(sourceNamespaceId);
     return connections.values().stream()
-        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
-        .filter(eligible)
+        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace));
+  }
+
+  private static Set<ExecutionTargetId> executionTargets(
+      Stream<WorkerConnection> eligibleConnections) {
+    return eligibleConnections
         .map(WorkerConnection::executionTargetId)
         .collect(Collectors.toCollection(LinkedHashSet::new));
+  }
+
+  // A worker with a hardware encoder for the decision's codec family takes each variant first, and
+  // a software encoder takes it only when no such worker has a free slot (ADR 0009). Each worker's
+  // encoder is read once: a start report that names another backend can withdraw it concurrently,
+  // and a sort whose keys change mid-sort may throw instead of ordering the workers.
+  private static Stream<WorkerConnection> hardwareEncodersFirst(
+      Stream<WorkerConnection> connections, TranscodeDecision decision) {
+    var byHardware =
+        connections.collect(
+            Collectors.partitioningBy(connection -> connection.encodesInHardware(decision)));
+    return Stream.concat(byHardware.get(true).stream(), byHardware.get(false).stream());
   }
 
   boolean stopVariant(UUID streamSessionId, String variantLabel) {
@@ -454,35 +478,49 @@ final class LiveWorkerConnectionRegistry {
   }
 
   boolean hasConnectedWorker(UUID sourceNamespaceId) {
-    var sourceNamespace = toProto(sourceNamespaceId);
-    return connections.values().stream()
-        .anyMatch(connection -> connection.canAccessSourceNamespace(sourceNamespace));
+    return connectionsFor(sourceNamespaceId).findAny().isPresent();
   }
 
   Set<String> verifiedVideoCodecFamilies(UUID sourceNamespaceId) {
-    var sourceNamespace = toProto(sourceNamespaceId);
-    return connections.values().stream()
-        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
+    return connectionsFor(sourceNamespaceId)
         .flatMap(connection -> connection.countedEncoders.keySet().stream())
         .collect(Collectors.toUnmodifiableSet());
   }
 
   boolean hasProbeWorker(UUID sourceNamespaceId, int probeVersion) {
-    var sourceNamespace = toProto(sourceNamespaceId);
-    return connections.values().stream()
-        .anyMatch(
-            connection ->
-                connection.canAccessSourceNamespace(sourceNamespace)
-                    && connection.probeVersions.contains(probeVersion));
+    return connectionsFor(sourceNamespaceId)
+        .anyMatch(connection -> connection.probeVersions.contains(probeVersion));
   }
 
   Set<String> encodableVideoCodecFamilies(UUID sourceNamespaceId) {
-    var sourceNamespace = toProto(sourceNamespaceId);
-    return connections.values().stream()
-        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
-        .filter(connection -> connection.availableSlots() > 0)
-        .flatMap(connection -> connection.countedEncoders.keySet().stream())
+    return encodersOfWorkersWithFreeSlot(sourceNamespaceId)
+        .map(WorkerVerifiedEncoder::backend)
+        .map(EncoderBackend::codecFamily)
         .collect(Collectors.toUnmodifiableSet());
+  }
+
+  Set<String> hardwareEncodableVideoCodecFamilies(UUID sourceNamespaceId) {
+    return hardwareCodecFamilies(encodersOfWorkersWithFreeSlot(sourceNamespaceId));
+  }
+
+  Set<String> verifiedHardwareVideoCodecFamilies(UUID sourceNamespaceId) {
+    return hardwareCodecFamilies(
+        connectionsFor(sourceNamespaceId)
+            .flatMap(connection -> connection.countedEncoders.values().stream()));
+  }
+
+  private static Set<String> hardwareCodecFamilies(Stream<WorkerVerifiedEncoder> encoders) {
+    return encoders
+        .map(WorkerVerifiedEncoder::backend)
+        .filter(backend -> backend.kind() == EncoderBackend.Kind.HARDWARE)
+        .map(EncoderBackend::codecFamily)
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
+  private Stream<WorkerVerifiedEncoder> encodersOfWorkersWithFreeSlot(UUID sourceNamespaceId) {
+    return connectionsFor(sourceNamespaceId)
+        .filter(connection -> connection.availableSlots() > 0)
+        .flatMap(connection -> connection.countedEncoders.values().stream());
   }
 
   private static boolean isCountedForEncodes(WorkerVerifiedEncoder encoder) {
@@ -495,26 +533,18 @@ final class LiveWorkerConnectionRegistry {
   }
 
   int availableSlots(UUID sourceNamespaceId) {
-    var sourceNamespace = toProto(sourceNamespaceId);
-    return connections.values().stream()
-        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
-        .mapToInt(WorkerConnection::availableSlots)
-        .sum();
+    return connectionsFor(sourceNamespaceId).mapToInt(WorkerConnection::availableSlots).sum();
   }
 
   int availableSlots(UUID sourceNamespaceId, TranscodeDecision decision) {
-    var sourceNamespace = toProto(sourceNamespaceId);
-    return connections.values().stream()
-        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
+    return connectionsFor(sourceNamespaceId)
         .filter(connection -> connection.canEncode(decision))
         .mapToInt(WorkerConnection::availableSlots)
         .sum();
   }
 
   int availableSlots(UUID sourceNamespaceId, WorkerVerifiedEncoder pinnedEncoder) {
-    var sourceNamespace = toProto(sourceNamespaceId);
-    return connections.values().stream()
-        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
+    return connectionsFor(sourceNamespaceId)
         .filter(connection -> connection.advertises(pinnedEncoder))
         .mapToInt(WorkerConnection::availableSlots)
         .sum();
@@ -952,6 +982,13 @@ final class LiveWorkerConnectionRegistry {
     private Optional<WorkerVerifiedEncoder> encoderFor(TranscodeDecision decision) {
       return RemoteEncoderBackendMapper.videoCodecFamilyName(decision.getVideo().getCodecFamily())
           .map(countedEncoders::get);
+    }
+
+    private boolean encodesInHardware(TranscodeDecision decision) {
+      return encodesVideo(decision)
+          && encoderFor(decision)
+              .filter(encoder -> encoder.backend().kind() == EncoderBackend.Kind.HARDWARE)
+              .isPresent();
     }
 
     // The keyframe-verified flag must match too: a playlist that carries

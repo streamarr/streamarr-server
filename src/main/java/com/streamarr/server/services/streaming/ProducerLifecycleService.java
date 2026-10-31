@@ -688,10 +688,10 @@ public class ProducerLifecycleService {
    * Stops the left variant of one stream session other than the given one when no slot is free for
    * a producer with this decision. A left variant only serves a switch back, so it never keeps
    * another stream session from starting or replacing a variant (ADR 0019). The caller must hold no
-   * session mutex.
+   * session mutex. Answers whether it stopped one.
    */
-  public void stopLeftVariantOfAnotherStreamSession(UUID sessionId, TranscodeDecision decision) {
-    stopLeftVariantOfAnotherStreamSession(
+  public boolean stopLeftVariantOfAnotherStreamSession(UUID sessionId, TranscodeDecision decision) {
+    return stopLeftVariantOfAnotherStreamSession(
         sessionId,
         SlotShortage.builder()
             .configuredTranscodeSlot(
@@ -1370,20 +1370,20 @@ public class ProducerLifecycleService {
             .filter(candidate -> candidate.label().equals(variantLabel))
             .findFirst();
     if (variant.isPresent()) {
+      var frameRate = variant.get().frameRate();
       request.width(variant.get().width());
       request.height(variant.get().height());
       request.bitrate(variant.get().videoBitrate());
+      request.framerate(OptionalDouble.of(frameRate.toDouble()));
+      request.outputFrameRate(Optional.of(frameRate));
       return request.build();
     }
 
+    // Only a copy runs without a ladder, and it keeps the displayed source picture.
     var probe = session.getMediaProbe();
     var source = probe.displayedSize();
-    var size =
-        session.getTranscodeDecision().transcodeMode().copiesVideo()
-            ? source
-            : EncodedPictureSizes.atHeight(source, source.height());
-    request.width(size.width());
-    request.height(size.height());
+    request.width(source.width());
+    request.height(source.height());
     request.bitrate(probe.bitrate());
     return request.build();
   }

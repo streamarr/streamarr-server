@@ -195,14 +195,8 @@ final class RemoteVariantJobMapper {
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static Optional<com.streamarr.transcode.v1.Fraction> outputFrameRate(
       TranscodeRequest request) {
-    var decision = request.transcodeDecision();
-    if (decision.transcodeMode().copiesVideo()) {
-      return Optional.empty();
-    }
-
-    return decision
-        .videoSource()
-        .flatMap(facts -> facts.frameRateRule().outputFrameRate())
+    return request
+        .outputFrameRate()
         .map(
             rate ->
                 com.streamarr.transcode.v1.Fraction.newBuilder()
