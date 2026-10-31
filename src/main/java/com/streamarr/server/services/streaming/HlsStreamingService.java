@@ -243,17 +243,30 @@ public class HlsStreamingService implements StreamingService {
   // workers' hardware encoders count too, so the encode is the one that the server would decide
   // once those workers had a free slot.
   private Optional<TranscodeDecision> verifiedEncodeCandidate(TranscodeDecisionRequest request) {
-    if (!transcodeExecutor.isHealthy()
-        || request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
+    if (!transcodeExecutor.isHealthy()) {
+      return Optional.empty();
+    }
+
+    return encodeCandidate(
+        request.toBuilder()
+            .hardwareEncodableVideoCodecFamilies(
+                transcodeExecutor.verifiedHardwareVideoCodecFamilies())
+            .build(),
+        request.verifiedVideoCodecFamilies());
+  }
+
+  // The encode that workers could run if they encoded exactly these codec families. It reads no
+  // worker state, so a caller decides from the workers that it has read.
+  private Optional<TranscodeDecision> encodeCandidate(
+      TranscodeDecisionRequest request, Set<String> encodableVideoCodecFamilies) {
+    if (request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
       return Optional.empty();
     }
 
     return transcodeDecisionService.decide(
         request.toBuilder()
             .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
-            .encodableVideoCodecFamilies(request.verifiedVideoCodecFamilies())
-            .hardwareEncodableVideoCodecFamilies(
-                transcodeExecutor.verifiedHardwareVideoCodecFamilies())
+            .encodableVideoCodecFamilies(encodableVideoCodecFamilies)
             .build());
   }
 
