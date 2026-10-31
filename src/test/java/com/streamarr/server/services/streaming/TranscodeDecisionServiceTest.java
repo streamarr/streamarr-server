@@ -27,6 +27,7 @@ import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
+import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
@@ -118,6 +119,7 @@ class TranscodeDecisionServiceTest {
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
     assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+    assertThat(decision.encodeCodecProfile()).contains(EncodeCodecProfile.H264_HIGH);
     assertThat(decision.videoSource()).isEqualTo(source.videoPlaybackFacts());
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
   }
@@ -837,6 +839,7 @@ class TranscodeDecisionServiceTest {
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(decision.videoCodecFamily()).isEqualTo("av1");
+    assertThat(decision.encodeCodecProfile()).isEmpty();
   }
 
   @Test
@@ -1255,6 +1258,7 @@ class TranscodeDecisionServiceTest {
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
     assertThat(decision.videoCodecFamily()).isEqualTo("av1");
+    assertThat(decision.encodeCodecProfile()).contains(EncodeCodecProfile.AV1_MAIN);
   }
 
   @Test

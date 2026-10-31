@@ -78,22 +78,29 @@ public class TranscodeDecisionService {
       return Optional.empty();
     }
 
-    var videoCodecFamily =
-        videoCopyable ? Optional.of(source.videoCodec()) : selectPreferredCodec(request);
+    var encodeCodecProfile =
+        videoCopyable ? Optional.<EncodeCodecProfile>empty() : selectEncodeCodecProfile(request);
+    if (!videoCopyable && encodeCodecProfile.isEmpty()) {
+      return Optional.empty();
+    }
+
     var audioDecision = decideAudio(source, declaration);
     var subtitleDecision = SubtitleDecision.exclude();
 
     var mode = resolveTranscodeMode(videoCopyable, audioDecision, subtitleDecision);
 
-    return videoCodecFamily.map(
-        codec ->
-            TranscodeDecision.builder()
-                .transcodeMode(mode)
-                .videoCodecFamily(codec)
-                .audioDecision(audioDecision)
-                .subtitleDecision(subtitleDecision)
-                .videoSource(source.videoPlaybackFacts())
-                .build());
+    return Optional.of(
+        TranscodeDecision.builder()
+            .transcodeMode(mode)
+            .videoCodecFamily(
+                encodeCodecProfile
+                    .map(EncodeCodecProfile::codecFamilyName)
+                    .orElse(source.videoCodec()))
+            .encodeCodecProfile(encodeCodecProfile)
+            .audioDecision(audioDecision)
+            .subtitleDecision(subtitleDecision)
+            .videoSource(source.videoPlaybackFacts())
+            .build());
   }
 
   // A source without an output frame rate cannot be encoded (#446), so a copy over the viewer's
@@ -341,7 +348,7 @@ public class TranscodeDecisionService {
         .build();
   }
 
-  private Optional<String> selectPreferredCodec(TranscodeDecisionRequest request) {
+  private Optional<EncodeCodecProfile> selectEncodeCodecProfile(TranscodeDecisionRequest request) {
     var declaration = request.capabilityDeclaration();
     var source = request.source();
     return codecPreference(request).stream()
@@ -352,9 +359,9 @@ public class TranscodeDecisionService {
         .flatMap(
             profile ->
                 encodedFrameRate(declaration, source, profile).stream()
-                    .mapToObj(rate -> new EncodeCandidate(profile.codecFamilyName(), rate)))
+                    .mapToObj(rate -> new EncodeCandidate(profile, rate)))
         .reduce((preferred, next) -> next.frameRate() > preferred.frameRate() ? next : preferred)
-        .map(EncodeCandidate::codecFamily);
+        .map(EncodeCandidate::codecProfile);
   }
 
   // The codec families that a worker encodes in hardware, then H.264, then the rest (ADR 0009).
@@ -373,5 +380,5 @@ public class TranscodeDecisionService {
         .toList();
   }
 
-  private record EncodeCandidate(String codecFamily, double frameRate) {}
+  private record EncodeCandidate(EncodeCodecProfile codecProfile, double frameRate) {}
 }
