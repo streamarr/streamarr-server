@@ -74,8 +74,11 @@ final class RemoteStreamMeasurementsMapper {
       throw violation("Worker probe measured a stream that is neither video nor audio");
     }
 
-    if (stream.getMeasuredBytes() < 0 || stream.getMeasuredDuration() < 0) {
-      throw violation("Worker probe measured bytes or duration exceed the contract's range");
+    if (stream.getMeasuredBytes() < 0
+        || stream.getPacketCount() < 0
+        || stream.getMeasuredDuration() < 0) {
+      throw violation(
+          "Worker probe measured bytes, packets or duration exceed the contract's range");
     }
 
     if (stream.getTimeBaseNumerator() <= 0 || stream.getTimeBaseDenominator() <= 0) {

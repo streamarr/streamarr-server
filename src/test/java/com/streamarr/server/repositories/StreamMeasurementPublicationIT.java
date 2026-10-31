@@ -130,6 +130,51 @@ class StreamMeasurementPublicationIT extends AbstractIntegrationTest {
     assertThat(measurementOf(file)).isEmpty();
   }
 
+  @Test
+  @DisplayName(
+      "Should read no measurement when the measurement read another modification time than the"
+          + " stored outcome")
+  void shouldReadNoMeasurementWhenMeasurementReadAnotherModificationTimeThanStoredOutcome() {
+    var file = createMediaFile();
+    repository.publish(publication(file, ProbeVersion.CURRENT, measured(positions(90_000))));
+
+    dsl.update(MEDIA_FILE_STREAM_MEASUREMENT)
+        .set(MEDIA_FILE_STREAM_MEASUREMENT.SOURCE_MODIFIED_NANOS, 1)
+        .where(MEDIA_FILE_STREAM_MEASUREMENT.MEDIA_FILE_ID.eq(file.getId()))
+        .execute();
+
+    assertThat(measurementOf(file)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the outcome without a measurement when stored interval bytes name an unknown"
+          + " format")
+  void shouldKeepOutcomeWithoutMeasurementWhenStoredIntervalBytesNameUnknownFormat() {
+    var file = createMediaFile();
+    repository.publish(publication(file, ProbeVersion.CURRENT, measured(positions(90_000))));
+
+    dsl.update(MEDIA_FILE_MEASURED_STREAM)
+        .set(MEDIA_FILE_MEASURED_STREAM.ENCODED_KEYFRAME_INTERVAL_BYTES, new byte[] {9})
+        .where(MEDIA_FILE_MEASURED_STREAM.MEDIA_FILE_ID.eq(file.getId()))
+        .execute();
+
+    assertThat(measurementOf(file)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should delete the measurement when its media file is deleted")
+  void shouldDeleteMeasurementWhenItsMediaFileIsDeleted() {
+    var file = createMediaFile();
+    repository.publish(publication(file, ProbeVersion.CURRENT, measured(positions(90_000))));
+
+    mediaFileRepository.delete(file);
+    createdFiles.remove(file);
+
+    assertThat(measurementRowCount(file)).isZero();
+    assertThat(measuredStreamRowCount(file)).isZero();
+  }
+
   private Optional<StreamMeasurements> measurementOf(MediaFile file) {
     return switch (stored(file).outcome()) {
       case ProbeOutcome.Success success -> success.streamMeasurements();

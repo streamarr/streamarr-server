@@ -909,7 +909,9 @@ final class LiveWorkerConnectionRegistry {
         return false;
       }
 
-      if (pending.streamMeasurementParts().violatesContract()) {
+      // The contract discards the parts of an attempt whose result reports no measurement.
+      if (result.getMedia().hasStreamMeasurements()
+          && pending.streamMeasurementParts().violatesContract()) {
         pending
             .result()
             .completeExceptionally(
@@ -924,8 +926,17 @@ final class LiveWorkerConnectionRegistry {
               new ProbeAttemptReport(
                   result,
                   pending.keyframePositionsParts().parts(),
-                  pending.streamMeasurementParts().parts()));
+                  measurementParts(result, pending.streamMeasurementParts())));
       return true;
+    }
+
+    private static List<ProbeStreamMeasurementPart> measurementParts(
+        ProbeAttemptResult result, ReceivedStreamMeasurementParts received) {
+      if (!result.getMedia().hasStreamMeasurements()) {
+        return List.of();
+      }
+
+      return received.parts();
     }
 
     private boolean acceptStreamMeasurementPart(ProbeStreamMeasurementPart part) {

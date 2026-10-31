@@ -34,6 +34,8 @@ import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
+import com.streamarr.transcode.v1.StreamMeasurementSource;
+import com.streamarr.transcode.v1.StreamMeasurements;
 import com.streamarr.transcode.v1.TranscodeDecision;
 import com.streamarr.transcode.v1.TranscodeMode;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
@@ -306,7 +308,7 @@ class WorkerSessionGrpcServiceTest {
     probe.send(measurementPart(probe, 0, 1, 2));
     probe.send(measurementPart(probe, 1, 7));
     probe.send(measurementPart(probe, 0, 3));
-    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(measuredResult(probe)));
 
     assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts())
         .containsExactly(
@@ -323,7 +325,7 @@ class WorkerSessionGrpcServiceTest {
     part.getProbeStreamMeasurementPartBuilder().setProbeAttemptId(toProto(UUID.randomUUID()));
 
     probe.send(part);
-    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(measuredResult(probe)));
 
     assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts()).isEmpty();
   }
@@ -336,7 +338,7 @@ class WorkerSessionGrpcServiceTest {
 
     probe.send(measurementPart(probe, 0, new int[MAXIMUM_ENTRIES_PER_PART + 1]));
     probe.send(measurementPart(probe, 0, 1));
-    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(measuredResult(probe)));
 
     assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
@@ -357,7 +359,7 @@ class WorkerSessionGrpcServiceTest {
     }
 
     probe.send(measurementPart(probe, 1, 1));
-    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(measuredResult(probe)));
 
     assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
@@ -370,7 +372,7 @@ class WorkerSessionGrpcServiceTest {
     var probe = SessionProbe.dispatch();
 
     probe.send(measurementPart(probe, 0));
-    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(measuredResult(probe)));
 
     assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
@@ -386,11 +388,36 @@ class WorkerSessionGrpcServiceTest {
       probe.send(measurementPart(probe, streamIndex, 1));
     }
 
-    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(measuredResult(probe)));
 
     assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
         .hasCauseInstanceOf(ProbeContractViolationException.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should discard measurement parts that break the contract when the result reports no"
+          + " measurement")
+  void shouldDiscardMeasurementPartsThatBreakContractWhenResultReportsNoMeasurement()
+      throws Exception {
+    var probe = SessionProbe.dispatch();
+
+    probe.send(measurementPart(probe, 0));
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
+
+    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts()).isEmpty();
+  }
+
+  private static ProbeAttemptResult measuredResult(SessionProbe probe) {
+    var result = probe.result();
+    return result.toBuilder()
+        .setMedia(
+            result.getMedia().toBuilder()
+                .setStreamMeasurements(
+                    StreamMeasurements.newBuilder()
+                        .setSource(StreamMeasurementSource.STREAM_MEASUREMENT_SOURCE_SAMPLE_TABLE)))
+        .build();
   }
 
   private static EstablishWorkerSessionRequest.Builder measurementPart(

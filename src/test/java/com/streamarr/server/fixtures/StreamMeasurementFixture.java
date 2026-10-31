@@ -27,11 +27,16 @@ public class StreamMeasurementFixture {
 
   /** Two keyframes on a 90 kHz time base, the second at this many ticks. */
   public static KeyframePositions positions(long secondKeyframeTicks) {
+    return positions(secondKeyframeTicks, KeyframePositionSource.CONTAINER_INDEX);
+  }
+
+  public static KeyframePositions positions(
+      long secondKeyframeTicks, KeyframePositionSource source) {
     return KeyframePositions.builder()
         .streamIndex(VIDEO)
         .timeBaseNumerator(1)
         .timeBaseDenominator(90_000)
-        .source(KeyframePositionSource.CONTAINER_INDEX)
+        .source(source)
         .keyframes(
             List.of(
                 new KeyframePosition(0, 0),

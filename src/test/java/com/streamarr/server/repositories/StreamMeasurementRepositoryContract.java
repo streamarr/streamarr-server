@@ -8,6 +8,7 @@ import static com.streamarr.server.fixtures.StreamMeasurementFixture.unmeasured;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamMeasurementSource;
 import com.streamarr.server.domain.streaming.StreamMeasurements;
@@ -101,6 +102,35 @@ public interface StreamMeasurementRepositoryContract {
         .publish(publication(mediaFileId, 2, success(positions(90_000), Optional.of(videoOnly))));
 
     assertThat(repository().findStreamMeasurements(mediaFileId)).contains(videoOnly);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the measurement when a keyframe packet scan source reports the same keyframe"
+          + " positions")
+  default void shouldKeepMeasurementWhenPacketScanSourceReportsSameKeyframePositions() {
+    var mediaFileId = createMediaFile();
+    repository().publish(publication(mediaFileId, 1, measured(positions(90_000))));
+    var scanned = positions(90_000, KeyframePositionSource.PACKET_SCAN);
+
+    repository().publish(publication(mediaFileId, 2, unmeasured(scanned)));
+
+    assertThat(repository().findStreamMeasurements(mediaFileId)).contains(measurement());
+  }
+
+  @Test
+  @DisplayName("Should list the measured streams by stream index whatever order they arrived in")
+  default void shouldListMeasuredStreamsByStreamIndexWhateverOrderTheyArrivedIn() {
+    var mediaFileId = createMediaFile();
+    var reversed =
+        new StreamMeasurements(
+            StreamMeasurementSource.SAMPLE_TABLE,
+            List.of(StreamMeasurementFixture.audio(), StreamMeasurementFixture.video()));
+
+    repository()
+        .publish(publication(mediaFileId, 1, success(positions(90_000), Optional.of(reversed))));
+
+    assertThat(repository().findStreamMeasurements(mediaFileId)).contains(measurement());
   }
 
   @Test

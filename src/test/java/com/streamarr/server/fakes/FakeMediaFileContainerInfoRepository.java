@@ -5,6 +5,8 @@ import com.streamarr.server.domain.media.MediaFileStreamInfo;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePositions;
+import com.streamarr.server.domain.streaming.MeasuredStream;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamMeasurements;
@@ -20,6 +22,7 @@ import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -110,13 +113,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
       chapters.put(publication.mediaFileId(), success.container().chapters());
       success
           .streamMeasurements()
-          .filter(_ -> success.keyframes() instanceof KeyframeKnowledge.Known)
-          .ifPresent(
-              measured ->
-                  measurements.put(
-                      publication.mediaFileId(),
-                      new StoredMeasurement(
-                          publication.snapshot(), success.keyframes(), measured)));
+          .ifPresent(measured -> replaceMeasurement(publication, success.keyframes(), measured));
     }
 
     return true;
@@ -162,8 +159,40 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
 
     return Optional.ofNullable(measurements.get(mediaFileId))
         .filter(stored -> stored.snapshot().equals(row.getSnapshot()))
-        .filter(stored -> stored.keyframes().equals(keyframes.get(mediaFileId)))
+        .filter(
+            stored ->
+                keyframes.get(mediaFileId) instanceof KeyframeKnowledge.Known(var positions)
+                    && stored.positionsDigest().equals(positionsDigest(positions)))
         .map(StoredMeasurement::measurements);
+  }
+
+  // PostgreSQL stores a measurement only beside known keyframe positions, and lists its streams by
+  // stream index.
+  private void replaceMeasurement(
+      ProbePublication publication, KeyframeKnowledge keyframes, StreamMeasurements measured) {
+    measurements.remove(publication.mediaFileId());
+    if (!(keyframes instanceof KeyframeKnowledge.Known(var positions))) {
+      return;
+    }
+
+    var byStreamIndex =
+        new StreamMeasurements(
+            measured.source(),
+            measured.streams().stream()
+                .sorted(Comparator.comparingInt(MeasuredStream::streamIndex))
+                .toList());
+    measurements.put(
+        publication.mediaFileId(),
+        new StoredMeasurement(publication.snapshot(), positionsDigest(positions), byStreamIndex));
+  }
+
+  // PostgreSQL's digest covers the chosen stream, its time base and the times, not their source.
+  private static List<Object> positionsDigest(KeyframePositions positions) {
+    return List.of(
+        positions.streamIndex(),
+        positions.timeBaseNumerator(),
+        positions.timeBaseDenominator(),
+        positions.keyframes());
   }
 
   private void dropMeasurementUnlessSnapshotMatches(UUID mediaFileId, SourceFileSnapshot snapshot) {
@@ -172,7 +201,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   }
 
   private record StoredMeasurement(
-      SourceFileSnapshot snapshot, KeyframeKnowledge keyframes, StreamMeasurements measurements) {}
+      SourceFileSnapshot snapshot, List<Object> positionsDigest, StreamMeasurements measurements) {}
 
   @Override
   public synchronized Map<UUID, ChapterKnowledge> findChapterKnowledge(

@@ -1588,7 +1588,7 @@ message MeasuredStream {
   // the sum of the stream's bytes in every keyframe interval, and it is at most
   // 2^63 - 1.
   uint64 measured_bytes = 2;
-  // This field counts the stream's packets.
+  // This field counts the stream's packets. It is at most 2^63 - 1.
   uint64 packet_count = 3;
   // The stream's own time base, in which measured_duration counts ticks. Both
   // values are positive.
@@ -1605,17 +1605,24 @@ message MeasuredStream {
 //
 // A keyframe interval runs from one keyframe of KeyframePositions to the next.
 // The last interval runs from the last keyframe to the end of the file. A
-// video packet belongs to the interval in which its decode order places it,
-// and an audio packet belongs to the interval that holds its presentation
-// time. A packet that comes before the first keyframe belongs to the first
-// interval. So each measured stream has exactly
-// KeyframePositions.keyframe_count intervals.
+// packet of the chosen video stream belongs to the interval in which its
+// decode order places it. A packet of another video stream belongs to the
+// interval that holds its decode time, and an audio packet belongs to the
+// interval that holds its presentation time. A packet that comes before the
+// first keyframe belongs to the first interval. So each measured stream has
+// exactly KeyframePositions.keyframe_count intervals.
 //
 // The worker reports no measurement when it cannot list every packet of every
-// stream it measures, or when one stream's bytes in one interval exceed
-// 4,294,967,295. When the server receives a measurement that breaks these
-// rules, it fails the probe attempt as a contract violation and retries the
-// probe.
+// stream it measures, when one stream's bytes in one interval exceed
+// 4,294,967,295, or when the parts would break ProbeStreamMeasurementPart's
+// limits: keyframe_count times the number of measured streams exceeds
+// 8,388,608, or more than 1,024 streams are measured. When the server receives
+// a measurement that breaks these rules, it fails the probe attempt as a
+// contract violation and retries the probe.
+//
+// The server stores a measurement from a probe that reads the container
+// index. Until streamarr/streamarr-server#690, it validates and then drops a
+// measurement that a keyframe packet scan reports.
 message StreamMeasurements {
   StreamMeasurementSource source = 1;
   // Each stream appears at most once. The list holds the chosen video stream
