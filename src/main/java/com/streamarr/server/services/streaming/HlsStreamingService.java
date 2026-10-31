@@ -181,12 +181,15 @@ public class HlsStreamingService implements StreamingService {
       return Optional.empty();
     }
 
-    // The first decision already refused a copy, so only an encode is decided again.
+    // The first decision already refused a copy, so only an encode is decided again. The stopped
+    // variant's worker may encode a family in hardware that no free worker encoded before.
     producerLifecycle.stopLeftVariantOfAnotherStreamSession(sessionId, verifiedCandidate.get());
     return transcodeDecisionService.decide(
         request.toBuilder()
             .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
             .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())
+            .hardwareEncodableVideoCodecFamilies(
+                transcodeExecutor.hardwareEncodableVideoCodecFamilies())
             .build());
   }
 
