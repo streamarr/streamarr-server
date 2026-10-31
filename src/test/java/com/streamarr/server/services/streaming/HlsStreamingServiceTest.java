@@ -1196,8 +1196,8 @@ class HlsStreamingServiceTest {
     assertThat(playlist).contains("BANDWIDTH=6000000,AVERAGE-BANDWIDTH=5000000,");
   }
 
-  // A 5 Mb/s source whose probe knows no bitrate for its video stream, beside a copyable stereo AAC
-  // track.
+  // A 5 Mb/s source whose probe knows no bitrate for its video stream, beside a copyable stereo
+  // AAC track.
   private StreamSession createCopySessionWithCopiedStereoAac(
       StreamingOptions options, OptionalLong audioBitrate) {
     var probe = defaultProbeBuilder().bitrate(5_000_000L);
