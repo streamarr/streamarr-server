@@ -3,6 +3,7 @@ package com.streamarr.server.domain.streaming;
 import java.util.Arrays;
 import java.util.Optional;
 import java.util.OptionalInt;
+import lombok.NonNull;
 
 /** The Dolby Vision that a stream copy carries, as a video capability entry judges it. */
 sealed interface CopiedDolbyVision {
@@ -17,7 +18,7 @@ sealed interface CopiedDolbyVision {
   record KeptUnderSdrBase() implements CopiedDolbyVision {}
 
   /** A profile that an entry can list, at the level that the configuration record names. */
-  record Declarable(DolbyVisionProfile profile, int level) implements CopiedDolbyVision {}
+  record Declarable(@NonNull DolbyVisionProfile profile, int level) implements CopiedDolbyVision {}
 
   /**
    * Dolby Vision that no entry accepts until a copy can strip it (streamarr/streamarr-server#396):
