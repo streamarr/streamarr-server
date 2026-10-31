@@ -571,15 +571,15 @@ class HlsStreamingServiceTest {
   }
 
   // ADR 0050: without a source bitrate, a single variant takes the nominal bitrate of the tier that
-  // holds its picture within the maximum bitrate less 128 kb/s of audio, and the 360p tier's
-  // bitrate within the maximum when less than that remains.
+  // holds its picture within the maximum bitrate less 128 kb/s of audio. When no audio step leaves
+  // the 360p tier's bitrate, the audio takes 64 kb/s and the video the rest, but at least 145 kb/s.
   static Stream<UnknownSourceBitrate> budgetsForASourceWithoutABitrate() {
     return Stream.of(
         unknownSourceBitrate(fixed1080p().build(), 5_000_000L),
         unknownSourceBitrate(fixed1080p().maxBitrate(20_000_000).build(), 5_000_000L),
         unknownSourceBitrate(fixed1080p().maxBitrate(2_000_000).build(), 1_872_000L),
-        unknownSourceBitrate(fixed1080p().maxBitrate(700_000).build(), 700_000L),
-        unknownSourceBitrate(fixed1080p().maxBitrate(100_000).build(), 100_000L),
+        unknownSourceBitrate(fixed1080p().maxBitrate(700_000).build(), 636_000L),
+        unknownSourceBitrate(fixed1080p().maxBitrate(100_000).build(), 145_000L),
         unknownSourceBitrate(autoAt300Lines().build(), 800_000L),
         unknownSourceBitrate(autoAt300Lines().maxBitrate(1_000_000).build(), 800_000L),
         unknownSourceBitrate(autoAt300Lines().maxBitrate(20_000_000).build(), 800_000L));
@@ -688,11 +688,13 @@ class HlsStreamingServiceTest {
             .options(fixed1080p().maxBitrate(2_000_000).build())
             .picture(new PictureSize(1920, 1080))
             .videoBitrate(1_872_000L)
+            .audioBitrate(128_000L)
             .build(),
         SingleVariantOutcome.builder()
             .options(fixed1080p().maxBitrate(1_000_000).build())
             .picture(new PictureSize(1920, 1080))
             .videoBitrate(872_000L)
+            .audioBitrate(128_000L)
             .build(),
         SingleVariantOutcome.builder()
             .options(
@@ -703,17 +705,20 @@ class HlsStreamingServiceTest {
                     .build())
             .picture(new PictureSize(498, 280))
             .videoBitrate(872_000L)
+            .audioBitrate(128_000L)
             .build());
   }
 
-  // An encoder reads a zero bitrate as no limit (ADR 0050).
+  // Under 864 kb/s, 800 kb/s of video plus 64 kb/s of AAC, no audio step leaves the 360p tier's
+  // bitrate. The audio takes 64 kb/s and the video the rest, but at least 145 kb/s, because an
+  // encoder reads a zero bitrate as no limit (ADR 0050).
   @ParameterizedTest(name = "{0}")
   @MethodSource("budgetsBelowThe360pTiersBitrateBesideTheAudio")
   @DisplayName(
-      "Should encode the single variant in the 360p box within the maximum bitrate when the audio"
-          + " leaves less than the 360p tier's bitrate")
+      "Should encode the single variant in the 360p box beside the lowest audio step when no audio"
+          + " step leaves the 360p tier's bitrate")
   void
-      shouldEncodeTheSingleVariantInThe360pBoxWithinTheMaximumBitrateWhenTheAudioLeavesLessThanThe360pTiersBitrate(
+      shouldEncodeTheSingleVariantInThe360pBoxBesideTheLowestAudioStepWhenNoAudioStepLeavesThe360pTiersBitrate(
           SingleVariantOutcome expected) {
     assertSingleVariantAndItsBandwidth(expected);
   }
@@ -724,18 +729,21 @@ class HlsStreamingServiceTest {
         SingleVariantOutcome.builder()
             .options(fixed1080p().maxBitrate(700_000).build())
             .picture(box360p)
-            .videoBitrate(700_000L)
+            .videoBitrate(636_000L)
+            .audioBitrate(64_000L)
             .build(),
         SingleVariantOutcome.builder()
             .options(fixed1080p().maxBitrate(100_000).build())
             .picture(box360p)
-            .videoBitrate(100_000L)
+            .videoBitrate(145_000L)
+            .audioBitrate(64_000L)
             .build(),
         SingleVariantOutcome.builder()
             .options(
                 StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(500_000).build())
             .picture(box360p)
-            .videoBitrate(500_000L)
+            .videoBitrate(436_000L)
+            .audioBitrate(64_000L)
             .build());
   }
 
@@ -749,7 +757,8 @@ class HlsStreamingServiceTest {
     var playlist =
         new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
 
-    assertThat(session.getTranscodeDecision().audioDecision().bitrate()).isEqualTo(128_000L);
+    assertThat(session.getTranscodeDecision().audioDecision().bitrate())
+        .isEqualTo(expected.audioBitrate());
     assertThat(transcodeExecutor.getStartedRequests())
         .singleElement()
         .satisfies(
@@ -758,7 +767,7 @@ class HlsStreamingServiceTest {
                   .isEqualTo(expected.picture());
               assertThat(request.bitrate()).isEqualTo(expected.videoBitrate());
             });
-    var averageBandwidth = expected.videoBitrate() + 128_000L;
+    var averageBandwidth = expected.videoBitrate() + expected.audioBitrate();
     assertThat(playlist)
         .contains(
             "BANDWIDTH="
@@ -769,7 +778,8 @@ class HlsStreamingServiceTest {
   }
 
   @Builder
-  record SingleVariantOutcome(StreamingOptions options, PictureSize picture, long videoBitrate) {}
+  record SingleVariantOutcome(
+      StreamingOptions options, PictureSize picture, long videoBitrate, long audioBitrate) {}
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("audioEncodesAndTheTiersTheyLeave")
@@ -886,6 +896,39 @@ class HlsStreamingServiceTest {
     assertThat(averageBandwidths(playlist))
         .isNotEmpty()
         .allSatisfy(bandwidth -> assertThat(bandwidth).isLessThanOrEqualTo(maxBitrate));
+  }
+
+  // Under 864 kb/s, 800 kb/s of video plus 64 kb/s of AAC, no audio step leaves the 360p tier's
+  // video bitrate. The audio takes AAC stereo at 64 kb/s and the video the rest in the 360p box,
+  // but
+  // never less than 145 kb/s, so only a maximum below 209 kb/s is exceeded.
+  @ParameterizedTest
+  @CsvSource({"600000, 536000", "209000, 145000", "150000, 145000"})
+  @DisplayName(
+      "Should give the video the rest in the 360p box beside the last audio step when no audio step"
+          + " leaves the 360p tier's video bitrate")
+  void
+      shouldGiveTheVideoTheRestInThe360pBoxBesideTheLastAudioStepWhenNoAudioStepLeavesThe360pTiersVideoBitrate(
+          int maxBitrate, long expectedVideoBitrate) {
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(maxBitrate).build();
+
+    var session = createDtsSession(8, options);
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
+        .containsExactly("aac", 2, 64_000L);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(640);
+              assertThat(request.height()).isEqualTo(360);
+              assertThat(request.bitrate()).isEqualTo(expectedVideoBitrate);
+            });
+    assertThat(averageBandwidths(playlist)).containsExactly(expectedVideoBitrate + 64_000L);
   }
 
   // A fixed 720p quality at 1,200 kb/s leaves 432 kb/s beside 768 kb/s E-AC-3 5.1. At 384 kb/s the

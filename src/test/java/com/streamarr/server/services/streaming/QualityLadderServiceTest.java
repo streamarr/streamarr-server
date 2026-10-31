@@ -557,34 +557,35 @@ class QualityLadderServiceTest {
         fixed1080pBudget().maxBitrate(928_000).videoBitrate(800_000L).build());
   }
 
-  // An encoder reads a zero bitrate as no limit, so the video never gets the remainder when the
-  // audio leaves less than the 360p tier's bitrate, or nothing at all.
+  // An encoder reads a zero bitrate as no limit, so the video never gets less than 145 kb/s, the
+  // lowest video bitrate of Apple's H.264 ladder.
   @ParameterizedTest(name = "{0}")
   @MethodSource("budgetsBelowThe360pTiersBitrate")
   @DisplayName(
-      "Should encode the single variant in the 360p box at the 360p tier's bitrate within the"
-          + " maximum when the audio leaves less than that bitrate")
+      "Should encode the single variant in the 360p box at the rest of the maximum but at least"
+          + " 145 kb/s when the audio leaves less than the 360p tier's bitrate")
   void
-      shouldEncodeTheSingleVariantInThe360pBoxAtThe360pTiersBitrateWithinTheMaximumWhenTheAudioLeavesLessThanThatBitrate(
+      shouldEncodeTheSingleVariantInThe360pBoxAtTheRestOfTheMaximumButAtLeast145KbpsWhenTheAudioLeavesLessThanThe360pTiersBitrate(
           SingleVariantBudget budget) {
     assertThat(singleVariantWithin(budget)).containsExactly(tuple(640, 360, budget.videoBitrate()));
   }
 
   static Stream<SingleVariantBudget> budgetsBelowThe360pTiersBitrate() {
     return Stream.of(
-        fixed1080pBudget().maxBitrate(927_999).videoBitrate(800_000L).build(),
-        fixed1080pBudget().maxBitrate(700_000).videoBitrate(700_000L).build(),
-        fixed1080pBudget().maxBitrate(128_000).videoBitrate(128_000L).build(),
+        fixed1080pBudget().maxBitrate(927_999).videoBitrate(799_999L).build(),
+        fixed1080pBudget().maxBitrate(700_000).videoBitrate(572_000L).build(),
+        fixed1080pBudget().maxBitrate(273_000).videoBitrate(145_000L).build(),
+        fixed1080pBudget().maxBitrate(128_000).videoBitrate(145_000L).build(),
         fixed1080pBudget()
             .audioBitrate(384_000L)
             .maxBitrate(100_000)
-            .videoBitrate(100_000L)
+            .videoBitrate(145_000L)
             .build(),
-        fixed1080pBudget().sourceBitrate(0L).maxBitrate(500_000).videoBitrate(500_000L).build(),
+        fixed1080pBudget().sourceBitrate(0L).maxBitrate(500_000).videoBitrate(372_000L).build(),
         fixed1080pBudget()
             .quality(VideoQuality.AUTO)
             .maxBitrate(500_000)
-            .videoBitrate(500_000L)
+            .videoBitrate(372_000L)
             .build());
   }
 
@@ -678,6 +679,28 @@ class QualityLadderServiceTest {
     assertThat(ladder.variants())
         .extracting(QualityVariant::label, QualityVariant::videoBitrate)
         .containsExactly(tuple("360p", 800_000L));
+  }
+
+  // Below 864 kb/s no step leaves the 360p tier's 800 kb/s, so the ladder takes the last step.
+  @ParameterizedTest
+  @CsvSource({"863999, 799999", "600000, 536000", "209000, 145000", "208999, 145000"})
+  @DisplayName(
+      "Should take the last audio step and give the video the rest but at least 145 kb/s when no"
+          + " step leaves the 360p tier's video bitrate")
+  void
+      shouldTakeTheLastAudioStepAndGiveTheVideoTheRestButAtLeast145KbpsWhenNoStepLeavesThe360pTiersVideoBitrate(
+          int maxBitrate, long expectedVideoBitrate) {
+    var probe = buildProbeBuilder(1920, 1080).bitrate(8_000_000L).build();
+    var options = StreamingOptions.builder().maxBitrate(maxBitrate).build();
+
+    var ladder = service.generateVariants(surroundEac3Request(probe, options));
+
+    assertThat(ladder.audio())
+        .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
+        .containsExactly("aac", 2, 64_000L);
+    assertThat(ladder.variants())
+        .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::videoBitrate)
+        .containsExactly(tuple(640, 360, expectedVideoBitrate));
   }
 
   @Test
