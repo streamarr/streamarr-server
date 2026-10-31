@@ -1,8 +1,6 @@
 package com.streamarr.server.config.health;
 
-import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
-import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -52,18 +50,12 @@ public class TranscodeExecutorHealthIndicator implements HealthIndicator {
   private Map<String, List<String>> workersMissingEncoders() {
     var missing = new TreeMap<String, List<String>>();
     for (var worker : transcodeExecutor.verifiedVideoCodecFamiliesByWorker()) {
-      var families = missingCodecFamilies(worker);
+      var families = worker.missingCodecFamilies();
       if (!families.isEmpty()) {
         missing.put(worker.workerId().toString(), families);
       }
     }
 
     return missing;
-  }
-
-  private static List<String> missingCodecFamilies(WorkerVerifiedCodecFamilies worker) {
-    return EncodeCodecProfile.codecFamilyNames().stream()
-        .filter(family -> !worker.codecFamilies().contains(family))
-        .toList();
   }
 }
