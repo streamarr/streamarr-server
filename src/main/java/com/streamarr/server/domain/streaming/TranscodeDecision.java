@@ -10,7 +10,7 @@ import lombok.NonNull;
  * the chosen video stream that the decision read. A decision that copies the video needs the codec
  * string that the probe stored, because the copy job carries it.
  */
-@Builder
+@Builder(toBuilder = true)
 public record TranscodeDecision(
     TranscodeMode transcodeMode,
     String videoCodecFamily,
@@ -37,6 +37,17 @@ public record TranscodeDecision(
       throw new IllegalArgumentException(
           "An encode codec profile must belong to the decision's video codec family");
     }
+  }
+
+  /**
+   * This decision with other audio, such as a lower audio step (ADR 0050). Audio that no longer
+   * passes through moves the mode to the one that encodes the audio, and the reverse.
+   */
+  public TranscodeDecision withAudioDecision(@NonNull AudioDecision audio) {
+    return toBuilder()
+        .audioDecision(audio)
+        .transcodeMode(TranscodeMode.of(transcodeMode.copiesVideo(), audio.mode()))
+        .build();
   }
 
   /** The output frame rate of the video source that the decision read, empty without one. */
