@@ -706,6 +706,46 @@ class HlsStreamingServiceTest {
                 + ",");
   }
 
+  // A copied track whose bitrate the probe does not know takes a nominal 128 kb/s, far below a
+  // stereo FLAC track's rate. The 2.2 Mb/s source holds 1 Mb/s of video and that track.
+  @ParameterizedTest
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"ORIGINAL", "AUTO"})
+  @DisplayName(
+      "Should advertise at least the container bitrate when the session copies the video and an"
+          + " audio track whose bitrate the probe does not know")
+  void
+      shouldAdvertiseAtLeastTheContainerBitrateWhenTheSessionCopiesTheVideoAndAnAudioTrackWhoseBitrateTheProbeDoesNotKnow(
+          VideoQuality quality) {
+    var probe = defaultProbeBuilder().bitrate(2_200_000L);
+    var streams =
+        List.of(
+            ProbeFixture.videoStreamBuilder(probe.build())
+                .bitrate(OptionalLong.of(1_000_000L))
+                .build(),
+            ProbeFixture.audioStreamBuilder("flac").index(1).channels(OptionalInt.of(2)).build());
+    probeResults.setDefaultOutcome(ProbeFixture.completeProbe(probe.streams(streams).build()));
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(List.of(aacEntryBuilder().build(), audioEntryBuilder(AudioCodec.FLAC).build()))
+            .build();
+
+    var session =
+        accepted(
+            service.createSession(
+                createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                    .options(StreamingOptions.builder().quality(quality).build())
+                    .capabilityDeclaration(declaration)
+                    .build()));
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(session.getTranscodeDecision().audioDecision().bitrate()).isEqualTo(128_000L);
+    assertThat(playlist).contains("BANDWIDTH=2640000,AVERAGE-BANDWIDTH=2200000,");
+  }
+
   // The declaration lists stereo AAC and 7.1 E-AC-3 but no Opus, so the session encodes the audio.
   private StreamSession createCopySessionWithSurroundOpus(
       VideoQuality quality, OptionalLong videoBitrate) {

@@ -1322,11 +1322,13 @@ class HlsPlaylistServiceTest {
             .build();
 
     // ADR 0050: a copy costs its own video bitrate plus the stream session's audio bitrate, here a
-    // copied 640 kb/s AC-3 5.1 track. A copy whose video bitrate the probe does not know counts the
-    // whole container bitrate as video.
+    // copied 640 kb/s AC-3 5.1 track. An 8 Mb/s source holds other audio tracks that the session
+    // does not deliver. A copy whose video bitrate the probe does not know counts the whole
+    // container bitrate as video.
     @ParameterizedTest(name = "container {0}, video {1}")
     @CsvSource({
       "5000000, 4500000, 5140000",
+      "8000000, 4500000, 5140000",
       "5000000, , 5640000",
       "0, 4500000, 5140000",
     })
@@ -1336,7 +1338,11 @@ class HlsPlaylistServiceTest {
     void
         shouldAdvertiseTheCopiedVideosBitratePlusTheSessionsAudioBitrateWhenTheSessionCopiesTheVideo(
             long containerBitrate, Long videoBitrate, long expectedAverageBandwidth) {
-      var probe = StreamSessionFixture.defaultProbeBuilder().bitrate(containerBitrate);
+      var probe =
+          StreamSessionFixture.defaultProbeBuilder()
+              .bitrate(containerBitrate)
+              .audioCodec("ac3")
+              .audioBitrate(OptionalLong.of(640_000L));
       var video =
           ProbeFixture.videoStreamBuilder(probe.build())
               .bitrate(videoBitrate == null ? OptionalLong.empty() : OptionalLong.of(videoBitrate))
@@ -1371,6 +1377,47 @@ class HlsPlaylistServiceTest {
               copySession(probe.streams(streams).build()), "test-token");
 
       assertThat(playlist).contains(bandwidthAttributes(5_140_000L));
+    }
+
+    // A copied track whose bitrate the probe does not know takes a nominal bitrate, here 384 kb/s
+    // for 5.1 FLAC, which can be far below its rate. The container bitrate holds that track.
+    @ParameterizedTest(name = "container {0}")
+    @CsvSource({"8000000, 8000000", "4000000, 4884000", "0, 4884000"})
+    @DisplayName(
+        "Should advertise at least the container bitrate when the session copies an audio track"
+            + " whose bitrate the probe does not know")
+    void
+        shouldAdvertiseAtLeastTheContainerBitrateWhenTheSessionCopiesAnAudioTrackWhoseBitrateIsUnknown(
+            long containerBitrate, long expectedAverageBandwidth) {
+      var probe = StreamSessionFixture.defaultProbeBuilder().bitrate(containerBitrate);
+      var streams =
+          List.of(
+              ProbeFixture.videoStreamBuilder(probe.build())
+                  .bitrate(OptionalLong.of(4_500_000L))
+                  .build(),
+              ProbeFixture.audioStreamBuilder("flac").index(1).channels(OptionalInt.of(6)).build());
+      var flacCopy =
+          AudioDecision.builder()
+              .mode(AudioMode.COPY)
+              .codec("flac")
+              .channels(6)
+              .bitrate(384_000L)
+              .sourceCodecString(Optional.of("fLaC"))
+              .build();
+      var mediaProbe = probe.streams(streams).build();
+      var session =
+          StreamSessionFixture.defaultSessionBuilder()
+              .mediaProbe(mediaProbe)
+              .transcodeDecision(
+                  StreamSessionFixture.remuxDecisionBuilder()
+                      .videoSource(mediaProbe.videoPlaybackFacts())
+                      .audioDecision(flacCopy)
+                      .build())
+              .build();
+
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
+
+      assertThat(playlist).contains(bandwidthAttributes(expectedAverageBandwidth));
     }
 
     private static StreamSession copySession(MediaProbe probe) {
