@@ -75,9 +75,8 @@ class AudioStepsTest {
   }
 
   // A copied codec that the server does not encode steps through the encode that the server would
-  // choose, E-AC-3 and then AC-3. A copy at or below every multichannel bitrate of that encode
-  // steps
-  // straight to stereo.
+  // choose, E-AC-3 and then AC-3. A copy at or below every multichannel bitrate of that encode goes
+  // straight to the stereo steps.
   static Stream<Arguments> copiedSessionAudio() {
     return Stream.of(
         Arguments.of(
