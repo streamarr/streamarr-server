@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.EncodedPictureSizes;
 import com.streamarr.server.domain.streaming.EncodedVariantRequest;
@@ -24,19 +25,38 @@ public class QualityLadderService {
 
   /**
    * The variants that an encode offers, each fitted to one capability entry (ADR 0049), and the
-   * audio step that every variant's cost includes (ADR 0050). Auto offers a standard tier when the
-   * source is larger than the next smaller tier's box, scaling the source to fit the tier's box
-   * without enlarging it, or one variant when the viewer's limits leave no tier. A fixed quality
-   * offers only the default variant, within its tier's box and at most the nominal bitrate of the
-   * smallest tier whose box holds the encoded picture; Original has no box. Sizes each variant from
-   * the picture that a player shows, after cropping and rotation. A tier that an entry shrinks into
-   * a smaller tier's box gives way to that tier. Auto labels each variant by the tier whose box it
-   * reaches, or else by its shorter side. Offers no variant when the viewer's limits leave no
-   * picture that the worker encodes.
+   * audio step that every variant's cost includes (ADR 0050). When the session's audio leaves less
+   * than the 360p tier's video bitrate under the maximum bitrate, the ladder takes the first audio
+   * step that leaves it. Auto offers a standard tier when the source is larger than the next
+   * smaller tier's box, scaling the source to fit the tier's box without enlarging it, or one
+   * variant when the viewer's limits leave no tier. A fixed quality offers only the default
+   * variant, within its tier's box and at most the nominal bitrate of the smallest tier whose box
+   * holds the encoded picture; Original has no box. Sizes each variant from the picture that a
+   * player shows, after cropping and rotation. A tier that an entry shrinks into a smaller tier's
+   * box gives way to that tier. Auto labels each variant by the tier whose box it reaches, or else
+   * by its shorter side. Offers no variant when the viewer's limits leave no picture that the
+   * worker encodes.
    */
   public QualityLadder generateVariants(@NonNull QualityLadderRequest request) {
-    var audio = request.audioSteps().sessionAudio();
+    var audio = audioLeavingTheSmallestTier(request);
     return new QualityLadder(variants(new Sizing(request, audio.bitrate())), audio);
+  }
+
+  // The first audio step that leaves the 360p tier's video bitrate under the maximum bitrate, or
+  // the
+  // session's audio when none does.
+  private static AudioDecision audioLeavingTheSmallestTier(QualityLadderRequest request) {
+    var steps = request.audioSteps();
+    var maxBitrate = request.viewerLimits().maxBitrate();
+    if (maxBitrate.isEmpty()) {
+      return steps.sessionAudio();
+    }
+
+    var smallestTierBitrate = QualityTier.TIER_360P.videoBitrate(request.codecProfile());
+    return steps.highestFirst().stream()
+        .filter(step -> maxBitrate.getAsLong() - step.bitrate() >= smallestTierBitrate)
+        .findFirst()
+        .orElse(steps.sessionAudio());
   }
 
   // A ladder request with the bitrate of the audio step that every variant's cost includes.
