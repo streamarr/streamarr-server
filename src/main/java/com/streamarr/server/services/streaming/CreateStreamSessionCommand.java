@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import java.util.Set;
@@ -14,6 +15,7 @@ public record CreateStreamSessionCommand(
     @NonNull UUID mediaFileId,
     @NonNull AuthenticatedIdentity identity,
     @NonNull StreamingOptions options,
+    @NonNull ClientCapabilityDeclaration capabilityDeclaration,
     @NonNull VideoFormatConstraint videoFormatConstraint,
     @NonNull Set<String> excludedEncodeCodecFamilies) {
   public CreateStreamSessionCommand {
@@ -32,6 +34,7 @@ public record CreateStreamSessionCommand(
           mediaFileId,
           identity,
           options,
+          capabilityDeclaration,
           videoFormatConstraint,
           excludedEncodeCodecFamilies);
     }

@@ -239,7 +239,7 @@ See https://github.com/streamarr/streamarr-adr/blob/main/adr/0010-spring-applica
 == Streaming Pipeline
 
 ----
-StreamingOptions (client)  +  MediaProbe (persisted probe rows)
+ClientCapabilityDeclaration (client)  +  MediaProbe (persisted probe rows)
                     |
             TranscodeDecisionService
             ├── Video: copy or transcode?
@@ -257,6 +257,9 @@ StreamingOptions (client)  +  MediaProbe (persisted probe rows)
             Segment uploads → server segment store
             → HlsPlaylistService → master + media playlists
 ----
+
+The client capability declaration lists video and audio capability entries (https://github.com/streamarr/streamarr-adr/blob/main/adr/0049-capability-declarations-list-entries-and-an-output-fits-one-entry.adoc[ADR 0049]).
+`StreamingOptions` carries only the viewer's playback choices, such as the quality.
 
 The decision carries no container.
 Every variant is multiplexed fragmented MP4: an `init.mp4` initialization segment and `segment<N>.m4s` media segments in an HLS version 6 playlist with `EXT-X-MAP`.

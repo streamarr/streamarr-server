@@ -186,11 +186,7 @@ class ProbeVersion5UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
   }
 
   private Optional<VideoStreamProperties> playedVideoProperties(UUID mediaFileId) {
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.AUTO)
-            .supportedCodecs(List.of("h264"))
-            .build();
+    var options = StreamingOptions.builder().quality(VideoQuality.AUTO).build();
     var session =
         accepted(
             streaming.createSession(

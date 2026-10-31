@@ -1,26 +1,32 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.AudioCapabilityEntry;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
+import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.StreamCopySegments;
 import com.streamarr.server.domain.streaming.StreamInfo;
-import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.SubtitleMode;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
+import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
+import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -29,7 +35,14 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class TranscodeDecisionService {
 
-  private static final List<String> CODEC_PREFERENCE = List.of("av1", "h264");
+  // An encode forces one codec profile for each codec family (ADR 0013).
+  private static final List<VideoCodecProfile> CODEC_PREFERENCE =
+      List.of(VideoCodecProfile.AV1_MAIN, VideoCodecProfile.H264_HIGH);
+  // A multichannel encode prefers the first of these codecs that keeps more than two channels.
+  private static final List<String> MULTICHANNEL_ENCODE_PREFERENCE = List.of("eac3", "ac3", "aac");
+  // FFmpeg's AC-3 and E-AC-3 encoders stop at 5.1.
+  private static final int AC3_AND_EAC3_ENCODER_MAX_CHANNELS = 6;
+  private static final int STEREO = 2;
   // The plain aac declaration covers LC, HE-AAC and HE-AAC v2.
   private static final Set<String> COPYABLE_AAC_CODEC_STRINGS =
       Set.of("mp4a.40.2", "mp4a.40.5", "mp4a.40.29");
@@ -40,18 +53,18 @@ public class TranscodeDecisionService {
   private final MeterRegistry meterRegistry;
 
   /**
-   * An encode uses the first codec in the preference that the client declares and that a
-   * worker-verified encoder encodes (ADR 0009). A copy needs no encoder. Returns empty when neither
-   * a copy nor a supported encode satisfies the request's constraints.
+   * A copy needs a video capability entry for HLS that names the source's codec family. An encode
+   * uses the first codec in the preference whose encode codec profile a video capability entry for
+   * HLS lists, and that a worker-verified encoder encodes (ADR 0009). The audio follows the audio
+   * capability entries for HLS. Returns empty when neither a copy nor a supported encode satisfies
+   * the request's constraints.
    */
   public Optional<TranscodeDecision> decide(@NonNull TranscodeDecisionRequest request) {
     var source = request.source();
-    var clientOptions = request.clientOptions();
-    var encodableVideoCodecFamilies = request.encodableVideoCodecFamilies();
-    var supportedCodecs = clientOptions.supportedCodecs();
+    var declaration = request.capabilityDeclaration();
     boolean videoCopyable =
         request.videoFormatConstraint() != VideoFormatConstraint.ENCODE_ONLY
-            && decideVideoCopy(source, supportedCodecs);
+            && decideVideoCopy(source, declaration);
     if (!videoCopyable && request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
       return Optional.empty();
     }
@@ -60,10 +73,10 @@ public class TranscodeDecisionService {
         videoCopyable
             ? Optional.of(source.videoCodec())
             : selectPreferredCodec(
-                supportedCodecs,
-                encodableVideoCodecFamilies,
+                declaration,
+                request.encodableVideoCodecFamilies(),
                 request.excludedEncodeCodecFamilies());
-    var audioDecision = decideAudio(source, clientOptions);
+    var audioDecision = decideAudio(source, declaration);
     var subtitleDecision = SubtitleDecision.exclude();
 
     var mode = resolveTranscodeMode(videoCopyable, audioDecision, subtitleDecision);
@@ -79,14 +92,38 @@ public class TranscodeDecisionService {
                 .build());
   }
 
-  private boolean decideVideoCopy(MediaProbe source, List<String> supportedCodecs) {
-    if (!supportedCodecs.contains(source.videoCodec()) || !permitsCopyUntilHdrCopies(source)) {
+  private boolean decideVideoCopy(MediaProbe source, ClientCapabilityDeclaration declaration) {
+    if (!declaresHlsCodecFamily(declaration, source.videoCodec())
+        || !permitsCopyUntilHdrCopies(source)) {
       return false;
     }
 
     var refusal = streamCopyRefusal(source);
     refusal.ifPresent(this::countStreamCopyRefusal);
     return refusal.isEmpty();
+  }
+
+  private static boolean declaresHlsCodecFamily(
+      ClientCapabilityDeclaration declaration, String probedCodec) {
+    if (probedCodec == null) {
+      return false;
+    }
+
+    var family = ProbedCodecFamily.fromProbedName(probedCodec);
+    return hlsVideoEntries(declaration).anyMatch(entry -> entry.codecFamily() == family);
+  }
+
+  private static boolean declaresHlsCodecProfile(
+      ClientCapabilityDeclaration declaration, VideoCodecProfile profile) {
+    return hlsVideoEntries(declaration)
+        .filter(entry -> entry.codecFamily() == profile.codecFamily())
+        .flatMap(entry -> entry.codecProfiles().stream())
+        .anyMatch(capability -> capability.profile() == profile);
+  }
+
+  private static Stream<VideoCapabilityEntry> hlsVideoEntries(
+      ClientCapabilityDeclaration declaration) {
+    return declaration.video().stream().filter(VideoCapabilityEntry::hls);
   }
 
   // A source without playback facts has no codec string for a copy job to carry.
@@ -177,69 +214,88 @@ public class TranscodeDecisionService {
     return TranscodeMode.FULL_TRANSCODE;
   }
 
-  private AudioDecision decideAudio(MediaProbe source, StreamingOptions clientOptions) {
-
+  private AudioDecision decideAudio(MediaProbe source, ClientCapabilityDeclaration declaration) {
     if (source.audioCodec() == null) {
       return AudioDecision.none();
     }
 
-    var clientAudioCodecs =
-        Optional.ofNullable(clientOptions.supportedAudioCodecs())
-            .orElse(StreamingOptions.DEFAULT_SUPPORTED_AUDIO_CODECS);
-    int maxChannels =
-        Optional.ofNullable(clientOptions.maxAudioChannels())
-            .orElse(StreamingOptions.DEFAULT_MAX_AUDIO_CHANNELS);
-
-    var candidates = new HashSet<>(clientAudioCodecs);
-    candidates.retainAll(AudioDecision.deliverableCodecs());
-
-    int normalizedChannels = AudioDecision.normalizeChannels(source.audioChannels().orElse(2));
-    int effectiveChannels = Math.min(normalizedChannels, maxChannels);
-
+    var channelMaximums = hlsAudioChannelMaximums(declaration);
+    // A copy carries every source channel, so the copy rule and the announced count use the
+    // source's count. Only an encode lays the channels out in a normalized layout.
+    int sourceChannels = sourceChannelCount(source);
     var sourceCodecString =
         source.audioStreams().stream()
             .findFirst()
             .flatMap(StreamInfo::codecString)
             .filter(codecString -> isCopyableAudioCodecString(source.audioCodec(), codecString));
-    if (candidates.contains(source.audioCodec())
-        && normalizedChannels <= maxChannels
+    var copyChannelMaximum = Optional.ofNullable(channelMaximums.get(source.audioCodec()));
+    if (copyChannelMaximum.filter(maximum -> sourceChannels <= maximum).isPresent()
         && sourceCodecString.isPresent()) {
       return AudioDecision.builder()
           .mode(AudioMode.COPY)
           .codec(source.audioCodec())
-          .channels(normalizedChannels)
+          .channels(sourceChannels)
           .bitrate(
-              source.audioBitrate().orElse(AudioDecision.bitrateForChannels(normalizedChannels)))
+              source
+                  .audioBitrate()
+                  .orElse(
+                      AudioDecision.bitrateFor(
+                          source.audioCodec(), AudioDecision.normalizeChannels(sourceChannels))))
           .sourceCodecString(sourceCodecString)
           .build();
     }
 
-    return selectTranscodeAudio(candidates, effectiveChannels);
+    return selectTranscodeAudio(channelMaximums, AudioDecision.normalizeChannels(sourceChannels));
+  }
+
+  // A probe can report zero channels, which says no more than an absent count.
+  private static int sourceChannelCount(MediaProbe source) {
+    int channels = source.audioChannels().orElse(STEREO);
+    if (channels <= 0) {
+      return STEREO;
+    }
+
+    return channels;
+  }
+
+  // Several entries for one codec each accept up to their own maximum, so the codec accepts up to
+  // the largest of them.
+  private static Map<String, Integer> hlsAudioChannelMaximums(
+      ClientCapabilityDeclaration declaration) {
+    return declaration.audio().stream()
+        .filter(AudioCapabilityEntry::hls)
+        .filter(entry -> AudioDecision.deliverableCodecs().contains(entry.codec().probedName()))
+        .collect(
+            Collectors.toMap(
+                entry -> entry.codec().probedName(), AudioCapabilityEntry::maxChannels, Math::max));
   }
 
   private static boolean isCopyableAudioCodecString(String codec, String codecString) {
     return !"aac".equals(codec) || COPYABLE_AAC_CODEC_STRINGS.contains(codecString);
   }
 
-  private AudioDecision selectTranscodeAudio(Set<String> candidates, int effectiveChannels) {
-
-    if (effectiveChannels == 1) {
-      return transcode("aac", 1);
+  // The API boundary requires an AAC entry for HLS, so ADR 0043's AAC encode always fits.
+  private AudioDecision selectTranscodeAudio(
+      Map<String, Integer> channelMaximums, int normalizedChannels) {
+    for (var codec : MULTICHANNEL_ENCODE_PREFERENCE) {
+      int channels =
+          Math.min(
+              normalizedChannels,
+              Math.min(channelMaximums.getOrDefault(codec, 0), encoderChannelLimit(codec)));
+      if (channels > STEREO) {
+        return transcode(codec, channels);
+      }
     }
 
-    if (effectiveChannels <= 2) {
-      return AudioDecision.stereoAac();
-    }
-    if (candidates.contains("eac3")) {
-      return transcode("eac3", effectiveChannels);
-    }
-    if (candidates.contains("ac3")) {
-      return transcode("ac3", Math.min(effectiveChannels, 6));
-    }
-    if (candidates.contains("aac")) {
-      return transcode("aac", effectiveChannels);
-    }
-    return AudioDecision.stereoAac();
+    int aacMaximum = channelMaximums.getOrDefault("aac", STEREO);
+    return transcode("aac", Math.min(Math.min(normalizedChannels, STEREO), aacMaximum));
+  }
+
+  private static int encoderChannelLimit(String codec) {
+    return switch (codec) {
+      case "ac3", "eac3" -> AC3_AND_EAC3_ENCODER_MAX_CHANNELS;
+      default -> Integer.MAX_VALUE;
+    };
   }
 
   private AudioDecision transcode(String codec, int channels) {
@@ -247,21 +303,19 @@ public class TranscodeDecisionService {
         .mode(AudioMode.TRANSCODE)
         .codec(codec)
         .channels(channels)
-        .bitrate(AudioDecision.bitrateForChannels(channels))
+        .bitrate(AudioDecision.bitrateFor(codec, channels))
         .build();
   }
 
   private Optional<String> selectPreferredCodec(
-      List<String> supportedCodecs,
+      ClientCapabilityDeclaration declaration,
       Set<String> encodableVideoCodecFamilies,
       Set<String> excludedEncodeCodecFamilies) {
-    for (var codec : CODEC_PREFERENCE) {
-      if (supportedCodecs.contains(codec)
-          && encodableVideoCodecFamilies.contains(codec)
-          && !excludedEncodeCodecFamilies.contains(codec)) {
-        return Optional.of(codec);
-      }
-    }
-    return Optional.empty();
+    return CODEC_PREFERENCE.stream()
+        .filter(profile -> declaresHlsCodecProfile(declaration, profile))
+        .map(profile -> profile.codecFamily().name().toLowerCase(Locale.ROOT))
+        .filter(encodableVideoCodecFamilies::contains)
+        .filter(family -> !excludedEncodeCodecFamilies.contains(family))
+        .findFirst();
   }
 }

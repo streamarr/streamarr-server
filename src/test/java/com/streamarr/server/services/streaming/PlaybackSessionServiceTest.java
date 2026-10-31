@@ -1,6 +1,12 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.domain.streaming.ProbedCodecFamily.H264;
+import static com.streamarr.server.domain.streaming.ProbedCodecFamily.HEVC;
 import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountScopedBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.declarationBuilderFor;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
@@ -30,6 +36,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -141,13 +148,7 @@ class PlaybackSessionServiceTest {
   @DisplayName("Should terminate the chosen format when fixed quality receives a copy mismatch")
   void shouldTerminateTheChosenFormatWhenFixedQualityReceivesACopyMismatch(VideoQuality quality) {
     var command =
-        startCommand()
-            .options(
-                StreamingOptions.builder()
-                    .quality(quality)
-                    .supportedCodecs(List.of("h264"))
-                    .build())
-            .build();
+        startCommand().options(StreamingOptions.builder().quality(quality).build()).build();
     var snapshot = accepted(service.start(command));
     var failedId = snapshot.currentFormatAttempt().streamSessionId();
     service.onVideoCopyOutputMismatch(
@@ -173,13 +174,7 @@ class PlaybackSessionServiceTest {
   void shouldFailPlaybackWithoutNewFormatAttemptWhenJobFailureIsFinal(
       VideoQuality quality, TranscodeFailure failure) {
     var command =
-        startCommand()
-            .options(
-                StreamingOptions.builder()
-                    .quality(quality)
-                    .supportedCodecs(List.of("h264"))
-                    .build())
-            .build();
+        startCommand().options(StreamingOptions.builder().quality(quality).build()).build();
     var snapshot = accepted(service.start(command));
     var failedId = snapshot.currentFormatAttempt().streamSessionId();
 
@@ -241,11 +236,7 @@ class PlaybackSessionServiceTest {
   void shouldRetainATypedClientFailureWhenTheChosenQualityIsFixed() {
     var command =
         startCommand()
-            .options(
-                StreamingOptions.builder()
-                    .quality(VideoQuality.ORIGINAL)
-                    .supportedCodecs(List.of("h264"))
-                    .build())
+            .options(StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build())
             .build();
     var snapshot = accepted(service.start(command));
     var failed =
@@ -452,11 +443,7 @@ class PlaybackSessionServiceTest {
                     command.streamSessionId(), UUID.randomUUID(), "default"));
     var command =
         startCommand()
-            .options(
-                StreamingOptions.builder()
-                    .quality(VideoQuality.ORIGINAL)
-                    .supportedCodecs(List.of("h264"))
-                    .build())
+            .options(StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build())
             .build();
     var result = accepted(service.start(command));
     assertThat(result.currentFormatAttempt())
@@ -552,11 +539,7 @@ class PlaybackSessionServiceTest {
   void shouldExpireATerminalPlaybackWhenItHasNoChildStream() {
     var command =
         startCommand()
-            .options(
-                StreamingOptions.builder()
-                    .quality(VideoQuality.ORIGINAL)
-                    .supportedCodecs(List.of("h264"))
-                    .build())
+            .options(StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build())
             .build();
     var initial = accepted(service.start(command));
     service.reportFormatFailure(report(initial, command).build());
@@ -576,34 +559,21 @@ class PlaybackSessionServiceTest {
   }
 
   @Test
-  @DisplayName("Should retain initial capabilities when caller lists change before replacement")
-  void shouldRetainInitialCapabilitiesWhenCallerListsChangeBeforeReplacement() {
-    var video = new ArrayList<>(List.of("h264", "hevc"));
-    var audio = new ArrayList<>(List.of("aac"));
-    var command =
-        startCommand()
-            .options(
-                StreamingOptions.builder()
-                    .quality(VideoQuality.AUTO)
-                    .supportedCodecs(video)
-                    .supportedAudioCodecs(audio)
-                    .build())
-            .build();
+  @DisplayName(
+      "Should replay the initial capability declaration when a replacement format attempt starts")
+  void shouldReplayTheInitialCapabilityDeclarationWhenAReplacementFormatAttemptStarts() {
+    var video = new ArrayList<>(List.of(h264EntryBuilder().build(), hevcEntryBuilder().build()));
+    var declaration = defaultDeclarationBuilder().video(video).build();
+    var command = startCommand().capabilityDeclaration(declaration).build();
     var initial = accepted(service.start(command));
     video.clear();
-    audio.clear();
 
-    var recovered = service.reportFormatFailure(report(initial, command).build()).orElseThrow();
+    service.reportFormatFailure(report(initial, command).build()).orElseThrow();
 
-    assertThat(recovered.currentFormatAttempt())
-        .isInstanceOfSatisfying(
-            PlaybackFormatAttempt.Ready.class,
-            ready -> {
-              assertThat(ready.session().getOptions().supportedCodecs())
-                  .containsExactly("h264", "hevc");
-              assertThat(ready.session().getOptions().supportedAudioCodecs())
-                  .containsExactly("aac");
-            });
+    assertThat(streams.createdCommands)
+        .hasSize(2)
+        .allSatisfy(created -> assertThat(created.capabilityDeclaration()).isEqualTo(declaration));
+    assertThat(streams.createdCommands.getLast().capabilityDeclaration().video()).hasSize(2);
   }
 
   @Test
@@ -997,15 +967,12 @@ class PlaybackSessionServiceTest {
     return StartPlaybackSessionCommand.builder()
         .mediaFileId(UUID.randomUUID())
         .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
-        .options(
-            StreamingOptions.builder()
-                .quality(VideoQuality.AUTO)
-                .supportedCodecs(List.of("h264", "hevc"))
-                .build());
+        .options(StreamingOptions.builder().quality(VideoQuality.AUTO).build())
+        .capabilityDeclaration(declarationBuilderFor(H264, HEVC).build());
   }
 
   private static PlaybackSessionSnapshot accepted(
-      Outcome<PlaybackSessionSnapshot, CreateStreamSessionRejection> outcome) {
+      Outcome<PlaybackSessionSnapshot, StartPlaybackSessionRejection> outcome) {
     return outcome.fold(
         result -> result,
         rejections -> {
@@ -1015,6 +982,7 @@ class PlaybackSessionServiceTest {
 
   private static class ChildStreams implements StreamingService {
     private final ConcurrentHashMap<UUID, StreamSession> sessions = new ConcurrentHashMap<>();
+    private final List<CreateStreamSessionCommand> createdCommands = new CopyOnWriteArrayList<>();
     private Consumer<CreateStreamSessionCommand> duringNextCreation;
     private Consumer<CreateStreamSessionCommand> beforeNextCreation;
     private CreateStreamSessionRejection rejection;
@@ -1025,6 +993,7 @@ class PlaybackSessionServiceTest {
     @Override
     public Outcome<StreamSession, CreateStreamSessionRejection> createSession(
         CreateStreamSessionCommand command) {
+      createdCommands.add(command);
       if (beforeNextCreation != null) {
         var callback = beforeNextCreation;
         beforeNextCreation = null;

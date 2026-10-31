@@ -79,14 +79,14 @@ public class HlsStreamingService implements StreamingService {
     var request =
         TranscodeDecisionRequest.builder()
             .source(probe)
-            .clientOptions(options)
+            .capabilityDeclaration(command.capabilityDeclaration())
             .videoFormatConstraint(command.videoFormatConstraint())
             .excludedEncodeCodecFamilies(command.excludedEncodeCodecFamilies())
             .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())
             .build();
     var candidate = transcodeDecisionService.decide(request);
     if (candidate.isEmpty()) {
-      candidate = decideAfterStoppingALeftVariant(command.streamSessionId(), request);
+      candidate = decideAfterStoppingALeftVariant(command, request);
     }
 
     if (candidate.isEmpty()) {
@@ -94,7 +94,7 @@ public class HlsStreamingService implements StreamingService {
     }
 
     var decision = candidate.orElseThrow();
-    var encodeRejection = encodeRejection(request, decision);
+    var encodeRejection = encodeRejection(command, request, decision);
     if (encodeRejection.isPresent()) {
       return Outcome.rejected(encodeRejection.get());
     }
@@ -147,13 +147,15 @@ public class HlsStreamingService implements StreamingService {
 
   // Why no worker can run the decision's encode, whatever slots are free.
   private Optional<CreateStreamSessionRejection> encodeRejection(
-      TranscodeDecisionRequest request, TranscodeDecision decision) {
+      CreateStreamSessionCommand command,
+      TranscodeDecisionRequest request,
+      TranscodeDecision decision) {
     if (!requiresVideoTranscode(decision.transcodeMode())) {
       return Optional.empty();
     }
 
     var probe = request.source();
-    var variants = resolveVariants(probe, request.clientOptions(), decision);
+    var variants = resolveVariants(probe, command.options(), decision);
     if (hasInvalidEncodeSize(probe, variants)) {
       return Optional.of(new CreateStreamSessionRejection.InvalidPictureSize());
     }
@@ -181,16 +183,17 @@ public class HlsStreamingService implements StreamingService {
   // that frees a slot on such a worker and decides once more. An encode that no worker can run
   // whatever slots are free stops nothing.
   private Optional<TranscodeDecision> decideAfterStoppingALeftVariant(
-      UUID sessionId, TranscodeDecisionRequest request) {
+      CreateStreamSessionCommand command, TranscodeDecisionRequest request) {
     var verifiedCandidate =
         verifiedEncodeCandidate(request)
-            .filter(decision -> encodeRejection(request, decision).isEmpty());
+            .filter(decision -> encodeRejection(command, request, decision).isEmpty());
     if (verifiedCandidate.isEmpty()) {
       return Optional.empty();
     }
 
     // The first decision already refused a copy, so only an encode is decided again.
-    producerLifecycle.stopLeftVariantOfAnotherStreamSession(sessionId, verifiedCandidate.get());
+    producerLifecycle.stopLeftVariantOfAnotherStreamSession(
+        command.streamSessionId(), verifiedCandidate.get());
     return transcodeDecisionService.decide(
         request.toBuilder()
             .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)

@@ -129,11 +129,7 @@ class ProbeVersion4UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
         .containsExactly(SystemActor.ID, SystemActor.ID);
     assertThat(PROBE.probeCount()).isZero();
 
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.AUTO)
-            .supportedCodecs(List.of("h264"))
-            .build();
+    var options = StreamingOptions.builder().quality(VideoQuality.AUTO).build();
     for (var file : fixture.files()) {
       assertThat(
               streaming.createSession(

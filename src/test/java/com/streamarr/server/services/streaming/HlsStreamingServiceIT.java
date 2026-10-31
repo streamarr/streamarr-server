@@ -42,7 +42,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -335,9 +334,6 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   }
 
   private StreamingOptions defaultOptions() {
-    return StreamingOptions.builder()
-        .quality(VideoQuality.AUTO)
-        .supportedCodecs(List.of("h264"))
-        .build();
+    return StreamingOptions.builder().quality(VideoQuality.AUTO).build();
   }
 }

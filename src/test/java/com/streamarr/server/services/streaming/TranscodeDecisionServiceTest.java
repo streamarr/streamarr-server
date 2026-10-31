@@ -1,9 +1,26 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.domain.streaming.AudioCodec.AAC;
+import static com.streamarr.server.domain.streaming.AudioCodec.AC3;
+import static com.streamarr.server.domain.streaming.AudioCodec.EAC3;
+import static com.streamarr.server.domain.streaming.AudioCodec.FLAC;
+import static com.streamarr.server.domain.streaming.AudioCodec.OPUS;
+import static com.streamarr.server.domain.streaming.ProbedCodecFamily.AV1;
+import static com.streamarr.server.domain.streaming.ProbedCodecFamily.H264;
+import static com.streamarr.server.domain.streaming.ProbedCodecFamily.HEVC;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.audioEntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.av1EntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.declarationBuilderFor;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.AudioCapabilityEntry;
+import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePosition;
@@ -11,9 +28,13 @@ import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.MediaProbe;
-import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
+import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
+import com.streamarr.server.domain.streaming.VideoCodecProfile;
+import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
+import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -36,6 +57,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Transcode Decision Service Tests")
@@ -63,15 +85,13 @@ class TranscodeDecisionServiceTest {
   @DisplayName("Should encode a copyable video when the format attempt requires encoding")
   void shouldEncodeACopyableVideoWhenTheFormatAttemptRequiresEncoding() {
     var source = probe("h264", "aac");
-    var clientCodecs = new ArrayList<>(List.of("h264"));
-    var clientOptions = options(clientCodecs);
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(clientOptions)
+                    .capabilityDeclaration(declaring(H264))
                     .encodableVideoCodecFamilies(Set.of("h264"))
                     .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
                     .build())
@@ -81,8 +101,6 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.videoCodecFamily()).isEqualTo("h264");
     assertThat(decision.videoSource()).isEqualTo(source.videoPlaybackFacts());
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
-    assertThat(clientOptions.supportedCodecs()).containsExactly("h264");
-    assertThat(clientCodecs).containsExactly("h264");
   }
 
   @Test
@@ -95,7 +113,7 @@ class TranscodeDecisionServiceTest {
         service.decide(
             TranscodeDecisionRequest.builder()
                 .source(source)
-                .clientOptions(options(List.of("h264")))
+                .capabilityDeclaration(declaring(H264))
                 .encodableVideoCodecFamilies(Set.of("h264"))
                 .videoFormatConstraint(VideoFormatConstraint.COPY_ONLY)
                 .build());
@@ -117,7 +135,7 @@ class TranscodeDecisionServiceTest {
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(options(List.of("h264")))
+                    .capabilityDeclaration(declaring(H264))
                     .encodableVideoCodecFamilies(Set.of())
                     .excludedEncodeCodecFamilies(Set.of("h264"))
                     .videoFormatConstraint(constraint)
@@ -129,6 +147,19 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.videoSource()).isEqualTo(source.videoPlaybackFacts());
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
     assertThat(decision.audioDecision().codec()).isEqualTo("aac");
+  }
+
+  @Test
+  @DisplayName("Should refuse a decision request when it carries no capability declaration")
+  void shouldRefuseADecisionRequestWhenItCarriesNoCapabilityDeclaration() {
+    var request =
+        TranscodeDecisionRequest.builder()
+            .source(probe("h264", "aac"))
+            .encodableVideoCodecFamilies(Set.of("h264"));
+
+    assertThatThrownBy(request::build)
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("capabilityDeclaration");
   }
 
   @ParameterizedTest
@@ -144,7 +175,7 @@ class TranscodeDecisionServiceTest {
     var request =
         TranscodeDecisionRequest.builder()
             .source(probe("hevc", "aac"))
-            .clientOptions(options(List.of("av1", "h264")))
+            .capabilityDeclaration(declaring(AV1, H264))
             .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
             .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
             .excludedEncodeCodecFamilies(excludedFamilies)
@@ -155,7 +186,6 @@ class TranscodeDecisionServiceTest {
 
     assertThat(decision.map(TranscodeDecision::videoCodecFamily))
         .isEqualTo(Optional.ofNullable(expectedFamily));
-    assertThat(request.clientOptions().supportedCodecs()).containsExactly("av1", "h264");
   }
 
   @ParameterizedTest(name = "{1}")
@@ -170,7 +200,7 @@ class TranscodeDecisionServiceTest {
         .decide(
             TranscodeDecisionRequest.builder()
                 .source(source)
-                .clientOptions(options(List.of("h264")))
+                .capabilityDeclaration(declaring(H264))
                 .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                 .build())
         .orElseThrow();
@@ -234,7 +264,7 @@ class TranscodeDecisionServiceTest {
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(options(List.of("h264")))
+                    .capabilityDeclaration(declaring(H264))
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -253,7 +283,7 @@ class TranscodeDecisionServiceTest {
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(options(List.of("av1")))
+                    .capabilityDeclaration(declaring(AV1))
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -272,7 +302,7 @@ class TranscodeDecisionServiceTest {
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(options(List.of("h264")))
+                    .capabilityDeclaration(declaring(H264))
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -293,7 +323,7 @@ class TranscodeDecisionServiceTest {
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(options(List.of("h264")))
+                    .capabilityDeclaration(declaring(H264))
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -313,7 +343,7 @@ class TranscodeDecisionServiceTest {
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(options(List.of("av1", "h264")))
+                    .capabilityDeclaration(declaring(AV1, H264))
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -338,7 +368,7 @@ class TranscodeDecisionServiceTest {
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(options(List.of("h264")))
+                    .capabilityDeclaration(declaring(H264))
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -363,7 +393,7 @@ class TranscodeDecisionServiceTest {
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(options(List.of("h264")))
+                    .capabilityDeclaration(declaring(H264))
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -385,7 +415,7 @@ class TranscodeDecisionServiceTest {
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(options(List.of("h264")))
+                    .capabilityDeclaration(declaring(H264))
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -414,7 +444,7 @@ class TranscodeDecisionServiceTest {
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(options(List.of("h264")))
+                    .capabilityDeclaration(declaring(H264))
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -433,7 +463,7 @@ class TranscodeDecisionServiceTest {
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(options(List.of("h264")))
+                    .capabilityDeclaration(declaring(H264))
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -457,7 +487,7 @@ class TranscodeDecisionServiceTest {
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(options(List.of("h264")))
+                    .capabilityDeclaration(declaring(H264))
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -526,21 +556,16 @@ class TranscodeDecisionServiceTest {
   private static final Map<String, String> SDR_CODEC_STRINGS =
       Map.of("h264", "avc1.640028", "hevc", "hvc1.1.6.L120.90", "av1", "av01.0.08M.08");
 
-  private StreamingOptions options(List<String> supportedCodecs) {
-    return StreamingOptions.builder()
-        .supportedCodecs(supportedCodecs)
-        .supportedAudioCodecs(StreamingOptions.DEFAULT_SUPPORTED_AUDIO_CODECS)
-        .maxAudioChannels(StreamingOptions.DEFAULT_MAX_AUDIO_CHANNELS)
-        .build();
+  private static ClientCapabilityDeclaration declaring(ProbedCodecFamily... codecFamilies) {
+    return declarationBuilderFor(codecFamilies).build();
   }
 
-  private StreamingOptions options(
-      List<String> supportedCodecs, List<String> audioCodecs, int maxAudioChannels) {
-    return StreamingOptions.builder()
-        .supportedCodecs(supportedCodecs)
-        .supportedAudioCodecs(audioCodecs)
-        .maxAudioChannels(maxAudioChannels)
-        .build();
+  private static ClientCapabilityDeclaration declaringAudio(AudioCapabilityEntry... entries) {
+    return defaultDeclarationBuilder().audio(List.of(entries)).build();
+  }
+
+  private static AudioCapabilityEntry audio(AudioCodec codec, int maxChannels) {
+    return audioEntryBuilder(codec).maxChannels(maxChannels).build();
   }
 
   // --- Existing tests (adapted) ---
@@ -549,14 +574,14 @@ class TranscodeDecisionServiceTest {
   @DisplayName("Should remux when video codec matches and audio is AAC")
   void shouldRemuxWhenVideoCodecMatchesAndAudioIsAac() {
     var source = probe("h264", "aac");
-    var clientOptions = options(List.of("h264"));
+    var declaration = declaring(H264);
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(clientOptions)
+                    .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -570,14 +595,14 @@ class TranscodeDecisionServiceTest {
   @DisplayName("Should audio transcode when video matches but audio needs conversion")
   void shouldAudioTranscodeWhenVideoMatchesButAudioNeedsConversion() {
     var source = probe("h264", "flac", 2, 0);
-    var clientOptions = options(List.of("h264"));
+    var declaration = declaring(H264);
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(clientOptions)
+                    .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -591,14 +616,14 @@ class TranscodeDecisionServiceTest {
   @DisplayName("Should video transcode when video incompatible but audio is compatible")
   void shouldVideoTranscodeWhenVideoIncompatibleButAudioIsCompatible() {
     var source = probe("hevc", "aac");
-    var clientOptions = options(List.of("h264"));
+    var declaration = declaring(H264);
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(clientOptions)
+                    .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -613,14 +638,14 @@ class TranscodeDecisionServiceTest {
   @DisplayName("Should prefer AV1 over H264 when client supports both")
   void shouldPreferAv1OverH264WhenClientSupportsBoth() {
     var source = probe("hevc", "aac");
-    var clientOptions = options(List.of("av1", "h264"));
+    var declaration = declaring(AV1, H264);
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(clientOptions)
+                    .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -634,14 +659,14 @@ class TranscodeDecisionServiceTest {
       "Should encode H.264 when the client prefers AV1 and no worker-verified encoder encodes AV1")
   void shouldEncodeH264WhenClientPrefersAv1AndNoWorkerVerifiedEncoderEncodesAv1() {
     var source = probe("hevc", "aac");
-    var clientOptions = options(List.of("av1", "h264"));
+    var declaration = declaring(AV1, H264);
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(clientOptions)
+                    .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(Set.of("h264", "hevc"))
                     .build())
             .orElseThrow();
@@ -655,13 +680,13 @@ class TranscodeDecisionServiceTest {
       "Should return no decision when no worker-verified encoder supports the client codecs")
   void shouldReturnNoDecisionWhenNoWorkerVerifiedEncoderSupportsTheClientCodecs() {
     var source = probe("hevc", "aac");
-    var clientOptions = options(List.of("av1"));
+    var declaration = declaring(AV1);
 
     var decision =
         service.decide(
             TranscodeDecisionRequest.builder()
                 .source(source)
-                .clientOptions(clientOptions)
+                .capabilityDeclaration(declaration)
                 .encodableVideoCodecFamilies(Set.of())
                 .build());
 
@@ -673,14 +698,14 @@ class TranscodeDecisionServiceTest {
       "Should copy an AV1 source when the client declares AV1 and no worker-verified encoder encodes AV1")
   void shouldCopyAv1SourceWhenClientDeclaresAv1AndNoWorkerVerifiedEncoderEncodesAv1() {
     var source = probe("av1", "aac");
-    var clientOptions = options(List.of("av1", "h264"));
+    var declaration = declaring(AV1, H264);
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(clientOptions)
+                    .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(Set.of("h264"))
                     .build())
             .orElseThrow();
@@ -693,14 +718,14 @@ class TranscodeDecisionServiceTest {
   @DisplayName("Should remux AV1 source when client supports AV1 and audio is AAC")
   void shouldRemuxAv1SourceWhenClientSupportsAv1AndAudioIsAac() {
     var source = probe("av1", "aac");
-    var clientOptions = options(List.of("av1", "h264"));
+    var declaration = declaring(AV1, H264);
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(clientOptions)
+                    .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -713,14 +738,14 @@ class TranscodeDecisionServiceTest {
   @DisplayName("Should audio transcode AV1 source when audio is not AAC")
   void shouldAudioTranscodeAv1SourceWhenAudioIsNotAac() {
     var source = probe("av1", "dts", 6, 1_500_000L);
-    var clientOptions = options(List.of("av1"));
+    var declaration = declaring(AV1);
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(clientOptions)
+                    .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -733,14 +758,14 @@ class TranscodeDecisionServiceTest {
   @Test
   @DisplayName("Should return no decision when the client supports no eligible encoding codec")
   void shouldReturnNoDecisionWhenTheClientSupportsNoEligibleEncodingCodec() {
-    var source = probe("hevc", "aac");
-    var clientOptions = options(List.of("vp9"));
+    var source = probe("h264", "aac");
+    var declaration = declaring(HEVC);
 
     var decision =
         service.decide(
             TranscodeDecisionRequest.builder()
                 .source(source)
-                .clientOptions(clientOptions)
+                .capabilityDeclaration(declaration)
                 .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                 .build());
 
@@ -757,14 +782,14 @@ class TranscodeDecisionServiceTest {
             .audioChannels(OptionalInt.empty())
             .audioBitrate(OptionalLong.empty())
             .build();
-    var clientOptions = options(List.of("h264"));
+    var declaration = declaring(H264);
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(clientOptions)
+                    .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -781,14 +806,14 @@ class TranscodeDecisionServiceTest {
   @DisplayName("Should copy AC-3 audio when client supports it")
   void shouldCopyAc3AudioWhenClientSupportsIt() {
     var source = probe("h264", "ac3", 6, 384_000L);
-    var clientOptions = options(List.of("h264"), List.of("aac", "ac3"), 6);
+    var declaration = declaringAudio(audio(AAC, 6), audio(AC3, 6));
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(clientOptions)
+                    .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -803,14 +828,14 @@ class TranscodeDecisionServiceTest {
   @DisplayName("Should copy E-AC-3 audio when client supports it")
   void shouldCopyEac3AudioWhenClientSupportsIt() {
     var source = probe("h264", "eac3", 6, 640_000L);
-    var clientOptions = options(List.of("h264"), List.of("aac", "eac3"), 8);
+    var declaration = declaringAudio(audio(AAC, 8), audio(EAC3, 8));
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(clientOptions)
+                    .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -822,18 +847,17 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName(
-      "Should fall back to stereo AAC when source codec is unsupported by default capabilities")
-  void shouldFallbackToStereoAacWhenSourceCodecIsUnsupportedByDefaultCapabilities() {
+  @DisplayName("Should fall back to stereo AAC when the client declares only AAC audio")
+  void shouldFallBackToStereoAacWhenTheClientDeclaresOnlyAacAudio() {
     var source = probe("h264", "flac", 2, 0);
-    var clientOptions = options(List.of("h264"));
+    var declaration = declaring(H264);
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(clientOptions)
+                    .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -847,14 +871,14 @@ class TranscodeDecisionServiceTest {
   @DisplayName("Should transcode to AC-3 when channel cap forces transcode")
   void shouldTranscodeToAc3WhenChannelCapForcesTranscode() {
     var source = probe("h264", "ac3", 8, 640_000L);
-    var clientOptions = options(List.of("h264"), List.of("ac3"), 6);
+    var declaration = declaringAudio(audio(AAC, 2), audio(AC3, 6));
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(clientOptions)
+                    .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -868,14 +892,14 @@ class TranscodeDecisionServiceTest {
   @DisplayName("Should copy FLAC audio when remuxing H264 and the client supports FLAC")
   void shouldCopyFlacAudioWhenRemuxingH264AndClientSupportsFlac() {
     var source = probe("h264", "flac", 6, 0);
-    var clientOptions = options(List.of("h264"), List.of("aac", "flac"), 6);
+    var declaration = declaringAudio(audio(AAC, 6), audio(FLAC, 6));
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(clientOptions)
+                    .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -887,17 +911,17 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("Should transcode MP3 audio to AAC when the client supports MP3")
-  void shouldTranscodeMp3AudioToAacWhenClientSupportsMp3() {
+  @DisplayName("Should transcode MP3 audio to AAC when the client declares AAC")
+  void shouldTranscodeMp3AudioToAacWhenTheClientDeclaresAac() {
     var source = probe("h264", "mp3", 2, 128_000L);
-    var clientOptions = options(List.of("h264"), List.of("aac", "mp3"), 2);
+    var declaration = declaringAudio(audio(AAC, 2));
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(clientOptions)
+                    .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -912,14 +936,14 @@ class TranscodeDecisionServiceTest {
       "Should video transcode with audio copy when video incompatible but audio compatible")
   void shouldVideoTranscodeWithAudioCopyWhenVideoIncompatibleButAudioCompatible() {
     var source = probe("hevc", "ac3", 6, 384_000L);
-    var clientOptions = options(List.of("h264"), List.of("ac3"), 6);
+    var declaration = declaringAudio(audio(AAC, 2), audio(AC3, 6));
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(clientOptions)
+                    .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -934,14 +958,14 @@ class TranscodeDecisionServiceTest {
   @DisplayName("Should full transcode when both video and audio need transcoding")
   void shouldFullTranscodeWhenBothVideoAndAudioNeedTranscoding() {
     var source = probe("hevc", "flac", 6, 0);
-    var clientOptions = options(List.of("h264"), List.of("aac"), 2);
+    var declaration = declaringAudio(audio(AAC, 2));
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(clientOptions)
+                    .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -955,14 +979,14 @@ class TranscodeDecisionServiceTest {
   @DisplayName("Should copy multichannel AAC when remuxing H264")
   void shouldCopyMultichannelAacWhenRemuxingH264() {
     var source = probe("h264", "aac", 6, 384_000L);
-    var clientOptions = options(List.of("h264"), List.of("aac"), 6);
+    var declaration = declaringAudio(audio(AAC, 6));
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(clientOptions)
+                    .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -974,17 +998,17 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("Should transcode to E-AC-3 when surround and client supports E-AC-3")
-  void shouldTranscodeToEac3WhenSurroundAndEac3Supported() {
+  @DisplayName("Should transcode to 5.1 E-AC-3 when the surround source has more channels")
+  void shouldTranscodeTo51Eac3WhenTheSurroundSourceHasMoreChannels() {
     var source = probe("h264", "dts", 8, 640_000L);
-    var clientOptions = options(List.of("h264"), List.of("eac3", "aac"), 8);
+    var declaration = declaringAudio(audio(EAC3, 8), audio(AAC, 8));
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(clientOptions)
+                    .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -992,22 +1016,113 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
     assertThat(decision.audioDecision().codec()).isEqualTo("eac3");
-    assertThat(decision.audioDecision().channels()).isEqualTo(8);
-    assertThat(decision.audioDecision().bitrate()).isEqualTo(512_000L);
+    assertThat(decision.audioDecision().channels()).isEqualTo(6);
+    assertThat(decision.audioDecision().bitrate()).isEqualTo(768_000L);
   }
 
-  @Test
-  @DisplayName("Should transcode to multichannel AAC when only AAC is supported")
-  void shouldTranscodeToMultichannelAacWhenOnlyAacIsSupported() {
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("fivePointOneEncodeBitrates")
+  @DisplayName(
+      "Should encode 5.1 audio at the highest bitrate that real media uses for the codec when the"
+          + " client declares that codec")
+  void
+      shouldEncode51AudioAtTheHighestBitrateThatRealMediaUsesForTheCodecWhenTheClientDeclaresThatCodec(
+          String scenario,
+          ClientCapabilityDeclaration declaration,
+          String expectedCodec,
+          long expectedBitrate) {
     var source = probe("h264", "dts", 6, 1_500_000L);
-    var clientOptions = options(List.of("h264"), List.of("aac"), 6);
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(clientOptions)
+                    .capabilityDeclaration(declaration)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
+    assertThat(decision.audioDecision().codec()).isEqualTo(expectedCodec);
+    assertThat(decision.audioDecision().channels()).isEqualTo(6);
+    assertThat(decision.audioDecision().bitrate()).isEqualTo(expectedBitrate);
+  }
+
+  static Stream<Arguments> fivePointOneEncodeBitrates() {
+    return Stream.of(
+        Arguments.of(
+            "E-AC-3 at 768 kb/s", declaringAudio(audio(AAC, 6), audio(EAC3, 6)), "eac3", 768_000L),
+        Arguments.of(
+            "AC-3 at 640 kb/s", declaringAudio(audio(AAC, 6), audio(AC3, 6)), "ac3", 640_000L),
+        Arguments.of("AAC at 384 kb/s", declaringAudio(audio(AAC, 6)), "aac", 384_000L));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @CsvSource({"AC3, 640000", "EAC3, 768000"})
+  @DisplayName(
+      "Should announce the codec's highest 5.1 bitrate when a copied 5.1 track has no probed"
+          + " bitrate")
+  void shouldAnnounceTheCodecsHighest51BitrateWhenACopied51TrackHasNoProbedBitrate(
+      AudioCodec codec, long expectedBitrate) {
+    var source =
+        probeBuilder("h264", codec.probedName())
+            .audioChannels(OptionalInt.of(6))
+            .audioBitrate(OptionalLong.empty())
+            .build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaringAudio(audio(AAC, 6), audio(codec, 6)))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
+    assertThat(decision.audioDecision().bitrate()).isEqualTo(expectedBitrate);
+  }
+
+  @Test
+  @DisplayName(
+      "Should announce at least E-AC-3's 5.1 bitrate when a copied 7.1 E-AC-3 track has no probed"
+          + " bitrate")
+  void shouldAnnounceAtLeastEac3s51BitrateWhenACopied71Eac3TrackHasNoProbedBitrate() {
+    var source =
+        probeBuilder("h264", "eac3")
+            .audioChannels(OptionalInt.of(8))
+            .audioBitrate(OptionalLong.empty())
+            .build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaringAudio(audio(AAC, 8), audio(EAC3, 8)))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
+    assertThat(decision.audioDecision().channels()).isEqualTo(8);
+    assertThat(decision.audioDecision().bitrate()).isEqualTo(768_000L);
+  }
+
+  @Test
+  @DisplayName("Should transcode to multichannel AAC when only AAC is supported")
+  void shouldTranscodeToMultichannelAacWhenOnlyAacIsSupported() {
+    var source = probe("h264", "dts", 6, 1_500_000L);
+    var declaration = declaringAudio(audio(AAC, 6));
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -1018,18 +1133,61 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.audioDecision().channels()).isEqualTo(6);
   }
 
-  @Test
-  @DisplayName("Should copy stereo AAC passthrough")
-  void shouldCopyStereoAacPassthrough() {
-    var source = probe("h264", "aac", 2, 128_000L);
-    var clientOptions = options(List.of("h264"), List.of("aac"), 2);
+  @ParameterizedTest(name = "{0} source channels")
+  @ValueSource(ints = {3, 4})
+  @DisplayName("Should encode stereo AAC when the source has more channels than the client plays")
+  void shouldEncodeStereoAacWhenTheSourceHasMoreChannelsThanTheClientPlays(int sourceChannels) {
+    var source = probe("h264", "aac", sourceChannels, 256_000L);
+    var declaration = declaringAudio(audio(AAC, 2));
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(clientOptions)
+                    .capabilityDeclaration(declaration)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
+    assertThat(decision.audioDecision().codec()).isEqualTo("aac");
+    assertThat(decision.audioDecision().channels()).isEqualTo(2);
+  }
+
+  @ParameterizedTest(name = "{0} source channels")
+  @ValueSource(ints = {3, 4, 5, 7})
+  @DisplayName("Should announce the source's channel count when the client plays every channel")
+  void shouldAnnounceTheSourcesChannelCountWhenTheClientPlaysEveryChannel(int sourceChannels) {
+    var source = probe("h264", "aac", sourceChannels, 256_000L);
+    var declaration = declaringAudio(audio(AAC, 8));
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaration)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
+    assertThat(decision.audioDecision().channels()).isEqualTo(sourceChannels);
+  }
+
+  @Test
+  @DisplayName("Should copy stereo AAC passthrough")
+  void shouldCopyStereoAacPassthrough() {
+    var source = probe("h264", "aac", 2, 128_000L);
+    var declaration = declaringAudio(audio(AAC, 2));
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -1040,50 +1198,239 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.audioDecision().channels()).isEqualTo(2);
   }
 
-  // --- Null-safe defaults ---
+  // --- Capability entries ---
 
   @Test
-  @DisplayName("Should use default audio codecs when client sends null")
-  void shouldUseDefaultAudioCodecsWhenClientSendsNull() {
-    var source = probe("h264", "aac");
-    var clientOptions =
-        StreamingOptions.builder()
-            .supportedCodecs(List.of("h264"))
-            .supportedAudioCodecs(null)
-            .maxAudioChannels(null)
+  @DisplayName(
+      "Should encode the video when the only entry for the source's codec family does not apply to HLS")
+  void shouldEncodeTheVideoWhenTheOnlyEntryForTheSourcesCodecFamilyDoesNotApplyToHls() {
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().hls(false).build(), av1EntryBuilder().build()))
             .build();
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
-                    .source(source)
-                    .clientOptions(clientOptions)
+                    .source(probe("h264", "aac"))
+                    .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
 
-    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
-    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
-    assertThat(decision.audioDecision().codec()).isEqualTo("aac");
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(decision.videoCodecFamily()).isEqualTo("av1");
   }
 
   @Test
-  @DisplayName("Should default to stereo when source audio channels are empty")
-  void shouldDefaultToStereoWhenSourceAudioChannelsAreEmpty() {
-    var source =
-        probeBuilder("h264", "aac")
-            .audioChannels(OptionalInt.empty())
-            .audioBitrate(OptionalLong.empty())
-            .build();
-    var clientOptions = options(List.of("h264"));
+  @DisplayName("Should encode the video when the probe named no video codec")
+  void shouldEncodeTheVideoWhenTheProbeNamedNoVideoCodec() {
+    var source = probeBuilder("h264", "aac").videoCodec(null).build();
 
     var decision =
         service
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
-                    .clientOptions(clientOptions)
+                    .capabilityDeclaration(declaring(H264))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+  }
+
+  @Test
+  @DisplayName("Should encode with no codec family when its entry does not apply to HLS")
+  void shouldEncodeWithNoCodecFamilyWhenItsEntryDoesNotApplyToHls() {
+    var declaration =
+        defaultDeclarationBuilder().video(List.of(h264EntryBuilder().hls(false).build())).build();
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(probe("hevc", "aac"))
+                .capabilityDeclaration(declaration)
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .build());
+
+    assertThat(decision).isEmpty();
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("entriesWithoutTheEncodeProfile")
+  @DisplayName(
+      "Should skip an encode codec when its entry does not list the encode's codec profile")
+  void shouldSkipAnEncodeCodecWhenItsEntryDoesNotListTheEncodesCodecProfile(
+      String skippedFamily, VideoCapabilityEntry withoutEncodeProfile, String expectedFamily) {
+    var otherEntry =
+        "av1".equals(skippedFamily) ? h264EntryBuilder().build() : av1EntryBuilder().build();
+    var declaration =
+        defaultDeclarationBuilder().video(List.of(withoutEncodeProfile, otherEntry)).build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(probe("hevc", "aac"))
+                    .capabilityDeclaration(declaration)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.videoCodecFamily()).isEqualTo(expectedFamily);
+  }
+
+  static Stream<Arguments> entriesWithoutTheEncodeProfile() {
+    return Stream.of(
+        Arguments.of(
+            "av1",
+            av1EntryBuilder()
+                .codecProfiles(
+                    List.of(
+                        VideoCodecProfileCapability.builder()
+                            .profile(VideoCodecProfile.AV1_HIGH)
+                            .maxLevel(51)
+                            .maxTier(Optional.of(VideoCodecTier.MAIN))
+                            .build()))
+                .build(),
+            "h264"),
+        Arguments.of(
+            "h264",
+            h264EntryBuilder()
+                .codecProfiles(
+                    List.of(
+                        VideoCodecProfileCapability.builder()
+                            .profile(VideoCodecProfile.H264_MAIN)
+                            .maxLevel(52)
+                            .build()))
+                .build(),
+            "av1"));
+  }
+
+  @Test
+  @DisplayName("Should encode a 5.1 Opus track when the client declares Opus at two channels")
+  void shouldEncodeA51OpusTrackWhenTheClientDeclaresOpusAtTwoChannels() {
+    var source = probe("h264", "opus", 6, 384_000L);
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaringAudio(audio(AAC, 2), audio(OPUS, 2)))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
+    assertThat(decision.audioDecision().codec()).isEqualTo("aac");
+    assertThat(decision.audioDecision().channels()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("Should encode the audio when its codec's only entry does not apply to HLS")
+  void shouldEncodeTheAudioWhenItsCodecsOnlyEntryDoesNotApplyToHls() {
+    var source = probe("h264", "ac3", 6, 384_000L);
+    var declaration =
+        declaringAudio(audio(AAC, 2), audioEntryBuilder(AC3).maxChannels(6).hls(false).build());
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaration)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
+    assertThat(decision.audioDecision().codec()).isEqualTo("aac");
+    assertThat(decision.audioDecision().channels()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName(
+      "Should copy the audio when any of several entries for its codec takes every channel")
+  void shouldCopyTheAudioWhenAnyOfSeveralEntriesForItsCodecTakesEveryChannel() {
+    var source = probe("h264", "eac3", 6, 640_000L);
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(
+                        declaringAudio(audio(AAC, 2), audio(EAC3, 6), audio(EAC3, 2)))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
+    assertThat(decision.audioDecision().channels()).isEqualTo(6);
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode multichannel audio with the next codec when the preferred codec's entry is stereo")
+  void shouldEncodeMultichannelAudioWithTheNextCodecWhenThePreferredCodecsEntryIsStereo() {
+    var source = probe("h264", "dts", 8, 1_500_000L);
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(
+                        declaringAudio(audio(AAC, 2), audio(EAC3, 2), audio(AC3, 6)))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
+    assertThat(decision.audioDecision().codec()).isEqualTo("ac3");
+    assertThat(decision.audioDecision().channels()).isEqualTo(6);
+  }
+
+  @Test
+  @DisplayName("Should encode mono AAC when the AAC entry accepts one channel")
+  void shouldEncodeMonoAacWhenTheAacEntryAcceptsOneChannel() {
+    var source = probe("h264", "dts", 6, 1_500_000L);
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaringAudio(audio(AAC, 1)))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.audioDecision().codec()).isEqualTo("aac");
+    assertThat(decision.audioDecision().channels()).isEqualTo(1);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("channelCountsThatAreNotKnown")
+  @DisplayName("Should default to stereo when the source reports no channel count")
+  void shouldDefaultToStereoWhenTheSourceReportsNoChannelCount(OptionalInt sourceChannels) {
+    var source =
+        probeBuilder("h264", "aac")
+            .audioChannels(sourceChannels)
+            .audioBitrate(OptionalLong.empty())
+            .build();
+    var declaration = declaring(H264);
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -1092,5 +1439,32 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
     assertThat(decision.audioDecision().channels()).isEqualTo(2);
     assertThat(decision.audioDecision().bitrate()).isEqualTo(128_000L);
+  }
+
+  static Stream<OptionalInt> channelCountsThatAreNotKnown() {
+    return Stream.of(OptionalInt.empty(), OptionalInt.of(0));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("channelCountsThatAreNotKnown")
+  @DisplayName(
+      "Should encode mono AAC when the source reports no channel count and the AAC entry accepts one channel")
+  void shouldEncodeMonoAacWhenTheSourceReportsNoChannelCountAndTheAacEntryAcceptsOneChannel(
+      OptionalInt sourceChannels) {
+    var source = probeBuilder("h264", "aac").audioChannels(sourceChannels).build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaringAudio(audio(AAC, 1)))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
+    assertThat(decision.audioDecision().codec()).isEqualTo("aac");
+    assertThat(decision.audioDecision().channels()).isEqualTo(1);
   }
 }

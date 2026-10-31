@@ -377,10 +377,7 @@ class PlaybackOfUnprobedFileIT extends AbstractProbeSchedulerIntegrationTest {
         createStreamSessionCommand(
             file.mediaFileId(),
             UUID.randomUUID(),
-            StreamingOptions.builder()
-                .quality(VideoQuality.AUTO)
-                .supportedCodecs(List.of("h264"))
-                .build());
+            StreamingOptions.builder().quality(VideoQuality.AUTO).build());
     return CompletableFuture.supplyAsync(() -> streamingService.createSession(command), viewers);
   }
 

@@ -1,7 +1,15 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.domain.streaming.ProbedCodecFamily.AV1;
+import static com.streamarr.server.domain.streaming.ProbedCodecFamily.H264;
+import static com.streamarr.server.domain.streaming.ProbedCodecFamily.HEVC;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.aacEntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.audioEntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.declarationBuilderFor;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
+import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommandBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
@@ -18,8 +26,10 @@ import static org.awaitility.Awaitility.await;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
+import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePosition;
@@ -28,6 +38,7 @@ import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -61,6 +72,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
@@ -176,6 +188,7 @@ class HlsStreamingServiceTest {
             .mediaFileId(seedMediaFile().getId())
             .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
             .options(defaultOptions())
+            .capabilityDeclaration(defaultDeclarationBuilder().build())
             .videoFormatConstraint(constraint)
             .build();
 
@@ -196,10 +209,12 @@ class HlsStreamingServiceTest {
   void shouldRejectAStreamSessionWhenNoVideoFormatIsEligible(int availableSlots) {
     transcodeExecutor.setAvailableSlots(availableSlots);
     var file = seedMediaFile();
-    var options = StreamingOptions.builder().supportedCodecs(List.of("vp9")).build();
+    var command =
+        createStreamSessionCommandBuilder(file.getId(), UUID.randomUUID())
+            .capabilityDeclaration(declarationBuilderFor(HEVC).build())
+            .build();
 
-    var outcome =
-        service.createSession(createStreamSessionCommand(file.getId(), UUID.randomUUID(), options));
+    var outcome = service.createSession(command);
 
     assertThat(outcome)
         .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
@@ -214,8 +229,7 @@ class HlsStreamingServiceTest {
   void shouldRejectTheStreamSessionWhenTheVideoMustBeEncodedAndTheProbeHasNoFrameRate(
       String audioCodec, VideoQuality quality, TranscodeMode encodingMode) {
     var probe = defaultProbeBuilder().videoCodec("hevc").audioCodec(audioCodec);
-    var options =
-        StreamingOptions.builder().quality(quality).supportedCodecs(List.of("h264")).build();
+    var options = StreamingOptions.builder().quality(quality).build();
     var file = seedMediaFile();
     var profileId = UUID.randomUUID();
     probeResults.setDefaultProbe(probe.framerate(OptionalDouble.of(23.976)).build());
@@ -248,8 +262,7 @@ class HlsStreamingServiceTest {
       int width, int height, VideoQuality quality) {
     probeResults.setDefaultProbe(
         defaultProbeBuilder().videoCodec("hevc").width(width).height(height).build());
-    var options =
-        StreamingOptions.builder().quality(quality).supportedCodecs(List.of("h264")).build();
+    var options = StreamingOptions.builder().quality(quality).build();
     var command = createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), options);
 
     assertThat(service.createSession(command))
@@ -265,11 +278,7 @@ class HlsStreamingServiceTest {
   void shouldPlanEvenOutputDimensionsWhenAFixedQualityEncodesAnOddCroppedPicture(
       ChromaSubsampling subsampling, int expectedWidth) {
     probeResults.setDefaultProbe(oddCroppedProbe(subsampling).build());
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.HIGH_720P)
-            .supportedCodecs(List.of("h264"))
-            .build();
+    var options = StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build();
 
     var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
     var playlist =
@@ -315,8 +324,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should reject an encode when the displayed height cannot contain a chroma sample")
   void shouldRejectAnEncodeWhenTheDisplayedHeightCannotContainAChromaSample(VideoQuality quality) {
     probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").height(1).build());
-    var options =
-        StreamingOptions.builder().quality(quality).supportedCodecs(List.of("h264")).build();
+    var options = StreamingOptions.builder().quality(quality).build();
     var command = createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), options);
 
     assertThat(service.createSession(command))
@@ -331,8 +339,7 @@ class HlsStreamingServiceTest {
   void shouldRejectAnEncodeWhenAPlannedOutputWidthRoundsToZero(VideoQuality quality, int height) {
     probeResults.setDefaultProbe(
         defaultProbeBuilder().videoCodec("hevc").width(1).height(height).build());
-    var options =
-        StreamingOptions.builder().quality(quality).supportedCodecs(List.of("h264")).build();
+    var options = StreamingOptions.builder().quality(quality).build();
     var command = createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), options);
 
     assertThat(service.createSession(command))
@@ -346,11 +353,7 @@ class HlsStreamingServiceTest {
   void shouldEncodeANarrowPictureWhenItsPlannedOutputHasPositiveDimensions() {
     probeResults.setDefaultProbe(
         defaultProbeBuilder().videoCodec("hevc").width(1).height(1080).build());
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.HIGH_720P)
-            .supportedCodecs(List.of("h264"))
-            .build();
+    var options = StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build();
 
     var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
     var playlist =
@@ -371,9 +374,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should preserve odd displayed dimensions when the source video is copied")
   void shouldPreserveOddDisplayedDimensionsWhenTheSourceVideoIsCopied() {
     probeResults.setDefaultProbe(oddCroppedProbe(ChromaSubsampling.CHROMA_444).build());
-    var options = StreamingOptions.builder().supportedCodecs(List.of("hevc")).build();
-
-    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+    var session = createSession(seedMediaFile().getId(), declarationBuilderFor(HEVC).build());
     var playlist =
         new HlsPlaylistService(StreamingProperties.builder().build())
             .generateMultivariantPlaylist(session, "test-token");
@@ -731,11 +732,7 @@ class HlsStreamingServiceTest {
         logicalPlayback()
             .start(
                 logicalStart()
-                    .options(
-                        StreamingOptions.builder()
-                            .quality(VideoQuality.ORIGINAL)
-                            .supportedCodecs(List.of("h264"))
-                            .build())
+                    .options(StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build())
                     .build());
 
     assertThat(result)
@@ -748,7 +745,7 @@ class HlsStreamingServiceTest {
   void shouldExcludeAFailedEncodedFamilyWhenTheClientReportsAFormatFailure() {
     probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("vp9").build());
     var playback = logicalPlayback();
-    var command = logicalStart().options(av1AndH264AutoOptions()).build();
+    var command = logicalStart().capabilityDeclaration(av1AndH264Declaration()).build();
     var initial = accepted(playback.start(command));
     assertThat(initial.currentFormatAttempt())
         .isInstanceOfSatisfying(
@@ -790,21 +787,16 @@ class HlsStreamingServiceTest {
     return StartPlaybackSessionCommand.builder()
         .mediaFileId(seedMediaFile().getId())
         .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
-        .options(defaultOptions());
+        .options(defaultOptions())
+        .capabilityDeclaration(defaultDeclarationBuilder().build());
   }
 
   private StreamingOptions defaultOptions() {
-    return StreamingOptions.builder()
-        .quality(VideoQuality.AUTO)
-        .supportedCodecs(List.of("h264"))
-        .build();
+    return StreamingOptions.builder().quality(VideoQuality.AUTO).build();
   }
 
-  private static StreamingOptions av1AndH264AutoOptions() {
-    return StreamingOptions.builder()
-        .quality(VideoQuality.AUTO)
-        .supportedCodecs(List.of("av1", "h264"))
-        .build();
+  private static ClientCapabilityDeclaration av1AndH264Declaration() {
+    return declarationBuilderFor(AV1, H264).build();
   }
 
   private MediaFile seedMediaFile() {
@@ -821,6 +813,14 @@ class HlsStreamingServiceTest {
   private StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
     return accepted(
         service.createSession(createStreamSessionCommand(mediaFileId, profileId, options)));
+  }
+
+  private StreamSession createSession(UUID mediaFileId, ClientCapabilityDeclaration declaration) {
+    return accepted(
+        service.createSession(
+            createStreamSessionCommandBuilder(mediaFileId, UUID.randomUUID())
+                .capabilityDeclaration(declaration)
+                .build()));
   }
 
   private Optional<StreamSession> accessSession(StreamSession session) {
@@ -901,13 +901,7 @@ class HlsStreamingServiceTest {
         defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).videoCodec("hevc").build());
     transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("h264"));
     var file = seedMediaFile();
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.AUTO)
-            .supportedCodecs(List.of("av1", "h264"))
-            .build();
-
-    var session = createSession(file.getId(), UUID.randomUUID(), options);
+    var session = createSession(file.getId(), av1AndH264Declaration());
 
     assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo("h264");
     assertThat(transcodeExecutor.getStartedRequests())
@@ -928,14 +922,13 @@ class HlsStreamingServiceTest {
     transcodeExecutor.setEncodableVideoCodecFamilies(
         Stream.of(encodableFamilies.split(",")).collect(Collectors.toSet()));
     var file = seedMediaFile();
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.HIGH_720P)
-            .supportedCodecs(List.of("av1"))
+    var command =
+        createStreamSessionCommandBuilder(file.getId(), UUID.randomUUID())
+            .options(StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build())
+            .capabilityDeclaration(declarationBuilderFor(AV1).build())
             .build();
 
-    var outcome =
-        service.createSession(createStreamSessionCommand(file.getId(), UUID.randomUUID(), options));
+    var outcome = service.createSession(command);
 
     assertThat(outcome)
         .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
@@ -958,7 +951,7 @@ class HlsStreamingServiceTest {
             .build());
     var file = seedMediaFile();
 
-    var session = createSession(file.getId(), UUID.randomUUID(), av1AndH264AutoOptions());
+    var session = createSession(file.getId(), av1AndH264Declaration());
 
     assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo("av1");
     assertThat(session.getVariants()).hasSize(4);
@@ -982,7 +975,7 @@ class HlsStreamingServiceTest {
             .build());
     var file = seedMediaFile();
 
-    var session = createSession(file.getId(), UUID.randomUUID(), av1AndH264AutoOptions());
+    var session = createSession(file.getId(), av1AndH264Declaration());
 
     assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo("h264");
     assertThat(session.getVariants()).hasSizeGreaterThan(1);
@@ -1001,11 +994,7 @@ class HlsStreamingServiceTest {
     probeResults.setDefaultProbe(
         defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).videoCodec("hevc").build());
     var file = seedMediaFile();
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.HIGH_720P)
-            .supportedCodecs(List.of("h264"))
-            .build();
+    var options = StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build();
 
     var outcome =
         service.createSession(createStreamSessionCommand(file.getId(), UUID.randomUUID(), options));
@@ -1022,14 +1011,10 @@ class HlsStreamingServiceTest {
   void shouldDownmixStereoAudioToMonoWhenTheClientSupportsOnlyOneChannel() {
     probeResults.setDefaultProbe(defaultProbeBuilder().audioChannels(OptionalInt.of(2)).build());
     var file = seedMediaFile();
-    var options =
-        StreamingOptions.builder()
-            .supportedCodecs(List.of("av1"))
-            .supportedAudioCodecs(List.of("aac"))
-            .maxAudioChannels(1)
-            .build();
+    var declaration =
+        declarationBuilderFor(AV1).audio(List.of(aacEntryBuilder().maxChannels(1).build())).build();
 
-    var session = createSession(file.getId(), UUID.randomUUID(), options);
+    var session = createSession(file.getId(), declaration);
 
     assertThat(session.getTranscodeDecision().transcodeMode())
         .isEqualTo(TranscodeMode.FULL_TRANSCODE);
@@ -1038,6 +1023,79 @@ class HlsStreamingServiceTest {
     assertThat(audio.codec()).isEqualTo("aac");
     assertThat(audio.channels()).isEqualTo(1);
     assertThat(audio.bitrate()).isEqualTo(64_000L);
+  }
+
+  @Test
+  @DisplayName("Should encode E-AC-3 as 5.1 when the source and the client have more channels")
+  void shouldEncodeEac3As51WhenTheSourceAndTheClientHaveMoreChannels() {
+    probeResults.setDefaultOutcome(
+        ProbeFixture.completeProbe(
+            defaultProbeBuilder().audioCodec("dts").audioChannels(OptionalInt.of(8)).build()));
+    var file = seedMediaFile();
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(
+                List.of(
+                    aacEntryBuilder().build(),
+                    audioEntryBuilder(AudioCodec.EAC3).maxChannels(8).build()))
+            .build();
+
+    var session = createSession(file.getId(), declaration);
+    var playlist =
+        new HlsPlaylistService(StreamingProperties.builder().build())
+            .generateMultivariantPlaylist(session, "token");
+
+    var decision = session.getTranscodeDecision().audioDecision();
+    assertThat(decision.codec()).isEqualTo("eac3");
+    assertThat(decision.channels()).isEqualTo(6);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .isNotEmpty()
+        .allSatisfy(
+            request -> assertThat(request.transcodeDecision().audioDecision()).isEqualTo(decision));
+    assertThat(playlist).contains("CHANNELS=\"6\"");
+  }
+
+  @ParameterizedTest(name = "{0} source channels")
+  @ValueSource(ints = {3, 4})
+  @DisplayName(
+      "Should encode the audio to stereo when the source has more channels than the client plays")
+  void shouldEncodeTheAudioToStereoWhenTheSourceHasMoreChannelsThanTheClientPlays(
+      int sourceChannels) {
+    probeResults.setDefaultOutcome(
+        ProbeFixture.completeProbe(
+            defaultProbeBuilder().audioChannels(OptionalInt.of(sourceChannels)).build()));
+    var file = seedMediaFile();
+    var session = createSession(file.getId(), defaultDeclarationBuilder().build());
+    var playlist =
+        new HlsPlaylistService(StreamingProperties.builder().build())
+            .generateMultivariantPlaylist(session, "token");
+
+    var decision = session.getTranscodeDecision().audioDecision();
+    assertThat(decision.mode()).isEqualTo(AudioMode.TRANSCODE);
+    assertThat(decision.channels()).isEqualTo(2);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .isNotEmpty()
+        .allSatisfy(
+            request -> assertThat(request.transcodeDecision().audioDecision()).isEqualTo(decision));
+    assertThat(playlist).contains("CHANNELS=\"2\"");
+  }
+
+  @Test
+  @DisplayName(
+      "Should announce stereo for a copied audio track when the probe reports zero channels")
+  void shouldAnnounceStereoForACopiedAudioTrackWhenTheProbeReportsZeroChannels() {
+    probeResults.setDefaultOutcome(
+        ProbeFixture.completeProbe(defaultProbeBuilder().audioChannels(OptionalInt.of(0)).build()));
+    var file = seedMediaFile();
+    var session = createSession(file.getId(), defaultDeclarationBuilder().build());
+    var playlist =
+        new HlsPlaylistService(StreamingProperties.builder().build())
+            .generateMultivariantPlaylist(session, "token");
+
+    var decision = session.getTranscodeDecision().audioDecision();
+    assertThat(decision.mode()).isEqualTo(AudioMode.COPY);
+    assertThat(decision.channels()).isEqualTo(2);
+    assertThat(playlist).contains("CHANNELS=\"2\"").doesNotContain("CHANNELS=\"0\"");
   }
 
   @ParameterizedTest(name = "{0} → {1}, encodeVideo={2}")
@@ -1090,13 +1148,16 @@ class HlsStreamingServiceTest {
             .streamTitlesOmitted(probe.streamTitlesOmitted())
             .build());
     var file = seedMediaFile();
-    var options =
-        StreamingOptions.builder()
-            .supportedCodecs(List.of("h264"))
-            .supportedAudioCodecs(List.of(sourceAudioCodec))
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(
+                List.of(
+                    aacEntryBuilder().build(),
+                    audioEntryBuilder(AudioCodec.valueOf(sourceAudioCodec.toUpperCase(Locale.ROOT)))
+                        .build()))
             .build();
 
-    var session = createSession(file.getId(), UUID.randomUUID(), options);
+    var session = createSession(file.getId(), declaration);
     var playlist =
         new HlsPlaylistService(StreamingProperties.builder().build())
             .generateMultivariantPlaylist(session, "token");
@@ -1139,7 +1200,7 @@ class HlsStreamingServiceTest {
             .chosenVideoStream(probe.chosenVideoStream())
             .build());
     var file = seedMediaFile();
-    var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
+    var options = StreamingOptions.builder().build();
 
     var session = createSession(file.getId(), UUID.randomUUID(), options);
     var playlist =
@@ -1185,14 +1246,16 @@ class HlsStreamingServiceTest {
             .streamTitlesOmitted(probe.streamTitlesOmitted())
             .build());
     var file = seedMediaFile();
-    var options =
-        StreamingOptions.builder()
-            .supportedCodecs(List.of("h264"))
-            .supportedAudioCodecs(List.of("ac3", "eac3"))
-            .maxAudioChannels(6)
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(
+                List.of(
+                    aacEntryBuilder().build(),
+                    audioEntryBuilder(AudioCodec.AC3).maxChannels(6).build(),
+                    audioEntryBuilder(AudioCodec.EAC3).maxChannels(6).build()))
             .build();
 
-    var session = createSession(file.getId(), UUID.randomUUID(), options);
+    var session = createSession(file.getId(), declaration);
     var playlist =
         new HlsPlaylistService(StreamingProperties.builder().build())
             .generateMultivariantPlaylist(session, "token");
@@ -1213,9 +1276,10 @@ class HlsStreamingServiceTest {
         defaultProbeBuilder().videoCodec("hevc").framerate(OptionalDouble.of(frameRate)).build());
     transcodeExecutor.setEncodableVideoCodecFamilies(Set.of(videoCodecFamily));
     var file = seedMediaFile();
-    var options = StreamingOptions.builder().supportedCodecs(List.of(videoCodecFamily)).build();
+    var declaration =
+        declarationBuilderFor(ProbedCodecFamily.fromProbedName(videoCodecFamily)).build();
 
-    var session = createSession(file.getId(), UUID.randomUUID(), options);
+    var session = createSession(file.getId(), declaration);
     var playlist =
         new HlsPlaylistService(StreamingProperties.builder().build())
             .generateMultivariantPlaylist(session, "token")
@@ -1495,11 +1559,7 @@ class HlsStreamingServiceTest {
     probeResults.setDefaultProbe(
         defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).videoCodec("hevc").build());
 
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.FULL_HD_1080P)
-            .supportedCodecs(List.of("h264"))
-            .build();
+    var options = StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P).build();
 
     for (int i = 0; i < 3; i++) {
       var file = seedMediaFile();
@@ -1523,11 +1583,7 @@ class HlsStreamingServiceTest {
     probeResults.setDefaultProbe(
         defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).videoCodec("hevc").build());
 
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.FULL_HD_1080P)
-            .supportedCodecs(List.of("h264"))
-            .build();
+    var options = StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P).build();
 
     var sessions = new ArrayList<StreamSession>();
     for (int i = 0; i < 3; i++) {
@@ -1550,11 +1606,7 @@ class HlsStreamingServiceTest {
     probeResults.setDefaultProbe(
         defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).videoCodec("hevc").build());
 
-    var transcodeOptions =
-        StreamingOptions.builder()
-            .quality(VideoQuality.FULL_HD_1080P)
-            .supportedCodecs(List.of("h264"))
-            .build();
+    var transcodeOptions = StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P).build();
 
     for (int i = 0; i < 3; i++) {
       var file = seedMediaFile();
@@ -1564,7 +1616,7 @@ class HlsStreamingServiceTest {
     probeResults.setDefaultProbe(
         defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).build());
 
-    var remuxOptions = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
+    var remuxOptions = StreamingOptions.builder().build();
     var file = seedMediaFile();
 
     var session = createSession(file.getId(), UUID.randomUUID(), remuxOptions);
@@ -1582,7 +1634,8 @@ class HlsStreamingServiceTest {
             .streamSessionId(UUID.randomUUID())
             .mediaFileId(file.getId())
             .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
-            .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
+            .options(StreamingOptions.builder().build())
+            .capabilityDeclaration(defaultDeclarationBuilder().build())
             .build();
 
     assertThat(service.createSession(command))
@@ -1604,7 +1657,7 @@ class HlsStreamingServiceTest {
             .build());
 
     var file = seedMediaFile();
-    var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
+    var options = StreamingOptions.builder().build();
 
     var session = createSession(file.getId(), UUID.randomUUID(), options);
 
@@ -1770,11 +1823,7 @@ class HlsStreamingServiceTest {
     service = serviceWith(transcodeExecutor, detachedRegistry);
     probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
     transcodeExecutor.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(libx264()));
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.HIGH_720P)
-            .supportedCodecs(List.of("h264"))
-            .build();
+    var options = StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build();
     var command = createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), options);
 
     var created = accepted(service.createSession(command));
@@ -1880,11 +1929,7 @@ class HlsStreamingServiceTest {
             .build());
 
     var file = seedMediaFile();
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.HIGH_720P)
-            .supportedCodecs(List.of("h264"))
-            .build();
+    var options = StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build();
 
     var session = createSession(file.getId(), UUID.randomUUID(), options);
 
@@ -2173,10 +2218,7 @@ class HlsStreamingServiceTest {
         defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).videoCodec("hevc").build());
 
     var singleVariantOptions =
-        StreamingOptions.builder()
-            .quality(VideoQuality.FULL_HD_1080P)
-            .supportedCodecs(List.of("h264"))
-            .build();
+        StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P).build();
 
     for (int i = 0; i < 3; i++) {
       var file = seedMediaFile();

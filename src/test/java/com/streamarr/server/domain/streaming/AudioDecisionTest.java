@@ -1,6 +1,7 @@
 package com.streamarr.server.domain.streaming;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Optional;
@@ -21,11 +22,28 @@ class AudioDecisionTest {
     assertThat(AudioDecision.normalizeChannels(sourceChannels)).isEqualTo(expected);
   }
 
-  @ParameterizedTest(name = "channels={0} → bitrate={1}")
-  @DisplayName("Should calculate bitrate when channel count given")
-  @CsvSource({"1, 64000", "2, 128000", "6, 384000", "8, 512000"})
-  void shouldCalculateBitrateWhenChannelCountGiven(int channels, long expectedBitrate) {
-    assertThat(AudioDecision.bitrateForChannels(channels)).isEqualTo(expectedBitrate);
+  @ParameterizedTest(name = "{0} at channels={1} → bitrate={2}")
+  @DisplayName("Should calculate bitrate when codec and channel count given")
+  @CsvSource({
+    "aac, 1, 64000",
+    "aac, 2, 128000",
+    "aac, 6, 384000",
+    "aac, 8, 512000",
+    "ac3, 6, 640000",
+    "eac3, 6, 768000",
+    "eac3, 8, 768000"
+  })
+  void shouldCalculateBitrateWhenCodecAndChannelCountGiven(
+      String codec, int channels, long expectedBitrate) {
+    assertThat(AudioDecision.bitrateFor(codec, channels)).isEqualTo(expectedBitrate);
+  }
+
+  @Test
+  @DisplayName("Should reject a bitrate lookup when the codec is missing")
+  void shouldRejectABitrateLookupWhenTheCodecIsMissing() {
+    assertThatNullPointerException()
+        .isThrownBy(() -> AudioDecision.bitrateFor(null, 6))
+        .withMessageContaining("codec");
   }
 
   @Test

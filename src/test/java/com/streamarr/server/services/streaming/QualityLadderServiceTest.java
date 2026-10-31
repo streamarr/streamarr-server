@@ -37,7 +37,7 @@ class QualityLadderServiceTest {
   @DisplayName("Should generate all tiers when source is 1080p")
   void shouldGenerateAllTiersWhenSourceIs1080p() {
     var probe = buildProbe(1920, 1080, 8_000_000L);
-    var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
+    var options = StreamingOptions.builder().build();
 
     var variants = service.generateVariants(probe, options);
 
@@ -52,7 +52,7 @@ class QualityLadderServiceTest {
   @DisplayName("Should cap at 720p when source is below 1080p")
   void shouldCapAt720pWhenSourceIsBelow1080p() {
     var probe = buildProbe(1280, 720, 4_000_000L);
-    var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
+    var options = StreamingOptions.builder().build();
 
     var variants = service.generateVariants(probe, options);
 
@@ -66,8 +66,7 @@ class QualityLadderServiceTest {
   @DisplayName("Should filter tiers when client specifies max height")
   void shouldFilterTiersWhenClientSpecifiesMaxHeight() {
     var probe = buildProbe(1920, 1080, 8_000_000L);
-    var options =
-        StreamingOptions.builder().maxHeight(480).supportedCodecs(List.of("h264")).build();
+    var options = StreamingOptions.builder().maxHeight(480).build();
 
     var variants = service.generateVariants(probe, options);
 
@@ -80,7 +79,7 @@ class QualityLadderServiceTest {
   @DisplayName("Should return single variant when source resolution is low")
   void shouldReturnSingleVariantWhenSourceResolutionIsLow() {
     var probe = buildProbe(320, 180, 500_000L);
-    var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
+    var options = StreamingOptions.builder().build();
 
     var variants = service.generateVariants(probe, options);
 
@@ -113,7 +112,7 @@ class QualityLadderServiceTest {
                                     .build()))
                         .build()))
             .build();
-    var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
+    var options = StreamingOptions.builder().build();
 
     assertThat(service.generateVariants(probe, options))
         .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::label)
@@ -124,8 +123,7 @@ class QualityLadderServiceTest {
   @DisplayName("Should filter tiers when client specifies max bitrate")
   void shouldFilterTiersWhenClientSpecifiesMaxBitrate() {
     var probe = buildProbe(1920, 1080, 8_000_000L);
-    var options =
-        StreamingOptions.builder().maxBitrate(2_000_000).supportedCodecs(List.of("h264")).build();
+    var options = StreamingOptions.builder().maxBitrate(2_000_000).build();
 
     var variants = service.generateVariants(probe, options);
 
@@ -138,7 +136,7 @@ class QualityLadderServiceTest {
   @DisplayName("Should generate correct bitrates when source is 1080p")
   void shouldGenerateCorrectBitratesWhenSourceIs1080p() {
     var probe = buildProbe(1920, 1080, 8_000_000L);
-    var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
+    var options = StreamingOptions.builder().build();
 
     var variants = service.generateVariants(probe, options);
 
@@ -155,7 +153,7 @@ class QualityLadderServiceTest {
   void shouldComputeAspectRatioCorrectDimensionsWhenGeneratingVariantsForEachQualityTier(
       String scenario, int sourceWidth, int sourceHeight, List<Integer> expectedWidths) {
     var probe = buildProbe(sourceWidth, sourceHeight, 8_000_000L);
-    var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
+    var options = StreamingOptions.builder().build();
 
     var variants = service.generateVariants(probe, options);
 
@@ -191,7 +189,7 @@ class QualityLadderServiceTest {
                         .rotationDegrees(OptionalInt.of(-90))
                         .build()))
             .build();
-    var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
+    var options = StreamingOptions.builder().build();
 
     var variants = service.generateVariants(probe, options);
 
@@ -212,7 +210,7 @@ class QualityLadderServiceTest {
                             Optional.of(ContainerCropping.builder().top(140).bottom(140).build()))
                         .build()))
             .build();
-    var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
+    var options = StreamingOptions.builder().build();
 
     var variants = service.generateVariants(probe, options);
 
@@ -225,7 +223,7 @@ class QualityLadderServiceTest {
   @DisplayName("Should align width to even number when source resolution is below all tiers")
   void shouldAlignWidthToEvenNumberWhenSourceResolutionIsBelowAllTiers() {
     var probe = buildProbe(319, 179, 500_000L);
-    var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
+    var options = StreamingOptions.builder().build();
 
     var variants = service.generateVariants(probe, options);
 

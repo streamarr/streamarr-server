@@ -23,4 +23,22 @@ public sealed interface CreateStreamSessionError extends MutationError {
   record MediaFileHasNoVideoError(String message) implements CreateStreamSessionError {}
 
   record MediaFileFrameRateUnknownError(String message) implements CreateStreamSessionError {}
+
+  record CapabilityValuesRequiredError(String message, List<String> inputPath)
+      implements CreateStreamSessionError, InputMutationError {}
+
+  record HlsAacCapabilityRequiredError(String message, List<String> inputPath)
+      implements CreateStreamSessionError, InputMutationError {}
+
+  record CapabilityListTooLongError(String message, List<String> inputPath, int maximum)
+      implements CreateStreamSessionError, InputMutationError {}
+
+  record CapabilityMaximumInvalidError(String message, List<String> inputPath)
+      implements CreateStreamSessionError, InputMutationError {}
+
+  record CapabilityProfileMismatchError(String message, List<String> inputPath)
+      implements CreateStreamSessionError, InputMutationError {}
+
+  record VideoCodecTierInvalidError(String message, List<String> inputPath)
+      implements CreateStreamSessionError, InputMutationError {}
 }

@@ -11,14 +11,12 @@ enum TranscodeMode {
     FULL_TRANSCODE
 }
 
+"The viewer's playback choices. What the client can play belongs in the client capability declaration."
 input StreamingOptionsInput {
     quality: VideoQuality
     maxWidth: Int
     maxHeight: Int
     maxBitrate: Int
-    supportedCodecs: [String!]
-    supportedAudioCodecs: [String!]
-    maxAudioChannels: Int
     audioLanguage: String
     subtitleLanguage: String
 }
