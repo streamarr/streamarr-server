@@ -36,9 +36,9 @@ final class VideoCopyBandwidth {
    * container bitrate, which holds that track, bounds the copy from below.
    */
   static long averageBandwidth(@NonNull MediaProbe source, @NonNull AudioDecision audio) {
-    var measuredVideo = averageSegmentBitRate(source, copiedStreamIndex(source));
-    if (measuredVideo.isPresent()) {
-      return saturatedSum(measuredVideo.getAsLong(), measuredAudioBitrate(source, audio));
+    var measuredCost = measuredCost(source, audio);
+    if (measuredCost.isPresent()) {
+      return measuredCost.getAsLong();
     }
 
     var copiesAudio = audio.mode() == AudioMode.COPY;
@@ -60,22 +60,44 @@ final class VideoCopyBandwidth {
    * bitrate.
    */
   static boolean isKnown(@NonNull MediaProbe source) {
-    return averageSegmentBitRate(source, copiedStreamIndex(source)).isPresent()
+    return measuredVideoBitRate(source).isPresent()
         || copiedStreamBitrate(source).isPresent()
         || source.bitrate() > 0;
   }
 
   /**
-   * A copied audio track's average segment bit rate. The copy carries the source's first audio
-   * stream, which a measurement always holds.
+   * The measured video's average plus the session's audio, or empty when the server measured
+   * neither the copied video nor, for a copied audio track, that track. The copy carries the
+   * source's first audio stream.
    */
-  private static long measuredAudioBitrate(MediaProbe source, AudioDecision audio) {
+  private static OptionalLong measuredCost(MediaProbe source, AudioDecision audio) {
+    var video = measuredVideoBitRate(source);
+    if (video.isEmpty()) {
+      return OptionalLong.empty();
+    }
+
     if (audio.mode() != AudioMode.COPY) {
-      return audio.bitrate();
+      return OptionalLong.of(saturatedSum(video.getAsLong(), audio.bitrate()));
     }
 
     var copiedAudio = source.audioStreams().stream().findFirst().map(StreamInfo::index);
-    return averageSegmentBitRate(source, copiedAudio).orElse(audio.bitrate());
+    var audioBitRate = averageSegmentBitRate(source, copiedAudio);
+    if (audioBitRate.isEmpty()) {
+      return OptionalLong.empty();
+    }
+
+    return OptionalLong.of(saturatedSum(video.getAsLong(), audioBitRate.getAsLong()));
+  }
+
+  /** The copied video's average segment bit rate, when the server measured bytes of it. */
+  private static OptionalLong measuredVideoBitRate(MediaProbe source) {
+    var streamIndex = copiedStreamIndex(source);
+    var hasBytes =
+        streamIndex
+            .flatMap(index -> source.streamMeasurements().flatMap(m -> m.stream(index)))
+            .filter(stream -> stream.measuredBytes() > 0)
+            .isPresent();
+    return hasBytes ? averageSegmentBitRate(source, streamIndex) : OptionalLong.empty();
   }
 
   /**
@@ -93,7 +115,10 @@ final class VideoCopyBandwidth {
     }
 
     var bits = BigInteger.valueOf(measured.get().measuredBytes()).shiftLeft(3);
-    var nanos = BigInteger.valueOf(duration.toNanos());
+    var nanos =
+        BigInteger.valueOf(duration.getSeconds())
+            .multiply(NANOS_PER_SECOND)
+            .add(BigInteger.valueOf(duration.getNano()));
     var bitRate = ceilDiv(bits.multiply(NANOS_PER_SECOND), nanos);
     return OptionalLong.of(bitRate.min(BigInteger.valueOf(Long.MAX_VALUE)).longValueExact());
   }
