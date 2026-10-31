@@ -1196,6 +1196,66 @@ class HlsStreamingServiceTest {
     assertThat(playlist).contains("BANDWIDTH=6000000,AVERAGE-BANDWIDTH=5000000,");
   }
 
+  // A copy of 4.5 Mb/s video beside a copied 384 kb/s AAC 5.1 track costs 4,884 kb/s. The player
+  // declares E-AC-3 5.1, so the server would encode the track as E-AC-3, but the copied codec's own
+  // 320 kb/s 5.1 step comes first and keeps surround beside the video copy. Below 4,820 kb/s the
+  // copy takes AAC stereo.
+  @ParameterizedTest
+  @CsvSource({
+    "4884000, REMUX, COPY, 6, 384000",
+    "4883999, AUDIO_TRANSCODE, TRANSCODE, 6, 320000",
+    "4819999, AUDIO_TRANSCODE, TRANSCODE, 2, 128000"
+  })
+  @DisplayName(
+      "Should keep surround in the copied codec beside a video copy when the copied audio leaves"
+          + " the copy over the maximum bitrate")
+  void
+      shouldKeepSurroundInTheCopiedCodecBesideAVideoCopyWhenTheCopiedAudioLeavesTheCopyOverTheMaximumBitrate(
+          int maxBitrate,
+          TranscodeMode expectedMode,
+          AudioMode expectedAudioMode,
+          int expectedChannels,
+          long expectedBitrate) {
+    var probe = defaultProbeBuilder().bitrate(5_000_000L);
+    var streams =
+        List.of(
+            ProbeFixture.videoStreamBuilder(probe.build())
+                .bitrate(OptionalLong.of(4_500_000L))
+                .build(),
+            ProbeFixture.audioStreamBuilder("aac")
+                .index(1)
+                .channels(OptionalInt.of(6))
+                .bitrate(OptionalLong.of(384_000L))
+                .build());
+    probeResults.setDefaultOutcome(ProbeFixture.completeProbe(probe.streams(streams).build()));
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(
+                List.of(
+                    aacEntryBuilder().maxChannels(6).build(),
+                    audioEntryBuilder(AudioCodec.EAC3).maxChannels(6).build()))
+            .build();
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(maxBitrate).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                    .options(options)
+                    .capabilityDeclaration(declaration)
+                    .build()));
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(expectedMode);
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(
+            AudioDecision::mode,
+            AudioDecision::codec,
+            AudioDecision::channels,
+            AudioDecision::bitrate)
+        .containsExactly(expectedAudioMode, "aac", expectedChannels, expectedBitrate);
+  }
+
   // A 5 Mb/s source whose probe knows no bitrate for its video stream, beside a copyable stereo
   // AAC track.
   private StreamSession createCopySessionWithCopiedStereoAac(
