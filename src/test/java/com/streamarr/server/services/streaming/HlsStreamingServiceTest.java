@@ -57,6 +57,7 @@ import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.exceptions.TranscodeException;
@@ -3372,14 +3373,7 @@ class HlsStreamingServiceTest {
   void
       shouldEncodeAv1AfterStoppingALeftVariantOnTheOnlyWorkerThatEncodesAv1InHardwareWhenTheOnlyH264WorkerIsBusy()
           throws Exception {
-    var hardwareAv1 = new ExecutionTargetId("hardware-av1");
-    var softwareH264 = new ExecutionTargetId("software-h264");
-    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("h264", "av1"));
-    transcodeExecutor.setExecutionTargets(List.of(hardwareAv1, softwareH264));
-    transcodeExecutor.setTargetEncoders(hardwareAv1, List.of(av1Nvenc()));
-    transcodeExecutor.setTargetEncoders(softwareH264, List.of(libx264()));
-    transcodeExecutor.limitJobSlots(hardwareAv1, 2);
-    transcodeExecutor.limitJobSlots(softwareH264, 1);
+    useAnAv1WorkerWithTwoSlotsAndAnH264WorkerWithOne(av1Nvenc());
     probeResults.setDefaultProbe(
         defaultProbeBuilder()
             .framerate(OptionalDouble.of(23.976))
@@ -3457,6 +3451,19 @@ class HlsStreamingServiceTest {
     assertThat(service.createSession(createStreamSessionCommand(abrFileId, profileId, abrOptions)))
         .isEqualTo(
             Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+  }
+
+  // One worker encodes only AV1 with the given encoder and has two job slots; another encodes only
+  // H.264 in software and has one.
+  private void useAnAv1WorkerWithTwoSlotsAndAnH264WorkerWithOne(WorkerVerifiedEncoder av1Encoder) {
+    var av1Worker = new ExecutionTargetId("av1-worker");
+    var h264Worker = new ExecutionTargetId("h264-worker");
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("h264", "av1"));
+    transcodeExecutor.setExecutionTargets(List.of(av1Worker, h264Worker));
+    transcodeExecutor.setTargetEncoders(av1Worker, List.of(av1Encoder));
+    transcodeExecutor.setTargetEncoders(h264Worker, List.of(libx264()));
+    transcodeExecutor.limitJobSlots(av1Worker, 2);
+    transcodeExecutor.limitJobSlots(h264Worker, 1);
   }
 
   // The player plays 480p, then asks for 1080p, whose start the session awaits while it keeps 480p
