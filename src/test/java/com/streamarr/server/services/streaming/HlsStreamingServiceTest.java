@@ -3302,20 +3302,7 @@ class HlsStreamingServiceTest {
             .build());
     var switching = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
     var switchingId = switching.getSessionId();
-    upload(switchingId, "480p", "480p/segment0.m4s");
-    assertThat(coordinator.deliver(switchingId, "480p", "480p/segment0.m4s"))
-        .isInstanceOf(SegmentDelivery.Ready.class);
-    var looks = transcodeExecutor.livenessChecks(switchingId, "1080p");
-    var switched =
-        CompletableFuture.supplyAsync(
-            () -> coordinator.deliver(switchingId, "1080p", "1080p/segment1.m4s"));
-    transcodeExecutor.awaitLivenessCheckCount(switchingId, "1080p", looks + 1);
-    var switchingMutex = sessionMutex.getMutex(switchingId);
-    await()
-        .pollDelay(Duration.ZERO)
-        .pollInterval(Duration.ofMillis(1))
-        .atMost(Duration.ofSeconds(5))
-        .until(() -> !switchingMutex.isLocked());
+    var switched = switchFrom480pTo1080pKeeping480pAsTheLeftVariant(switchingId);
     var other = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
     assertThat(switching.getVariantHandles()).containsOnlyKeys("480p", "1080p");
 
@@ -3348,20 +3335,7 @@ class HlsStreamingServiceTest {
             .build());
     var switching = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
     var switchingId = switching.getSessionId();
-    upload(switchingId, "480p", "480p/segment0.m4s");
-    assertThat(coordinator.deliver(switchingId, "480p", "480p/segment0.m4s"))
-        .isInstanceOf(SegmentDelivery.Ready.class);
-    var looks = transcodeExecutor.livenessChecks(switchingId, "1080p");
-    var switched =
-        CompletableFuture.supplyAsync(
-            () -> coordinator.deliver(switchingId, "1080p", "1080p/segment1.m4s"));
-    transcodeExecutor.awaitLivenessCheckCount(switchingId, "1080p", looks + 1);
-    var switchingMutex = sessionMutex.getMutex(switchingId);
-    await()
-        .pollDelay(Duration.ZERO)
-        .pollInterval(Duration.ofMillis(1))
-        .atMost(Duration.ofSeconds(5))
-        .until(() -> !switchingMutex.isLocked());
+    var switched = switchFrom480pTo1080pKeeping480pAsTheLeftVariant(switchingId);
     assertThat(switching.getVariantHandles()).containsOnlyKeys("480p", "1080p");
     assertThat(transcodeExecutor.encodableVideoCodecFamilies()).isEmpty();
 
@@ -3384,20 +3358,7 @@ class HlsStreamingServiceTest {
     transcodeExecutor.setEncodeSlots(Map.of("h264", 2));
     var switching = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
     var switchingId = switching.getSessionId();
-    upload(switchingId, "480p", "480p/segment0.m4s");
-    assertThat(coordinator.deliver(switchingId, "480p", "480p/segment0.m4s"))
-        .isInstanceOf(SegmentDelivery.Ready.class);
-    var looks = transcodeExecutor.livenessChecks(switchingId, "1080p");
-    var switched =
-        CompletableFuture.supplyAsync(
-            () -> coordinator.deliver(switchingId, "1080p", "1080p/segment1.m4s"));
-    transcodeExecutor.awaitLivenessCheckCount(switchingId, "1080p", looks + 1);
-    var switchingMutex = sessionMutex.getMutex(switchingId);
-    await()
-        .pollDelay(Duration.ZERO)
-        .pollInterval(Duration.ofMillis(1))
-        .atMost(Duration.ofSeconds(5))
-        .until(() -> !switchingMutex.isLocked());
+    var switched = switchFrom480pTo1080pKeeping480pAsTheLeftVariant(switchingId);
     assertThat(transcodeExecutor.encodableVideoCodecFamilies()).isEmpty();
     probeResults.setDefaultProbe(probe.framerate(OptionalDouble.empty()).build());
 
@@ -3436,6 +3397,27 @@ class HlsStreamingServiceTest {
     assertThat(service.createSession(createStreamSessionCommand(abrFileId, profileId, abrOptions)))
         .isEqualTo(
             Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+  }
+
+  // The player plays 480p, then asks for 1080p, whose start the session awaits while it keeps 480p
+  // as its left variant. The returned delivery completes once 1080p stores its segment.
+  private CompletableFuture<SegmentDelivery> switchFrom480pTo1080pKeeping480pAsTheLeftVariant(
+      UUID sessionId) {
+    upload(sessionId, "480p", "480p/segment0.m4s");
+    assertThat(coordinator.deliver(sessionId, "480p", "480p/segment0.m4s"))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+    var looks = transcodeExecutor.livenessChecks(sessionId, "1080p");
+    var switched =
+        CompletableFuture.supplyAsync(
+            () -> coordinator.deliver(sessionId, "1080p", "1080p/segment1.m4s"));
+    transcodeExecutor.awaitLivenessCheckCount(sessionId, "1080p", looks + 1);
+    var sessionMutexLock = sessionMutex.getMutex(sessionId);
+    await()
+        .pollDelay(Duration.ZERO)
+        .pollInterval(Duration.ofMillis(1))
+        .atMost(Duration.ofSeconds(5))
+        .until(() -> !sessionMutexLock.isLocked());
+    return switched;
   }
 
   // Stores the segment, then wakes the requests held on its variant, as a worker's upload does.
