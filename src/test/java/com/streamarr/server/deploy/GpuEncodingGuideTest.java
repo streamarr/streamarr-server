@@ -77,6 +77,33 @@ class GpuEncodingGuideTest {
                 String.join(",", NVENC_DRIVER_CAPABILITIES)));
   }
 
+  @Test
+  @DisplayName("Should replace GPU worker pods one at a time when no spare GPU is free")
+  void shouldReplaceGpuWorkerPodsOneAtATimeWhenNoSpareGpuIsFree() throws IOException {
+    var patch = asMap(new Yaml().load(listing("kubernetes-nvidia-gpu")));
+
+    assertThat(asMap(asMap(asMap(patch.get("spec")).get("strategy")).get("rollingUpdate")))
+        .containsEntry("maxSurge", 0)
+        .containsEntry("maxUnavailable", 1);
+  }
+
+  @Test
+  @DisplayName("Should load the worker image pin in every Compose command of the GPU section")
+  void shouldLoadTheWorkerImagePinInEveryComposeCommandOfTheGpuSection() throws IOException {
+    var lines = Files.readAllLines(GUIDE);
+    var start = lines.indexOf("== GPU encoding");
+    var end = lines.indexOf("== Validate the mesh");
+    var composeCommands =
+        lines.subList(start, end).stream()
+            .filter(line -> line.contains("docker compose "))
+            .toList();
+
+    assertThat(composeCommands)
+        .isNotEmpty()
+        .allSatisfy(
+            line -> assertThat(line).contains("--env-file worker-image.env --env-file .env"));
+  }
+
   // The body of the guide's listing block declared as [source#<id>,<language>].
   private static String listing(String id) throws IOException {
     var lines = Files.readAllLines(GUIDE);

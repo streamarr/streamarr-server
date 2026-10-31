@@ -322,6 +322,10 @@ kind: Deployment
 metadata:
   name: streamarr-transcode-worker
 spec:
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   template:
     spec:
       containers:
@@ -345,6 +349,8 @@ kubectl -n streamarr patch deployment streamarr-transcode-worker \
 
 The patch adds the variable to the worker's existing environment and keeps its CPU request.
 Each worker pod then needs a free GPU on its node.
+The patch also makes a rollout stop one worker pod before starting its replacement.
+Kubernetes' default rollout starts the replacement first, and that pod cannot be scheduled until a spare GPU is free.
 
 === Confirm GPU encoding
 
@@ -352,7 +358,7 @@ At startup, the worker encodes one test frame with each hardware encoder and log
 
 [source,bash]
 ----
-docker compose logs transcode-worker | grep 'FFmpeg capabilities:'
+docker compose --env-file worker-image.env --env-file .env logs transcode-worker | grep 'FFmpeg capabilities:'
 ----
 
 On a working GPU, `GPU=true` and `encoders` lists the NVENC encoders.
@@ -369,7 +375,7 @@ An encoder that the GPU lacks fails the test encode, and that codec stays on its
 In the example, the GPU has no AV1 encoder, so AV1 stays on libsvtav1.
 The worker runs the test encodes again only when it restarts.
 
-If the line shows `GPU=false`, run `nvidia-smi` in the worker container, for example `docker compose exec transcode-worker nvidia-smi`.
+If the line shows `GPU=false`, run `nvidia-smi` in the worker container, for example `docker compose --env-file worker-image.env --env-file .env exec transcode-worker nvidia-smi`.
 If that command fails, the container has no GPU. Check the toolkit setup and the reservation.
 If it lists the GPU, check that the request includes the `video` capability.
 
