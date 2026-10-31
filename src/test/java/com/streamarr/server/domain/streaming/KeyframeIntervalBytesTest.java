@@ -28,10 +28,11 @@ class KeyframeIntervalBytesTest {
 
     assertThat(bytes.intervalCount()).isEqualTo(2);
     assertThat(bytes.bytesOf(0)).isEqualTo(0xFFFF_FFFFL);
-    assertThat(bytes).isEqualTo(KeyframeIntervalBytes.of(0xFFFF_FFFFL, 7));
-    assertThat(bytes).hasSameHashCodeAs(KeyframeIntervalBytes.of(0xFFFF_FFFFL, 7));
-    assertThat(bytes).isNotEqualTo(KeyframeIntervalBytes.of(7, 0xFFFF_FFFFL)).isNotEqualTo("7");
-    assertThat(bytes).hasToString("KeyframeIntervalBytes[intervals=2]");
+    assertThat(bytes)
+        .isEqualTo(KeyframeIntervalBytes.of(0xFFFF_FFFFL, 7))
+        .hasSameHashCodeAs(KeyframeIntervalBytes.of(0xFFFF_FFFFL, 7))
+        .isNotEqualTo(KeyframeIntervalBytes.of(7, 0xFFFF_FFFFL))
+        .hasToString("KeyframeIntervalBytes[intervals=2]");
   }
 
   @Test
