@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
@@ -134,6 +135,42 @@ class ViewerLimitsTest {
     var audio = limits.audioStepBesideCopyOf(source, steps);
 
     assertThat(audio.map(AudioDecision::bitrate).orElse(-1L)).isEqualTo(expectedBitrate);
+  }
+
+  // A probe without playback facts names no copied stream, so the container bitrate stands in for
+  // the video.
+  @ParameterizedTest
+  @CsvSource({"4000000, true", "3999999, false"})
+  @DisplayName(
+      "Should check a copy against the container bitrate when the probe names no copied video"
+          + " stream")
+  void shouldCheckACopyAgainstTheContainerBitrateWhenTheProbeNamesNoCopiedVideoStream(
+      int maxBitrate, boolean allowed) {
+    var limits =
+        ViewerLimits.of(
+            StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(maxBitrate).build());
+    var source =
+        defaultProbeBuilder().bitrate(4_000_000L).videoPlaybackFacts(Optional.empty()).build();
+
+    assertThat(limits.audioStepBesideCopyOf(source, COPIED_AAC_ONLY).isPresent())
+        .isEqualTo(allowed);
+  }
+
+  @Test
+  @DisplayName("Should refuse to check a copy when the source or the audio steps are missing")
+  void shouldRefuseToCheckACopyWhenTheSourceOrTheAudioStepsAreMissing() {
+    var limits = ViewerLimits.none();
+    var source = defaultProbeBuilder().build();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> limits.allowsCopyPictureOf(null))
+        .withMessageContaining("source");
+    assertThatNullPointerException()
+        .isThrownBy(() -> limits.audioStepBesideCopyOf(null, COPIED_AAC_ONLY))
+        .withMessageContaining("source");
+    assertThatNullPointerException()
+        .isThrownBy(() -> limits.audioStepBesideCopyOf(source, null))
+        .withMessageContaining("steps");
   }
 
   @Test
