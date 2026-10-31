@@ -1,5 +1,6 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
@@ -26,6 +27,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class FakeTranscodeExecutor implements TranscodeExecutor {
 
@@ -494,19 +496,45 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     return Set.copyOf(encodeSlotsByVideoCodecFamily.keySet());
   }
 
+  /**
+   * A family whose encoders some targets advertise is encodable only while one of those targets has
+   * a free job slot, so the encoders of one target share its job slots.
+   */
   @Override
   public Set<String> encodableVideoCodecFamilies() {
     return encodeSlotsByVideoCodecFamily.entrySet().stream()
         .filter(entry -> entry.getValue() > 0)
         .map(Map.Entry::getKey)
+        .filter(family -> !advertisedOnlyByFullTargets(family))
         .collect(Collectors.toUnmodifiableSet());
+  }
+
+  private boolean advertisedOnlyByFullTargets(String family) {
+    var advertising =
+        encodersByTarget.entrySet().stream()
+            .filter(entry -> entry.getValue().containsKey(family))
+            .map(Map.Entry::getKey)
+            .toList();
+    return !advertising.isEmpty()
+        && advertising.stream().allMatch(target -> freeJobSlotsOn(target) <= 0);
   }
 
   @Override
   public Set<String> hardwareEncodableVideoCodecFamilies() {
-    return hardwareEncodableVideoCodecFamilies.stream()
-        .filter(encodableVideoCodecFamilies()::contains)
+    var encodable = encodableVideoCodecFamilies();
+    return Stream.concat(hardwareEncodableVideoCodecFamilies.stream(), advertisedHardwareFamilies())
+        .filter(encodable::contains)
         .collect(Collectors.toUnmodifiableSet());
+  }
+
+  // The families of the hardware encoders that targets with a free job slot advertise.
+  private Stream<String> advertisedHardwareFamilies() {
+    return encodersByTarget.entrySet().stream()
+        .filter(entry -> freeJobSlotsOn(entry.getKey()) > 0)
+        .flatMap(entry -> entry.getValue().values().stream())
+        .map(WorkerVerifiedEncoder::backend)
+        .filter(backend -> backend.kind() == EncoderBackend.Kind.HARDWARE)
+        .map(EncoderBackend::codecFamily);
   }
 
   /** Each listed family that has a free encode slot is encoded in hardware. */
