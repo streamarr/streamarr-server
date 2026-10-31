@@ -1618,15 +1618,18 @@ message MeasuredStream {
 // probe.
 message StreamMeasurements {
   StreamMeasurementSource source = 1;
-  // Each stream appears at most once. The list holds the chosen video stream.
+  // Each stream appears at most once. The list holds the chosen video stream
+  // and every audio stream. It may leave out another video stream, such as an
+  // attached picture.
   repeated MeasuredStream streams = 2;
 }
 
 // This message contains one measured stream's bytes in consecutive keyframe
 // intervals from one probe attempt. A long source has too many intervals for
 // one session message, so the worker splits each stream's intervals into
-// parts. A part holds at most 4,096 entries, so it stays below 128 KiB. The
-// parts of one attempt hold at most 8,388,608 entries in all. The worker sends
+// parts. A part holds at least 1 and at most 4,096 entries, so it stays below
+// 128 KiB. The parts of one attempt hold at most 8,388,608 entries in all and
+// name at most 1,024 streams. The worker sends
 // each stream's parts in interval order, before the attempt's
 // ProbeAttemptResult. The parts of different streams may interleave. The
 // worker sends parts only when the result reports StreamMeasurements. The

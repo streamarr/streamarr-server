@@ -35,6 +35,7 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
   private static final int VIDEO = 0;
   private static final int AUDIO = 1;
   private static final int SUBTITLE = 2;
+  private static final int COVER_ART = 3;
 
   @Test
   @DisplayName("Should report no measurement when the worker measured no stream")
@@ -50,16 +51,28 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
 
   @Test
   @DisplayName(
-      "Should keep only the chosen video stream's measurement when the worker measured no audio")
-  void shouldKeepOnlyChosenVideoStreamsMeasurementWhenWorkerMeasuredNoAudio() {
-    var report = report(measurements(video(30)), List.of(intervals(VIDEO, 10, 20)));
+      "Should accept a measurement without another video stream when it covers the chosen video"
+          + " stream and every audio stream")
+  void shouldAcceptMeasurementWithoutAnotherVideoStreamWhenItCoversChosenVideoAndEveryAudio() {
+    var report =
+        new ProbeAttemptReport(
+            result(
+                media()
+                    .addStreams(
+                        ProbeStreamInfo.newBuilder().setIndex(COVER_ART).setCodecType("video"))
+                    .setKeyframes(knownKeyframes())
+                    .setStreamMeasurements(measurements(video(30), audio(3)))),
+            List.of(keyframePart()),
+            List.of(intervals(VIDEO, 10, 20), intervals(AUDIO, 1, 2)));
 
     var outcome = (ProbeOutcome.Success) new RemoteProbeResultMapper().map(report);
 
     var measured = outcome.streamMeasurements().orElseThrow();
-    assertThat(measured.stream(AUDIO)).isEmpty();
+    assertThat(measured.stream(COVER_ART)).isEmpty();
     assertThat(measured.stream(VIDEO).orElseThrow().keyframeIntervalBytes())
         .isEqualTo(KeyframeIntervalBytes.of(10, 20));
+    assertThat(measured.stream(AUDIO).orElseThrow().keyframeIntervalBytes())
+        .isEqualTo(KeyframeIntervalBytes.of(1, 2));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -99,6 +112,10 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
             "no chosen video stream",
             report(measurements(audio(3)), List.of(intervals(AUDIO, 1, 2))),
             "Worker probe measurement leaves out the chosen video stream"),
+        arguments(
+            "an audio stream left out",
+            report(measurements(video(30)), List.of(intervals(VIDEO, 10, 20))),
+            "Worker probe measurement leaves out an audio stream"),
         arguments(
             "intervals of an unmeasured stream",
             report(measurements(video(30)), bothIntervals),

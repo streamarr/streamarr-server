@@ -84,6 +84,9 @@ class WorkerSessionGrpcServiceTest {
   private static final int MAXIMUM_ENTRIES_PER_PART = 4_096;
   // worker_session.proto bounds the measurement parts of one probe attempt to 8,388,608 entries.
   private static final int MAXIMUM_MEASUREMENT_ENTRIES_PER_PROBE = 8_388_608;
+  // worker_session.proto bounds the streams that the measurement parts of one attempt name to
+  // 1,024.
+  private static final int MAXIMUM_MEASURED_STREAMS_PER_PROBE = 1_024;
   private static final String ENCODER_BACKEND_MISMATCH_METRIC =
       "streamarr.streaming.encoder_backend_mismatches";
   private static final String UNKNOWN_JOB_ATTEMPT_REPORTS_METRIC =
@@ -354,6 +357,35 @@ class WorkerSessionGrpcServiceTest {
     }
 
     probe.send(measurementPart(probe, 1, 1));
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
+
+    assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
+        .isInstanceOf(ExecutionException.class)
+        .hasCauseInstanceOf(ProbeContractViolationException.class);
+  }
+
+  @Test
+  @DisplayName("Should fail a probe when a measurement part holds no entries")
+  void shouldFailProbeWhenMeasurementPartHoldsNoEntries() throws Exception {
+    var probe = SessionProbe.dispatch();
+
+    probe.send(measurementPart(probe, 0));
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
+
+    assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
+        .isInstanceOf(ExecutionException.class)
+        .hasCauseInstanceOf(ProbeContractViolationException.class);
+  }
+
+  @Test
+  @DisplayName("Should fail a probe when measurement parts name more streams than one probe allows")
+  void shouldFailProbeWhenMeasurementPartsNameMoreStreamsThanOneProbeAllows() throws Exception {
+    var probe = SessionProbe.dispatch();
+
+    for (var streamIndex = 0; streamIndex <= MAXIMUM_MEASURED_STREAMS_PER_PROBE; streamIndex++) {
+      probe.send(measurementPart(probe, streamIndex, 1));
+    }
+
     probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
 
     assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))

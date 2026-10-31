@@ -8,12 +8,14 @@ import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.transcode.v1.MeasuredStreamOrBuilder;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
+import com.streamarr.transcode.v1.ProbeStreamInfo;
 import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
 import com.streamarr.transcode.v1.StreamMeasurementsOrBuilder;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -31,6 +33,7 @@ final class RemoteStreamMeasurementsMapper {
     }
 
     var reported = media.getStreamMeasurements();
+    var source = source(reported);
     var partsByStream =
         parts.stream()
             .collect(
@@ -55,7 +58,11 @@ final class RemoteStreamMeasurementsMapper {
       throw violation("Worker probe sent keyframe interval bytes for a stream it did not measure");
     }
 
-    return Optional.of(new StreamMeasurements(source(reported), streams));
+    if (!measuredIndexes.containsAll(audioStreamIndexes(media))) {
+      throw violation("Worker probe measurement leaves out an audio stream");
+    }
+
+    return Optional.of(new StreamMeasurements(source, streams));
   }
 
   private static MeasuredStream measuredStream(
@@ -100,6 +107,13 @@ final class RemoteStreamMeasurementsMapper {
         .measuredDuration(stream.getMeasuredDuration())
         .keyframeIntervalBytes(KeyframeIntervalBytes.ofUnsigned(intervals))
         .build();
+  }
+
+  private static Set<Integer> audioStreamIndexes(ProbeMediaInfo media) {
+    return media.getStreamsList().stream()
+        .filter(stream -> "audio".equals(stream.getCodecType()))
+        .map(ProbeStreamInfo::getIndex)
+        .collect(Collectors.toSet());
   }
 
   private static boolean isVideoOrAudioStream(ProbeMediaInfo media, int streamIndex) {

@@ -15,6 +15,8 @@ final class ReceivedStreamMeasurementParts {
   private static final int MAXIMUM_ENTRIES_PER_PART = 4_096;
   // worker_session.proto bounds the entries across the parts of one attempt to this many.
   private static final int MAXIMUM_ENTRIES_PER_PROBE = 8_388_608;
+  // worker_session.proto bounds the streams that the parts of one attempt name to this many.
+  private static final int MAXIMUM_STREAMS_PER_PROBE = 1_024;
 
   private final Map<Integer, ProbeStreamMeasurementPart.Builder> received = new LinkedHashMap<>();
   private int entries;
@@ -26,8 +28,11 @@ final class ReceivedStreamMeasurementParts {
     }
 
     var partEntries = part.getKeyframeIntervalBytesCount();
-    if (partEntries > MAXIMUM_ENTRIES_PER_PART
-        || entries + partEntries > MAXIMUM_ENTRIES_PER_PROBE) {
+    var namesNewStream = !received.containsKey(part.getStreamIndex());
+    if (partEntries == 0
+        || partEntries > MAXIMUM_ENTRIES_PER_PART
+        || entries + partEntries > MAXIMUM_ENTRIES_PER_PROBE
+        || (namesNewStream && received.size() == MAXIMUM_STREAMS_PER_PROBE)) {
       violatesContract = true;
       received.clear();
       return;
