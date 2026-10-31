@@ -810,7 +810,7 @@ class HlsStreamingServiceTest {
 
   // A stereo DTS source encodes 128 kb/s AAC, and a 7.1 one 768 kb/s E-AC-3 5.1. 720p's 3 Mb/s
   // fits 3.1 Mb/s only without audio, and 480p's 1.5 Mb/s fits 2 Mb/s only beside less than 500
-  // kb/s.
+  // kb/s, so at 2 Mb/s E-AC-3 5.1 steps to 448 kb/s. At 1.8 Mb/s only a stereo step would fit it.
   static Stream<TiersBesideEncodedAudio> audioEncodesAndTheTiersTheyLeave() {
     var stereo = TiersBesideEncodedAudio.builder().sourceChannels(2).audioBitrate(128_000L);
     var surround = TiersBesideEncodedAudio.builder().sourceChannels(8).audioBitrate(768_000L);
@@ -818,7 +818,11 @@ class HlsStreamingServiceTest {
         stereo.maxBitrate(3_100_000).labels(List.of("480p", "360p")).build(),
         stereo.maxBitrate(1_800_000).labels(List.of("480p", "360p")).build(),
         surround.maxBitrate(1_800_000).labels(List.of("360p")).build(),
-        surround.maxBitrate(2_000_000).labels(List.of("360p")).build());
+        surround
+            .maxBitrate(2_000_000)
+            .audioBitrate(448_000L)
+            .labels(List.of("480p", "360p"))
+            .build());
   }
 
   @Builder
@@ -929,6 +933,70 @@ class HlsStreamingServiceTest {
               assertThat(request.bitrate()).isEqualTo(expectedVideoBitrate);
             });
     assertThat(averageBandwidths(playlist)).containsExactly(expectedVideoBitrate + 64_000L);
+  }
+
+  // E-AC-3 5.1 at 768 kb/s leaves room for the 360p tier at each maximum. A lower multichannel step
+  // is taken only when it lets a higher top tier fit, and then the first step that does.
+  @ParameterizedTest
+  @CsvSource({
+    "2000000, 448000, '480p, 360p'",
+    "3500000, 448000, '720p, 480p, 360p'",
+    "4000000, 768000, '720p, 480p, 360p'"
+  })
+  @DisplayName(
+      "Should lower the multichannel audio only when a lower step lets a higher top tier fit in"
+          + " Auto")
+  void shouldLowerTheMultichannelAudioOnlyWhenALowerStepLetsAHigherTopTierFitInAuto(
+      int maxBitrate, long expectedAudioBitrate, String expectedLabels) {
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(maxBitrate).build();
+
+    var session = createDtsSession(8, options);
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
+        .containsExactly("eac3", 6, expectedAudioBitrate);
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label)
+        .containsExactlyInAnyOrder(expectedLabels.split(", "));
+    assertThat(averageBandwidths(playlist))
+        .isNotEmpty()
+        .allSatisfy(bandwidth -> assertThat(bandwidth).isLessThanOrEqualTo(maxBitrate));
+  }
+
+  // A fixed 720p quality's variant reaches its full 3,000 kb/s beside E-AC-3 5.1 at 448 kb/s under
+  // 3,500 kb/s. Under 3,000 kb/s no multichannel step gives a fixed 1080p quality its full 5,000.
+  @ParameterizedTest
+  @CsvSource({
+    "HIGH_720P, 3500000, 448000, 1280, 720, 3000000",
+    "FULL_HD_1080P, 3000000, 768000, 1920, 1080, 2232000"
+  })
+  @DisplayName(
+      "Should lower the multichannel audio only when a lower step gives a fixed quality's variant"
+          + " its full bitrate")
+  void shouldLowerTheMultichannelAudioOnlyWhenALowerStepGivesAFixedQualitysVariantItsFullBitrate(
+      VideoQuality quality,
+      int maxBitrate,
+      long expectedAudioBitrate,
+      int expectedWidth,
+      int expectedHeight,
+      long expectedVideoBitrate) {
+    var options = StreamingOptions.builder().quality(quality).maxBitrate(maxBitrate).build();
+
+    var session = createDtsSession(8, options);
+
+    assertThat(session.getTranscodeDecision().audioDecision().bitrate())
+        .isEqualTo(expectedAudioBitrate);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(expectedWidth);
+              assertThat(request.height()).isEqualTo(expectedHeight);
+              assertThat(request.bitrate()).isEqualTo(expectedVideoBitrate);
+            });
   }
 
   // A fixed 720p quality at 1,200 kb/s leaves 432 kb/s beside 768 kb/s E-AC-3 5.1. At 384 kb/s the
