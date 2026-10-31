@@ -21,7 +21,8 @@ public sealed interface ProbeOutcome {
 
   /**
    * A successful probe. {@code chosenVideoStream} is empty for a probe version that names no chosen
-   * video stream, before version 4.
+   * video stream, before version 4. {@code streamMeasurements} is empty when no step measured the
+   * file's streams.
    */
   @Builder
   record Success(
@@ -29,7 +30,8 @@ public sealed interface ProbeOutcome {
       @NonNull List<StreamInfo> streams,
       @NonNull KeyframeKnowledge keyframes,
       @NonNull Optional<ChosenVideoStream> chosenVideoStream,
-      @NonNull Optional<Boolean> streamTitlesOmitted)
+      @NonNull Optional<Boolean> streamTitlesOmitted,
+      @NonNull Optional<StreamMeasurements> streamMeasurements)
       implements ProbeOutcome {
 
     public Success {
@@ -42,6 +44,16 @@ public sealed interface ProbeOutcome {
         @NonNull List<StreamInfo> streams,
         @NonNull KeyframeKnowledge keyframes) {
       this(container, streams, keyframes, Optional.empty(), Optional.empty());
+    }
+
+    /** An outcome without a measurement of its streams. */
+    public Success(
+        @NonNull ProbeContainer container,
+        @NonNull List<StreamInfo> streams,
+        @NonNull KeyframeKnowledge keyframes,
+        @NonNull Optional<ChosenVideoStream> chosenVideoStream,
+        @NonNull Optional<Boolean> streamTitlesOmitted) {
+      this(container, streams, keyframes, chosenVideoStream, streamTitlesOmitted, Optional.empty());
     }
 
     public MediaProbe mediaProbe() {
@@ -60,6 +72,7 @@ public sealed interface ProbeOutcome {
           .audioBitrate(audio.map(StreamInfo::bitrate).orElse(OptionalLong.empty()))
           .streams(streams)
           .keyframes(keyframes)
+          .streamMeasurements(streamMeasurements)
           .videoPlaybackFacts(
               chosenVideoStream.map(
                   chosen ->
@@ -111,6 +124,7 @@ public sealed interface ProbeOutcome {
     public static class SuccessBuilder {
       private Optional<ChosenVideoStream> chosenVideoStream = Optional.empty();
       private Optional<Boolean> streamTitlesOmitted = Optional.empty();
+      private Optional<StreamMeasurements> streamMeasurements = Optional.empty();
     }
   }
 }

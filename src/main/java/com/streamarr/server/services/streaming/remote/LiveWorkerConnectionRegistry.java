@@ -27,6 +27,7 @@ import com.streamarr.transcode.v1.ProbeCapacityChanged;
 import com.streamarr.transcode.v1.ProbeFailure;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeRequest;
+import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.StartProbeCommand;
 import com.streamarr.transcode.v1.StartVariantCommand;
@@ -346,6 +347,13 @@ final class LiveWorkerConnectionRegistry {
     }
 
     return true;
+  }
+
+  boolean acceptStreamMeasurementPart(
+      UUID workerId, UUID workerSessionId, ProbeStreamMeasurementPart part) {
+    return currentConnection(workerId, workerSessionId)
+        .map(connection -> connection.acceptStreamMeasurementPart(part))
+        .orElse(false);
   }
 
   boolean acceptKeyframePositionsPart(
@@ -754,7 +762,8 @@ final class LiveWorkerConnectionRegistry {
               request,
               new CompletableFuture<>(),
               new CompletableFuture<>(),
-              new ReceivedKeyframePositionsParts());
+              new ReceivedKeyframePositionsParts(),
+              new ReceivedStreamMeasurementParts());
       if (pendingProbes.putIfAbsent(attemptId, pending.result()) != null) {
         return new ProbeDispatch.Refused(ProbeRefusal.ATTEMPT_IN_PROGRESS);
       }
@@ -900,9 +909,32 @@ final class LiveWorkerConnectionRegistry {
         return false;
       }
 
+      if (pending.streamMeasurementParts().violatesContract()) {
+        pending
+            .result()
+            .completeExceptionally(
+                new ProbeContractViolationException(
+                    "Worker probe sent stream measurement parts that break the contract"));
+        return false;
+      }
+
       pending
           .result()
-          .complete(new ProbeAttemptReport(result, pending.keyframePositionsParts().parts()));
+          .complete(
+              new ProbeAttemptReport(
+                  result,
+                  pending.keyframePositionsParts().parts(),
+                  pending.streamMeasurementParts().parts()));
+      return true;
+    }
+
+    private boolean acceptStreamMeasurementPart(ProbeStreamMeasurementPart part) {
+      var pending = activeProbes.get(fromProto(part.getProbeAttemptId()));
+      if (pending == null) {
+        return false;
+      }
+
+      pending.streamMeasurementParts().add(part);
       return true;
     }
 
@@ -1286,6 +1318,7 @@ final class LiveWorkerConnectionRegistry {
         ProbeRequest request,
         CompletableFuture<ProbeAttemptReport> result,
         CompletableFuture<Void> terminated,
-        ReceivedKeyframePositionsParts keyframePositionsParts) {}
+        ReceivedKeyframePositionsParts keyframePositionsParts,
+        ReceivedStreamMeasurementParts streamMeasurementParts) {}
   }
 }

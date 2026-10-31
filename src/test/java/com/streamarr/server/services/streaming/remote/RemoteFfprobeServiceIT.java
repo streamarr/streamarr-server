@@ -15,6 +15,7 @@ import com.streamarr.server.domain.streaming.ChosenVideoStream;
 import com.streamarr.server.domain.streaming.ChromaticityCoordinates;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.ContentLightLevel;
+import com.streamarr.server.domain.streaming.KeyframeIntervalBytes;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MasteringDisplayColorVolume;
 import com.streamarr.server.domain.streaming.ProbeError;
@@ -35,6 +36,7 @@ import com.streamarr.server.fixtures.WorkerProbeResultFixture;
 import com.streamarr.server.support.BoundedTask;
 import com.streamarr.transcode.v1.KeyframePositionSource;
 import com.streamarr.transcode.v1.KeyframePositions;
+import com.streamarr.transcode.v1.MeasuredStream;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeChapter;
@@ -45,6 +47,9 @@ import com.streamarr.transcode.v1.ProbeKeyframes;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
+import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
+import com.streamarr.transcode.v1.StreamMeasurementSource;
+import com.streamarr.transcode.v1.StreamMeasurements;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
 import io.grpc.Status;
@@ -353,6 +358,107 @@ class RemoteFfprobeServiceIT {
         }
       }
     }
+  }
+
+  // The contract and the domain share these type names.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @Test
+  @DisplayName(
+      "Should return each stream's measurement when the worker measures the streams beside the"
+          + " keyframe positions")
+  void shouldReturnEachStreamsMeasurementWhenTheWorkerMeasuresTheStreamsBesideTheKeyframePositions()
+      throws Exception {
+    try (var server = server()) {
+      server.start();
+      try (var worker = worker(server.port(), ProbeVersion.CURRENT)) {
+        var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
+        var request = request().probeVersion(ProbeVersion.CURRENT).build();
+        try (var probe = BoundedTask.start(() -> service.probe(request))) {
+          var dispatched = worker.nextResponse().getStartProbe().getRequest();
+          worker.sendKeyframePositionsPart(
+              ProbeKeyframePositionsPart.newBuilder()
+                  .setProbeAttemptId(dispatched.getProbeAttemptId())
+                  .addAllPresentationTimeDeltas(List.of(0L, 90_000L))
+                  .addAllDecodeTimeDeltas(List.of(0L, 90_000L))
+                  .build());
+          worker.sendStreamMeasurementPart(
+              measurementPart(dispatched, 0).addKeyframeIntervalBytes(700).build());
+          worker.sendStreamMeasurementPart(
+              measurementPart(dispatched, 1).addKeyframeIntervalBytes(40).build());
+          worker.sendStreamMeasurementPart(
+              measurementPart(dispatched, 0).addKeyframeIntervalBytes(-1).build());
+          worker.sendStreamMeasurementPart(
+              measurementPart(dispatched, 1).addKeyframeIntervalBytes(60).build());
+          worker.reply(
+              answer(dispatched)
+                  .setMedia(
+                      WorkerProbeResultFixture.version4MediaBuilder()
+                          .addStreams(
+                              ProbeStreamInfo.newBuilder().setIndex(1).setCodecType("audio"))
+                          .setKeyframes(
+                              ProbeKeyframes.newBuilder()
+                                  .setPositions(
+                                      KeyframePositions.newBuilder()
+                                          .setStreamIndex(0)
+                                          .setTimeBaseNumerator(1)
+                                          .setTimeBaseDenominator(90_000)
+                                          .setSource(
+                                              KeyframePositionSource
+                                                  .KEYFRAME_POSITION_SOURCE_CONTAINER_INDEX)
+                                          .setKeyframeCount(2)))
+                          .setStreamMeasurements(
+                              StreamMeasurements.newBuilder()
+                                  .setSource(
+                                      StreamMeasurementSource
+                                          .STREAM_MEASUREMENT_SOURCE_SAMPLE_TABLE)
+                                  .addStreams(
+                                      MeasuredStream.newBuilder()
+                                          .setStreamIndex(0)
+                                          .setMeasuredBytes(700L + 0xFFFF_FFFFL)
+                                          .setPacketCount(48)
+                                          .setTimeBaseNumerator(1)
+                                          .setTimeBaseDenominator(12_288)
+                                          .setMeasuredDuration(24_576))
+                                  .addStreams(
+                                      MeasuredStream.newBuilder()
+                                          .setStreamIndex(1)
+                                          .setMeasuredBytes(100)
+                                          .setPacketCount(94)
+                                          .setTimeBaseNumerator(1)
+                                          .setTimeBaseDenominator(48_000)
+                                          .setMeasuredDuration(96_000))))
+                  .build());
+
+          var outcome = probe.await(Duration.ofSeconds(5));
+
+          assertThat(outcome).isInstanceOf(ProbeOutcome.Success.class);
+          var measurements = ((ProbeOutcome.Success) outcome).streamMeasurements().orElseThrow();
+          assertThat(measurements.source())
+              .isEqualTo(
+                  com.streamarr.server.domain.streaming.StreamMeasurementSource.SAMPLE_TABLE);
+          var video = measurements.stream(0).orElseThrow();
+          assertThat(video.measuredBytes()).isEqualTo(700L + 0xFFFF_FFFFL);
+          assertThat(video.packetCount()).isEqualTo(48);
+          assertThat(video.timeBaseDenominator()).isEqualTo(12_288);
+          assertThat(video.measuredDuration()).isEqualTo(24_576);
+          assertThat(video.keyframeIntervalBytes())
+              .isEqualTo(KeyframeIntervalBytes.of(700, 0xFFFF_FFFFL));
+          var audio = measurements.stream(1).orElseThrow();
+          assertThat(audio.measuredBytes()).isEqualTo(100);
+          assertThat(audio.packetCount()).isEqualTo(94);
+          assertThat(audio.timeBaseDenominator()).isEqualTo(48_000);
+          assertThat(audio.measuredDuration()).isEqualTo(96_000);
+          assertThat(audio.keyframeIntervalBytes()).isEqualTo(KeyframeIntervalBytes.of(40, 60));
+        }
+      }
+    }
+  }
+
+  private static ProbeStreamMeasurementPart.Builder measurementPart(
+      ProbeRequest dispatched, int streamIndex) {
+    return ProbeStreamMeasurementPart.newBuilder()
+        .setProbeAttemptId(dispatched.getProbeAttemptId())
+        .setStreamIndex(streamIndex);
   }
 
   @Test

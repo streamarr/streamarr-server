@@ -367,7 +367,8 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
               var streams,
               _,
               var chosenVideoStream,
-              var titlesOmitted) ->
+              var titlesOmitted,
+              _) ->
           builder
               .container(container)
               .chosenVideoStream(chosenVideoStream)

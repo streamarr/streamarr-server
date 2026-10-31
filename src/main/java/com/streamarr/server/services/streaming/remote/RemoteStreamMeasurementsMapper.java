@@ -1,0 +1,128 @@
+package com.streamarr.server.services.streaming.remote;
+
+import com.streamarr.server.domain.streaming.KeyframeIntervalBytes;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.MeasuredStream;
+import com.streamarr.server.domain.streaming.StreamMeasurementSource;
+import com.streamarr.server.domain.streaming.StreamMeasurements;
+import com.streamarr.server.exceptions.ProbeContractViolationException;
+import com.streamarr.transcode.v1.MeasuredStreamOrBuilder;
+import com.streamarr.transcode.v1.ProbeMediaInfo;
+import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
+import com.streamarr.transcode.v1.StreamMeasurementsOrBuilder;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+/** Maps and validates the measurement of the streams that a worker reports with a probe. */
+final class RemoteStreamMeasurementsMapper {
+
+  Optional<StreamMeasurements> map(
+      ProbeMediaInfo media, KeyframeKnowledge keyframes, List<ProbeStreamMeasurementPart> parts) {
+    if (!media.hasStreamMeasurements()) {
+      return Optional.empty();
+    }
+
+    if (!(keyframes instanceof KeyframeKnowledge.Known(var positions))) {
+      throw violation("Worker probe measured streams without keyframe positions");
+    }
+
+    var reported = media.getStreamMeasurements();
+    var partsByStream =
+        parts.stream()
+            .collect(
+                Collectors.toMap(ProbeStreamMeasurementPart::getStreamIndex, Function.identity()));
+    var measuredIndexes = new HashSet<Integer>();
+    var streams =
+        reported.getStreamsList().stream()
+            .map(
+                stream -> {
+                  if (!measuredIndexes.add(stream.getStreamIndex())) {
+                    throw violation("Worker probe measured one stream twice");
+                  }
+
+                  return measuredStream(media, stream, partsByStream, positions.keyframes().size());
+                })
+            .toList();
+    if (!measuredIndexes.contains(positions.streamIndex())) {
+      throw violation("Worker probe measurement leaves out the chosen video stream");
+    }
+
+    if (!measuredIndexes.containsAll(partsByStream.keySet())) {
+      throw violation("Worker probe sent keyframe interval bytes for a stream it did not measure");
+    }
+
+    return Optional.of(new StreamMeasurements(source(reported), streams));
+  }
+
+  private static MeasuredStream measuredStream(
+      ProbeMediaInfo media,
+      MeasuredStreamOrBuilder stream,
+      Map<Integer, ProbeStreamMeasurementPart> partsByStream,
+      int keyframeCount) {
+    if (!isVideoOrAudioStream(media, stream.getStreamIndex())) {
+      throw violation("Worker probe measured a stream that is neither video nor audio");
+    }
+
+    if (stream.getMeasuredBytes() < 0 || stream.getMeasuredDuration() < 0) {
+      throw violation("Worker probe measured bytes or duration exceed the contract's range");
+    }
+
+    if (stream.getTimeBaseNumerator() <= 0 || stream.getTimeBaseDenominator() <= 0) {
+      throw violation("Worker probe measured stream time base is not positive");
+    }
+
+    var part = partsByStream.get(stream.getStreamIndex());
+    if (part == null || part.getKeyframeIntervalBytesCount() != keyframeCount) {
+      throw violation("Worker probe measured stream's intervals differ from its keyframes");
+    }
+
+    var intervals = new int[keyframeCount];
+    var total = 0L;
+    for (var i = 0; i < keyframeCount; i++) {
+      intervals[i] = part.getKeyframeIntervalBytes(i);
+      total += Integer.toUnsignedLong(intervals[i]);
+    }
+
+    if (total != stream.getMeasuredBytes()) {
+      throw violation("Worker probe measured stream's intervals differ from its measured bytes");
+    }
+
+    return MeasuredStream.builder()
+        .streamIndex(stream.getStreamIndex())
+        .measuredBytes(stream.getMeasuredBytes())
+        .packetCount(stream.getPacketCount())
+        .timeBaseNumerator(stream.getTimeBaseNumerator())
+        .timeBaseDenominator(stream.getTimeBaseDenominator())
+        .measuredDuration(stream.getMeasuredDuration())
+        .keyframeIntervalBytes(KeyframeIntervalBytes.ofUnsigned(intervals))
+        .build();
+  }
+
+  private static boolean isVideoOrAudioStream(ProbeMediaInfo media, int streamIndex) {
+    return media.getStreamsList().stream()
+        .anyMatch(
+            stream ->
+                stream.getIndex() == streamIndex
+                    && ("video".equals(stream.getCodecType())
+                        || "audio".equals(stream.getCodecType())));
+  }
+
+  private static StreamMeasurementSource source(StreamMeasurementsOrBuilder reported) {
+    return switch (reported.getSource()) {
+      case STREAM_MEASUREMENT_SOURCE_SAMPLE_TABLE -> StreamMeasurementSource.SAMPLE_TABLE;
+      case STREAM_MEASUREMENT_SOURCE_KEYFRAME_PACKET_SCAN ->
+          StreamMeasurementSource.KEYFRAME_PACKET_SCAN;
+      case STREAM_MEASUREMENT_SOURCE_BITRATE_SCAN -> StreamMeasurementSource.BITRATE_SCAN;
+      case STREAM_MEASUREMENT_SOURCE_UNSPECIFIED, UNRECOGNIZED ->
+          throw violation("Worker probe measurement names no source");
+    };
+  }
+
+  private static ProbeContractViolationException violation(String message) {
+    return new ProbeContractViolationException(message);
+  }
+}

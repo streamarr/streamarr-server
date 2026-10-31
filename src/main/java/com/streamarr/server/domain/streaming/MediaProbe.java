@@ -11,7 +11,8 @@ import lombok.NonNull;
 
 /**
  * The playback view of a probe outcome. {@code videoPlaybackFacts} is empty when the outcome's
- * probe version reports no playback facts, which every version before 4 does.
+ * probe version reports no playback facts, which every version before 4 does. {@code
+ * streamMeasurements} is empty when the server holds no usable measurement of the file's streams.
  */
 @Builder
 public record MediaProbe(
@@ -27,7 +28,8 @@ public record MediaProbe(
     Optional<String> containerFormat,
     List<StreamInfo> streams,
     @NonNull KeyframeKnowledge keyframes,
-    @NonNull Optional<VideoPlaybackFacts> videoPlaybackFacts) {
+    @NonNull Optional<VideoPlaybackFacts> videoPlaybackFacts,
+    @NonNull Optional<StreamMeasurements> streamMeasurements) {
 
   public MediaProbe {
     if (audioChannels == null) {
@@ -47,6 +49,7 @@ public record MediaProbe(
     private Optional<String> containerFormat = Optional.empty();
     private OptionalDouble framerate = OptionalDouble.empty();
     private Optional<VideoPlaybackFacts> videoPlaybackFacts = Optional.empty();
+    private Optional<StreamMeasurements> streamMeasurements = Optional.empty();
   }
 
   /**

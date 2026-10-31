@@ -702,6 +702,7 @@ message EstablishWorkerSessionRequest {
     ProbeAttemptResult probe_result = 6;
     ProbeKeyframePositionsPart probe_keyframe_positions_part = 7;
     ProbeCapacityChanged probe_capacity_changed = 8;
+    ProbeStreamMeasurementPart probe_stream_measurement_part = 9;
   }
 }
 
@@ -1562,6 +1563,83 @@ message ProbeKeyframes {
   }
 }
 
+// This value names the step that measured a file's streams under ADR 0054.
+enum StreamMeasurementSource {
+  STREAM_MEASUREMENT_SOURCE_UNSPECIFIED = 0;
+  // The probe read every sample's size and times from the sample tables of an
+  // MP4 or MOV file that is not fragmented, and read no media data.
+  STREAM_MEASUREMENT_SOURCE_SAMPLE_TABLE = 1;
+  // A keyframe packet scan listed every packet of the file.
+  STREAM_MEASUREMENT_SOURCE_KEYFRAME_PACKET_SCAN = 2;
+  // A bitrate scan listed every packet of the file's video and audio streams.
+  STREAM_MEASUREMENT_SOURCE_BITRATE_SCAN = 3;
+}
+
+// This message reports the exact measurement of one video or audio stream
+// under ADR 0054. A packet's size counts the packet's payload only, without
+// the source container's framing. The stream's bytes in each keyframe interval
+// travel in the attempt's ProbeStreamMeasurementPart messages, which arrive
+// before the result.
+message MeasuredStream {
+  // This field contains the stream's ProbeStreamInfo.index within the
+  // container. The stream is a video or audio stream of the same result.
+  uint32 stream_index = 1;
+  // This field reports the sum of the sizes of the stream's packets. It equals
+  // the sum of the stream's bytes in every keyframe interval, and it is at most
+  // 2^63 - 1.
+  uint64 measured_bytes = 2;
+  // This field counts the stream's packets.
+  uint64 packet_count = 3;
+  // The stream's own time base, in which measured_duration counts ticks. Both
+  // values are positive.
+  uint32 time_base_numerator = 4;
+  uint32 time_base_denominator = 5;
+  // This field counts the ticks from the stream's first presentation time to
+  // the end of the stream's last packet. It is at most 2^63 - 1.
+  uint64 measured_duration = 6;
+}
+
+// This message reports the measurement of a file's video and audio streams.
+// The worker reports it only beside KeyframePositions, because the keyframe
+// intervals follow those positions.
+//
+// A keyframe interval runs from one keyframe of KeyframePositions to the next.
+// The last interval runs from the last keyframe to the end of the file. A
+// video packet belongs to the interval in which its decode order places it,
+// and an audio packet belongs to the interval that holds its presentation
+// time. A packet that comes before the first keyframe belongs to the first
+// interval. So each measured stream has exactly
+// KeyframePositions.keyframe_count intervals.
+//
+// The worker reports no measurement when it cannot list every packet of every
+// stream it measures, or when one stream's bytes in one interval exceed
+// 4,294,967,295. When the server receives a measurement that breaks these
+// rules, it fails the probe attempt as a contract violation and retries the
+// probe.
+message StreamMeasurements {
+  StreamMeasurementSource source = 1;
+  // Each stream appears at most once. The list holds the chosen video stream.
+  repeated MeasuredStream streams = 2;
+}
+
+// This message contains one measured stream's bytes in consecutive keyframe
+// intervals from one probe attempt. A long source has too many intervals for
+// one session message, so the worker splits each stream's intervals into
+// parts. A part holds at most 4,096 entries, so it stays below 128 KiB. The
+// parts of one attempt hold at most 8,388,608 entries in all. The worker sends
+// each stream's parts in interval order, before the attempt's
+// ProbeAttemptResult. The parts of different streams may interleave. The
+// worker sends parts only when the result reports StreamMeasurements. The
+// server discards the parts of an attempt whose result reports none.
+message ProbeStreamMeasurementPart {
+  Uuid probe_attempt_id = 1;
+  // This field names the MeasuredStream.stream_index of the stream whose
+  // intervals the part holds.
+  uint32 stream_index = 2;
+  // Entry i holds the stream's bytes in the next keyframe interval.
+  repeated uint32 keyframe_interval_bytes = 3;
+}
+
 message ProbeMediaInfo {
   ProbeContainerInfo container = 1;
   repeated ProbeStreamInfo streams = 2;
@@ -1593,6 +1671,9 @@ message ProbeMediaInfo {
   // the values from filling the result. Only probe version 4 and later set this
   // field.
   bool stream_titles_omitted = 6;
+  // This field is absent when the worker took no measurement of the file's
+  // streams (ADR 0054). Any probe version may report it.
+  StreamMeasurements stream_measurements = 7;
 }
 
 message ProbeAttemptResult {

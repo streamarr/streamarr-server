@@ -509,7 +509,8 @@ public class MediaFileContainerInfoRepositoryCustomImpl
               _,
               var keyframes,
               var chosenVideoStream,
-              var titlesOmitted) -> {
+              var titlesOmitted,
+              _) -> {
         row.setStreamTitlesOmitted(titlesOmitted.orElse(null));
         setKeyframeStatus(row, keyframes);
         chosenVideoStream.ifPresent(stream -> ChosenVideoStreamRow.set(row, stream));
@@ -524,7 +525,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
 
     dsl.executeInsert(row);
     if (!(publication.outcome()
-        instanceof ProbeOutcome.Success(var container, var streams, var keyframes, _, _))) {
+        instanceof ProbeOutcome.Success(var container, var streams, var keyframes, _, _, _))) {
       return;
     }
 

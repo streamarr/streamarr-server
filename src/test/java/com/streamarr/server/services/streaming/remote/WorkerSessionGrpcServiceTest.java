@@ -31,6 +31,7 @@ import com.streamarr.transcode.v1.ProbeCapacityChanged;
 import com.streamarr.transcode.v1.ProbeFailure;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeRequest;
+import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.TranscodeDecision;
@@ -81,6 +82,8 @@ class WorkerSessionGrpcServiceTest {
   private static final int MAXIMUM_KEYFRAME_POSITIONS_PER_PROBE = 1_048_576;
   // worker_session.proto bounds each list of a keyframe positions part to 4,096 entries.
   private static final int MAXIMUM_ENTRIES_PER_PART = 4_096;
+  // worker_session.proto bounds the measurement parts of one probe attempt to 8,388,608 entries.
+  private static final int MAXIMUM_MEASUREMENT_ENTRIES_PER_PROBE = 8_388_608;
   private static final String ENCODER_BACKEND_MISMATCH_METRIC =
       "streamarr.streaming.encoder_backend_mismatches";
   private static final String UNKNOWN_JOB_ATTEMPT_REPORTS_METRIC =
@@ -289,6 +292,86 @@ class WorkerSessionGrpcServiceTest {
     assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
         .hasCauseInstanceOf(ProbeContractViolationException.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should join each stream's measurement parts in order when a worker interleaves the streams")
+  void shouldJoinEachStreamsMeasurementPartsInOrderWhenWorkerInterleavesStreams() throws Exception {
+    var probe = SessionProbe.dispatch();
+
+    probe.send(measurementPart(probe, 0, 1, 2));
+    probe.send(measurementPart(probe, 1, 7));
+    probe.send(measurementPart(probe, 0, 3));
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
+
+    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts())
+        .containsExactly(
+            measurementPart(probe, 0, 1, 2, 3).getProbeStreamMeasurementPart(),
+            measurementPart(probe, 1, 7).getProbeStreamMeasurementPart());
+  }
+
+  @Test
+  @DisplayName(
+      "Should report no measurement parts when a worker sends them for another probe attempt")
+  void shouldReportNoMeasurementPartsWhenWorkerSendsThemForAnotherProbeAttempt() throws Exception {
+    var probe = SessionProbe.dispatch();
+    var part = measurementPart(probe, 0, 1);
+    part.getProbeStreamMeasurementPartBuilder().setProbeAttemptId(toProto(UUID.randomUUID()));
+
+    probe.send(part);
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
+
+    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should fail a probe when a measurement part holds more entries than one part allows")
+  void shouldFailProbeWhenMeasurementPartHoldsMoreEntriesThanOnePartAllows() throws Exception {
+    var probe = SessionProbe.dispatch();
+
+    probe.send(measurementPart(probe, 0, new int[MAXIMUM_ENTRIES_PER_PART + 1]));
+    probe.send(measurementPart(probe, 0, 1));
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
+
+    assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
+        .isInstanceOf(ExecutionException.class)
+        .hasCauseInstanceOf(ProbeContractViolationException.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should fail a probe when a worker sends more measurement entries than one probe allows")
+  void shouldFailProbeWhenWorkerSendsMoreMeasurementEntriesThanOneProbeAllows() throws Exception {
+    var probe = SessionProbe.dispatch();
+    var fullPart = measurementPart(probe, 0, new int[MAXIMUM_ENTRIES_PER_PART]);
+
+    for (var sent = 0;
+        sent < MAXIMUM_MEASUREMENT_ENTRIES_PER_PROBE / MAXIMUM_ENTRIES_PER_PART;
+        sent++) {
+      probe.send(fullPart);
+    }
+
+    probe.send(measurementPart(probe, 1, 1));
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
+
+    assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
+        .isInstanceOf(ExecutionException.class)
+        .hasCauseInstanceOf(ProbeContractViolationException.class);
+  }
+
+  private static EstablishWorkerSessionRequest.Builder measurementPart(
+      SessionProbe probe, int streamIndex, int... intervalBytes) {
+    var part =
+        ProbeStreamMeasurementPart.newBuilder()
+            .setProbeAttemptId(probe.attemptId())
+            .setStreamIndex(streamIndex);
+    for (var bytes : intervalBytes) {
+      part.addKeyframeIntervalBytes(bytes);
+    }
+
+    return EstablishWorkerSessionRequest.newBuilder().setProbeStreamMeasurementPart(part);
   }
 
   private static List<ProbeKeyframePositionsPart> withoutAttemptIds(ProbeAttemptReport report) {
