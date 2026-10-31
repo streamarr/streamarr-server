@@ -34,7 +34,8 @@ public record AudioDecision(
     }
   }
 
-  @SuppressWarnings("java:S1068") // Lombok builder defaults — fields are used by generated code
+  // Lombok builder default — its generated setter assigns it
+  @SuppressWarnings({"java:S1068", "java:S9438"})
   public static class AudioDecisionBuilder {
     private Optional<String> sourceCodecString = Optional.empty();
   }

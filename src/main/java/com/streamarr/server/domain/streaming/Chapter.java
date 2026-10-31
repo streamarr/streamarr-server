@@ -20,7 +20,8 @@ public record Chapter(
   /** The longest title, in bytes of UTF-8, that a probe reports. */
   public static final int MAXIMUM_TITLE_BYTES = 512;
 
-  @SuppressWarnings("java:S1068") // Lombok builder defaults — fields are used by generated code
+  // Lombok builder defaults — its generated setters assign them
+  @SuppressWarnings({"java:S1068", "java:S9438"})
   public static class ChapterBuilder {
     private Optional<Duration> startTime = Optional.empty();
     private Optional<Duration> endTime = Optional.empty();

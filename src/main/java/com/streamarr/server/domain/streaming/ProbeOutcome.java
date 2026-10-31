@@ -106,7 +106,8 @@ public sealed interface ProbeOutcome {
       return streams.stream().filter(s -> s.index() == index).findFirst().orElseThrow();
     }
 
-    @SuppressWarnings("java:S1068") // Lombok builder defaults — fields are used by generated code
+    // Lombok builder defaults — its generated setters assign them
+    @SuppressWarnings({"java:S1068", "java:S9438"})
     public static class SuccessBuilder {
       private Optional<ChosenVideoStream> chosenVideoStream = Optional.empty();
       private Optional<Boolean> streamTitlesOmitted = Optional.empty();

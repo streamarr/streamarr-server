@@ -18,7 +18,8 @@ public record DolbyVisionConfiguration(
     boolean enhancementLayer,
     boolean rpu) {
 
-  @SuppressWarnings("java:S1068") // Lombok builder defaults — fields are used by generated code
+  // Lombok builder defaults — its generated setters assign them
+  @SuppressWarnings({"java:S1068", "java:S9438"})
   public static class DolbyVisionConfigurationBuilder {
     private OptionalInt profile = OptionalInt.empty();
     private OptionalInt level = OptionalInt.empty();
