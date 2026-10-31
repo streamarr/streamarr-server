@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
+import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.stream.Stream;
 import lombok.Builder;
@@ -1304,6 +1305,91 @@ class HlsPlaylistServiceTest {
           .lines()
           .filter(line -> line.startsWith("#EXT-X-STREAM-INF:"))
           .toList();
+    }
+  }
+
+  @Nested
+  @DisplayName("Bandwidth of a video copy")
+  class CopyBandwidthTests {
+
+    private static final AudioDecision AC3_SURROUND_COPY =
+        AudioDecision.builder()
+            .mode(AudioMode.COPY)
+            .codec("ac3")
+            .channels(6)
+            .bitrate(640_000L)
+            .sourceCodecString(Optional.of("ac-3"))
+            .build();
+
+    // ADR 0050: a copy costs its own video bitrate plus the stream session's audio bitrate, here a
+    // copied 640 kb/s AC-3 5.1 track. A copy whose video bitrate the probe does not know counts the
+    // whole container bitrate as video.
+    @ParameterizedTest(name = "container {0}, video {1}")
+    @CsvSource({
+      "5000000, 4500000, 5140000",
+      "5000000, , 5640000",
+      "0, 4500000, 5140000",
+    })
+    @DisplayName(
+        "Should advertise the copied video's bitrate plus the session's audio bitrate when the"
+            + " session copies the video")
+    void
+        shouldAdvertiseTheCopiedVideosBitratePlusTheSessionsAudioBitrateWhenTheSessionCopiesTheVideo(
+            long containerBitrate, Long videoBitrate, long expectedAverageBandwidth) {
+      var probe = StreamSessionFixture.defaultProbeBuilder().bitrate(containerBitrate);
+      var video =
+          ProbeFixture.videoStreamBuilder(probe.build())
+              .bitrate(videoBitrate == null ? OptionalLong.empty() : OptionalLong.of(videoBitrate))
+              .build();
+
+      var playlist =
+          service.generateMultivariantPlaylist(
+              copySession(probe.streams(List.of(video)).build()), "test-token");
+
+      assertThat(playlist).contains(bandwidthAttributes(expectedAverageBandwidth));
+    }
+
+    @Test
+    @DisplayName(
+        "Should advertise the copied stream's bitrate when the source holds another video stream"
+            + " first")
+    void shouldAdvertiseTheCopiedStreamsBitrateWhenTheSourceHoldsAnotherVideoStreamFirst() {
+      var facts = VideoPlaybackFactsFixture.sdrH264FactsBuilder().streamIndex(1).build();
+      var probe = StreamSessionFixture.defaultProbeBuilder().videoPlaybackFacts(Optional.of(facts));
+      var streams =
+          List.of(
+              ProbeFixture.videoStreamBuilder(probe.build())
+                  .index(0)
+                  .bitrate(OptionalLong.of(1_000_000L))
+                  .build(),
+              ProbeFixture.videoStreamBuilder(probe.build())
+                  .bitrate(OptionalLong.of(4_500_000L))
+                  .build());
+
+      var playlist =
+          service.generateMultivariantPlaylist(
+              copySession(probe.streams(streams).build()), "test-token");
+
+      assertThat(playlist).contains(bandwidthAttributes(5_140_000L));
+    }
+
+    private static StreamSession copySession(MediaProbe probe) {
+      return StreamSessionFixture.defaultSessionBuilder()
+          .mediaProbe(probe)
+          .transcodeDecision(
+              StreamSessionFixture.remuxDecisionBuilder()
+                  .videoSource(probe.videoPlaybackFacts())
+                  .audioDecision(AC3_SURROUND_COPY)
+                  .build())
+          .build();
+    }
+
+    private static String bandwidthAttributes(long averageBandwidth) {
+      return "BANDWIDTH="
+          + (averageBandwidth + averageBandwidth / 5)
+          + ",AVERAGE-BANDWIDTH="
+          + averageBandwidth
+          + ",";
     }
   }
 }

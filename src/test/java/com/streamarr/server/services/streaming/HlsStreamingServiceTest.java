@@ -88,6 +88,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -670,6 +671,69 @@ class HlsStreamingServiceTest {
             variant ->
                 assertThat(peakBandwidths.get(variant.label()))
                     .isGreaterThanOrEqualTo(variant.videoBitrate() + audioBitrate));
+  }
+
+  // ADR 0050: a copy costs its own video bitrate plus the stream session's audio bitrate, here a
+  // 768 kb/s E-AC-3 5.1 encode of a 450 kb/s 7.1 Opus track. The source's 5 Mb/s holds 4.5 Mb/s of
+  // video. A copy whose video bitrate the probe does not know counts all 5 Mb/s as video.
+  @ParameterizedTest
+  @CsvSource({
+    "ORIGINAL, 4500000, 5268000",
+    "AUTO, 4500000, 5268000",
+    "ORIGINAL, , 5768000",
+    "AUTO, , 5768000"
+  })
+  @DisplayName(
+      "Should advertise the copied video's bitrate plus the encoded audio's bitrate when the"
+          + " session copies the video and encodes the audio")
+  void
+      shouldAdvertiseTheCopiedVideosBitratePlusTheEncodedAudiosBitrateWhenTheSessionCopiesTheVideoAndEncodesTheAudio(
+          VideoQuality quality, Long videoBitrate, long expectedAverageBandwidth) {
+    var session =
+        createCopySessionWithSurroundOpus(
+            quality, videoBitrate == null ? OptionalLong.empty() : OptionalLong.of(videoBitrate));
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+    assertThat(session.getTranscodeDecision().audioDecision().bitrate()).isEqualTo(768_000L);
+    assertThat(playlist)
+        .contains(
+            "BANDWIDTH="
+                + (expectedAverageBandwidth + expectedAverageBandwidth / 5)
+                + ",AVERAGE-BANDWIDTH="
+                + expectedAverageBandwidth
+                + ",");
+  }
+
+  // The declaration lists stereo AAC and 7.1 E-AC-3 but no Opus, so the session encodes the audio.
+  private StreamSession createCopySessionWithSurroundOpus(
+      VideoQuality quality, OptionalLong videoBitrate) {
+    var probe = defaultProbeBuilder().bitrate(5_000_000L).build();
+    var streams =
+        List.of(
+            ProbeFixture.videoStreamBuilder(probe).bitrate(videoBitrate).build(),
+            ProbeFixture.audioStreamBuilder("opus")
+                .index(1)
+                .channels(OptionalInt.of(8))
+                .bitrate(OptionalLong.of(450_000L))
+                .build());
+    probeResults.setDefaultOutcome(
+        ProbeFixture.completeProbe(
+            defaultProbeBuilder().bitrate(5_000_000L).streams(streams).build()));
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(
+                List.of(
+                    aacEntryBuilder().build(),
+                    audioEntryBuilder(AudioCodec.EAC3).maxChannels(8).build()))
+            .build();
+    return accepted(
+        service.createSession(
+            createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                .options(StreamingOptions.builder().quality(quality).build())
+                .capabilityDeclaration(declaration)
+                .build()));
   }
 
   // The declaration lists stereo AAC and 7.1 E-AC-3 but no DTS, so the session encodes the audio.
