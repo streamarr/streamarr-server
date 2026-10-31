@@ -526,18 +526,19 @@ class QualityLadderServiceTest {
   @CsvSource({
     "FULL_HD_1080P, 8000000, 128000, 2000000, 1920, 1080, 1872000",
     "FULL_HD_1080P, 8000000, 128000, 928000, 1920, 1080, 800000",
-    "FULL_HD_1080P, 8000000, 128000, 927999, 640, 360, 800000",
-    "FULL_HD_1080P, 8000000, 128000, 700000, 640, 360, 700000",
-    "FULL_HD_1080P, 8000000, 128000, 128000, 640, 360, 128000",
-    "FULL_HD_1080P, 8000000, 384000, 100000, 640, 360, 100000",
+    "FULL_HD_1080P, 8000000, 128000, 927999, 640, 360, 799999",
+    "FULL_HD_1080P, 8000000, 128000, 700000, 640, 360, 572000",
+    "FULL_HD_1080P, 8000000, 128000, 273000, 640, 360, 145000",
+    "FULL_HD_1080P, 8000000, 128000, 128000, 640, 360, 145000",
+    "FULL_HD_1080P, 8000000, 384000, 100000, 640, 360, 145000",
     "FULL_HD_1080P, 300000, 128000, 500000, 640, 360, 300000",
-    "FULL_HD_1080P, 0, 128000, 500000, 640, 360, 500000",
-    "AUTO, 8000000, 128000, 500000, 640, 360, 500000",
+    "FULL_HD_1080P, 0, 128000, 500000, 640, 360, 372000",
+    "AUTO, 8000000, 128000, 500000, 640, 360, 372000",
     "AUTO, 300000, 128000, 500000, 640, 360, 300000"
   })
   @DisplayName(
-      "Should bound the single variant by the maximum bitrate less the audio, or by the 360p box"
-          + " and the 360p tier's bitrate, when the viewer sets a maximum bitrate")
+      "Should bound the single variant by the maximum bitrate less the audio, or by the 360p box and"
+          + " at least 145 kb/s, when the viewer sets a maximum bitrate")
   void
       shouldBoundTheSingleVariantByTheMaximumBitrateLessTheAudioOrByThe360pBoxWhenTheViewerSetsAMaximumBitrate(
           VideoQuality quality,
@@ -591,6 +592,28 @@ class QualityLadderServiceTest {
     assertThat(ladder.variants())
         .extracting(QualityVariant::label, QualityVariant::videoBitrate)
         .containsExactly(tuple("360p", 800_000L));
+  }
+
+  // Below 864 kb/s no step leaves the 360p tier's 800 kb/s, so the ladder takes the last step.
+  @ParameterizedTest
+  @CsvSource({"863999, 799999", "600000, 536000", "209000, 145000", "208999, 145000"})
+  @DisplayName(
+      "Should take the last audio step and give the video the rest but at least 145 kb/s when no"
+          + " step leaves the 360p tier's video bitrate")
+  void
+      shouldTakeTheLastAudioStepAndGiveTheVideoTheRestButAtLeast145KbpsWhenNoStepLeavesThe360pTiersVideoBitrate(
+          int maxBitrate, long expectedVideoBitrate) {
+    var probe = buildProbe(1920, 1080, 8_000_000L);
+    var options = StreamingOptions.builder().maxBitrate(maxBitrate).build();
+
+    var ladder = service.generateVariants(surroundEac3Request(probe, options));
+
+    assertThat(ladder.audio())
+        .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
+        .containsExactly("aac", 2, 64_000L);
+    assertThat(ladder.variants())
+        .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::videoBitrate)
+        .containsExactly(tuple(640, 360, expectedVideoBitrate));
   }
 
   @Test

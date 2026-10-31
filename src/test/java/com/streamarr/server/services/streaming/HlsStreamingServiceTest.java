@@ -499,8 +499,8 @@ class HlsStreamingServiceTest {
   @CsvSource({
     "FULL_HD_1080P, 0, 0, 5000000",
     "FULL_HD_1080P, 0, 2000000, 1872000",
-    "FULL_HD_1080P, 0, 700000, 700000",
-    "FULL_HD_1080P, 0, 100000, 100000",
+    "FULL_HD_1080P, 0, 700000, 636000",
+    "FULL_HD_1080P, 0, 100000, 145000",
     "AUTO, 300, 0, 800000",
     "AUTO, 300, 1000000, 800000",
     "FULL_HD_1080P, 0, 20000000, 5000000",
@@ -566,15 +566,17 @@ class HlsStreamingServiceTest {
   }
 
   // ADR 0050: a variant costs its video bitrate plus the stream session's audio bitrate, here a
-  // 128 kb/s stereo AAC encode.
+  // 128 kb/s stereo AAC encode. Under 864 kb/s no audio step leaves the 360p tier's 800 kb/s, so
+  // the
+  // audio takes the last step, 64 kb/s, and the video the rest, but never less than 145 kb/s.
   @ParameterizedTest
   @CsvSource({
-    "FULL_HD_1080P, , 2000000, 1920, 1080, 1872000",
-    "FULL_HD_1080P, , 1000000, 1920, 1080, 872000",
-    "FULL_HD_1080P, , 700000, 640, 360, 700000",
-    "FULL_HD_1080P, , 100000, 640, 360, 100000",
-    "AUTO, 500, 1000000, 498, 280, 872000",
-    "AUTO, , 500000, 640, 360, 500000"
+    "FULL_HD_1080P, , 2000000, 1920, 1080, 1872000, 128000",
+    "FULL_HD_1080P, , 1000000, 1920, 1080, 872000, 128000",
+    "FULL_HD_1080P, , 700000, 640, 360, 636000, 64000",
+    "FULL_HD_1080P, , 100000, 640, 360, 145000, 64000",
+    "AUTO, 500, 1000000, 498, 280, 872000, 128000",
+    "AUTO, , 500000, 640, 360, 436000, 64000"
   })
   @DisplayName(
       "Should encode the single variant within the maximum bitrate less the audio, or in the 360p"
@@ -586,7 +588,8 @@ class HlsStreamingServiceTest {
           int maxBitrate,
           int expectedWidth,
           int expectedHeight,
-          long expectedVideoBitrate) {
+          long expectedVideoBitrate,
+          long expectedAudioBitrate) {
     probeResults.setDefaultProbe(
         defaultProbeBuilder().videoCodec("hevc").bitrate(8_000_000L).build());
     var options =
@@ -600,7 +603,8 @@ class HlsStreamingServiceTest {
     var playlist =
         new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
 
-    assertThat(session.getTranscodeDecision().audioDecision().bitrate()).isEqualTo(128_000L);
+    assertThat(session.getTranscodeDecision().audioDecision().bitrate())
+        .isEqualTo(expectedAudioBitrate);
     assertThat(transcodeExecutor.getStartedRequests())
         .singleElement()
         .satisfies(
@@ -609,7 +613,7 @@ class HlsStreamingServiceTest {
               assertThat(request.height()).isEqualTo(expectedHeight);
               assertThat(request.bitrate()).isEqualTo(expectedVideoBitrate);
             });
-    var averageBandwidth = expectedVideoBitrate + 128_000L;
+    var averageBandwidth = expectedVideoBitrate + expectedAudioBitrate;
     assertThat(playlist)
         .contains(
             "BANDWIDTH="
@@ -719,6 +723,39 @@ class HlsStreamingServiceTest {
     assertThat(averageBandwidths(playlist))
         .isNotEmpty()
         .allSatisfy(bandwidth -> assertThat(bandwidth).isLessThanOrEqualTo(maxBitrate));
+  }
+
+  // Under 864 kb/s, 800 kb/s of video plus 64 kb/s of AAC, no audio step leaves the 360p tier's
+  // video bitrate. The audio takes AAC stereo at 64 kb/s and the video the rest in the 360p box,
+  // but
+  // never less than 145 kb/s, so only a maximum below 209 kb/s is exceeded.
+  @ParameterizedTest
+  @CsvSource({"600000, 536000", "209000, 145000", "150000, 145000"})
+  @DisplayName(
+      "Should give the video the rest in the 360p box beside the last audio step when no audio step"
+          + " leaves the 360p tier's video bitrate")
+  void
+      shouldGiveTheVideoTheRestInThe360pBoxBesideTheLastAudioStepWhenNoAudioStepLeavesThe360pTiersVideoBitrate(
+          int maxBitrate, long expectedVideoBitrate) {
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(maxBitrate).build();
+
+    var session = createDtsSession(8, options);
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
+        .containsExactly("aac", 2, 64_000L);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(640);
+              assertThat(request.height()).isEqualTo(360);
+              assertThat(request.bitrate()).isEqualTo(expectedVideoBitrate);
+            });
+    assertThat(averageBandwidths(playlist)).containsExactly(expectedVideoBitrate + 64_000L);
   }
 
   // A fixed 720p quality at 1,200 kb/s leaves 432 kb/s beside 768 kb/s E-AC-3 5.1. At 384 kb/s the
