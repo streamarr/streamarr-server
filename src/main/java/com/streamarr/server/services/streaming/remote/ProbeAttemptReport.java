@@ -23,8 +23,7 @@ public record ProbeAttemptReport(
 
   /** A report without keyframe interval bytes. */
   public ProbeAttemptReport(
-      @NonNull ProbeAttemptResult result,
-      @NonNull List<ProbeKeyframePositionsPart> keyframePositionsParts) {
+      ProbeAttemptResult result, List<ProbeKeyframePositionsPart> keyframePositionsParts) {
     this(result, keyframePositionsParts, List.of());
   }
 }

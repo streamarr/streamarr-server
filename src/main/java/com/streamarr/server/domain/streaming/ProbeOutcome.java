@@ -48,11 +48,11 @@ public sealed interface ProbeOutcome {
 
     /** An outcome without a measurement of its streams. */
     public Success(
-        @NonNull ProbeContainer container,
-        @NonNull List<StreamInfo> streams,
-        @NonNull KeyframeKnowledge keyframes,
-        @NonNull Optional<ChosenVideoStream> chosenVideoStream,
-        @NonNull Optional<Boolean> streamTitlesOmitted) {
+        ProbeContainer container,
+        List<StreamInfo> streams,
+        KeyframeKnowledge keyframes,
+        Optional<ChosenVideoStream> chosenVideoStream,
+        Optional<Boolean> streamTitlesOmitted) {
       this(container, streams, keyframes, chosenVideoStream, streamTitlesOmitted, Optional.empty());
     }
 

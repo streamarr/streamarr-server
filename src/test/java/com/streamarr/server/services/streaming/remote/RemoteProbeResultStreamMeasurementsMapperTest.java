@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
@@ -73,6 +74,25 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
         .isEqualTo(KeyframeIntervalBytes.of(10, 20));
     assertThat(measured.stream(AUDIO).orElseThrow().keyframeIntervalBytes())
         .isEqualTo(KeyframeIntervalBytes.of(1, 2));
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "STREAM_MEASUREMENT_SOURCE_SAMPLE_TABLE, SAMPLE_TABLE",
+    "STREAM_MEASUREMENT_SOURCE_KEYFRAME_PACKET_SCAN, KEYFRAME_PACKET_SCAN",
+    "STREAM_MEASUREMENT_SOURCE_BITRATE_SCAN, BITRATE_SCAN"
+  })
+  @DisplayName("Should keep the measurement's source when the worker names one")
+  void shouldKeepMeasurementsSourceWhenWorkerNamesOne(
+      StreamMeasurementSource reported, String expected) {
+    var report =
+        report(
+            measurements(video(30), audio(3)).setSource(reported),
+            List.of(intervals(VIDEO, 10, 20), intervals(AUDIO, 1, 2)));
+
+    var outcome = (ProbeOutcome.Success) new RemoteProbeResultMapper().map(report);
+
+    assertThat(outcome.streamMeasurements().orElseThrow().source().name()).isEqualTo(expected);
   }
 
   @ParameterizedTest(name = "{0}")
