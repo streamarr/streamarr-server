@@ -3349,6 +3349,48 @@ class HlsStreamingServiceTest {
 
   @Test
   @DisplayName(
+      "Should encode AV1 after stopping a left variant on the only worker that encodes AV1 in"
+          + " hardware when the only H.264 worker is busy")
+  void
+      shouldEncodeAv1AfterStoppingALeftVariantOnTheOnlyWorkerThatEncodesAv1InHardwareWhenTheOnlyH264WorkerIsBusy()
+          throws Exception {
+    var hardwareAv1 = new ExecutionTargetId("hardware-av1");
+    var softwareH264 = new ExecutionTargetId("software-h264");
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("h264", "av1"));
+    transcodeExecutor.setExecutionTargets(List.of(hardwareAv1, softwareH264));
+    transcodeExecutor.setTargetEncoders(hardwareAv1, List.of(av1Nvenc()));
+    transcodeExecutor.setTargetEncoders(softwareH264, List.of(libx264()));
+    transcodeExecutor.limitJobSlots(hardwareAv1, 2);
+    transcodeExecutor.limitJobSlots(softwareH264, 1);
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .framerate(OptionalDouble.of(23.976))
+            .videoCodec("hevc")
+            .bitrate(8_000_000L)
+            .build());
+    var switching = createSession(seedMediaFile().getId(), av1AndH264Declaration());
+    assertThat(switching.getTranscodeDecision().videoCodecFamily()).isEqualTo("av1");
+    var switchingId = switching.getSessionId();
+    var switched = switchFrom480pTo1080pKeeping480pAsTheLeftVariant(switchingId);
+    assertThat(switching.getVariantHandles()).containsOnlyKeys("480p", "1080p");
+    var busy =
+        createSession(
+            seedMediaFile().getId(),
+            UUID.randomUUID(),
+            StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build());
+    assertThat(busy.getTranscodeDecision().videoCodecFamily()).isEqualTo("h264");
+    assertThat(transcodeExecutor.encodableVideoCodecFamilies()).isEmpty();
+
+    var admitted = accepted(service.createSession(createCommandDeclaring(av1AndH264Declaration())));
+
+    assertThat(admitted.getTranscodeDecision().videoCodecFamily()).isEqualTo("av1");
+    assertThat(switching.getVariantHandles()).containsOnlyKeys("1080p");
+    upload(switchingId, "1080p", "1080p/segment1.m4s");
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  @Test
+  @DisplayName(
       "Should keep another stream session's left variant when a stream session whose encode has no frame rate is refused while no encoder has a free slot")
   void
       shouldKeepAnotherStreamSessionsLeftVariantWhenAStreamSessionWhoseEncodeHasNoFrameRateIsRefusedWhileNoEncoderHasAFreeSlot()

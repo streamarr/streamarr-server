@@ -205,7 +205,9 @@ public class HlsStreamingService implements StreamingService {
     return new CreateStreamSessionRejection.NoEligibleVideoFormat();
   }
 
-  // The encode that a connected worker's verified encoder could run once it had a free slot.
+  // The encode that a connected worker's verified encoder could run once it had a free slot. Busy
+  // workers' hardware encoders count too, so the encode is the one that the server would decide
+  // once those workers had a free slot.
   private Optional<TranscodeDecision> verifiedEncodeCandidate(TranscodeDecisionRequest request) {
     if (!transcodeExecutor.isHealthy()
         || request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
@@ -216,6 +218,8 @@ public class HlsStreamingService implements StreamingService {
         request.toBuilder()
             .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
             .encodableVideoCodecFamilies(transcodeExecutor.verifiedVideoCodecFamilies())
+            .hardwareEncodableVideoCodecFamilies(
+                transcodeExecutor.verifiedHardwareVideoCodecFamilies())
             .build());
   }
 

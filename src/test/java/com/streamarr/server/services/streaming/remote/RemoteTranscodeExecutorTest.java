@@ -62,6 +62,7 @@ class RemoteTranscodeExecutorTest {
         var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, SOURCE_ROOT);
 
         assertThat(executor.hardwareEncodableVideoCodecFamilies()).containsExactly("av1");
+        assertThat(executor.verifiedHardwareVideoCodecFamilies()).containsExactly("av1");
       } finally {
         channel.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
       }
