@@ -1,5 +1,7 @@
 package com.streamarr.server.domain.streaming;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 import java.util.OptionalLong;
 
@@ -12,6 +14,11 @@ public enum EncodeCodecProfile {
 
   EncodeCodecProfile(VideoCodecProfile codecProfile) {
     this.codecProfile = codecProfile;
+  }
+
+  /** The codec families that the server encodes, in name order. */
+  public static List<String> codecFamilyNames() {
+    return Arrays.stream(values()).map(EncodeCodecProfile::codecFamilyName).sorted().toList();
   }
 
   /** The codec profile that the probe reports for the encoded video. */

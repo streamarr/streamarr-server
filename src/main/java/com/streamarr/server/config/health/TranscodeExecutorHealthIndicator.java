@@ -3,7 +3,6 @@ package com.streamarr.server.config.health;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -26,12 +25,6 @@ public class TranscodeExecutorHealthIndicator implements HealthIndicator {
           "DEGRADED",
           "A connected worker has no worker-verified encoder for a video codec family that the"
               + " server encodes");
-
-  private static final List<String> ENCODED_CODEC_FAMILIES =
-      Arrays.stream(EncodeCodecProfile.values())
-          .map(EncodeCodecProfile::codecFamilyName)
-          .sorted()
-          .toList();
 
   private final TranscodeExecutor transcodeExecutor;
 
@@ -69,7 +62,7 @@ public class TranscodeExecutorHealthIndicator implements HealthIndicator {
   }
 
   private static List<String> missingCodecFamilies(WorkerVerifiedCodecFamilies worker) {
-    return ENCODED_CODEC_FAMILIES.stream()
+    return EncodeCodecProfile.codecFamilyNames().stream()
         .filter(family -> !worker.codecFamilies().contains(family))
         .toList();
   }
