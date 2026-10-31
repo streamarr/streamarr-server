@@ -526,7 +526,7 @@ class HeldSegmentRequestConcurrencyIT {
     }
 
     @Override
-    public Set<String> verifiedVideoCodecFamilies() {
+    public Optional<Set<String>> verifiedVideoCodecFamilies() {
       return delegate.verifiedVideoCodecFamilies();
     }
 

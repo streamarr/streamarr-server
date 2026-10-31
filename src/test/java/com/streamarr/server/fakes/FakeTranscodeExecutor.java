@@ -493,8 +493,12 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
-  public Set<String> verifiedVideoCodecFamilies() {
-    return Set.copyOf(encodeSlotsByVideoCodecFamily.keySet());
+  public Optional<Set<String>> verifiedVideoCodecFamilies() {
+    if (!healthy) {
+      return Optional.empty();
+    }
+
+    return Optional.of(Set.copyOf(encodeSlotsByVideoCodecFamily.keySet()));
   }
 
   /**
@@ -533,7 +537,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   /** Busy targets' hardware encoders count too. */
   @Override
   public Set<String> verifiedHardwareVideoCodecFamilies() {
-    var verified = verifiedVideoCodecFamilies();
+    var verified = verifiedVideoCodecFamilies().orElseGet(Set::of);
     return Stream.concat(
             hardwareEncodableVideoCodecFamilies.stream(), advertisedHardwareFamilies(_ -> true))
         .filter(verified::contains)
