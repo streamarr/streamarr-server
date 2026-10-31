@@ -59,7 +59,7 @@ class HlsPlaylistStructureTest {
         .build();
   }
 
-  private StreamSession abrSession() {
+  private static StreamSession abrSession() {
     var variants =
         List.of(
             StreamSessionFixture.defaultVariantBuilder()

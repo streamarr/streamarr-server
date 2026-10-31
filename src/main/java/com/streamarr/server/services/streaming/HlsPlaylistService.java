@@ -26,6 +26,7 @@ public class HlsPlaylistService {
 
   private static final String AUDIO_GROUP_ID = "audio";
   private static final int EXTINF_DIGITS = 6;
+  private static final int FRAME_RATE_DIGITS = 3;
 
   private static final String INDEPENDENT_SEGMENTS_TAG = "#EXT-X-INDEPENDENT-SEGMENTS\n";
 
@@ -165,11 +166,17 @@ public class HlsPlaylistService {
   // probe does not measure, so its entry leaves FRAME-RATE out.
   private static void appendFrameRate(StringBuilder sb, QualityVariant variant) {
     var frameRate = variant.frameRate();
-    sb.append(",FRAME-RATE=")
-        .append(
-            BigDecimal.valueOf(frameRate.numerator())
-                .divide(BigDecimal.valueOf(frameRate.denominator()), 3, RoundingMode.HALF_UP)
-                .toPlainString());
+    appendFrameRate(
+        sb,
+        BigDecimal.valueOf(frameRate.numerator())
+            .divide(
+                BigDecimal.valueOf(frameRate.denominator()),
+                FRAME_RATE_DIGITS,
+                RoundingMode.HALF_UP));
+  }
+
+  private static void appendFrameRate(StringBuilder sb, BigDecimal frameRate) {
+    sb.append(",FRAME-RATE=").append(frameRate.toPlainString());
   }
 
   // A copy of a Dolby Vision source with an SDR compatible base declares its SDR base layer
