@@ -567,8 +567,7 @@ class HlsStreamingServiceTest {
 
   // ADR 0050: a variant costs its video bitrate plus the stream session's audio bitrate, here a
   // 128 kb/s stereo AAC encode. Under 864 kb/s no audio step leaves the 360p tier's 800 kb/s, so
-  // the
-  // audio takes the last step, 64 kb/s, and the video the rest, but never less than 145 kb/s.
+  // the audio takes the last step, 64 kb/s, and the video the rest, but never less than 145 kb/s.
   @ParameterizedTest
   @CsvSource({
     "FULL_HD_1080P, , 2000000, 1920, 1080, 1872000, 128000",
@@ -728,8 +727,7 @@ class HlsStreamingServiceTest {
 
   // Under 864 kb/s, 800 kb/s of video plus 64 kb/s of AAC, no audio step leaves the 360p tier's
   // video bitrate. The audio takes AAC stereo at 64 kb/s and the video the rest in the 360p box,
-  // but
-  // never less than 145 kb/s, so only a maximum below 209 kb/s is exceeded.
+  // but never less than 145 kb/s, so only a maximum below 209 kb/s is exceeded.
   @ParameterizedTest
   @CsvSource({"600000, 536000", "209000, 145000", "150000, 145000"})
   @DisplayName(
@@ -896,6 +894,51 @@ class HlsStreamingServiceTest {
             AudioDecision::channels,
             AudioDecision::bitrate)
         .containsExactly(AudioMode.TRANSCODE, "ac3", 6, 448_000L);
+  }
+
+  // Original copies the H.264 video whatever the viewer's limits, and the server keeps a copied
+  // 640 kb/s AC-3 5.1 track beside that copy.
+  @Test
+  @DisplayName(
+      "Should keep a copied audio track when Original copies the video under a low maximum bitrate")
+  void shouldKeepACopiedAudioTrackWhenOriginalCopiesTheVideoUnderALowMaximumBitrate() {
+    var probe = defaultProbeBuilder().build();
+    var streams =
+        List.of(
+            ProbeFixture.videoStreamBuilder(probe).build(),
+            ProbeFixture.audioStreamBuilder("ac3")
+                .index(1)
+                .channels(OptionalInt.of(6))
+                .bitrate(OptionalLong.of(640_000L))
+                .build());
+    probeResults.setDefaultOutcome(
+        ProbeFixture.completeProbe(defaultProbeBuilder().streams(streams).build()));
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(
+                List.of(
+                    aacEntryBuilder().build(),
+                    audioEntryBuilder(AudioCodec.AC3).maxChannels(6).build()))
+            .build();
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.ORIGINAL).maxBitrate(1_000_000).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                    .options(options)
+                    .capabilityDeclaration(declaration)
+                    .build()));
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(
+            AudioDecision::mode,
+            AudioDecision::codec,
+            AudioDecision::channels,
+            AudioDecision::bitrate)
+        .containsExactly(AudioMode.COPY, "ac3", 6, 640_000L);
   }
 
   // Original copies the H.264 video whatever the viewer's limits, and the server keeps the audio
