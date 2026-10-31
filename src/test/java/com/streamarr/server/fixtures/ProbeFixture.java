@@ -3,7 +3,6 @@ package com.streamarr.server.fixtures;
 import com.streamarr.server.domain.streaming.ChosenVideoStream;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
-import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePosition;
@@ -11,7 +10,6 @@ import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.MediaProbe;
-import com.streamarr.server.domain.streaming.OutputFrameRateBasis;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
@@ -79,11 +77,7 @@ public class ProbeFixture {
 
   private static FrameRateRule frameRateRule(OptionalDouble framerate) {
     if (framerate.isEmpty()) {
-      return FrameRateRule.builder()
-          .outputFrameRate(Optional.empty())
-          .basis(OutputFrameRateBasis.REFUSED)
-          .inputs(FrameRateRuleInputs.builder().build())
-          .build();
+      return VideoPlaybackFactsFixture.refusedRule();
     }
 
     return VideoPlaybackFactsFixture.declaredRateRule(declaredRate(framerate.getAsDouble()));

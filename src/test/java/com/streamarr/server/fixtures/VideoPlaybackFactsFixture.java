@@ -36,7 +36,7 @@ public class VideoPlaybackFactsFixture {
           CompatibleBase.SDR, Presence.UNSPECIFIED, new DolbyVision.Unspecified());
 
   public static final VideoDynamicRange SDR_WITHOUT_DOLBY_VISION =
-      new VideoDynamicRange(CompatibleBase.SDR, Presence.ABSENT, new DolbyVision.Absent());
+      rangeWithoutEnhancement(CompatibleBase.SDR);
 
   public static final Fraction FILM_RATE = new Fraction(24_000, 1_001);
 
@@ -80,6 +80,20 @@ public class VideoPlaybackFactsFixture {
                 .baseRate(Optional.of(rate))
                 .averageRate(Optional.of(rate))
                 .build())
+        .build();
+  }
+
+  /** A dynamic range with the compatible base and neither HDR10+ nor Dolby Vision. */
+  public static VideoDynamicRange rangeWithoutEnhancement(CompatibleBase base) {
+    return new VideoDynamicRange(base, Presence.ABSENT, new DolbyVision.Absent());
+  }
+
+  /** The rule's result when it refused to choose an output frame rate. */
+  public static FrameRateRule refusedRule() {
+    return FrameRateRule.builder()
+        .outputFrameRate(Optional.empty())
+        .basis(OutputFrameRateBasis.REFUSED)
+        .inputs(FrameRateRuleInputs.builder().build())
         .build();
   }
 

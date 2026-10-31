@@ -135,12 +135,7 @@ class TranscodeRequestTest {
   void shouldRefuseToPlanTheEncodeWhenTheAttemptHasNoFrameRate() {
     var source =
         VideoPlaybackFactsFixture.sdrH264FactsBuilder()
-            .frameRateRule(
-                FrameRateRule.builder()
-                    .outputFrameRate(Optional.empty())
-                    .basis(OutputFrameRateBasis.REFUSED)
-                    .inputs(FrameRateRuleInputs.builder().build())
-                    .build())
+            .frameRateRule(VideoPlaybackFactsFixture.refusedRule())
             .build();
     var request =
         attemptOf(TranscodeMode.FULL_TRANSCODE)
