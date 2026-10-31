@@ -53,7 +53,13 @@ public final class HlsAudioEncodes {
       }
     }
 
-    int aacMaximum = channelMaximums.getOrDefault("aac", STEREO);
+    return aacForTrack(declaration, normalizedChannels);
+  }
+
+  /** The AAC encode for a track with this normalized channel count, with at most two channels. */
+  public static AudioDecision aacForTrack(
+      @NonNull ClientCapabilityDeclaration declaration, int normalizedChannels) {
+    int aacMaximum = channelMaximum(declaration, "aac").orElse(STEREO);
     return transcode("aac", Math.min(Math.min(normalizedChannels, STEREO), aacMaximum));
   }
 

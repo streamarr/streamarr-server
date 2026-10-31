@@ -354,7 +354,7 @@ public class HlsStreamingService implements StreamingService {
             // The stream session refuses an encode without an output frame rate before it sizes a
             // variant.
             .frameRate(decision.outputFrameRate().orElseThrow())
-            .audioSteps(new AudioSteps(List.of(decision.audioDecision())))
+            .audioSteps(AudioSteps.below(decision.audioDecision(), declaration))
             .build();
     var ladder = qualityLadderService.generateVariants(request);
     return new QualityLadder(

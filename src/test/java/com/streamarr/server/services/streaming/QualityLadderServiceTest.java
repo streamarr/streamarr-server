@@ -1,5 +1,7 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.aacEntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.audioEntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.av1EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
@@ -7,7 +9,9 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBui
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
+import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.AudioSteps;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ContainerCropping;
@@ -40,6 +44,14 @@ import org.junit.jupiter.params.provider.MethodSource;
 @Tag("UnitTest")
 @DisplayName("Quality Ladder Service Tests")
 class QualityLadderServiceTest {
+
+  private static final AudioDecision SURROUND_EAC3 =
+      AudioDecision.builder()
+          .mode(AudioMode.TRANSCODE)
+          .codec("eac3")
+          .channels(6)
+          .bitrate(768_000L)
+          .build();
 
   private final QualityLadderService service = new QualityLadderService();
 
@@ -546,6 +558,52 @@ class QualityLadderServiceTest {
         .containsExactly(tuple(expectedWidth, expectedHeight, expectedVideoBitrate));
   }
 
+  // E-AC-3 5.1 at 768 kb/s steps to 640, 448 and 384 kb/s and then AAC stereo at 128, 96 and 64.
+  // Each maximum is the 360p tier's 800 kb/s plus a step's bitrate, or one bit/s below it.
+  @ParameterizedTest
+  @CsvSource({
+    "1568000, 768000",
+    "1567999, 640000",
+    "1440000, 640000",
+    "1439999, 448000",
+    "1248000, 448000",
+    "1247999, 384000",
+    "1184000, 384000",
+    "1183999, 128000",
+    "928000, 128000",
+    "927999, 96000",
+    "896000, 96000",
+    "895999, 64000",
+    "864000, 64000"
+  })
+  @DisplayName(
+      "Should take the first audio step at which the 360p tier fits when the session's audio leaves"
+          + " less than its video bitrate")
+  void
+      shouldTakeTheFirstAudioStepAtWhichThe360pTierFitsWhenTheSessionsAudioLeavesLessThanItsVideoBitrate(
+          int maxBitrate, long expectedAudioBitrate) {
+    var probe = buildProbe(1920, 1080, 8_000_000L);
+    var options = StreamingOptions.builder().maxBitrate(maxBitrate).build();
+
+    var ladder = service.generateVariants(surroundEac3Request(probe, options));
+
+    assertThat(ladder.audio().bitrate()).isEqualTo(expectedAudioBitrate);
+    assertThat(ladder.variants())
+        .extracting(QualityVariant::label, QualityVariant::videoBitrate)
+        .containsExactly(tuple("360p", 800_000L));
+  }
+
+  @Test
+  @DisplayName("Should keep the session's audio when the viewer sets no maximum bitrate")
+  void shouldKeepTheSessionsAudioWhenTheViewerSetsNoMaximumBitrate() {
+    var probe = buildProbe(1920, 1080, 8_000_000L);
+
+    var ladder =
+        service.generateVariants(surroundEac3Request(probe, StreamingOptions.builder().build()));
+
+    assertThat(ladder.audio()).isEqualTo(SURROUND_EAC3);
+  }
+
   @Test
   @DisplayName("Should filter tiers when client specifies max bitrate")
   void shouldFilterTiersWhenClientSpecifiesMaxBitrate() {
@@ -788,6 +846,22 @@ class QualityLadderServiceTest {
 
   private List<QualityVariant> generateVariants(MediaProbe probe, StreamingOptions options) {
     return variantsOf(ladderRequest(probe, options).build());
+  }
+
+  // The ladder of a session that encodes E-AC-3 5.1 at 768 kb/s for a player that declares it.
+  private static QualityLadderRequest surroundEac3Request(
+      MediaProbe probe, StreamingOptions options) {
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(
+                List.of(
+                    aacEntryBuilder().build(),
+                    audioEntryBuilder(AudioCodec.EAC3).maxChannels(6).build()))
+            .build();
+    return ladderRequest(probe, options)
+        .capabilityDeclaration(declaration)
+        .audioSteps(AudioSteps.below(SURROUND_EAC3, declaration))
+        .build();
   }
 
   private List<QualityVariant> variantsOf(QualityLadderRequest request) {
