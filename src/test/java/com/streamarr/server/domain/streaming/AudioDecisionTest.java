@@ -1,6 +1,7 @@
 package com.streamarr.server.domain.streaming;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Optional;
@@ -35,6 +36,14 @@ class AudioDecisionTest {
   void shouldCalculateBitrateWhenCodecAndChannelCountGiven(
       String codec, int channels, long expectedBitrate) {
     assertThat(AudioDecision.bitrateFor(codec, channels)).isEqualTo(expectedBitrate);
+  }
+
+  @Test
+  @DisplayName("Should reject a bitrate lookup when the codec is missing")
+  void shouldRejectABitrateLookupWhenTheCodecIsMissing() {
+    assertThatNullPointerException()
+        .isThrownBy(() -> AudioDecision.bitrateFor(null, 6))
+        .withMessageContaining("codec");
   }
 
   @Test
