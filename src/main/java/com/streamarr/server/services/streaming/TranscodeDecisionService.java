@@ -58,12 +58,12 @@ public class TranscodeDecisionService {
   /**
    * A copy needs a video capability entry for HLS that accepts the copy, and a source that fits the
    * viewer's limits or that no encode can play: the source has no encoded variant, or no video
-   * capability entry for HLS accepts one, whatever the workers encode (ADR 0050). An encode uses,
-   * among the codecs that a worker-verified encoder encodes (ADR 0009), the one whose video
-   * capability entry for HLS fits an encoded variant of the source at the highest frame rate (ADR
-   * 0049), and the first in the codec preference on a tie (ADR 0009). The audio follows the audio
-   * capability entries for HLS. Returns empty when neither a copy nor a supported encode satisfies
-   * the request's constraints.
+   * capability entry for HLS accepts one in a codec that a connected worker's verified encoder
+   * encodes, busy or not (ADR 0050). An encode uses, among the codecs that a worker-verified
+   * encoder encodes (ADR 0009), the one whose video capability entry for HLS fits an encoded
+   * variant of the source at the highest frame rate (ADR 0049), and the first in the codec
+   * preference on a tie (ADR 0009). The audio follows the audio capability entries for HLS. Returns
+   * empty when neither a copy nor a supported encode satisfies the request's constraints.
    */
   public Optional<TranscodeDecision> decide(@NonNull TranscodeDecisionRequest request) {
     var source = request.source();
@@ -104,9 +104,9 @@ public class TranscodeDecisionService {
   // copy's cost fits the maximum bitrate, so the audio steps down before the video is encoded (ADR
   // 0050). A copy over the viewer's limits beats refusing playback when no encode can play it: the
   // source has no output frame rate (#446) or no picture size that the worker encodes, or no video
-  // capability entry accepts its encoded variant. Such a copy takes the first step that fits, or
-  // else keeps the session's audio, because a lower step would not bring it within the maximum
-  // either.
+  // capability entry accepts its encoded variant in a codec that a verified encoder encodes. Such a
+  // copy takes the first step that fits, or else keeps the session's audio, because a lower step
+  // would not bring it within the maximum either.
   private Optional<AudioDecision> audioBesideVideoCopy(
       TranscodeDecisionRequest request, AudioDecision sessionAudio) {
     if (request.videoFormatConstraint() == VideoFormatConstraint.ENCODE_ONLY) {
@@ -119,7 +119,7 @@ public class TranscodeDecisionService {
     var steps = AudioSteps.below(sessionAudio, declaration);
     var stepWithinMaximum = limits.audioStepBesideCopyOf(source, steps);
     var withinLimits = limits.allowsCopyPictureOf(source) && stepWithinMaximum.isPresent();
-    if (!withinLimits && hasEncodeThatTheClientPlays(declaration, source)) {
+    if (!withinLimits && hasVerifiedEncodeThatTheClientPlays(request)) {
       return Optional.empty();
     }
 
@@ -130,11 +130,16 @@ public class TranscodeDecisionService {
     return Optional.of(stepWithinMaximum.orElse(sessionAudio));
   }
 
-  // The declaration alone answers this, whichever codec families the connected workers encode, so
-  // a worker's state refuses a session for capacity and never turns it into a copy.
-  private static boolean hasEncodeThatTheClientPlays(
-      ClientCapabilityDeclaration declaration, MediaProbe source) {
+  // Busy workers' verified encoders count, so a lack of free slots refuses a session for capacity
+  // and never turns it into a copy. Connected workers without a verified encoder for any codec
+  // that the declaration accepts are faulty and leave nothing to encode to. Without a connected
+  // worker no encoder is verified either, but the stream session is refused for capacity before
+  // any copy starts.
+  private static boolean hasVerifiedEncodeThatTheClientPlays(TranscodeDecisionRequest request) {
+    var source = request.source();
+    var declaration = request.capabilityDeclaration();
     return Arrays.stream(EncodeCodecProfile.values())
+        .filter(profile -> request.verifiedVideoCodecFamilies().contains(profile.codecFamilyName()))
         .map(profile -> encodedVariantRequest(source, profile))
         .flatMap(Optional::stream)
         .anyMatch(variantRequest -> declaration.fitHlsEncode(variantRequest).isPresent());

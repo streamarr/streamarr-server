@@ -2983,6 +2983,7 @@ class HlsStreamingServiceTest {
     assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo(expectedFamily);
   }
 
+  // Without a connected worker no verified encoder is registered either.
   @Test
   @DisplayName(
       "Should report transient capacity instead of copying over the viewer's limits when no worker"
@@ -2990,9 +2991,11 @@ class HlsStreamingServiceTest {
   void shouldReportTransientCapacityInsteadOfCopyingOverTheViewersLimitsWhenNoWorkerIsConnected() {
     probeResults.setDefaultProbe(wideUhdHevcProbe().build());
     transcodeExecutor.setHealthy(false);
+    transcodeExecutor.setEncodeSlots(Map.of());
 
     assertThat(
-            createSessionDeclaring(declarationBuilderFor(HEVC).build(), OVER_THE_MAXIMUM_BITRATE))
+            createSessionDeclaring(
+                declarationBuilderFor(HEVC, H264).build(), OVER_THE_MAXIMUM_BITRATE))
         .isEqualTo(
             Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
     assertThat(capacityRefusals("no_connected_worker")).isOne();
@@ -3016,21 +3019,28 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
 
-  // The declaration accepts an AV1 encode, so a copy over the viewer's limits never starts, even
-  // while no connected worker encodes AV1.
-  @Test
+  // Every worker image ships an H.264 and an AV1 encoder, so a connected worker without a verified
+  // encoder for the codec that the declaration accepts is faulty, and no free slot would let the
+  // server encode.
+  @ParameterizedTest
+  @CsvSource({"AV1, h264", "H264, av1", "H264, "})
   @DisplayName(
-      "Should refuse instead of copying over the viewer's limits when no connected worker encodes"
-          + " the codec that the declaration accepts")
-  void shouldRefuseInsteadOfCopyingOverTheViewersLimitsWhenNoConnectedWorkerEncodesTheCodec() {
+      "Should copy the video over the viewer's limits when no connected worker has a verified"
+          + " encoder for a codec that the declaration accepts")
+  void
+      shouldCopyTheVideoOverTheViewersLimitsWhenNoConnectedWorkerHasAVerifiedEncoderForACodecThatTheDeclarationAccepts(
+          ProbedCodecFamily encodedFamily, String verifiedFamily) {
     probeResults.setDefaultProbe(wideUhdHevcProbe().build());
-    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("h264", "hevc"));
+    transcodeExecutor.setEncodableVideoCodecFamilies(
+        Optional.ofNullable(verifiedFamily).map(Set::of).orElseGet(Set::of));
 
-    assertThat(
+    var session =
+        accepted(
             createSessionDeclaring(
-                declarationBuilderFor(HEVC, AV1).build(), OVER_THE_MAXIMUM_BITRATE))
-        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
-    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+                declarationBuilderFor(HEVC, encodedFamily).build(), OVER_THE_MAXIMUM_BITRATE));
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(session.getVariants()).isEmpty();
   }
 
   // A 1920x1 picture has no encoded size, so the H.264 entry accepts no encode that a worker runs.
