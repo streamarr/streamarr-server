@@ -719,7 +719,7 @@ class TranscodeDecisionServiceTest {
   @DisplayName(
       "Should prefer H.264 over AV1 unless a worker that can run the encode encodes AV1 in hardware"
           + " when the client declares both")
-  void shouldPreferH264OverAv1UnlessAWorkerThatCanRunTheEncodeEncodesAv1InHardware(
+  void shouldPreferH264OverAv1UnlessAWorkerEncodesAv1InHardwareWhenTheClientDeclaresBoth(
       Set<String> hardwareEncodedFamilies, String expectedCodecFamily) {
     var source = probe("hevc", "aac");
     var declaration = declaring(AV1, H264);
