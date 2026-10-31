@@ -67,24 +67,60 @@ class VideoCopyBandwidthTest {
   }
 
   @Test
-  @DisplayName(
-      "Should add the session's audio bitrate when the measurement holds no copied audio stream")
-  void shouldAddSessionsAudioBitrateWhenMeasurementHoldsNoCopiedAudioStream() {
+  @DisplayName("Should keep the unmeasured cost when the measurement holds no copied audio stream")
+  void shouldKeepUnmeasuredCostWhenMeasurementHoldsNoCopiedAudioStream() {
     var probe = measuredSource(900_000_000);
     var video = ProbeFixture.videoStreamBuilder(probe.build()).build();
     var audio = ProbeFixture.audioStreamBuilder("ac3").index(video.index() + 1).build();
-    var copy =
-        AudioDecision.builder()
-            .mode(AudioMode.COPY)
-            .codec("ac3")
-            .channels(6)
-            .bitrate(640_000L)
-            .sourceCodecString(Optional.of("ac-3"))
-            .build();
 
     assertThat(
-            VideoCopyBandwidth.averageBandwidth(probe.streams(List.of(video, audio)).build(), copy))
-        .isEqualTo(1_640_000L);
+            VideoCopyBandwidth.averageBandwidth(
+                probe.streams(List.of(video, audio)).build(), ac3Copy()))
+        .isEqualTo(4_000_000L);
+  }
+
+  @Test
+  @DisplayName("Should cost the first audio stream when the session copies the audio")
+  void shouldCostFirstAudioStreamWhenSessionCopiesAudio() {
+    var probe = defaultProbeBuilder().bitrate(4_000_000L);
+    var video = ProbeFixture.videoStreamBuilder(probe.build()).build();
+    var first = ProbeFixture.audioStreamBuilder("ac3").index(video.index() + 1).build();
+    var second = ProbeFixture.audioStreamBuilder("ac3").index(video.index() + 2).build();
+    var measurement =
+        new StreamMeasurements(
+            StreamMeasurementSource.SAMPLE_TABLE,
+            List.of(
+                measuredStream(video.index(), 900_000_000),
+                measuredStream(first.index(), 576_000_000),
+                measuredStream(second.index(), 4_500_000_000L)));
+    var source =
+        probe
+            .streams(List.of(video, first, second))
+            .streamMeasurements(Optional.of(measurement))
+            .build();
+
+    assertThat(VideoCopyBandwidth.averageBandwidth(source, ac3Copy())).isEqualTo(1_640_000L);
+  }
+
+  @Test
+  @DisplayName("Should keep the unmeasured cost when the measured video holds no bytes")
+  void shouldKeepUnmeasuredCostWhenMeasuredVideoHoldsNoBytes() {
+    var source = measuredSource(0).build();
+
+    assertThat(VideoCopyBandwidth.averageBandwidth(source, AudioDecision.none()))
+        .isEqualTo(4_000_000L);
+    assertThat(VideoCopyBandwidth.isKnown(measuredSource(0).bitrate(0).build())).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should cost a measured copy when the media playlist lasts longer than a count of nanoseconds"
+          + " can hold")
+  void shouldCostMeasuredCopyWhenMediaPlaylistLastsLongerThanNanosecondsCanHold() {
+    var source =
+        measuredSource(Long.MAX_VALUE).duration(Duration.ofSeconds(Long.MAX_VALUE)).build();
+
+    assertThat(VideoCopyBandwidth.averageBandwidth(source, AudioDecision.none())).isEqualTo(8);
   }
 
   @Test
@@ -117,6 +153,16 @@ class VideoCopyBandwidthTest {
     var videoIndex = ProbeFixture.videoStreamBuilder(probe.build()).build().index();
     return probe.streamMeasurements(
         Optional.of(measurementOf(measuredStream(videoIndex, videoBytes))));
+  }
+
+  private static AudioDecision ac3Copy() {
+    return AudioDecision.builder()
+        .mode(AudioMode.COPY)
+        .codec("ac3")
+        .channels(6)
+        .bitrate(640_000L)
+        .sourceCodecString(Optional.of("ac-3"))
+        .build();
   }
 
   private static MeasuredStream measuredStream(int streamIndex, long measuredBytes) {
