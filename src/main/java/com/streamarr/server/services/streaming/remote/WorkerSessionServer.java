@@ -226,6 +226,11 @@ public final class WorkerSessionServer
     return workerConnections.hardwareEncodableVideoCodecFamilies(sourceNamespaceId);
   }
 
+  public synchronized Set<String> verifiedHardwareVideoCodecFamilies(UUID sourceNamespaceId) {
+    requireStarted();
+    return workerConnections.verifiedHardwareVideoCodecFamilies(sourceNamespaceId);
+  }
+
   public synchronized int availableSlots(UUID sourceNamespaceId) {
     requireStarted();
     return workerConnections.availableSlots(sourceNamespaceId);

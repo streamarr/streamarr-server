@@ -100,4 +100,10 @@ public interface TranscodeExecutor {
    * workers.
    */
   Set<String> verifiedVideoCodecFamilies();
+
+  /**
+   * The codec families of connected, source-accessible worker-verified hardware encoders, including
+   * busy workers.
+   */
+  Set<String> verifiedHardwareVideoCodecFamilies();
 }

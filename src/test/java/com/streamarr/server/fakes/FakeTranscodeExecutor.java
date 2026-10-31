@@ -26,6 +26,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -522,15 +523,27 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   @Override
   public Set<String> hardwareEncodableVideoCodecFamilies() {
     var encodable = encodableVideoCodecFamilies();
-    return Stream.concat(hardwareEncodableVideoCodecFamilies.stream(), advertisedHardwareFamilies())
+    return Stream.concat(
+            hardwareEncodableVideoCodecFamilies.stream(),
+            advertisedHardwareFamilies(target -> freeJobSlotsOn(target) > 0))
         .filter(encodable::contains)
         .collect(Collectors.toUnmodifiableSet());
   }
 
-  // The families of the hardware encoders that targets with a free job slot advertise.
-  private Stream<String> advertisedHardwareFamilies() {
+  /** Busy targets' hardware encoders count too. */
+  @Override
+  public Set<String> verifiedHardwareVideoCodecFamilies() {
+    var verified = verifiedVideoCodecFamilies();
+    return Stream.concat(
+            hardwareEncodableVideoCodecFamilies.stream(), advertisedHardwareFamilies(_ -> true))
+        .filter(verified::contains)
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
+  // The families of the hardware encoders that the matching targets advertise.
+  private Stream<String> advertisedHardwareFamilies(Predicate<ExecutionTargetId> targets) {
     return encodersByTarget.entrySet().stream()
-        .filter(entry -> freeJobSlotsOn(entry.getKey()) > 0)
+        .filter(entry -> targets.test(entry.getKey()))
         .flatMap(entry -> entry.getValue().values().stream())
         .map(WorkerVerifiedEncoder::backend)
         .filter(backend -> backend.kind() == EncoderBackend.Kind.HARDWARE)
