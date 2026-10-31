@@ -617,13 +617,63 @@ class HlsStreamingServiceTest {
                 + ",");
   }
 
+  // A stereo DTS source encodes 128 kb/s AAC, and a 7.1 one 768 kb/s E-AC-3 5.1.
   @ParameterizedTest
-  @CsvSource({"2, 3100000, '480p, 360p'", "2, 1800000, '480p, 360p'", "8, 1800000, '360p'"})
+  @CsvSource({
+    "2, 3100000, 128000, '480p, 360p'",
+    "2, 1800000, 128000, '480p, 360p'",
+    "8, 1800000, 768000, '360p'",
+    "8, 2000000, 768000, '360p'"
+  })
   @DisplayName(
       "Should offer a tier only when its video bitrate plus the session's audio bitrate is within"
           + " the viewer's maximum bitrate")
   void shouldOfferATierOnlyWhenItsVideoPlusAudioBitrateIsWithinTheViewersMaximumBitrate(
-      int sourceChannels, int maxBitrate, String expectedLabels) {
+      int sourceChannels, int maxBitrate, long audioBitrate, String expectedLabels) {
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(maxBitrate).build();
+
+    var session = createDtsSession(sourceChannels, options);
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(session.getTranscodeDecision().audioDecision().bitrate()).isEqualTo(audioBitrate);
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label)
+        .containsExactlyInAnyOrder(expectedLabels.split(", "));
+    assertThat(averageBandwidths(playlist))
+        .isNotEmpty()
+        .allSatisfy(bandwidth -> assertThat(bandwidth).isLessThanOrEqualTo(maxBitrate));
+  }
+
+  @ParameterizedTest
+  @CsvSource({"2, 128000", "8, 768000"})
+  @DisplayName(
+      "Should advertise a BANDWIDTH of at least the video plus audio bitrate for each encoded"
+          + " variant when the audio is encoded")
+  void
+      shouldAdvertiseABandwidthOfAtLeastTheVideoPlusAudioBitrateForEachEncodedVariantWhenTheAudioIsEncoded(
+          int sourceChannels, long audioBitrate) {
+    var options = StreamingOptions.builder().quality(VideoQuality.AUTO).build();
+
+    var session = createDtsSession(sourceChannels, options);
+    var peakBandwidths =
+        peakBandwidthsByVariant(
+            new HlsPlaylistService(streamingProperties())
+                .generateMultivariantPlaylist(session, "t"));
+
+    assertThat(session.getTranscodeDecision().audioDecision().bitrate()).isEqualTo(audioBitrate);
+    assertThat(session.getVariants())
+        .isNotEmpty()
+        .hasSize(peakBandwidths.size())
+        .allSatisfy(
+            variant ->
+                assertThat(peakBandwidths.get(variant.label()))
+                    .isGreaterThanOrEqualTo(variant.videoBitrate() + audioBitrate));
+  }
+
+  // The declaration lists stereo AAC and 7.1 E-AC-3 but no DTS, so the session encodes the audio.
+  private StreamSession createDtsSession(int sourceChannels, StreamingOptions options) {
     probeResults.setDefaultOutcome(
         ProbeFixture.completeProbe(
             defaultProbeBuilder()
@@ -638,25 +688,21 @@ class HlsStreamingServiceTest {
                     aacEntryBuilder().build(),
                     audioEntryBuilder(AudioCodec.EAC3).maxChannels(8).build()))
             .build();
-    var options =
-        StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(maxBitrate).build();
+    return accepted(
+        service.createSession(
+            createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                .options(options)
+                .capabilityDeclaration(declaration)
+                .build()));
+  }
 
-    var session =
-        accepted(
-            service.createSession(
-                createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
-                    .options(options)
-                    .capabilityDeclaration(declaration)
-                    .build()));
-    var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
-
-    assertThat(session.getVariants())
-        .extracting(QualityVariant::label)
-        .containsExactlyInAnyOrder(expectedLabels.split(", "));
-    assertThat(averageBandwidths(playlist))
-        .isNotEmpty()
-        .allSatisfy(bandwidth -> assertThat(bandwidth).isLessThanOrEqualTo(maxBitrate));
+  // Each encoded variant's BANDWIDTH, keyed by the label that names its media playlist.
+  private static Map<String, Long> peakBandwidthsByVariant(String playlist) {
+    return Pattern.compile("#EXT-X-STREAM-INF:BANDWIDTH=(\\d+),.*\n([^/\n]+)/stream\\.m3u8")
+        .matcher(playlist)
+        .results()
+        .collect(
+            Collectors.toMap(match -> match.group(2), match -> Long.parseLong(match.group(1))));
   }
 
   private static List<Long> averageBandwidths(String playlist) {
