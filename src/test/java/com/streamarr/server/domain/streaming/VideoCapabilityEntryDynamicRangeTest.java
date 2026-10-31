@@ -3,6 +3,7 @@ package com.streamarr.server.domain.streaming;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.av1EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
+import static com.streamarr.server.fixtures.VideoPlaybackFactsFixture.rangeWithoutEnhancement;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.fixtures.VideoStreamCopyFixture;
@@ -43,19 +44,37 @@ class VideoCapabilityEntryDynamicRangeTest {
     var hlg = hevcEntryBuilder().compatibleBases(List.of(CompatibleBase.HLG)).build();
     return Stream.of(
         Arguments.of(
-            "unspecified base, SDR entry", sdr, hevcCopy(plain(CompatibleBase.UNSPECIFIED)), true),
+            "unspecified base, SDR entry",
+            sdr,
+            hevcCopy(rangeWithoutEnhancement(CompatibleBase.UNSPECIFIED)),
+            true),
         Arguments.of(
             "unspecified base, PQ entry",
             pqOnly,
-            hevcCopy(plain(CompatibleBase.UNSPECIFIED)),
+            hevcCopy(rangeWithoutEnhancement(CompatibleBase.UNSPECIFIED)),
             false),
-        Arguments.of("SDR base, PQ entry", pqOnly, hevcCopy(plain(CompatibleBase.SDR)), false),
-        Arguments.of("PQ base, SDR entry", sdr, hevcCopy(plain(CompatibleBase.PQ)), false),
         Arguments.of(
-            "PQ base, SDR and PQ entry", sdrAndPq, hevcCopy(plain(CompatibleBase.PQ)), true),
-        Arguments.of("HLG base, HLG entry", hlg, hevcCopy(plain(CompatibleBase.HLG)), true),
+            "SDR base, PQ entry",
+            pqOnly,
+            hevcCopy(rangeWithoutEnhancement(CompatibleBase.SDR)),
+            false),
         Arguments.of(
-            "HLG base, SDR and PQ entry", sdrAndPq, hevcCopy(plain(CompatibleBase.HLG)), false));
+            "PQ base, SDR entry", sdr, hevcCopy(rangeWithoutEnhancement(CompatibleBase.PQ)), false),
+        Arguments.of(
+            "PQ base, SDR and PQ entry",
+            sdrAndPq,
+            hevcCopy(rangeWithoutEnhancement(CompatibleBase.PQ)),
+            true),
+        Arguments.of(
+            "HLG base, HLG entry",
+            hlg,
+            hevcCopy(rangeWithoutEnhancement(CompatibleBase.HLG)),
+            true),
+        Arguments.of(
+            "HLG base, SDR and PQ entry",
+            sdrAndPq,
+            hevcCopy(rangeWithoutEnhancement(CompatibleBase.HLG)),
+            false));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -147,7 +166,7 @@ class VideoCapabilityEntryDynamicRangeTest {
         Arguments.of(
             "SDR copy, entry listing only profile 5",
             baselessEntryListing(DolbyVisionProfile.PROFILE_5, 6),
-            hevcCopy(plain(CompatibleBase.SDR)),
+            hevcCopy(rangeWithoutEnhancement(CompatibleBase.SDR)),
             false),
         Arguments.of(
             "10.1 at its declared level",
@@ -406,10 +425,6 @@ class VideoCapabilityEntryDynamicRangeTest {
         .codecTier(tier)
         .firstFramesRead(true)
         .build();
-  }
-
-  private static VideoDynamicRange plain(CompatibleBase base) {
-    return new VideoDynamicRange(base, Presence.ABSENT, new DolbyVision.Absent());
   }
 
   private static VideoDynamicRange dolbyVision(CompatibleBase base, DolbyVision.Present present) {

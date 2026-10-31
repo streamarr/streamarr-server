@@ -51,12 +51,7 @@ class ProbeOutcomePlaybackFactsTest {
   @Test
   @DisplayName("Should leave the playback frame rate unknown when the rule refused one")
   void shouldLeaveThePlaybackFrameRateUnknownWhenTheRuleRefusedOne() {
-    var refused =
-        FrameRateRule.builder()
-            .outputFrameRate(Optional.empty())
-            .basis(OutputFrameRateBasis.REFUSED)
-            .inputs(FrameRateRuleInputs.builder().build())
-            .build();
+    var refused = VideoPlaybackFactsFixture.refusedRule();
 
     var probe = version4Outcome(refused).mediaProbe();
 

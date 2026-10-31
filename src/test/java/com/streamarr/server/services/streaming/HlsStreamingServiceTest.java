@@ -724,6 +724,24 @@ class HlsStreamingServiceTest {
     assertThat(playlist).contains(",RESOLUTION=1917x1077,");
   }
 
+  @Test
+  @DisplayName("Should advertise the copied frame rate when the source video is copied")
+  void shouldAdvertiseTheCopiedFrameRateWhenTheSourceVideoIsCopied() {
+    probeResults.setDefaultProbe(probeAt(VideoPlaybackFactsFixture.FILM_RATE).build());
+    var command =
+        createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    var session = accepted(service.createSession(command));
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+    assertThat(playlist.lines().filter(line -> line.startsWith("#EXT-X-STREAM-INF:")))
+        .singleElement()
+        .asString()
+        .contains(",FRAME-RATE=23.976");
+  }
+
   private static MediaProbe.MediaProbeBuilder oddCroppedProbe(ChromaSubsampling subsampling) {
     return defaultProbeBuilder()
         .videoCodec("hevc")
