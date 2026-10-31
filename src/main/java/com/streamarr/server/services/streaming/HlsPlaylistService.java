@@ -52,13 +52,14 @@ public class HlsPlaylistService {
       appendAudioRendition(sb, audio.channels());
     }
 
-    // Only a copy runs without a ladder. It keeps the source bitrate, the displayed source
+    // Only a copy runs without a ladder. It keeps the source's video bitrate, the displayed source
     // dimensions and, when it is known, the source's frame rate.
     if (session.getVariants().isEmpty()) {
       var probe = session.getMediaProbe();
       var size = probe.displayedSize();
       var codecs = codecs(session, copiedVideoCodecString(session));
-      appendStreamInf(sb, probe.bitrate(), size.width(), size.height(), codecs, hasAudio);
+      appendStreamInf(
+          sb, copyAverageBandwidth(session), size.width(), size.height(), codecs, hasAudio);
       appendCopiedFrameRate(sb, probe);
       appendVideoRange(sb, session);
       sb.append("\n");
@@ -110,6 +111,42 @@ public class HlsPlaylistService {
         .videoSource()
         .flatMap(VideoPlaybackFacts::codecString)
         .orElseThrow();
+  }
+
+  // ADR 0050: a copy costs the copied stream's own bitrate plus the stream session's audio bitrate.
+  // A copied audio track whose bitrate the probe does not know takes a nominal bitrate, which can
+  // be
+  // far below a lossless track's rate. The container bitrate holds that track, so it bounds the
+  // copy
+  // from below.
+  private static long copyAverageBandwidth(StreamSession session) {
+    var audio = session.getTranscodeDecision().audioDecision();
+    var probe = session.getMediaProbe();
+    var averageBandwidth = copiedVideoBitrate(session) + audio.bitrate();
+    if (audio.mode() == AudioMode.COPY && probe.audioBitrate().isEmpty()) {
+      return Math.max(averageBandwidth, probe.bitrate());
+    }
+
+    return averageBandwidth;
+  }
+
+  // When the probe stored no bitrate for the copied stream, the copy counts the container bitrate
+  // as
+  // video. A known container bitrate also counts every other track of the source, so it never falls
+  // below the video's own bitrate.
+  private static long copiedVideoBitrate(StreamSession session) {
+    var probe = session.getMediaProbe();
+    var streamIndex =
+        session
+            .getTranscodeDecision()
+            .videoSource()
+            .map(VideoPlaybackFacts::streamIndex)
+            .orElseThrow();
+    return probe.streams().stream()
+        .filter(stream -> stream.index() == streamIndex)
+        .flatMapToLong(stream -> stream.bitrate().stream())
+        .findFirst()
+        .orElse(probe.bitrate());
   }
 
   // ADR 0037: the tag is true only for a variant pinned to a keyframe-verified encoder backend. A
