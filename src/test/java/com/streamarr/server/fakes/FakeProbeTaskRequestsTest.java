@@ -1,11 +1,15 @@
 package com.streamarr.server.fakes;
 
+import static com.streamarr.server.fixtures.StreamMeasurementFixture.measured;
+import static com.streamarr.server.fixtures.StreamMeasurementFixture.measurement;
+import static com.streamarr.server.fixtures.StreamMeasurementFixture.positions;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeState;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.support.BoundedTask;
@@ -49,6 +53,28 @@ class FakeProbeTaskRequestsTest {
 
     assertThat(stateOf()).isEqualTo(before);
     assertThat(requests.requests()).containsExactly(earlier);
+  }
+
+  @Test
+  @DisplayName("Should keep the stream measurement when the dispatcher rejects a changed source")
+  void shouldKeepStreamMeasurementWhenDispatcherRejectsChangedSource() {
+    var earlier = request(10);
+    outcomes.publish(
+        ProbePublication.builder()
+            .mediaFileId(mediaFileId)
+            .snapshot(earlier.snapshot())
+            .probeVersion(ProbeVersion.CURRENT)
+            .outcome(measured(positions(90_000)))
+            .build());
+    var rejection = new IllegalStateException("probe queue unavailable");
+    requests.dispatchWith(
+        _ -> {
+          throw rejection;
+        });
+
+    assertThatThrownBy(() -> requests.request(request(11))).isSameAs(rejection);
+
+    assertThat(outcomes.findStreamMeasurements(mediaFileId)).contains(measurement());
   }
 
   @Test

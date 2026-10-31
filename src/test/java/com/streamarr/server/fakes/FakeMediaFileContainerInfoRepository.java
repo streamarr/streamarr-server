@@ -365,12 +365,14 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     Optional<MediaFileContainerInfo> row;
     Optional<KeyframeKnowledge> knowledge;
     Optional<ChapterKnowledge> chapterKnowledge;
+    Optional<StoredMeasurement> measurement;
     synchronized (this) {
       requested = Optional.ofNullable(desiredInputs.get(mediaFileId));
       failure = Optional.ofNullable(failures.get(mediaFileId));
       row = Optional.ofNullable(rows.get(mediaFileId));
       knowledge = Optional.ofNullable(keyframes.get(mediaFileId));
       chapterKnowledge = Optional.ofNullable(chapters.get(mediaFileId));
+      measurement = Optional.ofNullable(measurements.get(mediaFileId));
     }
 
     try {
@@ -382,6 +384,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
         restore(rows, mediaFileId, row);
         restore(keyframes, mediaFileId, knowledge);
         restore(chapters, mediaFileId, chapterKnowledge);
+        restore(measurements, mediaFileId, measurement);
       }
 
       throw rejected;
