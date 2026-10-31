@@ -242,22 +242,10 @@ public class TranscodeDecisionService {
     DECODE_TIME_OUT_OF_RANGE
   }
 
-  private TranscodeMode resolveTranscodeMode(
+  private static TranscodeMode resolveTranscodeMode(
       boolean videoCopyable, AudioDecision audio, SubtitleDecision subtitle) {
     boolean subtitleForcesTranscode = subtitle.mode() == SubtitleMode.BURN_IN;
-    boolean effectiveVideoCopyable = videoCopyable && !subtitleForcesTranscode;
-    boolean audioPassthrough = audio.mode() == AudioMode.COPY || audio.mode() == AudioMode.NONE;
-
-    if (effectiveVideoCopyable && audioPassthrough) {
-      return TranscodeMode.REMUX;
-    }
-    if (effectiveVideoCopyable) {
-      return TranscodeMode.AUDIO_TRANSCODE;
-    }
-    if (audioPassthrough) {
-      return TranscodeMode.VIDEO_TRANSCODE;
-    }
-    return TranscodeMode.FULL_TRANSCODE;
+    return TranscodeMode.of(videoCopyable && !subtitleForcesTranscode, audio.mode());
   }
 
   private AudioDecision decideAudio(MediaProbe source, ClientCapabilityDeclaration declaration) {
