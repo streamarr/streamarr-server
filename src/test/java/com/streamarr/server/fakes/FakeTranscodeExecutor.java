@@ -74,6 +74,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private boolean healthy = true;
   private final AtomicReference<WorkerChange> workerChangeAroundNextVerifiedFamiliesRead =
       new AtomicReference<>();
+  private volatile List<WorkerVerifiedCodecFamilies> listedWorkers;
   private volatile boolean failUntargetedStarts;
 
   @Override
@@ -512,8 +513,14 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     return workers;
   }
 
-  // While healthy, one connected worker has a verified encoder for each family with encode slots.
+  // While healthy, one connected worker has a verified encoder for each family with encode slots,
+  // unless a test lists the connected workers.
   private List<WorkerVerifiedCodecFamilies> connectedWorkers() {
+    var listed = listedWorkers;
+    if (listed != null) {
+      return listed;
+    }
+
     if (!healthy) {
       return List.of();
     }
@@ -527,6 +534,11 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     return connectedWorkers().stream()
         .flatMap(worker -> worker.codecFamilies().stream())
         .collect(Collectors.toUnmodifiableSet());
+  }
+
+  /** Lists these connected workers in place of the one worker that the encode slots describe. */
+  public void setVerifiedVideoCodecFamiliesByWorker(List<WorkerVerifiedCodecFamilies> workers) {
+    listedWorkers = List.copyOf(workers);
   }
 
   /** Changes the connected workers just before and just after the next verified families read. */
