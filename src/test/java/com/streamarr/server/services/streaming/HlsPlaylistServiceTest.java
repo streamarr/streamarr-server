@@ -1324,13 +1324,15 @@ class HlsPlaylistServiceTest {
     // ADR 0050: a copy costs its own video bitrate plus the stream session's audio bitrate, here a
     // copied 640 kb/s AC-3 5.1 track. An 8 Mb/s source holds other audio tracks that the session
     // does not deliver. A copy whose video bitrate the probe does not know counts the whole
-    // container bitrate as video.
+    // container bitrate, which already holds the copied track, or the track alone when the probe
+    // knows neither.
     @ParameterizedTest(name = "container {0}, video {1}")
     @CsvSource({
       "5000000, 4500000, 5140000",
       "8000000, 4500000, 5140000",
-      "5000000, , 5640000",
+      "5000000, , 5000000",
       "0, 4500000, 5140000",
+      "0, , 640000",
     })
     @DisplayName(
         "Should advertise the copied video's bitrate plus the session's audio bitrate when the"

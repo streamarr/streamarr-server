@@ -1089,6 +1089,49 @@ class HlsStreamingServiceTest {
     assertThat(playlist).contains("BANDWIDTH=2640000,AVERAGE-BANDWIDTH=2200000,");
   }
 
+  // A Matroska source names no bitrate for its video stream, so its 5 Mb/s container bitrate stands
+  // in for the copied video. That rate already holds the copied stereo AAC track, so the copy costs
+  // the container bitrate alone, whether the probe knows the track's 192 kb/s or not.
+  @ParameterizedTest
+  @CsvSource({"192000, ORIGINAL", "192000, AUTO", ", ORIGINAL", ", AUTO"})
+  @DisplayName(
+      "Should advertise the container bitrate alone when the session copies an audio track that the"
+          + " container bitrate holds and the probe knows no bitrate for the copied video")
+  void
+      shouldAdvertiseTheContainerBitrateAloneWhenTheSessionCopiesAnAudioTrackThatTheContainerBitrateHoldsAndTheProbeKnowsNoBitrateForTheCopiedVideo(
+          Long audioBitrate, VideoQuality quality) {
+    var session =
+        createCopySessionWithCopiedStereoAac(
+            StreamingOptions.builder().quality(quality).build(),
+            audioBitrate == null ? OptionalLong.empty() : OptionalLong.of(audioBitrate));
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(playlist).contains("BANDWIDTH=6000000,AVERAGE-BANDWIDTH=5000000,");
+  }
+
+  // A 5 Mb/s source whose probe knows no bitrate for its video stream, beside a copyable stereo AAC
+  // track.
+  private StreamSession createCopySessionWithCopiedStereoAac(
+      StreamingOptions options, OptionalLong audioBitrate) {
+    var probe = defaultProbeBuilder().bitrate(5_000_000L);
+    var streams =
+        List.of(
+            ProbeFixture.videoStreamBuilder(probe.build()).build(),
+            ProbeFixture.audioStreamBuilder("aac")
+                .index(1)
+                .channels(OptionalInt.of(2))
+                .bitrate(audioBitrate)
+                .build());
+    probeResults.setDefaultOutcome(ProbeFixture.completeProbe(probe.streams(streams).build()));
+    return accepted(
+        service.createSession(
+            createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                .options(options)
+                .build()));
+  }
+
   // The declaration lists stereo AAC and 7.1 E-AC-3 but no Opus, so the session encodes the audio.
   private StreamSession createCopySessionWithSurroundOpus(
       VideoQuality quality, OptionalLong videoBitrate) {
