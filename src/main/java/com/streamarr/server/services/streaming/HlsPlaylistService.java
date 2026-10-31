@@ -6,16 +6,19 @@ import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecimalSeconds;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.EncodedVideoOutput;
+import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.VideoEncodeDecision;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
+import com.streamarr.server.domain.streaming.VideoStreamCopy;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.util.List;
+import java.util.OptionalDouble;
 import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -49,13 +52,14 @@ public class HlsPlaylistService {
       appendAudioRendition(sb, audio.channels());
     }
 
-    // Only a copy runs without a ladder. It keeps the source bitrate and the displayed source
-    // dimensions, and leaves FRAME-RATE out.
+    // Only a copy runs without a ladder. It keeps the source bitrate, the displayed source
+    // dimensions and, when it is known, the source's frame rate.
     if (session.getVariants().isEmpty()) {
       var probe = session.getMediaProbe();
       var size = probe.displayedSize();
       var codecs = codecs(session, copiedVideoCodecString(session));
       appendStreamInf(sb, probe.bitrate(), size.width(), size.height(), codecs, hasAudio);
+      appendCopiedFrameRate(sb, probe);
       appendVideoRange(sb, session);
       sb.append("\n");
       sb.append("stream.m3u8?t=").append(token).append("\n");
@@ -162,8 +166,7 @@ public class HlsPlaylistService {
   }
 
   // RFC 8216 section 4.3.4.2 gives FRAME-RATE as the maximum rate, to three decimals. An encoded
-  // variant runs at its own frame rate. A copy keeps the source's timing, whose maximum rate the
-  // probe does not measure, so its entry leaves FRAME-RATE out.
+  // variant runs at its own frame rate.
   private static void appendFrameRate(StringBuilder sb, QualityVariant variant) {
     var frameRate = variant.frameRate();
     appendFrameRate(
@@ -173,6 +176,24 @@ public class HlsPlaylistService {
                 BigDecimal.valueOf(frameRate.denominator()),
                 FRAME_RATE_DIGITS,
                 RoundingMode.HALF_UP));
+  }
+
+  // A copy writes the frame rate that the copy match checks against the entry for a probe version
+  // 5 outcome. The probe measures no maximum until #652, so a variable-rate source can briefly run
+  // faster. AVPlayer drops a PQ or HLG variant without FRAME-RATE. A copy whose frame rate the rule
+  // refused writes none: every copy announces SDR until #396, and AVPlayer accepts an SDR variant
+  // without it.
+  private static void appendCopiedFrameRate(StringBuilder sb, MediaProbe probe) {
+    var frameRate =
+        VideoStreamCopy.of(probe).map(VideoStreamCopy::frameRate).orElseGet(OptionalDouble::empty);
+    if (frameRate.isEmpty()) {
+      return;
+    }
+
+    appendFrameRate(
+        sb,
+        BigDecimal.valueOf(frameRate.getAsDouble())
+            .setScale(FRAME_RATE_DIGITS, RoundingMode.HALF_UP));
   }
 
   private static void appendFrameRate(StringBuilder sb, BigDecimal frameRate) {
