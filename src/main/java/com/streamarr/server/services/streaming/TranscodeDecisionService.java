@@ -1,13 +1,13 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
-import com.streamarr.server.domain.streaming.AudioCapabilityEntry;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.EncodedPictureSizes;
 import com.streamarr.server.domain.streaming.EncodedVariantRequest;
+import com.streamarr.server.domain.streaming.HlsAudioEncodes;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
@@ -26,7 +26,6 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.Set;
@@ -44,10 +43,6 @@ public class TranscodeDecisionService {
   // compress better than H.264, best first (ADR 0009).
   private static final List<EncodeCodecProfile> COMPRESSING_BETTER_THAN_H264 =
       List.of(EncodeCodecProfile.AV1_MAIN);
-  // A multichannel encode prefers the first of these codecs that keeps more than two channels.
-  private static final List<String> MULTICHANNEL_ENCODE_PREFERENCE = List.of("eac3", "ac3", "aac");
-  // FFmpeg's AC-3 and E-AC-3 encoders stop at 5.1.
-  private static final int AC3_AND_EAC3_ENCODER_MAX_CHANNELS = 6;
   private static final int STEREO = 2;
   // The plain aac declaration covers LC, HE-AAC and HE-AAC v2.
   private static final Set<String> COPYABLE_AAC_CODEC_STRINGS =
@@ -270,7 +265,6 @@ public class TranscodeDecisionService {
       return AudioDecision.none();
     }
 
-    var channelMaximums = hlsAudioChannelMaximums(declaration);
     // A copy carries every source channel, so the copy rule and the announced count use the
     // source's count. Only an encode lays the channels out in a normalized layout.
     int sourceChannels = sourceChannelCount(source);
@@ -279,8 +273,9 @@ public class TranscodeDecisionService {
             .findFirst()
             .flatMap(StreamInfo::codecString)
             .filter(codecString -> isCopyableAudioCodecString(source.audioCodec(), codecString));
-    var copyChannelMaximum = Optional.ofNullable(channelMaximums.get(source.audioCodec()));
-    if (copyChannelMaximum.filter(maximum -> sourceChannels <= maximum).isPresent()
+    var copyChannelMaximum = HlsAudioEncodes.channelMaximum(declaration, source.audioCodec());
+    if (copyChannelMaximum.isPresent()
+        && sourceChannels <= copyChannelMaximum.getAsInt()
         && sourceCodecString.isPresent()) {
       return AudioDecision.builder()
           .mode(AudioMode.COPY)
@@ -296,7 +291,7 @@ public class TranscodeDecisionService {
           .build();
     }
 
-    return selectTranscodeAudio(channelMaximums, AudioDecision.normalizeChannels(sourceChannels));
+    return HlsAudioEncodes.forTrack(declaration, AudioDecision.normalizeChannels(sourceChannels));
   }
 
   // A probe can report zero channels, which says no more than an absent count.
@@ -309,53 +304,8 @@ public class TranscodeDecisionService {
     return channels;
   }
 
-  // Several entries for one codec each accept up to their own maximum, so the codec accepts up to
-  // the largest of them.
-  private static Map<String, Integer> hlsAudioChannelMaximums(
-      ClientCapabilityDeclaration declaration) {
-    return declaration.audio().stream()
-        .filter(AudioCapabilityEntry::hls)
-        .filter(entry -> AudioDecision.deliverableCodecs().contains(entry.codec().probedName()))
-        .collect(
-            Collectors.toMap(
-                entry -> entry.codec().probedName(), AudioCapabilityEntry::maxChannels, Math::max));
-  }
-
   private static boolean isCopyableAudioCodecString(String codec, String codecString) {
     return !"aac".equals(codec) || COPYABLE_AAC_CODEC_STRINGS.contains(codecString);
-  }
-
-  // The API boundary requires an AAC entry for HLS, so ADR 0043's AAC encode always fits.
-  private AudioDecision selectTranscodeAudio(
-      Map<String, Integer> channelMaximums, int normalizedChannels) {
-    for (var codec : MULTICHANNEL_ENCODE_PREFERENCE) {
-      int channels =
-          Math.min(
-              normalizedChannels,
-              Math.min(channelMaximums.getOrDefault(codec, 0), encoderChannelLimit(codec)));
-      if (channels > STEREO) {
-        return transcode(codec, channels);
-      }
-    }
-
-    int aacMaximum = channelMaximums.getOrDefault("aac", STEREO);
-    return transcode("aac", Math.min(Math.min(normalizedChannels, STEREO), aacMaximum));
-  }
-
-  private static int encoderChannelLimit(String codec) {
-    return switch (codec) {
-      case "ac3", "eac3" -> AC3_AND_EAC3_ENCODER_MAX_CHANNELS;
-      default -> Integer.MAX_VALUE;
-    };
-  }
-
-  private AudioDecision transcode(String codec, int channels) {
-    return AudioDecision.builder()
-        .mode(AudioMode.TRANSCODE)
-        .codec(codec)
-        .channels(channels)
-        .bitrate(AudioDecision.bitrateFor(codec, channels))
-        .build();
   }
 
   private Optional<EncodeCodecProfile> selectEncodeCodecProfile(TranscodeDecisionRequest request) {
