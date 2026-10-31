@@ -176,6 +176,22 @@ Keep worker availability out of the server's liveness and readiness groups.
 A server with zero workers must remain reachable so workers can connect.
 The Istio policy restricts only the worker port. HTTP and Kubernetes health probes retain their existing mesh policies.
 
+=== Workers missing an encoder
+
+The server encodes video as H.264 and AV1, and every worker image ships libx264 and libsvtav1.
+A connected worker without a worker-verified encoder for one of those codec families is broken, and the server's `transcoding` health group names it.
+The group, at `/actuator/health/transcoding` on port `8080`, holds only the transcode executor and always shows its details.
+It answers `503` with status `DOWN` while no connected worker can read the source namespace.
+It answers `503` with status `DEGRADED` while a connected worker lacks such an encoder.
+The executor's `workersMissingEncoders` detail then maps each such worker's UUID to the codec families that it lacks, for example `{"3f0c9a52-6f1e-4b8e-9d4a-2c7e5b1a9f60": ["av1"]}`.
+A missing encoder alone leaves the aggregate `/actuator/health` at `UP`, because `DEGRADED` ranks below `UP` there.
+
+A worker counts an encoder only when the encoder's test encode at worker startup succeeded.
+A software encoder then always counts. A hardware encoder counts only when it is keyframe-verified.
+To fix the worker, run the worker image pinned in `worker-image.env`, or rebuild the worker's FFmpeg with the missing encoder.
+The worker's `FFmpeg capabilities:` line lists its encoder backends, as <<_confirm_gpu_encoding>> describes.
+The worker runs its test encodes again only when it restarts, so restart it after the fix.
+
 == Filename encoding
 
 The server and every worker must run under a UTF-8 locale.

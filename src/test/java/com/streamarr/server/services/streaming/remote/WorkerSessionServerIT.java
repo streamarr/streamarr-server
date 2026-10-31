@@ -1136,6 +1136,42 @@ class WorkerSessionServerIT {
 
   @Test
   @DisplayName(
+      "Should report each source-accessible worker's verified codec families when workers connect")
+  void shouldReportEachSourceAccessibleWorkersVerifiedCodecFamiliesWhenWorkersConnect()
+      throws Exception {
+    var av1WorkerId = UUID.randomUUID();
+    var av1Capabilities =
+        WorkerCapabilities.newBuilder()
+            .addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID))
+            .addVideoEncoders(softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "libsvtav1"))
+            .build();
+    try (var server = server()) {
+      server.start();
+      var h264Channel = workerChannel(server.port());
+      var av1Channel = plaintextChannelBuilder(server.port(), av1WorkerId).build();
+      try (var h264Worker = connect(h264Channel, AUTHENTICATED_WORKER_ID);
+          var av1Worker =
+              connect(
+                  av1Channel, workerIdentity(av1WorkerId, UUID.randomUUID()), av1Capabilities)) {
+        assertThat(h264Worker.nextResponse().hasSessionAccepted()).isTrue();
+        assertThat(av1Worker.nextResponse().hasSessionAccepted()).isTrue();
+        var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, Path.of("/media"));
+        var otherSource = new RemoteTranscodeExecutor(server, UUID.randomUUID(), Path.of("/media"));
+
+        assertThat(executor.verifiedVideoCodecFamiliesByWorker())
+            .containsExactlyInAnyOrder(
+                new WorkerVerifiedCodecFamilies(AUTHENTICATED_WORKER_ID, Set.of("h264")),
+                new WorkerVerifiedCodecFamilies(av1WorkerId, Set.of("av1")));
+        assertThat(otherSource.verifiedVideoCodecFamiliesByWorker()).isEmpty();
+      } finally {
+        shutdown(h264Channel);
+        shutdown(av1Channel);
+      }
+    }
+  }
+
+  @Test
+  @DisplayName(
       "Should bound active variant ownership by advertised worker capacity when handling a worker session")
   void shouldBoundActiveVariantOwnershipByAdvertisedWorkerCapacityWhenHandlingWorkerSession()
       throws Exception {
