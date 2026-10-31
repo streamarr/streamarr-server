@@ -81,6 +81,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -1071,7 +1072,7 @@ class WorkerSessionServerIT {
         assertThat(worker.nextResponse().hasStartVariant()).isTrue();
 
         assertThat(executor.encodableVideoCodecFamilies()).isEmpty();
-        assertThat(executor.verifiedVideoCodecFamilies()).containsExactly("h264");
+        assertThat(executor.verifiedVideoCodecFamilies()).contains(Set.of("h264"));
         assertThat(otherSource.verifiedVideoCodecFamilies()).isEmpty();
       } finally {
         shutdown(channel);

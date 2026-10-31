@@ -205,7 +205,7 @@ public final class WorkerSessionServer
     return workerConnections.hasConnectedWorker(sourceNamespaceId);
   }
 
-  public synchronized Set<String> verifiedVideoCodecFamilies(UUID sourceNamespaceId) {
+  public synchronized Optional<Set<String>> verifiedVideoCodecFamilies(UUID sourceNamespaceId) {
     requireStarted();
     return workerConnections.verifiedVideoCodecFamilies(sourceNamespaceId);
   }
