@@ -4,6 +4,7 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.a
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.audioEntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
@@ -142,6 +143,37 @@ class AudioStepsTest {
               assertThat(step.sourceCodecString()).isEmpty();
             });
     assertThat(steps.sessionAudio().mode()).isEqualTo(AudioMode.COPY);
+  }
+
+  // A player that declares AAC with at most 4 channels gets a 4-channel AAC encode at 128 kb/s. Its
+  // multichannel step, 64 kb/s for each of its 4 channels, is not below it.
+  @Test
+  @DisplayName(
+      "Should count every channel as full-band when a multichannel encode has no low-frequency"
+          + " channel")
+  void shouldCountEveryChannelAsFullBandWhenAMultichannelEncodeHasNoLowFrequencyChannel() {
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(List.of(aacEntryBuilder().maxChannels(4).build()))
+            .build();
+
+    var steps = AudioSteps.below(encode("aac 4 128000"), declaration);
+
+    assertThat(describe(steps)).isEqualTo("aac 4 128000, aac 2 96000, aac 2 64000");
+  }
+
+  @Test
+  @DisplayName("Should refuse audio steps when the session's audio or the declaration is missing")
+  void shouldRefuseAudioStepsWhenTheSessionsAudioOrTheDeclarationIsMissing() {
+    var declaration = defaultDeclarationBuilder().build();
+    var sessionAudio = AudioDecision.stereoAac();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> AudioSteps.below(null, declaration))
+        .withMessageContaining("sessionAudio");
+    assertThatNullPointerException()
+        .isThrownBy(() -> AudioSteps.below(sessionAudio, null))
+        .withMessageContaining("declaration");
   }
 
   @Test
