@@ -1,6 +1,7 @@
 package com.streamarr.server.domain.streaming;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import lombok.NonNull;
 
@@ -33,8 +34,11 @@ public record AudioSteps(@NonNull List<AudioDecision> highestFirst) {
   /**
    * The steps below the session's audio. Multichannel steps keep the codec and channels of the
    * encode that the server would choose for the track, which a capability entry already accepts,
-   * and exist only when that encode has more than two channels. Then come AAC stereo steps, or one
-   * AAC mono step for a mono track; every declaration carries an AAC entry for HLS (ADR 0049).
+   * and exist only when that encode has more than two channels. A copy in a codec that the server
+   * encodes also steps through that codec's multichannel steps: the steps of both codecs come
+   * highest bitrate first, the copied codec first at an equal bitrate. Then come AAC stereo steps,
+   * or one AAC mono step for a mono track; every declaration carries an AAC entry for HLS (ADR
+   * 0049).
    */
   public static AudioSteps below(
       @NonNull AudioDecision sessionAudio, @NonNull ClientCapabilityDeclaration declaration) {
@@ -45,7 +49,7 @@ public record AudioSteps(@NonNull List<AudioDecision> highestFirst) {
     var normalizedChannels = AudioDecision.normalizeChannels(sessionAudio.channels());
     var candidates = new ArrayList<AudioDecision>();
     candidates.add(sessionAudio);
-    candidates.addAll(multichannelSteps(HlsAudioEncodes.forTrack(declaration, normalizedChannels)));
+    candidates.addAll(multichannelSteps(sessionAudio, declaration, normalizedChannels));
     candidates.addAll(downmixSteps(HlsAudioEncodes.aacForTrack(declaration, normalizedChannels)));
     return new AudioSteps(eachLowerThanTheStepsBefore(candidates));
   }
@@ -58,6 +62,23 @@ public record AudioSteps(@NonNull List<AudioDecision> highestFirst) {
   /** The step with the lowest bitrate. */
   public AudioDecision lowest() {
     return highestFirst.getLast();
+  }
+
+  // The sort is stable, so the copied codec's step stays ahead of an equal-bitrate step of the
+  // server's encode, which then no longer counts.
+  private static List<AudioDecision> multichannelSteps(
+      AudioDecision sessionAudio, ClientCapabilityDeclaration declaration, int normalizedChannels) {
+    var encodes = new ArrayList<AudioDecision>();
+    if (sessionAudio.mode() == AudioMode.COPY) {
+      HlsAudioEncodes.multichannelEncode(declaration, sessionAudio.codec(), normalizedChannels)
+          .ifPresent(encodes::add);
+    }
+
+    encodes.add(HlsAudioEncodes.forTrack(declaration, normalizedChannels));
+    return encodes.stream()
+        .flatMap(encode -> multichannelSteps(encode).stream())
+        .sorted(Comparator.comparingLong(AudioDecision::bitrate).reversed())
+        .toList();
   }
 
   private static List<AudioDecision> multichannelSteps(AudioDecision encode) {

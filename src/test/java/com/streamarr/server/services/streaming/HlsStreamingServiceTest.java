@@ -896,6 +896,63 @@ class HlsStreamingServiceTest {
         .containsExactly(AudioMode.TRANSCODE, "ac3", 6, 448_000L);
   }
 
+  // The player declares E-AC-3 5.1, so the server would encode the track as E-AC-3. A copied AAC
+  // 5.1 track at 384 kb/s leaves 766 kb/s under 1,150 kb/s, and its own codec's 320 kb/s step
+  // leaves 830. A copied AC-3 5.1 track at 640 kb/s leaves 660 kb/s under 1,300 kb/s, and its own
+  // codec's 448 kb/s step leaves 852.
+  @ParameterizedTest
+  @CsvSource({"aac, AAC, 384000, 1150000, 320000", "ac3, AC3, 640000, 1300000, 448000"})
+  @DisplayName(
+      "Should keep surround in the copied codec at a lower step when the server encodes that codec"
+          + " and the copy leaves less than the 360p tier's video bitrate")
+  void
+      shouldKeepSurroundInTheCopiedCodecAtALowerStepWhenTheServerEncodesThatCodecAndTheCopyLeavesLessThanThe360pTiersVideoBitrate(
+          String codec,
+          AudioCodec declaredCodec,
+          long copiedBitrate,
+          int maxBitrate,
+          long expectedBitrate) {
+    var probe = defaultProbeBuilder().videoCodec("hevc").build();
+    var streams =
+        List.of(
+            ProbeFixture.videoStreamBuilder(probe).build(),
+            ProbeFixture.audioStreamBuilder(codec)
+                .index(1)
+                .channels(OptionalInt.of(6))
+                .bitrate(OptionalLong.of(copiedBitrate))
+                .build());
+    probeResults.setDefaultOutcome(
+        ProbeFixture.completeProbe(
+            defaultProbeBuilder().videoCodec("hevc").streams(streams).build()));
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(
+                Stream.of(AudioCodec.AAC, declaredCodec, AudioCodec.EAC3)
+                    .distinct()
+                    .map(declared -> audioEntryBuilder(declared).maxChannels(6).build())
+                    .toList())
+            .build();
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(maxBitrate).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                    .options(options)
+                    .capabilityDeclaration(declaration)
+                    .build()));
+
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(
+            AudioDecision::mode,
+            AudioDecision::codec,
+            AudioDecision::channels,
+            AudioDecision::bitrate)
+        .containsExactly(AudioMode.TRANSCODE, codec, 6, expectedBitrate);
+    assertThat(session.getVariants()).extracting(QualityVariant::label).containsExactly("360p");
+  }
+
   // Original copies the H.264 video whatever the viewer's limits, and the server keeps a copied
   // 640 kb/s AC-3 5.1 track beside that copy.
   @Test

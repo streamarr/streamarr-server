@@ -57,6 +57,49 @@ class HlsAudioEncodesTest {
         .containsExactly(codec, channels, bitrate);
   }
 
+  // The player declares AAC, AC-3 and E-AC-3 with up to 7.1 and FLAC, which the server does not
+  // encode. FFmpeg's AC-3 and E-AC-3 encoders stop at 5.1.
+  @ParameterizedTest
+  @CsvSource({
+    "aac, 8, 'TRANSCODE aac 8 512000'",
+    "ac3, 8, 'TRANSCODE ac3 6 640000'",
+    "eac3, 6, 'TRANSCODE eac3 6 768000'",
+    "ac3, 2, ''",
+    "flac, 6, ''"
+  })
+  @DisplayName(
+      "Should encode the codec with more than two channels only when the server encodes the codec"
+          + " and keeps more than two channels")
+  void
+      shouldEncodeTheCodecWithMoreThanTwoChannelsOnlyWhenTheServerEncodesTheCodecAndKeepsMoreThanTwoChannels(
+          String codec, int normalizedChannels, String expectedEncode) {
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(
+                List.of(
+                    aacEntryBuilder().maxChannels(8).build(),
+                    audioEntryBuilder(AudioCodec.AC3).maxChannels(8).build(),
+                    audioEntryBuilder(AudioCodec.EAC3).maxChannels(8).build(),
+                    audioEntryBuilder(AudioCodec.FLAC).maxChannels(8).build()))
+            .build();
+
+    var encode = HlsAudioEncodes.multichannelEncode(declaration, codec, normalizedChannels);
+
+    assertThat(
+            encode
+                .map(
+                    audio ->
+                        audio.mode()
+                            + " "
+                            + audio.codec()
+                            + " "
+                            + audio.channels()
+                            + " "
+                            + audio.bitrate())
+                .orElse(""))
+        .isEqualTo(expectedEncode);
+  }
+
   @Test
   @DisplayName("Should refuse to choose an encode when the declaration or the codec is missing")
   void shouldRefuseToChooseAnEncodeWhenTheDeclarationOrTheCodecIsMissing() {
@@ -74,5 +117,11 @@ class HlsAudioEncodesTest {
     assertThatNullPointerException()
         .isThrownBy(() -> HlsAudioEncodes.aacForTrack(null, 2))
         .withMessageContaining("declaration");
+    assertThatNullPointerException()
+        .isThrownBy(() -> HlsAudioEncodes.multichannelEncode(null, "ac3", 6))
+        .withMessageContaining("declaration");
+    assertThatNullPointerException()
+        .isThrownBy(() -> HlsAudioEncodes.multichannelEncode(declaration, null, 6))
+        .withMessageContaining("codec");
   }
 }
