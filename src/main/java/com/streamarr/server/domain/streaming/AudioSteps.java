@@ -55,6 +55,11 @@ public record AudioSteps(@NonNull List<AudioDecision> highestFirst) {
     return highestFirst.getFirst();
   }
 
+  /** The step with the lowest bitrate. */
+  public AudioDecision lowest() {
+    return highestFirst.getLast();
+  }
+
   private static List<AudioDecision> multichannelSteps(AudioDecision encode) {
     if (encode.channels() <= STEREO) {
       return List.of();

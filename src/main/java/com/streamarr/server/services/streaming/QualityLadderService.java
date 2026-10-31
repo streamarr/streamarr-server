@@ -22,6 +22,8 @@ public class QualityLadderService {
 
   // More than any codec level allows, so fitting caps it at the entry level's highest bitrate.
   private static final long UNCAPPED_BITRATE = Long.MAX_VALUE;
+  // The 416x234 row of the H.264 ladder in Apple's HLS Authoring Specification for Apple Devices.
+  private static final long LOWEST_VIDEO_BITRATE = 145_000L;
 
   /**
    * The variants that an encode offers, each fitted to one capability entry (ADR 0049), and the
@@ -43,8 +45,7 @@ public class QualityLadderService {
   }
 
   // The first audio step that leaves the 360p tier's video bitrate under the maximum bitrate, or
-  // the
-  // session's audio when none does.
+  // the lowest step when none does.
   private static AudioDecision audioLeavingTheSmallestTier(QualityLadderRequest request) {
     var steps = request.audioSteps();
     var maxBitrate = request.viewerLimits().maxBitrate();
@@ -56,7 +57,7 @@ public class QualityLadderService {
     return steps.highestFirst().stream()
         .filter(step -> maxBitrate.getAsLong() - step.bitrate() >= smallestTierBitrate)
         .findFirst()
-        .orElse(steps.sessionAudio());
+        .orElse(steps.lowest());
   }
 
   // A ladder request with the bitrate of the audio step that every variant's cost includes.
@@ -195,8 +196,9 @@ public class QualityLadderService {
   private record VideoBudget(PictureSize bounds, long bitrate) {}
 
   // The viewer's maximum bitrate covers the video and the audio step. When less than the 360p
-  // tier's video bitrate remains, the variant takes the 360p box and the 360p tier's bitrate within
-  // the maximum, because an encoder reads a zero bitrate as no limit (ADR 0050).
+  // tier's video bitrate remains, the variant takes the 360p box and the remainder, but never less
+  // than the lowest video bitrate of Apple's H.264 ladder, because an encoder reads a zero bitrate
+  // as no limit (ADR 0050).
   private static VideoBudget videoBudget(Sizing sizing, PictureSize bounds) {
     var request = sizing.request();
     var maxBitrate = request.viewerLimits().maxBitrate();
@@ -206,14 +208,12 @@ public class QualityLadderService {
 
     var remainder = maxBitrate.getAsLong() - sizing.audioBitrate();
     var smallest = QualityTier.TIER_360P;
-    var smallestBitrate = smallest.videoBitrate(request.codecProfile());
-    if (remainder >= smallestBitrate) {
+    if (remainder >= smallest.videoBitrate(request.codecProfile())) {
       return new VideoBudget(bounds, remainder);
     }
 
     var box = smallest.box().orientedLike(request.probe().displayedSize());
-    return new VideoBudget(
-        bounds.boundedBy(box), Math.min(smallestBitrate, maxBitrate.getAsLong()));
+    return new VideoBudget(bounds.boundedBy(box), Math.max(LOWEST_VIDEO_BITRATE, remainder));
   }
 
   private static OptionalLong sourceBitrate(QualityLadderRequest request) {
