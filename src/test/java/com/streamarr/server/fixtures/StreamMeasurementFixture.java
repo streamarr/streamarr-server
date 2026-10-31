@@ -99,4 +99,20 @@ public class StreamMeasurementFixture {
         .keyframeIntervalPacketCounts(KeyframeIntervalCounts.of(46, 48))
         .build();
   }
+
+  /**
+   * A stream that holds {@code measuredBytes} in one keyframe interval, on a millisecond time base.
+   * The caller sets its measured duration.
+   */
+  public static MeasuredStream.MeasuredStreamBuilder measuredStreamBuilder(
+      int streamIndex, long measuredBytes) {
+    return MeasuredStream.builder()
+        .streamIndex(streamIndex)
+        .measuredBytes(measuredBytes)
+        .packetCount(1)
+        .timeBaseNumerator(1)
+        .timeBaseDenominator(1_000)
+        .keyframeIntervalBytes(KeyframeIntervalCounts.of(measuredBytes))
+        .keyframeIntervalPacketCounts(KeyframeIntervalCounts.of(1));
+  }
 }

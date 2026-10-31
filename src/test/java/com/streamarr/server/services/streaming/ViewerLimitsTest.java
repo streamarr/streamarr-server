@@ -8,9 +8,12 @@ import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.AudioSteps;
 import com.streamarr.server.domain.streaming.PictureSize;
+import com.streamarr.server.domain.streaming.StreamMeasurementSource;
+import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fixtures.ProbeFixture;
+import com.streamarr.server.fixtures.StreamMeasurementFixture;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
@@ -177,6 +180,35 @@ class ViewerLimitsTest {
 
   @Builder
   record FirstStepBesideCopy(int maxBitrate, long bitrate) {}
+
+  // ADR 0054: 4,050,000,000 measured video bytes over the 2-hour default media playlist average
+  // 4.5 Mb/s, which the viewer's maximum bitrate checks instead of the probed 6 Mb/s video and the
+  // 8 Mb/s container. The session's encoded AAC adds 128 kb/s.
+  @ParameterizedTest
+  @CsvSource({"4628000, true", "4627999, false"})
+  @DisplayName(
+      "Should check a copy against the copied video's measured average when the server holds a"
+          + " measurement of the source's streams")
+  void shouldCheckACopyAgainstTheCopiedVideosMeasuredAverageWhenTheServerHoldsAMeasurement(
+      int maxBitrate, boolean allowed) {
+    var limits =
+        ViewerLimits.of(
+            StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(maxBitrate).build());
+    var probe = defaultProbeBuilder().bitrate(8_000_000L);
+    var video =
+        ProbeFixture.videoStreamBuilder(probe.build()).bitrate(OptionalLong.of(6_000_000L)).build();
+    var measurement =
+        new StreamMeasurements(
+            StreamMeasurementSource.SAMPLE_TABLE,
+            List.of(
+                StreamMeasurementFixture.measuredStreamBuilder(video.index(), 4_050_000_000L)
+                    .measuredDuration(7_200_000)
+                    .build()));
+    var source = probe.streams(List.of(video)).streamMeasurements(Optional.of(measurement)).build();
+    var steps = new AudioSteps(List.of(AudioDecision.stereoAac()));
+
+    assertThat(limits.audioStepBesideCopyOf(source, steps).isPresent()).isEqualTo(allowed);
+  }
 
   // A probe without playback facts names no copied stream, so the container bitrate stands in for
   // the video.
