@@ -3033,6 +3033,22 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
 
+  // A 1920x1 picture has no encoded size, so the H.264 entry accepts no encode that a worker runs.
+  @Test
+  @DisplayName(
+      "Should copy the video over the viewer's limits when the worker encodes the source's picture"
+          + " at no size")
+  void shouldCopyTheVideoOverTheViewersLimitsWhenTheWorkerEncodesTheSourcesPictureAtNoSize() {
+    probeResults.setDefaultProbe(wideUhdHevcProbe().width(1920).height(1).build());
+
+    var session =
+        accepted(
+            createSessionDeclaring(
+                declarationBuilderFor(HEVC, H264).build(), OVER_THE_MAXIMUM_BITRATE));
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+  }
+
   // The Auto picture maximum of 1080 lines refuses the 3840x1920 copy, and the declaration accepts
   // no encode of it. The 4.5 Mb/s video beside the copied 384 kb/s AAC 5.1 track costs 4,884 kb/s,
   // so the audio steps down as beside a copy within the viewer's limits: to AAC 5.1 at 320 kb/s,

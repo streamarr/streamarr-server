@@ -246,6 +246,27 @@ class TranscodeDecisionServiceTest {
 
   @Test
   @DisplayName(
+      "Should copy the video over the viewer's limits when the worker encodes the source's picture"
+          + " at no size")
+  void shouldCopyTheVideoOverTheViewersLimitsWhenTheWorkerEncodesTheSourcesPictureAtNoSize() {
+    var limits =
+        ViewerLimits.of(
+            StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(1_000_000).build());
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(probeBuilder("hevc", "aac").width(1920).height(1).build())
+                .capabilityDeclaration(declaring(HEVC, H264))
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .viewerLimits(limits)
+                .build());
+
+    assertThat(decision.map(TranscodeDecision::transcodeMode)).contains(TranscodeMode.REMUX);
+  }
+
+  @Test
+  @DisplayName(
       "Should return no decision when copy-only video has no usable copy segment boundaries")
   void shouldReturnNoDecisionWhenCopyOnlyVideoHasNoUsableCopySegmentBoundaries() {
     var source = h264Probe(KEYFRAMES_LEAVING_AN_INTERVAL_EMPTY, "aac");
