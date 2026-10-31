@@ -688,10 +688,10 @@ public class ProducerLifecycleService {
    * Stops the left variant of one stream session other than the given one when no slot is free for
    * a producer with this decision. A left variant only serves a switch back, so it never keeps
    * another stream session from starting or replacing a variant (ADR 0019). The caller must hold no
-   * session mutex.
+   * session mutex. Answers whether it stopped one.
    */
-  public void stopLeftVariantOfAnotherStreamSession(UUID sessionId, TranscodeDecision decision) {
-    stopLeftVariantOfAnotherStreamSession(
+  public boolean stopLeftVariantOfAnotherStreamSession(UUID sessionId, TranscodeDecision decision) {
+    return stopLeftVariantOfAnotherStreamSession(
         sessionId,
         SlotShortage.builder()
             .configuredTranscodeSlot(

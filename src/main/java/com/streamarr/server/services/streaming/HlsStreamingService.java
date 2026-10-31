@@ -15,9 +15,11 @@ import com.streamarr.server.services.mutation.Outcome;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Instant;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
@@ -174,16 +176,22 @@ public class HlsStreamingService implements StreamingService {
   // whatever slots are free stops nothing.
   private Optional<TranscodeDecision> decideAfterStoppingALeftVariant(
       UUID sessionId, TranscodeDecisionRequest request) {
-    var verifiedCandidate =
-        verifiedEncodeCandidate(request)
-            .filter(decision -> encodeRejection(request, decision).isEmpty());
-    if (verifiedCandidate.isEmpty()) {
+    var excludedFamilies = new HashSet<>(request.excludedEncodeCodecFamilies());
+    var candidate = stoppableEncodeCandidate(request, excludedFamilies);
+    if (candidate.isEmpty()) {
       return Optional.empty();
+    }
+
+    // When no left variant runs on a worker that encodes the preferred family, the next family's
+    // workers may still hold one.
+    while (candidate.isPresent()
+        && !producerLifecycle.stopLeftVariantOfAnotherStreamSession(sessionId, candidate.get())) {
+      excludedFamilies.add(candidate.get().videoCodecFamily());
+      candidate = stoppableEncodeCandidate(request, excludedFamilies);
     }
 
     // The first decision already refused a copy, so only an encode is decided again. The stopped
     // variant's worker may encode a family in hardware that no free worker encoded before.
-    producerLifecycle.stopLeftVariantOfAnotherStreamSession(sessionId, verifiedCandidate.get());
     return transcodeDecisionService.decide(
         request.toBuilder()
             .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
@@ -191,6 +199,13 @@ public class HlsStreamingService implements StreamingService {
             .hardwareEncodableVideoCodecFamilies(
                 transcodeExecutor.hardwareEncodableVideoCodecFamilies())
             .build());
+  }
+
+  private Optional<TranscodeDecision> stoppableEncodeCandidate(
+      TranscodeDecisionRequest request, Set<String> excludedFamilies) {
+    return verifiedEncodeCandidate(
+            request.toBuilder().excludedEncodeCodecFamilies(excludedFamilies).build())
+        .filter(decision -> encodeRejection(request, decision).isEmpty());
   }
 
   private CreateStreamSessionRejection unavailableVideoFormat(TranscodeDecisionRequest request) {
