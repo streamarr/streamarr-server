@@ -7,6 +7,7 @@ import com.google.protobuf.Duration;
 import com.streamarr.transcode.v1.BackgroundProbeCapacityControl;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.Test;
 class WorkerCapacityMetersTest {
 
   private static final UUID WORKER_ID = UUID.randomUUID();
+  private static final String MISSING_ENCODER_METRIC = "streamarr.streaming.missing_encoder";
   private static final SegmentUploadMetadata TIMED_SEGMENT =
       SegmentUploadMetadata.newBuilder()
           .setMediaDuration(Duration.newBuilder().setSeconds(6))
@@ -77,6 +79,42 @@ class WorkerCapacityMetersTest {
   }
 
   @Test
+  @DisplayName(
+      "Should report each codec family that the server encodes and the worker has no encoder for when the worker connects")
+  void
+      shouldReportEachCodecFamilyThatTheServerEncodesAndTheWorkerHasNoEncoderForWhenTheWorkerConnects() {
+    meters.connected(WORKER_ID, new FixedSession(1, Set.of("h264", "hevc")));
+
+    assertThat(missingEncoder("av1")).isEqualTo(1);
+    assertThat(missingEncoder("h264")).isZero();
+    assertThat(meterRegistry.find(MISSING_ENCODER_METRIC).tag("codec_family", "hevc").gauge())
+        .isNull();
+  }
+
+  @Test
+  @DisplayName("Should report no missing encoder when the worker reconnects with every encoder")
+  void shouldReportNoMissingEncoderWhenTheWorkerReconnectsWithEveryEncoder() {
+    meters.connected(WORKER_ID, new FixedSession(1, Set.of("h264")));
+
+    meters.connected(WORKER_ID, new FixedSession(1, Set.of("h264", "av1")));
+
+    assertThat(missingEncoder("av1")).isZero();
+    assertThat(missingEncoder("h264")).isZero();
+    assertThat(meterRegistry.find(MISSING_ENCODER_METRIC).gauges()).hasSize(2);
+  }
+
+  @Test
+  @DisplayName("Should remove the worker's missing encoder meters when the worker disconnects")
+  void shouldRemoveTheWorkersMissingEncoderMetersWhenTheWorkerDisconnects() {
+    var session = new FixedSession(1, Set.of());
+    meters.connected(WORKER_ID, session);
+
+    meters.disconnected(WORKER_ID, session);
+
+    assertThat(meterRegistry.find(MISSING_ENCODER_METRIC).gauges()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should reject a meter call when its worker or session is missing")
   void shouldRejectAMeterCallWhenItsWorkerOrSessionIsMissing() {
     var session = new FixedSession(1);
@@ -100,6 +138,15 @@ class WorkerCapacityMetersTest {
         .value();
   }
 
+  private double missingEncoder(String codecFamily) {
+    return meterRegistry
+        .get(MISSING_ENCODER_METRIC)
+        .tag("worker", WORKER_ID.toString())
+        .tag("codec_family", codecFamily)
+        .gauge()
+        .value();
+  }
+
   private long productionSpeedCount() {
     return meterRegistry
         .get("streamarr.streaming.production_speed")
@@ -108,7 +155,12 @@ class WorkerCapacityMetersTest {
         .count();
   }
 
-  private record FixedSession(int playbackSlots) implements WorkerCapacityMeters.Session {
+  private record FixedSession(int playbackSlots, Set<String> verifiedVideoCodecFamilies)
+      implements WorkerCapacityMeters.Session {
+
+    private FixedSession(int playbackSlots) {
+      this(playbackSlots, Set.of("h264", "av1"));
+    }
 
     @Override
     public int playbackSlotsInUse() {
