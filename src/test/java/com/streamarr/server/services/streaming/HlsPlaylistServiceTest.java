@@ -1361,14 +1361,14 @@ class HlsPlaylistServiceTest {
       assertThat(playlist).contains("BANDWIDTH=6168000,AVERAGE-BANDWIDTH=5140000,");
     }
 
-    // A known container bitrate holds the copied video and every other track, so it is never below
-    // the video's own bitrate.
+    // The 5 Mb/s container bitrate stands in for the copied video and already holds the copied AC-3
+    // track, so the track adds nothing to it.
     @Test
     @DisplayName(
-        "Should count the container bitrate as the copied video's bitrate when the probe does not"
-            + " know the copied stream's bitrate")
+        "Should advertise the container bitrate alone when the session copies an audio track and the"
+            + " probe does not know the copied stream's bitrate")
     void
-        shouldCountTheContainerBitrateAsTheCopiedVideosBitrateWhenTheProbeDoesNotKnowTheCopiedStreamsBitrate() {
+        shouldAdvertiseTheContainerBitrateAloneWhenTheSessionCopiesAnAudioTrackAndTheProbeDoesNotKnowTheCopiedStreamsBitrate() {
       var probe =
           withVideoAndAudioStreams(
               ac3SurroundProbeBuilder().bitrate(5_000_000L), OptionalLong.empty());
@@ -1377,7 +1377,23 @@ class HlsPlaylistServiceTest {
           service.generateMultivariantPlaylist(
               copySession(probe, remuxDecisionCopying(AC3_SURROUND_COPY)), "test-token");
 
-      assertThat(playlist).contains("BANDWIDTH=6768000,AVERAGE-BANDWIDTH=5640000,");
+      assertThat(playlist).contains("BANDWIDTH=6000000,AVERAGE-BANDWIDTH=5000000,");
+    }
+
+    @Test
+    @DisplayName(
+        "Should advertise the copied audio track's bitrate alone when the probe knows neither the"
+            + " copied stream's bitrate nor the container bitrate")
+    void
+        shouldAdvertiseTheCopiedAudioTracksBitrateAloneWhenTheProbeKnowsNeitherTheCopiedStreamsBitrateNorTheContainerBitrate() {
+      var probe =
+          withVideoAndAudioStreams(ac3SurroundProbeBuilder().bitrate(0L), OptionalLong.empty());
+
+      var playlist =
+          service.generateMultivariantPlaylist(
+              copySession(probe, remuxDecisionCopying(AC3_SURROUND_COPY)), "test-token");
+
+      assertThat(playlist).contains("BANDWIDTH=768000,AVERAGE-BANDWIDTH=640000,");
     }
 
     @Test
