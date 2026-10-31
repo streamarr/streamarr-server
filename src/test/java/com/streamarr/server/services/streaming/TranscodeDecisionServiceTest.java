@@ -180,15 +180,15 @@ class TranscodeDecisionServiceTest {
   }
 
   // A source without a usable frame rate cannot be encoded, so it copies over a maximum bitrate
-  // that
-  // no audio step fits, beside the last step. Its 5 Mb/s container bitrate holds the video.
+  // that no audio step fits. Lowering the audio would not bring it within the maximum, so the
+  // copied track stays. Its 5 Mb/s container bitrate holds the video and that track.
   @ParameterizedTest
-  @CsvSource({"1000000, AUDIO_TRANSCODE, aac, 64000", "5000000, REMUX, aac, 128000"})
+  @CsvSource({"1000000, REMUX, aac, 128000", "5000000, REMUX, aac, 128000"})
   @DisplayName(
-      "Should copy the video beside the last audio step when the source has no usable frame rate"
+      "Should copy the video beside the session's audio when the source has no usable frame rate"
           + " and no audio step fits the maximum bitrate")
   void
-      shouldCopyTheVideoBesideTheLastAudioStepWhenTheSourceHasNoUsableFrameRateAndNoAudioStepFitsTheMaximumBitrate(
+      shouldCopyTheVideoBesideTheSessionsAudioWhenTheSourceHasNoUsableFrameRateAndNoAudioStepFitsTheMaximumBitrate(
           int maxBitrate, TranscodeMode expectedMode, String codec, long bitrate) {
     var limits =
         ViewerLimits.of(
