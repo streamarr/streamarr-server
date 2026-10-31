@@ -616,6 +616,84 @@ class QualityLadderServiceTest {
         .containsExactly(tuple(640, 360, expectedVideoBitrate));
   }
 
+  // The 480p tier's 1,500 kb/s fits beside E-AC-3 5.1 at 640 kb/s from 2,140 kb/s, at 448 kb/s
+  // from 1,948 kb/s and at 384 kb/s from 1,884 kb/s. Below that only stereo steps would let it fit.
+  @ParameterizedTest
+  @CsvSource({
+    "2268000, 768000, '480p, 360p'",
+    "2267999, 640000, '480p, 360p'",
+    "2140000, 640000, '480p, 360p'",
+    "2139999, 448000, '480p, 360p'",
+    "1948000, 448000, '480p, 360p'",
+    "1947999, 384000, '480p, 360p'",
+    "1884000, 384000, '480p, 360p'",
+    "1883999, 768000, '360p'"
+  })
+  @DisplayName(
+      "Should take the first multichannel step that lets the highest top tier fit when the"
+          + " session's audio leaves room for the 360p tier")
+  void
+      shouldTakeTheFirstMultichannelStepThatLetsTheHighestTopTierFitWhenTheSessionsAudioLeavesRoomForThe360pTier(
+          int maxBitrate, long expectedAudioBitrate, String expectedLabels) {
+    var probe = buildProbe(1920, 1080, 8_000_000L);
+    var options = StreamingOptions.builder().maxBitrate(maxBitrate).build();
+
+    var ladder = service.generateVariants(surroundEac3Request(probe, options));
+
+    assertThat(ladder.audio().bitrate()).isEqualTo(expectedAudioBitrate);
+    assertThat(ladder.variants())
+        .extracting(QualityVariant::label)
+        .containsExactly(expectedLabels.split(", "));
+  }
+
+  // A fixed 720p quality's variant gets its full 3,000 kb/s from 3,768 kb/s beside the session's
+  // 768 kb/s, from 3,640 kb/s beside 640 kb/s, from 3,448 kb/s beside 448 kb/s and from 3,384 kb/s
+  // beside 384 kb/s. Below that no multichannel step gives it its full bitrate.
+  @ParameterizedTest
+  @CsvSource({
+    "3768000, 768000, 3000000",
+    "3767999, 640000, 3000000",
+    "3639999, 448000, 3000000",
+    "3447999, 384000, 3000000",
+    "3383999, 768000, 2615999"
+  })
+  @DisplayName(
+      "Should take the first multichannel step that gives a fixed quality's variant its full bitrate"
+          + " when one does")
+  void shouldTakeTheFirstMultichannelStepThatGivesAFixedQualitysVariantItsFullBitrateWhenOneDoes(
+      int maxBitrate, long expectedAudioBitrate, long expectedVideoBitrate) {
+    var probe = buildProbe(1920, 1080, 8_000_000L);
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.HIGH_720P).maxBitrate(maxBitrate).build();
+
+    var ladder = service.generateVariants(surroundEac3Request(probe, options));
+
+    assertThat(ladder.audio().bitrate()).isEqualTo(expectedAudioBitrate);
+    assertThat(ladder.variants())
+        .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::videoBitrate)
+        .containsExactly(tuple(1280, 720, expectedVideoBitrate));
+  }
+
+  // An encode in Original without a source bitrate asks for the 1080p tier's 5,000 kb/s.
+  @ParameterizedTest
+  @CsvSource({"5500000, 448000, 5000000", "5383999, 768000, 4615999"})
+  @DisplayName(
+      "Should take the first multichannel step that gives an encode in Original its full bitrate"
+          + " when one does")
+  void shouldTakeTheFirstMultichannelStepThatGivesAnEncodeInOriginalItsFullBitrateWhenOneDoes(
+      int maxBitrate, long expectedAudioBitrate, long expectedVideoBitrate) {
+    var probe = buildProbe(1920, 1080, 0);
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.ORIGINAL).maxBitrate(maxBitrate).build();
+
+    var ladder = service.generateVariants(surroundEac3Request(probe, options));
+
+    assertThat(ladder.audio().bitrate()).isEqualTo(expectedAudioBitrate);
+    assertThat(ladder.variants())
+        .extracting(QualityVariant::videoBitrate)
+        .containsExactly(expectedVideoBitrate);
+  }
+
   @Test
   @DisplayName("Should keep the session's audio when the viewer sets no maximum bitrate")
   void shouldKeepTheSessionsAudioWhenTheViewerSetsNoMaximumBitrate() {

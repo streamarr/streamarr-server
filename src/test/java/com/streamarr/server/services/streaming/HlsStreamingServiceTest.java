@@ -623,13 +623,14 @@ class HlsStreamingServiceTest {
                 + ",");
   }
 
-  // A stereo DTS source encodes 128 kb/s AAC, and a 7.1 one 768 kb/s E-AC-3 5.1.
+  // A stereo DTS source encodes 128 kb/s AAC, and a 7.1 one 768 kb/s E-AC-3 5.1. At 2,000 kb/s,
+  // E-AC-3 5.1 at 448 kb/s lets the 480p tier fit. At 1,800 kb/s only a stereo step would.
   @ParameterizedTest
   @CsvSource({
     "2, 3100000, 128000, '480p, 360p'",
     "2, 1800000, 128000, '480p, 360p'",
     "8, 1800000, 768000, '360p'",
-    "8, 2000000, 768000, '360p'"
+    "8, 2000000, 448000, '480p, 360p'"
   })
   @DisplayName(
       "Should offer a tier only when its video bitrate plus the session's audio bitrate is within"
@@ -756,6 +757,70 @@ class HlsStreamingServiceTest {
               assertThat(request.bitrate()).isEqualTo(expectedVideoBitrate);
             });
     assertThat(averageBandwidths(playlist)).containsExactly(expectedVideoBitrate + 64_000L);
+  }
+
+  // E-AC-3 5.1 at 768 kb/s leaves room for the 360p tier at each maximum. A lower multichannel step
+  // is taken only when it lets a higher top tier fit, and then the first step that does.
+  @ParameterizedTest
+  @CsvSource({
+    "2000000, 448000, '480p, 360p'",
+    "3500000, 448000, '720p, 480p, 360p'",
+    "4000000, 768000, '720p, 480p, 360p'"
+  })
+  @DisplayName(
+      "Should lower the multichannel audio only when a lower step lets a higher top tier fit in"
+          + " Auto")
+  void shouldLowerTheMultichannelAudioOnlyWhenALowerStepLetsAHigherTopTierFitInAuto(
+      int maxBitrate, long expectedAudioBitrate, String expectedLabels) {
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(maxBitrate).build();
+
+    var session = createDtsSession(8, options);
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
+        .containsExactly("eac3", 6, expectedAudioBitrate);
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label)
+        .containsExactlyInAnyOrder(expectedLabels.split(", "));
+    assertThat(averageBandwidths(playlist))
+        .isNotEmpty()
+        .allSatisfy(bandwidth -> assertThat(bandwidth).isLessThanOrEqualTo(maxBitrate));
+  }
+
+  // A fixed 720p quality's variant reaches its full 3,000 kb/s beside E-AC-3 5.1 at 448 kb/s under
+  // 3,500 kb/s. Under 3,000 kb/s no multichannel step gives a fixed 1080p quality its full 5,000.
+  @ParameterizedTest
+  @CsvSource({
+    "HIGH_720P, 3500000, 448000, 1280, 720, 3000000",
+    "FULL_HD_1080P, 3000000, 768000, 1920, 1080, 2232000"
+  })
+  @DisplayName(
+      "Should lower the multichannel audio only when a lower step gives a fixed quality's variant"
+          + " its full bitrate")
+  void shouldLowerTheMultichannelAudioOnlyWhenALowerStepGivesAFixedQualitysVariantItsFullBitrate(
+      VideoQuality quality,
+      int maxBitrate,
+      long expectedAudioBitrate,
+      int expectedWidth,
+      int expectedHeight,
+      long expectedVideoBitrate) {
+    var options = StreamingOptions.builder().quality(quality).maxBitrate(maxBitrate).build();
+
+    var session = createDtsSession(8, options);
+
+    assertThat(session.getTranscodeDecision().audioDecision().bitrate())
+        .isEqualTo(expectedAudioBitrate);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(expectedWidth);
+              assertThat(request.height()).isEqualTo(expectedHeight);
+              assertThat(request.bitrate()).isEqualTo(expectedVideoBitrate);
+            });
   }
 
   // A fixed 720p quality at 1,200 kb/s leaves 432 kb/s beside 768 kb/s E-AC-3 5.1. At 384 kb/s the
