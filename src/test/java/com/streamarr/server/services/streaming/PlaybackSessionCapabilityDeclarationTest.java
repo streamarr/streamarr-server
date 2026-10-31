@@ -300,8 +300,8 @@ class PlaybackSessionCapabilityDeclarationTest {
   }
 
   @Test
-  @DisplayName("Should refuse each overlong list without checking its values")
-  void shouldRefuseEachOverlongListWithoutCheckingItsValues() {
+  @DisplayName("Should refuse a list without checking its values when the list is overlong")
+  void shouldRefuseAListWithoutCheckingItsValuesWhenTheListIsOverlong() {
     var overlongEntry =
         h264EntryBuilder()
             .codecProfiles(
