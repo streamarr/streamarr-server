@@ -18,6 +18,8 @@ import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.QualityVariant;
+import com.streamarr.server.domain.streaming.StreamMeasurementSource;
+import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -27,6 +29,7 @@ import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fixtures.ProbeFixture;
+import com.streamarr.server.fixtures.StreamMeasurementFixture;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
@@ -48,6 +51,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -1484,6 +1488,53 @@ class HlsPlaylistServiceTest {
           service.generateMultivariantPlaylist(copySession(probe, decision), "test-token");
 
       assertThat(playlist).contains("BANDWIDTH=5553600,AVERAGE-BANDWIDTH=4628000,");
+    }
+
+    // ADR 0054: over the 2-hour default media playlist, 4,050,000,000 measured video bytes average
+    // 4.5 Mb/s and 576,000,000 AC-3 bytes 640 kb/s, below the probed 6 Mb/s video and the 8 Mb/s
+    // container. A track that ends after 1 hour averages half its own rate over the playlist.
+    @ParameterizedTest(name = "copied audio {0} bytes over {1} ms")
+    @CsvSource({
+      "576000000, 7200000, 'BANDWIDTH=6168000,AVERAGE-BANDWIDTH=5140000,'",
+      "288000000, 3600000, 'BANDWIDTH=5784000,AVERAGE-BANDWIDTH=4820000,'"
+    })
+    @DisplayName(
+        "Should advertise the copied video's measured average plus the copied audio's average"
+            + " when the server holds a measurement of the source's streams")
+    void shouldAdvertiseMeasuredVideoAveragePlusCopiedAudioAverageWhenServerHoldsMeasurement(
+        long audioBytes, long audioDuration, String expectedBandwidthAttributes) {
+      var probe =
+          StreamSessionFixture.defaultProbeBuilder()
+              .bitrate(8_000_000L)
+              .audioCodec("ac3")
+              .audioBitrate(OptionalLong.of(640_000L));
+      var video =
+          ProbeFixture.videoStreamBuilder(probe.build())
+              .bitrate(OptionalLong.of(6_000_000L))
+              .build();
+      var audio = ProbeFixture.audioStreamBuilder("ac3").index(video.index() + 1).build();
+      var measurement =
+          new StreamMeasurements(
+              StreamMeasurementSource.SAMPLE_TABLE,
+              List.of(
+                  StreamMeasurementFixture.measuredStreamBuilder(video.index(), 4_050_000_000L)
+                      .measuredDuration(7_200_000)
+                      .build(),
+                  StreamMeasurementFixture.measuredStreamBuilder(audio.index(), audioBytes)
+                      .measuredDuration(audioDuration)
+                      .build()));
+
+      var playlist =
+          service.generateMultivariantPlaylist(
+              copySession(
+                  probe
+                      .streams(List.of(video, audio))
+                      .streamMeasurements(Optional.of(measurement))
+                      .build(),
+                  remuxDecisionCopying(AC3_SURROUND_COPY)),
+              "test-token");
+
+      assertThat(playlist).contains(expectedBandwidthAttributes);
     }
 
     private static MediaProbe.MediaProbeBuilder ac3SurroundProbeBuilder() {
