@@ -101,7 +101,8 @@ public class TranscodeDecisionService {
   // A copy needs a source within the viewer's limits beside the first audio step at which the
   // copy's cost fits the maximum bitrate, so the audio steps down before the video is encoded (ADR
   // 0050). A source without an output frame rate cannot be encoded (#446), so a copy over the
-  // viewer's limits beats refusing playback; it takes the first step that fits, or else the last.
+  // viewer's limits beats refusing playback. It takes the first step that fits, or else keeps the
+  // session's audio, because a lower step would not bring it within the maximum either.
   private Optional<AudioDecision> audioBesideVideoCopy(
       TranscodeDecisionRequest request, AudioDecision sessionAudio) {
     if (request.videoFormatConstraint() == VideoFormatConstraint.ENCODE_ONLY) {
@@ -121,7 +122,7 @@ public class TranscodeDecisionService {
       return Optional.empty();
     }
 
-    return Optional.of(stepWithinMaximum.orElse(steps.lowest()));
+    return Optional.of(stepWithinMaximum.orElse(sessionAudio));
   }
 
   // A source without an output frame rate cannot be encoded (#446), so a copy over the viewer's
