@@ -25,6 +25,7 @@ import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoStreamCopy;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -56,12 +57,13 @@ public class TranscodeDecisionService {
 
   /**
    * A copy needs a video capability entry for HLS that accepts the copy, and a source that fits the
-   * viewer's limits or has no output frame rate to encode at (ADR 0050). An encode uses, among the
-   * codecs that a worker-verified encoder encodes (ADR 0009), the one whose video capability entry
-   * for HLS fits an encoded variant of the source at the highest frame rate (ADR 0049), and the
-   * first in the codec preference on a tie (ADR 0009). The audio follows the audio capability
-   * entries for HLS. Returns empty when neither a copy nor a supported encode satisfies the
-   * request's constraints.
+   * viewer's limits or that no encode can play: it has no output frame rate to encode at, or no
+   * video capability entry for HLS accepts an encode of it, whatever the workers encode (ADR 0050).
+   * An encode uses, among the codecs that a worker-verified encoder encodes (ADR 0009), the one
+   * whose video capability entry for HLS fits an encoded variant of the source at the highest frame
+   * rate (ADR 0049), and the first in the codec preference on a tie (ADR 0009). The audio follows
+   * the audio capability entries for HLS. Returns empty when neither a copy nor a supported encode
+   * satisfies the request's constraints.
    */
   public Optional<TranscodeDecision> decide(@NonNull TranscodeDecisionRequest request) {
     var source = request.source();
@@ -100,9 +102,10 @@ public class TranscodeDecisionService {
 
   // A copy needs a source within the viewer's limits beside the first audio step at which the
   // copy's cost fits the maximum bitrate, so the audio steps down before the video is encoded (ADR
-  // 0050). A source without an output frame rate cannot be encoded (#446), so a copy over the
-  // viewer's limits beats refusing playback. It takes the first step that fits, or else keeps the
-  // session's audio, because a lower step would not bring it within the maximum either.
+  // 0050). A copy over the viewer's limits beats refusing playback when no encode can play it: the
+  // source has no output frame rate (#446), or no video capability entry accepts an encode of it.
+  // Such a copy takes the first step that fits, or else keeps the session's audio, because a lower
+  // step would not bring it within the maximum either.
   private Optional<AudioDecision> audioBesideVideoCopy(
       TranscodeDecisionRequest request, AudioDecision sessionAudio) {
     if (request.videoFormatConstraint() == VideoFormatConstraint.ENCODE_ONLY) {
@@ -110,23 +113,34 @@ public class TranscodeDecisionService {
     }
 
     var source = request.source();
+    var declaration = request.capabilityDeclaration();
     var limits = request.viewerLimits();
-    var steps = AudioSteps.below(sessionAudio, request.capabilityDeclaration());
+    var steps = AudioSteps.below(sessionAudio, declaration);
     var stepWithinMaximum = limits.audioStepBesideCopyOf(source, steps);
     var withinLimits = limits.allowsCopyPictureOf(source) && stepWithinMaximum.isPresent();
-    if (!withinLimits && !hasNoOutputFrameRate(source)) {
+    if (!withinLimits && hasEncodeThatTheClientPlays(declaration, source)) {
       return Optional.empty();
     }
 
-    if (!decideVideoCopy(source, request.capabilityDeclaration())) {
+    if (!decideVideoCopy(source, declaration)) {
       return Optional.empty();
     }
 
     return Optional.of(stepWithinMaximum.orElse(sessionAudio));
   }
 
-  // A source without an output frame rate cannot be encoded (#446), so a copy over the viewer's
-  // limits beats refusing playback (ADR 0050).
+  // The declaration alone answers this, whichever codec families the connected workers encode, so
+  // a worker's state refuses a session for capacity and never turns it into a copy.
+  private static boolean hasEncodeThatTheClientPlays(
+      ClientCapabilityDeclaration declaration, MediaProbe source) {
+    if (hasNoOutputFrameRate(source)) {
+      return false;
+    }
+
+    return Arrays.stream(EncodeCodecProfile.values())
+        .anyMatch(profile -> encodedFrameRate(declaration, source, profile).isPresent());
+  }
+
   private static boolean hasNoOutputFrameRate(MediaProbe source) {
     return source.videoPlaybackFacts().flatMap(VideoPlaybackFacts::outputFrameRate).isEmpty();
   }

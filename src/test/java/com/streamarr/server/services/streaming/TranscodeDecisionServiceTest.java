@@ -196,6 +196,54 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.map(TranscodeDecision::transcodeMode)).contains(TranscodeMode.REMUX);
   }
 
+  // The 720p tier refuses the 1080p copy, and the declaration accepts the HEVC copy but no H.264
+  // or AV1 encode. A format attempt that requires encoding has nothing to encode to.
+  @ParameterizedTest
+  @CsvSource({"COPY_OR_ENCODE, REMUX", "COPY_ONLY, REMUX", "ENCODE_ONLY, "})
+  @DisplayName(
+      "Should copy the video over the viewer's limits when no capability entry accepts an encode"
+          + " of the source")
+  void shouldCopyTheVideoOverTheViewersLimitsWhenNoCapabilityEntryAcceptsAnEncodeOfTheSource(
+      VideoFormatConstraint constraint, TranscodeMode expectedMode) {
+    var limits =
+        ViewerLimits.of(StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build());
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(probe("hevc", "aac"))
+                .capabilityDeclaration(declaring(HEVC))
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .videoFormatConstraint(constraint)
+                .viewerLimits(limits)
+                .build());
+
+    assertThat(decision.map(TranscodeDecision::transcodeMode))
+        .isEqualTo(Optional.ofNullable(expectedMode));
+  }
+
+  // Which codec families a worker encodes picks the encode, never whether the declaration leaves
+  // the server something to encode to.
+  @Test
+  @DisplayName(
+      "Should not copy the video over the viewer's limits when a capability entry accepts an encode"
+          + " that no worker encodes")
+  void shouldNotCopyTheVideoOverTheViewersLimitsWhenAnEntryAcceptsAnEncodeThatNoWorkerEncodes() {
+    var limits =
+        ViewerLimits.of(StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build());
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(probe("hevc", "aac"))
+                .capabilityDeclaration(declaring(HEVC, AV1))
+                .encodableVideoCodecFamilies(Set.of("h264", "hevc"))
+                .viewerLimits(limits)
+                .build());
+
+    assertThat(decision).isEmpty();
+  }
+
   @Test
   @DisplayName(
       "Should return no decision when copy-only video has no usable copy segment boundaries")
