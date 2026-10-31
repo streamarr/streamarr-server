@@ -9,7 +9,6 @@ import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
-import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.StreamCopySegments;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -18,6 +17,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
+import com.streamarr.server.domain.streaming.VideoStreamCopy;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.List;
@@ -53,11 +53,11 @@ public class TranscodeDecisionService {
   private final MeterRegistry meterRegistry;
 
   /**
-   * A copy needs a video capability entry for HLS that names the source's codec family. An encode
-   * uses the first codec in the preference whose encode codec profile a video capability entry for
-   * HLS lists, and that a worker-verified encoder encodes (ADR 0009). The audio follows the audio
-   * capability entries for HLS. Returns empty when neither a copy nor a supported encode satisfies
-   * the request's constraints.
+   * A copy needs a video capability entry for HLS that accepts the copy. An encode uses the first
+   * codec in the preference whose encode codec profile a video capability entry for HLS lists, and
+   * that a worker-verified encoder encodes (ADR 0009). The audio follows the audio capability
+   * entries for HLS. Returns empty when neither a copy nor a supported encode satisfies the
+   * request's constraints.
    */
   public Optional<TranscodeDecision> decide(@NonNull TranscodeDecisionRequest request) {
     var source = request.source();
@@ -93,24 +93,14 @@ public class TranscodeDecisionService {
   }
 
   private boolean decideVideoCopy(MediaProbe source, ClientCapabilityDeclaration declaration) {
-    if (!declaresHlsCodecFamily(declaration, source.videoCodec())
-        || !permitsCopyUntilHdrCopies(source)) {
+    var copyFits = VideoStreamCopy.of(source).filter(declaration::acceptsHlsCopy).isPresent();
+    if (!copyFits || !permitsCopyUntilHdrCopies(source)) {
       return false;
     }
 
     var refusal = streamCopyRefusal(source);
     refusal.ifPresent(this::countStreamCopyRefusal);
     return refusal.isEmpty();
-  }
-
-  private static boolean declaresHlsCodecFamily(
-      ClientCapabilityDeclaration declaration, String probedCodec) {
-    if (probedCodec == null) {
-      return false;
-    }
-
-    var family = ProbedCodecFamily.fromProbedName(probedCodec);
-    return hlsVideoEntries(declaration).anyMatch(entry -> entry.codecFamily() == family);
   }
 
   private static boolean declaresHlsCodecProfile(

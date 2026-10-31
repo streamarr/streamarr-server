@@ -150,6 +150,7 @@ public class ProbeFixture {
             .rotationDegrees(
                 facts.map(VideoPlaybackFacts::rotationDegrees).orElse(OptionalInt.empty()))
             .containerCropping(facts.flatMap(VideoPlaybackFacts::containerCropping))
+            .videoProperties(facts.flatMap(VideoPlaybackFacts::videoProperties))
             .build());
     if (probe.audioCodec() == null) {
       return streams;

@@ -13,6 +13,7 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.a
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.declarationBuilderFor;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -21,6 +22,14 @@ import com.streamarr.server.domain.streaming.AudioCapabilityEntry;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
+import com.streamarr.server.domain.streaming.CompatibleBase;
+import com.streamarr.server.domain.streaming.DolbyVision;
+import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
+import com.streamarr.server.domain.streaming.DolbyVisionProfile;
+import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
+import com.streamarr.server.domain.streaming.Fraction;
+import com.streamarr.server.domain.streaming.FrameRateRule;
+import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePosition;
@@ -28,6 +37,8 @@ import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.PictureSize;
+import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -35,6 +46,8 @@ import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
+import com.streamarr.server.domain.streaming.VideoDynamicRange;
+import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -1257,6 +1270,341 @@ class TranscodeDecisionServiceTest {
                 .build());
 
     assertThat(decision).isEmpty();
+  }
+
+  // Auto and a fixed quality may copy or encode. Original only copies.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("copiesAgainstTwoEntries")
+  @DisplayName(
+      "Should copy the video only when one entry accepts every property of the copy, never two"
+          + " entries together")
+  void shouldCopyTheVideoOnlyWhenOneEntryAcceptsEveryPropertyOfTheCopyNeverTwoEntriesTogether(
+      String scenario,
+      VideoFormatConstraint constraint,
+      MediaProbe source,
+      Optional<TranscodeMode> expected) {
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    h264EntryBuilder().maxWidth(3840).maxHeight(2160).maxFrameRate(30).build(),
+                    h264EntryBuilder().maxWidth(1920).maxHeight(1080).maxFrameRate(60).build()))
+            .build();
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .capabilityDeclaration(declaration)
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .videoFormatConstraint(constraint)
+                .build());
+
+    assertThat(decision.map(TranscodeDecision::transcodeMode)).isEqualTo(expected);
+  }
+
+  static Stream<Arguments> copiesAgainstTwoEntries() {
+    var uhd = new PictureSize(3840, 2160);
+    var hd = new PictureSize(1920, 1080);
+    var at30 = VideoPlaybackFactsFixture.declaredRateRule(new Fraction(30, 1));
+    var at60 = VideoPlaybackFactsFixture.declaredRateRule(new Fraction(60, 1));
+    var uhdAt30 = probeVersion5H264(uhd, at30);
+    var hdAt60 = probeVersion5H264(hd, at60);
+    var uhdAt60 = probeVersion5H264(uhd, at60);
+    var copy = Optional.of(TranscodeMode.REMUX);
+    var encode = Optional.of(TranscodeMode.VIDEO_TRANSCODE);
+    return Stream.of(
+        Arguments.of("Auto, 2160p30", VideoFormatConstraint.COPY_OR_ENCODE, uhdAt30, copy),
+        Arguments.of("Auto, 1080p60", VideoFormatConstraint.COPY_OR_ENCODE, hdAt60, copy),
+        Arguments.of("Auto, 2160p60", VideoFormatConstraint.COPY_OR_ENCODE, uhdAt60, encode),
+        Arguments.of("Original, 2160p30", VideoFormatConstraint.COPY_ONLY, uhdAt30, copy),
+        Arguments.of(
+            "Original, 2160p60", VideoFormatConstraint.COPY_ONLY, uhdAt60, Optional.empty()));
+  }
+
+  // Timestamp rounding lets a measured rate sit slightly above the source's standard rate.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("sourcesMeasuredWithinHalfAPercentAboveTheEntrysMaximum")
+  @DisplayName(
+      "Should copy video when its measured frame rate is within half a percent above the entry's"
+          + " maximum")
+  void shouldCopyVideoWhenItsMeasuredFrameRateIsWithinHalfAPercentAboveTheEntrysMaximum(
+      String scenario, FrameRateRule frameRateRule, VideoFormatConstraint constraint) {
+    var outputFrameRate = frameRateRule.outputFrameRate().orElseThrow().toDouble();
+    var source = probeVersion5H264(new PictureSize(1920, 1080), frameRateRule);
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    h264EntryBuilder()
+                        .maxWidth(1920)
+                        .maxHeight(1080)
+                        .maxFrameRate(outputFrameRate)
+                        .build()))
+            .build();
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .capabilityDeclaration(declaration)
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .videoFormatConstraint(constraint)
+                .build());
+
+    assertThat(decision.map(TranscodeDecision::transcodeMode)).contains(TranscodeMode.REMUX);
+  }
+
+  static Stream<Arguments> sourcesMeasuredWithinHalfAPercentAboveTheEntrysMaximum() {
+    var rules =
+        Stream.of(
+            Map.entry(
+                "60.25 fps motion against 60",
+                VideoPlaybackFactsFixture.packetScanRule(60.25, new Fraction(60, 1))),
+            Map.entry(
+                "30.1 fps motion against 30",
+                VideoPlaybackFactsFixture.packetScanRule(30.1, new Fraction(30, 1))),
+            Map.entry(
+                "25.125 fps motion exactly half a percent above 25",
+                VideoPlaybackFactsFixture.packetScanRule(25.125, new Fraction(25, 1))),
+            Map.entry(
+                "50.25 fps motion exactly half a percent above 50",
+                VideoPlaybackFactsFixture.packetScanRule(50.25, new Fraction(50, 1))),
+            Map.entry(
+                "30.15 fps motion exactly half a percent above 30",
+                VideoPlaybackFactsFixture.packetScanRule(30.15, new Fraction(30, 1))),
+            Map.entry(
+                "60.3 fps motion exactly half a percent above 60",
+                VideoPlaybackFactsFixture.packetScanRule(60.3, new Fraction(60, 1))));
+    return rules.flatMap(
+        rule ->
+            Stream.of(
+                Arguments.of(
+                    "Auto, " + rule.getKey(),
+                    rule.getValue(),
+                    VideoFormatConstraint.COPY_OR_ENCODE),
+                Arguments.of(
+                    "Original, " + rule.getKey(),
+                    rule.getValue(),
+                    VideoFormatConstraint.COPY_ONLY)));
+  }
+
+  // ADR 0037's frame-rate rule snaps the rate that the source's frames run at to a listed output
+  // frame rate, which only an encode runs at. A copy keeps every source frame at its own rate.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("sourcesWhoseFramesRunFasterThanTheirOutputFrameRate")
+  @DisplayName(
+      "Should not copy video whose frames run faster than the entry's maximum frame rate when its"
+          + " output frame rate fits that maximum")
+  void
+      shouldNotCopyVideoWhoseFramesRunFasterThanTheEntrysMaximumFrameRateWhenItsOutputFrameRateFitsThatMaximum(
+          String scenario,
+          FrameRateRule frameRateRule,
+          VideoFormatConstraint constraint,
+          Optional<TranscodeMode> expected) {
+    var outputFrameRate = frameRateRule.outputFrameRate().orElseThrow().toDouble();
+    var source = probeVersion5H264(new PictureSize(1920, 1080), frameRateRule);
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    h264EntryBuilder()
+                        .maxWidth(1920)
+                        .maxHeight(1080)
+                        .maxFrameRate(outputFrameRate)
+                        .build()))
+            .build();
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .capabilityDeclaration(declaration)
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .videoFormatConstraint(constraint)
+                .build());
+
+    assertThat(decision.map(TranscodeDecision::transcodeMode)).isEqualTo(expected);
+  }
+
+  static Stream<Arguments> sourcesWhoseFramesRunFasterThanTheirOutputFrameRate() {
+    var rules =
+        Stream.of(
+            Map.entry(
+                "120 fps motion divided to 60",
+                VideoPlaybackFactsFixture.packetScanRule(120, new Fraction(60, 1))),
+            Map.entry(
+                "37.5 fps motion rounded to 30",
+                VideoPlaybackFactsFixture.packetScanRule(37.5, new Fraction(30, 1))),
+            Map.entry(
+                "50.26 fps motion just over half a percent above 50",
+                VideoPlaybackFactsFixture.packetScanRule(50.26, new Fraction(50, 1))),
+            Map.entry(
+                "120 fps average rate divided to 60 after a scan found fewer than 2 frames",
+                VideoPlaybackFactsFixture.declaredRateFallbackRule(
+                    FrameRateRuleInputs.builder()
+                        .averageRate(Optional.of(new Fraction(120, 1)))
+                        .baseRate(Optional.of(new Fraction(120, 1)))
+                        .build(),
+                    new Fraction(60, 1))));
+    return rules.flatMap(
+        rule ->
+            Stream.of(
+                Arguments.of(
+                    "Auto, " + rule.getKey(),
+                    rule.getValue(),
+                    VideoFormatConstraint.COPY_OR_ENCODE,
+                    Optional.of(TranscodeMode.VIDEO_TRANSCODE)),
+                Arguments.of(
+                    "Original, " + rule.getKey(),
+                    rule.getValue(),
+                    VideoFormatConstraint.COPY_ONLY,
+                    Optional.empty())));
+  }
+
+  @Test
+  @DisplayName(
+      "Should copy a probe version 4 outcome when an HLS entry names its codec family whatever its"
+          + " maximums")
+  void shouldCopyAProbeVersion4OutcomeWhenAnHlsEntryNamesItsCodecFamilyWhateverItsMaximums() {
+    var version4 = probeBuilder("h264", "aac").width(7680).height(4320).build();
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().maxWidth(1280).maxHeight(720).build()))
+            .build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(version4)
+                    .capabilityDeclaration(declaration)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode a probe version 5 outcome when its picture exceeds the entry's maximum size")
+  void shouldEncodeAProbeVersion5OutcomeWhenItsPictureExceedsTheEntrysMaximumSize() {
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().maxWidth(1280).maxHeight(720).build()))
+            .build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(
+                        probeVersion5H264(
+                            new PictureSize(1920, 1080),
+                            VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1))))
+                    .capabilityDeclaration(declaration)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode a Dolby Vision 8.1 source when an entry accepts it until HDR copies return")
+  void shouldEncodeADolbyVision81SourceWhenAnEntryAcceptsItUntilHdrCopiesReturn() {
+    var profile81 =
+        new VideoDynamicRange(
+            CompatibleBase.PQ,
+            Presence.ABSENT,
+            new DolbyVision.Present(
+                Optional.of(
+                    DolbyVisionConfiguration.builder()
+                        .profile(OptionalInt.of(8))
+                        .level(OptionalInt.of(6))
+                        .baseLayerCompatibilityId(OptionalInt.of(1))
+                        .baseLayer(true)
+                        .rpu(true)
+                        .build()),
+                Presence.PRESENT));
+    var source =
+        probeBuilder("hevc", "aac")
+            .videoPlaybackFacts(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .streamIndex(0)
+                        .codecFamily(Optional.of(HEVC))
+                        .codecString(Optional.of("hvc1.2.4.L120.90"))
+                        .bitDepth(OptionalInt.of(10))
+                        .dynamicRange(profile81)
+                        .videoProperties(
+                            Optional.of(
+                                VideoStreamProperties.builder()
+                                    .codecProfile(Optional.of(VideoCodecProfile.HEVC_MAIN_10))
+                                    .codecLevel(OptionalInt.of(41))
+                                    .codecTier(Optional.of(VideoCodecTier.MAIN))
+                                    .firstFramesRead(true)
+                                    .build()))
+                        .build()))
+            .build();
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    h264EntryBuilder().build(),
+                    hevcEntryBuilder()
+                        .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
+                        .dolbyVisionProfiles(
+                            List.of(
+                                DolbyVisionProfileCapability.builder()
+                                    .profile(DolbyVisionProfile.PROFILE_8_1)
+                                    .maxLevel(6)
+                                    .build()))
+                        .build()))
+            .build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaration)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+  }
+
+  // An 8-bit 4:2:0 SDR H.264 High profile source at level 5.1 that probe version 5 described.
+  private static MediaProbe probeVersion5H264(PictureSize size, FrameRateRule frameRateRule) {
+    return MediaProbe.builder()
+        .keyframes(KEYFRAMES_EVERY_TWO_SECONDS)
+        .duration(Duration.ofMinutes(120))
+        .framerate(OptionalDouble.of(frameRateRule.outputFrameRate().orElseThrow().toDouble()))
+        .width(size.width())
+        .height(size.height())
+        .videoCodec("h264")
+        .audioCodec("aac")
+        .streams(List.of(ProbeFixture.audioStreamBuilder("aac").index(1).build()))
+        .bitrate(5_000_000L)
+        .audioChannels(OptionalInt.of(2))
+        .videoPlaybackFacts(
+            Optional.of(
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                    .streamIndex(0)
+                    .frameRateRule(frameRateRule)
+                    .videoProperties(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.h264HighPropertiesBuilder()
+                                .codecLevel(OptionalInt.of(51))
+                                .build()))
+                    .build()))
+        .build();
   }
 
   @ParameterizedTest(name = "{0}")

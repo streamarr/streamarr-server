@@ -7,6 +7,7 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.a
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.audioEntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.declarationBuilderFor;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommandBuilder;
@@ -31,6 +32,7 @@ import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.ContainerCropping;
+import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
@@ -90,6 +92,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.dao.DataAccessException;
@@ -722,6 +725,159 @@ class HlsStreamingServiceTest {
                   .isEqualTo("h264");
               assertThat(service.getAllSessions()).containsExactly(ready.session());
             });
+  }
+
+  @Test
+  @DisplayName("Should encode the video when only two capability entries together accept the copy")
+  void shouldEncodeTheVideoWhenOnlyTwoCapabilityEntriesTogetherAcceptTheCopy() {
+    probeResults.setDefaultProbe(probeVersion5UhdAt60().build());
+
+    var session = createSession(seedMediaFile().getId(), uhdAt30AndHdAt60Declaration());
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo("h264");
+  }
+
+  @Test
+  @DisplayName("Should reject Original when only two capability entries together accept the copy")
+  void shouldRejectOriginalWhenOnlyTwoCapabilityEntriesTogetherAcceptTheCopy() {
+    probeResults.setDefaultProbe(probeVersion5UhdAt60().build());
+
+    var result =
+        logicalPlayback()
+            .start(
+                logicalStart()
+                    .options(StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build())
+                    .capabilityDeclaration(uhdAt30AndHdAt60Declaration())
+                    .build());
+
+    assertThat(result)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(service.getAllSessions()).isEmpty();
+  }
+
+  // Auto and a fixed quality start playback that may copy or encode the video.
+  @ParameterizedTest
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"AUTO", "UHD_4K"})
+  @DisplayName(
+      "Should encode the video in Auto or a fixed quality when only two capability entries"
+          + " together accept the copy")
+  void shouldEncodeTheVideoInAutoOrAFixedQualityWhenOnlyTwoCapabilityEntriesTogetherAcceptTheCopy(
+      VideoQuality quality) {
+    probeResults.setDefaultProbe(probeVersion5UhdAt60().build());
+
+    var attempt = startPlayback(quality, uhdAt30AndHdAt60Declaration());
+
+    assertThat(attempt)
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready ->
+                assertThat(ready.session().getTranscodeDecision().transcodeMode())
+                    .isEqualTo(TranscodeMode.VIDEO_TRANSCODE));
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"AUTO", "UHD_4K", "ORIGINAL"})
+  @DisplayName(
+      "Should copy the video in Auto, a fixed quality or Original when one capability entry accepts"
+          + " the copy")
+  void shouldCopyTheVideoInAutoAFixedQualityOrOriginalWhenOneCapabilityEntryAcceptsTheCopy(
+      VideoQuality quality) {
+    probeResults.setDefaultProbe(probeVersion5UhdAt60().build());
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().maxWidth(3840).maxHeight(2160).build()))
+            .build();
+
+    var attempt = startPlayback(quality, declaration);
+
+    assertThat(attempt)
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready ->
+                assertThat(ready.session().getTranscodeDecision().transcodeMode())
+                    .isEqualTo(TranscodeMode.REMUX));
+  }
+
+  // A phone records portrait video as a portrait picture, so a landscape maximum bounds it turned.
+  @ParameterizedTest
+  @CsvSource({"1080, 1920, REMUX", "1080, 2400, VIDEO_TRANSCODE"})
+  @DisplayName(
+      "Should copy a portrait source only when its picture fits the capability entry's maximum"
+          + " turned on its side")
+  void shouldCopyAPortraitSourceOnlyWhenItsPictureFitsTheCapabilityEntrysMaximumTurnedOnItsSide(
+      int width, int height, TranscodeMode expectedMode) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .width(width)
+            .height(height)
+            .videoPlaybackFacts(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .streamIndex(0)
+                        .frameRateRule(
+                            VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))
+                        .videoProperties(
+                            Optional.of(
+                                VideoPlaybackFactsFixture.h264HighPropertiesBuilder()
+                                    .codecLevel(OptionalInt.of(51))
+                                    .build()))
+                        .build()))
+            .build());
+    var landscapeHd =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().maxWidth(1920).maxHeight(1080).build()))
+            .build();
+
+    var session = createSession(seedMediaFile().getId(), landscapeHd);
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(expectedMode);
+  }
+
+  private PlaybackFormatAttempt startPlayback(
+      VideoQuality quality, ClientCapabilityDeclaration declaration) {
+    var result =
+        logicalPlayback()
+            .start(
+                logicalStart()
+                    .options(StreamingOptions.builder().quality(quality).build())
+                    .capabilityDeclaration(declaration)
+                    .build());
+    return accepted(result).currentFormatAttempt();
+  }
+
+  // An 8-bit SDR H.264 High profile source at 3840×2160 and 60 fps that probe version 5 described.
+  private static MediaProbe.MediaProbeBuilder probeVersion5UhdAt60() {
+    return defaultProbeBuilder()
+        .width(3840)
+        .height(2160)
+        .framerate(OptionalDouble.of(60))
+        .videoPlaybackFacts(
+            Optional.of(
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                    .streamIndex(0)
+                    .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(60, 1)))
+                    .videoProperties(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.h264HighPropertiesBuilder()
+                                .codecLevel(OptionalInt.of(52))
+                                .build()))
+                    .build()));
+  }
+
+  // A player that plays H.264 at 3840×2160 up to 30 fps and at 1920×1080 up to 60 fps.
+  private static ClientCapabilityDeclaration uhdAt30AndHdAt60Declaration() {
+    return defaultDeclarationBuilder()
+        .video(
+            List.of(
+                h264EntryBuilder().maxWidth(3840).maxHeight(2160).maxFrameRate(30).build(),
+                h264EntryBuilder().maxWidth(1920).maxHeight(1080).maxFrameRate(60).build()))
+        .build();
   }
 
   @Test

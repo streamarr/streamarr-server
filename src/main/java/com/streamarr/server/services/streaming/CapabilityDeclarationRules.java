@@ -142,7 +142,8 @@ final class CapabilityDeclarationRules {
     return Optional.empty();
   }
 
-  // A profile 5 or 10.0 output fits through its Dolby Vision profile alone (ADR 0049).
+  // Profile 5 and 10.0 streams have no compatible base, so an entry that lists either needs none
+  // (ADR 0049).
   private static boolean listsDolbyVisionWithoutACompatibleBase(VideoCapabilityEntry entry) {
     return entry.dolbyVisionProfiles().stream()
         .anyMatch(capability -> capability.profile().compatibleBase() == CompatibleBase.NONE);
