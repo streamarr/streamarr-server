@@ -71,12 +71,12 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 
-/** The checks that need a pinned worker image that answers probe version 5. */
+/** The checks that need a pinned worker image that answers probe version 6. */
 @Tag("IntegrationTest")
 @EnableDgsTest
 @WithProfileContext
-@DisplayName("Probe Version 5 Worker Integration Tests")
-class ProbeVersion5WorkerIT extends AbstractIntegrationTest {
+@DisplayName("Probe Version 6 Worker Integration Tests")
+class ProbeVersion6WorkerIT extends AbstractIntegrationTest {
 
   private static final UUID SOURCE_NAMESPACE_ID =
       UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd");
