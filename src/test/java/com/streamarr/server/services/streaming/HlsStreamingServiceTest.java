@@ -18,6 +18,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest;
 import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.av1Nvenc;
+import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libsvtav1;
 import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libx264;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static com.streamarr.server.support.OutcomeTestSupport.rejectionOf;
@@ -3391,6 +3392,36 @@ class HlsStreamingServiceTest {
             UUID.randomUUID(),
             StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build());
     assertThat(busy.getTranscodeDecision().videoCodecFamily()).isEqualTo("h264");
+    assertThat(transcodeExecutor.encodableVideoCodecFamilies()).isEmpty();
+
+    var admitted = accepted(service.createSession(createCommandDeclaring(av1AndH264Declaration())));
+
+    assertThat(admitted.getTranscodeDecision().videoCodecFamily()).isEqualTo("av1");
+    assertThat(switching.getVariantHandles()).containsOnlyKeys("1080p");
+    upload(switchingId, "1080p", "1080p/segment1.m4s");
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode AV1 after stopping a left variant on the only AV1 worker when the only H.264"
+          + " worker is busy")
+  void shouldEncodeAv1AfterStoppingALeftVariantOnTheOnlyAv1WorkerWhenTheOnlyH264WorkerIsBusy()
+      throws Exception {
+    useAnAv1WorkerWithTwoSlotsAndAnH264WorkerWithOne(libsvtav1());
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .framerate(OptionalDouble.of(23.976))
+            .videoCodec("hevc")
+            .bitrate(8_000_000L)
+            .build());
+    var switching = createSession(seedMediaFile().getId(), declarationBuilderFor(AV1).build());
+    var switchingId = switching.getSessionId();
+    var switched = switchFrom480pTo1080pKeeping480pAsTheLeftVariant(switchingId);
+    createSession(
+        seedMediaFile().getId(),
+        UUID.randomUUID(),
+        StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build());
     assertThat(transcodeExecutor.encodableVideoCodecFamilies()).isEmpty();
 
     var admitted = accepted(service.createSession(createCommandDeclaring(av1AndH264Declaration())));
