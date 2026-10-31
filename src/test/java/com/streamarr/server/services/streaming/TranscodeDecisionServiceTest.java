@@ -1414,12 +1414,13 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.audioDecision().channels()).isEqualTo(1);
   }
 
-  @Test
-  @DisplayName("Should default to stereo when source audio channels are empty")
-  void shouldDefaultToStereoWhenSourceAudioChannelsAreEmpty() {
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("channelCountsThatAreNotKnown")
+  @DisplayName("Should default to stereo when the source reports no channel count")
+  void shouldDefaultToStereoWhenTheSourceReportsNoChannelCount(OptionalInt sourceChannels) {
     var source =
         probeBuilder("h264", "aac")
-            .audioChannels(OptionalInt.empty())
+            .audioChannels(sourceChannels)
             .audioBitrate(OptionalLong.empty())
             .build();
     var declaration = declaring(H264);
@@ -1438,5 +1439,32 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
     assertThat(decision.audioDecision().channels()).isEqualTo(2);
     assertThat(decision.audioDecision().bitrate()).isEqualTo(128_000L);
+  }
+
+  static Stream<OptionalInt> channelCountsThatAreNotKnown() {
+    return Stream.of(OptionalInt.empty(), OptionalInt.of(0));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("channelCountsThatAreNotKnown")
+  @DisplayName(
+      "Should encode mono AAC when the source reports no channel count and the AAC entry accepts one channel")
+  void shouldEncodeMonoAacWhenTheSourceReportsNoChannelCountAndTheAacEntryAcceptsOneChannel(
+      OptionalInt sourceChannels) {
+    var source = probeBuilder("h264", "aac").audioChannels(sourceChannels).build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaringAudio(audio(AAC, 1)))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
+    assertThat(decision.audioDecision().codec()).isEqualTo("aac");
+    assertThat(decision.audioDecision().channels()).isEqualTo(1);
   }
 }

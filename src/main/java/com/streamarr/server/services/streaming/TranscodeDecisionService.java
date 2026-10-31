@@ -222,7 +222,7 @@ public class TranscodeDecisionService {
     var channelMaximums = hlsAudioChannelMaximums(declaration);
     // A copy carries every source channel, so the copy rule and the announced count use the
     // source's count. Only an encode lays the channels out in a normalized layout.
-    int sourceChannels = source.audioChannels().orElse(STEREO);
+    int sourceChannels = sourceChannelCount(source);
     var sourceCodecString =
         source.audioStreams().stream()
             .findFirst()
@@ -246,6 +246,16 @@ public class TranscodeDecisionService {
     }
 
     return selectTranscodeAudio(channelMaximums, AudioDecision.normalizeChannels(sourceChannels));
+  }
+
+  // A probe can report zero channels, which says no more than an absent count.
+  private static int sourceChannelCount(MediaProbe source) {
+    int channels = source.audioChannels().orElse(STEREO);
+    if (channels <= 0) {
+      return STEREO;
+    }
+
+    return channels;
   }
 
   // Several entries for one codec each accept up to their own maximum, so the codec accepts up to
