@@ -3002,6 +3002,32 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
 
+  // A worker with an H.264 encoder is connected again right after the server reads the verified
+  // encoders, either after none was connected or after a momentary disconnect. The read describes
+  // a moment without a connected worker, so it never admits a copy over the viewer's limits.
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  @DisplayName(
+      "Should report transient capacity instead of copying over the viewer's limits when a worker"
+          + " connects right after the server reads the verified encoders")
+  void
+      shouldReportTransientCapacityInsteadOfCopyingOverTheViewersLimitsWhenAWorkerConnectsRightAfterTheVerifiedEncodersAreRead(
+          boolean connectedBeforeTheRead) {
+    probeResults.setDefaultProbe(wideUhdHevcProbe().build());
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("h264"));
+    transcodeExecutor.setHealthy(connectedBeforeTheRead);
+    transcodeExecutor.changeWorkersAroundNextVerifiedFamiliesRead(
+        () -> transcodeExecutor.setHealthy(false), () -> transcodeExecutor.setHealthy(true));
+
+    assertThat(
+            createSessionDeclaring(
+                declarationBuilderFor(HEVC, H264).build(), OVER_THE_MAXIMUM_BITRATE))
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(capacityRefusals("no_connected_worker")).isOne();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
   @Test
   @DisplayName(
       "Should report transient capacity instead of copying over the viewer's limits when the"

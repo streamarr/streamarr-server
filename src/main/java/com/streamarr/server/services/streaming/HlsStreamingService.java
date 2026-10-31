@@ -75,6 +75,13 @@ public class HlsStreamingService implements StreamingService {
       return Outcome.rejected(new CreateStreamSessionRejection.InvalidPictureSize());
     }
 
+    // Without a connected worker no encoder is verified. That moment must not read as faulty
+    // workers and admit a copy over the viewer's limits once a worker connects.
+    var verifiedFamilies = transcodeExecutor.verifiedVideoCodecFamilies();
+    if (verifiedFamilies.isEmpty()) {
+      return Outcome.rejected(refuseForLackOfCapacity(CapacityRefusal.NO_CONNECTED_WORKER));
+    }
+
     var authority = command.identity().playbackAuthority();
     var mediaFileId = command.mediaFileId();
     var options = command.options();
@@ -87,8 +94,7 @@ public class HlsStreamingService implements StreamingService {
             .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())
             .hardwareEncodableVideoCodecFamilies(
                 transcodeExecutor.hardwareEncodableVideoCodecFamilies())
-            .verifiedVideoCodecFamilies(
-                transcodeExecutor.verifiedVideoCodecFamilies().orElseGet(Set::of))
+            .verifiedVideoCodecFamilies(verifiedFamilies.get())
             .viewerLimits(ViewerLimits.of(options))
             .build();
     var candidate = transcodeDecisionService.decide(request);
