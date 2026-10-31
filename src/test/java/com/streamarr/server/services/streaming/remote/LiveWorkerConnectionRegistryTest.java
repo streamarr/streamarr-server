@@ -621,6 +621,30 @@ class LiveWorkerConnectionRegistryTest {
 
   @Test
   @DisplayName(
+      "Should keep a codec family among the verified hardware families when the worker that counts"
+          + " its hardware encoder has no free slot")
+  void
+      shouldKeepACodecFamilyAmongTheVerifiedHardwareFamiliesWhenTheWorkerThatCountsItsHardwareEncoderHasNoFreeSlot() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    registry.register(
+        WORKER_ID,
+        registration(
+            WORKER_ID,
+            keyframeVerifiedHardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "av1_nvenc"),
+            hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_HEVC, "hevc_nvenc"),
+            softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264")),
+        new CancellableObserver());
+
+    assertThat(registry.dispatch(encodeJob("h264"))).isPresent();
+
+    assertThat(registry.hardwareEncodableVideoCodecFamilies(SOURCE_NAMESPACE_ID)).isEmpty();
+    assertThat(registry.verifiedHardwareVideoCodecFamilies(SOURCE_NAMESPACE_ID))
+        .containsExactly("av1");
+    assertThat(registry.verifiedHardwareVideoCodecFamilies(UUID.randomUUID())).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
       "Should start AV1 variants on the hardware AV1 worker until it has no free slot when a"
           + " software AV1 worker registered first")
   void

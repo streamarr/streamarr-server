@@ -500,7 +500,17 @@ final class LiveWorkerConnectionRegistry {
   }
 
   Set<String> hardwareEncodableVideoCodecFamilies(UUID sourceNamespaceId) {
-    return encodersOfWorkersWithFreeSlot(sourceNamespaceId)
+    return hardwareCodecFamilies(encodersOfWorkersWithFreeSlot(sourceNamespaceId));
+  }
+
+  Set<String> verifiedHardwareVideoCodecFamilies(UUID sourceNamespaceId) {
+    return hardwareCodecFamilies(
+        connectionsFor(sourceNamespaceId)
+            .flatMap(connection -> connection.countedEncoders.values().stream()));
+  }
+
+  private static Set<String> hardwareCodecFamilies(Stream<WorkerVerifiedEncoder> encoders) {
+    return encoders
         .map(WorkerVerifiedEncoder::backend)
         .filter(backend -> backend.kind() == EncoderBackend.Kind.HARDWARE)
         .map(EncoderBackend::codecFamily)
