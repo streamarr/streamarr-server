@@ -22,7 +22,7 @@ public record VideoEncodeDecision(
   }
 
   /** The decision whose level is the smallest that allows the output, or empty when none does. */
-  static Optional<VideoEncodeDecision> allowing(EncodedVideoOutput output) {
+  static Optional<VideoEncodeDecision> allowing(@NonNull EncodedVideoOutput output) {
     return switch (output.codecFamily()) {
       case "h264" -> H264Level.smallestAllowing(output).map(VideoEncodeDecision::h264);
       case "av1" -> Av1Level.smallestAllowing(output).map(VideoEncodeDecision::av1);

@@ -6,6 +6,7 @@ import com.streamarr.server.domain.streaming.VideoQuality;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import lombok.NonNull;
 
 /**
  * A named picture box that the quality ladder offers. The box bounds a picture in either
@@ -45,7 +46,7 @@ enum QualityTier {
   }
 
   /** The tier's nominal video bitrate for the codec family that the encode forces. */
-  long videoBitrate(EncodeCodecProfile codecProfile) {
+  long videoBitrate(@NonNull EncodeCodecProfile codecProfile) {
     return switch (codecProfile) {
       case AV1_MAIN -> av1VideoBitrate;
       case H264_HIGH -> h264VideoBitrate;
@@ -53,7 +54,7 @@ enum QualityTier {
   }
 
   /** The tier whose box a fixed quality has, or empty for Auto and Original. */
-  static Optional<QualityTier> ofFixedQuality(VideoQuality quality) {
+  static Optional<QualityTier> ofFixedQuality(@NonNull VideoQuality quality) {
     return switch (quality) {
       case LOW_360P -> Optional.of(TIER_360P);
       case MEDIUM_480P -> Optional.of(TIER_480P);
@@ -66,13 +67,13 @@ enum QualityTier {
 
   // The tier whose box holds the source and every smaller tier. The smallest tier has no smaller
   // box, so every source is offered it.
-  static List<QualityTier> offeredFor(PictureSize source) {
+  static List<QualityTier> offeredFor(@NonNull PictureSize source) {
     var sourceTier = LARGEST_FIRST.indexOf(containing(source));
     return LARGEST_FIRST.subList(sourceTier, LARGEST_FIRST.size());
   }
 
   // The smallest tier whose box holds the picture, or the largest tier when none does.
-  static QualityTier containing(PictureSize picture) {
+  static QualityTier containing(@NonNull PictureSize picture) {
     return LARGEST_FIRST.reversed().stream()
         .filter(tier -> picture.fitsWithinEitherOrientation(tier.box()))
         .findFirst()
