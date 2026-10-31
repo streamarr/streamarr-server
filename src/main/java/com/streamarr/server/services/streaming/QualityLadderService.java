@@ -24,24 +24,25 @@ public class QualityLadderService {
   private static final long UNCAPPED_BITRATE = Long.MAX_VALUE;
   // The 416x234 row of the H.264 ladder in Apple's HLS Authoring Specification for Apple Devices.
   private static final long LOWEST_VIDEO_BITRATE = 145_000L;
+  private static final int STEREO = 2;
 
   /**
    * The variants that an encode offers, each fitted to one capability entry (ADR 0049), and the
    * audio step that every variant's cost includes (ADR 0050). When the session's audio leaves less
    * than the 360p tier's video bitrate under the maximum bitrate, the ladder takes the first audio
-   * step that leaves it. Auto offers a standard tier when the source is larger than the next
-   * smaller tier's box, scaling the source to fit the tier's box without enlarging it, or one
-   * variant when the viewer's limits leave no tier. A fixed quality offers only the default
-   * variant, within its tier's box and at most the nominal bitrate of the smallest tier whose box
-   * holds the encoded picture; Original has no box. Sizes each variant from the picture that a
-   * player shows, after cropping and rotation. A tier that an entry shrinks into a smaller tier's
-   * box gives way to that tier. Auto labels each variant by the tier whose box it reaches, or else
-   * by its shorter side. Offers no variant when the viewer's limits leave no picture that the
-   * worker encodes.
+   * step that leaves it. A lower multichannel step is taken only when it lets a larger picture fit.
+   * Auto offers a standard tier when the source is larger than the next smaller tier's box, scaling
+   * the source to fit the tier's box without enlarging it, or one variant when the viewer's limits
+   * leave no tier. A fixed quality offers only the default variant, within its tier's box and at
+   * most the nominal bitrate of the smallest tier whose box holds the encoded picture; Original has
+   * no box. Sizes each variant from the picture that a player shows, after cropping and rotation. A
+   * tier that an entry shrinks into a smaller tier's box gives way to that tier. Auto labels each
+   * variant by the tier whose box it reaches, or else by its shorter side. Offers no variant when
+   * the viewer's limits leave no picture that the worker encodes.
    */
   public QualityLadder generateVariants(@NonNull QualityLadderRequest request) {
-    var audio = audioLeavingTheSmallestTier(request);
-    return new QualityLadder(variants(new Sizing(request, audio.bitrate())), audio);
+    var audio = audioForTheLargestPicture(request, audioLeavingTheSmallestTier(request));
+    return new QualityLadder(variants(Sizing.within(request, audio)), audio);
   }
 
   // The first audio step that leaves the 360p tier's video bitrate under the maximum bitrate, or
@@ -60,15 +61,67 @@ public class QualityLadderService {
         .orElse(steps.lowest());
   }
 
-  // A ladder request with the bitrate of the audio step that every variant's cost includes.
-  private record Sizing(QualityLadderRequest request, long audioBitrate) {}
+  // The multichannel steps below the chosen step, from the highest, lead to the first step whose
+  // ladder reaches the largest picture that any of them reaches. A stereo step is never taken for a
+  // larger picture, and the steps list every multichannel step before the stereo ones.
+  private static AudioDecision audioForTheLargestPicture(
+      QualityLadderRequest request, AudioDecision chosen) {
+    if (request.viewerLimits().maxBitrate().isEmpty()) {
+      return chosen;
+    }
+
+    var steps = request.audioSteps().highestFirst();
+    var largest = chosen;
+    var largestPicture = pictureReached(request, chosen);
+    var lowerMultichannelSteps =
+        steps.subList(steps.indexOf(chosen) + 1, steps.size()).stream()
+            .takeWhile(step -> step.channels() > STEREO)
+            .toList();
+    for (var step : lowerMultichannelSteps) {
+      var picture = pictureReached(request, step);
+      if (picture > largestPicture) {
+        largest = step;
+        largestPicture = picture;
+      }
+    }
+
+    return largest;
+  }
+
+  // How large a picture the ladder reaches beside the audio. In Auto, the area of its largest
+  // variant, so a higher top tier reaches more. A single variant reaches more only when it is the
+  // variant that it would be without a maximum bitrate, at its full bitrate.
+  private static long pictureReached(QualityLadderRequest request, AudioDecision audio) {
+    var variants = variants(Sizing.within(request, audio));
+    if (request.viewerLimits().quality() == VideoQuality.AUTO) {
+      return variants.stream()
+          .mapToLong(variant -> (long) variant.width() * variant.height())
+          .max()
+          .orElse(0);
+    }
+
+    return variants.equals(variants(Sizing.withoutMaximumBitrate(request))) ? 1 : 0;
+  }
+
+  // A ladder request with the maximum bitrate that bounds its variants and the bitrate of the audio
+  // step that every variant's cost includes.
+  private record Sizing(QualityLadderRequest request, OptionalLong maxBitrate, long audioBitrate) {
+
+    static Sizing within(QualityLadderRequest request, AudioDecision audio) {
+      return new Sizing(request, request.viewerLimits().maxBitrate(), audio.bitrate());
+    }
+
+    static Sizing withoutMaximumBitrate(QualityLadderRequest request) {
+      return new Sizing(request, OptionalLong.empty(), 0);
+    }
+  }
 
   private static List<QualityVariant> variants(Sizing sizing) {
     var request = sizing.request();
     var limits = request.viewerLimits();
     var source = request.probe().displayedSize();
     var viewerBounds = limits.maximumPicture();
-    var maxBitrate = limits.maxBitrate();
+    var maxBitrate = sizing.maxBitrate();
     if (limits.quality() != VideoQuality.AUTO) {
       return fitDefaultVariant(sizing).map(QualityLadderService::defaultVariant).stream().toList();
     }
@@ -201,7 +254,7 @@ public class QualityLadderService {
   // as no limit (ADR 0050).
   private static VideoBudget videoBudget(Sizing sizing, PictureSize bounds) {
     var request = sizing.request();
-    var maxBitrate = request.viewerLimits().maxBitrate();
+    var maxBitrate = sizing.maxBitrate();
     if (maxBitrate.isEmpty()) {
       return new VideoBudget(bounds, UNCAPPED_BITRATE);
     }
