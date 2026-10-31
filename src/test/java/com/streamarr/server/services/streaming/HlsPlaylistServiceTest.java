@@ -10,6 +10,7 @@ import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
+import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
@@ -1238,13 +1239,49 @@ class HlsPlaylistServiceTest {
           .allSatisfy(line -> assertThat(line).contains(",FRAME-RATE=" + frameRate));
     }
 
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("copiedFrameRates")
+    @DisplayName(
+        "Should advertise the copied frame rate to three decimals when the session copies the"
+            + " video")
+    void shouldAdvertiseTheCopiedFrameRateToThreeDecimalsWhenTheSessionCopiesTheVideo(
+        String rateSource, FrameRateRule rule, String frameRate) {
+      assertThat(streamInf(copySessionWithRule(rule)))
+          .singleElement()
+          .asString()
+          .contains(",FRAME-RATE=" + frameRate);
+    }
+
+    static Stream<Arguments> copiedFrameRates() {
+      return Stream.of(
+          Arguments.of(
+              "declared rates that agree",
+              VideoPlaybackFactsFixture.declaredRateRule(new Fraction(25, 1)),
+              "25.000"),
+          Arguments.of(
+              "declared NTSC rates that agree",
+              VideoPlaybackFactsFixture.declaredRateRule(new Fraction(30_000, 1_001)),
+              "29.970"),
+          Arguments.of(
+              "packet scan whose motion rate snaps to a listed rate",
+              VideoPlaybackFactsFixture.packetScanRule(59.94005994, new Fraction(60, 1)),
+              "59.940"),
+          Arguments.of(
+              "declared-rate fallback",
+              VideoPlaybackFactsFixture.declaredRateFallbackRule(
+                  FrameRateRuleInputs.builder()
+                      .averageRate(Optional.of(new Fraction(75, 2)))
+                      .build(),
+                  new Fraction(30, 1)),
+              "37.500"));
+    }
+
     @Test
     @DisplayName(
-        "Should advertise no frame rate when the session copies a stream whose declared rates"
-            + " agree")
-    void shouldAdvertiseNoFrameRateWhenTheSessionCopiesAStreamWhoseDeclaredRatesAgree() {
-      var session =
-          copySessionWithRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(25, 1)));
+        "Should advertise no frame rate when the session copies a stream whose frame rate the rule"
+            + " refused")
+    void shouldAdvertiseNoFrameRateWhenTheSessionCopiesAStreamWhoseFrameRateTheRuleRefused() {
+      var session = copySessionWithRule(VideoPlaybackFactsFixture.refusedRule());
 
       assertThat(streamInf(session)).singleElement().asString().doesNotContain("FRAME-RATE");
     }
@@ -1252,13 +1289,7 @@ class HlsPlaylistServiceTest {
     private StreamSession copySessionWithRule(FrameRateRule rule) {
       var facts =
           VideoPlaybackFactsFixture.sdrH264FactsBuilder().streamIndex(0).frameRateRule(rule);
-      return StreamSessionFixture.defaultSessionBuilder()
-          .mediaProbe(probeWithFacts(facts))
-          .transcodeDecision(
-              StreamSessionFixture.remuxDecisionBuilder()
-                  .videoSource(Optional.of(facts.build()))
-                  .build())
-          .build();
+      return StreamSessionFixture.copySessionBuilder(probeWithFacts(facts)).build();
     }
 
     private static MediaProbe probeWithFacts(VideoPlaybackFacts.VideoPlaybackFactsBuilder facts) {
