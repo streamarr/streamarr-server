@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -65,6 +66,34 @@ class MediaFileProbePropertyIssueTest {
         Arguments.of(2, CompatibleBase.PQ, true),
         Arguments.of(0, CompatibleBase.SDR, true),
         Arguments.of(3, CompatibleBase.SDR, true));
+  }
+
+  @ParameterizedTest(name = "profile {0}: {1}")
+  @CsvSource({"7, false", "5, true", "8, true", "9, true", "10, true"})
+  @DisplayName(
+      "Should rule out a copy when the record pairs compatibility identifier 6 with a profile other"
+          + " than 7")
+  void shouldRuleOutACopyWhenTheRecordPairsCompatibilityIdentifier6WithAProfileOtherThan7(
+      int profile, boolean rulesOutCopy) {
+    var range =
+        new VideoDynamicRange(
+            CompatibleBase.PQ,
+            Presence.UNSPECIFIED,
+            new DolbyVision.Present(
+                Optional.of(
+                    DolbyVisionConfiguration.builder()
+                        .profile(OptionalInt.of(profile))
+                        .level(OptionalInt.of(6))
+                        .baseLayerCompatibilityId(OptionalInt.of(6))
+                        .baseLayer(true)
+                        .rpu(true)
+                        .build()),
+                Presence.UNSPECIFIED));
+
+    assertThat(
+            MediaFileProbePropertyIssue.foundIn(range).stream()
+                .anyMatch(MediaFileProbePropertyIssue::rulesOutCopy))
+        .isEqualTo(rulesOutCopy);
   }
 
   @Test
