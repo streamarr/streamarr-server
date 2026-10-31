@@ -50,6 +50,21 @@ public final class HlsAudioEncodes {
         .orElseGet(() -> aacForTrack(declaration, normalizedChannels));
   }
 
+  /**
+   * The encode in the codec, by its probed name, for a track with this normalized channel count, or
+   * empty when the server does not encode the codec or the encode would keep at most two channels.
+   */
+  public static Optional<AudioDecision> multichannelEncode(
+      @NonNull ClientCapabilityDeclaration declaration,
+      @NonNull String codec,
+      int normalizedChannels) {
+    if (!MULTICHANNEL_ENCODE_PREFERENCE.contains(codec)) {
+      return Optional.empty();
+    }
+
+    return multichannelEncode(channelMaximums(declaration), codec, normalizedChannels);
+  }
+
   /** The AAC encode for a track with this normalized channel count, with at most two channels. */
   public static AudioDecision aacForTrack(
       @NonNull ClientCapabilityDeclaration declaration, int normalizedChannels) {
