@@ -222,13 +222,14 @@ class TranscodeDecisionServiceTest {
         .isEqualTo(Optional.ofNullable(expectedMode));
   }
 
-  // Which codec families a worker encodes picks the encode, never whether the declaration leaves
-  // the server something to encode to.
-  @Test
+  // The declaration accepts an AV1 encode, but no connected worker has a verified AV1 encoder.
+  @ParameterizedTest
+  @CsvSource({"COPY_OR_ENCODE, REMUX", "COPY_ONLY, REMUX", "ENCODE_ONLY, "})
   @DisplayName(
-      "Should not copy the video over the viewer's limits when a capability entry accepts an encode"
-          + " that no worker encodes")
-  void shouldNotCopyTheVideoOverTheViewersLimitsWhenAnEntryAcceptsAnEncodeThatNoWorkerEncodes() {
+      "Should copy the video over the viewer's limits when no verified encoder encodes a codec that"
+          + " a capability entry accepts")
+  void shouldCopyTheVideoOverTheViewersLimitsWhenNoVerifiedEncoderEncodesACodecThatAnEntryAccepts(
+      VideoFormatConstraint constraint, TranscodeMode expectedMode) {
     var limits =
         ViewerLimits.of(StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build());
 
@@ -238,6 +239,31 @@ class TranscodeDecisionServiceTest {
                 .source(probe("hevc", "aac"))
                 .capabilityDeclaration(declaring(HEVC, AV1))
                 .encodableVideoCodecFamilies(Set.of("h264", "hevc"))
+                .verifiedVideoCodecFamilies(Set.of("h264", "hevc"))
+                .videoFormatConstraint(constraint)
+                .viewerLimits(limits)
+                .build());
+
+    assertThat(decision.map(TranscodeDecision::transcodeMode))
+        .isEqualTo(Optional.ofNullable(expectedMode));
+  }
+
+  // A busy worker's verified encoder counts, so the session waits for its slot instead of copying.
+  @Test
+  @DisplayName(
+      "Should not copy the video over the viewer's limits when a busy verified encoder encodes a"
+          + " codec that a capability entry accepts")
+  void shouldNotCopyTheVideoOverTheViewersLimitsWhenABusyVerifiedEncoderEncodesAnAcceptedCodec() {
+    var limits =
+        ViewerLimits.of(StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build());
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(probe("hevc", "aac"))
+                .capabilityDeclaration(declaring(HEVC, AV1))
+                .encodableVideoCodecFamilies(Set.of("h264"))
+                .verifiedVideoCodecFamilies(Set.of("h264", "av1"))
                 .viewerLimits(limits)
                 .build());
 
