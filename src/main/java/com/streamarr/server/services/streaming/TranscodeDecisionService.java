@@ -239,8 +239,8 @@ public class TranscodeDecisionService {
               source
                   .audioBitrate()
                   .orElse(
-                      AudioDecision.bitrateForChannels(
-                          AudioDecision.normalizeChannels(sourceChannels))))
+                      AudioDecision.bitrateFor(
+                          source.audioCodec(), AudioDecision.normalizeChannels(sourceChannels))))
           .sourceCodecString(sourceCodecString)
           .build();
     }
@@ -293,7 +293,7 @@ public class TranscodeDecisionService {
         .mode(AudioMode.TRANSCODE)
         .codec(codec)
         .channels(channels)
-        .bitrate(AudioDecision.bitrateForChannels(channels))
+        .bitrate(AudioDecision.bitrateFor(codec, channels))
         .build();
   }
 

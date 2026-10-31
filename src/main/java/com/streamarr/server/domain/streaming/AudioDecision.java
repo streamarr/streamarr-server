@@ -80,12 +80,23 @@ public record AudioDecision(
     };
   }
 
-  public static long bitrateForChannels(int channels) {
+  public static long bitrateFor(@NonNull String codec, int channels) {
     return switch (channels) {
       case 1 -> 64_000L;
-      case 6 -> 384_000L;
-      case 8 -> 512_000L;
+      case 6 -> fivePointOneBitrate(codec);
+      case 8 -> Math.max(512_000L, fivePointOneBitrate(codec));
       default -> 128_000L;
+    };
+  }
+
+  // AC-3 takes 640 kb/s, the most that FFmpeg's AC-3 encoder produces however much more it is asked
+  // for. E-AC-3 takes 768 kb/s, the highest 5.1 bitrate that streamed E-AC-3 commonly uses. Every
+  // other codec keeps 384 kb/s. A 7.1 track never announces less than its codec's 5.1 bitrate.
+  private static long fivePointOneBitrate(String codec) {
+    return switch (codec) {
+      case "ac3" -> 640_000L;
+      case "eac3" -> 768_000L;
+      default -> 384_000L;
     };
   }
 }
