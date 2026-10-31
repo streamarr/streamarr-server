@@ -81,8 +81,8 @@ class QualityLadderServiceTest {
   @ParameterizedTest
   @CsvSource({"AV1_MAIN, 11600000, 8100000", "H264_HIGH, 20000000, 12000000"})
   @DisplayName(
-      "Should give each tier its nominal bitrate for the codec family that the encode uses")
-  void shouldGiveEachTierItsNominalBitrateForTheCodecFamilyThatTheEncodeUses(
+      "Should give each tier a codec family's nominal bitrate when the encode uses that family")
+  void shouldGiveEachTierACodecFamilysNominalBitrateWhenTheEncodeUsesThatFamily(
       EncodeCodecProfile codecProfile, long bitrate2160p, long bitrate1440p) {
     var probe = buildProbe(3840, 2160, 40_000_000L);
     var declaration =
@@ -199,8 +199,9 @@ class QualityLadderServiceTest {
   @ParameterizedTest
   @CsvSource({"1080, 1920, FULL_HD_1080P, 1080, 1920", "1920, 1080, UHD_4K, 1920, 1080"})
   @DisplayName(
-      "Should fit a fixed quality's box to the source's orientation without enlarging the source")
-  void shouldFitAFixedQualitysBoxToTheSourcesOrientationWithoutEnlargingTheSource(
+      "Should keep the source's size when it fits the fixed quality's box turned to its"
+          + " orientation")
+  void shouldKeepTheSourcesSizeWhenItFitsTheFixedQualitysBoxTurnedToItsOrientation(
       int sourceWidth,
       int sourceHeight,
       VideoQuality quality,

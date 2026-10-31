@@ -618,9 +618,9 @@ class HlsStreamingServiceTest {
   @ParameterizedTest
   @CsvSource({"2, 3100000, '480p, 360p'", "2, 1800000, '480p, 360p'", "8, 1800000, '360p'"})
   @DisplayName(
-      "Should offer only the tiers whose video bitrate plus the session's audio bitrate is within"
+      "Should offer a tier only when its video bitrate plus the session's audio bitrate is within"
           + " the viewer's maximum bitrate")
-  void shouldOfferOnlyTheTiersWhoseVideoPlusAudioBitrateIsWithinTheViewersMaximumBitrate(
+  void shouldOfferATierOnlyWhenItsVideoPlusAudioBitrateIsWithinTheViewersMaximumBitrate(
       int sourceChannels, int maxBitrate, String expectedLabels) {
     probeResults.setDefaultOutcome(
         ProbeFixture.completeProbe(
@@ -2798,9 +2798,9 @@ class HlsStreamingServiceTest {
   @ParameterizedTest
   @CsvSource({"av1, 11600000, 8100000", "h264, 20000000, 12000000"})
   @DisplayName(
-      "Should give the 2160p and 1440p tiers the nominal bitrates of the codec family that the"
-          + " encode uses")
-  void shouldGiveThe2160pAnd1440pTiersTheNominalBitratesOfTheCodecFamilyThatTheEncodeUses(
+      "Should give the 2160p and 1440p tiers a codec family's nominal bitrates when the encode uses"
+          + " that family")
+  void shouldGiveThe2160pAnd1440pTiersACodecFamilysNominalBitratesWhenTheEncodeUsesThatFamily(
       String codecFamily, long bitrate2160p, long bitrate1440p) {
     transcodeExecutor.setEncodeSlots(Map.of(codecFamily, 3));
     probeResults.setDefaultProbe(
