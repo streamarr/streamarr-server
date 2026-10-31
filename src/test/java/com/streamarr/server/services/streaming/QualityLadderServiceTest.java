@@ -6,6 +6,8 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBui
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
+import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.AudioSteps;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
@@ -357,8 +359,7 @@ class QualityLadderServiceTest {
             .build();
 
     var variants =
-        service.generateVariants(
-            ladderRequest(probe, options).capabilityDeclaration(levelTwelveOnly).build());
+        variantsOf(ladderRequest(probe, options).capabilityDeclaration(levelTwelveOnly).build());
 
     // Level 1.2 allows a 480 kb/s High profile rate, below the 360p tier's 800 kb/s.
     assertThat(variants).extracting(QualityVariant::videoBitrate).containsExactly(480_000L);
@@ -419,7 +420,7 @@ class QualityLadderServiceTest {
             .build();
 
     var variants =
-        service.generateVariants(
+        variantsOf(
             ladderRequest(probe, StreamingOptions.builder().build())
                 .capabilityDeclaration(declaration)
                 .build());
@@ -490,8 +491,10 @@ class QualityLadderServiceTest {
     var options = StreamingOptions.builder().maxBitrate(budget.maxBitrate()).build();
 
     var variants =
-        service.generateVariants(
-            ladderRequest(probe, options).audioBitrate(budget.audioBitrate()).build());
+        variantsOf(
+            ladderRequest(probe, options)
+                .audioSteps(sessionAudioAt(budget.audioBitrate()))
+                .build());
 
     assertThat(variants)
         .extracting(QualityVariant::label)
@@ -602,8 +605,10 @@ class QualityLadderServiceTest {
             .build();
 
     var variants =
-        service.generateVariants(
-            ladderRequest(probe, options).audioBitrate(budget.audioBitrate()).build());
+        variantsOf(
+            ladderRequest(probe, options)
+                .audioSteps(sessionAudioAt(budget.audioBitrate()))
+                .build());
 
     return variants.stream()
         .map(variant -> tuple(variant.width(), variant.height(), variant.videoBitrate()))
@@ -856,7 +861,16 @@ class QualityLadderServiceTest {
   }
 
   private List<QualityVariant> generateVariants(MediaProbe probe, StreamingOptions options) {
-    return service.generateVariants(ladderRequest(probe, options).build());
+    return variantsOf(ladderRequest(probe, options).build());
+  }
+
+  private List<QualityVariant> variantsOf(QualityLadderRequest request) {
+    return service.generateVariants(request).variants();
+  }
+
+  // Audio steps that hold only the session's audio, an encode at this bitrate.
+  private static AudioSteps sessionAudioAt(long bitrate) {
+    return new AudioSteps(List.of(AudioDecision.stereoAac().toBuilder().bitrate(bitrate).build()));
   }
 
   // An H.264 ladder at 24 fps for a player whose only entry plays up to 3840×2160 at 60 fps.
@@ -867,7 +881,8 @@ class QualityLadderServiceTest {
         .viewerLimits(ViewerLimits.of(options))
         .capabilityDeclaration(defaultDeclarationBuilder().build())
         .codecProfile(EncodeCodecProfile.H264_HIGH)
-        .frameRate(new Fraction(24, 1));
+        .frameRate(new Fraction(24, 1))
+        .audioSteps(new AudioSteps(List.of(AudioDecision.none())));
   }
 
   private static MediaProbe.MediaProbeBuilder buildProbeBuilder(int width, int height) {
