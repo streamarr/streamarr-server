@@ -2,9 +2,9 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.streaming.AudioSteps;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.MediaProbe;
-import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -97,13 +97,16 @@ public class HlsStreamingService implements StreamingService {
       return Outcome.rejected(unavailableVideoFormat(request));
     }
 
-    var decision = candidate.orElseThrow();
-    var encodeRejection = encodeRejection(request, decision);
+    var decisionWithSessionAudio = candidate.orElseThrow();
+    var encodeRejection = encodeRejection(request, decisionWithSessionAudio);
     if (encodeRejection.isPresent()) {
       return Outcome.rejected(encodeRejection.get());
     }
 
-    var variants = resolveVariants(request, decision);
+    // The worker's job and the playlists read the audio step that the ladder takes (ADR 0050).
+    var ladder = resolveLadder(request, decisionWithSessionAudio);
+    var decision = decisionWithSessionAudio.withAudioDecision(ladder.audio());
+    var variants = ladder.variants();
     var sessionId = command.streamSessionId();
     var refusal = capacityRefusalFor(decision);
     // A left variant only serves its own player's switch back, so it never keeps a new stream
@@ -162,7 +165,7 @@ public class HlsStreamingService implements StreamingService {
     }
 
     // An encode whose ladder has no variant has no picture that the worker encodes.
-    var variants = resolveVariants(request, decision);
+    var variants = resolveLadder(request, decision).variants();
     if (variants.isEmpty()) {
       return Optional.of(new CreateStreamSessionRejection.InvalidPictureSize());
     }
@@ -327,32 +330,35 @@ public class HlsStreamingService implements StreamingService {
     return runtimeRegistry.count();
   }
 
-  // Every encode runs as a variant of the ladder; a copy keeps the source and has no ladder.
-  private List<QualityVariant> resolveVariants(
+  // Every encode runs as a variant of the ladder; a copy keeps the source and the session's audio
+  // and has no ladder.
+  private QualityLadder resolveLadder(
       TranscodeDecisionRequest decisionRequest, TranscodeDecision decision) {
     return decision
         .encodeCodecProfile()
-        .map(codecProfile -> encodedVariants(decisionRequest, decision, codecProfile))
-        .orElseGet(List::of);
+        .map(codecProfile -> encodedLadder(decisionRequest, decision, codecProfile))
+        .orElseGet(() -> new QualityLadder(List.of(), decision.audioDecision()));
   }
 
-  private List<QualityVariant> encodedVariants(
+  private QualityLadder encodedLadder(
       TranscodeDecisionRequest decisionRequest,
       TranscodeDecision decision,
       EncodeCodecProfile codecProfile) {
+    var declaration = decisionRequest.capabilityDeclaration();
     var request =
         QualityLadderRequest.builder()
             .probe(decisionRequest.source())
             .viewerLimits(decisionRequest.viewerLimits())
-            .capabilityDeclaration(decisionRequest.capabilityDeclaration())
+            .capabilityDeclaration(declaration)
             .codecProfile(codecProfile)
             // The stream session refuses an encode without an output frame rate before it sizes a
             // variant.
             .frameRate(decision.outputFrameRate().orElseThrow())
-            .audioBitrate(decision.audioDecision().bitrate())
+            .audioSteps(AudioSteps.below(decision.audioDecision(), declaration))
             .build();
-    return MultivariantPlaylistOrder.of(
-        qualityLadderService.generateVariants(request), decision.audioDecision().bitrate());
+    var ladder = qualityLadderService.generateVariants(request);
+    return new QualityLadder(
+        MultivariantPlaylistOrder.of(ladder.variants(), ladder.audio().bitrate()), ladder.audio());
   }
 
   // Creating a stream session starts one job attempt, so a session needs one free slot whatever

@@ -6,7 +6,7 @@ import java.util.Set;
 import lombok.Builder;
 import lombok.NonNull;
 
-@Builder
+@Builder(toBuilder = true)
 public record AudioDecision(
     AudioMode mode,
     String codec,

@@ -32,6 +32,7 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.AudioCodec;
+import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
@@ -498,8 +499,8 @@ class HlsStreamingServiceTest {
   @CsvSource({
     "FULL_HD_1080P, 0, 0, 5000000",
     "FULL_HD_1080P, 0, 2000000, 1872000",
-    "FULL_HD_1080P, 0, 700000, 700000",
-    "FULL_HD_1080P, 0, 100000, 100000",
+    "FULL_HD_1080P, 0, 700000, 636000",
+    "FULL_HD_1080P, 0, 100000, 145000",
     "AUTO, 300, 0, 800000",
     "AUTO, 300, 1000000, 800000",
     "FULL_HD_1080P, 0, 20000000, 5000000",
@@ -565,15 +566,16 @@ class HlsStreamingServiceTest {
   }
 
   // ADR 0050: a variant costs its video bitrate plus the stream session's audio bitrate, here a
-  // 128 kb/s stereo AAC encode.
+  // 128 kb/s stereo AAC encode. Under 864 kb/s no audio step leaves the 360p tier's 800 kb/s, so
+  // the audio takes the last step, 64 kb/s, and the video the rest, but never less than 145 kb/s.
   @ParameterizedTest
   @CsvSource({
-    "FULL_HD_1080P, , 2000000, 1920, 1080, 1872000",
-    "FULL_HD_1080P, , 1000000, 1920, 1080, 872000",
-    "FULL_HD_1080P, , 700000, 640, 360, 700000",
-    "FULL_HD_1080P, , 100000, 640, 360, 100000",
-    "AUTO, 500, 1000000, 498, 280, 872000",
-    "AUTO, , 500000, 640, 360, 500000"
+    "FULL_HD_1080P, , 2000000, 1920, 1080, 1872000, 128000",
+    "FULL_HD_1080P, , 1000000, 1920, 1080, 872000, 128000",
+    "FULL_HD_1080P, , 700000, 640, 360, 636000, 64000",
+    "FULL_HD_1080P, , 100000, 640, 360, 145000, 64000",
+    "AUTO, 500, 1000000, 498, 280, 872000, 128000",
+    "AUTO, , 500000, 640, 360, 436000, 64000"
   })
   @DisplayName(
       "Should encode the single variant within the maximum bitrate less the audio, or in the 360p"
@@ -585,7 +587,8 @@ class HlsStreamingServiceTest {
           int maxBitrate,
           int expectedWidth,
           int expectedHeight,
-          long expectedVideoBitrate) {
+          long expectedVideoBitrate,
+          long expectedAudioBitrate) {
     probeResults.setDefaultProbe(
         defaultProbeBuilder().videoCodec("hevc").bitrate(8_000_000L).build());
     var options =
@@ -599,7 +602,8 @@ class HlsStreamingServiceTest {
     var playlist =
         new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
 
-    assertThat(session.getTranscodeDecision().audioDecision().bitrate()).isEqualTo(128_000L);
+    assertThat(session.getTranscodeDecision().audioDecision().bitrate())
+        .isEqualTo(expectedAudioBitrate);
     assertThat(transcodeExecutor.getStartedRequests())
         .singleElement()
         .satisfies(
@@ -608,7 +612,7 @@ class HlsStreamingServiceTest {
               assertThat(request.height()).isEqualTo(expectedHeight);
               assertThat(request.bitrate()).isEqualTo(expectedVideoBitrate);
             });
-    var averageBandwidth = expectedVideoBitrate + 128_000L;
+    var averageBandwidth = expectedVideoBitrate + expectedAudioBitrate;
     assertThat(playlist)
         .contains(
             "BANDWIDTH="
@@ -618,13 +622,14 @@ class HlsStreamingServiceTest {
                 + ",");
   }
 
-  // A stereo DTS source encodes 128 kb/s AAC, and a 7.1 one 768 kb/s E-AC-3 5.1.
+  // A stereo DTS source encodes 128 kb/s AAC, and a 7.1 one 768 kb/s E-AC-3 5.1. At 2,000 kb/s,
+  // E-AC-3 5.1 at 448 kb/s lets the 480p tier fit. At 1,800 kb/s only a stereo step would.
   @ParameterizedTest
   @CsvSource({
     "2, 3100000, 128000, '480p, 360p'",
     "2, 1800000, 128000, '480p, 360p'",
     "8, 1800000, 768000, '360p'",
-    "8, 2000000, 768000, '360p'"
+    "8, 2000000, 448000, '480p, 360p'"
   })
   @DisplayName(
       "Should offer a tier only when its video bitrate plus the session's audio bitrate is within"
@@ -671,6 +676,344 @@ class HlsStreamingServiceTest {
             variant ->
                 assertThat(peakBandwidths.get(variant.label()))
                     .isGreaterThanOrEqualTo(variant.videoBitrate() + audioBitrate));
+  }
+
+  // ADR 0050: a 7.1 DTS source encodes E-AC-3 5.1 at 768 kb/s, which leaves less than the 360p
+  // tier's 800 kb/s under each of these maximums. The session takes the first audio step that
+  // leaves it, and the worker's job and the playlist carry that step.
+  @ParameterizedTest
+  @CsvSource({
+    "1400000, eac3, 6, 448000, ec-3",
+    "1248000, eac3, 6, 448000, ec-3",
+    "1247999, eac3, 6, 384000, ec-3",
+    "1000000, aac, 2, 128000, mp4a.40.2",
+    "928000, aac, 2, 128000, mp4a.40.2",
+    "927999, aac, 2, 96000, mp4a.40.2",
+    "870000, aac, 2, 64000, mp4a.40.2"
+  })
+  @DisplayName(
+      "Should take the first audio step that leaves the 360p tier's video bitrate when the"
+          + " session's audio leaves less under the maximum bitrate")
+  void
+      shouldTakeTheFirstAudioStepThatLeavesThe360pTiersVideoBitrateWhenTheSessionsAudioLeavesLessUnderTheMaximumBitrate(
+          int maxBitrate, String codec, int channels, long bitrate, String codecString) {
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(maxBitrate).build();
+
+    var session = createDtsSession(8, options);
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    var audio = session.getTranscodeDecision().audioDecision();
+    assertThat(audio)
+        .extracting(
+            AudioDecision::mode,
+            AudioDecision::codec,
+            AudioDecision::channels,
+            AudioDecision::bitrate)
+        .containsExactly(AudioMode.TRANSCODE, codec, channels, bitrate);
+    assertThat(session.getVariants()).extracting(QualityVariant::label).containsExactly("360p");
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> assertThat(request.transcodeDecision().audioDecision()).isEqualTo(audio));
+    assertThat(playlist)
+        .contains("CHANNELS=\"" + channels + "\"")
+        .contains("," + codecString + "\"");
+    assertThat(averageBandwidths(playlist))
+        .isNotEmpty()
+        .allSatisfy(bandwidth -> assertThat(bandwidth).isLessThanOrEqualTo(maxBitrate));
+  }
+
+  // Under 864 kb/s, 800 kb/s of video plus 64 kb/s of AAC, no audio step leaves the 360p tier's
+  // video bitrate. The audio takes AAC stereo at 64 kb/s and the video the rest in the 360p box,
+  // but never less than 145 kb/s, so only a maximum below 209 kb/s is exceeded.
+  @ParameterizedTest
+  @CsvSource({"600000, 536000", "209000, 145000", "150000, 145000"})
+  @DisplayName(
+      "Should give the video the rest in the 360p box beside the last audio step when no audio step"
+          + " leaves the 360p tier's video bitrate")
+  void
+      shouldGiveTheVideoTheRestInThe360pBoxBesideTheLastAudioStepWhenNoAudioStepLeavesThe360pTiersVideoBitrate(
+          int maxBitrate, long expectedVideoBitrate) {
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(maxBitrate).build();
+
+    var session = createDtsSession(8, options);
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
+        .containsExactly("aac", 2, 64_000L);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(640);
+              assertThat(request.height()).isEqualTo(360);
+              assertThat(request.bitrate()).isEqualTo(expectedVideoBitrate);
+            });
+    assertThat(averageBandwidths(playlist)).containsExactly(expectedVideoBitrate + 64_000L);
+  }
+
+  // E-AC-3 5.1 at 768 kb/s leaves room for the 360p tier at each maximum. A lower multichannel step
+  // is taken only when it lets a higher top tier fit, and then the first step that does.
+  @ParameterizedTest
+  @CsvSource({
+    "2000000, 448000, '480p, 360p'",
+    "3500000, 448000, '720p, 480p, 360p'",
+    "4000000, 768000, '720p, 480p, 360p'"
+  })
+  @DisplayName(
+      "Should lower the multichannel audio only when a lower step lets a higher top tier fit in"
+          + " Auto")
+  void shouldLowerTheMultichannelAudioOnlyWhenALowerStepLetsAHigherTopTierFitInAuto(
+      int maxBitrate, long expectedAudioBitrate, String expectedLabels) {
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(maxBitrate).build();
+
+    var session = createDtsSession(8, options);
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
+        .containsExactly("eac3", 6, expectedAudioBitrate);
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label)
+        .containsExactlyInAnyOrder(expectedLabels.split(", "));
+    assertThat(averageBandwidths(playlist))
+        .isNotEmpty()
+        .allSatisfy(bandwidth -> assertThat(bandwidth).isLessThanOrEqualTo(maxBitrate));
+  }
+
+  // A fixed 720p quality's variant reaches its full 3,000 kb/s beside E-AC-3 5.1 at 448 kb/s under
+  // 3,500 kb/s. Under 3,000 kb/s no multichannel step gives a fixed 1080p quality its full 5,000.
+  @ParameterizedTest
+  @CsvSource({
+    "HIGH_720P, 3500000, 448000, 1280, 720, 3000000",
+    "FULL_HD_1080P, 3000000, 768000, 1920, 1080, 2232000"
+  })
+  @DisplayName(
+      "Should lower the multichannel audio only when a lower step gives a fixed quality's variant"
+          + " its full bitrate")
+  void shouldLowerTheMultichannelAudioOnlyWhenALowerStepGivesAFixedQualitysVariantItsFullBitrate(
+      VideoQuality quality,
+      int maxBitrate,
+      long expectedAudioBitrate,
+      int expectedWidth,
+      int expectedHeight,
+      long expectedVideoBitrate) {
+    var options = StreamingOptions.builder().quality(quality).maxBitrate(maxBitrate).build();
+
+    var session = createDtsSession(8, options);
+
+    assertThat(session.getTranscodeDecision().audioDecision().bitrate())
+        .isEqualTo(expectedAudioBitrate);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(expectedWidth);
+              assertThat(request.height()).isEqualTo(expectedHeight);
+              assertThat(request.bitrate()).isEqualTo(expectedVideoBitrate);
+            });
+  }
+
+  // A fixed 720p quality at 1,200 kb/s leaves 432 kb/s beside 768 kb/s E-AC-3 5.1. At 384 kb/s the
+  // single variant gets 816 kb/s and keeps the 720p box.
+  @Test
+  @DisplayName(
+      "Should lower the audio and keep the fixed quality's box when the session's audio leaves less"
+          + " than the 360p tier's video bitrate")
+  void
+      shouldLowerTheAudioAndKeepTheFixedQualitysBoxWhenTheSessionsAudioLeavesLessThanThe360pTiersVideoBitrate() {
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.HIGH_720P).maxBitrate(1_200_000).build();
+
+    var session = createDtsSession(8, options);
+
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
+        .containsExactly("eac3", 6, 384_000L);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(1280);
+              assertThat(request.height()).isEqualTo(720);
+              assertThat(request.bitrate()).isEqualTo(816_000L);
+            });
+  }
+
+  // A copied 640 kb/s AC-3 5.1 track leaves 660 kb/s under 1,300 kb/s. The player declares AC-3 but
+  // no E-AC-3, so the copy becomes a 448 kb/s AC-3 5.1 encode.
+  @Test
+  @DisplayName(
+      "Should encode a copied audio track at a lower step when its bitrate leaves less than the"
+          + " 360p tier's video bitrate")
+  void
+      shouldEncodeACopiedAudioTrackAtALowerStepWhenItsBitrateLeavesLessThanThe360pTiersVideoBitrate() {
+    var probe = defaultProbeBuilder().videoCodec("hevc").build();
+    var streams =
+        List.of(
+            ProbeFixture.videoStreamBuilder(probe).build(),
+            ProbeFixture.audioStreamBuilder("ac3")
+                .index(1)
+                .channels(OptionalInt.of(6))
+                .bitrate(OptionalLong.of(640_000L))
+                .build());
+    probeResults.setDefaultOutcome(
+        ProbeFixture.completeProbe(
+            defaultProbeBuilder().videoCodec("hevc").streams(streams).build()));
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(
+                List.of(
+                    aacEntryBuilder().build(),
+                    audioEntryBuilder(AudioCodec.AC3).maxChannels(6).build()))
+            .build();
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(1_300_000).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                    .options(options)
+                    .capabilityDeclaration(declaration)
+                    .build()));
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.FULL_TRANSCODE);
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(
+            AudioDecision::mode,
+            AudioDecision::codec,
+            AudioDecision::channels,
+            AudioDecision::bitrate)
+        .containsExactly(AudioMode.TRANSCODE, "ac3", 6, 448_000L);
+  }
+
+  // The player declares E-AC-3 5.1, so the server would encode the track as E-AC-3. A copied AAC
+  // 5.1 track at 384 kb/s leaves 766 kb/s under 1,150 kb/s, and its own codec's 320 kb/s step
+  // leaves 830. A copied AC-3 5.1 track at 640 kb/s leaves 660 kb/s under 1,300 kb/s, and its own
+  // codec's 448 kb/s step leaves 852.
+  @ParameterizedTest
+  @CsvSource({"aac, AAC, 384000, 1150000, 320000", "ac3, AC3, 640000, 1300000, 448000"})
+  @DisplayName(
+      "Should keep surround in the copied codec at a lower step when the server encodes that codec"
+          + " and the copy leaves less than the 360p tier's video bitrate")
+  void
+      shouldKeepSurroundInTheCopiedCodecAtALowerStepWhenTheServerEncodesThatCodecAndTheCopyLeavesLessThanThe360pTiersVideoBitrate(
+          String codec,
+          AudioCodec declaredCodec,
+          long copiedBitrate,
+          int maxBitrate,
+          long expectedBitrate) {
+    var probe = defaultProbeBuilder().videoCodec("hevc").build();
+    var streams =
+        List.of(
+            ProbeFixture.videoStreamBuilder(probe).build(),
+            ProbeFixture.audioStreamBuilder(codec)
+                .index(1)
+                .channels(OptionalInt.of(6))
+                .bitrate(OptionalLong.of(copiedBitrate))
+                .build());
+    probeResults.setDefaultOutcome(
+        ProbeFixture.completeProbe(
+            defaultProbeBuilder().videoCodec("hevc").streams(streams).build()));
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(
+                Stream.of(AudioCodec.AAC, declaredCodec, AudioCodec.EAC3)
+                    .distinct()
+                    .map(declared -> audioEntryBuilder(declared).maxChannels(6).build())
+                    .toList())
+            .build();
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(maxBitrate).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                    .options(options)
+                    .capabilityDeclaration(declaration)
+                    .build()));
+
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(
+            AudioDecision::mode,
+            AudioDecision::codec,
+            AudioDecision::channels,
+            AudioDecision::bitrate)
+        .containsExactly(AudioMode.TRANSCODE, codec, 6, expectedBitrate);
+    assertThat(session.getVariants()).extracting(QualityVariant::label).containsExactly("360p");
+  }
+
+  // Original copies the H.264 video whatever the viewer's limits, and the server keeps a copied
+  // 640 kb/s AC-3 5.1 track beside that copy.
+  @Test
+  @DisplayName(
+      "Should keep a copied audio track when Original copies the video under a low maximum bitrate")
+  void shouldKeepACopiedAudioTrackWhenOriginalCopiesTheVideoUnderALowMaximumBitrate() {
+    var probe = defaultProbeBuilder().build();
+    var streams =
+        List.of(
+            ProbeFixture.videoStreamBuilder(probe).build(),
+            ProbeFixture.audioStreamBuilder("ac3")
+                .index(1)
+                .channels(OptionalInt.of(6))
+                .bitrate(OptionalLong.of(640_000L))
+                .build());
+    probeResults.setDefaultOutcome(
+        ProbeFixture.completeProbe(defaultProbeBuilder().streams(streams).build()));
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(
+                List.of(
+                    aacEntryBuilder().build(),
+                    audioEntryBuilder(AudioCodec.AC3).maxChannels(6).build()))
+            .build();
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.ORIGINAL).maxBitrate(1_000_000).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                    .options(options)
+                    .capabilityDeclaration(declaration)
+                    .build()));
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(
+            AudioDecision::mode,
+            AudioDecision::codec,
+            AudioDecision::channels,
+            AudioDecision::bitrate)
+        .containsExactly(AudioMode.COPY, "ac3", 6, 640_000L);
+  }
+
+  // Original copies the H.264 video whatever the viewer's limits, and the server keeps the audio
+  // beside that copy.
+  @Test
+  @DisplayName(
+      "Should keep the session's audio when Original copies the video under a low maximum bitrate")
+  void shouldKeepTheSessionsAudioWhenOriginalCopiesTheVideoUnderALowMaximumBitrate() {
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.ORIGINAL).maxBitrate(1_000_000).build();
+
+    var session = createDtsSession(defaultProbeBuilder(), 8, options);
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
+        .containsExactly("eac3", 6, 768_000L);
   }
 
   // ADR 0050: a copy costs its own video bitrate plus the stream session's audio bitrate, here a
@@ -776,15 +1119,16 @@ class HlsStreamingServiceTest {
                 .build()));
   }
 
-  // The declaration lists stereo AAC and 7.1 E-AC-3 but no DTS, so the session encodes the audio.
   private StreamSession createDtsSession(int sourceChannels, StreamingOptions options) {
+    return createDtsSession(defaultProbeBuilder().videoCodec("hevc"), sourceChannels, options);
+  }
+
+  // The declaration lists stereo AAC and 7.1 E-AC-3 but no DTS, so the session encodes the audio.
+  private StreamSession createDtsSession(
+      MediaProbe.MediaProbeBuilder probe, int sourceChannels, StreamingOptions options) {
     probeResults.setDefaultOutcome(
         ProbeFixture.completeProbe(
-            defaultProbeBuilder()
-                .videoCodec("hevc")
-                .audioCodec("dts")
-                .audioChannels(OptionalInt.of(sourceChannels))
-                .build()));
+            probe.audioCodec("dts").audioChannels(OptionalInt.of(sourceChannels)).build()));
     var declaration =
         defaultDeclarationBuilder()
             .audio(

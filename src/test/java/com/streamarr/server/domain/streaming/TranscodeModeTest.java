@@ -23,4 +23,19 @@ class TranscodeModeTest {
       TranscodeMode mode, boolean copiesVideo) {
     assertThat(mode.copiesVideo()).isEqualTo(copiesVideo);
   }
+
+  @ParameterizedTest
+  @CsvSource({
+    "true, COPY, REMUX",
+    "true, NONE, REMUX",
+    "true, TRANSCODE, AUDIO_TRANSCODE",
+    "false, COPY, VIDEO_TRANSCODE",
+    "false, NONE, VIDEO_TRANSCODE",
+    "false, TRANSCODE, FULL_TRANSCODE"
+  })
+  @DisplayName("Should encode the audio in the mode only when the audio does not pass through")
+  void shouldEncodeTheAudioInTheModeOnlyWhenTheAudioDoesNotPassThrough(
+      boolean copiesVideo, AudioMode audio, TranscodeMode expected) {
+    assertThat(TranscodeMode.of(copiesVideo, audio)).isEqualTo(expected);
+  }
 }
