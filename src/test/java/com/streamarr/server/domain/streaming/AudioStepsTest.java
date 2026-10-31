@@ -55,7 +55,7 @@ class AudioStepsTest {
         Arguments.of(
             "aac 8 512000",
             entries(AudioCodec.AAC, 8),
-            "aac 8 512000, aac 8 448000, " + STEREO_STEPS),
+            "aac 8 512000, aac 8 448000, aac 6 320000, " + STEREO_STEPS),
         Arguments.of("aac 2 128000", List.of(aacEntryBuilder().build()), STEREO_STEPS),
         Arguments.of("aac 1 64000", List.of(aacEntryBuilder().build()), "aac 1 64000"));
   }
@@ -78,8 +78,8 @@ class AudioStepsTest {
   // A copied codec that the server does not encode steps through the encode that the server would
   // choose, E-AC-3 and then AC-3. A copied codec that the server encodes also steps through its own
   // multichannel bitrates: the steps of both codecs below the copy, highest bitrate first, the
-  // copied codec first at an equal bitrate. A copy at or below every multichannel bitrate goes
-  // straight to the stereo steps.
+  // copied codec first at an equal bitrate. AAC above 5.1 also steps through AAC 5.1. A copy at or
+  // below every multichannel bitrate goes straight to the stereo steps.
   static Stream<Arguments> copiedSessionAudio() {
     return Stream.of(
         Arguments.of(
@@ -104,7 +104,15 @@ class AudioStepsTest {
             List.of(
                 aacEntryBuilder().maxChannels(8).build(),
                 audioEntryBuilder(AudioCodec.EAC3).maxChannels(6).build()),
-            "aac 8 512000, aac 8 448000, eac3 6 384000, " + STEREO_STEPS),
+            "aac 8 512000, aac 8 448000, eac3 6 384000, aac 6 320000, " + STEREO_STEPS),
+        Arguments.of(
+            "aac 8 640000",
+            entries(AudioCodec.AAC, 8),
+            "aac 8 640000, aac 8 448000, aac 6 320000, " + STEREO_STEPS),
+        Arguments.of(
+            "aac 8 400000",
+            entries(AudioCodec.AAC, 8),
+            "aac 8 400000, aac 6 320000, " + STEREO_STEPS),
         Arguments.of(
             "eac3 8 1024000",
             entries(AudioCodec.EAC3, 8),

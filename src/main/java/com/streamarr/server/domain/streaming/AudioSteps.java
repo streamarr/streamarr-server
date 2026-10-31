@@ -20,6 +20,7 @@ public record AudioSteps(@NonNull List<AudioDecision> highestFirst) {
   private static final List<Long> STEREO_BITRATES = List.of(128_000L, 96_000L, 64_000L);
   private static final long MONO_BITRATE = 64_000L;
   private static final int STEREO = 2;
+  private static final int FIVE_POINT_ONE = 6;
   // 5.1 and 7.1 carry one low-frequency channel beside their full-band channels.
   private static final int LAYOUT_WITH_LOW_FREQUENCY_CHANNEL = 6;
 
@@ -34,11 +35,11 @@ public record AudioSteps(@NonNull List<AudioDecision> highestFirst) {
   /**
    * The steps below the session's audio. Multichannel steps keep the codec and channels of the
    * encode that the server would choose for the track, which a capability entry already accepts,
-   * and exist only when that encode has more than two channels. A copy in a codec that the server
-   * encodes also steps through that codec's multichannel steps: the steps of both codecs come
-   * highest bitrate first, the copied codec first at an equal bitrate. Then come AAC stereo steps,
-   * or one AAC mono step for a mono track; every declaration carries an AAC entry for HLS (ADR
-   * 0049).
+   * and exist only when that encode has more than two channels; AAC above 5.1 also steps through
+   * AAC 5.1, which the same entry accepts. A copy in a codec that the server encodes also steps
+   * through that codec's multichannel steps: the steps of both codecs come highest bitrate first,
+   * the copied codec first at an equal bitrate. Then come AAC stereo steps, or one AAC mono step
+   * for a mono track; every declaration carries an AAC entry for HLS (ADR 0049).
    */
   public static AudioSteps below(
       @NonNull AudioDecision sessionAudio, @NonNull ClientCapabilityDeclaration declaration) {
@@ -86,17 +87,32 @@ public record AudioSteps(@NonNull List<AudioDecision> highestFirst) {
       return List.of();
     }
 
-    return multichannelBitrates(encode).stream()
-        .map(bitrate -> encode.toBuilder().bitrate(bitrate).build())
-        .toList();
+    return switch (encode.codec()) {
+      case "eac3" -> atBitrates(encode, EAC3_MULTICHANNEL_BITRATES);
+      case "ac3" -> atBitrates(encode, AC3_MULTICHANNEL_BITRATES);
+      default -> aacMultichannelSteps(encode);
+    };
   }
 
-  private static List<Long> multichannelBitrates(AudioDecision encode) {
-    return switch (encode.codec()) {
-      case "eac3" -> EAC3_MULTICHANNEL_BITRATES;
-      case "ac3" -> AC3_MULTICHANNEL_BITRATES;
-      default -> List.of(AAC_BITRATE_PER_FULL_BAND_CHANNEL * fullBandChannels(encode.channels()));
-    };
+  private static List<AudioDecision> atBitrates(AudioDecision encode, List<Long> bitrates) {
+    return bitrates.stream().map(bitrate -> encode.toBuilder().bitrate(bitrate).build()).toList();
+  }
+
+  private static List<AudioDecision> aacMultichannelSteps(AudioDecision encode) {
+    var steps = new ArrayList<AudioDecision>();
+    steps.add(aacStep(encode, encode.channels()));
+    if (encode.channels() > FIVE_POINT_ONE) {
+      steps.add(aacStep(encode, FIVE_POINT_ONE));
+    }
+
+    return steps;
+  }
+
+  private static AudioDecision aacStep(AudioDecision encode, int channels) {
+    return encode.toBuilder()
+        .channels(channels)
+        .bitrate(AAC_BITRATE_PER_FULL_BAND_CHANNEL * fullBandChannels(channels))
+        .build();
   }
 
   private static int fullBandChannels(int channels) {
