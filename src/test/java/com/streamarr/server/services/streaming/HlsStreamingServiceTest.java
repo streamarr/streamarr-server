@@ -1080,6 +1080,24 @@ class HlsStreamingServiceTest {
     assertThat(playlist).contains("CHANNELS=\"2\"");
   }
 
+  @Test
+  @DisplayName(
+      "Should announce stereo for a copied audio track when the probe reports zero channels")
+  void shouldAnnounceStereoForACopiedAudioTrackWhenTheProbeReportsZeroChannels() {
+    probeResults.setDefaultOutcome(
+        ProbeFixture.completeProbe(defaultProbeBuilder().audioChannels(OptionalInt.of(0)).build()));
+    var file = seedMediaFile();
+    var session = createSession(file.getId(), defaultDeclarationBuilder().build());
+    var playlist =
+        new HlsPlaylistService(StreamingProperties.builder().build())
+            .generateMultivariantPlaylist(session, "token");
+
+    var decision = session.getTranscodeDecision().audioDecision();
+    assertThat(decision.mode()).isEqualTo(AudioMode.COPY);
+    assertThat(decision.channels()).isEqualTo(2);
+    assertThat(playlist).contains("CHANNELS=\"2\"").doesNotContain("CHANNELS=\"0\"");
+  }
+
   @ParameterizedTest(name = "{0} → {1}, encodeVideo={2}")
   @CsvSource({
     "aac, mp4a.40.2, false",
