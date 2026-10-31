@@ -306,7 +306,9 @@ On those hosts, also set `NVIDIA_DRIVER_CAPABILITIES=compute,video,utility` on t
 
 === Kubernetes GPUs
 
-Worker nodes need the NVIDIA driver and the https://github.com/NVIDIA/k8s-device-plugin[NVIDIA device plugin], or the NVIDIA GPU Operator, which installs both.
+Worker nodes need the NVIDIA driver, the NVIDIA Container Toolkit configured for the node's container runtime, such as containerd, and the https://github.com/NVIDIA/k8s-device-plugin[NVIDIA device plugin].
+The https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/index.html[NVIDIA GPU Operator] installs and configures all three.
+The Docker setup in <<_host_prerequisites>> does not configure a Kubernetes node's container runtime.
 Save this patch as `worker-gpu-patch.yaml`:
 
 [source#kubernetes-nvidia-gpu,yaml]
