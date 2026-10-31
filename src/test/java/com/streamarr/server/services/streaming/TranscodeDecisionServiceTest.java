@@ -37,7 +37,6 @@ import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.MediaProbe;
-import com.streamarr.server.domain.streaming.OutputFrameRateBasis;
 import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
@@ -153,12 +152,7 @@ class TranscodeDecisionServiceTest {
   void shouldCopyTheVideoWhenTheSourceExceedsTheViewersLimitsAndHasNoUsableFrameRate() {
     var limits =
         ViewerLimits.of(StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build());
-    var refusedRule =
-        FrameRateRule.builder()
-            .outputFrameRate(Optional.empty())
-            .basis(OutputFrameRateBasis.REFUSED)
-            .inputs(FrameRateRuleInputs.builder().build())
-            .build();
+    var refusedRule = VideoPlaybackFactsFixture.refusedRule();
     var source =
         probeBuilder("h264", "aac")
             .framerate(OptionalDouble.empty())

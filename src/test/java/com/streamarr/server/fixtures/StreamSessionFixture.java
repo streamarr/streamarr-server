@@ -191,6 +191,17 @@ public final class StreamSessionFixture {
                     .build()));
   }
 
+  /** A session that copies the probe's video, whose decision carries the probe's playback facts. */
+  public static StreamSession.StreamSessionBuilder copySessionBuilder(MediaProbe probe) {
+    return defaultSessionBuilder()
+        .mediaProbe(probe)
+        .transcodeDecision(
+            remuxDecisionBuilder()
+                .videoCodecFamily(probe.videoCodec())
+                .videoSource(probe.videoPlaybackFacts())
+                .build());
+  }
+
   public static TranscodeDecision fullTranscodeDecision(String videoCodecFamily) {
     return TranscodeDecision.builder()
         .transcodeMode(TranscodeMode.FULL_TRANSCODE)

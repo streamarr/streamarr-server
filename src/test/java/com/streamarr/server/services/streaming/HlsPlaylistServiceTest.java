@@ -1252,13 +1252,7 @@ class HlsPlaylistServiceTest {
     private StreamSession copySessionWithRule(FrameRateRule rule) {
       var facts =
           VideoPlaybackFactsFixture.sdrH264FactsBuilder().streamIndex(0).frameRateRule(rule);
-      return StreamSessionFixture.defaultSessionBuilder()
-          .mediaProbe(probeWithFacts(facts))
-          .transcodeDecision(
-              StreamSessionFixture.remuxDecisionBuilder()
-                  .videoSource(Optional.of(facts.build()))
-                  .build())
-          .build();
+      return StreamSessionFixture.copySessionBuilder(probeWithFacts(facts)).build();
     }
 
     private static MediaProbe probeWithFacts(VideoPlaybackFacts.VideoPlaybackFactsBuilder facts) {

@@ -161,12 +161,6 @@ class VideoStreamCopyTest {
                 FrameRateRuleInputs.builder().build(), new Fraction(30, 1)),
             OptionalDouble.of(30)),
         Arguments.of(
-            "refused rule",
-            FrameRateRule.builder()
-                .outputFrameRate(Optional.empty())
-                .basis(OutputFrameRateBasis.REFUSED)
-                .inputs(FrameRateRuleInputs.builder().build())
-                .build(),
-            OptionalDouble.empty()));
+            "refused rule", VideoPlaybackFactsFixture.refusedRule(), OptionalDouble.empty()));
   }
 }
