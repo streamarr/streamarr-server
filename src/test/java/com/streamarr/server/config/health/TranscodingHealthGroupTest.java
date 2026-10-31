@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -15,10 +14,8 @@ import org.springframework.boot.actuate.endpoint.ApiVersion;
 import org.springframework.boot.actuate.endpoint.SecurityContext;
 import org.springframework.boot.actuate.endpoint.web.WebServerNamespace;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
-import org.springframework.boot.health.actuate.endpoint.CompositeHealthDescriptor;
 import org.springframework.boot.health.actuate.endpoint.HealthEndpointGroups;
 import org.springframework.boot.health.actuate.endpoint.HealthEndpointWebExtension;
-import org.springframework.boot.health.actuate.endpoint.IndicatedHealthDescriptor;
 import org.springframework.boot.health.autoconfigure.actuate.endpoint.HealthEndpointAutoConfiguration;
 import org.springframework.boot.health.autoconfigure.contributor.HealthContributorAutoConfiguration;
 import org.springframework.boot.health.autoconfigure.registry.HealthContributorRegistryAutoConfiguration;
@@ -28,6 +25,7 @@ import org.springframework.boot.test.context.ConfigDataApplicationContextInitial
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import tools.jackson.databind.json.JsonMapper;
 
 @Tag("UnitTest")
 @DisplayName("Transcoding Health Group Tests")
@@ -37,8 +35,8 @@ class TranscodingHealthGroupTest {
 
   @Test
   @DisplayName(
-      "Should answer 503 and name the worker when a connected worker lacks an encoder that the server needs")
-  void shouldAnswer503AndNameTheWorkerWhenAConnectedWorkerLacksAnEncoderThatTheServerNeeds() {
+      "Should answer 503 with its status alone when a connected worker lacks an encoder that the server needs")
+  void shouldAnswer503WithItsStatusAloneWhenAConnectedWorkerLacksAnEncoderThatTheServerNeeds() {
     new WebApplicationContextRunner()
         .withInitializer(new ConfigDataApplicationContextInitializer())
         .withConfiguration(
@@ -64,15 +62,14 @@ class TranscodingHealthGroupTest {
                           SecurityContext.NONE,
                           "transcoding");
               assertThat(response.getStatus()).isEqualTo(503);
-              var executorHealth =
-                  (IndicatedHealthDescriptor)
-                      ((CompositeHealthDescriptor) response.getBody())
-                          .getComponents()
-                          .get("transcodeExecutor");
-              assertThat(executorHealth.getStatus().getCode()).isEqualTo("DEGRADED");
-              assertThat(executorHealth.getDetails())
-                  .containsEntry(
-                      "workersMissingEncoders", Map.of(WORKER_ID.toString(), List.of("av1")));
+              var json = new JsonMapper();
+              var body = json.readTree(json.writeValueAsString(response.getBody()));
+              assertThat(body.path("status").asString()).isEqualTo("DEGRADED");
+              assertThat(body.has("components")).isFalse();
+              assertThat(body.has("details")).isFalse();
+              assertThat(body.toString())
+                  .doesNotContain(WORKER_ID.toString())
+                  .doesNotContain("av1");
             });
   }
 

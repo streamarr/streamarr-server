@@ -97,11 +97,10 @@ management:
               degraded: 503
               down: 503
               out-of-service: 503
-        # Its details hold only worker ids, codec family names and playback slots, so an
-        # administrator sees which worker lacks an encoder without enabling details elsewhere.
+        # Status only, like every group: the API listener serves health and may face the internet,
+        # so worker ids stay in the missing-encoder metric and the server's log.
         transcoding:
           include: transcodeExecutor
-          show-details: always
           status:
             http-mapping:
               degraded: 503

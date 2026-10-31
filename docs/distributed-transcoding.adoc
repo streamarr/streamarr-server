@@ -181,13 +181,23 @@ The Istio policy restricts only the worker port. HTTP and Kubernetes health prob
 === Workers missing an encoder
 
 The server encodes video as H.264 and AV1, and every worker image ships libx264 and libsvtav1.
-A connected worker without a worker-verified encoder for one of those codec families is broken, and the server's `transcoding` health group names it.
-The group, at `/actuator/health/transcoding` on port `8080`, holds only the transcode executor and always shows its details.
+A connected worker without a worker-verified encoder for one of those codec families is broken.
+The server's `transcoding` health group reports that a worker is broken, but not which one.
+The group, at `/actuator/health/transcoding` on port `8080`, holds only the transcode executor and shows only its status, like every other health group.
 It answers `503` with status `DOWN` while no connected worker can read the source namespace.
 It answers `503` with status `DEGRADED` while a connected worker lacks such an encoder.
-The executor's `workersMissingEncoders` detail then maps each such worker's UUID to the codec families that it lacks, for example `{"3f0c9a52-6f1e-4b8e-9d4a-2c7e5b1a9f60": ["av1"]}`.
 A missing encoder alone leaves the aggregate `/actuator/health` at `UP`, because `DEGRADED` ranks below `UP` there.
-The `streamarr.streaming.missing_encoder` gauge and a server log warning also name the worker and the codec families that it lacks.
+
+Port `8080` serves health without authentication and may face the internet, so health names no worker.
+To find the worker, read the `streamarr.streaming.missing_encoder` gauge or the server's log:
+
+* The gauge is `1` for each connected worker and codec family that the worker lacks, with the worker's UUID in its `worker` tag and the codec family in its `codec_family` tag.
+Like the server's other metrics, the gauge stays off port `8080`: the server refuses every actuator endpoint there except health.
+* When such a worker connects, the server logs a warning that names the worker's UUID and the codec families that it lacks.
+The server logs the warning again when a start report withdraws one of the worker's encoders.
+
+The gauge counts every connected worker. The health group counts only the workers that can read the server's source namespace, which are the workers that the server dispatches to.
+
 Each stream session that the missing encoder refuses increments `streamarr.streaming.missing_encoder_sessions`.
 A busy worker or no connected worker never counts there: the server refuses those sessions for lack of capacity instead.
 

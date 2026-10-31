@@ -1,19 +1,19 @@
 package com.streamarr.server.config.health;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.entry;
 
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.health.contributor.Status;
 
 @Tag("UnitTest")
@@ -60,49 +60,39 @@ class TranscodeExecutorHealthIndicatorTest {
   }
 
   @ParameterizedTest
-  @CsvSource(
-      delimiter = '|',
-      value = {"h264|av1", "av1|h264", "hevc|av1,h264"})
+  @ValueSource(strings = {"h264", "av1", "hevc,av1"})
   @DisplayName(
-      "Should report degraded and name the worker when it lacks a worker-verified encoder for a codec family the server encodes")
+      "Should report degraded without naming the worker when it lacks a worker-verified encoder for a codec family the server encodes")
   void
-      shouldReportDegradedAndNameTheWorkerWhenItLacksAWorkerVerifiedEncoderForACodecFamilyTheServerEncodes(
-          String verifiedFamilies, String missingFamilies) {
-    var workerId = UUID.randomUUID();
+      shouldReportDegradedWithoutNamingTheWorkerWhenItLacksAWorkerVerifiedEncoderForACodecFamilyTheServerEncodes(
+          String verifiedFamilies) {
     var executor = new FakeTranscodeExecutor();
     executor.setAvailableSlots(2);
     executor.setVerifiedVideoCodecFamiliesByWorker(
-        List.of(worker(workerId, Set.of(verifiedFamilies.split(",")))));
+        List.of(worker(Set.of(verifiedFamilies.split(",")))));
     var indicator = new TranscodeExecutorHealthIndicator(executor);
 
     var health = indicator.health();
 
     assertThat(health.getStatus().getCode()).isEqualTo("DEGRADED");
     assertThat(health.getStatus().getDescription()).isNotBlank();
-    assertThat(health.getDetails())
-        .containsEntry("availableSlots", 2)
-        .containsEntry(
-            "workersMissingEncoders",
-            Map.of(workerId.toString(), List.of(missingFamilies.split(","))));
+    assertThat(health.getDetails()).containsExactly(entry("availableSlots", 2));
   }
 
   @Test
   @DisplayName(
-      "Should name only the workers that lack an encoder when another worker encodes every codec family")
-  void shouldNameOnlyTheWorkersThatLackAnEncoderWhenAnotherWorkerEncodesEveryCodecFamily() {
-    var completeWorker = UUID.randomUUID();
-    var brokenWorker = UUID.randomUUID();
+      "Should report degraded when one worker lacks an encoder and another worker encodes every codec family")
+  void shouldReportDegradedWhenOneWorkerLacksAnEncoderAndAnotherWorkerEncodesEveryCodecFamily() {
     var executor = new FakeTranscodeExecutor();
+    executor.setAvailableSlots(TranscodeExecutor.UNBOUNDED_SLOTS);
     executor.setVerifiedVideoCodecFamiliesByWorker(
-        List.of(worker(completeWorker, Set.of("h264", "av1")), worker(brokenWorker, Set.of())));
+        List.of(worker(Set.of("h264", "av1")), worker(Set.of())));
     var indicator = new TranscodeExecutorHealthIndicator(executor);
 
     var health = indicator.health();
 
     assertThat(health.getStatus().getCode()).isEqualTo("DEGRADED");
-    assertThat(health.getDetails())
-        .containsEntry(
-            "workersMissingEncoders", Map.of(brokenWorker.toString(), List.of("av1", "h264")));
+    assertThat(health.getDetails()).containsExactly(entry("capacity", "unbounded"));
   }
 
   @Test
@@ -111,20 +101,18 @@ class TranscodeExecutorHealthIndicatorTest {
     var executor = new FakeTranscodeExecutor();
     executor.setAvailableSlots(1);
     executor.setVerifiedVideoCodecFamiliesByWorker(
-        List.of(
-            worker(UUID.randomUUID(), Set.of("h264", "av1")),
-            worker(UUID.randomUUID(), Set.of("h264", "hevc", "av1"))));
+        List.of(worker(Set.of("h264", "av1")), worker(Set.of("h264", "hevc", "av1"))));
     var indicator = new TranscodeExecutorHealthIndicator(executor);
 
     var health = indicator.health();
 
     assertThat(health.getStatus()).isEqualTo(Status.UP);
-    assertThat(health.getDetails()).doesNotContainKey("workersMissingEncoders");
+    assertThat(health.getDetails()).containsExactly(entry("availableSlots", 1));
   }
 
-  private static WorkerVerifiedCodecFamilies worker(UUID workerId, Set<String> codecFamilies) {
+  private static WorkerVerifiedCodecFamilies worker(Set<String> codecFamilies) {
     return WorkerVerifiedCodecFamilies.builder()
-        .workerId(workerId)
+        .workerId(UUID.randomUUID())
         .codecFamilies(codecFamilies)
         .build();
   }
