@@ -167,6 +167,7 @@ class WorkerSessionServerTest {
     assertNotStarted(() -> server.dispatch(job, pinnedEncoder));
     assertNotStarted(() -> server.hasConnectedWorker(sourceNamespaceId));
     assertNotStarted(() -> server.hardwareEncodableVideoCodecFamilies(sourceNamespaceId));
+    assertNotStarted(() -> server.verifiedHardwareVideoCodecFamilies(sourceNamespaceId));
     assertNotStarted(() -> server.stopVariant(UUID.randomUUID(), "720p"));
     assertNotStarted(() -> server.terminalFailure(UUID.randomUUID()));
     assertNotStarted(() -> server.destroyStreamSession(UUID.randomUUID()));
