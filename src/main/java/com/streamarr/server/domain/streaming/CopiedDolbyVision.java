@@ -26,6 +26,15 @@ sealed interface CopiedDolbyVision {
    */
   record Undeclarable() implements CopiedDolbyVision {}
 
+  /**
+   * Profile 5 or 10.0, which no entry accepts until the worker can write the Dolby Vision sample
+   * entry and configuration record that such a copy needs: dvh1 for profile 5, dav1 for 10.0
+   * (streamarr/streamarr-server#396). The worker writes HEVC copies under hvc1 without the record
+   * and cannot write dav1, and a picture with no compatible base shows wrong colours or is refused
+   * without them.
+   */
+  record NeedsDolbyVisionSampleEntry() implements CopiedDolbyVision {}
+
   static CopiedDolbyVision of(ProbedCodecFamily codecFamily, VideoDynamicRange range) {
     return switch (range.dolbyVision()) {
       case DolbyVision.Unspecified _, DolbyVision.Absent _ -> new None();
@@ -48,6 +57,10 @@ sealed interface CopiedDolbyVision {
     var level = present.declared().map(DolbyVisionConfiguration::level).orElse(OptionalInt.empty());
     if (profile.isEmpty() || level.isEmpty()) {
       return new Undeclarable();
+    }
+
+    if (profile.get().compatibleBase() == CompatibleBase.NONE) {
+      return new NeedsDolbyVisionSampleEntry();
     }
 
     return new Declarable(profile.get(), level.getAsInt());
