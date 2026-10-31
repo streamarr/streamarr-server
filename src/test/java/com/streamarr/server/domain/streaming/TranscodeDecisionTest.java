@@ -9,6 +9,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 
 @Tag("UnitTest")
@@ -93,6 +94,34 @@ class TranscodeDecisionTest {
     assertThatThrownBy(decision::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("cannot hold an encode codec profile");
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "REMUX, TRANSCODE, AUDIO_TRANSCODE",
+    "AUDIO_TRANSCODE, COPY, REMUX",
+    "VIDEO_TRANSCODE, TRANSCODE, FULL_TRANSCODE",
+    "FULL_TRANSCODE, NONE, VIDEO_TRANSCODE"
+  })
+  @DisplayName(
+      "Should keep the video path and follow the new audio when the decision takes other audio")
+  void shouldKeepTheVideoPathAndFollowTheNewAudioWhenTheDecisionTakesOtherAudio(
+      TranscodeMode mode, AudioMode audioMode, TranscodeMode expectedMode) {
+    var decision =
+        decisionBuilder(mode)
+            .videoSource(Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()))
+            .build();
+    var audio =
+        AudioDecision.stereoAac().toBuilder()
+            .mode(audioMode)
+            .sourceCodecString(Optional.of("mp4a.40.2"))
+            .build();
+
+    var withAudio = decision.withAudioDecision(audio);
+
+    assertThat(withAudio.audioDecision()).isEqualTo(audio);
+    assertThat(withAudio.transcodeMode()).isEqualTo(expectedMode);
+    assertThat(withAudio.videoSource()).isEqualTo(decision.videoSource());
   }
 
   private static TranscodeDecision.TranscodeDecisionBuilder decisionBuilder(TranscodeMode mode) {

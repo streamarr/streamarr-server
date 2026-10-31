@@ -23,30 +23,40 @@ public class QualityLadderService {
   private static final long UNCAPPED_BITRATE = Long.MAX_VALUE;
 
   /**
-   * The variants that an encode offers, each fitted to one capability entry (ADR 0049). Auto offers
-   * a standard tier when the source is larger than the next smaller tier's box, scaling the source
-   * to fit the tier's box without enlarging it, or one variant when the viewer's limits leave no
-   * tier. A fixed quality offers only the default variant, within its tier's box and at most the
-   * nominal bitrate of the smallest tier whose box holds the encoded picture; Original has no box.
-   * Sizes each variant from the picture that a player shows, after cropping and rotation. A tier
-   * that an entry shrinks into a smaller tier's box gives way to that tier. Auto labels each
-   * variant by the tier whose box it reaches, or else by its shorter side. Returns no variant when
-   * the viewer's limits leave no picture that the worker encodes.
+   * The variants that an encode offers, each fitted to one capability entry (ADR 0049), and the
+   * audio step that every variant's cost includes (ADR 0050). Auto offers a standard tier when the
+   * source is larger than the next smaller tier's box, scaling the source to fit the tier's box
+   * without enlarging it, or one variant when the viewer's limits leave no tier. A fixed quality
+   * offers only the default variant, within its tier's box and at most the nominal bitrate of the
+   * smallest tier whose box holds the encoded picture; Original has no box. Sizes each variant from
+   * the picture that a player shows, after cropping and rotation. A tier that an entry shrinks into
+   * a smaller tier's box gives way to that tier. Auto labels each variant by the tier whose box it
+   * reaches, or else by its shorter side. Offers no variant when the viewer's limits leave no
+   * picture that the worker encodes.
    */
-  public List<QualityVariant> generateVariants(@NonNull QualityLadderRequest request) {
+  public QualityLadder generateVariants(@NonNull QualityLadderRequest request) {
+    var audio = request.audioSteps().sessionAudio();
+    return new QualityLadder(variants(new Sizing(request, audio.bitrate())), audio);
+  }
+
+  // A ladder request with the bitrate of the audio step that every variant's cost includes.
+  private record Sizing(QualityLadderRequest request, long audioBitrate) {}
+
+  private static List<QualityVariant> variants(Sizing sizing) {
+    var request = sizing.request();
     var limits = request.viewerLimits();
     var source = request.probe().displayedSize();
     var viewerBounds = limits.maximumPicture();
     var maxBitrate = limits.maxBitrate();
     if (limits.quality() != VideoQuality.AUTO) {
-      return fitDefaultVariant(request).map(QualityLadderService::defaultVariant).stream().toList();
+      return fitDefaultVariant(sizing).map(QualityLadderService::defaultVariant).stream().toList();
     }
 
     var variants = new ArrayList<LabelledVariant>();
     for (var tier : QualityTier.offeredFor(source)) {
       var tierBitrate = tier.videoBitrate(request.codecProfile());
       var box = tier.box().orientedLike(source);
-      if (exceeds(maxBitrate, tierBitrate + request.audioBitrate())
+      if (exceeds(maxBitrate, tierBitrate + sizing.audioBitrate())
           || !fitsViewerBounds(source, box, viewerBounds)) {
         continue;
       }
@@ -58,7 +68,7 @@ public class QualityLadderService {
     }
 
     if (variants.isEmpty()) {
-      return fitUntiered(request, viewerBounds, maxBitrate)
+      return fitUntiered(sizing, viewerBounds)
           .map(output -> labelled(output, source).variant())
           .stream()
           .toList();
@@ -117,25 +127,25 @@ public class QualityLadderService {
   }
 
   // Original has no tier, so its variant is untiered.
-  private static Optional<EncodedVideoOutput> fitDefaultVariant(QualityLadderRequest request) {
-    var limits = request.viewerLimits();
+  private static Optional<EncodedVideoOutput> fitDefaultVariant(Sizing sizing) {
+    var limits = sizing.request().viewerLimits();
     var fixedTier = limits.fixedTier();
     if (fixedTier.isEmpty()) {
-      return fitUntiered(request, limits.maximumPicture(), limits.maxBitrate());
+      return fitUntiered(sizing, limits.maximumPicture());
     }
 
-    return fitFixedQuality(request, fixedTier.get());
+    return fitFixedQuality(sizing, fixedTier.get());
   }
 
   // A fixed quality asks for the nominal bitrate of the smallest tier whose box holds the encoded
   // picture, so a source smaller than the quality's box encodes at its own tier's bitrate. The
   // source's known bitrate, the video budget and the entry's codec level cap it.
-  private static Optional<EncodedVideoOutput> fitFixedQuality(
-      QualityLadderRequest request, QualityTier tier) {
+  private static Optional<EncodedVideoOutput> fitFixedQuality(Sizing sizing, QualityTier tier) {
+    var request = sizing.request();
     var limits = request.viewerLimits();
     var source = request.probe().displayedSize();
     var bounds = limits.maximumPicture().boundedBy(tier.box().orientedLike(source));
-    var budget = videoBudget(request, bounds, limits.maxBitrate());
+    var budget = videoBudget(sizing, bounds);
     var bitrate = budget.bitrate();
     var sourceBitrate = sourceBitrate(request);
     if (sourceBitrate.isPresent()) {
@@ -150,9 +160,9 @@ public class QualityLadderService {
   // names no source bitrate reports 0, so the variant then asks for the nominal bitrate of the
   // smallest tier whose box holds the fitted picture, within the budget. The entry's codec level
   // caps each.
-  private static Optional<EncodedVideoOutput> fitUntiered(
-      QualityLadderRequest request, PictureSize bounds, OptionalLong maxBitrate) {
-    var budget = videoBudget(request, bounds, maxBitrate);
+  private static Optional<EncodedVideoOutput> fitUntiered(Sizing sizing, PictureSize bounds) {
+    var request = sizing.request();
+    var budget = videoBudget(sizing, bounds);
     var sourceBitrate = sourceBitrate(request);
     if (sourceBitrate.isPresent()) {
       return fit(request, budget.bounds(), Math.min(sourceBitrate.getAsLong(), budget.bitrate()));
@@ -164,16 +174,17 @@ public class QualityLadderService {
 
   private record VideoBudget(PictureSize bounds, long bitrate) {}
 
-  // The viewer's maximum bitrate covers the video and the stream session's audio. When less than
-  // the 360p tier's video bitrate remains, the variant takes the 360p box and the 360p tier's
-  // bitrate within the maximum, because an encoder reads a zero bitrate as no limit (ADR 0050).
-  private static VideoBudget videoBudget(
-      QualityLadderRequest request, PictureSize bounds, OptionalLong maxBitrate) {
+  // The viewer's maximum bitrate covers the video and the audio step. When less than the 360p
+  // tier's video bitrate remains, the variant takes the 360p box and the 360p tier's bitrate within
+  // the maximum, because an encoder reads a zero bitrate as no limit (ADR 0050).
+  private static VideoBudget videoBudget(Sizing sizing, PictureSize bounds) {
+    var request = sizing.request();
+    var maxBitrate = request.viewerLimits().maxBitrate();
     if (maxBitrate.isEmpty()) {
       return new VideoBudget(bounds, UNCAPPED_BITRATE);
     }
 
-    var remainder = maxBitrate.getAsLong() - request.audioBitrate();
+    var remainder = maxBitrate.getAsLong() - sizing.audioBitrate();
     var smallest = QualityTier.TIER_360P;
     var smallestBitrate = smallest.videoBitrate(request.codecProfile());
     if (remainder >= smallestBitrate) {
