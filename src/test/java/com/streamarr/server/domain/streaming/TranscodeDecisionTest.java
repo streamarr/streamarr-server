@@ -65,6 +65,36 @@ class TranscodeDecisionTest {
         .hasMessageContaining("videoSource");
   }
 
+  @Test
+  @DisplayName(
+      "Should refuse a decision when its encode codec profile belongs to another codec family")
+  void shouldRefuseADecisionWhenItsEncodeCodecProfileBelongsToAnotherCodecFamily() {
+    var decision =
+        decisionBuilder(TranscodeMode.VIDEO_TRANSCODE)
+            .encodeCodecProfile(Optional.of(EncodeCodecProfile.AV1_MAIN));
+
+    assertThatThrownBy(decision::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("must belong to the decision's video codec family");
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = TranscodeMode.class,
+      names = {"REMUX", "AUDIO_TRANSCODE"})
+  @DisplayName(
+      "Should refuse a decision that copies the video when it holds an encode codec profile")
+  void shouldRefuseADecisionThatCopiesTheVideoWhenItHoldsAnEncodeCodecProfile(TranscodeMode mode) {
+    var decision =
+        decisionBuilder(mode)
+            .videoSource(Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()))
+            .encodeCodecProfile(Optional.of(EncodeCodecProfile.H264_HIGH));
+
+    assertThatThrownBy(decision::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("cannot hold an encode codec profile");
+  }
+
   private static TranscodeDecision.TranscodeDecisionBuilder decisionBuilder(TranscodeMode mode) {
     return TranscodeDecision.builder()
         .transcodeMode(mode)
