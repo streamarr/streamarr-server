@@ -2,6 +2,7 @@ package com.streamarr.server.domain.streaming;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.stream.Collectors;
 import lombok.NonNull;
@@ -43,17 +44,10 @@ public final class HlsAudioEncodes {
   public static AudioDecision forTrack(
       @NonNull ClientCapabilityDeclaration declaration, int normalizedChannels) {
     var channelMaximums = channelMaximums(declaration);
-    for (var codec : MULTICHANNEL_ENCODE_PREFERENCE) {
-      int channels =
-          Math.min(
-              normalizedChannels,
-              Math.min(channelMaximums.getOrDefault(codec, 0), encoderChannelLimit(codec)));
-      if (channels > STEREO) {
-        return transcode(codec, channels);
-      }
-    }
-
-    return aacForTrack(declaration, normalizedChannels);
+    return MULTICHANNEL_ENCODE_PREFERENCE.stream()
+        .flatMap(codec -> multichannelEncode(channelMaximums, codec, normalizedChannels).stream())
+        .findFirst()
+        .orElseGet(() -> aacForTrack(declaration, normalizedChannels));
   }
 
   /** The AAC encode for a track with this normalized channel count, with at most two channels. */
@@ -70,6 +64,19 @@ public final class HlsAudioEncodes {
         .collect(
             Collectors.toMap(
                 entry -> entry.codec().probedName(), AudioCapabilityEntry::maxChannels, Math::max));
+  }
+
+  private static Optional<AudioDecision> multichannelEncode(
+      Map<String, Integer> channelMaximums, String codec, int normalizedChannels) {
+    int channels =
+        Math.min(
+            normalizedChannels,
+            Math.min(channelMaximums.getOrDefault(codec, 0), encoderChannelLimit(codec)));
+    if (channels <= STEREO) {
+      return Optional.empty();
+    }
+
+    return Optional.of(transcode(codec, channels));
   }
 
   private static int encoderChannelLimit(String codec) {
