@@ -19,8 +19,9 @@ import org.junit.jupiter.params.provider.MethodSource;
 /**
  * How a video capability entry judges the dynamic range of an HLS stream copy as it is (ADR 0049).
  * A copy with Dolby Vision fits only an entry that lists its Dolby Vision profile at or above its
- * Dolby Vision level, except a profile 8.2 or 9 copy, which keeps its RPUs under an SDR base. A
- * copy with HDR10+ fits only an entry that declares HDR10+.
+ * Dolby Vision level, except a profile 8.2 or 9 copy, which keeps its RPUs under an SDR base, and a
+ * profile 5 or 10.0 copy, which fits no entry yet. A copy with HDR10+ fits only an entry that
+ * declares HDR10+.
  */
 @Tag("UnitTest")
 @DisplayName("Video Capability Entry Dynamic Range Tests")
@@ -144,48 +145,10 @@ class VideoCapabilityEntryDynamicRangeTest {
                     configuration(8).baseLayerCompatibilityId(OptionalInt.of(4)))),
             true),
         Arguments.of(
-            "5 through its Dolby Vision profile alone",
-            baselessEntryListing(DolbyVisionProfile.PROFILE_5, 6),
-            hevcCopy(
-                declaredDolbyVision(
-                    CompatibleBase.NONE,
-                    configuration(5).baseLayerCompatibilityId(OptionalInt.of(0)))),
-            true),
-        Arguments.of(
-            "5 above its declared level",
-            baselessEntryListing(DolbyVisionProfile.PROFILE_5, 5),
-            hevcCopy(
-                declaredDolbyVision(
-                    CompatibleBase.NONE,
-                    configuration(5).baseLayerCompatibilityId(OptionalInt.of(0)))),
-            false),
-        Arguments.of(
-            "5, SDR and PQ entry without Dolby Vision",
-            hevcEntryBuilder()
-                .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
-                .build(),
-            hevcCopy(
-                declaredDolbyVision(
-                    CompatibleBase.NONE,
-                    configuration(5).baseLayerCompatibilityId(OptionalInt.of(0)))),
-            false),
-        Arguments.of(
             "SDR copy, entry listing only profile 5",
             baselessEntryListing(DolbyVisionProfile.PROFILE_5, 6),
             hevcCopy(plain(CompatibleBase.SDR)),
             false),
-        Arguments.of(
-            "10.0 through its Dolby Vision profile alone",
-            av1EntryBuilder()
-                .compatibleBases(List.of())
-                .dolbyVisionProfiles(
-                    List.of(dolbyVisionCapability(DolbyVisionProfile.PROFILE_10_0, 6)))
-                .build(),
-            av1Copy(
-                declaredDolbyVision(
-                    CompatibleBase.NONE,
-                    configuration(10).baseLayerCompatibilityId(OptionalInt.of(0)))),
-            true),
         Arguments.of(
             "10.1 at its declared level",
             av1EntryBuilder()
@@ -228,6 +191,68 @@ class VideoCapabilityEntryDynamicRangeTest {
                 .build(),
             av1Copy(dolbyVision(CompatibleBase.PQ, singleLayerRpuHeader())),
             false));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("baselessDolbyVisionCopies")
+  @DisplayName(
+      "Should refuse a Dolby Vision copy without a compatible base whatever the entry declares")
+  void shouldRefuseADolbyVisionCopyWithoutACompatibleBaseWhateverTheEntryDeclares(
+      String scenario, VideoCapabilityEntry entry, VideoStreamCopy copy) {
+    assertThat(entry.acceptsHlsCopy(copy)).isFalse();
+  }
+
+  static Stream<Arguments> baselessDolbyVisionCopies() {
+    var profile5 =
+        hevcCopy(
+            declaredDolbyVision(
+                CompatibleBase.NONE, configuration(5).baseLayerCompatibilityId(OptionalInt.of(0))));
+    var profile100 =
+        av1Copy(
+            declaredDolbyVision(
+                CompatibleBase.NONE,
+                configuration(10).baseLayerCompatibilityId(OptionalInt.of(0))));
+    return Stream.of(
+        Arguments.of(
+            "5, entry listing profile 5 alone",
+            baselessEntryListing(DolbyVisionProfile.PROFILE_5, 13),
+            profile5),
+        Arguments.of(
+            "5, entry listing every base, HDR10+ and HEVC profile",
+            hevcEntryBuilder()
+                .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG))
+                .dolbyVisionProfiles(everyProfileAtTheHighestLevel())
+                .hdr10Plus(true)
+                .build(),
+            profile5),
+        Arguments.of(
+            "5, SDR and PQ entry without Dolby Vision",
+            hevcEntryBuilder()
+                .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
+                .build(),
+            profile5),
+        Arguments.of(
+            "10.0, entry listing profile 10.0 alone",
+            av1EntryBuilder()
+                .compatibleBases(List.of())
+                .dolbyVisionProfiles(
+                    List.of(dolbyVisionCapability(DolbyVisionProfile.PROFILE_10_0, 13)))
+                .build(),
+            profile100),
+        Arguments.of(
+            "10.0, entry listing every base, HDR10+ and AV1 profile",
+            av1EntryBuilder()
+                .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG))
+                .dolbyVisionProfiles(everyProfileAtTheHighestLevel())
+                .hdr10Plus(true)
+                .build(),
+            profile100));
+  }
+
+  private static List<DolbyVisionProfileCapability> everyProfileAtTheHighestLevel() {
+    return Stream.of(DolbyVisionProfile.values())
+        .map(profile -> dolbyVisionCapability(profile, 13))
+        .toList();
   }
 
   @ParameterizedTest(name = "{0}")

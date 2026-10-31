@@ -128,11 +128,12 @@ public record VideoCapabilityEntry(
     return switch (CopiedDolbyVision.of(copy.codecFamily(), copy.dynamicRange())) {
       case CopiedDolbyVision.None _, CopiedDolbyVision.KeptUnderSdrBase _ -> true;
       case CopiedDolbyVision.Declarable(var profile, var level) -> listsDolbyVision(profile, level);
-      case CopiedDolbyVision.Undeclarable _ -> false;
+      case CopiedDolbyVision.Undeclarable _, CopiedDolbyVision.NeedsDolbyVisionSampleEntry _ ->
+          false;
     };
   }
 
-  // A base of NONE comes only with Dolby Vision, whose profile and level alone admit it.
+  // A base of NONE comes only with Dolby Vision, which decides alone whether the copy fits.
   private boolean acceptsCompatibleBase(CompatibleBase base) {
     return switch (base) {
       case UNSPECIFIED -> compatibleBases.contains(CompatibleBase.SDR);
