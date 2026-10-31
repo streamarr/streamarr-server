@@ -1086,6 +1086,32 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should announce at least E-AC-3's 5.1 bitrate when a copied 7.1 E-AC-3 track has no probed"
+          + " bitrate")
+  void shouldAnnounceAtLeastEac3s51BitrateWhenACopied71Eac3TrackHasNoProbedBitrate() {
+    var source =
+        probeBuilder("h264", "eac3")
+            .audioChannels(OptionalInt.of(8))
+            .audioBitrate(OptionalLong.empty())
+            .build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaringAudio(audio(AAC, 8), audio(EAC3, 8)))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
+    assertThat(decision.audioDecision().channels()).isEqualTo(8);
+    assertThat(decision.audioDecision().bitrate()).isEqualTo(768_000L);
+  }
+
+  @Test
   @DisplayName("Should transcode to multichannel AAC when only AAC is supported")
   void shouldTranscodeToMultichannelAacWhenOnlyAacIsSupported() {
     var source = probe("h264", "dts", 6, 1_500_000L);

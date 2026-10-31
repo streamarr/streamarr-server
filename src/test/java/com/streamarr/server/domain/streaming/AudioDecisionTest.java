@@ -29,7 +29,8 @@ class AudioDecisionTest {
     "aac, 6, 384000",
     "aac, 8, 512000",
     "ac3, 6, 640000",
-    "eac3, 6, 768000"
+    "eac3, 6, 768000",
+    "eac3, 8, 768000"
   })
   void shouldCalculateBitrateWhenCodecAndChannelCountGiven(
       String codec, int channels, long expectedBitrate) {
