@@ -257,6 +257,10 @@ The worker image's FFmpeg has VAAPI, Quick Sync and AMF encoders, but the image 
 Passing `/dev/dri` to the worker therefore leaves Intel and AMD encoding unavailable.
 Without a usable GPU, the worker encodes H.264 with libx264, HEVC with libx265 and AV1 with libsvtav1.
 
+IMPORTANT: The worker image pinned in `worker-image.env` detects NVENC but still encodes on the CPU.
+https://github.com/streamarr/streamarr-transcode-worker/issues/56[streamarr-transcode-worker#56] tracks encoding with NVENC.
+Until a worker release with that change is pinned, the setup below prepares the host and lets you confirm that the worker sees the GPU.
+
 === Host prerequisites
 
 Install these on each host that runs a worker:
@@ -351,7 +355,9 @@ At startup, the worker encodes one test frame with each hardware encoder and log
 docker compose logs transcode-worker | grep 'FFmpeg capabilities:'
 ----
 
-On a working GPU, `GPU=true` and the encoder backends name NVENC encoders with `hardware=true`:
+On a working GPU, `GPU=true` and `encoders` lists the NVENC encoders.
+The current worker image still shows every encoder backend with `hardware=false`.
+Once the worker encodes with NVENC, the encoder backends name NVENC encoders with `hardware=true`:
 
 [source,text]
 ----
