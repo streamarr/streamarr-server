@@ -78,9 +78,10 @@ message WorkerCapabilities {
   // bitstream. Version 5 also reports whether those packets carry presentation
   // times. Version 6 reports the bitrate of a Matroska video or audio stream
   // from the file's statistics tags when ffprobe reports none, as
-  // ProbeStreamInfo.bitrate_bits_per_second describes. Each version reports
-  // every fact from earlier versions. Version 2 is unused. No server requests
-  // version 2 and no worker advertises it.
+  // ProbeStreamInfo.bitrate_bits_per_second describes. Version 6 also reports
+  // ProbeStreamInfo.copy_keeps_packet_bytes for each H.264 and HEVC video
+  // stream. Each version reports every fact from earlier versions. Version 2
+  // is unused. No server requests version 2 and no worker advertises it.
   repeated uint32 probe_versions = 2;
   // The worker sends exactly one entry for each codec family it can encode.
   // Each entry identifies the encoder backend that the worker uses for that
