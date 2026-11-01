@@ -52,7 +52,6 @@ class ComposeMetricsExportIT extends AbstractIntegrationTest {
   private static final String COMPOSE_PROMETHEUS_ADDRESS = "http://prometheus:9090";
   private static final Pattern METRICS_VARIABLE =
       Pattern.compile("OTEL_.*|MANAGEMENT_.*|SPRING_APPLICATION_NAME");
-  private static final Pattern COMPOSE_DEFAULT = Pattern.compile("\\$\\{[^:}]+:-([^}]*)}");
   private static final Duration STORAGE_WAIT = Duration.ofSeconds(60);
   // The Compose documentation promises an export every 10 seconds.
   private static final double EXPORT_STEP_SECONDS = 10;
@@ -216,7 +215,7 @@ class ComposeMetricsExportIT extends AbstractIntegrationTest {
     var command =
         service.path("command").values().stream()
             .map(JsonNode::asString)
-            .map(argument -> COMPOSE_DEFAULT.matcher(argument).replaceAll("$1"))
+            .map(ComposeFile::withDefaults)
             .toArray(String[]::new);
     var container =
         new GenericContainer<>(service.path("image").asString())
