@@ -25,7 +25,8 @@ class MetricExportConfigurationTest {
               AutoConfigurations.of(
                   MetricsAutoConfiguration.class,
                   OtlpMetricsExportAutoConfiguration.class,
-                  SimpleMetricsExportAutoConfiguration.class));
+                  SimpleMetricsExportAutoConfiguration.class))
+          .withUserConfiguration(OtlpMetricsEndpointConfiguration.class);
 
   @Test
   @DisplayName("Should export no metrics when the observability profile is inactive")
@@ -48,6 +49,19 @@ class MetricExportConfigurationTest {
                   .containsEntry("service.name", "streamarr-server")
                   .containsEntry("deployment.environment", "dev");
             });
+  }
+
+  @Test
+  @DisplayName("Should append the metrics path once when the endpoint ends in a slash")
+  void shouldAppendTheMetricsPathOnceWhenTheEndpointEndsInASlash() {
+    CONTEXT_RUNNER
+        .withPropertyValues(
+            "spring.profiles.active=observability",
+            "otel.exporter.otlp.endpoint=http://collector.example:4318/")
+        .run(
+            context ->
+                assertThat(context.getBean(OtlpConfig.class).url())
+                    .isEqualTo("http://collector.example:4318/v1/metrics"));
   }
 
   @Test

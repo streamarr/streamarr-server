@@ -14,12 +14,16 @@ otel:
     sampler:
       arg: 1.0
   # Micrometer exports every meter, JVM metrics included. The SDK's metric exporter would send its
-  # own JVM metrics a second time, and its Micrometer bridge keeps exporting removed meters.
+  # own JVM metrics a second time, and its Micrometer bridge keeps exporting removed meters. The
+  # runtime telemetry stays off even when OTEL_METRICS_EXPORTER turns the SDK's exporter back on.
   metrics:
     exporter: none
+  instrumentation:
+    runtime-telemetry:
+      enabled: false
 
-# Metrics follow the OpenTelemetry starter's endpoint and resource, so OTEL_EXPORTER_OTLP_ENDPOINT
-# and OTEL_SERVICE_NAME move spans, logs and metrics together.
+# Metrics follow the OpenTelemetry starter's service name and resource, so OTEL_SERVICE_NAME renames
+# spans, logs and metrics together. OtlpMetricsEndpointConfiguration sends them to its endpoint.
 management:
   endpoints:
     web:
@@ -29,12 +33,11 @@ management:
     metrics:
       export:
         enabled: true
-        url: ${otel.exporter.otlp.endpoint}/v1/metrics
   opentelemetry:
     resource-attributes:
       service.name: ${otel.service.name}
       deployment.environment: ${otel.resource.attributes.deployment.environment}
-  # The SDK's HTTP server histogram is not exported, so Micrometer's request timer carries the buckets.
+  # Micrometer's request timer carries the HTTP server latency buckets that the SDK no longer sends.
   metrics:
     distribution:
       percentiles-histogram:

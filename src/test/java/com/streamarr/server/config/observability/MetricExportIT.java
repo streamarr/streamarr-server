@@ -46,8 +46,9 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * Runs the server under the {@code observability} profile against a local OTLP receiver in place of
- * the collector, and reads what the server sends it. The receiver's address and a service name
- * reach the server as the OpenTelemetry environment variables that a deployment would set.
+ * the collector, and reads what the server sends it. The receiver's address, a service name and the
+ * SDK's metric exporter reach the server as the OpenTelemetry environment variables that a
+ * deployment could set.
  */
 @Tag("IntegrationTest")
 @DisplayName("Metric export integration tests")
@@ -147,6 +148,7 @@ class MetricExportIT extends AbstractIntegrationTest {
         .untilAsserted(
             () ->
                 assertThat(scopesExporting("jvm.memory.used"::equals))
+                    .isNotEmpty()
                     .containsAnyElementsOf(scopesExporting(STARTUP_METER::equals)));
 
     assertThat(scopesExporting(name -> name.startsWith("jvm.")))
@@ -286,9 +288,12 @@ class MetricExportIT extends AbstractIntegrationTest {
       var variables =
           Map.<String, Object>of(
               "OTEL_EXPORTER_OTLP_ENDPOINT",
-              "http://127.0.0.1:" + COLLECTOR.getAddress().getPort(),
+              "http://127.0.0.1:" + COLLECTOR.getAddress().getPort() + "/",
               "OTEL_SERVICE_NAME",
-              SERVICE_NAME);
+              SERVICE_NAME,
+              // Turns the SDK's metric exporter back on: it must still send no JVM metrics.
+              "OTEL_METRICS_EXPORTER",
+              "otlp");
       context
           .getEnvironment()
           .getPropertySources()
