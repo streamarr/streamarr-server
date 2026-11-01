@@ -503,6 +503,49 @@ message VideoDecision {
   // bitstream filter, so the delivered samples equal the source packets. When
   // the field is false, the worker applies the filter as before.
   bool copy_keeps_packet_bytes = 12;
+  // The server sets this field only on a job that encodes video from an
+  // interlaced source: a chosen stream whose stored field order is TT, BB, TB
+  // or BT. Every other job omits it.
+  //
+  // The worker deinterlaces every frame before any other filter, before the
+  // scaler, so that no filter mixes the two fields of a frame. The worker
+  // takes the field order from deinterlace.field_order, not from each frame's
+  // flags. The produced output is progressive. The worker fails the attempt
+  // with JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION in any of these cases:
+  // - A job that copies video includes this field.
+  // - field_order is any value other than TT, BB, TB or BT, including
+  //   UNSPECIFIED, PROGRESSIVE and a value that this contract does not define.
+  // - output is any value other than ONE_FRAME_PER_FIELD or
+  //   ONE_FRAME_PER_FRAME, including UNSPECIFIED and a value that this contract
+  //   does not define.
+  //
+  // The worker fails the attempt with JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH when
+  // the initialization segment of an encode declares interlaced video, with or
+  // without this field.
+  Deinterlace deinterlace = 13;
+}
+
+// This message tells the worker how to deinterlace the chosen video stream.
+message Deinterlace {
+  // The field order that the probe stored for the chosen video stream. The
+  // field displayed first is the earlier field: the top field for TT and BT,
+  // the bottom field for BB and TB.
+  FieldOrder field_order = 1;
+  DeinterlaceOutput output = 2;
+}
+
+// This value states how many frames the deinterlacer writes.
+// TranscodeExecution.output_frame_rate is the rate of the deinterlacer's
+// output in either case.
+enum DeinterlaceOutput {
+  DEINTERLACE_OUTPUT_UNSPECIFIED = 0;
+  // The deinterlacer writes one frame for each field. A source with 29.97
+  // frames per second, and so 59.94 fields per second, becomes 59.94 frames
+  // per second.
+  DEINTERLACE_OUTPUT_ONE_FRAME_PER_FIELD = 1;
+  // The deinterlacer writes one frame for each source frame. A source with
+  // 29.97 frames per second stays at 29.97 frames per second.
+  DEINTERLACE_OUTPUT_ONE_FRAME_PER_FRAME = 2;
 }
 
 message TranscodeDecision {
@@ -573,10 +616,12 @@ message TranscodeExecution {
   // of the attempt's first media segment. This version of the server sets the
   // field for no other attempt.
   google.protobuf.Duration seek_position = 6;
-  // This field reports the output frame rate that the probe stored for the
-  // chosen video stream. The worker passes the exact fraction to FFmpeg and
-  // never converts it to a decimal. Every encode requires positive numerator
-  // and denominator terms. A job that copies the video carries none.
+  // This field reports the frame rate of the encode's output. It is the output
+  // frame rate that the probe stored for the chosen video stream, or twice that
+  // rate when VideoDecision.deinterlace.output is ONE_FRAME_PER_FIELD. The
+  // worker passes the exact fraction to FFmpeg and never converts it to a
+  // decimal. Every encode requires positive numerator and denominator terms. A
+  // job that copies the video carries none.
   Fraction output_frame_rate = 7;
 }
 
