@@ -13,11 +13,13 @@ final class ComposeFile {
   private ComposeFile() {}
 
   static JsonNode service(String name) {
+    return read().path("services").path(name);
+  }
+
+  private static JsonNode read() {
     try {
-      JsonNode compose =
-          new ObjectMapper()
-              .valueToTree(new Yaml().load(Files.readString(Path.of("docker-compose.yml"))));
-      return compose.path("services").path(name);
+      return new ObjectMapper()
+          .valueToTree(new Yaml().load(Files.readString(Path.of("docker-compose.yml"))));
     } catch (IOException e) {
       throw new UncheckedIOException(e);
     }

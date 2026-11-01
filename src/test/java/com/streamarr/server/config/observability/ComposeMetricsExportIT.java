@@ -51,8 +51,11 @@ class ComposeMetricsExportIT extends AbstractIntegrationTest {
       Pattern.compile("OTEL_.*|MANAGEMENT_.*|SPRING_APPLICATION_NAME");
   private static final Pattern COMPOSE_DEFAULT = Pattern.compile("\\$\\{[^:}]+:-([^}]*)}");
   private static final Duration STORAGE_WAIT = Duration.ofSeconds(60);
+  // The Compose documentation promises an export every 10 seconds.
+  private static final double EXPORT_STEP_SECONDS = 10;
   // Shorter than one export step, so a larger gap means a later export left the meter out.
-  private static final double LATER_EXPORT_GAP_SECONDS = 5;
+  private static final double LATER_EXPORT_GAP_SECONDS = EXPORT_STEP_SECONDS / 2;
+  private static final String PROBES_WAITING = "__name__=\"streamarr_probes_waiting\"";
   private static final String SERVICE = "streamarr-server";
 
   private static final GenericContainer<?> PROMETHEUS = startPrometheus();
@@ -100,13 +103,16 @@ class ComposeMetricsExportIT extends AbstractIntegrationTest {
         .atMost(STORAGE_WAIT)
         .untilAsserted(
             () ->
-                assertThat(latestSampleSeconds("__name__=\"streamarr_probes_waiting\""))
+                assertThat(latestSampleSeconds(PROBES_WAITING))
                     .get()
                     .satisfies(
                         latestExport ->
                             assertThat(
                                     latestExport
                                         - latestSampleSeconds(workerMatchers).orElseThrow())
+                                .as(
+                                    "seconds from the removed meter's newest sample to the newest"
+                                        + " export of streamarr_probes_waiting")
                                 .isGreaterThan(LATER_EXPORT_GAP_SECONDS)));
   }
 
@@ -120,15 +126,20 @@ class ComposeMetricsExportIT extends AbstractIntegrationTest {
         .toList();
   }
 
-  // A range selector returns the stored samples with their own timestamps.
   private static Optional<Double> latestSampleSeconds(String matchers) {
+    return sampleSeconds(matchers).stream().max(Double::compare);
+  }
+
+  // A range selector returns the stored samples with their own timestamps.
+  private static List<Double> sampleSeconds(String matchers) {
     var series = "{job=\"" + SERVICE + "\", " + matchers + "}";
     var result =
         query("/api/v1/query?query=" + encode(series + "[5m]")).path("data").path("result");
     return result.values().stream()
         .flatMap(stored -> stored.path("values").values().stream())
         .map(sample -> sample.get(0).asDouble())
-        .max(Double::compare);
+        .sorted()
+        .toList();
   }
 
   private static JsonNode query(String pathAndQuery) {
