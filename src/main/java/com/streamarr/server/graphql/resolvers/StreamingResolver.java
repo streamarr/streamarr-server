@@ -148,7 +148,7 @@ public class StreamingResolver {
               "This video file has no usable picture size. Ask your server admin to check the file.");
       case CreateStreamSessionRejection.NoEligibleVideoFormat() ->
           new CreateStreamSessionError.NoEligibleVideoFormatError(
-              "The server can't find a video format this device can play. Set Quality to Auto, or try another device.");
+              "The server can't find a video format this device can play. Try another device.");
       case CreateStreamSessionRejection.NoMediaSegments() ->
           new CreateStreamSessionError.InvalidMediaFileError(
               "This video file has no playable length. Ask your server admin to check the file.");
