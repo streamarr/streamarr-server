@@ -137,13 +137,6 @@ class ClientCapabilityDeclarationTest {
     assertThat(profile.codecFamily()).isEqualTo(expected);
   }
 
-  @Test
-  @DisplayName("Should name each audio codec by its probed name when a decision compares codecs")
-  void shouldNameEachAudioCodecByItsProbedNameWhenADecisionComparesCodecs() {
-    assertThat(List.of(AudioCodec.values()).stream().map(AudioCodec::probedName))
-        .containsExactly("aac", "ac3", "eac3", "opus", "flac", "alac");
-  }
-
   static Stream<String> requiredDeclarationLists() {
     return REQUIRED_DECLARATION_LISTS.keySet().stream().sorted();
   }

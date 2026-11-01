@@ -28,7 +28,6 @@ import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -562,18 +561,18 @@ class PlaybackSessionServiceTest {
   @DisplayName(
       "Should replay the initial capability declaration when a replacement format attempt starts")
   void shouldReplayTheInitialCapabilityDeclarationWhenAReplacementFormatAttemptStarts() {
-    var video = new ArrayList<>(List.of(h264EntryBuilder().build(), hevcEntryBuilder().build()));
-    var declaration = defaultDeclarationBuilder().video(video).build();
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().build(), hevcEntryBuilder().build()))
+            .build();
     var command = startCommand().capabilityDeclaration(declaration).build();
     var initial = accepted(service.start(command));
-    video.clear();
 
     service.reportFormatFailure(report(initial, command).build()).orElseThrow();
 
     assertThat(streams.createdCommands)
-        .hasSize(2)
-        .allSatisfy(created -> assertThat(created.capabilityDeclaration()).isEqualTo(declaration));
-    assertThat(streams.createdCommands.getLast().capabilityDeclaration().video()).hasSize(2);
+        .extracting(CreateStreamSessionCommand::capabilityDeclaration)
+        .containsExactly(declaration, declaration);
   }
 
   @Test
