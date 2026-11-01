@@ -260,6 +260,10 @@ public class StreamingResolver {
         .id(snapshot.playbackSessionId().toString())
         .formatAttemptCount(snapshot.formatAttemptCount())
         .maximumFormatAttempts(snapshot.maximumFormatAttempts())
+        .requestedChoice(snapshot.requestedChoice().name())
+        .playbackChoice(snapshot.playbackChoice().name())
+        .formatChange(snapshot.formatChange().map(Enum::name).orElse(null))
+        .offeredChoices(snapshot.offeredChoices().stream().map(Enum::name).toList())
         .currentFormatAttempt(attempt)
         .build();
   }
@@ -394,6 +398,7 @@ public class StreamingResolver {
                         playbackTokenValidity(session))
                     .value())
         .transcodeMode(session.getTranscodeDecision().transcodeMode().name())
+        .videoRange(session.getTranscodeDecision().videoRange().name())
         .build();
   }
 
