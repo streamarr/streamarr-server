@@ -133,6 +133,9 @@ class HlsStreamingServiceTest {
   private static final String MISSING_ENCODER_SESSIONS_METRIC =
       "streamarr.streaming.missing_encoder_sessions";
 
+  private static final ExecutionTargetId AV1_WORKER = new ExecutionTargetId("av1-worker");
+  private static final ExecutionTargetId H264_WORKER = new ExecutionTargetId("h264-worker");
+
   private FakeMediaFileRepository mediaFileRepository;
   private FakeTranscodeExecutor transcodeExecutor;
   private FakeSegmentStore segmentStore;
@@ -5967,14 +5970,12 @@ class HlsStreamingServiceTest {
   // One worker encodes only AV1 with the given encoder and has two job slots; another encodes only
   // H.264 in software and has one.
   private void useAnAv1WorkerWithTwoSlotsAndAnH264WorkerWithOne(WorkerVerifiedEncoder av1Encoder) {
-    var av1Worker = new ExecutionTargetId("av1-worker");
-    var h264Worker = new ExecutionTargetId("h264-worker");
     transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("h264", "av1"));
-    transcodeExecutor.setExecutionTargets(List.of(av1Worker, h264Worker));
-    transcodeExecutor.setTargetEncoders(av1Worker, List.of(av1Encoder));
-    transcodeExecutor.setTargetEncoders(h264Worker, List.of(libx264()));
-    transcodeExecutor.limitJobSlots(av1Worker, 2);
-    transcodeExecutor.limitJobSlots(h264Worker, 1);
+    transcodeExecutor.setExecutionTargets(List.of(AV1_WORKER, H264_WORKER));
+    transcodeExecutor.setTargetEncoders(AV1_WORKER, List.of(av1Encoder));
+    transcodeExecutor.setTargetEncoders(H264_WORKER, List.of(libx264()));
+    transcodeExecutor.limitJobSlots(AV1_WORKER, 2);
+    transcodeExecutor.limitJobSlots(H264_WORKER, 1);
   }
 
   // The player plays 480p, then asks for 1080p, whose start the session awaits while it keeps 480p
