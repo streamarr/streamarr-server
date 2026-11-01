@@ -314,9 +314,10 @@ class StreamingResolverTest {
 
   @ParameterizedTest
   @ValueSource(strings = {"UNSUPPORTED_FORMAT", "DECODE_ERROR"})
-  @DisplayName("Should preserve the typed client failure when a fixed format is rejected")
-  void shouldPreserveTheTypedClientFailureWhenAFixedFormatIsRejected(String reason) {
-    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+  @DisplayName("Should preserve the typed client failure when a fixed quality's encode is rejected")
+  void shouldPreserveTheTypedClientFailureWhenAFixedQualitysEncodeIsRejected(String reason) {
+    STUB_SERVICE.setNextResult(
+        buildSessionDeciding(UUID.randomUUID(), fullTranscodeDecision("h264")));
     var created = startPlayback(VideoQuality.HIGH_720P);
 
     var reported =
@@ -439,27 +440,49 @@ class StreamingResolverTest {
             .formatted(UUID.randomUUID(), quality, CAPABILITIES));
   }
 
+  // ADR 0052: a fixed quality's failed copy plays the fixed quality's encode, which is SDR until
+  // the server encodes HDR (#397), even when the copy kept a PQ base.
   @Test
-  @DisplayName("Should expose the typed worker mismatch when a fixed quality's copy mismatches")
-  void shouldExposeTheTypedWorkerMismatchWhenAFixedQualitysCopyMismatches() {
-    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
-    var created = startPlayback(VideoQuality.HIGH_720P);
+  @DisplayName("Should report SDR when the fixed quality's encode replaces a copy")
+  void shouldReportSdrWhenTheFixedQualitysEncodeReplacesACopy() {
+    var pqCopy =
+        remuxDecisionBuilder()
+            .videoSource(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .dynamicRange(
+                            VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ))
+                        .build()))
+            .build();
+    STUB_SERVICE.setNextResult(buildSessionDeciding(UUID.randomUUID(), pqCopy));
+    var created = startPlaybackReadingChoices(VideoQuality.HIGH_720P);
     var playbackId = created.read(CREATED_PLAYBACK + ".id", String.class);
-    var streamId =
-        created.read(CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.id", String.class);
 
-    playbackSessions.onVideoCopyOutputMismatch(
-        new VideoCopyOutputMismatchEvent(UUID.fromString(streamId), UUID.randomUUID(), "default"));
+    var reported =
+        reportFailure(
+            playbackId,
+            created.read(CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.id", String.class),
+            "UNSUPPORTED_FORMAT");
+    STUB_SERVICE.setNextResult(
+        buildSessionDeciding(UUID.randomUUID(), fullTranscodeDecision("h264")));
+    REPLACEMENT_TASKS.remove().run();
 
-    var status = playbackStatus(playbackId);
     assertThat(
-            status.read(
-                "data.playbackSession.currentFormatAttempt.error['__typename']", String.class))
-        .isEqualTo("PlaybackOutputMismatchError");
-    assertThat(status.read("data.playbackSession.currentFormatAttempt.error.message", String.class))
-        .isEqualTo(
-            "This video can't play in this format. Set Quality to Auto and try again. If Quality is"
-                + " already Auto, ask your server admin to check the file.");
+            created.read(
+                CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.videoRange", String.class))
+        .isEqualTo("PQ");
+    assertThat(reported.read(REPORTED_PLAYBACK + ".currentFormatAttempt.__typename", String.class))
+        .isEqualTo("PendingPlaybackFormatAttempt");
+    assertThat(reported.read(REPORTED_PLAYBACK + ".playbackChoice", String.class))
+        .isEqualTo("HIGH_720P");
+    assertThat(reported.read(REPORTED_PLAYBACK + ".formatChange", String.class))
+        .isEqualTo("COPY_FAILED");
+    var ready = playbackStatus(playbackId);
+    assertThat(ready.read("data.playbackSession.formatAttemptCount", Integer.class)).isEqualTo(2);
+    assertThat(
+            ready.read(
+                "data.playbackSession.currentFormatAttempt.streamSession.videoRange", String.class))
+        .isEqualTo("SDR");
   }
 
   @ParameterizedTest
@@ -619,7 +642,7 @@ class StreamingResolverTest {
             id formatAttemptCount maximumFormatAttempts
             currentFormatAttempt {
               __typename
-              ... on ReadyPlaybackFormatAttempt { streamSession { id streamUrl } }
+              ... on ReadyPlaybackFormatAttempt { streamSession { id streamUrl videoRange } }
               ... on FailedPlaybackFormatAttempt { error { __typename ... on MutationError { message } } }
             }
           }

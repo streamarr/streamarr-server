@@ -268,27 +268,23 @@ class PlaybackSessionServiceTest {
     assertThat(accepted(playback.start(command)).formatAttemptCount()).isEqualTo(1);
   }
 
+  // ADR 0052: a fixed quality's failed HLS copy falls back to an encode at the same quality.
   @ParameterizedTest
   @EnumSource(
       value = VideoQuality.class,
       mode = EnumSource.Mode.EXCLUDE,
       names = {"AUTO", "ORIGINAL"})
-  @DisplayName("Should terminate the chosen format when fixed quality receives a copy mismatch")
-  void shouldTerminateTheChosenFormatWhenFixedQualityReceivesACopyMismatch(VideoQuality quality) {
-    var command =
-        startCommand().options(StreamingOptions.builder().quality(quality).build()).build();
-    var snapshot = accepted(service.start(command));
-    var failedId = snapshot.currentFormatAttempt().streamSessionId();
-    service.onVideoCopyOutputMismatch(
-        new VideoCopyOutputMismatchEvent(failedId, UUID.randomUUID(), "default"));
+  @DisplayName("Should encode at the same fixed quality when its copy mismatches")
+  void shouldEncodeAtTheSameFixedQualityWhenItsCopyMismatches(VideoQuality quality) {
+    var command = startCommand().options(qualityOptions(quality)).build();
+    var initial = accepted(service.start(command));
 
-    var failed = service.access(request(snapshot, command)).orElseThrow();
-    assertThat(failed.formatAttemptCount()).isEqualTo(1);
-    assertThat(failed.currentFormatAttempt())
-        .isEqualTo(
-            new PlaybackFormatAttempt.Failed(
-                failedId, new PlaybackSessionFailure.OutputMismatch()));
-    assertThat(streams.getAllSessions()).isEmpty();
+    service.onVideoCopyOutputMismatch(
+        new VideoCopyOutputMismatchEvent(
+            initial.currentFormatAttempt().streamSessionId(), UUID.randomUUID(), "default"));
+
+    assertThatTheFixedQualityPlaysAnEncodeAfterItsCopyFailed(
+        service.access(request(initial, command)).orElseThrow(), quality);
   }
 
   @ParameterizedTest
@@ -359,27 +355,152 @@ class PlaybackSessionServiceTest {
     };
   }
 
+  // A worker's copy mismatch names a copy even before the format attempt that it fails is ready.
+  @Test
+  @DisplayName(
+      "Should return a pending encode at the fixed quality when its copy mismatches before"
+          + " creation returns")
+  void shouldReturnAPendingEncodeAtTheFixedQualityWhenItsCopyMismatchesBeforeCreationReturns() {
+    var work = new ConcurrentLinkedQueue<Runnable>();
+    var playback = serviceRunning(work::add).maximumFormatAttempts(2).build();
+    streams.duringNextCreation =
+        child ->
+            playback.onVideoCopyOutputMismatch(
+                new VideoCopyOutputMismatchEvent(
+                    child.streamSessionId(), UUID.randomUUID(), "default"));
+    var command = startCommand().options(qualityOptions(VideoQuality.HIGH_720P)).build();
+
+    var pending = accepted(playback.start(command));
+
+    assertThat(pending.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Pending.class);
+    assertThat(pending.formatAttemptCount()).isEqualTo(2);
+    assertThat(pending.playbackChoice()).isEqualTo(VideoQuality.HIGH_720P);
+    assertThat(pending.formatChange()).contains(PlaybackFormatChange.COPY_FAILED);
+    drain(work);
+    assertThatTheFixedQualityPlaysAnEncodeAfterItsCopyFailed(
+        playback.access(request(pending, command)).orElseThrow(), VideoQuality.HIGH_720P);
+  }
+
   @ParameterizedTest
   @EnumSource(
       value = VideoQuality.class,
       mode = EnumSource.Mode.EXCLUDE,
       names = {"AUTO", "ORIGINAL"})
-  @DisplayName("Should retain a typed client failure when the chosen quality is fixed")
-  void shouldRetainATypedClientFailureWhenTheChosenQualityIsFixed(VideoQuality quality) {
+  @DisplayName("Should encode at the same fixed quality when its copy fails")
+  void shouldEncodeAtTheSameFixedQualityWhenItsCopyFails(VideoQuality quality) {
     var command = startCommand().options(qualityOptions(quality)).build();
-    var snapshot = accepted(service.start(command));
-    var failed =
+    var initial = accepted(service.start(command));
+
+    var recovered =
         service
             .reportFormatFailure(
-                report(snapshot, command).reason(PlaybackFormatFailure.UNSUPPORTED_FORMAT).build())
+                report(initial, command).reason(PlaybackFormatFailure.UNSUPPORTED_FORMAT).build())
             .orElseThrow();
+
+    assertThatTheFixedQualityPlaysAnEncodeAfterItsCopyFailed(recovered, quality);
+    assertThat(streams.getAllSessions())
+        .singleElement()
+        .extracting(StreamSession::getSessionId)
+        .isEqualTo(recovered.currentFormatAttempt().streamSessionId());
+  }
+
+  // The fixed quality's own encode is the output that the viewer asked for, so its failure ends
+  // playback with the client's reason while attempts remain.
+  @Test
+  @DisplayName(
+      "Should end with the typed error when the encode after the fixed quality's copy fails")
+  void shouldEndWithTheTypedErrorWhenTheEncodeAfterTheFixedQualitysCopyFails() {
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(4).build();
+    var command = startCommand().options(qualityOptions(VideoQuality.HIGH_720P)).build();
+    var copy = accepted(playback.start(command));
+    var encode = playback.reportFormatFailure(report(copy, command).build()).orElseThrow();
+
+    var failed =
+        playback
+            .reportFormatFailure(
+                report(encode, command).reason(PlaybackFormatFailure.UNSUPPORTED_FORMAT).build())
+            .orElseThrow();
+
+    assertThat(failed.formatAttemptCount()).isEqualTo(2);
+    assertThat(failed.playbackChoice()).isEqualTo(VideoQuality.HIGH_720P);
+    assertThat(failed.formatChange()).contains(PlaybackFormatChange.COPY_FAILED);
     assertThat(failed.currentFormatAttempt())
         .isEqualTo(
             new PlaybackFormatAttempt.Failed(
-                snapshot.currentFormatAttempt().streamSessionId(),
+                encode.currentFormatAttempt().streamSessionId(),
                 new PlaybackSessionFailure.FixedFormatFailed(
                     PlaybackFormatFailure.UNSUPPORTED_FORMAT)));
+    assertThat(streams.getAllSessions()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should end with the typed error when the fixed quality starts with an encode that fails")
+  void shouldEndWithTheTypedErrorWhenTheFixedQualityStartsWithAnEncodeThatFails() {
+    streams.copiesTheSource = false;
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(4).build();
+    var command = startCommand().options(qualityOptions(VideoQuality.HIGH_720P)).build();
+    var encode = accepted(playback.start(command));
+
+    var failed =
+        playback
+            .reportFormatFailure(
+                report(encode, command).reason(PlaybackFormatFailure.UNSUPPORTED_FORMAT).build())
+            .orElseThrow();
+
     assertThat(failed.formatAttemptCount()).isEqualTo(1);
+    assertThat(failed.formatChange()).isEmpty();
+    assertThat(failed.currentFormatAttempt())
+        .isEqualTo(
+            new PlaybackFormatAttempt.Failed(
+                encode.currentFormatAttempt().streamSessionId(),
+                new PlaybackSessionFailure.FixedFormatFailed(
+                    PlaybackFormatFailure.UNSUPPORTED_FORMAT)));
+    assertThat(streams.getAllSessions()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should end with the typed error when no encode can replace the fixed quality's copy")
+  void shouldEndWithTheTypedErrorWhenNoEncodeCanReplaceTheFixedQualitysCopy() {
+    var command = startCommand().options(qualityOptions(VideoQuality.HIGH_720P)).build();
+    var initial = accepted(service.start(command));
+    streams.rejection = new CreateStreamSessionRejection.NoEligibleVideoFormat();
+
+    var failed = service.reportFormatFailure(report(initial, command).build()).orElseThrow();
+
+    assertThat(failed.formatAttemptCount()).isEqualTo(2);
+    assertThat(failed.playbackChoice()).isEqualTo(VideoQuality.HIGH_720P);
+    assertThat(failed.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Failed.class,
+            attempt ->
+                assertThat(attempt.reason())
+                    .isEqualTo(new PlaybackSessionFailure.CreationRejected(streams.rejection)));
+    assertThat(streams.getAllSessions()).isEmpty();
+  }
+
+  // No encode was reached, so nothing changed for the client to announce.
+  @Test
+  @DisplayName(
+      "Should end with attempts exhausted when the fixed quality's copy fails with no attempt"
+          + " left")
+  void shouldEndWithAttemptsExhaustedWhenTheFixedQualitysCopyFailsWithNoAttemptLeft() {
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(1).build();
+    var command = startCommand().options(qualityOptions(VideoQuality.HIGH_720P)).build();
+    var initial = accepted(playback.start(command));
+
+    var failed = playback.reportFormatFailure(report(initial, command).build()).orElseThrow();
+
+    assertThat(failed.formatAttemptCount()).isEqualTo(1);
+    assertThat(failed.playbackChoice()).isEqualTo(VideoQuality.HIGH_720P);
+    assertThat(failed.formatChange()).isEmpty();
+    assertThat(failed.currentFormatAttempt())
+        .isEqualTo(
+            new PlaybackFormatAttempt.Failed(
+                initial.currentFormatAttempt().streamSessionId(),
+                new PlaybackSessionFailure.AttemptsExhausted()));
+    assertThat(streams.getAllSessions()).isEmpty();
   }
 
   // ADR 0052: Original's failed HLS copy falls back to an encode, which plays in Auto.
@@ -494,12 +615,14 @@ class PlaybackSessionServiceTest {
     assertThatThrownBy(builder::build).isInstanceOf(IllegalArgumentException.class);
   }
 
-  // Auto's recoveries are not announced; Original's failed copy changes to Auto (ADR 0052).
+  // Auto's recoveries are not announced; Original's failed copy changes to Auto, and a fixed
+  // quality's failed copy keeps the fixed quality (ADR 0052).
   @ParameterizedTest
-  @CsvSource({"AUTO,", "ORIGINAL, COPY_FAILED"})
+  @CsvSource({"AUTO, AUTO,", "ORIGINAL, AUTO, COPY_FAILED", "HIGH_720P, HIGH_720P, COPY_FAILED"})
   @DisplayName("Should reserve one replacement when client and worker failures race")
   void shouldReserveOneReplacementWhenClientAndWorkerFailuresRace(
-      VideoQuality quality, PlaybackFormatChange expectedChange) throws Exception {
+      VideoQuality quality, VideoQuality expectedChoice, PlaybackFormatChange expectedChange)
+      throws Exception {
     var work = new ConcurrentLinkedQueue<Runnable>();
     var playback =
         PlaybackSessionService.builder()
@@ -543,7 +666,7 @@ class PlaybackSessionServiceTest {
     var pending = playback.access(request(initial, command)).orElseThrow();
     assertThat(pending.formatAttemptCount()).isEqualTo(2);
     assertThat(pending.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Pending.class);
-    assertThat(pending.playbackChoice()).isEqualTo(VideoQuality.AUTO);
+    assertThat(pending.playbackChoice()).isEqualTo(expectedChoice);
     assertThat(pending.formatChange()).isEqualTo(Optional.ofNullable(expectedChange));
     assertThat(playback.reportFormatFailure(report(pending, command).build())).contains(pending);
     drain(work);
@@ -747,6 +870,7 @@ class PlaybackSessionServiceTest {
   @Test
   @DisplayName("Should expire a terminal playback when it has no child stream")
   void shouldExpireATerminalPlaybackWhenItHasNoChildStream() {
+    streams.copiesTheSource = false;
     var command = startCommand().options(qualityOptions(VideoQuality.HIGH_720P)).build();
     var initial = accepted(service.start(command));
     service.reportFormatFailure(report(initial, command).build());
@@ -1183,6 +1307,22 @@ class PlaybackSessionServiceTest {
               assertThat(ready.session().getTranscodeDecision().transcodeMode().copiesVideo())
                   .isFalse();
               assertThat(ready.session().getOptions().quality()).isEqualTo(VideoQuality.AUTO);
+            });
+  }
+
+  private static void assertThatTheFixedQualityPlaysAnEncodeAfterItsCopyFailed(
+      PlaybackSessionSnapshot snapshot, VideoQuality quality) {
+    assertThat(snapshot.requestedChoice()).isEqualTo(quality);
+    assertThat(snapshot.playbackChoice()).isEqualTo(quality);
+    assertThat(snapshot.formatChange()).contains(PlaybackFormatChange.COPY_FAILED);
+    assertThat(snapshot.formatAttemptCount()).isEqualTo(2);
+    assertThat(snapshot.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready -> {
+              assertThat(ready.session().getTranscodeDecision().transcodeMode().copiesVideo())
+                  .isFalse();
+              assertThat(ready.session().getOptions().quality()).isEqualTo(quality);
             });
   }
 
