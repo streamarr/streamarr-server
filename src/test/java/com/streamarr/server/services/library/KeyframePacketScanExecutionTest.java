@@ -19,6 +19,8 @@ import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.domain.streaming.StreamMeasurementSource;
+import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
 import com.streamarr.server.domain.task.ProbePublication;
@@ -32,6 +34,7 @@ import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
+import com.streamarr.server.fixtures.StreamMeasurementFixture;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.PlaybackProbeClaims;
@@ -47,6 +50,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Stream;
@@ -112,6 +116,29 @@ class KeyframePacketScanExecutionTest {
               assertThat(scan.attemptId()).isNotNull();
             });
     assertThat(storedKeyframes()).isEqualTo(known());
+  }
+
+  // worker_session.proto: until streamarr/streamarr-server#690 the server drops the measurement
+  // that a keyframe packet scan reports.
+  @Test
+  @DisplayName(
+      "Should store the scanned keyframe positions without the scan's measurement when the scan"
+          + " measures the streams")
+  void shouldStoreScannedKeyframePositionsWithoutScansMeasurementWhenScanMeasuresStreams() {
+    var request = storePacketScanRequired();
+    var measurement =
+        new StreamMeasurements(
+            StreamMeasurementSource.KEYFRAME_PACKET_SCAN,
+            List.of(StreamMeasurementFixture.video(), StreamMeasurementFixture.audio()));
+    scanner =
+        scanAnswering(
+            StreamMeasurementFixture.success(SCANNED_POSITIONS, Optional.of(measurement)));
+
+    var result = execution().execute(request);
+
+    assertThat(result).isEqualTo(new KeyframePacketScanResult.Completed());
+    assertThat(storedKeyframes()).isEqualTo(known());
+    assertThat(outcomes.findStreamMeasurements(mediaFile.getId())).isEmpty();
   }
 
   @Test

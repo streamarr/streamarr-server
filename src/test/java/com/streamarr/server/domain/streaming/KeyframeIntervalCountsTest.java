@@ -28,6 +28,7 @@ class KeyframeIntervalCountsTest {
 
     assertThat(counts.intervalCount()).isEqualTo(2);
     assertThat(counts.countOf(0)).isEqualTo(0xFFFF_FFFFL);
+    assertThat(counts.countOf(1)).isEqualTo(7);
   }
 
   @Test
@@ -38,7 +39,8 @@ class KeyframeIntervalCountsTest {
     assertThat(counts)
         .isEqualTo(KeyframeIntervalCounts.ofUnsigned(new int[] {-1, 7}))
         .hasSameHashCodeAs(KeyframeIntervalCounts.ofUnsigned(new int[] {-1, 7}))
-        .isNotEqualTo(KeyframeIntervalCounts.of(7, 0xFFFF_FFFFL));
+        .isNotEqualTo(KeyframeIntervalCounts.of(7, 0xFFFF_FFFFL))
+        .isNotEqualTo(KeyframeIntervalCounts.of(0xFFFF_FFFFL, 7, 0));
   }
 
   @Test

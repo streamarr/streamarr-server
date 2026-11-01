@@ -18,9 +18,20 @@ import org.junit.jupiter.params.provider.MethodSource;
 class MeasuredStreamTest {
 
   @Test
-  @DisplayName("Should build a measured stream when every value is in range")
-  void shouldBuildMeasuredStreamWhenEveryValueIsInRange() {
-    assertThat(validStream().build().measuredBytes()).isEqualTo(3);
+  @DisplayName("Should build a measured stream when every value sits at the bottom of its range")
+  void shouldBuildMeasuredStreamWhenEveryValueSitsAtBottomOfItsRange() {
+    var empty =
+        MeasuredStream.builder()
+            .streamIndex(0)
+            .measuredBytes(0)
+            .packetCount(0)
+            .timeBaseNumerator(1)
+            .timeBaseDenominator(1)
+            .measuredDuration(0)
+            .keyframeIntervalBytes(KeyframeIntervalCounts.of(0))
+            .keyframeIntervalPacketCounts(KeyframeIntervalCounts.of(0));
+
+    assertThat(empty.build().measuredBytes()).isZero();
   }
 
   @ParameterizedTest(name = "{0}")
@@ -48,7 +59,9 @@ class MeasuredStreamTest {
   void shouldRefuseMeasuredStreamWhenItsIntervalBytesAreMissing() {
     var builder = validStream();
 
-    assertThatNullPointerException().isThrownBy(() -> builder.keyframeIntervalBytes(null));
+    assertThatNullPointerException()
+        .isThrownBy(() -> builder.keyframeIntervalBytes(null))
+        .withMessageContaining("keyframeIntervalBytes");
   }
 
   @Test
@@ -56,7 +69,9 @@ class MeasuredStreamTest {
   void shouldRefuseMeasuredStreamWhenItsIntervalPacketCountsAreMissing() {
     var builder = validStream();
 
-    assertThatNullPointerException().isThrownBy(() -> builder.keyframeIntervalPacketCounts(null));
+    assertThatNullPointerException()
+        .isThrownBy(() -> builder.keyframeIntervalPacketCounts(null))
+        .withMessageContaining("keyframeIntervalPacketCounts");
   }
 
   @Test

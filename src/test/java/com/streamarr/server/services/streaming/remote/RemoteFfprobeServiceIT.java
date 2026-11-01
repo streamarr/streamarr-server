@@ -15,7 +15,6 @@ import com.streamarr.server.domain.streaming.ChosenVideoStream;
 import com.streamarr.server.domain.streaming.ChromaticityCoordinates;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.ContentLightLevel;
-import com.streamarr.server.domain.streaming.KeyframeIntervalCounts;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MasteringDisplayColorVolume;
 import com.streamarr.server.domain.streaming.ProbeError;
@@ -32,6 +31,7 @@ import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.LoopbackProbeWorker;
+import com.streamarr.server.fixtures.StreamMeasurementFixture;
 import com.streamarr.server.fixtures.WorkerProbeResultFixture;
 import com.streamarr.server.support.BoundedTask;
 import com.streamarr.transcode.v1.KeyframePositionSource;
@@ -360,8 +360,6 @@ class RemoteFfprobeServiceIT {
     }
   }
 
-  // The contract and the domain share these type names.
-  @SuppressWarnings("checkstyle:fullyQualifiedName")
   @Test
   @DisplayName(
       "Should return each stream's measurement when the worker measures the streams beside the"
@@ -443,28 +441,12 @@ class RemoteFfprobeServiceIT {
 
           var outcome = probe.await(Duration.ofSeconds(5));
 
-          assertThat(outcome).isInstanceOf(ProbeOutcome.Success.class);
-          var measurements = ((ProbeOutcome.Success) outcome).streamMeasurements().orElseThrow();
-          assertThat(measurements.source())
-              .isEqualTo(
-                  com.streamarr.server.domain.streaming.StreamMeasurementSource.SAMPLE_TABLE);
-          var video = measurements.stream(0).orElseThrow();
-          assertThat(video.measuredBytes()).isEqualTo(700L + 0xFFFF_FFFFL);
-          assertThat(video.packetCount()).isEqualTo(48);
-          assertThat(video.timeBaseDenominator()).isEqualTo(12_288);
-          assertThat(video.measuredDuration()).isEqualTo(24_576);
-          assertThat(video.keyframeIntervalBytes())
-              .isEqualTo(KeyframeIntervalCounts.of(700, 0xFFFF_FFFFL));
-          assertThat(video.keyframeIntervalPacketCounts())
-              .isEqualTo(KeyframeIntervalCounts.of(12, 36));
-          var audio = measurements.stream(1).orElseThrow();
-          assertThat(audio.measuredBytes()).isEqualTo(100);
-          assertThat(audio.packetCount()).isEqualTo(94);
-          assertThat(audio.timeBaseDenominator()).isEqualTo(48_000);
-          assertThat(audio.measuredDuration()).isEqualTo(96_000);
-          assertThat(audio.keyframeIntervalBytes()).isEqualTo(KeyframeIntervalCounts.of(40, 60));
-          assertThat(audio.keyframeIntervalPacketCounts())
-              .isEqualTo(KeyframeIntervalCounts.of(46, 48));
+          assertThat(outcome)
+              .isInstanceOfSatisfying(
+                  ProbeOutcome.Success.class,
+                  success ->
+                      assertThat(success.streamMeasurements())
+                          .contains(StreamMeasurementFixture.measurement()));
         }
       }
     }

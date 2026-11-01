@@ -4,10 +4,13 @@ import static com.streamarr.server.fixtures.StreamMeasurementFixture.measured;
 import static com.streamarr.server.fixtures.StreamMeasurementFixture.measurement;
 import static com.streamarr.server.fixtures.StreamMeasurementFixture.positions;
 import static com.streamarr.server.fixtures.StreamMeasurementFixture.success;
+import static com.streamarr.server.fixtures.StreamMeasurementFixture.successBuilder;
 import static com.streamarr.server.fixtures.StreamMeasurementFixture.unmeasured;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamMeasurementSource;
@@ -85,6 +88,48 @@ public interface StreamMeasurementRepositoryContract {
     repository().trySaveProbeRequest(mediaFileId, new ProbeInputs(MEASURED_SNAPSHOT, 1));
     repository().publish(publication(mediaFileId, 1, unmeasured(positions(90_000))));
 
+    assertThat(repository().findStreamMeasurements(mediaFileId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should read no measurement when a publication of another snapshot replaced it, even once"
+          + " the old snapshot returns")
+  default void
+      shouldReadNoMeasurementWhenPublicationOfAnotherSnapshotReplacedItEvenOnceItReturns() {
+    var mediaFileId = createMediaFile();
+    repository().publish(publication(mediaFileId, 1, measured(positions(90_000))));
+
+    repository()
+        .publish(
+            ProbePublication.builder()
+                .mediaFileId(mediaFileId)
+                .snapshot(CHANGED_SNAPSHOT)
+                .probeVersion(1)
+                .outcome(unmeasured(positions(90_000)))
+                .build());
+    repository().publish(publication(mediaFileId, 1, unmeasured(positions(90_000))));
+
+    assertThat(repository().findStreamMeasurements(mediaFileId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should store the outcome without its measurement when the outcome has no keyframe"
+          + " positions")
+  default void shouldStoreOutcomeWithoutItsMeasurementWhenOutcomeHasNoKeyframePositions() {
+    var mediaFileId = createMediaFile();
+    var withoutPositions =
+        successBuilder()
+            .keyframes(
+                new KeyframeKnowledge.PacketScanRequired(
+                    KeyframePacketScanReason.NO_CONTAINER_INDEX))
+            .streamMeasurements(Optional.of(measurement()))
+            .build();
+
+    var published = repository().publish(publication(mediaFileId, 1, withoutPositions));
+
+    assertThat(published).isTrue();
     assertThat(repository().findStreamMeasurements(mediaFileId)).isEmpty();
   }
 
