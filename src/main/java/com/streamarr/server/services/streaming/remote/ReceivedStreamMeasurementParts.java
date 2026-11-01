@@ -27,19 +27,13 @@ final class ReceivedStreamMeasurementParts {
       return;
     }
 
-    var partEntries = part.getKeyframeIntervalBytesCount();
-    var namesNewStream = !received.containsKey(part.getStreamIndex());
-    if (partEntries == 0
-        || part.getKeyframeIntervalPacketCountsCount() != partEntries
-        || partEntries > MAXIMUM_ENTRIES_PER_PART
-        || entries + partEntries > MAXIMUM_ENTRIES_PER_PROBE
-        || (namesNewStream && received.size() == MAXIMUM_STREAMS_PER_PROBE)) {
+    if (isOutsideTheContract(part)) {
       violatesContract = true;
       received.clear();
       return;
     }
 
-    entries += partEntries;
+    entries += part.getKeyframeIntervalBytesCount();
     received
         .computeIfAbsent(
             part.getStreamIndex(),
@@ -49,6 +43,26 @@ final class ReceivedStreamMeasurementParts {
                     .setStreamIndex(streamIndex))
         .addAllKeyframeIntervalBytes(part.getKeyframeIntervalBytesList())
         .addAllKeyframeIntervalPacketCounts(part.getKeyframeIntervalPacketCountsList());
+  }
+
+  private boolean isOutsideTheContract(ProbeStreamMeasurementPart part) {
+    return !hasEntriesForTheSameIntervals(part)
+        || exceedsTheEntryLimits(part.getKeyframeIntervalBytesCount())
+        || namesOneStreamTooMany(part.getStreamIndex());
+  }
+
+  private static boolean hasEntriesForTheSameIntervals(ProbeStreamMeasurementPart part) {
+    var partEntries = part.getKeyframeIntervalBytesCount();
+    return partEntries > 0 && part.getKeyframeIntervalPacketCountsCount() == partEntries;
+  }
+
+  private boolean exceedsTheEntryLimits(int partEntries) {
+    return partEntries > MAXIMUM_ENTRIES_PER_PART
+        || entries + partEntries > MAXIMUM_ENTRIES_PER_PROBE;
+  }
+
+  private boolean namesOneStreamTooMany(int streamIndex) {
+    return !received.containsKey(streamIndex) && received.size() == MAXIMUM_STREAMS_PER_PROBE;
   }
 
   synchronized boolean violatesContract() {
