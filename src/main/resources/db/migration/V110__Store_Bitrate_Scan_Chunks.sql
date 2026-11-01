@@ -45,7 +45,7 @@ CREATE TABLE media_file_bitrate_scan_chunk_stream
 ALTER TABLE media_file_stream_measurement
     DROP CONSTRAINT media_file_stream_measurement_unavailable_reason_check,
     ADD CONSTRAINT media_file_stream_measurement_unavailable_reason_check
-        CHECK (unavailable_reason IN ('FAILED_ATTEMPTS', 'COPY_CHANGES_PACKETS'));
+        CHECK (unavailable_reason IN ('FAILED_ATTEMPTS', 'COPY_CHANGES_PACKETS')) NOT VALID;
 
 -- Bitrate scans share the keyframe packet scan table at lower priorities than keyframe packet
 -- scans, and claims sort by priority, then execution time. The server also counts the waiting
