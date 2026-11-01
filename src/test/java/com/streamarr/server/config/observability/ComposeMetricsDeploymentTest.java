@@ -15,6 +15,7 @@ class ComposeMetricsDeploymentTest {
 
   private static final String STORAGE_PATH_FLAG = "--storage.tsdb.path=";
   private static final String METRICS_VOLUME = "prometheus-data";
+  private static final String RETENTION_FLAG = "--storage.tsdb.retention.time=";
 
   @Test
   @DisplayName("Should publish the Prometheus UI on the host's loopback only")
@@ -49,6 +50,20 @@ class ComposeMetricsDeploymentTest {
     assertThat(ComposeFile.volumes().has(METRICS_VOLUME))
         .as("top-level declaration of the %s volume", METRICS_VOLUME)
         .isTrue();
+  }
+
+  @Test
+  @DisplayName("Should keep stored metrics for fifteen days when the retention variable is unset")
+  void shouldKeepStoredMetricsForFifteenDaysWhenTheRetentionVariableIsUnset() {
+    assertThat(prometheusFlag(RETENTION_FLAG, Map.of())).contains("15d");
+  }
+
+  @Test
+  @DisplayName("Should keep stored metrics for the retention variable's time when it is set")
+  void shouldKeepStoredMetricsForTheRetentionVariablesTimeWhenItIsSet() {
+    var variables = Map.of("STREAMARR_METRICS_RETENTION", "30d");
+
+    assertThat(prometheusFlag(RETENTION_FLAG, variables)).contains("30d");
   }
 
   private static Optional<String> prometheusFlag(String flag, Map<String, String> variables) {

@@ -106,14 +106,6 @@ class ComposeMetricsExportIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep stored metrics for fifteen days when the retention variable is unset")
-  void shouldKeepStoredMetricsForFifteenDaysWhenTheRetentionVariableIsUnset() {
-    var retention = query("/api/v1/status/runtimeinfo").path("data").path("storageRetention");
-
-    assertThat(retention.asString()).isEqualTo("15d");
-  }
-
-  @Test
   @DisplayName(
       "Should produce no spans or log records when the server runs with the Compose settings")
   void shouldProduceNoSpansOrLogRecordsWhenTheServerRunsWithTheComposeSettings() {
