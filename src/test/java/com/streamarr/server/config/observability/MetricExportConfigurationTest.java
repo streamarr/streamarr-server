@@ -92,6 +92,8 @@ class MetricExportConfigurationTest {
   @Test
   @DisplayName("Should leave OpenTelemetry variables to the starter when the server starts")
   void shouldLeaveOpenTelemetryVariablesToTheStarterWhenTheServerStarts() {
+    // Spring Boot reads the variables from System.getenv(), which a test cannot set, so the test
+    // reads the switch that stops it from mapping them.
     CONTEXT_RUNNER
         .withPropertyValues("spring.profiles.active=observability")
         .run(
