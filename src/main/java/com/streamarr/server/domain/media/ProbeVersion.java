@@ -8,10 +8,12 @@ public final class ProbeVersion {
 
   // Version 3 adds the chosen video stream's keyframe positions. Version 4 adds the dynamic range
   // facts of streamarr/streamarr-server#501 and the other facts that ADR 0032 lists for version 4.
-  // Version 5 adds the frame facts below. Each version includes the facts of every earlier version.
-  // Version 2 is unused. V097 deleted every result before version 4; a version 4 result stays
-  // playable until the re-scan stores the file's version 5 result.
-  public static final int CURRENT = 5;
+  // Version 5 adds the frame facts below. Version 6 adds the video and audio bitrates that the
+  // worker reads from a Matroska file's trusted statistics tags, and whether a copy of an H.264 or
+  // HEVC video stream keeps every packet's bytes. Each version includes the facts of every earlier
+  // version. Version 2 is unused. V097 deleted every result before version 4; an earlier result
+  // stays playable until the re-scan stores the file's current result.
+  public static final int CURRENT = 6;
 
   public static final int FIRST_TO_REPORT_CHAPTERS = 4;
 
