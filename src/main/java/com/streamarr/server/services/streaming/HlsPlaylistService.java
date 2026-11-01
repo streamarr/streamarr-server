@@ -115,10 +115,8 @@ public class HlsPlaylistService {
 
   // ADR 0050: a copy costs the copied stream's own bitrate plus the stream session's audio bitrate.
   // A copied audio track whose bitrate the probe does not know takes a nominal bitrate, which can
-  // be
-  // far below a lossless track's rate. The container bitrate holds that track, so it bounds the
-  // copy
-  // from below.
+  // be far below a lossless track's rate. The container bitrate holds that track, so it bounds the
+  // copy from below.
   private static long copyAverageBandwidth(StreamSession session) {
     var audio = session.getTranscodeDecision().audioDecision();
     var probe = session.getMediaProbe();
@@ -131,9 +129,8 @@ public class HlsPlaylistService {
   }
 
   // When the probe stored no bitrate for the copied stream, the copy counts the container bitrate
-  // as
-  // video. A known container bitrate also counts every other track of the source, so it never falls
-  // below the video's own bitrate.
+  // as video. A known container bitrate also counts every other track of the source, so it never
+  // falls below the video's own bitrate.
   private static long copiedVideoBitrate(StreamSession session) {
     var probe = session.getMediaProbe();
     var streamIndex =
