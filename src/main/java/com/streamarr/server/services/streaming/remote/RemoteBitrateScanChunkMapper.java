@@ -10,6 +10,7 @@ import com.streamarr.transcode.v1.BitrateScanChunk;
 import com.streamarr.transcode.v1.BitrateScanChunkResult;
 import com.streamarr.transcode.v1.BitrateScanChunkStream;
 import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
+import java.math.BigInteger;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -103,7 +104,7 @@ final class RemoteBitrateScanChunkMapper {
                     throw violation("Worker bitrate scan chunk measured one stream twice");
                   }
 
-                  return measuredStream(stream, partsByStream, chunk.getDecodeTimeDeltasCount());
+                  return measuredStream(chunk, stream, partsByStream);
                 })
             .toList();
     if (!measuredIndexes.equals(requested)) {
@@ -119,9 +120,10 @@ final class RemoteBitrateScanChunkMapper {
   }
 
   private static MeasuredChunkStream measuredStream(
+      BitrateScanChunk chunk,
       BitrateScanChunkStream stream,
-      Map<Integer, ProbeStreamMeasurementPart> partsByStream,
-      int keyframeCount) {
+      Map<Integer, ProbeStreamMeasurementPart> partsByStream) {
+    var keyframeCount = chunk.getDecodeTimeDeltasCount();
     if (stream.getMeasuredBytes() < 0 || stream.getPacketCount() < 0) {
       throw violation("Worker bitrate scan chunk bytes or packets exceed the contract's range");
     }
@@ -144,13 +146,23 @@ final class RemoteBitrateScanChunkMapper {
       throw violation("Worker bitrate scan chunk stream's intervals differ from its totals");
     }
 
+    var isChosenVideo = stream.getStreamIndex() == chunk.getChosenVideoStreamIndex();
+    if (isChosenVideo && hasEmptyInterval(packets)) {
+      throw violation("Worker bitrate scan chunk has a keyframe interval without its keyframe");
+    }
+
+    var packetTimes = packetTimes(stream);
+    if (!isChosenVideo && packetTimes.isPresent() && startsOutside(chunk, stream)) {
+      throw violation("Worker bitrate scan chunk audio starts outside the chunk");
+    }
+
     return MeasuredChunkStream.builder()
         .streamIndex(stream.getStreamIndex())
         .measuredBytes(stream.getMeasuredBytes())
         .packetCount(stream.getPacketCount())
         .timeBaseNumerator(stream.getTimeBaseNumerator())
         .timeBaseDenominator(stream.getTimeBaseDenominator())
-        .packetTimes(packetTimes(stream))
+        .packetTimes(packetTimes)
         .keyframeIntervalBytes(bytes)
         .keyframeIntervalPacketCounts(packets)
         .build();
@@ -175,6 +187,41 @@ final class RemoteBitrateScanChunkMapper {
     return Optional.of(
         new MeasuredChunkStream.PacketTimes(
             stream.getFirstPresentationTime(), stream.getEndTime()));
+  }
+
+  private static boolean hasEmptyInterval(KeyframeIntervalCounts packets) {
+    for (var interval = 0; interval < packets.intervalCount(); interval++) {
+      if (packets.countOf(interval) == 0) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // Compares the audio's first presentation time with the chunk's bounds exactly, across the two
+  // time bases.
+  private static boolean startsOutside(BitrateScanChunk chunk, BitrateScanChunkStream stream) {
+    var first =
+        ticks(stream.getFirstPresentationTime(), stream.getTimeBaseNumerator())
+            .multiply(BigInteger.valueOf(chunk.getTimeBaseDenominator()));
+    var startsBefore =
+        !chunk.getFirstChunk()
+            && first.compareTo(chunkTime(chunk, stream, chunk.getPresentationTimeDeltas(0))) < 0;
+    var startsAfter =
+        chunk.hasEndPresentationTime()
+            && first.compareTo(chunkTime(chunk, stream, chunk.getEndPresentationTime())) >= 0;
+    return startsBefore || startsAfter;
+  }
+
+  private static BigInteger chunkTime(
+      BitrateScanChunk chunk, BitrateScanChunkStream stream, long time) {
+    return ticks(time, chunk.getTimeBaseNumerator())
+        .multiply(BigInteger.valueOf(stream.getTimeBaseDenominator()));
+  }
+
+  private static BigInteger ticks(long time, int timeBaseNumerator) {
+    return BigInteger.valueOf(time).multiply(BigInteger.valueOf(timeBaseNumerator));
   }
 
   private static int[] toArray(List<Integer> unsignedCounts) {
