@@ -37,7 +37,7 @@ public record StreamingProperties(
     }
 
     if (maxFormatAttempts == null) {
-      maxFormatAttempts = 2;
+      maxFormatAttempts = 4;
     }
 
     if (maxFormatAttempts <= 0) {
