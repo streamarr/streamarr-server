@@ -6,15 +6,26 @@ otel:
       endpoint: http://otel-collector:4318
       protocol: http/protobuf
   resource:
-    attributes:
+    attributes: &resource-attributes
       service.name: streamarr-server
       deployment.environment: ${DEPLOYMENT_ENV:dev}
   traces:
     sampler:
       arg: 1.0
+  # Micrometer exports every meter, JVM metrics included. The SDK's metric exporter would send its
+  # own JVM metrics a second time, and its Micrometer bridge keeps exporting removed meters.
+  metrics:
+    exporter: none
 
 management:
   endpoints:
     web:
       exposure:
         include: health,info,metrics
+  otlp:
+    metrics:
+      export:
+        enabled: true
+        url: http://otel-collector:4318/v1/metrics
+  opentelemetry:
+    resource-attributes: *resource-attributes

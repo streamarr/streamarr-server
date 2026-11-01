@@ -145,3 +145,17 @@ docker compose --env-file worker-image.env --env-file .env --profile observabili
 # Run server with observability profile:
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev,observability
 ----
+
+The `observability` profile sends spans, logs and metrics to the collector at `otel-collector:4318`.
+The collector forwards them to Grafana Cloud.
+
+* *Spans and logs* come from the OpenTelemetry Spring Boot starter.
+* *Metrics* come from Micrometer through Spring Boot's OTLP meter registry, once a minute.
+They include every `streamarr.*` meter and the JVM, HikariCP and other meters that Spring Boot binds.
+The OpenTelemetry SDK exports no metrics, so each JVM metric reaches the collector once, under its Micrometer name, for example `jvm.memory.used` with the `area` and `id` attributes.
+* Each export carries the meters that are registered at that moment.
+When the server removes a meter, its series ends.
+For example, the meters tagged with a worker's UUID end when that worker disconnects.
+* Metrics carry the same resource attributes as spans: `service.name` is `streamarr-server` and `deployment.environment` is `DEPLOYMENT_ENV` (default `dev`).
+
+Without the profile, the server exports nothing.

@@ -118,6 +118,9 @@ These metrics report the same facts:
 * `streamarr.streaming.production_speed` reports the media seconds that a worker produced per second of production time, for each media segment it uploads. It carries the `worker` tag.
 * `streamarr.streaming.capacity_refusals` counts the stream sessions refused for lack of capacity. Its `cause` tag is `no_connected_worker`, `no_free_worker_slot`, `no_free_configured_transcode_slot`, or `no_encoder_with_free_slot`.
 
+The `observability` profile exports these metrics to the OpenTelemetry collector, as the observability section of `docs/dev-setup.adoc` describes.
+A meter tagged with a worker's UUID stops being exported when that worker disconnects.
+
 == Media and health
 
 Set `STREAMING_REMOTE_SOURCE_NAMESPACE_ID` and `STREAMING_REMOTE_SOURCE_ROOT` for the server's media mapping.
