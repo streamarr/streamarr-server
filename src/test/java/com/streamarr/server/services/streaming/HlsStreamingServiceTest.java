@@ -4037,6 +4037,50 @@ class HlsStreamingServiceTest {
             });
   }
 
+  // ADR 0052: a fixed quality's failed copy falls back to the fixed quality's own encode, which is
+  // one variant (ADR 0050).
+  @Test
+  @DisplayName("Should encode one variant at the fixed quality when the fixed quality's copy fails")
+  void shouldEncodeOneVariantAtTheFixedQualityWhenTheFixedQualitysCopyFails() {
+    var playback = logicalPlayback();
+    var command =
+        logicalStart()
+            .options(StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P).build())
+            .build();
+    var initial = accepted(playback.start(command));
+    assertThat(initial.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready ->
+                assertThat(ready.session().getTranscodeDecision().transcodeMode().copiesVideo())
+                    .isTrue());
+
+    var recovered =
+        playback
+            .reportFormatFailure(
+                ReportPlaybackFormatFailureCommand.builder()
+                    .playbackSessionId(initial.playbackSessionId())
+                    .streamSessionId(initial.currentFormatAttempt().streamSessionId())
+                    .identity(command.identity())
+                    .reason(PlaybackFormatFailure.DECODE_ERROR)
+                    .build())
+            .orElseThrow();
+
+    assertThat(recovered.playbackChoice()).isEqualTo(VideoQuality.FULL_HD_1080P);
+    assertThat(recovered.formatChange()).contains(PlaybackFormatChange.COPY_FAILED);
+    assertThat(recovered.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready -> {
+              assertThat(ready.session().getTranscodeDecision().transcodeMode().copiesVideo())
+                  .isFalse();
+              assertThat(ready.session().getVariants())
+                  .extracting(QualityVariant::width, QualityVariant::height)
+                  .containsExactly(tuple(1920, 1080));
+              assertThat(service.getAllSessions()).containsExactly(ready.session());
+            });
+  }
+
   @Test
   @DisplayName("Should exclude a failed encoded family when the client reports a format failure")
   void shouldExcludeAFailedEncodedFamilyWhenTheClientReportsAFormatFailure() {

@@ -7,7 +7,9 @@ import lombok.NonNull;
 /**
  * Decides what follows a format failure of a playback session's current format attempt (ADR 0052).
  * Auto encodes again while its budget lasts. Original plays only copies, because an encode that it
- * reaches plays in Auto, so its failure is a failed copy: it falls back to an encode in Auto.
+ * reaches plays in Auto, so its failure is a failed copy: it falls back to an encode in Auto. A
+ * fixed quality's failed copy falls back to an encode at the same fixed quality, and the failure of
+ * the fixed quality's own encode ends playback.
  */
 record FormatRecoveryPolicy(int maximumFormatAttempts) {
   private static final PlayingChoice AUTO_AFTER_A_FAILED_COPY =
@@ -25,8 +27,19 @@ record FormatRecoveryPolicy(int maximumFormatAttempts) {
       case AUTO -> encodeWithinBudget(choice, formatAttemptCount);
       case ORIGINAL -> encodeWithinBudget(AUTO_AFTER_A_FAILED_COPY, formatAttemptCount);
       case LOW_360P, MEDIUM_480P, HIGH_720P, FULL_HD_1080P, UHD_4K ->
-          new NextFormatAttempt.Fail(failed.reason());
+          afterAFixedQualitysFailure(choice, failed, formatAttemptCount);
     };
+  }
+
+  private NextFormatAttempt afterAFixedQualitysFailure(
+      PlayingChoice choice, FailedFormatAttempt failed, int formatAttemptCount) {
+    if (!failed.copiedVideo()) {
+      return new NextFormatAttempt.Fail(failed.reason());
+    }
+
+    var encodeAtTheSameQuality =
+        new PlayingChoice(choice.playbackChoice(), Optional.of(PlaybackFormatChange.COPY_FAILED));
+    return encodeWithinBudget(encodeAtTheSameQuality, formatAttemptCount);
   }
 
   private NextFormatAttempt encodeWithinBudget(PlayingChoice next, int formatAttemptCount) {
