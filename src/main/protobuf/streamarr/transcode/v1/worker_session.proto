@@ -90,6 +90,11 @@ message WorkerCapabilities {
   // The server counts a hardware backend only after the backend also passes ADR
   // 0037's checks.
   repeated WorkerVerifiedVideoEncoder video_encoders = 3;
+  // The worker lists the stream measurement versions (ADR 0054) whose bitrate
+  // scan chunks it runs. A worker without bitrate scans lists none. The server
+  // sends a BitrateScanChunk only to a worker that lists the chunk's
+  // measurement_version.
+  repeated uint32 measurement_versions = 4;
 }
 
 // The worker sends this message first on its session and declares its
@@ -739,9 +744,63 @@ message ProbeRequest {
   // probe's priority.
   bool scan_keyframe_packets = 4;
   // This field specifies whether a playback request waits for the probe. The
-  // server sends every keyframe packet scan with PROBE_PRIORITY_BACKGROUND. The
-  // worker treats PROBE_PRIORITY_UNSPECIFIED as PROBE_PRIORITY_BACKGROUND.
+  // server sends every keyframe packet scan and every bitrate scan chunk with
+  // PROBE_PRIORITY_BACKGROUND. The worker treats PROBE_PRIORITY_UNSPECIFIED as
+  // PROBE_PRIORITY_BACKGROUND.
   ProbePriority priority = 5;
+  // When set, the request asks for one chunk of a bitrate scan (ADR 0054)
+  // instead of a probe, and the worker answers with a BitrateScanChunkResult.
+  // A chunk uses the keyframe packet scan capacity and runs at the lowest CPU
+  // priority, whatever the probe's priority. The server sets probe_version to
+  // its current probe version, leaves scan_keyframe_packets false, and sends a
+  // chunk only to a worker whose WorkerCapabilities.measurement_versions lists
+  // the chunk's measurement_version.
+  BitrateScanChunk bitrate_scan_chunk = 6;
+}
+
+// This message asks a worker to measure the packets of one chunk of a file's
+// keyframe intervals (ADR 0054). The server splits the keyframe positions that
+// it stores for the file into consecutive chunks and sends one chunk at a time.
+// The chunk's keyframe intervals follow the rules of StreamMeasurements: the
+// chunk holds one interval for each of its keyframes, and an interval runs from
+// one keyframe to the next, or to end_presentation_time and end_decode_time for
+// the chunk's last keyframe. A packet of the chosen video stream belongs to the
+// interval in which its decode order places it, so each interval holds at least
+// the packet of its keyframe. An audio packet belongs to the interval that holds
+// its presentation time. An audio packet without a presentation time uses its
+// decode time in its place, for its interval and for the stream's times in
+// BitrateScanChunkStream. The worker fails the chunk with
+// PROBE_FAILURE_INVALID_MEDIA when a measured packet has neither time. In the
+// first chunk, a packet that comes before the first keyframe belongs to the
+// first interval. In the last chunk, which has no end times, a packet after the
+// last keyframe belongs to the last interval.
+message BitrateScanChunk {
+  // This field names the stream measurement version whose rules the worker
+  // follows. The value is never zero.
+  uint32 measurement_version = 1;
+  // This field contains the chosen video stream's ProbeStreamInfo.index, which
+  // the keyframes belong to.
+  uint32 chosen_video_stream_index = 2;
+  // This field lists the streams to measure, each once: the chosen video stream
+  // and every audio stream of the file.
+  repeated uint32 measured_stream_indexes = 3;
+  // The time base of the keyframe times. Both values are positive.
+  uint32 time_base_numerator = 4;
+  uint32 time_base_denominator = 5;
+  // These lists hold the chunk's keyframes in decode-time order, on the
+  // zero-based timeline of the KeyframePositions that a probe reported for the
+  // file. They are delta-coded as in ProbeKeyframePositionsPart, so entry 0
+  // holds the chunk's first keyframe's absolute time. Both lists hold the same
+  // number of entries, at least 1 and at most 4,096.
+  repeated sint64 presentation_time_deltas = 6;
+  repeated sint64 decode_time_deltas = 7;
+  // These fields hold the absolute times of the next chunk's first keyframe,
+  // where the chunk's last interval ends. Both are absent for the last chunk,
+  // which runs to the end of the file.
+  optional sint64 end_presentation_time = 8;
+  optional sint64 end_decode_time = 9;
+  // This field is true for the chunk that holds the file's first keyframe.
+  bool first_chunk = 10;
 }
 
 enum ProbePriority {
@@ -1669,8 +1728,9 @@ message StreamMeasurements {
 // 8,388,608 entries in all and name at most 1,024 streams. The worker sends
 // each stream's parts in interval order, before the attempt's
 // ProbeAttemptResult. The parts of different streams may interleave. The
-// worker sends parts only when the result reports StreamMeasurements. The
-// server discards the parts of an attempt whose result reports none.
+// worker sends parts only when the result reports StreamMeasurements or
+// BitrateScanChunkResult.measured. The server discards the parts of an attempt
+// whose result reports neither.
 message ProbeStreamMeasurementPart {
   Uuid probe_attempt_id = 1;
   // This field names the MeasuredStream.stream_index of the stream whose
@@ -1729,8 +1789,71 @@ message ProbeAttemptResult {
     // The probe succeeds only if the file contains a video stream. For
     // audio-only media, the worker reports PROBE_FAILURE_NO_VIDEO_STREAM.
     ProbeMediaInfo media = 3;
+    // A worker reports a failure for a bitrate scan chunk as it does for a
+    // probe. PROBE_FAILURE_INVALID_MEDIA reports a chunk whose packets the
+    // worker cannot read to the chunk's end.
     ProbeFailure failure = 4;
+    // The worker answers a request that carries a BitrateScanChunk with this
+    // result or a failure, and never with media.
+    BitrateScanChunkResult bitrate_scan_chunk = 5;
   }
+}
+
+// This message reports what a worker found in one bitrate scan chunk.
+message BitrateScanChunkResult {
+  oneof result {
+    // The worker measured every requested stream. Each stream's bytes and
+    // packets in each of the chunk's keyframe intervals travel in the attempt's
+    // ProbeStreamMeasurementPart messages, which arrive before the result. Each
+    // measured stream has exactly as many entries as the chunk has keyframes.
+    BitrateScanChunkStreams measured = 1;
+    // A stream copy would change the size or the number of a measured stream's
+    // packets (ADR 0054), so the file's streams cannot be measured. The worker
+    // sends no ProbeStreamMeasurementPart for the attempt.
+    BitrateScanCopyChangesPackets copy_changes_packets = 2;
+  }
+}
+
+// This message lists the measurement of every stream that the chunk names in
+// BitrateScanChunk.measured_stream_indexes, each once.
+message BitrateScanChunkStreams {
+  repeated BitrateScanChunkStream streams = 1;
+}
+
+// This message reports one stream's packets in one bitrate scan chunk.
+message BitrateScanChunkStream {
+  // This field contains the stream's ProbeStreamInfo.index.
+  uint32 stream_index = 1;
+  // This field reports the sum of the sizes of the stream's packets in the
+  // chunk. It equals the sum of the stream's bytes in the chunk's keyframe
+  // intervals, and it is at most 2^63 - 1.
+  uint64 measured_bytes = 2;
+  // This field counts the stream's packets in the chunk. It equals the sum of
+  // the stream's packets in the chunk's keyframe intervals, and it is at most
+  // 2^63 - 1.
+  uint64 packet_count = 3;
+  // The stream's own time base, in which the stream's times count ticks. Both
+  // values are positive.
+  uint32 time_base_numerator = 4;
+  uint32 time_base_denominator = 5;
+  // This field holds the earliest presentation time of the stream's packets in
+  // the chunk, on the same timeline as the chunk's keyframes. Both times are
+  // absent when the chunk holds no packet of the stream, and both are present
+  // otherwise. For an audio stream, the time lies inside the chunk: at or after
+  // the chunk's first keyframe's presentation time unless the chunk is the
+  // first, and before end_presentation_time unless the chunk is the last.
+  optional sint64 first_presentation_time = 6;
+  // This field holds the end of the stream's last packet in the chunk: its
+  // presentation time plus its duration. It is at least
+  // first_presentation_time.
+  optional sint64 end_time = 7;
+}
+
+// This message names the first measured stream whose packets a stream copy
+// would change.
+message BitrateScanCopyChangesPackets {
+  // This field contains one of BitrateScanChunk.measured_stream_indexes.
+  uint32 stream_index = 1;
 }
 
 enum ProbeFailure {
@@ -1750,8 +1873,8 @@ enum ProbeFailure {
   // not retry the probe until the file or the probe version changes. Any probe
   // version may report this failure.
   PROBE_FAILURE_RESULT_TOO_LARGE = 7;
-  // The probe arrived while every unit of the probe's capacity was in use, so
-  // ffprobe never started. The worker lowered that capacity before the server
+  // The probe or bitrate scan chunk arrived while every unit of its capacity
+  // was in use, so ffprobe never started. The worker lowered that capacity before the server
   // learned of the change. The server keeps the probe queued without a failure,
   // and any worker with a free unit can take the probe.
   PROBE_FAILURE_NO_FREE_CAPACITY = 8;
@@ -1781,8 +1904,9 @@ enum ProbeCancelReason {
   // as PROBE_CANCEL_REASON_OTHER.
   PROBE_CANCEL_REASON_UNSPECIFIED = 0;
   // The probe reached its timeout on the server. For a keyframe packet scan,
-  // the timeout is the keyframe packet scan timeout, and the worker applies no
-  // brake for the scan.
+  // the timeout is the keyframe packet scan timeout, and for a bitrate scan
+  // chunk, the bitrate scan chunk timeout. The worker applies no brake for
+  // either.
   PROBE_CANCEL_REASON_TIMEOUT = 1;
   // The server is shutting down.
   PROBE_CANCEL_REASON_SERVER_SHUTDOWN = 2;
