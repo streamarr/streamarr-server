@@ -1373,6 +1373,42 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should skip an encode codec when only an entry that does not apply to HLS lists its codec profile")
+  void shouldSkipAnEncodeCodecWhenOnlyAnEntryThatDoesNotApplyToHlsListsItsCodecProfile() {
+    var hlsEntryWithoutAv1Main =
+        av1EntryBuilder()
+            .codecProfiles(
+                List.of(
+                    VideoCodecProfileCapability.builder()
+                        .profile(VideoCodecProfile.AV1_HIGH)
+                        .maxLevel(51)
+                        .maxTier(Optional.of(VideoCodecTier.MAIN))
+                        .build()))
+            .build();
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    hlsEntryWithoutAv1Main,
+                    av1EntryBuilder().hls(false).build(),
+                    h264EntryBuilder().build()))
+            .build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(probe("hevc", "aac"))
+                    .capabilityDeclaration(declaration)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+  }
+
+  @Test
   @DisplayName("Should encode a 5.1 Opus track when the client declares Opus at two channels")
   void shouldEncodeA51OpusTrackWhenTheClientDeclaresOpusAtTwoChannels() {
     var source =
