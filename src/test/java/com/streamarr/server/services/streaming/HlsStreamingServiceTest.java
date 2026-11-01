@@ -253,26 +253,68 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
 
-  @ParameterizedTest
-  @CsvSource(
-      delimiter = '|',
-      value = {"h264|av1|h264", "av1|h264|av1", "av1,h264||h264", "av1,h264|hevc|h264"})
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("missingEncoderCases")
   @DisplayName(
       "Should count the missing encoder of the codec family the server would encode when no connected worker has one")
   void shouldCountTheMissingEncoderOfTheCodecFamilyTheServerWouldEncodeWhenNoConnectedWorkerHasOne(
-      String acceptedCodecs, String verifiedFamilies, String expectedFamily) {
+      MissingEncoderCase missingEncoder) {
     probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("vp9").build());
-    transcodeExecutor.setEncodableVideoCodecFamilies(familiesOf(verifiedFamilies));
-    transcodeExecutor.setVerifiedVideoCodecFamiliesByWorker(
-        List.of(connectedWorker(familiesOf(verifiedFamilies))));
+    connectWorkerEncoding(missingEncoder.workerCodecFamilies());
 
     var outcome =
-        service.createSession(createCommandDeclaring(declarationAccepting(acceptedCodecs)));
+        service.createSession(
+            createCommandDeclaring(
+                declarationBuilderFor(
+                        missingEncoder.acceptedCodecFamilies().toArray(ProbedCodecFamily[]::new))
+                    .build()));
 
     assertThat(outcome)
         .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
-    assertThat(missingEncoderSessions(expectedFamily)).isOne();
+    assertThat(missingEncoderSessions(missingEncoder.expectedCodecFamily())).isOne();
     assertThat(missingEncoderSessions()).isOne();
+  }
+
+  // Without a hardware encoder the server prefers H.264 (ADR 0009).
+  private static Stream<MissingEncoderCase> missingEncoderCases() {
+    return Stream.of(
+        MissingEncoderCase.builder()
+            .name("H.264 accepted, worker encodes AV1 alone")
+            .acceptedCodecFamilies(List.of(H264))
+            .workerCodecFamilies(Set.of("av1"))
+            .expectedCodecFamily("h264")
+            .build(),
+        MissingEncoderCase.builder()
+            .name("AV1 accepted, worker encodes H.264 alone")
+            .acceptedCodecFamilies(List.of(AV1))
+            .workerCodecFamilies(Set.of("h264"))
+            .expectedCodecFamily("av1")
+            .build(),
+        MissingEncoderCase.builder()
+            .name("AV1 and H.264 accepted, worker encodes nothing")
+            .acceptedCodecFamilies(List.of(AV1, H264))
+            .workerCodecFamilies(Set.of())
+            .expectedCodecFamily("h264")
+            .build(),
+        MissingEncoderCase.builder()
+            .name("AV1 and H.264 accepted, worker encodes HEVC alone")
+            .acceptedCodecFamilies(List.of(AV1, H264))
+            .workerCodecFamilies(Set.of("hevc"))
+            .expectedCodecFamily("h264")
+            .build());
+  }
+
+  @Builder
+  private record MissingEncoderCase(
+      String name,
+      List<ProbedCodecFamily> acceptedCodecFamilies,
+      Set<String> workerCodecFamilies,
+      String expectedCodecFamily) {
+
+    @Override
+    public String toString() {
+      return name;
+    }
   }
 
   // A worker with a busy H.264 encoder connects right after the stream session reads the connected
@@ -2567,21 +2609,11 @@ class HlsStreamingServiceTest {
         .build();
   }
 
-  // One video capability entry for each comma-separated probed codec family name.
-  private static ClientCapabilityDeclaration declarationAccepting(String commaSeparated) {
-    return declarationBuilderFor(
-            Arrays.stream(commaSeparated.split(","))
-                .map(ProbedCodecFamily::fromProbedName)
-                .toArray(ProbedCodecFamily[]::new))
-        .build();
-  }
-
-  private static Set<String> familiesOf(String commaSeparated) {
-    if (commaSeparated == null) {
-      return Set.of();
-    }
-
-    return Set.of(commaSeparated.split(","));
+  // One connected worker that encodes exactly these codec families, with free slots for each.
+  private void connectWorkerEncoding(Set<String> codecFamilies) {
+    transcodeExecutor.setEncodableVideoCodecFamilies(codecFamilies);
+    transcodeExecutor.setVerifiedVideoCodecFamiliesByWorker(
+        List.of(connectedWorker(codecFamilies)));
   }
 
   @Test

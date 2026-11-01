@@ -9,11 +9,12 @@ import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.boot.health.contributor.Status;
 
 @Tag("UnitTest")
@@ -60,16 +61,16 @@ class TranscodeExecutorHealthIndicatorTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"h264", "av1", "hevc,av1"})
+  @MethodSource("codecFamiliesMissingAnEncoder")
   @DisplayName(
       "Should report degraded without naming the worker when it lacks a worker-verified encoder for a codec family the server encodes")
   void
       shouldReportDegradedWithoutNamingTheWorkerWhenItLacksAWorkerVerifiedEncoderForACodecFamilyTheServerEncodes(
-          String verifiedFamilies) {
+          Set<String> verifiedFamilies) {
     var executor = new FakeTranscodeExecutor();
     executor.setAvailableSlots(2);
-    executor.setVerifiedVideoCodecFamiliesByWorker(
-        List.of(worker(Set.of(verifiedFamilies.split(",")))));
+    var worker = worker(verifiedFamilies);
+    executor.setVerifiedVideoCodecFamiliesByWorker(List.of(worker));
     var indicator = new TranscodeExecutorHealthIndicator(executor);
 
     var health = indicator.health();
@@ -77,6 +78,10 @@ class TranscodeExecutorHealthIndicatorTest {
     assertThat(health.getStatus().getCode()).isEqualTo("DEGRADED");
     assertThat(health.getStatus().getDescription()).isNotBlank();
     assertThat(health.getDetails()).containsExactly(entry("availableSlots", 2));
+  }
+
+  private static Stream<Set<String>> codecFamiliesMissingAnEncoder() {
+    return Stream.of(Set.of("h264"), Set.of("av1"), Set.of("hevc", "av1"));
   }
 
   @Test
