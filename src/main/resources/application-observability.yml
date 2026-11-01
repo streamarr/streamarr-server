@@ -1,20 +1,44 @@
 otel:
   sdk:
     disabled: false
+  service:
+    name: streamarr-server
   exporter:
     otlp:
       endpoint: http://otel-collector:4318
       protocol: http/protobuf
   resource:
     attributes:
-      service.name: streamarr-server
       deployment.environment: ${DEPLOYMENT_ENV:dev}
   traces:
     sampler:
       arg: 1.0
+  # Micrometer exports every meter, JVM metrics included. The SDK's metric exporter would send its
+  # own JVM metrics a second time, and its Micrometer bridge keeps exporting removed meters. The
+  # runtime telemetry stays off even when OTEL_METRICS_EXPORTER turns the SDK's exporter back on.
+  metrics:
+    exporter: none
+  instrumentation:
+    runtime-telemetry:
+      enabled: false
 
+# Metrics follow the OpenTelemetry starter's service name and resource, so OTEL_SERVICE_NAME renames
+# spans, logs and metrics together. OtlpMetricsEndpointConfiguration sends them to its endpoint.
 management:
   endpoints:
     web:
       exposure:
         include: health,info,metrics
+  otlp:
+    metrics:
+      export:
+        enabled: true
+  opentelemetry:
+    resource-attributes:
+      service.name: ${otel.service.name}
+      deployment.environment: ${otel.resource.attributes.deployment.environment}
+  # Micrometer's request timer carries the HTTP server latency buckets that the SDK no longer sends.
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true

@@ -1,4 +1,12 @@
 spring:
+  # The OpenTelemetry starter owns the OpenTelemetry SDK: spans and logs. Spring Boot's own SDK
+  # would compete with it for the OpenTelemetry bean. Spring Boot's OpenTelemetry module stays on
+  # the classpath only for its OTLP meter registry.
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.opentelemetry.autoconfigure.OpenTelemetrySdkAutoConfiguration
+      - org.springframework.boot.opentelemetry.autoconfigure.logging.OpenTelemetryLoggingAutoConfiguration
+      - org.springframework.boot.opentelemetry.autoconfigure.logging.otlp.OtlpLoggingAutoConfiguration
   jpa:
     open-in-view: false
     properties:
@@ -68,6 +76,14 @@ management:
     web:
       exposure:
         include: health
+  otlp:
+    metrics:
+      export:
+        enabled: false
+  # Spring Boot would otherwise map OTEL_* variables onto its own settings: OTEL_METRICS_EXPORTER
+  # would switch Micrometer's export on or off whatever the profile says.
+  opentelemetry:
+    map-environment-variables: false
   endpoint:
     health:
       status:
