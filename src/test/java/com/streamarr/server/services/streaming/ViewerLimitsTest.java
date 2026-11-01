@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.AudioSteps;
+import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.StreamMeasurementSource;
 import com.streamarr.server.domain.streaming.StreamMeasurements;
@@ -38,6 +39,13 @@ class ViewerLimitsTest {
                   .mode(AudioMode.COPY)
                   .sourceCodecString(Optional.of("mp4a.40.2"))
                   .build()));
+
+  private static final AudioSteps STEREO_AAC_ONLY =
+      new AudioSteps(List.of(AudioDecision.stereoAac()));
+
+  // The 1,200 segments of 6 s that a stream copy of the default 2-hour source lists.
+  private static final CopyMediaPlaylist TWO_HOURS =
+      new CopyMediaPlaylist(1_200, new BigDecimal("7200.000000"));
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("sourcesAgainstFixedQualityBoxes")
@@ -193,16 +201,33 @@ class ViewerLimitsTest {
   // for 675,001 frames at the encoder's highest rate of 96 kHz average 4,512,214 b/s, which the
   // viewer's maximum bitrate checks instead of the probed 6 Mb/s video and the 8 Mb/s container.
   // The session's AAC adds its 128 kb/s.
-  @ParameterizedTest
-  @CsvSource({"4640214, true", "4640213, false"})
+  @Test
   @DisplayName(
-      "Should check a copy against the copied video's measured average when the server holds a"
-          + " measurement of the source's streams")
-  void shouldCheckACopyAgainstTheCopiedVideosMeasuredAverageWhenTheServerHoldsAMeasurement(
-      int maxBitrate, boolean allowed) {
-    var limits =
-        ViewerLimits.of(
-            StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(maxBitrate).build());
+      "Should keep the session's audio beside a copy when the copy's measured average equals the"
+          + " maximum bitrate")
+  void shouldKeepTheSessionsAudioBesideACopyWhenTheCopysMeasuredAverageEqualsTheMaximumBitrate() {
+    var limits = ViewerLimits.of(auto().maxBitrate(4_640_214).build());
+
+    var audio = limits.audioStepBesideCopyOf(measuredSource(), STEREO_AAC_ONLY, TWO_HOURS);
+
+    assertThat(audio).contains(AudioDecision.stereoAac());
+  }
+
+  @Test
+  @DisplayName(
+      "Should find no audio step when a copy's measured average exceeds the maximum bitrate by one"
+          + " bit per second")
+  void shouldFindNoAudioStepWhenACopysMeasuredAverageExceedsTheMaximumBitrateByOneBitPerSecond() {
+    var limits = ViewerLimits.of(auto().maxBitrate(4_640_213).build());
+
+    var audio = limits.audioStepBesideCopyOf(measuredSource(), STEREO_AAC_ONLY, TWO_HOURS);
+
+    assertThat(audio).isEmpty();
+  }
+
+  // A source of 6 Mb/s probed video in an 8 Mb/s container, whose video the server measured at
+  // 4,050,000,000 bytes over 2 hours.
+  private static MediaProbe measuredSource() {
     var probe = defaultProbeBuilder().bitrate(8_000_000L);
     var video =
         ProbeFixture.videoStreamBuilder(probe.build()).bitrate(OptionalLong.of(6_000_000L)).build();
@@ -213,15 +238,7 @@ class ViewerLimitsTest {
                 StreamMeasurementFixture.measuredStreamBuilder(video.index(), 4_050_000_000L)
                     .measuredDuration(7_200_000)
                     .build()));
-    var source = probe.streams(List.of(video)).streamMeasurements(Optional.of(measurement)).build();
-    var steps = new AudioSteps(List.of(AudioDecision.stereoAac()));
-
-    assertThat(
-            limits
-                .audioStepBesideCopyOf(
-                    source, steps, new CopyMediaPlaylist(1_200, new BigDecimal("7200.000000")))
-                .isPresent())
-        .isEqualTo(allowed);
+    return probe.streams(List.of(video)).streamMeasurements(Optional.of(measurement)).build();
   }
 
   // A probe without playback facts names no copied stream, so the container bitrate stands in for

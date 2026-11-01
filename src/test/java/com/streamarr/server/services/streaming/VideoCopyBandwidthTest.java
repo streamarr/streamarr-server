@@ -17,11 +17,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.stream.Stream;
+import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * A measured copy delivers, in every media segment, a moof header, an mfhd and an mdat header of 32
@@ -75,8 +78,11 @@ class VideoCopyBandwidthTest {
     var source =
         measuredSource(
                 List.of(
-                    measuredStream(first.index(), 100_000, 422),
-                    measuredStream(second.index(), 4_500_000_000L, 1)))
+                    measuredStream(first.index()).measuredBytes(100_000).packetCount(422).build(),
+                    measuredStream(second.index())
+                        .measuredBytes(4_500_000_000L)
+                        .packetCount(1)
+                        .build()))
             .streams(List.of(video, first, second))
             .build();
 
@@ -87,36 +93,79 @@ class VideoCopyBandwidthTest {
   // The encoder writes ceil((9 s * rate + priming) / frame size) frames: AAC 1,024 priming samples
   // in frames of 1,024 and AC-3 and E-AC-3 256 in frames of 1,536. Each frame's 16 bytes and the
   // track's 64 bytes in each segment count as framing, and the session's bitrate as the payload.
-  // The rate is the lowest rate that the encoder takes at or above the source's, or its highest
-  // rate when the source's is above it or unknown.
-  @ParameterizedTest(name = "{0} at {1} Hz")
-  @CsvSource({
-    "aac, 48000, 128000, 1026404",
-    "aac, 44100, 128000, 1025920",
-    "aac, 50000, 128000, 1028409",
-    "aac, 192000, 128000, 1032406",
-    "aac, 0, 128000, 1032406",
-    "ac3, 44100, 640000, 1536072",
-    "eac3, 96000, 640000, 1536399"
-  })
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("sourceRatesThatAnEncoderTakesOrRoundsUpTo")
   @DisplayName(
-      "Should count the encoded audio's frames as framing and its bitrate as payload when the"
-          + " session encodes the audio")
-  void shouldCountEncodedAudiosFramesAsFramingAndBitrateAsPayloadWhenSessionEncodesAudio(
-      String codec, int sampleRate, long bitrate, long expected) {
+      "Should count the encoded audio's frames at the lowest rate that the encoder takes at or"
+          + " above the source's rate when the session encodes the audio")
+  void shouldCountEncodedAudiosFramesAtLowestRateEncoderTakesAtOrAboveSourcesRate(
+      EncodedAudioCost expected) {
+    assertThat(encodedAudioCost(expected)).isEqualTo(expected.cost());
+  }
+
+  // AAC at 48 kHz writes 423 frames, at 44.1 kHz 389, and a 50 kHz source takes 64 kHz, 564
+  // frames. AC-3 at 44.1 kHz writes 259 frames.
+  static Stream<EncodedAudioCost> sourceRatesThatAnEncoderTakesOrRoundsUpTo() {
+    return Stream.of(
+        aacAt(OptionalInt.of(48_000)).cost(1_026_404L).build(),
+        aacAt(OptionalInt.of(44_100)).cost(1_025_920L).build(),
+        aacAt(OptionalInt.of(50_000)).cost(1_028_409L).build(),
+        EncodedAudioCost.builder()
+            .codec("ac3")
+            .sourceRate(OptionalInt.of(44_100))
+            .bitrate(640_000L)
+            .cost(1_536_072L)
+            .build());
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("sourceRatesAboveEveryRateThatAnEncoderTakesOrUnknown")
+  @DisplayName(
+      "Should count the encoded audio's frames at the encoder's highest rate when the source's rate"
+          + " is above every rate that the encoder takes or unknown")
+  void shouldCountEncodedAudiosFramesAtEncodersHighestRateWhenSourcesRateIsAboveItOrUnknown(
+      EncodedAudioCost expected) {
+    assertThat(encodedAudioCost(expected)).isEqualTo(expected.cost());
+  }
+
+  // AAC at its highest rate of 96 kHz writes 845 frames, and E-AC-3 at its highest rate of 48 kHz
+  // 282 frames.
+  static Stream<EncodedAudioCost> sourceRatesAboveEveryRateThatAnEncoderTakesOrUnknown() {
+    return Stream.of(
+        aacAt(OptionalInt.of(192_000)).cost(1_032_406L).build(),
+        aacAt(OptionalInt.empty()).cost(1_032_406L).build(),
+        EncodedAudioCost.builder()
+            .codec("eac3")
+            .sourceRate(OptionalInt.of(96_000))
+            .bitrate(640_000L)
+            .cost(1_536_399L)
+            .build());
+  }
+
+  private static EncodedAudioCost.EncodedAudioCostBuilder aacAt(OptionalInt sourceRate) {
+    return EncodedAudioCost.builder().codec("aac").sourceRate(sourceRate).bitrate(128_000L);
+  }
+
+  // The source's first audio stream is a TrueHD track at the case's rate.
+  private static long encodedAudioCost(EncodedAudioCost encode) {
     var probe = measuredSource(List.of());
     var video = ProbeFixture.videoStreamBuilder(probe.build()).build();
     var audio =
         ProbeFixture.audioStreamBuilder("truehd")
             .index(video.index() + 1)
-            .sampleRate(sampleRate == 0 ? OptionalInt.empty() : OptionalInt.of(sampleRate))
+            .sampleRate(encode.sourceRate())
             .build();
     var source = probe.streams(List.of(video, audio)).build();
-    var encoded = AudioDecision.stereoAac().toBuilder().codec(codec).bitrate(bitrate).build();
-
-    assertThat(VideoCopyBandwidth.averageBandwidth(source, encoded, NINE_SECONDS))
-        .isEqualTo(expected);
+    var encoded =
+        AudioDecision.stereoAac().toBuilder()
+            .codec(encode.codec())
+            .bitrate(encode.bitrate())
+            .build();
+    return VideoCopyBandwidth.averageBandwidth(source, encoded, NINE_SECONDS);
   }
+
+  @Builder
+  record EncodedAudioCost(String codec, OptionalInt sourceRate, long bitrate, long cost) {}
 
   // Three segments of 3.000000, 3.000000 and 2.999999 s sum to 8.999999 s. The 1,125,000 delivered
   // bytes are 9,000,000 bits.
@@ -164,7 +213,10 @@ class VideoCopyBandwidthTest {
         defaultProbeBuilder()
             .bitrate(4_000_000L)
             .streamMeasurements(
-                Optional.of(measurementOf(List.of(measuredStream(99, VIDEO_BYTES, 1)))))
+                Optional.of(
+                    measurementOf(
+                        List.of(
+                            measuredStream(99).measuredBytes(VIDEO_BYTES).packetCount(1).build()))))
             .build();
 
     assertThat(VideoCopyBandwidth.averageBandwidth(source, AudioDecision.none(), NINE_SECONDS))
@@ -188,11 +240,19 @@ class VideoCopyBandwidthTest {
   @DisplayName("Should keep the unmeasured cost when the measured video holds no bytes")
   void shouldKeepUnmeasuredCostWhenMeasuredVideoHoldsNoBytes() {
     var source = measuredSource(List.of(), 0).build();
-    var withoutBitrate = measuredSource(List.of(), 0).bitrate(0).build();
 
     assertThat(VideoCopyBandwidth.averageBandwidth(source, AudioDecision.none(), NINE_SECONDS))
         .isEqualTo(4_000_000L);
-    assertThat(VideoCopyBandwidth.isKnown(withoutBitrate, NINE_SECONDS)).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should not know a copy's cost when the measured video holds no bytes and the probe knows no"
+          + " bitrate")
+  void shouldNotKnowCopysCostWhenMeasuredVideoHoldsNoBytesAndProbeKnowsNoBitrate() {
+    var source = measuredSource(List.of(), 0).bitrate(0).build();
+
+    assertThat(VideoCopyBandwidth.isKnown(source, NINE_SECONDS)).isFalse();
   }
 
   @Test
@@ -256,7 +316,8 @@ class VideoCopyBandwidthTest {
     var probe = defaultProbeBuilder().bitrate(4_000_000L);
     var videoIndex = ProbeFixture.videoStreamBuilder(probe.build()).build().index();
     var streams = new ArrayList<MeasuredStream>();
-    streams.add(measuredStream(videoIndex, videoBytes, VIDEO_PACKETS));
+    streams.add(
+        measuredStream(videoIndex).measuredBytes(videoBytes).packetCount(VIDEO_PACKETS).build());
     streams.addAll(others);
     return probe.streamMeasurements(Optional.of(measurementOf(streams)));
   }
@@ -271,17 +332,15 @@ class VideoCopyBandwidthTest {
         .build();
   }
 
-  private static MeasuredStream measuredStream(int streamIndex, long measuredBytes, long packets) {
+  /** A stream of no bytes in one keyframe interval, before the caller sets its counts. */
+  private static MeasuredStream.MeasuredStreamBuilder measuredStream(int streamIndex) {
     return MeasuredStream.builder()
         .streamIndex(streamIndex)
-        .measuredBytes(measuredBytes)
-        .packetCount(packets)
         .timeBaseNumerator(1)
         .timeBaseDenominator(1_000)
         .measuredDuration(1_000)
         .keyframeIntervalBytes(KeyframeIntervalCounts.of(0))
-        .keyframeIntervalPacketCounts(KeyframeIntervalCounts.of(packets))
-        .build();
+        .keyframeIntervalPacketCounts(KeyframeIntervalCounts.of(0));
   }
 
   private static StreamMeasurements measurementOf(List<MeasuredStream> streams) {
