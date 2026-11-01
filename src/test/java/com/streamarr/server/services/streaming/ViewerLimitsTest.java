@@ -15,7 +15,6 @@ import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamMeasurementFixture;
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
@@ -45,7 +44,7 @@ class ViewerLimitsTest {
 
   // The 1,200 segments of 6 s that a stream copy of the default 2-hour source lists.
   private static final CopyMediaPlaylist TWO_HOURS =
-      new CopyMediaPlaylist(1_200, new BigDecimal("7200.000000"));
+      CopyMediaPlaylistFixture.evenlyListing(1_200, "6.000000");
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("sourcesAgainstFixedQualityBoxes")
