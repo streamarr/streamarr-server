@@ -231,6 +231,41 @@ public interface ProbePlaybackFactsRepositoryContract {
   }
 
   @ParameterizedTest
+  @MethodSource("copyPacketByteStates")
+  @DisplayName(
+      "Should read whether a copy keeps every packet's bytes back when an outcome stores it")
+  default void shouldReadWhetherACopyKeepsEveryPacketsBytesBackWhenAnOutcomeStoresIt(
+      Optional<Boolean> kept) {
+    var mediaFileId = createMediaFile();
+    var chosen =
+        video()
+            .codec(Optional.of("hevc"))
+            .videoProperties(
+                Optional.of(VideoStreamProperties.builder().copyKeepsPacketBytes(kept).build()))
+            .build();
+    var published =
+        outcomeBuilder()
+            .streams(List.of(chosen))
+            .chosenVideoStream(Optional.of(new ChosenVideoStream(0, declaredFilmRate())))
+            .build();
+
+    repository()
+        .publish(
+            ProbePublication.builder()
+                .mediaFileId(mediaFileId)
+                .snapshot(PLAYBACK_FACTS_SNAPSHOT)
+                .probeVersion(ProbeVersion.FIRST_TO_REPORT_FRAME_FACTS)
+                .outcome(published)
+                .build());
+
+    assertThat(storedOutcome(mediaFileId).streams()).isEqualTo(published.streams());
+  }
+
+  static Stream<Optional<Boolean>> copyPacketByteStates() {
+    return Stream.of(Optional.empty(), Optional.of(false), Optional.of(true));
+  }
+
+  @ParameterizedTest
   @MethodSource("titleOmissionStates")
   @DisplayName("Should retain every optional metadata fact when a probe outcome is published")
   default void shouldRetainEveryOptionalMetadataFactWhenAProbeOutcomeIsPublished(

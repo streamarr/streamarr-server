@@ -57,9 +57,9 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * PostgreSQL enforcement of the probe version 5 frame facts that V107 stores. Each case starts from
- * a published video stream row that holds every frame fact, and changes the facts that one
- * invariant guards.
+ * PostgreSQL enforcement of the probe version 5 frame facts that V107 stores and the copy fact that
+ * V109 stores. Each case starts from a published video stream row that holds every such fact, and
+ * changes the facts that one invariant guards.
  */
 @Tag("IntegrationTest")
 @DisplayName("Probe Frame Facts Invariants Integration Tests")
@@ -150,6 +150,14 @@ class ProbeFrameFactsInvariantsIT extends AbstractIntegrationTest {
             "presentation_times_require_first_frames_read",
             Map.of(stream.FIRST_FRAMES_READ, DSL.val(false))),
         broken(
+            "whether a copy keeps every packet's bytes on an AV1 stream",
+            "copy_keeps_packet_bytes_requires_h264_or_hevc",
+            Map.of(stream.CODEC, DSL.val("av1"))),
+        broken(
+            "whether a copy keeps every packet's bytes on a stream without a codec",
+            "copy_keeps_packet_bytes_requires_h264_or_hevc",
+            Map.of(stream.CODEC, nullOf(stream.CODEC))),
+        broken(
             "a codec level of 0",
             "media_file_stream_info_codec_level_check",
             Map.of(stream.CODEC_LEVEL, DSL.val(0))),
@@ -213,7 +221,8 @@ class ProbeFrameFactsInvariantsIT extends AbstractIntegrationTest {
   }
 
   // An HDR10 stream with Dolby Vision RPUs that start their samples, whose probe named every
-  // codec and color property, read its first frames and packets, and omitted no static metadata.
+  // codec and color property, read its first frames and packets, omitted no static metadata, and
+  // reported that a copy keeps every packet's bytes.
   private UUID publishVideoStreamWithEveryFrameFact() {
     var mediaFileId = createMediaFile();
     var video =
@@ -263,6 +272,7 @@ class ProbeFrameFactsInvariantsIT extends AbstractIntegrationTest {
                         .colorRange(Optional.of(ColorRange.LIMITED))
                         .firstFramesRead(true)
                         .firstPacketsCarryPresentationTimes(Optional.of(true))
+                        .copyKeepsPacketBytes(Optional.of(true))
                         .build()))
             .build();
     repository.publish(

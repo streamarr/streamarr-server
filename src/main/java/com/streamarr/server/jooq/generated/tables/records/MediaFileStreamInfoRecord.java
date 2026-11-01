@@ -990,6 +990,22 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
         return (Integer) get(65);
     }
 
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.copy_keeps_packet_bytes</code>.
+     */
+    public void setCopyKeepsPacketBytes(Boolean value) {
+        set(66, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.copy_keeps_packet_bytes</code>.
+     */
+    public Boolean getCopyKeepsPacketBytes() {
+        return (Boolean) get(66);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -1013,7 +1029,7 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
     /**
      * Create a detached, initialised MediaFileStreamInfoRecord
      */
-    public MediaFileStreamInfoRecord(UUID mediaFileId, Integer streamIndex, String codecType, String codec, Integer width, Integer height, Double framerate, Integer channels, Long bitrate, String language, Boolean isDefault, Boolean isForced, String dynamicRangeCompatibleBase, String hdr10Plus, String dolbyVision, String dolbyVisionObservedRpu, Integer dolbyVisionProfile, Integer dolbyVisionLevel, Integer dolbyVisionBaseLayerCompatibilityId, Boolean dolbyVisionBaseLayer, Boolean dolbyVisionEnhancementLayer, Boolean dolbyVisionRpu, Integer bitDepth, String chromaSubsampling, Integer rotationDegrees, Integer cropTop, Integer cropBottom, Integer cropLeft, Integer cropRight, String codecString, Integer sampleRateHz, String audioProfile, Long endTimeSeconds, Integer endTimeNanos, Integer masteringRedX, Integer masteringRedY, Integer masteringGreenX, Integer masteringGreenY, Integer masteringBlueX, Integer masteringBlueY, Integer masteringWhitePointX, Integer masteringWhitePointY, Long masteringMaxLuminance, Long masteringMinLuminance, Integer maxContentLightLevel, Integer maxFrameAverageLightLevel, String title, String handlerName, Boolean hearingImpaired, String codecProfile, Integer codecLevel, String codecTier, String colorPrimaries, String transferCharacteristics, String matrixCoefficients, String colorRange, Boolean firstFramesRead, Boolean masteringDisplayOmitted, Boolean contentLightLevelOmitted, Boolean firstPacketsCarryPresentationTimes, String dolbyVisionRpuPlacement, Integer firstRpuVdrRpuProfile, Boolean firstRpuBaseLayerFullRange, Boolean firstRpuEnhancementLayerSpatialResamplingFilter, Boolean firstRpuDisableResidual, Integer firstRpuVdrBitDepth) {
+    public MediaFileStreamInfoRecord(UUID mediaFileId, Integer streamIndex, String codecType, String codec, Integer width, Integer height, Double framerate, Integer channels, Long bitrate, String language, Boolean isDefault, Boolean isForced, String dynamicRangeCompatibleBase, String hdr10Plus, String dolbyVision, String dolbyVisionObservedRpu, Integer dolbyVisionProfile, Integer dolbyVisionLevel, Integer dolbyVisionBaseLayerCompatibilityId, Boolean dolbyVisionBaseLayer, Boolean dolbyVisionEnhancementLayer, Boolean dolbyVisionRpu, Integer bitDepth, String chromaSubsampling, Integer rotationDegrees, Integer cropTop, Integer cropBottom, Integer cropLeft, Integer cropRight, String codecString, Integer sampleRateHz, String audioProfile, Long endTimeSeconds, Integer endTimeNanos, Integer masteringRedX, Integer masteringRedY, Integer masteringGreenX, Integer masteringGreenY, Integer masteringBlueX, Integer masteringBlueY, Integer masteringWhitePointX, Integer masteringWhitePointY, Long masteringMaxLuminance, Long masteringMinLuminance, Integer maxContentLightLevel, Integer maxFrameAverageLightLevel, String title, String handlerName, Boolean hearingImpaired, String codecProfile, Integer codecLevel, String codecTier, String colorPrimaries, String transferCharacteristics, String matrixCoefficients, String colorRange, Boolean firstFramesRead, Boolean masteringDisplayOmitted, Boolean contentLightLevelOmitted, Boolean firstPacketsCarryPresentationTimes, String dolbyVisionRpuPlacement, Integer firstRpuVdrRpuProfile, Boolean firstRpuBaseLayerFullRange, Boolean firstRpuEnhancementLayerSpatialResamplingFilter, Boolean firstRpuDisableResidual, Integer firstRpuVdrBitDepth, Boolean copyKeepsPacketBytes) {
         super(MediaFileStreamInfo.MEDIA_FILE_STREAM_INFO);
 
         setMediaFileId(mediaFileId);
@@ -1082,6 +1098,7 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
         setFirstRpuEnhancementLayerSpatialResamplingFilter(firstRpuEnhancementLayerSpatialResamplingFilter);
         setFirstRpuDisableResidual(firstRpuDisableResidual);
         setFirstRpuVdrBitDepth(firstRpuVdrBitDepth);
+        setCopyKeepsPacketBytes(copyKeepsPacketBytes);
         resetTouchedOnNotNull();
     }
 }
