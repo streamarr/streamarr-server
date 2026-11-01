@@ -1,13 +1,15 @@
 package com.streamarr.server.support;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.LockSupport;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * Runs a task on its own virtual thread and waits for it with a bound. A task that outlives its
@@ -17,6 +19,8 @@ import java.util.concurrent.locks.LockSupport;
 public final class BoundedTask<T> implements AutoCloseable {
 
   private static final Duration CLOSE_BOUND = Duration.ofSeconds(5);
+  private static final List<String> LOCK_CLASS_NAMES =
+      List.of(ReentrantLock.class.getName(), ReentrantReadWriteLock.class.getName());
 
   private final Thread thread;
   private final CompletableFuture<T> result;
@@ -64,19 +68,22 @@ public final class BoundedTask<T> implements AutoCloseable {
   /**
    * Returns whether the task's thread waits without a deadline for a signal, such as a latch or a
    * condition. A thread that waits for a lock answers false, because it is only waiting its turn.
+   * The answer comes from one snapshot of the thread's stack, so it cannot combine a lock wait with
+   * a later wait.
    */
   public boolean isAwaitingASignalWithoutDeadline() {
-    if (thread.getState() != Thread.State.WAITING) {
-      return false;
-    }
-
-    var blocker = LockSupport.getBlocker(thread);
-    return blocker == null || !isPartOfALock(blocker);
+    var frames = List.of(thread.getStackTrace());
+    return frames.stream().anyMatch(BoundedTask::parksWithoutDeadline)
+        && frames.stream().noneMatch(BoundedTask::acquiresALock);
   }
 
-  private static boolean isPartOfALock(Object blocker) {
-    var owner = blocker.getClass().getEnclosingClass();
-    return owner != null && Lock.class.isAssignableFrom(owner);
+  private static boolean parksWithoutDeadline(StackTraceElement frame) {
+    return frame.getClassName().equals(LockSupport.class.getName())
+        && frame.getMethodName().equals("park");
+  }
+
+  private static boolean acquiresALock(StackTraceElement frame) {
+    return LOCK_CLASS_NAMES.stream().anyMatch(frame.getClassName()::startsWith);
   }
 
   /** Interrupts the task's thread, as a stopping server interrupts its workers. */
