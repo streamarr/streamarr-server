@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DolbyVision;
@@ -53,13 +54,7 @@ public class HlsPlaylistService {
       var size = probe.displayedSize();
       var codecs = codecs(session, copiedVideoCodecString(session));
       appendStreamInf(
-          sb,
-          VideoCopyBandwidth.averageBandwidth(
-              probe, audio, CopyMediaPlaylist.of(probe, properties)),
-          size.width(),
-          size.height(),
-          codecs,
-          hasAudio);
+          sb, copyBandwidth(probe, audio), size.width(), size.height(), codecs, hasAudio);
       appendCopiedFrameRate(sb, probe);
       appendVideoRange(sb, session);
       sb.append("\n");
@@ -68,9 +63,9 @@ public class HlsPlaylistService {
     }
 
     for (var variant : session.getVariants()) {
-      var averageBandwidth = variant.averageBandwidth(audio.bitrate());
+      var bandwidth = Bandwidth.withHeadroom(variant.averageBandwidth(audio.bitrate()));
       var codecs = codecs(session, encodedVideoCodecString(session, variant));
-      appendStreamInf(sb, averageBandwidth, variant.width(), variant.height(), codecs, hasAudio);
+      appendStreamInf(sb, bandwidth, variant.width(), variant.height(), codecs, hasAudio);
       appendFrameRate(sb, variant);
       appendVideoRange(sb, session);
       sb.append("\n");
@@ -78,6 +73,19 @@ public class HlsPlaylistService {
     }
 
     return sb.toString();
+  }
+
+  // A measured copy advertises its measured peak. An unmeasured copy, like an encoded variant, adds
+  // headroom to its average (ADR 0054).
+  private Bandwidth copyBandwidth(MediaProbe probe, AudioDecision audio) {
+    var playlist = CopyMediaPlaylist.of(probe, properties);
+    var average = VideoCopyBandwidth.averageBandwidth(probe, audio, playlist);
+    var peak = VideoCopyBandwidth.peakBandwidth(probe, audio, playlist);
+    if (peak.isEmpty()) {
+      return Bandwidth.withHeadroom(average);
+    }
+
+    return new Bandwidth(peak.getAsLong(), average);
   }
 
   private static String codecs(StreamSession session, String videoCodecString) {
@@ -142,23 +150,30 @@ public class HlsPlaylistService {
     sb.append("\n");
   }
 
-  // RFC 8216 §4.3.4.2 defines BANDWIDTH as the peak segment bit rate and AVERAGE-BANDWIDTH
-  // as the average. The rates available here are averages, so BANDWIDTH adds headroom for
-  // container overhead and rate variation. Encoded variants are capped with -maxrate.
-  // Probed source rates remain estimates.
-  private static final int PEAK_HEADROOM_PERCENT = 20;
+  /** A variant's BANDWIDTH and AVERAGE-BANDWIDTH (RFC 8216 §4.3.4.2). */
+  private record Bandwidth(long peak, long average) {
+
+    // RFC 8216 §4.3.4.2 defines BANDWIDTH as the peak segment bit rate and AVERAGE-BANDWIDTH as
+    // the average. An encoded variant and an unmeasured copy know only an average, so their
+    // BANDWIDTH adds headroom for container overhead and rate variation (ADR 0044). Encoded
+    // variants are capped with -maxrate. Probed source rates remain estimates.
+    private static final int PEAK_HEADROOM_PERCENT = 20;
+
+    static Bandwidth withHeadroom(long average) {
+      return new Bandwidth(average + average * PEAK_HEADROOM_PERCENT / 100, average);
+    }
+  }
 
   private void appendStreamInf(
       StringBuilder sb,
-      long averageBandwidth,
+      Bandwidth bandwidth,
       int width,
       int height,
       String codecs,
       boolean hasAudio) {
-    var peakBandwidth = averageBandwidth + averageBandwidth * PEAK_HEADROOM_PERCENT / 100;
     sb.append("#EXT-X-STREAM-INF:");
-    sb.append("BANDWIDTH=").append(peakBandwidth);
-    sb.append(",AVERAGE-BANDWIDTH=").append(averageBandwidth);
+    sb.append("BANDWIDTH=").append(bandwidth.peak());
+    sb.append(",AVERAGE-BANDWIDTH=").append(bandwidth.average());
     sb.append(",RESOLUTION=").append(width).append("x").append(height);
     sb.append(",CODECS=\"").append(codecs).append("\"");
     if (hasAudio) {

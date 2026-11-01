@@ -2,6 +2,8 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MeasuredStream;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamInfo;
@@ -19,7 +21,7 @@ import lombok.NonNull;
 /**
  * What a video copy costs beside the stream session's audio: the AVERAGE-BANDWIDTH that the
  * multivariant playlist advertises for the copy and the cost that the viewer's maximum bitrate
- * bounds (ADR 0050, ADR 0054).
+ * bounds (ADR 0050, ADR 0054), and the BANDWIDTH that a measured copy advertises.
  */
 final class VideoCopyBandwidth {
 
@@ -58,6 +60,72 @@ final class VideoCopyBandwidth {
       @NonNull AudioDecision audio,
       @NonNull CopyMediaPlaylist playlist) {
     return measuredCost(source, audio, playlist).orElseGet(() -> unmeasuredCost(source, audio));
+  }
+
+  /**
+   * A measured copy's peak segment bit rate: the copied video's peak plus the copied audio's peak
+   * over the media segments that a stream copy lists (RFC 8216 §4.1, ADR 0054), never below the
+   * copy's average. Empty when the copy has no measured average, or when the measured keyframe
+   * intervals do not follow the source's keyframe positions.
+   */
+  static OptionalLong peakBandwidth(
+      @NonNull MediaProbe source,
+      @NonNull AudioDecision audio,
+      @NonNull CopyMediaPlaylist playlist) {
+    var average = measuredCost(source, audio, playlist);
+    var positions = keyframePositions(source);
+    if (average.isEmpty() || positions.isEmpty()) {
+      return OptionalLong.empty();
+    }
+
+    var video = measuredVideo(source).orElseThrow();
+    if (!followsKeyframes(video, positions.get())) {
+      return OptionalLong.empty();
+    }
+
+    var videoPeak =
+        PeakSegmentBitRate.of(
+            CopySegmentSizes.video(video, playlist), playlist.targetDurationSeconds());
+    var audioPeak = audioPeak(source, audio, positions.get(), playlist);
+    if (audioPeak.isEmpty()) {
+      return OptionalLong.empty();
+    }
+
+    // A peak over runs that miss the densest segment can fall below the average, which RFC 8216
+    // never lets BANDWIDTH do.
+    return OptionalLong.of(Math.max(saturatedSum(videoPeak, audioPeak.get()), average.get()));
+  }
+
+  /** The largest peak among the session's audio renditions: today its one audio decision. */
+  private static Optional<Long> audioPeak(
+      MediaProbe source,
+      AudioDecision audio,
+      KeyframePositions positions,
+      CopyMediaPlaylist playlist) {
+    return switch (audio.mode()) {
+      case NONE -> Optional.of(0L);
+      case COPY ->
+          copiedAudio(source)
+              .filter(copied -> followsKeyframes(copied, positions))
+              .map(
+                  copied ->
+                      PeakSegmentBitRate.of(
+                          CopySegmentSizes.copiedAudio(copied, positions, playlist),
+                          playlist.targetDurationSeconds()));
+      case TRANSCODE -> Optional.empty();
+    };
+  }
+
+  private static Optional<KeyframePositions> keyframePositions(MediaProbe source) {
+    if (source.keyframes() instanceof KeyframeKnowledge.Known(var positions)) {
+      return Optional.of(positions);
+    }
+
+    return Optional.empty();
+  }
+
+  private static boolean followsKeyframes(MeasuredStream stream, KeyframePositions positions) {
+    return stream.keyframeIntervalBytes().intervalCount() == positions.keyframes().size();
   }
 
   private static long unmeasuredCost(MediaProbe source, AudioDecision audio) {
