@@ -13,6 +13,7 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h
 import static com.streamarr.server.fixtures.PlaybackSessionFixture.playbackServiceBuilder;
 import static com.streamarr.server.fixtures.PlaybackSessionFixture.startPlaybackBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.streaming.AudioCapabilityEntry;
 import com.streamarr.server.domain.streaming.AudioCodec;
@@ -24,7 +25,9 @@ import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
+import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.fakes.FakeCreatingStreamingService;
+import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.AudioChannelsNotPositive;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.AudioEntriesMissing;
@@ -65,7 +68,9 @@ class PlaybackSessionCapabilityDeclarationTest {
   private static final int OVERLONG = 33;
 
   private final FakeCreatingStreamingService streams = new FakeCreatingStreamingService();
-  private final PlaybackSessionService service = playbackServiceBuilder(streams).build();
+  private final FakePlaybackAuthorityGate authority = new FakePlaybackAuthorityGate();
+  private final PlaybackSessionService service =
+      playbackServiceBuilder(streams).authorityGate(authority).build();
 
   @Test
   @DisplayName("Should start playback when every capability entry is valid")
@@ -102,6 +107,17 @@ class PlaybackSessionCapabilityDeclarationTest {
                     new VideoEntriesMissing(),
                     new AudioEntriesMissing(),
                     new HlsAacEntryMissing())));
+    assertThat(streams.getAllSessions()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse the caller before checking the declaration when live authority is denied")
+  void shouldRefuseTheCallerBeforeCheckingTheDeclarationWhenLiveAuthorityIsDenied() {
+    authority.deny();
+    var invalid = ClientCapabilityDeclaration.builder().video(List.of()).audio(List.of()).build();
+
+    assertThatThrownBy(() -> start(invalid)).isInstanceOf(AuthenticationRequiredException.class);
     assertThat(streams.getAllSessions()).isEmpty();
   }
 
@@ -345,11 +361,23 @@ class PlaybackSessionCapabilityDeclarationTest {
   }
 
   @Test
-  @DisplayName("Should accept as many entries as the server allows when each list is full")
-  void shouldAcceptAsManyEntriesAsTheServerAllowsWhenEachListIsFull() {
+  @DisplayName("Should accept as many values as the server allows when each list is full")
+  void shouldAcceptAsManyValuesAsTheServerAllowsWhenEachListIsFull() {
+    var fullEntry =
+        hevcEntryBuilder()
+            .codecProfiles(
+                Collections.nCopies(
+                    32,
+                    codecProfileBuilder(VideoCodecProfile.HEVC_MAIN)
+                        .maxLevel(51)
+                        .maxTier(Optional.of(VideoCodecTier.MAIN))
+                        .build()))
+            .compatibleBases(Collections.nCopies(32, CompatibleBase.SDR))
+            .dolbyVisionProfiles(Collections.nCopies(32, dolbyVision(PROFILE_8_1)))
+            .build();
     var declaration =
         defaultDeclarationBuilder()
-            .video(Collections.nCopies(32, h264EntryBuilder().build()))
+            .video(Collections.nCopies(32, fullEntry))
             .audio(Collections.nCopies(32, aacEntryBuilder().build()))
             .build();
 
