@@ -1315,7 +1315,8 @@ class HlsPlaylistServiceTest {
     }
   }
 
-  // ADR 0050: a copy costs its own video bitrate plus the stream session's audio bitrate.
+  // ADR 0050: a copy costs its own video bitrate plus the stream session's audio bitrate. For a
+  // copied audio track that is the track's bitrate; for an encoded one, the encode's bitrate.
   @Nested
   @DisplayName("Bandwidth of a video copy")
   class CopyBandwidthTests {
@@ -1445,6 +1446,28 @@ class HlsPlaylistServiceTest {
               copySession(probe, remuxDecisionCopying(FLAC_SURROUND_COPY)), "test-token");
 
       assertThat(playlist).contains("BANDWIDTH=5860800,AVERAGE-BANDWIDTH=4884000,");
+    }
+
+    // The session delivers the encode, whose bitrate is known, so the container bitrate never
+    // stands in for the audio.
+    @Test
+    @DisplayName(
+        "Should advertise the copied stream's bitrate plus the encoded audio's bitrate when the"
+            + " session encodes an audio track whose bitrate the probe does not know")
+    void
+        shouldAdvertiseTheCopiedStreamsBitratePlusTheEncodedAudiosBitrateWhenTheSessionEncodesAnAudioTrackWhoseBitrateTheProbeDoesNotKnow() {
+      var probe =
+          withVideoAndAudioStreams(
+              flacSurroundProbeBuilder().bitrate(8_000_000L), OptionalLong.of(4_500_000L));
+      var decision =
+          StreamSessionFixture.remuxDecisionBuilder()
+              .transcodeMode(TranscodeMode.AUDIO_TRANSCODE)
+              .audioDecision(AudioDecision.stereoAac());
+
+      var playlist =
+          service.generateMultivariantPlaylist(copySession(probe, decision), "test-token");
+
+      assertThat(playlist).contains("BANDWIDTH=5553600,AVERAGE-BANDWIDTH=4628000,");
     }
 
     private static MediaProbe.MediaProbeBuilder ac3SurroundProbeBuilder() {

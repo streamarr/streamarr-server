@@ -842,11 +842,11 @@ class HlsStreamingServiceTest {
 
   // ADR 0050: a copy costs its own video bitrate plus the stream session's audio bitrate, here a
   // 768 kb/s E-AC-3 5.1 encode of a 450 kb/s 7.1 Opus track. The source's 5 Mb/s holds 4.5 Mb/s of
-  // video.
+  // video. Original, Auto and a fixed quality whose box holds the source each copy the video.
   @ParameterizedTest
   @EnumSource(
       value = VideoQuality.class,
-      names = {"ORIGINAL", "AUTO"})
+      names = {"ORIGINAL", "AUTO", "FULL_HD_1080P"})
   @DisplayName(
       "Should advertise the copied video's bitrate plus the encoded audio's bitrate when the"
           + " session copies the video and encodes the audio")
@@ -868,7 +868,7 @@ class HlsStreamingServiceTest {
   @ParameterizedTest
   @EnumSource(
       value = VideoQuality.class,
-      names = {"ORIGINAL", "AUTO"})
+      names = {"ORIGINAL", "AUTO", "FULL_HD_1080P"})
   @DisplayName(
       "Should count the container bitrate as the copied video's bitrate when the session copies"
           + " the video and the probe does not know the video stream's bitrate")
@@ -890,7 +890,7 @@ class HlsStreamingServiceTest {
   @ParameterizedTest
   @EnumSource(
       value = VideoQuality.class,
-      names = {"ORIGINAL", "AUTO"})
+      names = {"ORIGINAL", "AUTO", "FULL_HD_1080P"})
   @DisplayName(
       "Should advertise at least the container bitrate when the session copies the video and an"
           + " audio track whose bitrate the probe does not know")
