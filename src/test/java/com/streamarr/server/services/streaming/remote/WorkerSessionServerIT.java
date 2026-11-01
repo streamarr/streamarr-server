@@ -1103,6 +1103,33 @@ class WorkerSessionServerIT {
     }
   }
 
+  // A connected worker without a verified encoder is faulty, which lets a stream session copy over
+  // the viewer's limits (ADR 0050), so its answer must differ from no connected worker at all.
+  @Test
+  @DisplayName(
+      "Should answer an empty set of verified encoder families when the connected worker has no"
+          + " verified encoder")
+  void shouldAnswerAnEmptySetOfVerifiedEncoderFamiliesWhenTheConnectedWorkerHasNoVerifiedEncoder()
+      throws Exception {
+    var withoutEncoders =
+        WorkerCapabilities.newBuilder().addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID)).build();
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+      try (var worker =
+          connect(
+              channel,
+              workerIdentity(AUTHENTICATED_WORKER_ID, UUID.randomUUID()),
+              withoutEncoders)) {
+        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
+
+        assertThat(server.verifiedVideoCodecFamilies(SOURCE_NAMESPACE_ID)).contains(Set.of());
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
   @Test
   @DisplayName(
       "Should bound active variant ownership by advertised worker capacity when handling a worker session")
