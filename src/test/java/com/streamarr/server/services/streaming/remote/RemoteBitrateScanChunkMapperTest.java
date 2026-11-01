@@ -32,6 +32,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Remote Bitrate Scan Chunk Mapper Tests")
@@ -164,6 +165,59 @@ class RemoteBitrateScanChunkMapperTest {
         .isInstanceOf(ProbeWorkersBusyException.class);
   }
 
+  @ParameterizedTest(name = "audio first presentation time {0}/48000 s")
+  @ValueSource(longs = {48_000, 95_999})
+  @DisplayName(
+      "Should accept audio that starts inside a middle chunk when its first presentation time lies"
+          + " in the chunk's presentation range")
+  void shouldAcceptAudioThatStartsInsideAMiddleChunkWhenItsFirstTimeLiesInTheChunk(
+      long firstPresentationTime) {
+    var outcome =
+        mapper.map(middleChunk(), report(audioStartingAt(firstPresentationTime), audioParts()));
+
+    assertThat(outcome).isInstanceOf(BitrateScanChunkOutcome.Measured.class);
+  }
+
+  @ParameterizedTest(name = "audio first presentation time {0}/48000 s")
+  @ValueSource(longs = {47_999, 96_000})
+  @DisplayName(
+      "Should fail a middle chunk as a contract violation when its audio starts before the chunk's"
+          + " first keyframe or at its end")
+  void shouldFailAMiddleChunkWhenItsAudioStartsBeforeItsFirstKeyframeOrAtItsEnd(
+      long firstPresentationTime) {
+    var chunk = middleChunk();
+    var report = report(audioStartingAt(firstPresentationTime), audioParts());
+
+    assertThatThrownBy(() -> mapper.map(chunk, report))
+        .isInstanceOf(ProbeContractViolationException.class)
+        .hasMessage("Worker bitrate scan chunk audio starts outside the chunk");
+  }
+
+  // Video keyframes at 1 s and 1.5 s, and the next chunk's first keyframe at 2 s.
+  private static BitrateScanChunk middleChunk() {
+    return chunk().toBuilder()
+        .clearPresentationTimeDeltas()
+        .clearDecodeTimeDeltas()
+        .addAllPresentationTimeDeltas(List.of(90_000L, 45_000L))
+        .addAllDecodeTimeDeltas(List.of(90_000L, 45_000L))
+        .setEndPresentationTime(180_000)
+        .setEndDecodeTime(180_000)
+        .setFirstChunk(false)
+        .build();
+  }
+
+  private static BitrateScanChunkResult audioStartingAt(long firstPresentationTime) {
+    return measured(
+        video().setFirstPresentationTime(90_000),
+        audio()
+            .setFirstPresentationTime(firstPresentationTime)
+            .setEndTime(firstPresentationTime + 1_024));
+  }
+
+  private static List<ProbeStreamMeasurementPart> audioParts() {
+    return List.of(intervals(VIDEO, 600, 400), intervals(AUDIO, 30, 70));
+  }
+
   @ParameterizedTest(name = "{0}")
   @MethodSource("contractBreakingReports")
   @DisplayName("Should fail the chunk as a contract violation when the worker's reply breaks it")
@@ -240,6 +294,11 @@ class RemoteBitrateScanChunkMapperTest {
             report(
                 measured(video(), audio().setMeasuredBytes(0).setPacketCount(0)),
                 List.of(intervals(VIDEO, 600, 400), intervals(AUDIO, 0, 0)))),
+        arguments(
+            "a keyframe interval without a packet of the chosen video stream",
+            report(
+                measured(video().setPacketCount(1), audio()),
+                List.of(intervals(VIDEO, 1_000, 0), intervals(AUDIO, 30, 70)))),
         arguments(
             "an end before the first presentation time",
             report(measured(video().setEndTime(-1), audio()), bothParts)));

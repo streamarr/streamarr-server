@@ -550,7 +550,7 @@ class RemoteFfprobeServiceIT {
                               .packetCount(94)
                               .timeBaseNumerator(1)
                               .timeBaseDenominator(48_000)
-                              .packetTimes(Optional.of(new PacketTimes(96_000, 192_000)))
+                              .packetTimes(Optional.of(new PacketTimes(97_600, 193_600)))
                               .keyframeIntervalBytes(KeyframeIntervalCounts.of(40, 60))
                               .keyframeIntervalPacketCounts(KeyframeIntervalCounts.of(46, 48))
                               .build())));
@@ -602,8 +602,8 @@ class RemoteFfprobeServiceIT {
         .setPacketCount(94)
         .setTimeBaseNumerator(1)
         .setTimeBaseDenominator(48_000)
-        .setFirstPresentationTime(96_000)
-        .setEndTime(192_000);
+        .setFirstPresentationTime(97_600)
+        .setEndTime(193_600);
   }
 
   @Test
