@@ -69,7 +69,8 @@ public sealed interface MediaSegmentTimeline {
         @NonNull KeyframePositions positions, StreamCopySegments.@NonNull Starts starts) {
       var mediaEnd = Duration.ofMillis(mediaDuration.toMillis());
       var openingKeyframes = new ArrayList<OpeningKeyframe>();
-      for (var keyframe : starts.openingKeyframes()) {
+      for (var keyframeIndex : starts.openingKeyframeIndexes()) {
+        var keyframe = positions.keyframes().get(keyframeIndex);
         var presentationTime = positions.timeOf(keyframe.presentationTime(), RoundingMode.FLOOR);
         if (presentationTime.compareTo(mediaEnd) >= 0) {
           break;
@@ -77,7 +78,7 @@ public sealed interface MediaSegmentTimeline {
 
         // Rounding the decode time up keeps a seek from reaching back to the keyframe before.
         var decodeTime = positions.timeOf(keyframe.decodeTime(), RoundingMode.CEILING);
-        openingKeyframes.add(new OpeningKeyframe(presentationTime, decodeTime));
+        openingKeyframes.add(new OpeningKeyframe(keyframeIndex, presentationTime, decodeTime));
       }
 
       return new StreamCopy(mediaEnd, targetSegmentDuration, openingKeyframes);
@@ -148,6 +149,11 @@ public sealed interface MediaSegmentTimeline {
     }
   }
 
-  /** The times of a keyframe that opens a stream copy segment, on the zero-based timeline. */
-  record OpeningKeyframe(@NonNull Duration presentationTime, @NonNull Duration decodeTime) {}
+  /**
+   * A keyframe that opens a stream copy segment: its index in the source's keyframe positions,
+   * which is also the index of the keyframe interval that it opens, and its times on the zero-based
+   * timeline.
+   */
+  record OpeningKeyframe(
+      int keyframeIndex, @NonNull Duration presentationTime, @NonNull Duration decodeTime) {}
 }

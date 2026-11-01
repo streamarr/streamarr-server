@@ -10,13 +10,13 @@ import lombok.NonNull;
 public sealed interface StreamCopySegments {
 
   /**
-   * Segment N opens at the keyframe at index N, whose times count ticks of the keyframe positions'
-   * time base. The last segment holds the source's last keyframe.
+   * Segment N opens at the keyframe whose index in the keyframe positions is {@code
+   * openingKeyframeIndexes[N]}. The last segment holds the source's last keyframe.
    */
-  record Starts(@NonNull List<KeyframePosition> openingKeyframes) implements StreamCopySegments {
+  record Starts(@NonNull List<Integer> openingKeyframeIndexes) implements StreamCopySegments {
 
     public Starts {
-      openingKeyframes = List.copyOf(openingKeyframes);
+      openingKeyframeIndexes = List.copyOf(openingKeyframeIndexes);
     }
   }
 
