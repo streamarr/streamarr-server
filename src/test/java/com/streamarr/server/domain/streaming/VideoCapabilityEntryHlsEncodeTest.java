@@ -8,12 +8,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
+import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
@@ -49,53 +49,59 @@ class VideoCapabilityEntryHlsEncodeTest {
       "Should encode at the largest size the entry accepts when the source is larger, keeping its"
           + " aspect ratio")
   void shouldEncodeAtTheLargestSizeTheEntryAcceptsWhenTheSourceIsLargerKeepingItsAspectRatio(
-      String scenario, PictureSize source, PictureSize entryMaximum, PictureSize expected) {
-    var entry =
-        h264EntryBuilder().maxWidth(entryMaximum.width()).maxHeight(entryMaximum.height()).build();
+      SizeCap sizeCap) {
+    var maximum = sizeCap.entryMaximum();
+    var entry = h264EntryBuilder().maxWidth(maximum.width()).maxHeight(maximum.height()).build();
 
-    var output = entry.fitHlsEncode(fullHdRequest().source(source).bounds(source).build());
+    var output =
+        entry.fitHlsEncode(
+            fullHdRequest().source(sizeCap.source()).bounds(sizeCap.source()).build());
 
-    assertThat(pictureOf(output)).contains(expected);
+    assertThat(pictureOf(output)).contains(sizeCap.picture());
   }
 
-  static Stream<Arguments> pictureSizeCaps() {
+  // A 16:9 and a 21:9 source under a 720p maximum, a 9:16 and a 9:20 source under a 1080p maximum
+  // declared either way, a 16:9 source under a portrait 720p maximum, and a 16:9 source under an
+  // odd maximum, whose height the worker keeps even.
+  static Stream<SizeCap> pictureSizeCaps() {
+    var hd = new PictureSize(1280, 720);
+    var portraitFullHd = new PictureSize(1080, 1920);
     return Stream.of(
-        Arguments.of(
-            "16:9 source under a 720p maximum",
-            FULL_HD,
-            new PictureSize(1280, 720),
-            new PictureSize(1280, 720)),
-        Arguments.of(
-            "21:9 source under a 720p maximum",
-            new PictureSize(2560, 1080),
-            new PictureSize(1280, 720),
-            new PictureSize(1280, 540)),
-        Arguments.of(
-            "9:16 source under a landscape 1080p maximum",
-            new PictureSize(1080, 1920),
-            FULL_HD,
-            new PictureSize(1080, 1920)),
-        Arguments.of(
-            "9:16 source under a portrait 1080p maximum",
-            new PictureSize(1080, 1920),
-            new PictureSize(1080, 1920),
-            new PictureSize(1080, 1920)),
-        Arguments.of(
-            "16:9 source under a portrait 720p maximum",
-            FULL_HD,
-            new PictureSize(720, 1280),
-            new PictureSize(1280, 720)),
-        Arguments.of(
-            "9:20 source under a landscape 1080p maximum",
-            new PictureSize(1080, 2400),
-            FULL_HD,
-            new PictureSize(864, 1920)),
-        Arguments.of(
-            "16:9 source under an odd 1000×563 maximum",
-            FULL_HD,
-            new PictureSize(1000, 563),
-            new PictureSize(1000, 562)));
+        SizeCap.builder().source(FULL_HD).entryMaximum(hd).picture(hd).build(),
+        SizeCap.builder()
+            .source(new PictureSize(2560, 1080))
+            .entryMaximum(hd)
+            .picture(new PictureSize(1280, 540))
+            .build(),
+        SizeCap.builder()
+            .source(portraitFullHd)
+            .entryMaximum(FULL_HD)
+            .picture(portraitFullHd)
+            .build(),
+        SizeCap.builder()
+            .source(portraitFullHd)
+            .entryMaximum(portraitFullHd)
+            .picture(portraitFullHd)
+            .build(),
+        SizeCap.builder()
+            .source(FULL_HD)
+            .entryMaximum(new PictureSize(720, 1280))
+            .picture(hd)
+            .build(),
+        SizeCap.builder()
+            .source(new PictureSize(1080, 2400))
+            .entryMaximum(FULL_HD)
+            .picture(new PictureSize(864, 1920))
+            .build(),
+        SizeCap.builder()
+            .source(FULL_HD)
+            .entryMaximum(new PictureSize(1000, 563))
+            .picture(new PictureSize(1000, 562))
+            .build());
   }
+
+  @Builder
+  record SizeCap(PictureSize source, PictureSize entryMaximum, PictureSize picture) {}
 
   @Test
   @DisplayName(
@@ -120,73 +126,136 @@ class VideoCapabilityEntryHlsEncodeTest {
     assertThat(pictureOf(output)).contains(new PictureSize(1280, 720));
   }
 
-  @ParameterizedTest
-  @CsvSource({
-    "60, 1, 30, 30, 1",
-    "60000, 1001, 30, 30000, 1001",
-    "50, 1, 30, 25, 1",
-    "60, 1, 25, 20, 1",
-    "60, 1, 20, 20, 1",
-    "24000, 1001, 30, 24000, 1001",
-    "60, 1, 60, 60, 1",
-    // A rate fits up to half a percent above the maximum, so a declared 29.97 or 59.94 accepts the
-    // exact NTSC rate 30000/1001 or 60000/1001.
-    "60000, 1001, 29.97, 30000, 1001",
-    "60000, 1001, 59.94, 60000, 1001",
-    "60, 1, 59.94, 60, 1",
-    "201, 4, 50, 201, 4",
-    "20101, 400, 50, 20101, 800",
-    // Division stops at 10 fps, with the same half-percent margin.
-    "60, 1, 10, 10, 1",
-    "24, 1, 12, 12, 1",
-    "30, 1, 10, 10, 1",
-    "30000, 1001, 10, 10000, 1001"
-  })
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("ratesAboveTheEntrysMaximum")
   @DisplayName(
       "Should divide the frame rate by the smallest whole number that fits when it is above the"
           + " entry's maximum")
   void shouldDivideTheFrameRateByTheSmallestWholeNumberThatFitsWhenItIsAboveTheEntrysMaximum(
-      int numerator,
-      int denominator,
-      double maxFrameRate,
-      int expectedNumerator,
-      int expectedDenominator) {
-    var entry = h264EntryBuilder().maxFrameRate(maxFrameRate).build();
-
-    var output =
-        entry.fitHlsEncode(fullHdRequest().frameRate(new Fraction(numerator, denominator)).build());
-
-    assertThat(output.map(EncodedVideoOutput::frameRate))
-        .contains(new Fraction(expectedNumerator, expectedDenominator));
+      FrameRateFit fit) {
+    assertThat(encodedFrameRate(fit)).contains(fit.encoded());
   }
 
-  @ParameterizedTest
-  @CsvSource({"60, 1, 0.1", "60, 1, 9", "24, 1, 11", "24, 1, 1e-9"})
+  // ADR 0049: 60 becomes 30, 59.94 becomes 29.97 and 50 becomes 25. The halved 60000/1001 fits a
+  // declared 29.97 through the half-percent margin, and 20101/400 lies just past that margin above
+  // 50, so it is halved.
+  static Stream<FrameRateFit> ratesAboveTheEntrysMaximum() {
+    return Stream.of(
+        frameRateFit(new Fraction(60, 1), 30).encoded(new Fraction(30, 1)).build(),
+        frameRateFit(new Fraction(60_000, 1_001), 30).encoded(new Fraction(30_000, 1_001)).build(),
+        frameRateFit(new Fraction(50, 1), 30).encoded(new Fraction(25, 1)).build(),
+        frameRateFit(new Fraction(60, 1), 25).encoded(new Fraction(20, 1)).build(),
+        frameRateFit(new Fraction(60, 1), 20).encoded(new Fraction(20, 1)).build(),
+        frameRateFit(new Fraction(60_000, 1_001), 29.97)
+            .encoded(new Fraction(30_000, 1_001))
+            .build(),
+        frameRateFit(new Fraction(20_101, 400), 50).encoded(new Fraction(20_101, 800)).build());
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("ratesWithinTheEntrysMaximum")
+  @DisplayName(
+      "Should keep the frame rate when it is at most half a percent above the entry's maximum")
+  void shouldKeepTheFrameRateWhenItIsAtMostHalfAPercentAboveTheEntrysMaximum(FrameRateFit fit) {
+    assertThat(encodedFrameRate(fit)).contains(fit.encoded());
+  }
+
+  // ADR 0049's margin lets a declared 59.94 accept the exact NTSC rate 60000/1001, which lies just
+  // above it. 201/4 lies exactly half a percent above 50.
+  static Stream<FrameRateFit> ratesWithinTheEntrysMaximum() {
+    return Stream.of(
+        keptRate(new Fraction(24_000, 1_001), 30),
+        keptRate(new Fraction(60, 1), 60),
+        keptRate(new Fraction(60, 1), 59.94),
+        keptRate(new Fraction(60_000, 1_001), 59.94),
+        keptRate(new Fraction(201, 4), 50));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("ratesDividedToTheFloor")
+  @DisplayName(
+      "Should divide the frame rate down to 10 fps when only that rate fits, with the same half"
+          + " percent margin")
+  void shouldDivideTheFrameRateDownTo10FpsWhenOnlyThatRateFitsWithTheSameHalfPercentMargin(
+      FrameRateFit fit) {
+    assertThat(encodedFrameRate(fit)).contains(fit.encoded());
+  }
+
+  // ADR 0049: division stops at 10 fps, and 29.97 divided by 3 still counts as 10 fps.
+  static Stream<FrameRateFit> ratesDividedToTheFloor() {
+    return Stream.of(
+        frameRateFit(new Fraction(60, 1), 10).encoded(new Fraction(10, 1)).build(),
+        frameRateFit(new Fraction(24, 1), 12).encoded(new Fraction(12, 1)).build(),
+        frameRateFit(new Fraction(30, 1), 10).encoded(new Fraction(10, 1)).build(),
+        frameRateFit(new Fraction(30_000, 1_001), 10).encoded(new Fraction(10_000, 1_001)).build());
+  }
+
+  static Stream<FrameRateFit> ratesThatFitOnlyBelow10Fps() {
+    return Stream.of(
+        frameRateFit(new Fraction(60, 1), 0.1).build(),
+        frameRateFit(new Fraction(60, 1), 9).build(),
+        frameRateFit(new Fraction(24, 1), 11).build(),
+        frameRateFit(new Fraction(24, 1), 1e-9).build());
+  }
+
+  private static Optional<Fraction> encodedFrameRate(FrameRateFit fit) {
+    var entry = h264EntryBuilder().maxFrameRate(fit.maxFrameRate()).build();
+
+    return entry
+        .fitHlsEncode(fullHdRequest().frameRate(fit.source()).build())
+        .map(EncodedVideoOutput::frameRate);
+  }
+
+  private static FrameRateFit keptRate(Fraction rate, double maxFrameRate) {
+    return frameRateFit(rate, maxFrameRate).encoded(rate).build();
+  }
+
+  private static FrameRateFit.FrameRateFitBuilder frameRateFit(
+      Fraction source, double maxFrameRate) {
+    return FrameRateFit.builder().source(source).maxFrameRate(maxFrameRate);
+  }
+
+  @Builder
+  record FrameRateFit(Fraction source, double maxFrameRate, Fraction encoded) {}
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("ratesThatFitOnlyBelow10Fps")
   @DisplayName("Should fit no encode when only a frame rate below 10 fps fits the entry")
-  void shouldFitNoEncodeWhenOnlyAFrameRateBelow10FpsFitsTheEntry(
-      int numerator, int denominator, double maxFrameRate) {
-    var entry = h264EntryBuilder().maxFrameRate(maxFrameRate).build();
-
-    var output =
-        entry.fitHlsEncode(fullHdRequest().frameRate(new Fraction(numerator, denominator)).build());
-
-    assertThat(output).isEmpty();
+  void shouldFitNoEncodeWhenOnlyAFrameRateBelow10FpsFitsTheEntry(FrameRateFit fit) {
+    assertThat(encodedFrameRate(fit)).isEmpty();
   }
 
-  @ParameterizedTest
-  @CsvSource({"24, 1280, 720", "60, 896, 504"})
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("levelLimitedPictures")
   @DisplayName(
       "Should step the size down until the codec level fits when the profile's maximum level is"
           + " below the size's level")
   void shouldStepTheSizeDownUntilTheCodecLevelFitsWhenTheProfilesMaximumLevelIsBelowTheSizesLevel(
-      int frameRate, int expectedWidth, int expectedHeight) {
+      LevelLimitedPicture expected) {
     var entry = h264EntryBuilder().codecProfiles(List.of(h264High(31))).build();
 
-    var output = entry.fitHlsEncode(fullHdRequest().frameRate(new Fraction(frameRate, 1)).build());
+    var output = entry.fitHlsEncode(fullHdRequest().frameRate(expected.frameRate()).build());
 
-    assertThat(pictureOf(output)).contains(new PictureSize(expectedWidth, expectedHeight));
+    assertThat(pictureOf(output)).contains(expected.picture());
     assertThat(output.map(VideoEncodeDecision::of).map(VideoEncodeDecision::level)).contains(31);
   }
+
+  // H.264 Table A-1: level 3.1 holds 3,600 macroblocks per frame and 108,000 per second, so 720p
+  // fits at 24 fps and 896×504, 1,792 macroblocks, is the largest 16:9 picture at 60 fps.
+  static Stream<LevelLimitedPicture> levelLimitedPictures() {
+    return Stream.of(
+        LevelLimitedPicture.builder()
+            .frameRate(new Fraction(24, 1))
+            .picture(new PictureSize(1280, 720))
+            .build(),
+        LevelLimitedPicture.builder()
+            .frameRate(new Fraction(60, 1))
+            .picture(new PictureSize(896, 504))
+            .build());
+  }
+
+  @Builder
+  record LevelLimitedPicture(Fraction frameRate, PictureSize picture) {}
 
   @Test
   @DisplayName(
