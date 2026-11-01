@@ -399,6 +399,7 @@ public class StreamingResolver {
                     .value())
         .transcodeMode(session.getTranscodeDecision().transcodeMode().name())
         .videoRange(session.getTranscodeDecision().videoRange().name())
+        .mediaEndSeconds(session.getNormalEnd().map(end -> end.toMillis() / 1000.0).orElse(null))
         .build();
   }
 

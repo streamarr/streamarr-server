@@ -201,7 +201,7 @@ final class WorkerSessionGrpcService
         case JOB_ATTEMPT_STARTED -> startJobAttempt(request.getJobAttemptStarted());
         case JOB_ATTEMPT_FAILED -> reportFailedJobAttempt(request.getJobAttemptFailed());
         case JOB_ATTEMPT_COMPLETED ->
-            finishOrWarn(request.getJobAttemptCompleted().getJobAttemptId(), "completed");
+            completeOrWarn(request.getJobAttemptCompleted().getJobAttemptId());
         case JOB_ATTEMPT_STOPPED ->
             finishOrWarn(request.getJobAttemptStopped().getJobAttemptId(), "stopped");
         case PROBE_RESULT -> completeProbe(request.getProbeResult());
@@ -306,6 +306,15 @@ final class WorkerSessionGrpcService
               authenticatedWorkerId, workerSessionId, attemptId),
           attemptId,
           detail);
+    }
+
+    private void completeOrWarn(Uuid jobAttemptId) {
+      var attemptId = fromProto(jobAttemptId);
+      logReportedEnd(
+          workerConnections.completeReportedJobAttempt(
+              authenticatedWorkerId, workerSessionId, attemptId),
+          attemptId,
+          "completed");
     }
 
     private void logReportedEnd(ReportedJobAttemptEnd end, UUID attemptId, String detail) {

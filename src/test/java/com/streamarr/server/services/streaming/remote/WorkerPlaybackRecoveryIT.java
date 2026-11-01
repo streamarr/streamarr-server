@@ -34,8 +34,10 @@ import com.streamarr.server.services.streaming.PlaybackSessionSnapshot;
 import com.streamarr.server.services.streaming.QualityLadderService;
 import com.streamarr.server.services.streaming.SegmentDelivery;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
+import com.streamarr.server.services.streaming.ShortCopyListener;
 import com.streamarr.server.services.streaming.StartPlaybackSessionCommand;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
+import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
@@ -45,12 +47,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import lombok.Builder;
+import lombok.NonNull;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -111,9 +117,12 @@ class WorkerPlaybackRecoveryIT {
   void shouldReplaceARejectedCopyWithAMatchingEncodedPlaylistWhenTheSourceChangesAfterProbing()
       throws Exception {
     var mismatches = events.collect(VideoCopyOutputMismatchEvent.class);
-    var source = worker.generateMedia(sourceRoot.resolve("movie.mp4"), sourceArguments("3.1"));
-    try (var playback = new PlaybackRig(source)) {
-      worker.generateMedia(source, sourceArguments("3.2"));
+    var source = worker.generateMedia(sourceRoot.resolve("movie.mp4"), sourceArguments("3.1", 2));
+    var probe = probe(source);
+    assertThat(probe.mediaProbe().videoPlaybackFacts().orElseThrow().codecString())
+        .contains("avc1.64001F");
+    try (var playback = new PlaybackRig(autoPlayback(source, probe))) {
+      worker.generateMedia(source, sourceArguments("3.2", 2));
 
       var initial = accepted(playback.sessions.start(playback.command));
       var mismatch = mismatches.poll(15, TimeUnit.SECONDS);
@@ -139,14 +148,86 @@ class WorkerPlaybackRecoveryIT {
     }
   }
 
-  private static List<String> sourceArguments(String level) {
+  @Test
+  @DisplayName(
+      "Should end playback at the copy's end without another format attempt when the copy runs short after every source stream ended")
+  void
+      shouldEndPlaybackAtTheCopysEndWithoutAnotherFormatAttemptWhenTheCopyRunsShortAfterEverySourceStreamEnded()
+          throws Exception {
+    var source = worker.generateMedia(sourceRoot.resolve("movie.mp4"), sourceArguments("3.1", 24));
+    var containerProbe = probe(source);
+    worker.generateMedia(source, sourceArguments("3.1", 4));
+    // The container and its keyframe index still describe 24 s, while the video stream's own
+    // header says that it ends at 4 s.
+    var storedProbe = withStreamsOf(containerProbe, probe(source));
+    try (var playback = new PlaybackRig(autoPlayback(source, storedProbe))) {
+      var started = accepted(playback.sessions.start(playback.command));
+      var copy = ((PlaybackFormatAttempt.Ready) started.currentFormatAttempt()).session();
+      assertThat(copy.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+      var copyAttempt = copy.getHandle().orElseThrow().attemptId();
+
+      assertThat(playback.deliverDefault(copy, "segment0.m4s"))
+          .isInstanceOf(SegmentDelivery.Ready.class);
+      await().atMost(15, TimeUnit.SECONDS).until(copy::getNormalEnd, Optional::isPresent);
+      var pastTheEnd =
+          CompletableFuture.supplyAsync(() -> playback.deliverDefault(copy, "segment1.m4s"));
+
+      await()
+          .during(3, TimeUnit.SECONDS)
+          .atMost(5, TimeUnit.SECONDS)
+          .until(() -> !pastTheEnd.isDone());
+      assertThat(copy.getNormalEnd()).contains(Duration.ofSeconds(6));
+      assertThat(copy.getHandle().orElseThrow().attemptId()).isEqualTo(copyAttempt);
+      var snapshot = playback.sessions.access(playback.requestFor(started)).orElseThrow();
+      assertThat(snapshot.formatAttemptCount()).isOne();
+      assertThat(snapshot.formatChange()).isEmpty();
+      assertThat(snapshot.currentFormatAttempt()).isEqualTo(new PlaybackFormatAttempt.Ready(copy));
+      playback.sessions.close(playback.requestFor(started));
+      assertThat(pastTheEnd.get(5, TimeUnit.SECONDS)).isEqualTo(new SegmentDelivery.SessionEnded());
+    }
+  }
+
+  private ProbeOutcome.Success probe(Path source) {
+    var outcome =
+        new RemoteFfprobeService(server, SOURCE_NAMESPACE, source.getParent())
+            .probe(
+                ProbeExecutionRequest.builder()
+                    .sourcePath(source)
+                    .attemptId(UUID.randomUUID())
+                    .probeVersion(ProbeVersion.CURRENT)
+                    .priority(ProbePriority.BACKGROUND)
+                    .build());
+    assertThat(outcome).isInstanceOf(ProbeOutcome.Success.class);
+    return (ProbeOutcome.Success) outcome;
+  }
+
+  private static ProbeOutcome.Success withStreamsOf(
+      ProbeOutcome.Success container, ProbeOutcome.Success streams) {
+    return new ProbeOutcome.Success(
+        container.container(),
+        streams.streams(),
+        container.keyframes(),
+        container.chosenVideoStream(),
+        container.streamTitlesOmitted(),
+        container.streamMeasurements());
+  }
+
+  private static PlayedSource autoPlayback(Path file, ProbeOutcome.Success storedProbe) {
+    return PlayedSource.builder()
+        .file(file)
+        .storedProbe(storedProbe)
+        .quality(VideoQuality.AUTO)
+        .build();
+  }
+
+  private static List<String> sourceArguments(String level, int seconds) {
     return List.of(
         "-f",
         "lavfi",
         "-i",
         "testsrc2=size=320x180:rate=24",
         "-t",
-        "2",
+        Integer.toString(seconds),
         "-c:v",
         "libx264",
         "-profile:v",
@@ -174,6 +255,12 @@ class WorkerPlaybackRecoveryIT {
         .put(media)
         .array();
   }
+
+  @Builder
+  private record PlayedSource(
+      @NonNull Path file,
+      ProbeOutcome.@NonNull Success storedProbe,
+      @NonNull VideoQuality quality) {}
 
   // Hands each event that the worker session server publishes to the listeners of its type, as
   // Spring's event multicaster does.
@@ -208,23 +295,11 @@ class WorkerPlaybackRecoveryIT {
     private final SegmentDeliveryCoordinator delivery;
     private final HlsPlaylistService playlists;
 
-    private PlaybackRig(Path source) {
+    private PlaybackRig(PlayedSource played) {
+      var source = played.file();
       var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE, source.getParent());
-      var outcome =
-          new RemoteFfprobeService(server, SOURCE_NAMESPACE, source.getParent())
-              .probe(
-                  ProbeExecutionRequest.builder()
-                      .sourcePath(source)
-                      .attemptId(UUID.randomUUID())
-                      .probeVersion(ProbeVersion.CURRENT)
-                      .priority(ProbePriority.BACKGROUND)
-                      .build());
-      assertThat(outcome).isInstanceOf(ProbeOutcome.Success.class);
-      var probe = (ProbeOutcome.Success) outcome;
-      assertThat(probe.mediaProbe().videoPlaybackFacts().orElseThrow().codecString())
-          .contains("avc1.64001F");
       var probes = new FakeMediaFileContainerInfoRepository();
-      probes.setDefaultOutcome(probe);
+      probes.setDefaultOutcome(played.storedProbe());
       var files = new FakeMediaFileRepository();
       var file =
           files.save(
@@ -272,22 +347,27 @@ class WorkerPlaybackRecoveryIT {
               .sessionRetention(Duration.ofMinutes(1))
               .build();
       events.listen(VideoCopyOutputMismatchEvent.class, sessions::onVideoCopyOutputMismatch);
+      var shortCopies = new ShortCopyListener(lifecycle.lifecycle());
+      events.listen(JobAttemptCompletedEvent.class, shortCopies::onJobAttemptCompleted);
       playlists = new HlsPlaylistService(properties);
       command =
           StartPlaybackSessionCommand.builder()
               .mediaFileId(file.getId())
               .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
-              .options(StreamingOptions.builder().quality(VideoQuality.AUTO).build())
+              .options(StreamingOptions.builder().quality(played.quality()).build())
               .capabilityDeclaration(defaultDeclarationBuilder().build())
               .build();
     }
 
+    private PlaybackSessionRequest requestFor(PlaybackSessionSnapshot snapshot) {
+      return PlaybackSessionRequest.builder()
+          .playbackSessionId(snapshot.playbackSessionId())
+          .identity(command.identity())
+          .build();
+    }
+
     private StreamSession awaitReplacement(PlaybackSessionSnapshot initial) {
-      var request =
-          PlaybackSessionRequest.builder()
-              .playbackSessionId(initial.playbackSessionId())
-              .identity(command.identity())
-              .build();
+      var request = requestFor(initial);
       var ready =
           await()
               .atMost(15, TimeUnit.SECONDS)
@@ -304,6 +384,10 @@ class WorkerPlaybackRecoveryIT {
       var result = delivery.deliver(session.getSessionId(), variant, variant + "/" + name);
       assertThat(result).isInstanceOf(SegmentDelivery.Ready.class);
       return ((SegmentDelivery.Ready) result).data();
+    }
+
+    private SegmentDelivery deliverDefault(StreamSession session, String name) {
+      return delivery.deliver(session.getSessionId(), StreamSession.defaultVariant(), name);
     }
 
     @Override

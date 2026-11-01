@@ -110,6 +110,11 @@ public final class HeldSegmentRequests {
       return variantWake.fired.await(timeout.toNanos(), TimeUnit.NANOSECONDS);
     }
 
+    /** Blocks until the wake fires. */
+    public void await() throws InterruptedException {
+      variantWake.fired.await();
+    }
+
     /** Ends this request's hold. The variant forgets an unfired wake that no request holds. */
     @Override
     public void close() {

@@ -14,6 +14,7 @@ import com.streamarr.server.services.streaming.QualityLadderService;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.server.services.streaming.ShortCopyListener;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
@@ -83,6 +84,11 @@ public class StreamingConfig {
         .producerLifecycle(producerLifecycleService)
         .heldRequests(heldSegmentRequests)
         .build();
+  }
+
+  @Bean
+  public ShortCopyListener shortCopyListener(ProducerLifecycleService producerLifecycleService) {
+    return new ShortCopyListener(producerLifecycleService);
   }
 
   @Bean
