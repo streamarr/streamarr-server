@@ -26,11 +26,11 @@ public class KeyframeIntervalCountsCodec {
   }
 
   public static KeyframeIntervalCounts decode(byte[] encoded) {
-    if (encoded.length == 0 || encoded[0] != UNSIGNED_32_BIT_FORMAT) {
+    if (!startsWithTheUnsigned32BitFormat(encoded)) {
       throw new MalformedStreamMeasurementException("Unknown keyframe interval counts format");
     }
 
-    if ((encoded.length - 1) % Integer.BYTES != 0) {
+    if (endsInsideACount(encoded)) {
       throw new MalformedStreamMeasurementException("Keyframe interval counts end inside a count");
     }
 
@@ -41,5 +41,13 @@ public class KeyframeIntervalCountsCodec {
     }
 
     return KeyframeIntervalCounts.ofUnsigned(counts);
+  }
+
+  private static boolean startsWithTheUnsigned32BitFormat(byte[] encoded) {
+    return encoded.length > 0 && encoded[0] == UNSIGNED_32_BIT_FORMAT;
+  }
+
+  private static boolean endsInsideACount(byte[] encoded) {
+    return (encoded.length - 1) % Integer.BYTES != 0;
   }
 }
