@@ -75,6 +75,8 @@ class SupersededSegmentRequestTest {
             .segmentStore(segmentStore)
             .properties(
                 StreamingProperties.builder()
+                    // Each round's stream session keeps its job attempt until the test ends.
+                    .maxConcurrentTranscodes(RACE_ROUNDS)
                     .targetSegmentDuration(segmentDuration)
                     .producerStallThreshold(STALL_THRESHOLD)
                     .build())

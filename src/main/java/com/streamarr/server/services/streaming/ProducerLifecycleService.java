@@ -13,6 +13,7 @@ import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.exceptions.TranscodeLimitReachedException;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import java.time.Clock;
@@ -76,6 +77,7 @@ public class ProducerLifecycleService {
   // The stream sessions whose left variant runs beside the newest media-segment request's variant.
   // A start or a replacement in any stream session that finds no free slot may stop one of them.
   private final Set<UUID> sessionsKeepingLeftVariant = ConcurrentHashMap.newKeySet();
+  private final TranscodeLimit transcodeLimit = new TranscodeLimit();
 
   public enum RecoveryResult {
     WAITING,
@@ -559,7 +561,9 @@ public class ProducerLifecycleService {
   /**
    * Starts the variant that the multivariant playlist lists first, at the stream session's current
    * segment. No other variant starts until the player requests one of its segments (ADR 0019). When
-   * no slot is free, another stream session's left variant stops first.
+   * no slot is free, another stream session's left variant stops first. Throws {@link
+   * TranscodeLimitReachedException} and starts nothing when the transcode limit still leaves no
+   * place for a stream session that transcodes.
    */
   public StreamSession startFirstListedVariant(StreamSession session) {
     var sessionId = session.getSessionId();
@@ -575,12 +579,18 @@ public class ProducerLifecycleService {
               runtimeRegistry
                   .findById(sessionId)
                   .orElseThrow(() -> new SessionNotFoundException(sessionId));
-          startVariant(current, firstListedVariant(current), current.getCurrentSegment());
-          if (runtimeRegistry.findById(sessionId).isEmpty()) {
-            throw new SessionNotFoundException(sessionId);
+          try (var _ =
+              transcodeLimit
+                  .tryReserve(current)
+                  .orElseThrow(() -> new TranscodeLimitReachedException(sessionId))) {
+            startVariant(current, firstListedVariant(current), current.getCurrentSegment());
+            if (runtimeRegistry.findById(sessionId).isEmpty()) {
+              throw new SessionNotFoundException(sessionId);
+            }
+
+            runtimeRegistry.save(current);
           }
 
-          runtimeRegistry.save(current);
           return current;
         });
   }
@@ -1091,11 +1101,12 @@ public class ProducerLifecycleService {
 
   private Optional<String> attemptOnDemandStart(
       StreamSession session, String variantLabel, int startSequenceNumber) {
-    if (!hasConfiguredTranscodeSlotFor(session)) {
+    var place = transcodeLimit.tryReserve(session);
+    if (place.isEmpty()) {
       return Optional.of("the transcode limit is reached");
     }
 
-    try {
+    try (var _ = place.get()) {
       startVariant(session, variantLabel, startSequenceNumber);
       runtimeRegistry.save(session);
       return Optional.empty();
@@ -1142,15 +1153,57 @@ public class ProducerLifecycleService {
 
   /**
    * The configured transcode limit minus the running job attempts of every transcoding stream
-   * session. A suspended or stopped variant has no running job attempt.
+   * session and the places that starts hold while their job attempts dispatch. A suspended or
+   * stopped variant has no running job attempt.
    */
   public long freeConfiguredTranscodeSlots() {
-    var runningJobAttempts =
-        runtimeRegistry.findAll().stream()
-            .filter(ProducerLifecycleService::requiresTranscode)
-            .mapToLong(ProducerLifecycleService::countRunningJobAttempts)
-            .sum();
-    return properties.maxConcurrentTranscodes() - runningJobAttempts;
+    return transcodeLimit.freePlaces();
+  }
+
+  /**
+   * The configured transcode limit across every stream session that transcodes (ADR 0019). A start
+   * reserves a place before it dispatches its job attempt, and gives the place back once the
+   * started job attempt's handle is saved, where the limit counts the job attempt, or once the
+   * dispatch fails. Two starts therefore never take the same last place. The monitor guards only
+   * these counts, so no start waits on another start's dispatch.
+   */
+  private final class TranscodeLimit {
+
+    private int reservedPlaces;
+
+    private synchronized long freePlaces() {
+      var runningJobAttempts =
+          runtimeRegistry.findAll().stream()
+              .filter(ProducerLifecycleService::requiresTranscode)
+              .mapToLong(ProducerLifecycleService::countRunningJobAttempts)
+              .sum();
+      return properties.maxConcurrentTranscodes() - runningJobAttempts - reservedPlaces;
+    }
+
+    // Empty when no place is free. A stream session that only remuxes needs no place.
+    private synchronized Optional<TranscodeLimitPlace> tryReserve(StreamSession session) {
+      if (!requiresTranscode(session)) {
+        return Optional.of(() -> {});
+      }
+
+      if (freePlaces() <= 0) {
+        return Optional.empty();
+      }
+
+      reservedPlaces++;
+      return Optional.of(this::giveBack);
+    }
+
+    private synchronized void giveBack() {
+      reservedPlaces--;
+    }
+  }
+
+  // A place under the transcode limit that a start holds while its job attempt dispatches.
+  private interface TranscodeLimitPlace extends AutoCloseable {
+
+    @Override
+    void close();
   }
 
   private static boolean requiresTranscode(StreamSession session) {
