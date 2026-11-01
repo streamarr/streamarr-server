@@ -315,8 +315,12 @@ For every other video codec the probe walks no units, so only the frames tell it
 An omitted flag on a mastering display or a content light level means that the stream carries, or may carry, that value although the probe left it empty, either because the probe could not read the value or because it could not rule the value out.
 A stream with either flag set is never PQ10.
 When the probe read no frames, an empty value means only that the container declares none, so it never proves PQ10.
+Version 6 adds the bitrate of each video and audio stream of a Matroska file whose statistics tags the worker trusts, when ffprobe reports none.
+The worker trusts a stream's tags only when the program that wrote them, `_STATISTICS_WRITING_APP`, also last wrote the file, its `WritingApp`, or when mkvpropedit wrote them into a file that mkvmerge wrote, and only when the `NUMBER_OF_BYTES` of every trusted stream add up to no more than the file's size.
+Version 6 also reports, for each H.264 and HEVC video stream, whether a copy keeps every packet's bytes: whether a copy without the Annex B bitstream filter delivers the source's packets unchanged.
+The server sets that fact on each job that copies the stream, and the worker drops the filter only then.
 Version 2 is unused.
-The server requests version 5.
+The server requests version 6.
 After the version rises, the server scans each library that holds a result of an earlier version at startup.
 Playback keeps using a file's earlier result until the scan stores the file's new result.
 
