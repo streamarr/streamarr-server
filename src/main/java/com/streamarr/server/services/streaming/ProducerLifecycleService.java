@@ -1047,7 +1047,6 @@ public class ProducerLifecycleService {
       return refusedStart(shortage.any());
     }
 
-    runtimeRegistry.save(session);
     log.info(
         "Started variant {} of session {} on demand at segment {}",
         variantLabel,
@@ -1098,6 +1097,7 @@ public class ProducerLifecycleService {
 
     try {
       startVariant(session, variantLabel, startSequenceNumber);
+      runtimeRegistry.save(session);
       return Optional.empty();
     } catch (TranscodeException e) {
       return Optional.of(e.getMessage());
