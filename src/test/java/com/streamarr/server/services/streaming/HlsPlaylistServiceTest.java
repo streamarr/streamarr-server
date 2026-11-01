@@ -1,5 +1,8 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.StreamMeasurementFixture.concat;
+import static com.streamarr.server.fixtures.StreamMeasurementFixture.everySecond;
+import static com.streamarr.server.fixtures.StreamMeasurementFixture.repeat;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 import static org.assertj.core.api.Assertions.within;
@@ -1509,7 +1512,7 @@ class HlsPlaylistServiceTest {
                   .measuredDuration(7_200_000)
                   .build());
 
-      assertThat(playlist).contains("BANDWIDTH=6168256,AVERAGE-BANDWIDTH=5140214,");
+      assertThat(playlist).contains(",AVERAGE-BANDWIDTH=5140214,");
     }
 
     // ADR 0054: 288,000,000 AC-3 bytes that end after 1 hour average 320 kb/s over the 2-hour
@@ -1526,7 +1529,7 @@ class HlsPlaylistServiceTest {
                   .measuredDuration(3_600_000)
                   .build());
 
-      assertThat(playlist).contains("BANDWIDTH=5784256,AVERAGE-BANDWIDTH=4820214,");
+      assertThat(playlist).contains(",AVERAGE-BANDWIDTH=4820214,");
     }
 
     // A stream copy segment opens at each keyframe of a 1/10,000,000 time base, at 6.0000004 s and
@@ -1654,6 +1657,334 @@ class HlsPlaylistServiceTest {
       return StreamSessionFixture.defaultSessionBuilder()
           .mediaProbe(probe)
           .transcodeDecision(decision.videoSource(probe.videoPlaybackFacts()).build())
+          .build();
+    }
+  }
+
+  @Nested
+  @DisplayName("Peak bandwidth of a measured video copy")
+  class MeasuredCopyPeakTests {
+
+    private static final AudioDecision AC3_COPY =
+        AudioDecision.builder()
+            .mode(AudioMode.COPY)
+            .codec("ac3")
+            .channels(6)
+            .bitrate(640_000L)
+            .sourceCodecString(Optional.of("ac-3"))
+            .build();
+
+    // RFC 8216 §4.1 over 6 s segments: a run lasts 3 to 9 s, so each run is one segment. Segment 2
+    // holds 6 video intervals of 150,000 bytes, three times the others: 900,000 bytes plus 32 + 64
+    // bytes and 16 for each of its 144 samples, 902,400 bytes, 1,203,200 b/s. Each AC-3 interval
+    // holds 80,000 bytes in 32 frames of 32 ms. A middle segment's audio spans its own 6 intervals
+    // and, widened by one frame, one neighbouring interval on each side: 8 × (80,000 + 16 × 32)
+    // + 64 = 644,160 bytes, 858,880 b/s. The copy averages 1,180,715 b/s.
+    @Test
+    @DisplayName(
+        "Should advertise the measured video peak plus the copied audio peak when one segment holds"
+            + " three times the video of the others")
+    void
+        shouldAdvertiseMeasuredVideoPeakPlusCopiedAudioPeakWhenOneSegmentHoldsThreeTimesTheVideo() {
+      var source =
+          StreamMeasurementFixture.CopySource.builder()
+              .duration(Duration.ofSeconds(36))
+              .keyframeMillis(everySecond(36))
+              .videoBytes(concat(repeat(12, 50_000L), repeat(6, 150_000L), repeat(18, 50_000L)))
+              .audioBytes(repeat(36, 80_000L))
+              .audioPackets(repeat(36, 32L))
+              .build();
+
+      var playlist = service.generateMultivariantPlaylist(copySession(source, AC3_COPY), "t");
+
+      assertThat(playlist).contains("BANDWIDTH=2062080,AVERAGE-BANDWIDTH=1180715,");
+    }
+
+    // One measurement serves any segment length. On 6 s segments, segment 2 holds the 3 dense
+    // intervals of 150,000 bytes beside 3 of 50,000: 602,400 bytes with framing, 803,200 b/s. On
+    // 3 s segments, segment 4 holds only the dense intervals: 451,248 bytes, 1,203,328 b/s. Each
+    // run is one segment, since two segments last longer than 1.5 target durations.
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("segmentLengthsThatOneMeasurementServes")
+    @DisplayName(
+        "Should follow the session's segment length when one measurement serves 6 and 3 second"
+            + " segments")
+    void shouldFollowTheSessionsSegmentLengthWhenOneMeasurementServesSixAndThreeSecondSegments(
+        SegmentLengthPeak expected) {
+      var source =
+          StreamMeasurementFixture.CopySource.builder()
+              .duration(Duration.ofSeconds(36))
+              .keyframeMillis(everySecond(36))
+              .videoBytes(concat(repeat(12, 50_000L), repeat(3, 150_000L), repeat(21, 50_000L)))
+              .build();
+      var segmentService =
+          new HlsPlaylistService(
+              StreamingProperties.builder()
+                  .targetSegmentDuration(Duration.ofSeconds(expected.segmentSeconds()))
+                  .build());
+
+      var playlist =
+          segmentService.generateMultivariantPlaylist(
+              copySession(source, AudioDecision.none()), "t");
+
+      assertThat(playlist).contains(expected.bandwidthAttributes());
+    }
+
+    static Stream<SegmentLengthPeak> segmentLengthsThatOneMeasurementServes() {
+      return Stream.of(
+          SegmentLengthPeak.builder()
+              .segmentSeconds(6)
+              .bandwidthAttributes("BANDWIDTH=803200,AVERAGE-BANDWIDTH=469867,")
+              .build(),
+          SegmentLengthPeak.builder()
+              .segmentSeconds(3)
+              .bandwidthAttributes("BANDWIDTH=1203328,AVERAGE-BANDWIDTH=469995,")
+              .build());
+    }
+
+    @Builder
+    record SegmentLengthPeak(int segmentSeconds, String bandwidthAttributes) {}
+
+    // RFC 8216 §4.1: a run lasts 3 to 9 s under a 6 s target. The last segment lasts 1 s and holds
+    // 500,000 bytes, so it counts only with the 6 s segment before it: 302,400 + 500,480 bytes
+    // over 7 s, 917,577.1 b/s. Alone it would advertise 4,003,840 b/s.
+    @Test
+    @DisplayName(
+        "Should count a segment shorter than half the target duration only with its neighbour when"
+            + " it ends the playlist")
+    void shouldCountASegmentShorterThanHalfTheTargetOnlyWithItsNeighbourWhenItEndsThePlaylist() {
+      var source =
+          StreamMeasurementFixture.CopySource.builder()
+              .duration(Duration.ofSeconds(37))
+              .keyframeMillis(everySecond(37))
+              .videoBytes(concat(repeat(36, 50_000L), repeat(1, 500_000L)))
+              .build();
+
+      var playlist =
+          service.generateMultivariantPlaylist(copySession(source, AudioDecision.none()), "t");
+
+      assertThat(playlist).contains("BANDWIDTH=917578,AVERAGE-BANDWIDTH=500515,");
+    }
+
+    // The keyframe at -2 s opens no segment, so segment 0 holds its interval of 600,000 bytes with
+    // the three that follow: 901,632 bytes with framing, 1,202,176 b/s.
+    @Test
+    @DisplayName(
+        "Should count the interval of a keyframe that presents before zero in segment 0 when the"
+            + " source starts before its first segment")
+    void shouldCountIntervalOfKeyframeThatPresentsBeforeZeroInSegmentZeroWhenSourceStartsEarly() {
+      var source =
+          StreamMeasurementFixture.CopySource.builder()
+              .duration(Duration.ofSeconds(12))
+              .keyframeMillis(List.of(-2_000L, 0L, 2_000L, 4_000L, 6_000L, 8_000L, 10_000L))
+              .videoBytes(concat(repeat(1, 600_000L), repeat(6, 100_000L)))
+              .build();
+
+      var playlist =
+          service.generateMultivariantPlaylist(copySession(source, AudioDecision.none()), "t");
+
+      assertThat(playlist).contains("BANDWIDTH=1202176,AVERAGE-BANDWIDTH=801920,");
+    }
+
+    // The keyframe at the 12 s media end opens no segment, so the last segment holds its interval
+    // of 600,000 bytes with the three before it: 901,632 bytes with framing, 1,202,176 b/s.
+    @Test
+    @DisplayName(
+        "Should count the interval of a keyframe at the media end in the last segment when the"
+            + " source holds packets after it")
+    void shouldCountIntervalOfKeyframeAtMediaEndInLastSegmentWhenSourceHoldsPacketsAfterIt() {
+      var source =
+          StreamMeasurementFixture.CopySource.builder()
+              .duration(Duration.ofSeconds(12))
+              .keyframeMillis(List.of(0L, 2_000L, 4_000L, 6_000L, 8_000L, 10_000L, 12_000L))
+              .videoBytes(concat(repeat(6, 100_000L), repeat(1, 600_000L)))
+              .build();
+
+      var playlist =
+          service.generateMultivariantPlaylist(copySession(source, AudioDecision.none()), "t");
+
+      assertThat(playlist).contains("BANDWIDTH=1202176,AVERAGE-BANDWIDTH=801920,");
+    }
+
+    // ADR 0054 bounds a segment's audio by the keyframe intervals that overlap its interval
+    // widened by one 32 ms AC-3 frame on each side. Segment 1 runs from 6 to 12 s, and the 20 ms
+    // interval from 12 s is shorter than a frame, so segment 1's audio also spans the interval from
+    // 12.02 s with its 400,000 bytes: intervals 0 to 4, 803,864 bytes with framing, 1,071,818.7
+    // b/s. The video's busiest segment adds 7,509.3 b/s. Without the frame, segment 1 would end its
+    // audio at 12.02 s and the peak would be segment 2's 406,024 bytes.
+    @Test
+    @DisplayName(
+        "Should widen a segment's audio by one audio frame when a neighbouring keyframe interval is"
+            + " shorter than a frame")
+    void shouldWidenSegmentsAudioByOneAudioFrameWhenNeighbouringIntervalIsShorterThanAFrame() {
+      var source =
+          StreamMeasurementFixture.CopySource.builder()
+              .duration(Duration.ofSeconds(18))
+              .keyframeMillis(List.of(0L, 6_000L, 11_980L, 12_000L, 12_020L, 14_000L, 16_000L))
+              .videoBytes(repeat(7, 1_000L))
+              .audioBytes(List.of(400_000L, 1_000L, 1_000L, 1_000L, 400_000L, 1_000L, 1_000L))
+              .audioPackets(repeat(7, 10L))
+              .build();
+
+      var playlist = service.generateMultivariantPlaylist(copySession(source, AC3_COPY), "t");
+
+      assertThat(playlist).contains("BANDWIDTH=1079329,AVERAGE-BANDWIDTH=362795,");
+    }
+
+    // ADR 0037: the worker puts an audio sample in the segment whose 6 s grid slot holds its start,
+    // not in the segment whose video spans it. Segment 1 opens at 8 s, late in slot 1, so its audio
+    // spans intervals 0 and 1, which overlap slot 1 widened by one 32 ms frame, and not interval 2
+    // from 14 s: 1,120,000 bytes, 7,008 bytes for 438 frames and 64. The last segment lasts 4 s
+    // and holds slot 2 onwards, intervals 1 and 2: 805,072 bytes over 4 s, 1,610,144 b/s, the
+    // audio peak. The video's last segment adds 2,960 b/s.
+    @Test
+    @DisplayName(
+        "Should bound a segment's copied audio by its grid slot when its keyframe opens late in the"
+            + " slot")
+    void shouldBoundSegmentsCopiedAudioByItsGridSlotWhenItsKeyframeOpensLateInTheSlot() {
+      var source =
+          StreamMeasurementFixture.CopySource.builder()
+              .duration(Duration.ofSeconds(18))
+              .keyframeMillis(List.of(0L, 8_000L, 14_000L))
+              .videoBytes(repeat(3, 1_000L))
+              .audioBytes(List.of(640_000L, 480_000L, 320_000L))
+              .audioPackets(List.of(250L, 188L, 125L))
+              .build();
+
+      var playlist = service.generateMultivariantPlaylist(copySession(source, AC3_COPY), "t");
+
+      assertThat(playlist).contains("BANDWIDTH=1613104,AVERAGE-BANDWIDTH=646063,");
+    }
+
+    // ADR 0054 charges a copied audio track's 64 bytes in every segment, even one without an audio
+    // sample: 85.3 b/s over 6 s beside segment 0's 901,248 video bytes, 1,201,664 b/s.
+    @Test
+    @DisplayName(
+        "Should charge the copied audio track's framing in every segment when the track holds no"
+            + " sample")
+    void shouldChargeCopiedAudioTracksFramingInEverySegmentWhenTheTrackHoldsNoSample() {
+      var source =
+          StreamMeasurementFixture.CopySource.builder()
+              .duration(Duration.ofSeconds(12))
+              .keyframeMillis(List.of(0L, 2_000L, 4_000L, 6_000L, 8_000L, 10_000L))
+              .videoBytes(concat(repeat(3, 300_000L), repeat(3, 100_000L)))
+              .audioBytes(repeat(6, 0L))
+              .audioPackets(repeat(6, 0L))
+              .build();
+
+      var playlist = service.generateMultivariantPlaylist(copySession(source, AC3_COPY), "t");
+
+      assertThat(playlist).contains("BANDWIDTH=1201750,AVERAGE-BANDWIDTH=801750,");
+    }
+
+    // RFC 8216 §4.1 counts no run that holds the 2.6 s segment of 10,000,000 bytes: alone it lasts
+    // less than 3 s, and with either 6.45 s neighbour more than 9 s. The runs then peak at the
+    // last segment's 2,213.1 b/s, far below the copy's average of 1,213,973.3 b/s.
+    @Test
+    @DisplayName(
+        "Should advertise at least the average when the densest segment belongs to no run of the"
+            + " peak")
+    void shouldAdvertiseAtLeastTheAverageWhenTheDensestSegmentBelongsToNoRunOfThePeak() {
+      var source =
+          StreamMeasurementFixture.CopySource.builder()
+              .duration(Duration.ofSeconds(66))
+              .keyframeMillis(
+                  List.of(
+                      0L, 6_450L, 12_900L, 19_350L, 25_800L, 32_250L, 38_700L, 45_150L, 51_600L,
+                      54_200L, 60_650L))
+              .videoBytes(concat(repeat(8, 1_000L), repeat(1, 10_000_000L), repeat(2, 1_000L)))
+              .build();
+
+      var playlist =
+          service.generateMultivariantPlaylist(copySession(source, AudioDecision.none()), "t");
+
+      assertThat(playlist).contains("BANDWIDTH=1213974,AVERAGE-BANDWIDTH=1213974,");
+    }
+
+    // ADR 0044 keeps BANDWIDTH at 1.2 × AVERAGE-BANDWIDTH for a copy without a peak. Video in 35
+    // keyframe intervals does not follow the source's 36 keyframes and gives no peak.
+    @Test
+    @DisplayName(
+        "Should keep BANDWIDTH at 1.2 times the average when the measured video's intervals do not"
+            + " follow the keyframes")
+    void shouldKeepBandwidthAtOnePointTwoTimesAverageWhenVideoIntervalsDoNotFollowKeyframes() {
+      var source =
+          StreamMeasurementFixture.CopySource.builder()
+              .duration(Duration.ofSeconds(36))
+              .keyframeMillis(everySecond(36))
+              .videoBytes(repeat(35, 50_000L))
+              .audioBytes(repeat(36, 80_000L))
+              .audioPackets(repeat(36, 32L))
+              .build();
+
+      var playlist = service.generateMultivariantPlaylist(copySession(source, AC3_COPY), "t");
+
+      assertThat(playlist).contains("BANDWIDTH=1243422,AVERAGE-BANDWIDTH=1036185,");
+    }
+
+    // ADR 0044 keeps BANDWIDTH at 1.2 × AVERAGE-BANDWIDTH for a copy without a peak. Copied audio
+    // in 35 keyframe intervals does not follow the source's 36 keyframes and gives no peak.
+    @Test
+    @DisplayName(
+        "Should keep BANDWIDTH at 1.2 times the average when the measured audio's intervals do not"
+            + " follow the keyframes")
+    void shouldKeepBandwidthAtOnePointTwoTimesAverageWhenAudioIntervalsDoNotFollowKeyframes() {
+      var source =
+          StreamMeasurementFixture.CopySource.builder()
+              .duration(Duration.ofSeconds(36))
+              .keyframeMillis(everySecond(36))
+              .videoBytes(repeat(36, 50_000L))
+              .audioBytes(repeat(35, 80_000L))
+              .audioPackets(repeat(35, 32L))
+              .build();
+
+      var playlist = service.generateMultivariantPlaylist(copySession(source, AC3_COPY), "t");
+
+      assertThat(playlist).contains("BANDWIDTH=1235388,AVERAGE-BANDWIDTH=1029490,");
+    }
+
+    // ADR 0054 measures only copies. An encoded 5 Mb/s variant with the session's 128 kb/s AAC
+    // keeps
+    // ADR 0044's 1.2 × its average, whatever the source's measurement holds.
+    @Test
+    @DisplayName(
+        "Should keep encoded variants at 1.2 times their average when the source is measured")
+    void shouldKeepEncodedVariantsAtOnePointTwoTimesTheirAverageWhenTheSourceIsMeasured() {
+      var source =
+          StreamMeasurementFixture.CopySource.builder()
+              .duration(Duration.ofSeconds(36))
+              .keyframeMillis(everySecond(36))
+              .videoBytes(concat(repeat(12, 50_000L), repeat(6, 150_000L), repeat(18, 50_000L)))
+              .build();
+      var session =
+          StreamSessionFixture.defaultSessionBuilder()
+              .mediaProbe(source.probe())
+              .variants(
+                  List.of(
+                      StreamSessionFixture.defaultVariantBuilder()
+                          .width(1920)
+                          .height(1080)
+                          .videoBitrate(5_000_000L)
+                          .label("1080p")
+                          .build()))
+              .transcodeDecision(encodedDecision("h264", new Fraction(24, 1)))
+              .build();
+
+      var playlist = service.generateMultivariantPlaylist(session, "t");
+
+      assertThat(playlist).contains("BANDWIDTH=6153600,AVERAGE-BANDWIDTH=5128000,");
+    }
+
+    private StreamSession copySession(
+        StreamMeasurementFixture.CopySource source, AudioDecision audio) {
+      var probe = source.probe();
+      return StreamSessionFixture.defaultSessionBuilder()
+          .mediaProbe(probe)
+          .transcodeDecision(
+              StreamSessionFixture.remuxDecisionBuilder()
+                  .videoSource(probe.videoPlaybackFacts())
+                  .audioDecision(audio)
+                  .build())
           .build();
     }
   }

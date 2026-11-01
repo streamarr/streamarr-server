@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.KeyframeIntervalCounts;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MeasuredStream;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamMeasurementSource;
@@ -288,6 +289,19 @@ class VideoCopyBandwidthTest {
     assertThat(VideoCopyBandwidth.isKnown(source, CopyMediaPlaylist.UNKNOWN)).isFalse();
   }
 
+  // ADR 0054 computes a copy's peak from its measured keyframe intervals, which follow the
+  // source's keyframe positions. Without those positions the copy keeps 1.2 times its average.
+  @Test
+  @DisplayName("Should give no peak when the source's keyframe positions are not known")
+  void shouldGiveNoPeakWhenTheSourcesKeyframePositionsAreNotKnown() {
+    var source = measuredSource(List.of()).keyframes(new KeyframeKnowledge.NotReported()).build();
+
+    assertThat(VideoCopyBandwidth.averageBandwidth(source, AudioDecision.none(), NINE_SECONDS))
+        .isEqualTo(892_217L);
+    assertThat(VideoCopyBandwidth.peakBandwidth(source, AudioDecision.none(), NINE_SECONDS))
+        .isEmpty();
+  }
+
   @Test
   @DisplayName("Should refuse to cost a copy when the source, the audio or the playlist is missing")
   void shouldRefuseToCostACopyWhenTheSourceTheAudioOrThePlaylistIsMissing() {
@@ -309,6 +323,15 @@ class VideoCopyBandwidthTest {
         .withMessageContaining("source");
     assertThatNullPointerException()
         .isThrownBy(() -> VideoCopyBandwidth.isKnown(source, null))
+        .withMessageContaining("playlist");
+    assertThatNullPointerException()
+        .isThrownBy(() -> VideoCopyBandwidth.peakBandwidth(null, audio, playlist))
+        .withMessageContaining("source");
+    assertThatNullPointerException()
+        .isThrownBy(() -> VideoCopyBandwidth.peakBandwidth(source, null, playlist))
+        .withMessageContaining("audio");
+    assertThatNullPointerException()
+        .isThrownBy(() -> VideoCopyBandwidth.peakBandwidth(source, audio, null))
         .withMessageContaining("playlist");
   }
 
