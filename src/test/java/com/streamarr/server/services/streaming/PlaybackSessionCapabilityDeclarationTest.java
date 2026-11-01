@@ -235,9 +235,15 @@ class PlaybackSessionCapabilityDeclarationTest {
         hevcEntryBuilder()
             .codecProfiles(
                 List.of(
-                    codecProfile(VideoCodecProfile.HEVC_MAIN, 51, Optional.of(VideoCodecTier.MAIN)),
-                    codecProfile(VideoCodecProfile.H264_HIGH, 0, Optional.of(VideoCodecTier.HIGH)),
-                    codecProfile(VideoCodecProfile.HEVC_MAIN_10, -1, Optional.empty())))
+                    codecProfileBuilder(VideoCodecProfile.HEVC_MAIN)
+                        .maxLevel(51)
+                        .maxTier(Optional.of(VideoCodecTier.MAIN))
+                        .build(),
+                    codecProfileBuilder(VideoCodecProfile.H264_HIGH)
+                        .maxLevel(0)
+                        .maxTier(Optional.of(VideoCodecTier.HIGH))
+                        .build(),
+                    codecProfileBuilder(VideoCodecProfile.HEVC_MAIN_10).maxLevel(-1).build()))
             .build();
     var declaration = defaultDeclarationBuilder().video(List.of(entry)).build();
 
@@ -257,7 +263,8 @@ class PlaybackSessionCapabilityDeclarationTest {
   void shouldRefuseAnAv1CodecProfileWhenItNamesNoMaximumTier() {
     var entry =
         av1EntryBuilder()
-            .codecProfiles(List.of(codecProfile(VideoCodecProfile.AV1_MAIN, 51, Optional.empty())))
+            .codecProfiles(
+                List.of(codecProfileBuilder(VideoCodecProfile.AV1_MAIN).maxLevel(51).build()))
             .build();
 
     assertThat(start(defaultDeclarationBuilder().video(List.of(entry)).build()))
@@ -306,7 +313,7 @@ class PlaybackSessionCapabilityDeclarationTest {
         h264EntryBuilder()
             .codecProfiles(
                 Collections.nCopies(
-                    OVERLONG, codecProfile(VideoCodecProfile.H264_HIGH, 0, Optional.empty())))
+                    OVERLONG, codecProfileBuilder(VideoCodecProfile.H264_HIGH).maxLevel(0).build()))
             .compatibleBases(Collections.nCopies(OVERLONG, CompatibleBase.SDR))
             .dolbyVisionProfiles(Collections.nCopies(OVERLONG, dolbyVision(PROFILE_8_1)))
             .build();
@@ -358,12 +365,8 @@ class PlaybackSessionCapabilityDeclarationTest {
     return DolbyVisionProfileCapability.builder().profile(profile).maxLevel(6).build();
   }
 
-  private static VideoCodecProfileCapability codecProfile(
-      VideoCodecProfile profile, int maxLevel, Optional<VideoCodecTier> maxTier) {
-    return VideoCodecProfileCapability.builder()
-        .profile(profile)
-        .maxLevel(maxLevel)
-        .maxTier(maxTier)
-        .build();
+  private static VideoCodecProfileCapability.VideoCodecProfileCapabilityBuilder codecProfileBuilder(
+      VideoCodecProfile profile) {
+    return VideoCodecProfileCapability.builder().profile(profile);
   }
 }

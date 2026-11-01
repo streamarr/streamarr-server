@@ -162,16 +162,12 @@ class TranscodeDecisionServiceTest {
         .hasMessageContaining("capabilityDeclaration");
   }
 
-  @ParameterizedTest
-  @CsvSource({"false,h264", "true,"})
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("excludedEncodeFamilies")
   @DisplayName("Should choose only untried encodes when previous codec families are excluded")
   void shouldChooseOnlyUntriedEncodesWhenPreviousCodecFamiliesAreExcluded(
-      boolean excludeH264, String expectedFamily) {
-    var excludedFamilies = new HashSet<>(Set.of("av1"));
-    if (excludeH264) {
-      excludedFamilies.add("h264");
-    }
-
+      String scenario, Set<String> excluded, Optional<String> expectedFamily) {
+    var excludedFamilies = new HashSet<>(excluded);
     var request =
         TranscodeDecisionRequest.builder()
             .source(probe("hevc", "aac"))
@@ -184,8 +180,14 @@ class TranscodeDecisionServiceTest {
 
     var decision = service.decide(request);
 
-    assertThat(decision.map(TranscodeDecision::videoCodecFamily))
-        .isEqualTo(Optional.ofNullable(expectedFamily));
+    assertThat(decision.map(TranscodeDecision::videoCodecFamily)).isEqualTo(expectedFamily);
+  }
+
+  static Stream<Arguments> excludedEncodeFamilies() {
+    return Stream.of(
+        Arguments.of("AV1 tried, H.264 next", Set.of("av1"), Optional.of("h264")),
+        Arguments.of(
+            "AV1 and H.264 tried, no encode left", Set.of("av1", "h264"), Optional.empty()));
   }
 
   @ParameterizedTest(name = "{1}")
@@ -520,14 +522,6 @@ class TranscodeDecisionServiceTest {
     return probeBuilder(videoCodec, audioCodec).build();
   }
 
-  private MediaProbe probe(
-      String videoCodec, String audioCodec, int audioChannels, long audioBitrate) {
-    return probeBuilder(videoCodec, audioCodec)
-        .audioChannels(OptionalInt.of(audioChannels))
-        .audioBitrate(OptionalLong.of(audioBitrate))
-        .build();
-  }
-
   private MediaProbe.MediaProbeBuilder probeBuilder(String videoCodec, String audioCodec) {
     return MediaProbe.builder()
         .keyframes(KEYFRAMES_EVERY_TWO_SECONDS)
@@ -594,7 +588,11 @@ class TranscodeDecisionServiceTest {
   @Test
   @DisplayName("Should audio transcode when video matches but audio needs conversion")
   void shouldAudioTranscodeWhenVideoMatchesButAudioNeedsConversion() {
-    var source = probe("h264", "flac", 2, 0);
+    var source =
+        probeBuilder("h264", "flac")
+            .audioChannels(OptionalInt.of(2))
+            .audioBitrate(OptionalLong.empty())
+            .build();
     var declaration = declaring(H264);
 
     var decision =
@@ -737,7 +735,11 @@ class TranscodeDecisionServiceTest {
   @Test
   @DisplayName("Should audio transcode AV1 source when audio is not AAC")
   void shouldAudioTranscodeAv1SourceWhenAudioIsNotAac() {
-    var source = probe("av1", "dts", 6, 1_500_000L);
+    var source =
+        probeBuilder("av1", "dts")
+            .audioChannels(OptionalInt.of(6))
+            .audioBitrate(OptionalLong.of(1_500_000L))
+            .build();
     var declaration = declaring(AV1);
 
     var decision =
@@ -805,7 +807,11 @@ class TranscodeDecisionServiceTest {
   @Test
   @DisplayName("Should copy AC-3 audio when client supports it")
   void shouldCopyAc3AudioWhenClientSupportsIt() {
-    var source = probe("h264", "ac3", 6, 384_000L);
+    var source =
+        probeBuilder("h264", "ac3")
+            .audioChannels(OptionalInt.of(6))
+            .audioBitrate(OptionalLong.of(384_000L))
+            .build();
     var declaration = declaringAudio(audio(AAC, 6), audio(AC3, 6));
 
     var decision =
@@ -827,7 +833,11 @@ class TranscodeDecisionServiceTest {
   @Test
   @DisplayName("Should copy E-AC-3 audio when client supports it")
   void shouldCopyEac3AudioWhenClientSupportsIt() {
-    var source = probe("h264", "eac3", 6, 640_000L);
+    var source =
+        probeBuilder("h264", "eac3")
+            .audioChannels(OptionalInt.of(6))
+            .audioBitrate(OptionalLong.of(640_000L))
+            .build();
     var declaration = declaringAudio(audio(AAC, 8), audio(EAC3, 8));
 
     var decision =
@@ -849,7 +859,11 @@ class TranscodeDecisionServiceTest {
   @Test
   @DisplayName("Should fall back to stereo AAC when the client declares only AAC audio")
   void shouldFallBackToStereoAacWhenTheClientDeclaresOnlyAacAudio() {
-    var source = probe("h264", "flac", 2, 0);
+    var source =
+        probeBuilder("h264", "flac")
+            .audioChannels(OptionalInt.of(2))
+            .audioBitrate(OptionalLong.empty())
+            .build();
     var declaration = declaring(H264);
 
     var decision =
@@ -870,7 +884,11 @@ class TranscodeDecisionServiceTest {
   @Test
   @DisplayName("Should transcode to AC-3 when channel cap forces transcode")
   void shouldTranscodeToAc3WhenChannelCapForcesTranscode() {
-    var source = probe("h264", "ac3", 8, 640_000L);
+    var source =
+        probeBuilder("h264", "ac3")
+            .audioChannels(OptionalInt.of(8))
+            .audioBitrate(OptionalLong.of(640_000L))
+            .build();
     var declaration = declaringAudio(audio(AAC, 2), audio(AC3, 6));
 
     var decision =
@@ -891,7 +909,11 @@ class TranscodeDecisionServiceTest {
   @Test
   @DisplayName("Should copy FLAC audio when remuxing H264 and the client supports FLAC")
   void shouldCopyFlacAudioWhenRemuxingH264AndClientSupportsFlac() {
-    var source = probe("h264", "flac", 6, 0);
+    var source =
+        probeBuilder("h264", "flac")
+            .audioChannels(OptionalInt.of(6))
+            .audioBitrate(OptionalLong.empty())
+            .build();
     var declaration = declaringAudio(audio(AAC, 6), audio(FLAC, 6));
 
     var decision =
@@ -913,7 +935,11 @@ class TranscodeDecisionServiceTest {
   @Test
   @DisplayName("Should transcode MP3 audio to AAC when the client declares AAC")
   void shouldTranscodeMp3AudioToAacWhenTheClientDeclaresAac() {
-    var source = probe("h264", "mp3", 2, 128_000L);
+    var source =
+        probeBuilder("h264", "mp3")
+            .audioChannels(OptionalInt.of(2))
+            .audioBitrate(OptionalLong.of(128_000L))
+            .build();
     var declaration = declaringAudio(audio(AAC, 2));
 
     var decision =
@@ -935,7 +961,11 @@ class TranscodeDecisionServiceTest {
   @DisplayName(
       "Should video transcode with audio copy when video incompatible but audio compatible")
   void shouldVideoTranscodeWithAudioCopyWhenVideoIncompatibleButAudioCompatible() {
-    var source = probe("hevc", "ac3", 6, 384_000L);
+    var source =
+        probeBuilder("hevc", "ac3")
+            .audioChannels(OptionalInt.of(6))
+            .audioBitrate(OptionalLong.of(384_000L))
+            .build();
     var declaration = declaringAudio(audio(AAC, 2), audio(AC3, 6));
 
     var decision =
@@ -957,7 +987,11 @@ class TranscodeDecisionServiceTest {
   @Test
   @DisplayName("Should full transcode when both video and audio need transcoding")
   void shouldFullTranscodeWhenBothVideoAndAudioNeedTranscoding() {
-    var source = probe("hevc", "flac", 6, 0);
+    var source =
+        probeBuilder("hevc", "flac")
+            .audioChannels(OptionalInt.of(6))
+            .audioBitrate(OptionalLong.empty())
+            .build();
     var declaration = declaringAudio(audio(AAC, 2));
 
     var decision =
@@ -978,7 +1012,11 @@ class TranscodeDecisionServiceTest {
   @Test
   @DisplayName("Should copy multichannel AAC when remuxing H264")
   void shouldCopyMultichannelAacWhenRemuxingH264() {
-    var source = probe("h264", "aac", 6, 384_000L);
+    var source =
+        probeBuilder("h264", "aac")
+            .audioChannels(OptionalInt.of(6))
+            .audioBitrate(OptionalLong.of(384_000L))
+            .build();
     var declaration = declaringAudio(audio(AAC, 6));
 
     var decision =
@@ -1000,7 +1038,11 @@ class TranscodeDecisionServiceTest {
   @Test
   @DisplayName("Should transcode to 5.1 E-AC-3 when the surround source has more channels")
   void shouldTranscodeTo51Eac3WhenTheSurroundSourceHasMoreChannels() {
-    var source = probe("h264", "dts", 8, 640_000L);
+    var source =
+        probeBuilder("h264", "dts")
+            .audioChannels(OptionalInt.of(8))
+            .audioBitrate(OptionalLong.of(640_000L))
+            .build();
     var declaration = declaringAudio(audio(EAC3, 8), audio(AAC, 8));
 
     var decision =
@@ -1031,7 +1073,11 @@ class TranscodeDecisionServiceTest {
           ClientCapabilityDeclaration declaration,
           String expectedCodec,
           long expectedBitrate) {
-    var source = probe("h264", "dts", 6, 1_500_000L);
+    var source =
+        probeBuilder("h264", "dts")
+            .audioChannels(OptionalInt.of(6))
+            .audioBitrate(OptionalLong.of(1_500_000L))
+            .build();
 
     var decision =
         service
@@ -1114,7 +1160,11 @@ class TranscodeDecisionServiceTest {
   @Test
   @DisplayName("Should transcode to multichannel AAC when only AAC is supported")
   void shouldTranscodeToMultichannelAacWhenOnlyAacIsSupported() {
-    var source = probe("h264", "dts", 6, 1_500_000L);
+    var source =
+        probeBuilder("h264", "dts")
+            .audioChannels(OptionalInt.of(6))
+            .audioBitrate(OptionalLong.of(1_500_000L))
+            .build();
     var declaration = declaringAudio(audio(AAC, 6));
 
     var decision =
@@ -1137,7 +1187,11 @@ class TranscodeDecisionServiceTest {
   @ValueSource(ints = {3, 4})
   @DisplayName("Should encode stereo AAC when the source has more channels than the client plays")
   void shouldEncodeStereoAacWhenTheSourceHasMoreChannelsThanTheClientPlays(int sourceChannels) {
-    var source = probe("h264", "aac", sourceChannels, 256_000L);
+    var source =
+        probeBuilder("h264", "aac")
+            .audioChannels(OptionalInt.of(sourceChannels))
+            .audioBitrate(OptionalLong.of(256_000L))
+            .build();
     var declaration = declaringAudio(audio(AAC, 2));
 
     var decision =
@@ -1159,7 +1213,11 @@ class TranscodeDecisionServiceTest {
   @ValueSource(ints = {3, 4, 5, 7})
   @DisplayName("Should announce the source's channel count when the client plays every channel")
   void shouldAnnounceTheSourcesChannelCountWhenTheClientPlaysEveryChannel(int sourceChannels) {
-    var source = probe("h264", "aac", sourceChannels, 256_000L);
+    var source =
+        probeBuilder("h264", "aac")
+            .audioChannels(OptionalInt.of(sourceChannels))
+            .audioBitrate(OptionalLong.of(256_000L))
+            .build();
     var declaration = declaringAudio(audio(AAC, 8));
 
     var decision =
@@ -1179,7 +1237,11 @@ class TranscodeDecisionServiceTest {
   @Test
   @DisplayName("Should copy stereo AAC passthrough")
   void shouldCopyStereoAacPassthrough() {
-    var source = probe("h264", "aac", 2, 128_000L);
+    var source =
+        probeBuilder("h264", "aac")
+            .audioChannels(OptionalInt.of(2))
+            .audioBitrate(OptionalLong.of(128_000L))
+            .build();
     var declaration = declaringAudio(audio(AAC, 2));
 
     var decision =
@@ -1313,7 +1375,11 @@ class TranscodeDecisionServiceTest {
   @Test
   @DisplayName("Should encode a 5.1 Opus track when the client declares Opus at two channels")
   void shouldEncodeA51OpusTrackWhenTheClientDeclaresOpusAtTwoChannels() {
-    var source = probe("h264", "opus", 6, 384_000L);
+    var source =
+        probeBuilder("h264", "opus")
+            .audioChannels(OptionalInt.of(6))
+            .audioBitrate(OptionalLong.of(384_000L))
+            .build();
 
     var decision =
         service
@@ -1333,7 +1399,11 @@ class TranscodeDecisionServiceTest {
   @Test
   @DisplayName("Should encode the audio when its codec's only entry does not apply to HLS")
   void shouldEncodeTheAudioWhenItsCodecsOnlyEntryDoesNotApplyToHls() {
-    var source = probe("h264", "ac3", 6, 384_000L);
+    var source =
+        probeBuilder("h264", "ac3")
+            .audioChannels(OptionalInt.of(6))
+            .audioBitrate(OptionalLong.of(384_000L))
+            .build();
     var declaration =
         declaringAudio(audio(AAC, 2), audioEntryBuilder(AC3).maxChannels(6).hls(false).build());
 
@@ -1356,7 +1426,11 @@ class TranscodeDecisionServiceTest {
   @DisplayName(
       "Should copy the audio when any of several entries for its codec takes every channel")
   void shouldCopyTheAudioWhenAnyOfSeveralEntriesForItsCodecTakesEveryChannel() {
-    var source = probe("h264", "eac3", 6, 640_000L);
+    var source =
+        probeBuilder("h264", "eac3")
+            .audioChannels(OptionalInt.of(6))
+            .audioBitrate(OptionalLong.of(640_000L))
+            .build();
 
     var decision =
         service
@@ -1377,7 +1451,11 @@ class TranscodeDecisionServiceTest {
   @DisplayName(
       "Should encode multichannel audio with the next codec when the preferred codec's entry is stereo")
   void shouldEncodeMultichannelAudioWithTheNextCodecWhenThePreferredCodecsEntryIsStereo() {
-    var source = probe("h264", "dts", 8, 1_500_000L);
+    var source =
+        probeBuilder("h264", "dts")
+            .audioChannels(OptionalInt.of(8))
+            .audioBitrate(OptionalLong.of(1_500_000L))
+            .build();
 
     var decision =
         service
@@ -1398,7 +1476,11 @@ class TranscodeDecisionServiceTest {
   @Test
   @DisplayName("Should encode mono AAC when the AAC entry accepts one channel")
   void shouldEncodeMonoAacWhenTheAacEntryAcceptsOneChannel() {
-    var source = probe("h264", "dts", 6, 1_500_000L);
+    var source =
+        probeBuilder("h264", "dts")
+            .audioChannels(OptionalInt.of(6))
+            .audioBitrate(OptionalLong.of(1_500_000L))
+            .build();
 
     var decision =
         service

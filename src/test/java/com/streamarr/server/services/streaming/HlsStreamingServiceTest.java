@@ -72,7 +72,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
@@ -83,6 +82,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import lombok.Builder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -222,14 +222,14 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
 
-  @ParameterizedTest
-  @CsvSource({"aac, AUTO, VIDEO_TRANSCODE", "flac, HIGH_720P, FULL_TRANSCODE"})
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("encodesThatNeedAFrameRate")
   @DisplayName(
       "Should reject the stream session when the video must be encoded and the probe has no frame rate")
   void shouldRejectTheStreamSessionWhenTheVideoMustBeEncodedAndTheProbeHasNoFrameRate(
-      String audioCodec, VideoQuality quality, TranscodeMode encodingMode) {
-    var probe = defaultProbeBuilder().videoCodec("hevc").audioCodec(audioCodec);
-    var options = StreamingOptions.builder().quality(quality).build();
+      EncodeCase encode) {
+    var probe = defaultProbeBuilder().videoCodec("hevc").audioCodec(encode.audioCodec());
+    var options = StreamingOptions.builder().quality(encode.quality()).build();
     var file = seedMediaFile();
     var profileId = UUID.randomUUID();
     probeResults.setDefaultProbe(probe.framerate(OptionalDouble.of(23.976)).build());
@@ -241,27 +241,41 @@ class HlsStreamingServiceTest {
     var outcome =
         service.createSession(createStreamSessionCommand(file.getId(), profileId, options));
 
-    assertThat(encoded.getTranscodeDecision().transcodeMode()).isEqualTo(encodingMode);
+    assertThat(encoded.getTranscodeDecision().transcodeMode()).isEqualTo(encode.encodingMode());
     assertThat(outcome)
         .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.FrameRateUnknown()));
     assertThat(service.getActiveSessionCount()).isZero();
     assertThat(transcodeExecutor.getStartedRequests()).isEqualTo(startedRequests);
   }
 
-  @ParameterizedTest
-  @CsvSource({
-    "0, 0, AUTO",
-    "0, 1080, AUTO",
-    "1920, 0, AUTO",
-    "0, 0, HIGH_720P",
-    "0, 1080, HIGH_720P",
-    "1920, 0, HIGH_720P"
-  })
+  static Stream<EncodeCase> encodesThatNeedAFrameRate() {
+    return Stream.of(
+        EncodeCase.builder()
+            .audioCodec("aac")
+            .quality(VideoQuality.AUTO)
+            .encodingMode(TranscodeMode.VIDEO_TRANSCODE)
+            .build(),
+        EncodeCase.builder()
+            .audioCodec("flac")
+            .quality(VideoQuality.HIGH_720P)
+            .encodingMode(TranscodeMode.FULL_TRANSCODE)
+            .build());
+  }
+
+  @Builder
+  record EncodeCase(String audioCodec, VideoQuality quality, TranscodeMode encodingMode) {}
+
+  @ParameterizedTest(name = "{0} in {1}")
+  @MethodSource("picturesWithoutArea")
   @DisplayName("Should reject session creation when the displayed picture has no area")
   void shouldRejectSessionCreationWhenTheDisplayedPictureHasNoArea(
-      int width, int height, VideoQuality quality) {
+      PictureSize picture, VideoQuality quality) {
     probeResults.setDefaultProbe(
-        defaultProbeBuilder().videoCodec("hevc").width(width).height(height).build());
+        defaultProbeBuilder()
+            .videoCodec("hevc")
+            .width(picture.width())
+            .height(picture.height())
+            .build());
     var options = StreamingOptions.builder().quality(quality).build();
     var command = createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), options);
 
@@ -270,6 +284,19 @@ class HlsStreamingServiceTest {
     assertThat(service.getActiveSessionCount()).isZero();
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
+
+  static Stream<Arguments> picturesWithoutArea() {
+    var pictures =
+        List.of(
+            PictureSize.builder().width(0).height(0).build(),
+            PictureSize.builder().width(0).height(1080).build(),
+            PictureSize.builder().width(1920).height(0).build());
+    return Stream.of(VideoQuality.AUTO, VideoQuality.HIGH_720P)
+        .flatMap(quality -> pictures.stream().map(picture -> Arguments.of(picture, quality)));
+  }
+
+  @Builder
+  record PictureSize(int width, int height) {}
 
   @ParameterizedTest
   @CsvSource({"CHROMA_444, 1916", "CHROMA_422, 1914"})
@@ -1098,41 +1125,24 @@ class HlsStreamingServiceTest {
     assertThat(playlist).contains("CHANNELS=\"2\"").doesNotContain("CHANNELS=\"0\"");
   }
 
-  @ParameterizedTest(name = "{0} → {1}, encodeVideo={2}")
-  @CsvSource({
-    "aac, mp4a.40.2, false",
-    "aac, mp4a.40.5, false",
-    "aac, mp4a.40.29, false",
-    "ac3, ac-3, false",
-    "eac3, ec-3, false",
-    "flac, fLaC, false",
-    "opus, Opus, false",
-    "alac, alac, false",
-    "aac, mp4a.40.2, true",
-    "aac, mp4a.40.5, true",
-    "aac, mp4a.40.29, true",
-    "ac3, ac-3, true",
-    "eac3, ec-3, true",
-    "flac, fLaC, true",
-    "opus, Opus, true",
-    "alac, alac, true"
-  })
+  @ParameterizedTest(name = "{0}, encodeVideo={1}")
+  @MethodSource("copiedAudioCodecs")
   @DisplayName(
       "Should advertise the copied audio codec in the playlist when the client supports the source audio codec")
   void shouldAdvertiseCopiedAudioCodecInPlaylistWhenClientSupportsSourceAudioCodec(
-      String sourceAudioCodec, String codecsParameter, boolean encodeVideo) {
+      CopiedAudio copied, boolean encodeVideo) {
     var probe =
         ProbeFixture.completeProbe(
             defaultProbeBuilder()
                 .videoCodec(encodeVideo ? "hevc" : "h264")
-                .audioCodec(sourceAudioCodec)
+                .audioCodec(copied.probedCodec())
                 .build());
     var audio =
         StreamInfo.builder()
             .index(1)
             .codecType("audio")
-            .codec(Optional.of(sourceAudioCodec))
-            .codecString(Optional.of(codecsParameter))
+            .codec(Optional.of(copied.probedCodec()))
+            .codecString(Optional.of(copied.codecString()))
             .channels(OptionalInt.of(2))
             .build();
     probeResults.setDefaultOutcome(
@@ -1150,11 +1160,7 @@ class HlsStreamingServiceTest {
     var file = seedMediaFile();
     var declaration =
         defaultDeclarationBuilder()
-            .audio(
-                List.of(
-                    aacEntryBuilder().build(),
-                    audioEntryBuilder(AudioCodec.valueOf(sourceAudioCodec.toUpperCase(Locale.ROOT)))
-                        .build()))
+            .audio(List.of(aacEntryBuilder().build(), audioEntryBuilder(copied.declared()).build()))
             .build();
 
     var session = createSession(file.getId(), declaration);
@@ -1167,8 +1173,31 @@ class HlsStreamingServiceTest {
         .isEqualTo(encodeVideo ? TranscodeMode.VIDEO_TRANSCODE : TranscodeMode.REMUX);
     assertThat(playlist.lines().filter(line -> line.startsWith("#EXT-X-STREAM-INF:")))
         .isNotEmpty()
-        .allSatisfy(line -> assertThat(line).contains("," + codecsParameter + "\""));
+        .allSatisfy(line -> assertThat(line).contains("," + copied.codecString() + "\""));
   }
+
+  // The codec name that the probe stores and the codec string that the copy's playlist carries.
+  static Stream<Arguments> copiedAudioCodecs() {
+    var codecs =
+        List.of(
+            copiedAudio(AudioCodec.AAC).probedCodec("aac").codecString("mp4a.40.2").build(),
+            copiedAudio(AudioCodec.AAC).probedCodec("aac").codecString("mp4a.40.5").build(),
+            copiedAudio(AudioCodec.AAC).probedCodec("aac").codecString("mp4a.40.29").build(),
+            copiedAudio(AudioCodec.AC3).probedCodec("ac3").codecString("ac-3").build(),
+            copiedAudio(AudioCodec.EAC3).probedCodec("eac3").codecString("ec-3").build(),
+            copiedAudio(AudioCodec.FLAC).probedCodec("flac").codecString("fLaC").build(),
+            copiedAudio(AudioCodec.OPUS).probedCodec("opus").codecString("Opus").build(),
+            copiedAudio(AudioCodec.ALAC).probedCodec("alac").codecString("alac").build());
+    return Stream.of(false, true)
+        .flatMap(encodeVideo -> codecs.stream().map(codec -> Arguments.of(codec, encodeVideo)));
+  }
+
+  private static CopiedAudio.CopiedAudioBuilder copiedAudio(AudioCodec declared) {
+    return CopiedAudio.builder().declared(declared);
+  }
+
+  @Builder
+  record CopiedAudio(AudioCodec declared, String probedCodec, String codecString) {}
 
   @ParameterizedTest(name = "{0}, encodeVideo={1}")
   @CsvSource({
