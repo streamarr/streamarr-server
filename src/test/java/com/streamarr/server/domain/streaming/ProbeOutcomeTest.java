@@ -117,15 +117,14 @@ class ProbeOutcomeTest {
   @Test
   @DisplayName("Should reject a success when its stream measurement is missing")
   void shouldRejectSuccessWhenItsStreamMeasurementIsMissing() {
-    var container = ProbeContainer.builder().build();
-    var streams = List.of(streamBuilder("video", "h264").build());
-    var keyframes = new KeyframeKnowledge.NotReported();
+    var builder =
+        ProbeOutcome.Success.builder()
+            .container(ProbeContainer.builder().build())
+            .streams(List.of(streamBuilder("video", "h264").build()))
+            .keyframes(new KeyframeKnowledge.NotReported());
 
     assertThatNullPointerException()
-        .isThrownBy(
-            () ->
-                new ProbeOutcome.Success(
-                    container, streams, keyframes, Optional.empty(), Optional.empty(), null))
+        .isThrownBy(() -> builder.streamMeasurements(null))
         .withMessageContaining("streamMeasurements");
   }
 

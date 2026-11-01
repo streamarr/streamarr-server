@@ -28,10 +28,23 @@ class KeyframeIntervalCountsTest {
 
     assertThat(counts.intervalCount()).isEqualTo(2);
     assertThat(counts.countOf(0)).isEqualTo(0xFFFF_FFFFL);
+  }
+
+  @Test
+  @DisplayName("Should equal other counts only when they hold the same counts in the same order")
+  void shouldEqualOtherCountsOnlyWhenTheyHoldSameCountsInSameOrder() {
+    var counts = KeyframeIntervalCounts.of(0xFFFF_FFFFL, 7);
+
     assertThat(counts)
-        .isEqualTo(KeyframeIntervalCounts.of(0xFFFF_FFFFL, 7))
-        .hasSameHashCodeAs(KeyframeIntervalCounts.of(0xFFFF_FFFFL, 7))
-        .isNotEqualTo(KeyframeIntervalCounts.of(7, 0xFFFF_FFFFL))
+        .isEqualTo(KeyframeIntervalCounts.ofUnsigned(new int[] {-1, 7}))
+        .hasSameHashCodeAs(KeyframeIntervalCounts.ofUnsigned(new int[] {-1, 7}))
+        .isNotEqualTo(KeyframeIntervalCounts.of(7, 0xFFFF_FFFFL));
+  }
+
+  @Test
+  @DisplayName("Should name only its interval count when printed")
+  void shouldNameOnlyItsIntervalCountWhenPrinted() {
+    assertThat(KeyframeIntervalCounts.of(700, 0xFFFF_FFFFL))
         .hasToString("KeyframeIntervalCounts[intervals=2]");
   }
 

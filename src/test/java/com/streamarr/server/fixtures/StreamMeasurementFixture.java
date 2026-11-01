@@ -54,15 +54,20 @@ public class StreamMeasurementFixture {
 
   public static ProbeOutcome.Success success(
       KeyframePositions positions, Optional<StreamMeasurements> measurements) {
+    return successBuilder()
+        .keyframes(new KeyframeKnowledge.Known(positions))
+        .streamMeasurements(measurements)
+        .build();
+  }
+
+  /** The video stream and the audio stream, with no keyframe knowledge and no measurement yet. */
+  public static ProbeOutcome.Success.SuccessBuilder successBuilder() {
     return ProbeOutcome.Success.builder()
         .container(ProbeContainer.builder().build())
         .streams(
             List.of(
                 StreamInfo.builder().index(VIDEO).codecType("video").build(),
-                StreamInfo.builder().index(AUDIO).codecType("audio").build()))
-        .keyframes(new KeyframeKnowledge.Known(positions))
-        .streamMeasurements(measurements)
-        .build();
+                StreamInfo.builder().index(AUDIO).codecType("audio").build()));
   }
 
   public static StreamMeasurements measurement() {

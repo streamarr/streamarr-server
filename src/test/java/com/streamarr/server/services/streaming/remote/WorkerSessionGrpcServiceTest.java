@@ -58,6 +58,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -89,6 +90,8 @@ class WorkerSessionGrpcServiceTest {
   // worker_session.proto bounds the streams that the measurement parts of one attempt name to
   // 1,024.
   private static final int MAXIMUM_MEASURED_STREAMS_PER_PROBE = 1_024;
+  private static final int VIDEO_STREAM = 0;
+  private static final int AUDIO_STREAM = 1;
   private static final String ENCODER_BACKEND_MISMATCH_METRIC =
       "streamarr.streaming.encoder_backend_mismatches";
   private static final String UNKNOWN_JOB_ATTEMPT_REPORTS_METRIC =
@@ -305,15 +308,35 @@ class WorkerSessionGrpcServiceTest {
   void shouldJoinEachStreamsMeasurementPartsInOrderWhenWorkerInterleavesStreams() throws Exception {
     var probe = SessionProbe.dispatch();
 
-    probe.send(measurementPart(probe, 0, 1, 2));
-    probe.send(measurementPart(probe, 1, 7));
-    probe.send(measurementPart(probe, 0, 3));
-    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(measuredResult(probe)));
+    probe.sendMeasurementPart(
+        probe
+            .measurementPart(VIDEO_STREAM)
+            .addAllKeyframeIntervalBytes(List.of(1, 2))
+            .addAllKeyframeIntervalPacketCounts(List.of(11, 12)));
+    probe.sendMeasurementPart(
+        probe
+            .measurementPart(AUDIO_STREAM)
+            .addKeyframeIntervalBytes(7)
+            .addKeyframeIntervalPacketCounts(17));
+    probe.sendMeasurementPart(
+        probe
+            .measurementPart(VIDEO_STREAM)
+            .addKeyframeIntervalBytes(3)
+            .addKeyframeIntervalPacketCounts(13));
+    probe.sendMeasuredResult();
 
     assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts())
         .containsExactly(
-            measurementPart(probe, 0, 1, 2, 3).getProbeStreamMeasurementPart(),
-            measurementPart(probe, 1, 7).getProbeStreamMeasurementPart());
+            probe
+                .measurementPart(VIDEO_STREAM)
+                .addAllKeyframeIntervalBytes(List.of(1, 2, 3))
+                .addAllKeyframeIntervalPacketCounts(List.of(11, 12, 13))
+                .build(),
+            probe
+                .measurementPart(AUDIO_STREAM)
+                .addKeyframeIntervalBytes(7)
+                .addKeyframeIntervalPacketCounts(17)
+                .build());
   }
 
   @Test
@@ -321,11 +344,11 @@ class WorkerSessionGrpcServiceTest {
       "Should report no measurement parts when a worker sends them for another probe attempt")
   void shouldReportNoMeasurementPartsWhenWorkerSendsThemForAnotherProbeAttempt() throws Exception {
     var probe = SessionProbe.dispatch();
-    var part = measurementPart(probe, 0, 1);
-    part.getProbeStreamMeasurementPartBuilder().setProbeAttemptId(toProto(UUID.randomUUID()));
 
-    probe.send(part);
-    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(measuredResult(probe)));
+    probe.sendMeasurementPart(
+        withEntries(probe.measurementPart(VIDEO_STREAM), 1)
+            .setProbeAttemptId(toProto(UUID.randomUUID())));
+    probe.sendMeasuredResult();
 
     assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts()).isEmpty();
   }
@@ -336,9 +359,9 @@ class WorkerSessionGrpcServiceTest {
   void shouldFailProbeWhenMeasurementPartHoldsMoreEntriesThanOnePartAllows() throws Exception {
     var probe = SessionProbe.dispatch();
 
-    probe.send(measurementPart(probe, 0, new int[MAXIMUM_ENTRIES_PER_PART + 1]));
-    probe.send(measurementPart(probe, 0, 1));
-    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(measuredResult(probe)));
+    probe.sendMeasurementPart(
+        withEntries(probe.measurementPart(VIDEO_STREAM), MAXIMUM_ENTRIES_PER_PART + 1));
+    probe.sendMeasuredResult();
 
     assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
@@ -350,16 +373,10 @@ class WorkerSessionGrpcServiceTest {
       "Should fail a probe when a worker sends more measurement entries than one probe allows")
   void shouldFailProbeWhenWorkerSendsMoreMeasurementEntriesThanOneProbeAllows() throws Exception {
     var probe = SessionProbe.dispatch();
-    var fullPart = measurementPart(probe, 0, new int[MAXIMUM_ENTRIES_PER_PART]);
 
-    for (var sent = 0;
-        sent < MAXIMUM_MEASUREMENT_ENTRIES_PER_PROBE / MAXIMUM_ENTRIES_PER_PART;
-        sent++) {
-      probe.send(fullPart);
-    }
-
-    probe.send(measurementPart(probe, 1, 1));
-    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(measuredResult(probe)));
+    sendFullMeasurementParts(probe, MAXIMUM_MEASUREMENT_ENTRIES_PER_PROBE);
+    probe.sendMeasurementPart(withEntries(probe.measurementPart(AUDIO_STREAM), 1));
+    probe.sendMeasuredResult();
 
     assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
@@ -373,12 +390,13 @@ class WorkerSessionGrpcServiceTest {
   void shouldFailProbeWhenMeasurementPartCountsPacketsForOtherIntervalsThanItsBytes()
       throws Exception {
     var probe = SessionProbe.dispatch();
-    var part = measurementPart(probe, 0, 1, 2);
-    part.getProbeStreamMeasurementPartBuilder().addKeyframeIntervalPacketCounts(1);
 
-    probe.send(part);
-    probe.send(measurementPart(probe, 0, 3));
-    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(measuredResult(probe)));
+    probe.sendMeasurementPart(
+        probe
+            .measurementPart(VIDEO_STREAM)
+            .addAllKeyframeIntervalBytes(List.of(1, 2))
+            .addAllKeyframeIntervalPacketCounts(List.of(1, 1, 1)));
+    probe.sendMeasuredResult();
 
     assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
@@ -390,8 +408,8 @@ class WorkerSessionGrpcServiceTest {
   void shouldFailProbeWhenMeasurementPartHoldsNoEntries() throws Exception {
     var probe = SessionProbe.dispatch();
 
-    probe.send(measurementPart(probe, 0));
-    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(measuredResult(probe)));
+    probe.sendMeasurementPart(probe.measurementPart(VIDEO_STREAM));
+    probe.sendMeasuredResult();
 
     assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
@@ -404,10 +422,10 @@ class WorkerSessionGrpcServiceTest {
     var probe = SessionProbe.dispatch();
 
     for (var streamIndex = 0; streamIndex <= MAXIMUM_MEASURED_STREAMS_PER_PROBE; streamIndex++) {
-      probe.send(measurementPart(probe, streamIndex, 1));
+      probe.sendMeasurementPart(withEntries(probe.measurementPart(streamIndex), 1));
     }
 
-    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(measuredResult(probe)));
+    probe.sendMeasuredResult();
 
     assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
@@ -422,34 +440,24 @@ class WorkerSessionGrpcServiceTest {
       throws Exception {
     var probe = SessionProbe.dispatch();
 
-    probe.send(measurementPart(probe, 0));
+    probe.sendMeasurementPart(probe.measurementPart(VIDEO_STREAM));
     probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
 
     assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts()).isEmpty();
   }
 
-  private static ProbeAttemptResult measuredResult(SessionProbe probe) {
-    var result = probe.result();
-    return result.toBuilder()
-        .setMedia(
-            result.getMedia().toBuilder()
-                .setStreamMeasurements(
-                    StreamMeasurements.newBuilder()
-                        .setSource(StreamMeasurementSource.STREAM_MEASUREMENT_SOURCE_SAMPLE_TABLE)))
-        .build();
+  private static void sendFullMeasurementParts(SessionProbe probe, int entries) {
+    for (var sent = 0; sent < entries / MAXIMUM_ENTRIES_PER_PART; sent++) {
+      probe.sendMeasurementPart(
+          withEntries(probe.measurementPart(VIDEO_STREAM), MAXIMUM_ENTRIES_PER_PART));
+    }
   }
 
-  private static EstablishWorkerSessionRequest.Builder measurementPart(
-      SessionProbe probe, int streamIndex, int... intervalBytes) {
-    var part =
-        ProbeStreamMeasurementPart.newBuilder()
-            .setProbeAttemptId(probe.attemptId())
-            .setStreamIndex(streamIndex);
-    for (var bytes : intervalBytes) {
-      part.addKeyframeIntervalBytes(bytes).addKeyframeIntervalPacketCounts(bytes + 100);
-    }
-
-    return EstablishWorkerSessionRequest.newBuilder().setProbeStreamMeasurementPart(part);
+  /** Adds this many keyframe intervals to the part, each with no bytes and no packets. */
+  private static ProbeStreamMeasurementPart.Builder withEntries(
+      ProbeStreamMeasurementPart.Builder part, int entries) {
+    var zeros = Collections.nCopies(entries, 0);
+    return part.addAllKeyframeIntervalBytes(zeros).addAllKeyframeIntervalPacketCounts(zeros);
   }
 
   private static List<ProbeKeyframePositionsPart> withoutAttemptIds(ProbeAttemptReport report) {
@@ -511,6 +519,27 @@ class WorkerSessionGrpcServiceTest {
 
     private void send(EstablishWorkerSessionRequest.Builder event) {
       session.onNext(event.build());
+    }
+
+    private ProbeStreamMeasurementPart.Builder measurementPart(int streamIndex) {
+      return ProbeStreamMeasurementPart.newBuilder()
+          .setProbeAttemptId(attemptId())
+          .setStreamIndex(streamIndex);
+    }
+
+    private void sendMeasurementPart(ProbeStreamMeasurementPart.Builder part) {
+      send(EstablishWorkerSessionRequest.newBuilder().setProbeStreamMeasurementPart(part));
+    }
+
+    private void sendMeasuredResult() {
+      var media =
+          result().getMedia().toBuilder()
+              .setStreamMeasurements(
+                  StreamMeasurements.newBuilder()
+                      .setSource(StreamMeasurementSource.STREAM_MEASUREMENT_SOURCE_SAMPLE_TABLE));
+      send(
+          EstablishWorkerSessionRequest.newBuilder()
+              .setProbeResult(result().toBuilder().setMedia(media)));
     }
   }
 

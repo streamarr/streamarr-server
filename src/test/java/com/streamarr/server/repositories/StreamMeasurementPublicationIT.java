@@ -64,7 +64,7 @@ class StreamMeasurementPublicationIT extends AbstractIntegrationTest {
   void shouldGivePlaybackEachStreamsMeasurementWhenProbePublishesMeasurement() {
     var file = createMediaFile();
 
-    repository.publish(publication(file, ProbeVersion.CURRENT, measured(positions(90_000))));
+    repository.publish(publication(file, measured(positions(90_000))));
 
     assertThat(stored(file).outcome())
         .isInstanceOfSatisfying(
@@ -77,7 +77,7 @@ class StreamMeasurementPublicationIT extends AbstractIntegrationTest {
   @DisplayName("Should delete the measurement when the source snapshot changes")
   void shouldDeleteMeasurementWhenSourceSnapshotChanges() {
     var file = createMediaFile();
-    repository.publish(publication(file, ProbeVersion.CURRENT, measured(positions(90_000))));
+    repository.publish(publication(file, measured(positions(90_000))));
 
     repository.trySaveProbeRequest(file.getId(), new ProbeInputs(SNAPSHOT_B, ProbeVersion.CURRENT));
 
@@ -91,7 +91,7 @@ class StreamMeasurementPublicationIT extends AbstractIntegrationTest {
           + " outcome")
   void shouldReadNoMeasurementWhenMeasurementReadAnotherSnapshotThanStoredOutcome() {
     var file = createMediaFile();
-    repository.publish(publication(file, ProbeVersion.CURRENT, measured(positions(90_000))));
+    repository.publish(publication(file, measured(positions(90_000))));
 
     dsl.update(MEDIA_FILE_STREAM_MEASUREMENT)
         .set(MEDIA_FILE_STREAM_MEASUREMENT.SOURCE_SIZE, SNAPSHOT_B.size())
@@ -105,7 +105,7 @@ class StreamMeasurementPublicationIT extends AbstractIntegrationTest {
   @DisplayName("Should read no measurement when the measurement has an older measurement version")
   void shouldReadNoMeasurementWhenMeasurementHasOlderMeasurementVersion() {
     var file = createMediaFile();
-    repository.publish(publication(file, ProbeVersion.CURRENT, measured(positions(90_000))));
+    repository.publish(publication(file, measured(positions(90_000))));
 
     dsl.update(MEDIA_FILE_STREAM_MEASUREMENT)
         .set(
@@ -122,7 +122,7 @@ class StreamMeasurementPublicationIT extends AbstractIntegrationTest {
       "Should keep the outcome without a measurement when a stored stream cannot be decoded")
   void shouldKeepOutcomeWithoutMeasurementWhenStoredStreamCannotBeDecoded() {
     var file = createMediaFile();
-    repository.publish(publication(file, ProbeVersion.CURRENT, measured(positions(90_000))));
+    repository.publish(publication(file, measured(positions(90_000))));
 
     dsl.update(MEDIA_FILE_MEASURED_STREAM)
         .set(MEDIA_FILE_MEASURED_STREAM.KEYFRAME_INTERVAL_COUNT, 3)
@@ -138,7 +138,7 @@ class StreamMeasurementPublicationIT extends AbstractIntegrationTest {
           + " stored outcome")
   void shouldReadNoMeasurementWhenMeasurementReadAnotherModificationTimeThanStoredOutcome() {
     var file = createMediaFile();
-    repository.publish(publication(file, ProbeVersion.CURRENT, measured(positions(90_000))));
+    repository.publish(publication(file, measured(positions(90_000))));
 
     dsl.update(MEDIA_FILE_STREAM_MEASUREMENT)
         .set(MEDIA_FILE_STREAM_MEASUREMENT.SOURCE_MODIFIED_NANOS, 1)
@@ -154,7 +154,7 @@ class StreamMeasurementPublicationIT extends AbstractIntegrationTest {
           + " format")
   void shouldKeepOutcomeWithoutMeasurementWhenStoredIntervalBytesNameUnknownFormat() {
     var file = createMediaFile();
-    repository.publish(publication(file, ProbeVersion.CURRENT, measured(positions(90_000))));
+    repository.publish(publication(file, measured(positions(90_000))));
 
     dsl.update(MEDIA_FILE_MEASURED_STREAM)
         .set(MEDIA_FILE_MEASURED_STREAM.ENCODED_KEYFRAME_INTERVAL_BYTES, new byte[] {9})
@@ -170,7 +170,7 @@ class StreamMeasurementPublicationIT extends AbstractIntegrationTest {
           + " other intervals than the bytes")
   void shouldKeepOutcomeWithoutMeasurementWhenStoredIntervalPacketCountsCoverOtherIntervals() {
     var file = createMediaFile();
-    repository.publish(publication(file, ProbeVersion.CURRENT, measured(positions(90_000))));
+    repository.publish(publication(file, measured(positions(90_000))));
 
     dsl.update(MEDIA_FILE_MEASURED_STREAM)
         .set(
@@ -186,7 +186,7 @@ class StreamMeasurementPublicationIT extends AbstractIntegrationTest {
   @DisplayName("Should delete the measurement when its media file is deleted")
   void shouldDeleteMeasurementWhenItsMediaFileIsDeleted() {
     var file = createMediaFile();
-    repository.publish(publication(file, ProbeVersion.CURRENT, measured(positions(90_000))));
+    repository.publish(publication(file, measured(positions(90_000))));
 
     mediaFileRepository.delete(file);
     createdFiles.remove(file);
@@ -232,12 +232,11 @@ class StreamMeasurementPublicationIT extends AbstractIntegrationTest {
         MEDIA_FILE_MEASURED_STREAM, MEDIA_FILE_MEASURED_STREAM.MEDIA_FILE_ID.eq(file.getId()));
   }
 
-  private static ProbePublication publication(
-      MediaFile file, int probeVersion, ProbeOutcome.Success outcome) {
+  private static ProbePublication publication(MediaFile file, ProbeOutcome.Success outcome) {
     return ProbePublication.builder()
         .mediaFileId(file.getId())
         .snapshot(SNAPSHOT_A)
-        .probeVersion(probeVersion)
+        .probeVersion(ProbeVersion.CURRENT)
         .outcome(outcome)
         .build();
   }
