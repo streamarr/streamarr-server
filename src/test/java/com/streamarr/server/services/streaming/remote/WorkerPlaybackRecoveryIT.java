@@ -43,6 +43,7 @@ import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
@@ -53,7 +54,6 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.FutureTask;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -171,19 +171,21 @@ class WorkerPlaybackRecoveryIT {
       assertThat(playback.deliverDefault(copy, "segment0.m4s"))
           .isInstanceOf(SegmentDelivery.Ready.class);
       await().atMost(15, TimeUnit.SECONDS).until(copy::getNormalEnd, Optional::isPresent);
-      var pastTheEnd = new FutureTask<>(() -> playback.deliverDefault(copy, "segment1.m4s"));
-      var delivering = Thread.ofPlatform().start(pastTheEnd);
-
-      // Only a request past the normal end waits without a deadline.
-      await().atMost(5, TimeUnit.SECONDS).until(delivering::getState, Thread.State.WAITING::equals);
-      assertThat(copy.getNormalEnd()).contains(Duration.ofSeconds(6));
-      assertThat(copy.getHandle().orElseThrow().attemptId()).isEqualTo(copyAttempt);
-      var snapshot = playback.sessions.access(playback.requestFor(started)).orElseThrow();
-      assertThat(snapshot.formatAttemptCount()).isOne();
-      assertThat(snapshot.formatChange()).isEmpty();
-      assertThat(snapshot.currentFormatAttempt()).isEqualTo(new PlaybackFormatAttempt.Ready(copy));
-      playback.sessions.close(playback.requestFor(started));
-      assertThat(pastTheEnd.get(5, TimeUnit.SECONDS)).isEqualTo(new SegmentDelivery.SessionEnded());
+      try (var pastTheEnd =
+          BoundedTask.start(() -> playback.deliverDefault(copy, "segment1.m4s"))) {
+        // Only a request past the normal end waits for a wake without a deadline.
+        await().atMost(5, TimeUnit.SECONDS).until(pastTheEnd::isAwaitingASignalWithoutDeadline);
+        assertThat(copy.getNormalEnd()).contains(Duration.ofSeconds(6));
+        assertThat(copy.getHandle().orElseThrow().attemptId()).isEqualTo(copyAttempt);
+        var snapshot = playback.sessions.access(playback.requestFor(started)).orElseThrow();
+        assertThat(snapshot.formatAttemptCount()).isOne();
+        assertThat(snapshot.formatChange()).isEmpty();
+        assertThat(snapshot.currentFormatAttempt())
+            .isEqualTo(new PlaybackFormatAttempt.Ready(copy));
+        playback.sessions.close(playback.requestFor(started));
+        assertThat(pastTheEnd.await(Duration.ofSeconds(5)))
+            .isEqualTo(new SegmentDelivery.SessionEnded());
+      }
     }
   }
 

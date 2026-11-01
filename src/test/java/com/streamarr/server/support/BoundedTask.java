@@ -6,6 +6,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.LockSupport;
 
 /**
  * Runs a task on its own virtual thread and waits for it with a bound. A task that outlives its
@@ -57,6 +59,24 @@ public final class BoundedTask<T> implements AutoCloseable {
   public boolean isWaiting() {
     var state = thread.getState();
     return state == Thread.State.WAITING || state == Thread.State.TIMED_WAITING;
+  }
+
+  /**
+   * Returns whether the task's thread waits without a deadline for a signal, such as a latch or a
+   * condition. A thread that waits for a lock answers false, because it is only waiting its turn.
+   */
+  public boolean isAwaitingASignalWithoutDeadline() {
+    if (thread.getState() != Thread.State.WAITING) {
+      return false;
+    }
+
+    var blocker = LockSupport.getBlocker(thread);
+    return blocker == null || !isPartOfALock(blocker);
+  }
+
+  private static boolean isPartOfALock(Object blocker) {
+    var owner = blocker.getClass().getEnclosingClass();
+    return owner != null && Lock.class.isAssignableFrom(owner);
   }
 
   /** Interrupts the task's thread, as a stopping server interrupts its workers. */
