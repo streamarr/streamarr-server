@@ -245,6 +245,24 @@ class JooqBitrateScanRepositoryIT extends AbstractIntegrationTest
     assertThat(lockedInputs(UUID.randomUUID())).isEmpty();
   }
 
+  // V110 widens the reasons that V108's check allowed, so every stored row satisfies the new check.
+  // Validating it would only scan the table under ACCESS EXCLUSIVE.
+  @Test
+  @DisplayName("Should leave the unavailable reason constraint unvalidated when V110 widens it")
+  void shouldLeaveTheUnavailableReasonConstraintUnvalidatedWhenV110WidensIt() {
+    var validated =
+        dsl.fetchSingle(
+                """
+                SELECT convalidated FROM pg_constraint
+                WHERE conrelid = ?::regclass AND conname = ?
+                """,
+                MEDIA_FILE_STREAM_MEASUREMENT.getName(),
+                "media_file_stream_measurement_unavailable_reason_check")
+            .get(0, Boolean.class);
+
+    assertThat(validated).isFalse();
+  }
+
   @Test
   @DisplayName(
       "Should refuse an unavailable reason V110 does not name when a stored mark changes to it")
