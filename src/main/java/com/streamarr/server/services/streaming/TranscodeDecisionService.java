@@ -117,7 +117,8 @@ public class TranscodeDecisionService {
     var declaration = request.capabilityDeclaration();
     var limits = request.viewerLimits();
     var steps = AudioSteps.below(sessionAudio, declaration);
-    var stepWithinMaximum = limits.audioStepBesideCopyOf(source, steps);
+    var stepWithinMaximum =
+        limits.audioStepBesideCopyOf(source, steps, CopyMediaPlaylist.of(source, properties));
     var withinLimits = limits.allowsCopyPictureOf(source) && stepWithinMaximum.isPresent();
     if (!withinLimits && hasVerifiedEncodeThatTheClientPlays(request)) {
       return Optional.empty();

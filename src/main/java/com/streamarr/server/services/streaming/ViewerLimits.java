@@ -95,18 +95,22 @@ public record ViewerLimits(
   /**
    * The first audio step beside which a copy of the source costs at most the maximum bitrate, or
    * empty when none does (ADR 0050). A copy in Original, a copy without a maximum bitrate and a
-   * copy whose video bitrate and container bitrate are both unknown keep the session's audio.
+   * copy whose video bitrate and container bitrate are both unknown keep the session's audio. The
+   * copy's media playlist is the one a stream copy of the source would list.
    */
   public Optional<AudioDecision> audioStepBesideCopyOf(
-      @NonNull MediaProbe source, @NonNull AudioSteps steps) {
+      @NonNull MediaProbe source, @NonNull AudioSteps steps, @NonNull CopyMediaPlaylist playlist) {
     if (quality == VideoQuality.ORIGINAL
         || maxBitrate.isEmpty()
-        || !VideoCopyBandwidth.isKnown(source)) {
+        || !VideoCopyBandwidth.isKnown(source, playlist)) {
       return Optional.of(steps.sessionAudio());
     }
 
     return steps.highestFirst().stream()
-        .filter(step -> VideoCopyBandwidth.averageBandwidth(source, step) <= maxBitrate.getAsLong())
+        .filter(
+            step ->
+                VideoCopyBandwidth.averageBandwidth(source, step, playlist)
+                    <= maxBitrate.getAsLong())
         .findFirst();
   }
 }

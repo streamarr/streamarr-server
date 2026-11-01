@@ -56,7 +56,8 @@ public class HlsPlaylistService {
       var codecs = codecs(session, copiedVideoCodecString(session));
       appendStreamInf(
           sb,
-          VideoCopyBandwidth.averageBandwidth(session.getMediaProbe(), audio),
+          VideoCopyBandwidth.averageBandwidth(
+              probe, audio, CopyMediaPlaylist.of(probe, properties)),
           size.width(),
           size.height(),
           codecs,
