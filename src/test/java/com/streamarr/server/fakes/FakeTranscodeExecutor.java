@@ -11,6 +11,7 @@ import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
+import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -34,6 +35,7 @@ import java.util.stream.Stream;
 public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   private static final long OBSERVATION_TIMEOUT_SECONDS = 5;
+  private static final UUID CONNECTED_WORKER_ID = UUID.randomUUID();
 
   private record ProcessKey(UUID sessionId, String variantLabel) {}
 
@@ -496,21 +498,35 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
-  public Optional<Set<String>> verifiedVideoCodecFamilies() {
+  public List<WorkerVerifiedCodecFamilies> verifiedVideoCodecFamiliesByWorker() {
     var change = workerChangeAroundNextVerifiedFamiliesRead.getAndSet(null);
     if (change != null) {
       change.before().run();
     }
 
-    var families =
-        healthy
-            ? Optional.of(Set.copyOf(encodeSlotsByVideoCodecFamily.keySet()))
-            : Optional.<Set<String>>empty();
+    var workers = connectedWorkers();
     if (change != null) {
       change.after().run();
     }
 
-    return families;
+    return workers;
+  }
+
+  // While healthy, one connected worker has a verified encoder for each family with encode slots.
+  private List<WorkerVerifiedCodecFamilies> connectedWorkers() {
+    if (!healthy) {
+      return List.of();
+    }
+
+    return List.of(
+        new WorkerVerifiedCodecFamilies(
+            CONNECTED_WORKER_ID, Set.copyOf(encodeSlotsByVideoCodecFamily.keySet())));
+  }
+
+  private Set<String> verifiedVideoCodecFamilies() {
+    return connectedWorkers().stream()
+        .flatMap(worker -> worker.codecFamilies().stream())
+        .collect(Collectors.toUnmodifiableSet());
   }
 
   /** Changes the connected workers just before and just after the next verified families read. */
@@ -560,7 +576,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   /** Busy targets' hardware encoders count too. */
   @Override
   public Set<String> verifiedHardwareVideoCodecFamilies() {
-    var verified = verifiedVideoCodecFamilies().orElseGet(Set::of);
+    var verified = verifiedVideoCodecFamilies();
     return Stream.concat(
             hardwareEncodableVideoCodecFamilies.stream(), advertisedHardwareFamilies(_ -> true))
         .filter(verified::contains)

@@ -5,6 +5,7 @@ import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -96,11 +97,12 @@ public interface TranscodeExecutor {
   Set<String> hardwareEncodableVideoCodecFamilies();
 
   /**
-   * The codec families of connected, source-accessible worker-verified encoders, including busy
-   * workers, read from one view of the connected workers. Empty when no connected worker can access
-   * the source, so a disconnected moment never reads as connected workers without encoders.
+   * Each connected, source-accessible worker with the video codec families that it encodes with a
+   * worker-verified encoder, including busy workers, read from one view of the connected workers.
+   * Empty when no connected worker can access the source, so a disconnected moment never reads as
+   * connected workers without encoders.
    */
-  Optional<Set<String>> verifiedVideoCodecFamilies();
+  List<WorkerVerifiedCodecFamilies> verifiedVideoCodecFamiliesByWorker();
 
   /**
    * The codec families of connected, source-accessible worker-verified hardware encoders, including

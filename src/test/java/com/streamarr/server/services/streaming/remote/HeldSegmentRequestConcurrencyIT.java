@@ -26,6 +26,7 @@ import com.streamarr.server.services.streaming.SegmentDelivery;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
+import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
@@ -526,8 +527,8 @@ class HeldSegmentRequestConcurrencyIT {
     }
 
     @Override
-    public Optional<Set<String>> verifiedVideoCodecFamilies() {
-      return delegate.verifiedVideoCodecFamilies();
+    public List<WorkerVerifiedCodecFamilies> verifiedVideoCodecFamiliesByWorker() {
+      return delegate.verifiedVideoCodecFamiliesByWorker();
     }
 
     @Override
