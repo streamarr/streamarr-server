@@ -209,29 +209,18 @@ class HlsStreamingServiceTest {
     assertThat(service.getAllSessions()).containsExactly(session);
   }
 
-  @ParameterizedTest
-  @CsvSource({"COPY_OR_ENCODE, true", "COPY_ONLY, false"})
+  @Test
   @DisplayName("Should count one copy refusal when every video encoder is busy")
-  void shouldCountOneCopyRefusalWhenEveryVideoEncoderIsBusy(
-      VideoFormatConstraint constraint, boolean capacityUnavailable) {
+  void shouldCountOneCopyRefusalWhenEveryVideoEncoderIsBusy() {
     probeResults.setDefaultProbe(
         defaultProbeBuilder().keyframes(new KeyframeKnowledge.NotReported()).build());
     transcodeExecutor.setEncodeSlots(Map.of("h264", 0));
     var command =
-        CreateStreamSessionCommand.builder()
-            .streamSessionId(UUID.randomUUID())
-            .mediaFileId(seedMediaFile().getId())
-            .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
-            .options(defaultOptions())
-            .capabilityDeclaration(defaultDeclarationBuilder().build())
-            .videoFormatConstraint(constraint)
-            .build();
+        createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
 
-    var expectedRejection =
-        capacityUnavailable
-            ? new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)
-            : new CreateStreamSessionRejection.NoEligibleVideoFormat();
-    assertThat(service.createSession(command)).isEqualTo(Outcome.rejected(expectedRejection));
+    assertThat(service.createSession(command))
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
     assertThat(meters.get("streamarr.streaming.stream_copy_refusals").counter().count())
         .isEqualTo(1.0);
     assertThat(service.getActiveSessionCount()).isZero();
@@ -385,23 +374,6 @@ class HlsStreamingServiceTest {
     assertThat(outcome)
         .isEqualTo(
             Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
-    assertThat(missingEncoderSessions()).isZero();
-  }
-
-  @Test
-  @DisplayName("Should not count a missing encoder when the request accepts only a video copy")
-  void shouldNotCountAMissingEncoderWhenTheRequestAcceptsOnlyAVideoCopy() {
-    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("vp9").build());
-    connectWorkerEncoding(Set.of());
-    var command =
-        createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
-            .videoFormatConstraint(VideoFormatConstraint.COPY_ONLY)
-            .build();
-
-    var outcome = service.createSession(command);
-
-    assertThat(outcome)
-        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
     assertThat(missingEncoderSessions()).isZero();
   }
 
@@ -1384,31 +1356,32 @@ class HlsStreamingServiceTest {
             });
   }
 
-  // ADR 0050: an encode in Original has no tier but takes the audio step by the 360p tier too. At
-  // 1,400 kb/s, 768 kb/s E-AC-3 5.1 leaves 632 kb/s, 640 leaves 760 and 448 leaves 952, which
-  // the video of the 5 Mb/s source then gets.
+  // ADR 0052: an encode in Original plays Auto's ladder, so at 1,400 kb/s it takes the audio step
+  // that Auto's ladder takes beside an 8-channel DTS source (ADR 0050).
   @Test
   @DisplayName(
-      "Should take the first audio step that leaves the 360p tier's video bitrate when an encode in"
-          + " Original leaves less beside the session's audio")
+      "Should take Auto's audio step when an encode in Original leaves less than the 360p tier's"
+          + " video bitrate beside the session's audio")
   void
-      shouldTakeTheFirstAudioStepThatLeavesThe360pTiersVideoBitrateWhenAnEncodeInOriginalLeavesLessBesideTheSessionsAudio() {
-    var options =
-        StreamingOptions.builder().quality(VideoQuality.ORIGINAL).maxBitrate(1_400_000).build();
+      shouldTakeAutosAudioStepWhenAnEncodeInOriginalLeavesLessThanThe360pTiersVideoBitrateBesideTheSessionsAudio() {
+    var auto =
+        createDtsSession(
+            8, StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(1_400_000).build());
+    var original =
+        createDtsSession(
+            8,
+            StreamingOptions.builder()
+                .quality(VideoQuality.ORIGINAL)
+                .maxBitrate(1_400_000)
+                .build());
 
-    var session = createDtsSession(8, options);
-    var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
-
-    assertThat(session.getTranscodeDecision().transcodeMode())
+    assertThat(original.getTranscodeDecision().transcodeMode())
         .isEqualTo(TranscodeMode.FULL_TRANSCODE);
-    assertThat(session.getTranscodeDecision().audioDecision())
-        .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
-        .containsExactly("eac3", 6, 448_000L);
-    assertThat(transcodeExecutor.getStartedRequests())
-        .singleElement()
-        .satisfies(request -> assertThat(request.bitrate()).isEqualTo(952_000L));
-    assertThat(averageBandwidths(playlist)).containsExactly(1_400_000L);
+    assertThat(original.getTranscodeDecision().audioDecision())
+        .isEqualTo(auto.getTranscodeDecision().audioDecision())
+        .extracting(AudioDecision::bitrate)
+        .isNotEqualTo(768_000L);
+    assertThat(original.getVariants()).isEqualTo(auto.getVariants());
   }
 
   // A copied 640 kb/s AC-3 5.1 track leaves 660 kb/s under 1,300 kb/s. The player declares AC-3 but
@@ -2460,14 +2433,16 @@ class HlsStreamingServiceTest {
   }
 
   @ParameterizedTest
-  @CsvSource({"AUTO, COPY_OR_ENCODE", "HIGH_720P, COPY_OR_ENCODE", "ORIGINAL, COPY_ONLY"})
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"AUTO", "HIGH_720P", "ORIGINAL"})
   @DisplayName(
       "Should encode and deinterlace an interlaced H.264 source when the client plays H.264 in any quality")
   void shouldEncodeAndDeinterlaceAnInterlacedH264SourceWhenTheClientPlaysH264InAnyQuality(
-      VideoQuality quality, VideoFormatConstraint constraint) {
+      VideoQuality quality) {
     probeResults.setDefaultOutcome(interlacedOutcome(FieldOrder.TT));
 
-    var session = accepted(service.createSession(interlacedSourceCommand(quality, constraint)));
+    var session = accepted(service.createSession(interlacedSourceCommand(quality)));
     var started = transcodeExecutor.getStartedRequests().getFirst();
 
     assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
@@ -2480,16 +2455,21 @@ class HlsStreamingServiceTest {
     assertThat(started.framerate()).isEqualTo(OptionalDouble.of(60_000.0 / 1_001));
   }
 
-  // ADR 0052: an encode that Original reaches plays Auto's ladder, within the viewer's limits. A
-  // maximum of 0 is no maximum.
+  // ADR 0052: Original encodes a source that it cannot copy, and that encode plays Auto's ladder
+  // within the viewer's limits. Keyframes 10.01 s apart leave the 6 s interval [12 s, 18 s)
+  // without one, so no copy carries this progressive source. A maximum of 0 is no maximum.
   @ParameterizedTest
   @CsvSource({"0, 0", "2000000, 0", "0, 720"})
   @DisplayName(
-      "Should encode an interlaced source on Auto's ladder within the viewer's limits when the"
-          + " quality is Original")
-  void shouldEncodeAnInterlacedSourceOnAutosLadderWithinTheViewersLimitsWhenTheQualityIsOriginal(
+      "Should offer Auto's ladder within the viewer's limits when Original encodes a progressive"
+          + " source")
+  void shouldOfferAutosLadderWithinTheViewersLimitsWhenOriginalEncodesAProgressiveSource(
       int maxBitrate, int maxHeight) {
-    probeResults.setDefaultOutcome(interlacedOutcome(FieldOrder.BB));
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .keyframes(
+                ProbeFixture.keyframesEvery(Duration.ofMillis(10_010), Duration.ofMinutes(120)))
+            .build());
     var autoOptions =
         StreamingOptions.builder()
             .quality(VideoQuality.AUTO)
@@ -2503,15 +2483,10 @@ class HlsStreamingServiceTest {
             .maxHeight(maxHeight)
             .build();
 
-    var auto =
-        accepted(
-            service.createSession(
-                interlacedSourceCommand(autoOptions, VideoFormatConstraint.COPY_OR_ENCODE)));
-    var original =
-        accepted(
-            service.createSession(
-                interlacedSourceCommand(originalOptions, VideoFormatConstraint.COPY_ONLY)));
+    var auto = createSession(seedMediaFile().getId(), UUID.randomUUID(), autoOptions);
+    var original = createSession(seedMediaFile().getId(), UUID.randomUUID(), originalOptions);
 
+    assertThat(original.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
     assertThat(auto.getVariants()).hasSizeGreaterThan(1);
     assertThat(original.getVariants()).isEqualTo(auto.getVariants());
     assertThat(original.getTranscodeDecision().audioDecision())
@@ -2519,17 +2494,19 @@ class HlsStreamingServiceTest {
   }
 
   @ParameterizedTest
-  @CsvSource({"AUTO, COPY_OR_ENCODE", "ORIGINAL, COPY_ONLY"})
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"AUTO", "ORIGINAL"})
   @DisplayName(
       "Should report missing capacity instead of no eligible format when Auto or Original must"
           + " encode an interlaced source and every encoder is busy")
   void
       shouldReportMissingCapacityInsteadOfNoEligibleFormatWhenAutoOrOriginalMustEncodeAnInterlacedSourceAndEveryEncoderIsBusy(
-          VideoQuality quality, VideoFormatConstraint constraint) {
+          VideoQuality quality) {
     probeResults.setDefaultOutcome(interlacedOutcome(FieldOrder.TT));
     transcodeExecutor.setEncodeSlots(Map.of("h264", 0));
 
-    var outcome = service.createSession(interlacedSourceCommand(quality, constraint));
+    var outcome = service.createSession(interlacedSourceCommand(quality));
 
     assertThat(outcome)
         .isEqualTo(
@@ -2583,15 +2560,17 @@ class HlsStreamingServiceTest {
   }
 
   @ParameterizedTest
-  @CsvSource({"ORIGINAL, COPY_ONLY", "AUTO, COPY_OR_ENCODE"})
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"ORIGINAL", "AUTO"})
   @DisplayName(
       "Should copy an H.264 source whose stored field order is unspecified when the client plays H.264")
   void shouldCopyAnH264SourceWhoseStoredFieldOrderIsUnspecifiedWhenTheClientPlaysH264(
-      VideoQuality quality, VideoFormatConstraint constraint) {
+      VideoQuality quality) {
     var rule = VideoPlaybackFactsFixture.declaredRateRule(new Fraction(30_000, 1_001));
     probeResults.setDefaultOutcome(outcomeWithFrameRateRule(rule));
 
-    var session = accepted(service.createSession(interlacedSourceCommand(quality, constraint)));
+    var session = accepted(service.createSession(interlacedSourceCommand(quality)));
 
     assertThat(rule.inputs().fieldOrder()).isEmpty();
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
@@ -2924,21 +2903,22 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject Original when only two capability entries together accept the copy")
-  void shouldRejectOriginalWhenOnlyTwoCapabilityEntriesTogetherAcceptTheCopy() {
+  @DisplayName(
+      "Should start Original with an encode in Auto when only two capability entries together"
+          + " accept the copy")
+  void shouldStartOriginalWithAnEncodeInAutoWhenOnlyTwoCapabilityEntriesTogetherAcceptTheCopy() {
     probeResults.setDefaultProbe(probeVersion5UhdAt60().build());
 
-    var result =
-        logicalPlayback()
-            .start(
-                logicalStart()
-                    .options(StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build())
-                    .capabilityDeclaration(uhdAt30AndHdAt60Declaration())
-                    .build());
+    var snapshot =
+        accepted(
+            logicalPlayback()
+                .start(
+                    logicalStart()
+                        .options(StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build())
+                        .capabilityDeclaration(uhdAt30AndHdAt60Declaration())
+                        .build()));
 
-    assertThat(result)
-        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
-    assertThat(service.getAllSessions()).isEmpty();
+    assertThatOriginalStartedWithAnEncodeInAuto(snapshot);
   }
 
   // Auto and a fixed quality start playback that may copy or encode the video.
@@ -3264,68 +3244,6 @@ class HlsStreamingServiceTest {
             ready ->
                 assertThat(ready.session().getTranscodeDecision().transcodeMode().copiesVideo())
                     .isTrue());
-  }
-
-  @Test
-  @DisplayName(
-      "Should encode Original within the viewer's limits when no capability entry accepts a copy")
-  void shouldEncodeOriginalWithinTheViewersLimitsWhenNoCapabilityEntryAcceptsACopy() {
-    probeResults.setDefaultProbe(
-        defaultProbeBuilder().videoCodec("hevc").bitrate(8_000_000L).build());
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.ORIGINAL)
-            .maxWidth(1280)
-            .maxBitrate(2_000_000)
-            .build();
-
-    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
-
-    assertThat(session.getTranscodeDecision().audioDecision().bitrate()).isEqualTo(128_000L);
-    assertThat(transcodeExecutor.getStartedRequests())
-        .singleElement()
-        .satisfies(
-            request -> {
-              assertThat(request.width()).isEqualTo(1280);
-              assertThat(request.height()).isEqualTo(720);
-              assertThat(request.bitrate()).isEqualTo(1_872_000L);
-            });
-  }
-
-  // ADR 0050: Original has no fixed quality, so no picture box bounds its encode.
-  @Test
-  @DisplayName(
-      "Should encode Original at the source's size when no capability entry accepts a copy and the"
-          + " viewer sets no limits")
-  void
-      shouldEncodeOriginalAtTheSourcesSizeWhenNoCapabilityEntryAcceptsACopyAndTheViewerSetsNoLimits() {
-    probeResults.setDefaultProbe(
-        defaultProbeBuilder()
-            .videoCodec("hevc")
-            .width(3840)
-            .height(2160)
-            .bitrate(8_000_000L)
-            .build());
-    var options = StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build();
-
-    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
-
-    // The source's 8 Mb/s caps the encode below the 2160p tier's 20 Mb/s.
-    assertThat(session.getVariants())
-        .extracting(
-            QualityVariant::width,
-            QualityVariant::height,
-            QualityVariant::videoBitrate,
-            QualityVariant::label)
-        .containsExactly(tuple(3840, 2160, 8_000_000L, StreamSession.defaultVariant()));
-    assertThat(transcodeExecutor.getStartedRequests())
-        .singleElement()
-        .satisfies(
-            request -> {
-              assertThat(new PictureSize(request.width(), request.height()))
-                  .isEqualTo(new PictureSize(3840, 2160));
-              assertThat(request.bitrate()).isEqualTo(8_000_000L);
-            });
   }
 
   @ParameterizedTest
@@ -4081,20 +3999,42 @@ class HlsStreamingServiceTest {
         .build();
   }
 
+  // ADR 0052: Original encodes a source that no capability entry copies, on Auto's ladder, and the
+  // playback session plays it in Auto.
   @Test
-  @DisplayName("Should reject Original when the source cannot be copied")
-  void shouldRejectOriginalWhenTheSourceCannotBeCopied() {
+  @DisplayName(
+      "Should start Original with an encode on Auto's ladder when the source cannot be copied")
+  void shouldStartOriginalWithAnEncodeOnAutosLadderWhenTheSourceCannotBeCopied() {
     probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
-    var result =
-        logicalPlayback()
-            .start(
-                logicalStart()
-                    .options(StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build())
-                    .build());
 
-    assertThat(result)
-        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
-    assertThat(service.getAllSessions()).isEmpty();
+    var snapshot =
+        accepted(
+            logicalPlayback()
+                .start(
+                    logicalStart()
+                        .options(StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build())
+                        .build()));
+
+    assertThatOriginalStartedWithAnEncodeInAuto(snapshot);
+    assertThat(snapshot.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready -> assertThat(ready.session().getVariants()).hasSizeGreaterThan(1));
+  }
+
+  private void assertThatOriginalStartedWithAnEncodeInAuto(PlaybackSessionSnapshot snapshot) {
+    assertThat(snapshot.requestedChoice()).isEqualTo(VideoQuality.ORIGINAL);
+    assertThat(snapshot.playbackChoice()).isEqualTo(VideoQuality.AUTO);
+    assertThat(snapshot.formatChange()).contains(PlaybackFormatChange.STARTED_WITH_ENCODE);
+    assertThat(snapshot.formatAttemptCount()).isEqualTo(1);
+    assertThat(snapshot.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready -> {
+              assertThat(ready.session().getTranscodeDecision().transcodeMode().copiesVideo())
+                  .isFalse();
+              assertThat(service.getAllSessions()).containsExactly(ready.session());
+            });
   }
 
   @Test
@@ -4200,17 +4140,11 @@ class HlsStreamingServiceTest {
         .build();
   }
 
-  private CreateStreamSessionCommand interlacedSourceCommand(
-      VideoQuality quality, VideoFormatConstraint constraint) {
-    return interlacedSourceCommand(StreamingOptions.builder().quality(quality).build(), constraint);
-  }
-
-  private CreateStreamSessionCommand interlacedSourceCommand(
-      StreamingOptions options, VideoFormatConstraint constraint) {
-    return createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
-        .options(options)
-        .videoFormatConstraint(constraint)
-        .build();
+  private CreateStreamSessionCommand interlacedSourceCommand(VideoQuality quality) {
+    return createStreamSessionCommand(
+        seedMediaFile().getId(),
+        UUID.randomUUID(),
+        StreamingOptions.builder().quality(quality).build());
   }
 
   private Optional<StreamSession> accessSession(StreamSession session) {
