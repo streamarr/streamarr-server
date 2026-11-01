@@ -237,6 +237,9 @@ class RemoteBitrateScanChunkMapperTest {
             new ProbeAttemptReport(
                 ProbeAttemptResult.newBuilder().setMedia(ProbeMediaInfo.newBuilder()).build(),
                 List.of())),
+        arguments(
+            "no outcome",
+            new ProbeAttemptReport(ProbeAttemptResult.getDefaultInstance(), List.of())),
         arguments("no result", report(BitrateScanChunkResult.getDefaultInstance(), List.of())),
         arguments(
             "a copy change in a stream it was not asked to measure",
