@@ -9,8 +9,6 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -24,9 +22,6 @@ import org.springframework.context.ApplicationContextInitializer;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.SystemEnvironmentPropertySource;
 import org.springframework.test.context.ContextConfiguration;
-import org.yaml.snakeyaml.Yaml;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
 
 /**
  * The server's OpenTelemetry settings in {@code docker-compose.yml} must export the server's
@@ -96,23 +91,15 @@ class ComposeMetricsExportIT extends AbstractIntegrationTest {
     }
 
     private static Map<String, String> composeOpenTelemetryEnvironment() {
-      try {
-        JsonNode compose =
-            new ObjectMapper()
-                .valueToTree(new Yaml().load(Files.readString(Path.of("docker-compose.yml"))));
-        var serverEnvironment =
-            compose.path("services").path("streamarr-server").path("environment");
-        var openTelemetry = new HashMap<String, String>();
-        for (var variable : serverEnvironment.properties()) {
-          if (variable.getKey().startsWith("OTEL_")) {
-            openTelemetry.put(variable.getKey(), variable.getValue().asString());
-          }
+      var serverEnvironment = ComposeFile.service("streamarr-server").path("environment");
+      var openTelemetry = new HashMap<String, String>();
+      for (var variable : serverEnvironment.properties()) {
+        if (variable.getKey().startsWith("OTEL_")) {
+          openTelemetry.put(variable.getKey(), variable.getValue().asString());
         }
-
-        return openTelemetry;
-      } catch (IOException e) {
-        throw new UncheckedIOException(e);
       }
+
+      return openTelemetry;
     }
   }
 }
