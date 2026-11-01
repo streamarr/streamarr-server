@@ -6,10 +6,15 @@ import static com.streamarr.server.config.observability.OtlpExports.hex;
 import static com.streamarr.server.config.observability.OtlpExports.histogramExemplars;
 import static com.streamarr.server.config.observability.OtlpExports.metricNames;
 import static com.streamarr.server.config.observability.OtlpExports.metricsNamed;
+import static com.streamarr.server.support.AuthTestSupport.bearer;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.streamarr.server.support.AuthTestSupport;
 import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest;
 import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest;
 import io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest;
@@ -20,6 +25,7 @@ import io.opentelemetry.proto.trace.v1.Span;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
@@ -27,12 +33,16 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContextInitializer;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @Slf4j
 @DisplayName("Metric Export Integration Tests")
 @ContextConfiguration(initializers = MetricExportIT.DeploymentVariables.class)
+@Import(MetricExportIT.AsyncResponseController.class)
 class MetricExportIT extends AbstractObservabilityProfileIntegrationTest {
 
   private static final String POOL_METER = "hikaricp.connections.active";
@@ -43,6 +53,7 @@ class MetricExportIT extends AbstractObservabilityProfileIntegrationTest {
   private static final RecordingOtlpCollector COLLECTOR = RecordingOtlpCollector.start(EXPORT_WAIT);
 
   @Autowired private MockMvc mockMvc;
+  @Autowired private AuthTestSupport authTestSupport;
 
   @AfterAll
   static void stopCollector() {
@@ -119,6 +130,40 @@ class MetricExportIT extends AbstractObservabilityProfileIntegrationTest {
     assertThat(histogramExemplars(exportsCollectedSince(metricPosition), HTTP_SERVER_METER))
         .extracting(exemplar -> hex(exemplar.getTraceId()), exemplar -> hex(exemplar.getSpanId()))
         .contains(tuple(traceId, hex(serverSpan.getSpanId())));
+  }
+
+  @Test
+  @DisplayName(
+      "Should link HTTP server latency to the request's span when a request completes"
+          + " asynchronously")
+  void shouldLinkHttpServerLatencyToTheRequestsSpanWhenARequestCompletesAsynchronously()
+      throws Exception {
+    var identity = authTestSupport.createIdentity();
+    try {
+      var traceId = UUID.randomUUID().toString().replace("-", "");
+      var callerSpanId = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+      var metricPosition = COLLECTOR.metricExports().position();
+      var tracePosition = COLLECTOR.traceExports().position();
+
+      var started =
+          mockMvc
+              .perform(
+                  get(AsyncResponseController.PATH)
+                      .with(bearer(authTestSupport.accountBearer(identity)))
+                      .header(TRACEPARENT, traceparent(traceId, callerSpanId)))
+              .andExpect(request().asyncStarted())
+              .andReturn();
+      // The observation stops when the async request completes, after this dispatch.
+      mockMvc.perform(asyncDispatch(started)).andExpect(status().isOk());
+
+      var serverSpan = awaitServerSpan(tracePosition, traceId, callerSpanId);
+
+      assertThat(histogramExemplars(exportsCollectedSince(metricPosition), HTTP_SERVER_METER))
+          .extracting(exemplar -> hex(exemplar.getTraceId()), exemplar -> hex(exemplar.getSpanId()))
+          .contains(tuple(traceId, hex(serverSpan.getSpanId())));
+    } finally {
+      authTestSupport.deleteIdentity(identity);
+    }
   }
 
   @Test
@@ -222,6 +267,18 @@ class MetricExportIT extends AbstractObservabilityProfileIntegrationTest {
                     .anyMatch(logRecord -> logRecord.getBody().getStringValue().equals(message)))
         .map(ResourceLogs::getResource)
         .toList();
+  }
+
+  /** Answers on a request thread other than the one that received the request. */
+  @RestController
+  static class AsyncResponseController {
+
+    static final String PATH = "/metric-export-test/async";
+
+    @GetMapping(PATH)
+    Callable<String> respondAsynchronously() {
+      return () -> "answered";
+    }
   }
 
   static class DeploymentVariables

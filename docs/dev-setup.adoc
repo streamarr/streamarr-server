@@ -155,7 +155,7 @@ They include every `streamarr.*` meter and the JVM, HikariCP and other meters th
 The OpenTelemetry SDK exports no metrics, so each JVM metric reaches the collector once, under its Micrometer name, for example `jvm.memory.used` with the `area` and `id` attributes.
 The HTTP server's latency histogram is `http.server.requests`, with buckets.
 * A counter, timer or distribution summary recorded while a sampled span is current carries that span's trace and span IDs as an exemplar, so a backend can open the trace behind a metric.
-`http.server.requests` points to the request's server span.
+An observation's timer carries the span that was current when the observation started, so `http.server.requests` points to the request's server span even when the request completes asynchronously.
 Meters recorded on threads that carry no span, such as worker connections and scheduled jobs, have no exemplars.
 * Each export carries the meters that are registered at that moment.
 When the server removes a meter, its series ends.
