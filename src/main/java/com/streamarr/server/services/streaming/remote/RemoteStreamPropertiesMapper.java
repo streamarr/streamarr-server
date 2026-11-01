@@ -41,6 +41,7 @@ final class RemoteStreamPropertiesMapper {
     checkStaticHdrMetadataOmission(stream);
     checkFrameEvidence(stream);
     checkPacketEvidence(stream, codecFamily);
+    checkCopyPacketBytes(stream, codecFamily);
     checkCodecVisibility(stream, codecFamily);
     checkCompatibleBase(stream, codecFamily);
     return builder.videoProperties(Optional.of(properties(stream, codecFamily)));
@@ -107,6 +108,22 @@ final class RemoteStreamPropertiesMapper {
 
     if (!stream.getFirstFramesRead() || !codecFamily.isWalkedByProbe()) {
       throw contractViolation("Worker probe reported presentation times of packets it never read");
+    }
+  }
+
+  private static void checkCopyPacketBytes(ProbeStreamInfo stream, ProbedCodecFamily codecFamily) {
+    if (!stream.hasCopyKeepsPacketBytes()) {
+      return;
+    }
+
+    switch (codecFamily) {
+      case H264, HEVC -> {
+        // The worker reads the decoder configuration record of only these codecs.
+      }
+      case AV1, OTHER ->
+          throw contractViolation(
+              "Worker probe reported whether a copy keeps packet bytes for a codec other than"
+                  + " H.264 and HEVC");
     }
   }
 
@@ -252,6 +269,10 @@ final class RemoteStreamPropertiesMapper {
         .firstPacketsCarryPresentationTimes(
             stream.hasFirstPacketsCarryPresentationTimes()
                 ? Optional.of(stream.getFirstPacketsCarryPresentationTimes())
+                : Optional.empty())
+        .copyKeepsPacketBytes(
+            stream.hasCopyKeepsPacketBytes()
+                ? Optional.of(stream.getCopyKeepsPacketBytes())
                 : Optional.empty())
         .build();
   }

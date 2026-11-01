@@ -120,6 +120,7 @@ final class RemoteVariantJobMapper {
         .setStreamIndex(source.streamIndex())
         .setSourceCodecFamily(sourceCodecFamily(source))
         .setSourcePacketsCarryPresentationTimes(sourcePacketsCarryPresentationTimes(source))
+        .setCopyKeepsPacketBytes(copyKeepsPacketBytes(source))
         .build();
   }
 
@@ -280,6 +281,14 @@ final class RemoteVariantJobMapper {
     return source
         .videoProperties()
         .flatMap(VideoStreamProperties::firstPacketsCarryPresentationTimes)
+        .orElse(false);
+  }
+
+  // A source whose probe could not tell keeps the Annex B bitstream filter.
+  private static boolean copyKeepsPacketBytes(VideoPlaybackFacts source) {
+    return source
+        .videoProperties()
+        .flatMap(VideoStreamProperties::copyKeepsPacketBytes)
         .orElse(false);
   }
 

@@ -12,6 +12,7 @@ import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeCapacityChanged;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
+import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
@@ -142,6 +143,11 @@ public final class LoopbackProbeWorker implements AutoCloseable {
   public void sendKeyframePositionsPart(ProbeKeyframePositionsPart part) {
     requests.onNext(
         EstablishWorkerSessionRequest.newBuilder().setProbeKeyframePositionsPart(part).build());
+  }
+
+  public void sendStreamMeasurementPart(ProbeStreamMeasurementPart part) {
+    requests.onNext(
+        EstablishWorkerSessionRequest.newBuilder().setProbeStreamMeasurementPart(part).build());
   }
 
   public CompletableFuture<Status> terminated() {

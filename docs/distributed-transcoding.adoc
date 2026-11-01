@@ -118,6 +118,10 @@ These metrics report the same facts:
 * `streamarr.streaming.production_speed` reports the media seconds that a worker produced per second of production time, for each media segment it uploads. It carries the `worker` tag.
 * `streamarr.streaming.capacity_refusals` counts the stream sessions refused for lack of capacity. Its `cause` tag is `no_connected_worker`, `no_free_worker_slot`, `no_free_configured_transcode_slot`, or `no_encoder_with_free_slot`.
 
+The `observability` profile exports these metrics to the OpenTelemetry collector, as the observability section of `docs/dev-setup.adoc` describes.
+Under Docker Compose, Prometheus stores them, as <<_docker_compose>> describes.
+A meter tagged with a worker's UUID stops being exported when that worker disconnects.
+
 == Media and health
 
 Set `STREAMING_REMOTE_SOURCE_NAMESPACE_ID` and `STREAMING_REMOTE_SOURCE_ROOT` for the server's media mapping.
@@ -205,6 +209,21 @@ STREAMARR_MEDIA_PATH=/absolute/path/to/media docker compose \
 The worker uses its own Spring Boot image and normal entrypoint.
 The server image contains neither the worker application nor FFmpeg.
 To encode on an NVIDIA GPU, see <<_gpu_encoding>>.
+
+Compose also runs Prometheus, which stores the server's metrics.
+Every 10 seconds, the server's Micrometer meter registry sends every meter to the OTLP receiver of Prometheus.
+A meter that the server removes, such as one tagged with the UUID of a worker that disconnected, gets no new samples.
+The server sends no spans or logs under Compose.
+Prometheus keeps the metrics for 15 days in the `prometheus-data` volume. `STREAMARR_METRICS_RETENTION` changes how long.
+The Prometheus UI and query API have no authentication, so Compose publishes them on the host's loopback port `9090` only. `STREAMARR_PROMETHEUS_PORT` changes the port.
+To open the UI from another machine, forward the port over SSH with `ssh -L 9090:localhost:9090 <user>@<media-server>`, then open `http://localhost:9090`.
+Prometheus stores the metrics under the `streamarr-server` job.
+It replaces each dot in a metric name with an underscore and adds the unit and type:
+
+* `streamarr.probes.waiting` becomes `streamarr_probes_waiting`.
+* `jvm.memory.used`, in bytes, becomes `jvm_memory_used_bytes`.
+* A counter ends in `_total`, for example `streamarr_streaming_encoder_backend_mismatches_total`.
+* A timer or distribution summary becomes a histogram, for example `streamarr_playback_probe_queue_latency_milliseconds_bucket`, `_count` and `_sum`, with its largest recent value in `streamarr_playback_probe_queue_latency_max_milliseconds`.
 
 == Kubernetes
 

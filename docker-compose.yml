@@ -26,8 +26,32 @@ services:
       STREAMING_WORKER_SESSION_PORT: ${STREAMARR_WORKER_SESSION_PORT:-9090}
       STREAMING_REMOTE_SOURCE_NAMESPACE_ID: ${STREAMARR_SOURCE_NAMESPACE_ID:-cccccccc-cccc-cccc-cccc-cccccccccccc}
       STREAMING_REMOTE_SOURCE_ROOT: /media
+      # Spring Boot's OTLP meter registry sends every Micrometer meter to Prometheus every 10 s, at
+      # the OTLP endpoint followed by /v1/metrics. The OpenTelemetry SDK stays disabled, so the
+      # server produces no spans or log records: Compose runs no backend for them. The metrics'
+      # service.name, which Prometheus stores as the job label, is the Spring application name.
+      SPRING_APPLICATION_NAME: streamarr-server
+      MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: "true"
+      MANAGEMENT_OTLP_METRICS_EXPORT_STEP: 10s
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://prometheus:9090/api/v1/otlp
     volumes:
       - ${STREAMARR_MEDIA_PATH:-/mpool/media/clean/movies}:/media:ro
+    depends_on:
+      - prometheus
+
+  prometheus:
+    image: prom/prometheus:v3.13.4
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${STREAMARR_METRICS_RETENTION:-15d}
+      - --web.enable-otlp-receiver
+    # The UI and query API have no authentication, so they listen on the host's loopback only.
+    ports:
+      - "127.0.0.1:${STREAMARR_PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - prometheus-data:/prometheus
 
   transcode-worker:
     image: ${STREAMARR_WORKER_IMAGE:?Set STREAMARR_WORKER_IMAGE to the verified standalone worker image}
@@ -63,3 +87,6 @@ services:
       GRAFANA_CLOUD_OTLP_ENDPOINT: ${GRAFANA_CLOUD_OTLP_ENDPOINT:-}
     profiles:
       - observability
+
+volumes:
+  prometheus-data:

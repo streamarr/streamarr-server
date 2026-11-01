@@ -4,8 +4,10 @@ import static com.streamarr.server.jooq.generated.tables.MediaFile.MEDIA_FILE;
 import static com.streamarr.server.jooq.generated.tables.MediaFileChapter.MEDIA_FILE_CHAPTER;
 import static com.streamarr.server.jooq.generated.tables.MediaFileContainerInfo.MEDIA_FILE_CONTAINER_INFO;
 import static com.streamarr.server.jooq.generated.tables.MediaFileKeyframePositions.MEDIA_FILE_KEYFRAME_POSITIONS;
+import static com.streamarr.server.jooq.generated.tables.MediaFileMeasuredStream.MEDIA_FILE_MEASURED_STREAM;
 import static com.streamarr.server.jooq.generated.tables.MediaFileProbeTaskRequest.MEDIA_FILE_PROBE_TASK_REQUEST;
 import static com.streamarr.server.jooq.generated.tables.MediaFileStreamInfo.MEDIA_FILE_STREAM_INFO;
+import static com.streamarr.server.jooq.generated.tables.MediaFileStreamMeasurement.MEDIA_FILE_STREAM_MEASUREMENT;
 
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
@@ -16,18 +18,23 @@ import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
+import com.streamarr.server.domain.streaming.MeasuredStream;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.domain.streaming.StreamMeasurementSource;
+import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.ProbeAttemptFailure;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeState;
 import com.streamarr.server.exceptions.MalformedKeyframePositionsException;
+import com.streamarr.server.exceptions.MalformedStreamMeasurementException;
 import com.streamarr.server.jooq.generated.enums.ItemResultFailureReason;
 import com.streamarr.server.jooq.generated.tables.records.MediaFileChapterRecord;
 import com.streamarr.server.jooq.generated.tables.records.MediaFileContainerInfoRecord;
+import com.streamarr.server.jooq.generated.tables.records.MediaFileMeasuredStreamRecord;
 import com.streamarr.server.jooq.generated.tables.records.MediaFileStreamInfoRecord;
 import java.time.Duration;
 import java.time.Instant;
@@ -350,6 +357,69 @@ public class MediaFileContainerInfoRepositoryCustomImpl
   }
 
   @Override
+  // A read changes nothing, so a malformed row must not mark the caller's transaction
+  // rollback-only.
+  @Transactional(readOnly = true, noRollbackFor = MalformedStreamMeasurementException.class)
+  public Optional<StreamMeasurements> findStreamMeasurements(UUID mediaFileId) {
+    var measurement = MEDIA_FILE_STREAM_MEASUREMENT;
+    var rows =
+        dsl.select(measurement.SOURCE, MEDIA_FILE_MEASURED_STREAM.asterisk())
+            .from(measurement)
+            .join(MEDIA_FILE_CONTAINER_INFO)
+            .on(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(measurement.MEDIA_FILE_ID))
+            .and(MEDIA_FILE_CONTAINER_INFO.SOURCE_SIZE.eq(measurement.SOURCE_SIZE))
+            .and(
+                MEDIA_FILE_CONTAINER_INFO.SOURCE_MODIFIED_EPOCH_SECOND.eq(
+                    measurement.SOURCE_MODIFIED_EPOCH_SECOND))
+            .and(
+                MEDIA_FILE_CONTAINER_INFO.SOURCE_MODIFIED_NANOS.eq(
+                    measurement.SOURCE_MODIFIED_NANOS))
+            .join(MEDIA_FILE_KEYFRAME_POSITIONS)
+            .on(MEDIA_FILE_KEYFRAME_POSITIONS.MEDIA_FILE_ID.eq(measurement.MEDIA_FILE_ID))
+            .and(
+                MEDIA_FILE_KEYFRAME_POSITIONS.POSITIONS_DIGEST.eq(
+                    measurement.KEYFRAME_POSITIONS_DIGEST))
+            .join(MEDIA_FILE_MEASURED_STREAM)
+            .on(MEDIA_FILE_MEASURED_STREAM.MEDIA_FILE_ID.eq(measurement.MEDIA_FILE_ID))
+            .where(measurement.MEDIA_FILE_ID.eq(mediaFileId))
+            .and(measurement.STATUS.eq(MeasurementStatus.MEASURED.name()))
+            .and(measurement.MEASUREMENT_VERSION.eq(StreamMeasurements.CURRENT_VERSION))
+            .orderBy(MEDIA_FILE_MEASURED_STREAM.STREAM_INDEX)
+            .fetch();
+    if (rows.isEmpty()) {
+      return Optional.empty();
+    }
+
+    return Optional.of(
+        new StreamMeasurements(
+            StreamMeasurementSource.valueOf(rows.getFirst().get(measurement.SOURCE)),
+            rows.stream()
+                .map(row -> toMeasuredStream(row.into(MEDIA_FILE_MEASURED_STREAM)))
+                .toList()));
+  }
+
+  private static MeasuredStream toMeasuredStream(MediaFileMeasuredStreamRecord row) {
+    var bytes = KeyframeIntervalCountsCodec.decode(row.getEncodedKeyframeIntervalBytes());
+    var packets = KeyframeIntervalCountsCodec.decode(row.getEncodedKeyframeIntervalPacketCounts());
+    if (bytes.intervalCount() != row.getKeyframeIntervalCount()
+        || packets.intervalCount() != row.getKeyframeIntervalCount()) {
+      throw new MalformedStreamMeasurementException(
+          "Stored keyframe interval counts differ from their interval count");
+    }
+
+    return MeasuredStream.builder()
+        .streamIndex(row.getStreamIndex())
+        .measuredBytes(row.getMeasuredBytes())
+        .packetCount(row.getPacketCount())
+        .timeBaseNumerator(row.getTimeBaseNumerator())
+        .timeBaseDenominator(row.getTimeBaseDenominator())
+        .measuredDuration(row.getMeasuredDuration())
+        .keyframeIntervalBytes(bytes)
+        .keyframeIntervalPacketCounts(packets)
+        .build();
+  }
+
+  @Override
   @Transactional(propagation = Propagation.MANDATORY)
   public Optional<ProbeInputs> lockProbeInputs(UUID mediaFileId) {
     if (!lockMediaFile(mediaFileId)) {
@@ -460,6 +530,90 @@ public class MediaFileContainerInfoRepositoryCustomImpl
         .where(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(mediaFileId))
         .and(snapshotMatches(snapshot).not())
         .execute();
+    deleteMeasurementUnlessSnapshotMatches(mediaFileId, snapshot);
+  }
+
+  private void deleteMeasurementUnlessSnapshotMatches(
+      UUID mediaFileId, SourceFileSnapshot snapshot) {
+    var measurement = MEDIA_FILE_STREAM_MEASUREMENT;
+    dsl.deleteFrom(measurement)
+        .where(measurement.MEDIA_FILE_ID.eq(mediaFileId))
+        .and(
+            measurement
+                .SOURCE_SIZE
+                .eq(snapshot.size())
+                .and(
+                    measurement.SOURCE_MODIFIED_EPOCH_SECOND.eq(
+                        snapshot.modifiedAt().getEpochSecond()))
+                .and(measurement.SOURCE_MODIFIED_NANOS.eq(snapshot.modifiedAt().getNano()))
+                .not())
+        .execute();
+  }
+
+  /**
+   * Stores the measurement in place of the file's earlier one, only while the stored outcome holds
+   * the publication's snapshot and keyframe positions, which the measurement's intervals follow.
+   */
+  private void replaceMeasurement(
+      UUID mediaFileId, SourceFileSnapshot snapshot, StreamMeasurements measurements) {
+    var measurement = MEDIA_FILE_STREAM_MEASUREMENT;
+    dsl.deleteFrom(measurement).where(measurement.MEDIA_FILE_ID.eq(mediaFileId)).execute();
+    var stored =
+        dsl.insertInto(
+                measurement,
+                measurement.MEDIA_FILE_ID,
+                measurement.SOURCE_SIZE,
+                measurement.SOURCE_MODIFIED_EPOCH_SECOND,
+                measurement.SOURCE_MODIFIED_NANOS,
+                measurement.MEASUREMENT_VERSION,
+                measurement.KEYFRAME_POSITIONS_DIGEST,
+                measurement.STATUS,
+                measurement.SOURCE)
+            .select(
+                dsl.select(
+                        MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID,
+                        MEDIA_FILE_CONTAINER_INFO.SOURCE_SIZE,
+                        MEDIA_FILE_CONTAINER_INFO.SOURCE_MODIFIED_EPOCH_SECOND,
+                        MEDIA_FILE_CONTAINER_INFO.SOURCE_MODIFIED_NANOS,
+                        DSL.val(StreamMeasurements.CURRENT_VERSION),
+                        MEDIA_FILE_KEYFRAME_POSITIONS.POSITIONS_DIGEST,
+                        DSL.val(MeasurementStatus.MEASURED.name()),
+                        DSL.val(measurements.source().name()))
+                    .from(MEDIA_FILE_CONTAINER_INFO)
+                    .join(MEDIA_FILE_KEYFRAME_POSITIONS)
+                    .on(
+                        MEDIA_FILE_KEYFRAME_POSITIONS.MEDIA_FILE_ID.eq(
+                            MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID))
+                    .where(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(mediaFileId))
+                    .and(snapshotMatches(snapshot)))
+            .execute();
+    if (stored == 0) {
+      return;
+    }
+
+    dsl.batchInsert(
+            measurements.streams().stream()
+                .map(stream -> toMeasuredStreamRow(mediaFileId, stream))
+                .toList())
+        .execute();
+  }
+
+  private MediaFileMeasuredStreamRecord toMeasuredStreamRow(
+      UUID mediaFileId, MeasuredStream stream) {
+    var row = dsl.newRecord(MEDIA_FILE_MEASURED_STREAM);
+    row.setMediaFileId(mediaFileId);
+    row.setStreamIndex(stream.streamIndex());
+    row.setMeasuredBytes(stream.measuredBytes());
+    row.setPacketCount(stream.packetCount());
+    row.setTimeBaseNumerator(stream.timeBaseNumerator());
+    row.setTimeBaseDenominator(stream.timeBaseDenominator());
+    row.setMeasuredDuration(stream.measuredDuration());
+    row.setKeyframeIntervalCount(stream.keyframeIntervalBytes().intervalCount());
+    row.setEncodedKeyframeIntervalBytes(
+        KeyframeIntervalCountsCodec.encode(stream.keyframeIntervalBytes()));
+    row.setEncodedKeyframeIntervalPacketCounts(
+        KeyframeIntervalCountsCodec.encode(stream.keyframeIntervalPacketCounts()));
+    return row;
   }
 
   private boolean lockMediaFile(UUID mediaFileId) {
@@ -509,7 +663,8 @@ public class MediaFileContainerInfoRepositoryCustomImpl
               _,
               var keyframes,
               var chosenVideoStream,
-              var titlesOmitted) -> {
+              var titlesOmitted,
+              _) -> {
         row.setStreamTitlesOmitted(titlesOmitted.orElse(null));
         setKeyframeStatus(row, keyframes);
         chosenVideoStream.ifPresent(stream -> ChosenVideoStreamRow.set(row, stream));
@@ -523,8 +678,10 @@ public class MediaFileContainerInfoRepositoryCustomImpl
     }
 
     dsl.executeInsert(row);
+    deleteMeasurementUnlessSnapshotMatches(mediaFileId, publication.snapshot());
     if (!(publication.outcome()
-        instanceof ProbeOutcome.Success(var container, var streams, var keyframes, _, _))) {
+        instanceof
+        ProbeOutcome.Success(var container, var streams, var keyframes, _, _, var measurements))) {
       return;
     }
 
@@ -538,6 +695,9 @@ public class MediaFileContainerInfoRepositoryCustomImpl
         && !chapters.isEmpty()) {
       dsl.batchInsert(toChapterRows(mediaFileId, chapters)).execute();
     }
+
+    measurements.ifPresent(
+        measured -> replaceMeasurement(mediaFileId, publication.snapshot(), measured));
   }
 
   private static void setChapterStatus(
@@ -608,6 +768,10 @@ public class MediaFileContainerInfoRepositoryCustomImpl
   private enum ChapterStatus {
     KNOWN,
     OMITTED
+  }
+
+  private enum MeasurementStatus {
+    MEASURED
   }
 
   private MediaFileStreamInfoRecord toStreamRow(UUID mediaFileId, StreamInfo stream) {

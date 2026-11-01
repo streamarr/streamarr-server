@@ -3,8 +3,10 @@ package com.streamarr.server.services.probe;
 import com.streamarr.server.domain.media.PersistedProbeOutcome;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.ChapterKnowledge;
+import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.exceptions.ContradictoryDynamicRangeException;
 import com.streamarr.server.exceptions.MalformedKeyframePositionsException;
+import com.streamarr.server.exceptions.MalformedStreamMeasurementException;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import java.util.Collection;
 import java.util.HashMap;
@@ -24,8 +26,8 @@ public class PersistedProbeReader {
 
   private final MediaFileContainerInfoRepository repository;
 
-  // Repeatable read gives the outcome row and its keyframe positions one snapshot, so a
-  // publication between the two reads cannot pair one outcome with another's keyframes.
+  // Repeatable read gives the outcome row, its keyframe positions and its stream measurements one
+  // snapshot, so a publication between the reads cannot pair one outcome with another's keyframes.
   @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
   public Optional<PersistedProbeOutcome> find(UUID mediaFileId) {
     try {
@@ -38,10 +40,20 @@ public class PersistedProbeReader {
                       row.getProbeVersion(),
                       row.getOutcome(
                           () -> repository.findKeyframeKnowledge(mediaFileId).orElseThrow(),
-                          () -> chapterKnowledge(mediaFileId))))
+                          () -> chapterKnowledge(mediaFileId),
+                          () -> streamMeasurements(mediaFileId))))
           .filter(outcome -> outcome.isCompatibleWith(ProbeVersion.CURRENT));
     } catch (MalformedKeyframePositionsException | ContradictoryDynamicRangeException _) {
       // Without an outcome, the scheduler requests a probe, and its publication replaces the row.
+      return Optional.empty();
+    }
+  }
+
+  // A malformed measurement leaves the copy on its unmeasured cost, and the outcome stays usable.
+  private Optional<StreamMeasurements> streamMeasurements(UUID mediaFileId) {
+    try {
+      return repository.findStreamMeasurements(mediaFileId);
+    } catch (MalformedStreamMeasurementException _) {
       return Optional.empty();
     }
   }

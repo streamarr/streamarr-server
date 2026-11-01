@@ -63,13 +63,13 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
 
   @BeforeEach
   void setUp() {
+    dsl.deleteFrom(SECURITY_AUDIT_EVENT).execute();
     admin = authTestSupport.createIdentity();
     serverAdmin = authTestSupport.createAdminIdentity();
   }
 
   @AfterEach
   void tearDown() {
-    dsl.deleteFrom(SECURITY_AUDIT_EVENT).execute();
     authTestSupport.deleteIdentity(admin);
     authTestSupport.deleteIdentity(serverAdmin);
   }

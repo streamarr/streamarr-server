@@ -19,7 +19,6 @@ import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeChapter;
 import com.streamarr.transcode.v1.ProbeContainerInfo;
-import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
 import java.time.Duration;
@@ -35,13 +34,15 @@ final class RemoteProbeResultMapper {
   private static final int MAXIMUM_PROTOBUF_DURATION_NANOS = 999_999_999;
 
   private final RemoteKeyframeKnowledgeMapper keyframeMapper = new RemoteKeyframeKnowledgeMapper();
+  private final RemoteStreamMeasurementsMapper streamMeasurementsMapper =
+      new RemoteStreamMeasurementsMapper();
   private final RemotePlaybackFactsMapper playbackFactsMapper =
       new RemotePlaybackFactsMapper(RemoteProbeResultMapper::toDuration);
 
   ProbeOutcome map(ProbeAttemptReport report) {
     var result = report.result();
     if (result.hasMedia()) {
-      return success(result, report.keyframePositionsParts());
+      return success(report);
     }
 
     return switch (result.getFailure()) {
@@ -76,8 +77,8 @@ final class RemoteProbeResultMapper {
     return new ProbeContractViolationException(message);
   }
 
-  private ProbeOutcome.Success success(
-      ProbeAttemptResult result, List<ProbeKeyframePositionsPart> keyframePositionsParts) {
+  private ProbeOutcome.Success success(ProbeAttemptReport report) {
+    var result = report.result();
     var media = result.getMedia();
     if (media.getStreamsList().stream()
         .noneMatch(stream -> "video".equals(stream.getCodecType()))) {
@@ -90,7 +91,7 @@ final class RemoteProbeResultMapper {
         media.getStreamsList().stream()
             .map(stream -> stream(stream, result.getProbeVersion()))
             .toList();
-    var keyframes = keyframeMapper.map(media, keyframePositionsParts);
+    var keyframes = keyframeMapper.map(media, report.keyframePositionsParts());
     var chosenVideoStream =
         reportsPlaybackFacts
             ? Optional.of(playbackFactsMapper.chosenVideoStream(media, streams))
@@ -112,6 +113,8 @@ final class RemoteProbeResultMapper {
         .keyframes(keyframes)
         .chosenVideoStream(chosenVideoStream)
         .streamTitlesOmitted(titleOmission(media, reportsPlaybackFacts))
+        .streamMeasurements(
+            streamMeasurementsMapper.map(media, keyframes, report.streamMeasurementParts()))
         .build();
   }
 

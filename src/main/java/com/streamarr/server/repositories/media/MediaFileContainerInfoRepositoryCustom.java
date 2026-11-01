@@ -2,6 +2,7 @@ package com.streamarr.server.repositories.media;
 
 import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.ProbeAttemptFailure;
 import com.streamarr.server.domain.task.ProbeInputs;
@@ -72,6 +73,14 @@ public interface MediaFileContainerInfoRepositoryCustom {
    * probe version that reports no chapters, maps to {@link ChapterKnowledge.NotReported}.
    */
   Map<UUID, ChapterKnowledge> findChapterKnowledge(Collection<UUID> mediaFileIds);
+
+  /**
+   * Reads the measurement of the file's streams while it matches the stored outcome: the same
+   * source snapshot, the same keyframe positions and the current measurement version. Empty
+   * otherwise. Throws {@link com.streamarr.server.exceptions.MalformedStreamMeasurementException}
+   * when a stored stream cannot be decoded, without marking the caller's transaction rollback-only.
+   */
+  Optional<StreamMeasurements> findStreamMeasurements(UUID mediaFileId);
 
   /** Reads desired inputs under the media file lock. Requires the caller's transaction. */
   Optional<ProbeInputs> lockProbeInputs(UUID mediaFileId);

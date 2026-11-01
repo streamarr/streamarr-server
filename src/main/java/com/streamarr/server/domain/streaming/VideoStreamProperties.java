@@ -15,7 +15,9 @@ import lombok.NonNull;
  * never PQ10. Without {@code firstFramesRead}, an empty mastering display or content light level
  * says only that the container declares none, so it proves no PQ10 either. {@code
  * firstPacketsCarryPresentationTimes} tells whether every packet that the probe read of the chosen
- * video stream carried a presentation time, and is empty when the probe read no packets.
+ * video stream carried a presentation time, and is empty when the probe read no packets. {@code
+ * copyKeepsPacketBytes} tells whether a stream copy delivers every packet with its bytes unchanged,
+ * and is empty when the probe did not report it.
  */
 @Builder
 public record VideoStreamProperties(
@@ -29,7 +31,8 @@ public record VideoStreamProperties(
     boolean firstFramesRead,
     boolean masteringDisplayOmitted,
     boolean contentLightLevelOmitted,
-    @NonNull Optional<Boolean> firstPacketsCarryPresentationTimes) {
+    @NonNull Optional<Boolean> firstPacketsCarryPresentationTimes,
+    @NonNull Optional<Boolean> copyKeepsPacketBytes) {
 
   // Lombok builder defaults — its generated setters assign them
   @SuppressWarnings({"java:S1068", "java:S9438"})
@@ -42,5 +45,6 @@ public record VideoStreamProperties(
     private Optional<MatrixCoefficients> matrixCoefficients = Optional.empty();
     private Optional<ColorRange> colorRange = Optional.empty();
     private Optional<Boolean> firstPacketsCarryPresentationTimes = Optional.empty();
+    private Optional<Boolean> copyKeepsPacketBytes = Optional.empty();
   }
 }
