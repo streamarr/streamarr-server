@@ -8,6 +8,7 @@ import com.streamarr.server.exceptions.PlaybackSessionClosedException;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.streaming.events.CopiedVariantRanShortEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import java.time.Clock;
@@ -261,7 +262,18 @@ public class PlaybackSessionService implements AutoCloseable {
 
   @EventListener
   public void onVideoCopyOutputMismatch(@NonNull VideoCopyOutputMismatchEvent event) {
-    var failedId = event.streamSessionId();
+    recoverFromFailedCopy(event.streamSessionId());
+  }
+
+  /** A copy that ran short while a source stream still has media fails as a copy does. */
+  @EventListener
+  public void onCopiedVariantRanShort(@NonNull CopiedVariantRanShortEvent event) {
+    recoverFromFailedCopy(event.streamSessionId());
+  }
+
+  // Every playback choice falls back from a failed copy to an encode, so the failure that this
+  // names ends playback only when no encode follows.
+  private void recoverFromFailedCopy(UUID failedId) {
     handleJobFailure(
         failedId,
         playback ->

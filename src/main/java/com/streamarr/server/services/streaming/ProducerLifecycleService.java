@@ -91,7 +91,10 @@ public class ProducerLifecycleService {
     SUPERSEDED,
     // The segment lies past the normal end of the stream session's short copy, which no job attempt
     // can produce (ADR 0052).
-    PAST_THE_NORMAL_END
+    PAST_THE_NORMAL_END,
+    // The segment lies past a short copy that a source stream outlasts, which no job attempt of the
+    // copy can produce; the playback session falls back to an encode (ADR 0052).
+    PAST_A_FAILED_COPY
   }
 
   private record VariantKey(UUID sessionId, String variantLabel) {}
@@ -245,8 +248,9 @@ public class ProducerLifecycleService {
       return RecoveryResult.SESSION_GONE;
     }
 
-    if (liesPastTheNormalEnd(session, segmentName)) {
-      return RecoveryResult.PAST_THE_NORMAL_END;
+    var pastShortCopy = shortCopyBefore(session, segmentName);
+    if (pastShortCopy.isPresent()) {
+      return pastShortCopy.get();
     }
 
     if (transcodeExecutor.terminalFailure(sessionId).isPresent()) {
@@ -1571,14 +1575,30 @@ public class ProducerLifecycleService {
   }
 
   private static boolean liesPastTheNormalEnd(StreamSession session, String segmentName) {
+    return shortCopyBefore(session, segmentName)
+        .filter(RecoveryResult.PAST_THE_NORMAL_END::equals)
+        .isPresent();
+  }
+
+  // How recovery answers a segment past the stream session's short copy, which no job attempt of
+  // the copy can produce; empty for every other segment.
+  private static Optional<RecoveryResult> shortCopyBefore(
+      StreamSession session, String segmentName) {
     return session
         .getShortCopy()
-        .filter(ShortCopy::everySourceStreamEnded)
         .filter(
             shortCopy ->
                 SegmentNames.indexOf(segmentName).stream()
                     .anyMatch(index -> index > shortCopy.lastMediaSegmentIndex()))
-        .isPresent();
+        .map(ProducerLifecycleService::answerPast);
+  }
+
+  private static RecoveryResult answerPast(ShortCopy shortCopy) {
+    if (shortCopy.everySourceStreamEnded()) {
+      return RecoveryResult.PAST_THE_NORMAL_END;
+    }
+
+    return RecoveryResult.PAST_A_FAILED_COPY;
   }
 
   /** A session that no longer exists advertises nothing to refuse, so this answers false. */

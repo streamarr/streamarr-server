@@ -22,6 +22,7 @@ import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegist
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.nio.file.Path;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -87,8 +88,9 @@ public class StreamingConfig {
   }
 
   @Bean
-  public ShortCopyListener shortCopyListener(ProducerLifecycleService producerLifecycleService) {
-    return new ShortCopyListener(producerLifecycleService);
+  public ShortCopyListener shortCopyListener(
+      ProducerLifecycleService producerLifecycleService, ApplicationEventPublisher eventPublisher) {
+    return new ShortCopyListener(producerLifecycleService, eventPublisher);
   }
 
   @Bean

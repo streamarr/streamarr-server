@@ -28,6 +28,7 @@ import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.PlaybackFormatAttempt;
+import com.streamarr.server.services.streaming.PlaybackFormatChange;
 import com.streamarr.server.services.streaming.PlaybackSessionRequest;
 import com.streamarr.server.services.streaming.PlaybackSessionService;
 import com.streamarr.server.services.streaming.PlaybackSessionSnapshot;
@@ -37,6 +38,7 @@ import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.ShortCopyListener;
 import com.streamarr.server.services.streaming.StartPlaybackSessionCommand;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
+import com.streamarr.server.services.streaming.events.CopiedVariantRanShortEvent;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
@@ -184,6 +186,39 @@ class WorkerPlaybackRecoveryIT {
       assertThat(snapshot.currentFormatAttempt()).isEqualTo(new PlaybackFormatAttempt.Ready(copy));
       playback.sessions.close(playback.requestFor(started));
       assertThat(pastTheEnd.get(5, TimeUnit.SECONDS)).isEqualTo(new SegmentDelivery.SessionEnded());
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should fall back to an encode in Auto when Original's copy runs short while the video still has media")
+  void shouldFallBackToAnEncodeInAutoWhenOriginalsCopyRunsShortWhileTheVideoStillHasMedia()
+      throws Exception {
+    var source = worker.generateMedia(sourceRoot.resolve("movie.mp4"), sourceArguments("3.1", 24));
+    // The probe still says that the video runs to 24 s.
+    var storedProbe = probe(source);
+    worker.generateMedia(source, sourceArguments("3.1", 4));
+    var played =
+        PlayedSource.builder()
+            .file(source)
+            .storedProbe(storedProbe)
+            .quality(VideoQuality.ORIGINAL)
+            .build();
+    try (var playback = new PlaybackRig(played)) {
+      var started = accepted(playback.sessions.start(playback.command));
+      var copy = ((PlaybackFormatAttempt.Ready) started.currentFormatAttempt()).session();
+      assertThat(copy.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+
+      assertThat(playback.deliverDefault(copy, "segment0.m4s"))
+          .isInstanceOf(SegmentDelivery.Ready.class);
+      var encode = playback.awaitReplacement(started);
+
+      assertThat(encode.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
+      assertThat(copy.getNormalEnd()).isEmpty();
+      var snapshot = playback.sessions.access(playback.requestFor(started)).orElseThrow();
+      assertThat(snapshot.playbackChoice()).isEqualTo(VideoQuality.AUTO);
+      assertThat(snapshot.formatChange()).contains(PlaybackFormatChange.COPY_FAILED);
+      assertThat(playback.streams.getAllSessions()).containsExactly(encode);
     }
   }
 
@@ -347,8 +382,9 @@ class WorkerPlaybackRecoveryIT {
               .sessionRetention(Duration.ofMinutes(1))
               .build();
       events.listen(VideoCopyOutputMismatchEvent.class, sessions::onVideoCopyOutputMismatch);
-      var shortCopies = new ShortCopyListener(lifecycle.lifecycle());
+      var shortCopies = new ShortCopyListener(lifecycle.lifecycle(), events);
       events.listen(JobAttemptCompletedEvent.class, shortCopies::onJobAttemptCompleted);
+      events.listen(CopiedVariantRanShortEvent.class, sessions::onCopiedVariantRanShort);
       playlists = new HlsPlaylistService(properties);
       command =
           StartPlaybackSessionCommand.builder()

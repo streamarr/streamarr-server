@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import static com.streamarr.server.fixtures.SegmentRequestFixture.earliestArrivingSegmentRequestBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultLadderSessionBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.sessionWithDurationBuilder;
@@ -18,10 +19,12 @@ import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture.StreamingRig;
 import com.streamarr.server.services.concurrency.MutexFactory;
@@ -157,17 +160,24 @@ class SegmentDeliveryCoordinatorTest {
         .destroySession(sessionId);
   }
 
-  // Settles the completion of the copy's job attempt after its stored segments, which every source
-  // stream outlasts by nothing, then ends the job attempt as the worker's completion report does.
+  // Completes the copy's job attempt after the default probe's streams, which state no end time,
+  // so the copy ends normally.
   private void completeShort(StreamSession copy) {
-    new ShortCopyListener(lifecycle)
+    completeShortCopy(copy);
+    assertThat(copy.getNormalEnd()).isPresent();
+  }
+
+  // Settles the completion of the copy's job attempt after its stored segments, then ends the job
+  // attempt as the worker's completion report does.
+  private void completeShortCopy(StreamSession copy) {
+    new ShortCopyListener(lifecycle, new CapturingEventPublisher())
         .onJobAttemptCompleted(
             JobAttemptCompletedEvent.builder()
                 .streamSessionId(copy.getSessionId())
                 .jobAttemptId(copy.getHandle().orElseThrow().attemptId())
                 .variantLabel(StreamSession.defaultVariant())
                 .build());
-    assertThat(copy.getNormalEnd()).isPresent();
+    assertThat(copy.getShortCopy()).isPresent();
     transcodeExecutor.markDead(copy.getSessionId());
   }
 
@@ -383,6 +393,34 @@ class SegmentDeliveryCoordinatorTest {
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
     destroy(sessionId);
     assertThat(pastTheEnd.get(2, TimeUnit.SECONDS)).isEqualTo(new SegmentDelivery.SessionEnded());
+  }
+
+  // ADR 0052: the playback session falls back to an encode, and a 503 sends the client to it.
+  @Test
+  @DisplayName(
+      "Should answer unrecoverable without a job attempt for a segment past a copy that a source stream outlasts")
+  void shouldAnswerUnrecoverableWithoutAJobAttemptForASegmentPastACopyThatASourceStreamOutlasts() {
+    var probe =
+        defaultProbeBuilder()
+            .streams(
+                List.of(
+                    ProbeFixture.audioStreamBuilder("aac")
+                        .endTime(Optional.of(Duration.ofMinutes(10)))
+                        .build()))
+            .build();
+    var copy = defaultSessionBuilder().mediaProbe(probe).build();
+    runtimeRegistry.save(copy);
+    lifecycle.startFirstListedVariant(copy);
+    upload(copy.getSessionId(), "segment0.m4s", new byte[] {1});
+    completeShortCopy(copy);
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    var delivery =
+        coordinator.deliver(copy.getSessionId(), StreamSession.defaultVariant(), "segment1.m4s");
+
+    assertThat(delivery).isEqualTo(new SegmentDelivery.Unrecoverable());
+    assertThat(copy.getNormalEnd()).isEmpty();
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
   }
 
   @Test

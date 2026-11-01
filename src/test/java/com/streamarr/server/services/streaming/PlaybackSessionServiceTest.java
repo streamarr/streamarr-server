@@ -28,6 +28,7 @@ import com.streamarr.server.exceptions.PlaybackSessionClosedException;
 import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.streaming.events.CopiedVariantRanShortEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import java.time.Duration;
@@ -690,10 +691,13 @@ class PlaybackSessionServiceTest {
   // Auto's recoveries are not announced; Original's failed copy changes to Auto, and a fixed
   // quality's failed copy keeps the fixed quality (ADR 0052).
   @ParameterizedTest
-  @CsvSource({"AUTO, AUTO,", "ORIGINAL, AUTO, COPY_FAILED", "HIGH_720P, HIGH_720P, COPY_FAILED"})
+  @MethodSource("racingCopyFailures")
   @DisplayName("Should reserve one replacement when client and worker failures race")
   void shouldReserveOneReplacementWhenClientAndWorkerFailuresRace(
-      VideoQuality quality, VideoQuality expectedChoice, PlaybackFormatChange expectedChange)
+      VideoQuality quality,
+      VideoQuality expectedChoice,
+      PlaybackFormatChange expectedChange,
+      BiConsumer<PlaybackSessionService, UUID> workerFailure)
       throws Exception {
     var work = new ConcurrentLinkedQueue<Runnable>();
     var playback =
@@ -722,11 +726,7 @@ class PlaybackSessionServiceTest {
               () -> {
                 ready.countDown();
                 assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
-                playback.onVideoCopyOutputMismatch(
-                    new VideoCopyOutputMismatchEvent(
-                        initial.currentFormatAttempt().streamSessionId(),
-                        UUID.randomUUID(),
-                        "default"));
+                workerFailure.accept(playback, initial.currentFormatAttempt().streamSessionId());
                 return true;
               });
       assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
@@ -751,6 +751,71 @@ class PlaybackSessionServiceTest {
             initial.currentFormatAttempt().streamSessionId(), UUID.randomUUID(), "default"));
     assertThat(playback.access(request(initial, command))).contains(result);
     assertThat(streams.getActiveSessionCount()).isEqualTo(1);
+  }
+
+  private static Stream<Arguments> racingCopyFailures() {
+    var choices =
+        List.of(
+            Arguments.of(VideoQuality.AUTO, VideoQuality.AUTO, null),
+            Arguments.of(
+                VideoQuality.ORIGINAL, VideoQuality.AUTO, PlaybackFormatChange.COPY_FAILED),
+            Arguments.of(
+                VideoQuality.HIGH_720P, VideoQuality.HIGH_720P, PlaybackFormatChange.COPY_FAILED));
+    return choices.stream()
+        .flatMap(
+            choice ->
+                copyFailures()
+                    .map(
+                        failure ->
+                            Arguments.of(
+                                choice.get()[0], choice.get()[1], choice.get()[2], failure)));
+  }
+
+  // The worker's two failures of a copy that every playback choice falls back from.
+  private static Stream<Named<BiConsumer<PlaybackSessionService, UUID>>> copyFailures() {
+    return Stream.of(
+        Named.of(
+            "copy output mismatch",
+            (playback, streamId) ->
+                playback.onVideoCopyOutputMismatch(
+                    new VideoCopyOutputMismatchEvent(streamId, UUID.randomUUID(), "default"))),
+        Named.of(
+            "copy that runs short while a source stream still has media",
+            (playback, streamId) -> playback.onCopiedVariantRanShort(ranShort(streamId))));
+  }
+
+  private static CopiedVariantRanShortEvent ranShort(UUID streamSessionId) {
+    return CopiedVariantRanShortEvent.builder()
+        .streamSessionId(streamSessionId)
+        .jobAttemptId(UUID.randomUUID())
+        .variantLabel("default")
+        .build();
+  }
+
+  // ADR 0052: a short copy that a source stream outlasts falls back as every failed copy does.
+  @ParameterizedTest
+  @CsvSource({"AUTO, AUTO,", "ORIGINAL, AUTO, COPY_FAILED", "HIGH_720P, HIGH_720P, COPY_FAILED"})
+  @DisplayName(
+      "Should fall back to an encode when the copy runs short while a source stream still has media")
+  void shouldFallBackToAnEncodeWhenTheCopyRunsShortWhileASourceStreamStillHasMedia(
+      VideoQuality quality, VideoQuality expectedChoice, PlaybackFormatChange expectedChange) {
+    var command = startCommand().options(qualityOptions(quality)).build();
+    var initial = accepted(service.start(command));
+
+    service.onCopiedVariantRanShort(ranShort(initial.currentFormatAttempt().streamSessionId()));
+
+    var recovered = service.access(request(initial, command)).orElseThrow();
+    assertThat(recovered.formatAttemptCount()).isEqualTo(2);
+    assertThat(recovered.playbackChoice()).isEqualTo(expectedChoice);
+    assertThat(recovered.formatChange()).isEqualTo(Optional.ofNullable(expectedChange));
+    assertThat(recovered.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready -> {
+              assertThat(ready.session().getTranscodeDecision().transcodeMode().copiesVideo())
+                  .isFalse();
+              assertThat(streams.getAllSessions()).containsExactly(ready.session());
+            });
   }
 
   @Test

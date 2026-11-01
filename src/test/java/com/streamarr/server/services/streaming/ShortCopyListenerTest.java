@@ -1,6 +1,8 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.ProbeFixture.audioStreamBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultLadderSessionBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.sessionWithDurationBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -10,12 +12,16 @@ import com.streamarr.server.domain.streaming.ShortCopy;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.services.streaming.events.CopiedVariantRanShortEvent;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import java.time.Duration;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -27,6 +33,7 @@ import org.junit.jupiter.api.Test;
 class ShortCopyListenerTest {
 
   private final FakeSegmentStore segmentStore = new FakeSegmentStore();
+  private final CapturingEventPublisher events = new CapturingEventPublisher();
   private final FakeRuntimeStreamSessionRegistry runtimeRegistry =
       new FakeRuntimeStreamSessionRegistry();
   private ProducerLifecycleService lifecycle;
@@ -43,7 +50,7 @@ class ShortCopyListenerTest {
             .runtimeRegistry(runtimeRegistry)
             .build()
             .lifecycle();
-    listener = new ShortCopyListener(lifecycle);
+    listener = new ShortCopyListener(lifecycle, events);
   }
 
   @Test
@@ -57,6 +64,37 @@ class ShortCopyListenerTest {
 
     assertThat(copy.getShortCopy()).contains(new ShortCopy(3, Duration.ofSeconds(24), true));
     assertThat(copy.getNormalEnd()).contains(Duration.ofSeconds(24));
+    assertThat(events.getEventsOfType(CopiedVariantRanShortEvent.class)).isEmpty();
+  }
+
+  // ADR 0052: a short copy that a source stream outlasts is a format failure of the copy.
+  @Test
+  @DisplayName(
+      "Should publish the failed copy when a source stream still has media after the copy's end")
+  void shouldPublishTheFailedCopyWhenASourceStreamStillHasMediaAfterTheCopysEnd() {
+    var probe =
+        defaultProbeBuilder()
+            .streams(
+                List.of(
+                    audioStreamBuilder("aac")
+                        .endTime(Optional.of(Duration.ofMillis(30_001)))
+                        .build()))
+            .build();
+    var copy = started(defaultSessionBuilder().mediaProbe(probe).build());
+    storeSegments(copy, 4);
+    var completion = completionBuilderOf(copy).build();
+
+    listener.onJobAttemptCompleted(completion);
+
+    assertThat(copy.getShortCopy()).contains(new ShortCopy(3, Duration.ofSeconds(24), false));
+    assertThat(copy.getNormalEnd()).isEmpty();
+    assertThat(events.getEventsOfType(CopiedVariantRanShortEvent.class))
+        .containsExactly(
+            CopiedVariantRanShortEvent.builder()
+                .streamSessionId(completion.streamSessionId())
+                .jobAttemptId(completion.jobAttemptId())
+                .variantLabel(completion.variantLabel())
+                .build());
   }
 
   @Test

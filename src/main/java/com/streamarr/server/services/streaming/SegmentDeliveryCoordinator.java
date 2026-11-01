@@ -85,7 +85,7 @@ public class SegmentDeliveryCoordinator {
     }
 
     return switch (producerLifecycle.recover(request)) {
-      case EXHAUSTED, VARIANT_NOT_RUNNING, SUPERSEDED ->
+      case EXHAUSTED, VARIANT_NOT_RUNNING, SUPERSEDED, PAST_A_FAILED_COPY ->
           unrecoverableDelivery(request.sessionId(), request.segmentName());
       case SESSION_GONE, SEGMENT_NOT_ADVERTISED -> new SegmentDelivery.SessionEnded();
       case WAITING, PAST_THE_NORMAL_END -> null;
