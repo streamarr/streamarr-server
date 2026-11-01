@@ -3094,6 +3094,49 @@ class HlsStreamingServiceTest {
   @Builder
   record UnverifiedEncode(ProbedCodecFamily acceptedEncode, Set<String> verifiedFamilies) {}
 
+  // An encode-only format attempt follows a copy that the client could not play, so it never falls
+  // back to a copy, even over the viewer's limits with nothing to encode to.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("declarationsAndWorkersThatLeaveNothingToEncodeTo")
+  @DisplayName(
+      "Should refuse the video format instead of copying over the viewer's limits when the format"
+          + " attempt requires an encode and the server has nothing to encode to")
+  void
+      shouldRefuseTheVideoFormatInsteadOfCopyingOverTheViewersLimitsWhenTheFormatAttemptRequiresAnEncodeAndTheServerHasNothingToEncodeTo(
+          NothingToEncodeTo nothing) {
+    probeResults.setDefaultProbe(wideUhdHevcProbe().build());
+    transcodeExecutor.setEncodableVideoCodecFamilies(nothing.verifiedFamilies());
+
+    var outcome =
+        service.createSession(
+            createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                .options(OVER_THE_MAXIMUM_BITRATE)
+                .capabilityDeclaration(
+                    declarationBuilderFor(nothing.declaredVideo().toArray(ProbedCodecFamily[]::new))
+                        .build())
+                .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                .build());
+
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  static Stream<NothingToEncodeTo> declarationsAndWorkersThatLeaveNothingToEncodeTo() {
+    return Stream.of(
+        NothingToEncodeTo.builder()
+            .declaredVideo(List.of(HEVC))
+            .verifiedFamilies(Set.of("h264", "hevc", "av1"))
+            .build(),
+        NothingToEncodeTo.builder()
+            .declaredVideo(List.of(HEVC, AV1))
+            .verifiedFamilies(Set.of("h264"))
+            .build());
+  }
+
+  @Builder
+  record NothingToEncodeTo(List<ProbedCodecFamily> declaredVideo, Set<String> verifiedFamilies) {}
+
   // A 1920x1 picture has no encoded size, so the H.264 entry accepts no encode that a worker runs.
   @Test
   @DisplayName(
