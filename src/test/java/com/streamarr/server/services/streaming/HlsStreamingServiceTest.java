@@ -1586,6 +1586,7 @@ class HlsStreamingServiceTest {
     assertThat(session.getTranscodeDecision().audioDecision())
         .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
         .containsExactly("eac3", 6, 768_000L);
+    assertDeliversTheSessionsAudioWithinTheMaximumBitrate(session, 5_268_000);
   }
 
   // ADR 0050: under a maximum below the copy's 5,268 kb/s the audio steps down first, so the video
@@ -1606,23 +1607,13 @@ class HlsStreamingServiceTest {
             .build();
 
     var session = createCopySessionWithSurroundOpus(surroundOpusSource().options(options).build());
-    var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
 
     assertThat(session.getTranscodeDecision().transcodeMode())
         .isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
     assertThat(session.getTranscodeDecision().audioDecision())
         .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
         .containsExactly(expected.codec(), expected.channels(), expected.bitrate());
-    assertThat(transcodeExecutor.getStartedRequests())
-        .singleElement()
-        .satisfies(
-            request ->
-                assertThat(request.transcodeDecision().audioDecision())
-                    .isEqualTo(session.getTranscodeDecision().audioDecision()));
-    assertThat(averageBandwidths(playlist))
-        .singleElement()
-        .satisfies(bandwidth -> assertThat(bandwidth).isLessThanOrEqualTo(expected.maxBitrate()));
+    assertDeliversTheSessionsAudioWithinTheMaximumBitrate(session, expected.maxBitrate());
   }
 
   static Stream<StepBesideCopy> maximumsAndTheFirstAudioStepBesideAVideoCopy() {
@@ -1669,6 +1660,7 @@ class HlsStreamingServiceTest {
     assertThat(session.getTranscodeDecision().audioDecision())
         .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
         .containsExactly("eac3", 6, expected.bitrate());
+    assertDeliversTheSessionsAudioWithinTheMaximumBitrate(session, expected.maxBitrate());
   }
 
   static Stream<EncodeBesideStep> maximumsBelowTheCopyBesideEveryAudioStep() {
@@ -1679,6 +1671,24 @@ class HlsStreamingServiceTest {
 
   @Builder
   record EncodeBesideStep(int maxBitrate, long bitrate) {}
+
+  // Every job that the worker starts carries the session's audio, and every variant that the
+  // multivariant playlist advertises costs at most the maximum bitrate.
+  private void assertDeliversTheSessionsAudioWithinTheMaximumBitrate(
+      StreamSession session, int maxBitrate) {
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .isNotEmpty()
+        .allSatisfy(
+            request ->
+                assertThat(request.transcodeDecision().audioDecision())
+                    .isEqualTo(session.getTranscodeDecision().audioDecision()));
+    assertThat(averageBandwidths(playlist))
+        .isNotEmpty()
+        .allSatisfy(bandwidth -> assertThat(bandwidth).isLessThanOrEqualTo(maxBitrate));
+  }
 
   // The probe knows the 4.5 Mb/s copied video's bitrate but not the container's, so the copy still
   // costs the video plus E-AC-3 5.1, and under 5 Mb/s it takes 448 kb/s.
