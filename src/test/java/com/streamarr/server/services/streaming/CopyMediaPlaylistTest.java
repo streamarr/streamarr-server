@@ -43,6 +43,30 @@ class CopyMediaPlaylistTest {
     assertThat(playlist.durationSeconds()).isEqualByComparingTo(new BigDecimal("14"));
   }
 
+  // The 8 s first segment lifts the EXT-X-TARGETDURATION above the 6 s grid slot.
+  @Test
+  @DisplayName(
+      "Should list each segment's opening keyframe, the written target duration and the grid slot"
+          + " when keyframes open every segment")
+  void
+      shouldListEachSegmentsOpeningKeyframeTargetDurationAndGridSlotWhenKeyframesOpenEverySegment() {
+    var source =
+        StreamSessionFixture.defaultProbeBuilder()
+            .duration(Duration.ofSeconds(14))
+            .keyframes(ProbeFixture.keyframesEvery(Duration.ofSeconds(4), Duration.ofSeconds(14)))
+            .build();
+
+    var playlist = CopyMediaPlaylist.of(source, PROPERTIES);
+
+    assertThat(playlist.segments())
+        .containsExactly(
+            new CopyMediaPlaylist.Segment(0, new BigDecimal("8.000000")),
+            new CopyMediaPlaylist.Segment(2, new BigDecimal("4.000000")),
+            new CopyMediaPlaylist.Segment(3, new BigDecimal("2.000000")));
+    assertThat(playlist.targetDurationSeconds()).isEqualTo(8);
+    assertThat(playlist.targetSegmentDurationSeconds()).isEqualTo(6);
+  }
+
   @Test
   @DisplayName("Should list no media playlist when the source's keyframes are not known")
   void shouldListNoMediaPlaylistWhenSourcesKeyframesAreNotKnown() {
@@ -101,9 +125,9 @@ class CopyMediaPlaylistTest {
 
   @Test
   @DisplayName(
-      "Should refuse to list a media playlist when the source, the properties, the timeline or the"
-          + " duration is missing")
-  void shouldRefuseToListMediaPlaylistWhenSourcePropertiesTimelineOrDurationIsMissing() {
+      "Should refuse to list a media playlist when the source, the properties or the timeline is"
+          + " missing")
+  void shouldRefuseToListMediaPlaylistWhenSourcePropertiesOrTimelineIsMissing() {
     var source = StreamSessionFixture.defaultProbeBuilder().build();
 
     assertThatNullPointerException()
@@ -113,10 +137,18 @@ class CopyMediaPlaylistTest {
         .isThrownBy(() -> CopyMediaPlaylist.of(source, null))
         .withMessageContaining("properties");
     assertThatNullPointerException()
-        .isThrownBy(() -> CopyMediaPlaylist.of((MediaSegmentTimeline) null))
+        .isThrownBy(() -> CopyMediaPlaylist.of((MediaSegmentTimeline.StreamCopy) null))
         .withMessageContaining("timeline");
+  }
+
+  @Test
+  @DisplayName("Should refuse a media playlist without segments or a segment without a duration")
+  void shouldRefuseMediaPlaylistWithoutSegmentsOrSegmentWithoutDuration() {
     assertThatNullPointerException()
-        .isThrownBy(() -> new CopyMediaPlaylist(1, null))
-        .withMessageContaining("durationSeconds");
+        .isThrownBy(() -> new CopyMediaPlaylist(null, 6, 6))
+        .withMessageContaining("segments");
+    assertThatNullPointerException()
+        .isThrownBy(() -> new CopyMediaPlaylist.Segment(0, null))
+        .withMessageContaining("extinfSeconds");
   }
 }
