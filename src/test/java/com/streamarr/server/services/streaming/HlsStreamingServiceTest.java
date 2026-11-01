@@ -842,35 +842,47 @@ class HlsStreamingServiceTest {
 
   // ADR 0050: a copy costs its own video bitrate plus the stream session's audio bitrate, here a
   // 768 kb/s E-AC-3 5.1 encode of a 450 kb/s 7.1 Opus track. The source's 5 Mb/s holds 4.5 Mb/s of
-  // video. A copy whose video bitrate the probe does not know counts all 5 Mb/s as video.
+  // video.
   @ParameterizedTest
-  @CsvSource({
-    "ORIGINAL, 4500000, 5268000",
-    "AUTO, 4500000, 5268000",
-    "ORIGINAL, , 5768000",
-    "AUTO, , 5768000"
-  })
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"ORIGINAL", "AUTO"})
   @DisplayName(
       "Should advertise the copied video's bitrate plus the encoded audio's bitrate when the"
           + " session copies the video and encodes the audio")
   void
       shouldAdvertiseTheCopiedVideosBitratePlusTheEncodedAudiosBitrateWhenTheSessionCopiesTheVideoAndEncodesTheAudio(
-          VideoQuality quality, Long videoBitrate, long expectedAverageBandwidth) {
-    var session =
-        createCopySessionWithSurroundOpus(
-            quality, videoBitrate == null ? OptionalLong.empty() : OptionalLong.of(videoBitrate));
+          VideoQuality quality) {
+    var session = createCopySessionWithSurroundOpus(quality, OptionalLong.of(4_500_000L));
     var playlist =
         new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
 
-    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
     assertThat(session.getTranscodeDecision().audioDecision().bitrate()).isEqualTo(768_000L);
-    assertThat(playlist)
-        .contains(
-            "BANDWIDTH="
-                + (expectedAverageBandwidth + expectedAverageBandwidth / 5)
-                + ",AVERAGE-BANDWIDTH="
-                + expectedAverageBandwidth
-                + ",");
+    assertThat(playlist).contains("BANDWIDTH=6321600,AVERAGE-BANDWIDTH=5268000,");
+  }
+
+  // A known container bitrate holds the copied video and every other track, so counting all of the
+  // source's 5 Mb/s as video never falls below the video's own bitrate.
+  @ParameterizedTest
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"ORIGINAL", "AUTO"})
+  @DisplayName(
+      "Should count the container bitrate as the copied video's bitrate when the session copies"
+          + " the video and the probe does not know the video stream's bitrate")
+  void
+      shouldCountTheContainerBitrateAsTheCopiedVideosBitrateWhenTheSessionCopiesTheVideoAndTheProbeDoesNotKnowTheVideoStreamsBitrate(
+          VideoQuality quality) {
+    var session = createCopySessionWithSurroundOpus(quality, OptionalLong.empty());
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
+    assertThat(session.getTranscodeDecision().audioDecision().bitrate()).isEqualTo(768_000L);
+    assertThat(playlist).contains("BANDWIDTH=6921600,AVERAGE-BANDWIDTH=5768000,");
   }
 
   // A copied track whose bitrate the probe does not know takes a nominal 128 kb/s, far below a
@@ -916,18 +928,16 @@ class HlsStreamingServiceTest {
   // The declaration lists stereo AAC and 7.1 E-AC-3 but no Opus, so the session encodes the audio.
   private StreamSession createCopySessionWithSurroundOpus(
       VideoQuality quality, OptionalLong videoBitrate) {
-    var probe = defaultProbeBuilder().bitrate(5_000_000L).build();
+    var probe = defaultProbeBuilder().bitrate(5_000_000L);
     var streams =
         List.of(
-            ProbeFixture.videoStreamBuilder(probe).bitrate(videoBitrate).build(),
+            ProbeFixture.videoStreamBuilder(probe.build()).bitrate(videoBitrate).build(),
             ProbeFixture.audioStreamBuilder("opus")
                 .index(1)
                 .channels(OptionalInt.of(8))
                 .bitrate(OptionalLong.of(450_000L))
                 .build());
-    probeResults.setDefaultOutcome(
-        ProbeFixture.completeProbe(
-            defaultProbeBuilder().bitrate(5_000_000L).streams(streams).build()));
+    probeResults.setDefaultOutcome(ProbeFixture.completeProbe(probe.streams(streams).build()));
     var declaration =
         defaultDeclarationBuilder()
             .audio(
