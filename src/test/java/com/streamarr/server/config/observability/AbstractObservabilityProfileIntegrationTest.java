@@ -1,12 +1,16 @@
 package com.streamarr.server.config.observability;
 
 import static com.streamarr.server.config.observability.OtlpExports.carryingMeter;
+import static com.streamarr.server.config.observability.OtlpExports.fromMicrometer;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Tag;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.SystemEnvironmentPropertySource;
@@ -55,16 +59,33 @@ abstract class AbstractObservabilityProfileIntegrationTest extends AbstractInteg
   abstract RecordingOtlpCollector collector();
 
   /**
-   * Waits for the second export of the server's meters after {@code position}. The first may have
-   * been collected before the position; the registry collects the next export only after it has
-   * sent the previous one.
+   * Waits for the server's meters to be exported twice by Micrometer after {@code position}, and
+   * returns the metric exports collected after it. Each exporter's first export after the position
+   * may have been collected before it and is left out: an exporter collects its next export only
+   * after it has sent the previous one.
    */
-  ExportMetricsServiceRequest exportOfTheServersMetersCollectedAfter(int position)
+  List<ExportMetricsServiceRequest> exportsCollectedAfter(int position)
       throws InterruptedException {
     var exports =
         collector()
             .metricExports()
-            .awaitAfter(position, received -> carryingMeter(received, STARTUP_METER).size() >= 2);
-    return carryingMeter(exports, STARTUP_METER).get(1);
+            .awaitAfter(
+                position,
+                received -> carryingMeter(fromMicrometer(received), STARTUP_METER).size() >= 2);
+    return exports.stream()
+        .collect(
+            Collectors.groupingBy(OtlpExports::exporter, LinkedHashMap::new, Collectors.toList()))
+        .values()
+        .stream()
+        .flatMap(exporterExports -> exporterExports.stream().skip(1))
+        .toList();
+  }
+
+  /**
+   * Waits for, and returns, the first export of the server's meters collected after the position.
+   */
+  ExportMetricsServiceRequest exportOfTheServersMetersCollectedAfter(int position)
+      throws InterruptedException {
+    return carryingMeter(fromMicrometer(exportsCollectedAfter(position)), STARTUP_METER).getFirst();
   }
 }

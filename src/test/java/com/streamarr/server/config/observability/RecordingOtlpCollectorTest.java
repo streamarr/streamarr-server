@@ -27,8 +27,7 @@ class RecordingOtlpCollectorTest {
 
   private static final Duration BOUND = Duration.ofSeconds(5);
 
-  private final RecordingOtlpCollector collector =
-      RecordingOtlpCollector.start(Duration.ofMillis(200));
+  private final RecordingOtlpCollector collector = RecordingOtlpCollector.start(BOUND);
 
   @AfterEach
   void stopCollector() {
@@ -38,7 +37,7 @@ class RecordingOtlpCollectorTest {
   @Test
   @DisplayName("Should return the exports after the position when a waited-for export arrives")
   void shouldReturnTheExportsAfterThePositionWhenAWaitedForExportArrives() throws Exception {
-    send(exportOf("before.position"));
+    send(collector, exportOf("before.position"));
     var position = collector.metricExports().position();
     var conditionChecked = new CountDownLatch(1);
 
@@ -54,7 +53,7 @@ class RecordingOtlpCollectorTest {
                           return !received.isEmpty();
                         }))) {
       assertThat(conditionChecked.await(BOUND.toNanos(), TimeUnit.NANOSECONDS)).isTrue();
-      send(exportOf("after.position"));
+      send(collector, exportOf("after.position"));
 
       assertThat(waiter.await(BOUND))
           .extracting(OtlpExports::metricNames)
@@ -65,19 +64,25 @@ class RecordingOtlpCollectorTest {
   @Test
   @DisplayName("Should fail when no export after the position satisfies the condition in time")
   void shouldFailWhenNoExportAfterThePositionSatisfiesTheConditionInTime() throws Exception {
-    send(exportOf("before.position"));
-    var position = collector.metricExports().position();
+    try (var impatientCollector = RecordingOtlpCollector.start(Duration.ofMillis(200))) {
+      send(impatientCollector, exportOf("before.position"));
+      var position = impatientCollector.metricExports().position();
 
-    assertThatThrownBy(
-            () -> collector.metricExports().awaitAfter(position, received -> !received.isEmpty()))
-        .isInstanceOf(AssertionError.class);
+      assertThatThrownBy(
+              () ->
+                  impatientCollector
+                      .metricExports()
+                      .awaitAfter(position, received -> !received.isEmpty()))
+          .isInstanceOf(AssertionError.class);
+    }
   }
 
-  private void send(ExportMetricsServiceRequest export) throws Exception {
+  private static void send(RecordingOtlpCollector receiver, ExportMetricsServiceRequest export)
+      throws Exception {
     try (var client = HttpClient.newHttpClient()) {
       var response =
           client.send(
-              HttpRequest.newBuilder(URI.create(collector.endpoint() + "v1/metrics"))
+              HttpRequest.newBuilder(URI.create(receiver.endpoint() + "v1/metrics"))
                   .POST(HttpRequest.BodyPublishers.ofByteArray(export.toByteArray()))
                   .build(),
               HttpResponse.BodyHandlers.discarding());

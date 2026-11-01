@@ -16,6 +16,8 @@ import java.util.stream.Stream;
 /** Reads what an OTLP export carries. */
 final class OtlpExports {
 
+  static final String MICROMETER = "io.micrometer";
+
   private OtlpExports() {}
 
   static boolean carriesMeter(ExportMetricsServiceRequest export, String meter) {
@@ -25,6 +27,20 @@ final class OtlpExports {
   static List<ExportMetricsServiceRequest> carryingMeter(
       List<ExportMetricsServiceRequest> exports, String meter) {
     return exports.stream().filter(export -> carriesMeter(export, meter)).toList();
+  }
+
+  /** The SDK that sent the export: {@code io.micrometer} for Micrometer's OTLP registry. */
+  static Optional<String> exporter(ExportMetricsServiceRequest export) {
+    return export.getResourceMetricsList().stream()
+        .flatMap(resource -> attribute(resource.getResource(), "telemetry.sdk.name").stream())
+        .findFirst();
+  }
+
+  static List<ExportMetricsServiceRequest> fromMicrometer(
+      List<ExportMetricsServiceRequest> exports) {
+    return exports.stream()
+        .filter(export -> exporter(export).equals(Optional.of(MICROMETER)))
+        .toList();
   }
 
   static Set<String> metricNames(ExportMetricsServiceRequest export) {

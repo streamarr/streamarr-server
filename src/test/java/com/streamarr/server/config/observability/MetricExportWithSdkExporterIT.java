@@ -59,9 +59,11 @@ class MetricExportWithSdkExporterIT extends AbstractObservabilityProfileIntegrat
     assertThat(workersOf(beforeRemoval)).contains(worker);
 
     meterRegistry.remove(productionSpeed);
-    var afterRemoval = exportOfTheServersMetersCollectedAfter(COLLECTOR.metricExports().position());
+    var afterRemoval = exportsCollectedAfter(COLLECTOR.metricExports().position());
 
-    assertThat(workersOf(afterRemoval)).doesNotContain(worker);
+    assertThat(afterRemoval)
+        .flatMap(MetricExportWithSdkExporterIT::workersOf)
+        .doesNotContain(worker);
   }
 
   @Test

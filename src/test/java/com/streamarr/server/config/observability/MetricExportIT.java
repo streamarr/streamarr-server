@@ -1,5 +1,6 @@
 package com.streamarr.server.config.observability;
 
+import static com.streamarr.server.config.observability.OtlpExports.MICROMETER;
 import static com.streamarr.server.config.observability.OtlpExports.attribute;
 import static com.streamarr.server.config.observability.OtlpExports.metricNames;
 import static com.streamarr.server.config.observability.OtlpExports.metricsNamed;
@@ -78,7 +79,7 @@ class MetricExportIT extends AbstractObservabilityProfileIntegrationTest {
     assertThat(COLLECTOR.metricExports().all())
         .flatMap(ExportMetricsServiceRequest::getResourceMetricsList)
         .extracting(resource -> attribute(resource.getResource(), "telemetry.sdk.name"))
-        .containsOnly(Optional.of("io.micrometer"));
+        .containsOnly(Optional.of(MICROMETER));
   }
 
   @Test
