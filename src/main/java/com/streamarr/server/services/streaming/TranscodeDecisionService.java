@@ -181,7 +181,8 @@ public class TranscodeDecisionService {
   }
 
   // Every variant of a stream session is at most the source's size, so an entry that fits the
-  // source-sized variant fits every variant (ADR 0049).
+  // source-sized variant fits every variant (ADR 0049). The variant runs at the rate the encode
+  // runs at, which the deinterlacer doubles for an interlaced source (#653).
   private static Optional<EncodedVariantRequest> encodedVariantRequest(
       MediaProbe source, EncodeCodecProfile profile) {
     var picture = source.displayedSize();
@@ -191,7 +192,7 @@ public class TranscodeDecisionService {
 
     return source
         .videoPlaybackFacts()
-        .flatMap(VideoPlaybackFacts::outputFrameRate)
+        .flatMap(VideoPlaybackFacts::encodedFrameRate)
         .map(
             frameRate ->
                 EncodedVariantRequest.builder()
