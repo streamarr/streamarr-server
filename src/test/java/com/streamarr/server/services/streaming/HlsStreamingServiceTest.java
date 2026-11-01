@@ -858,6 +858,38 @@ class HlsStreamingServiceTest {
         .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
   }
 
+  // Decoder limits bound decoded frames, so the container's cropping does not shrink the picture
+  // that a capability entry's maximum bounds.
+  @Test
+  @DisplayName(
+      "Should encode the video when its decoded picture exceeds the capability entry's maximum and"
+          + " the container crops it to fit")
+  void
+      shouldEncodeTheVideoWhenItsDecodedPictureExceedsTheCapabilityEntrysMaximumAndTheContainerCropsItToFit() {
+    var croppedTo1920x1080 = ContainerCropping.builder().top(0).bottom(8).left(0).right(0).build();
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .width(1920)
+            .height(1088)
+            .videoPlaybackFacts(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .streamIndex(0)
+                        .frameRateRule(
+                            VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))
+                        .containerCropping(Optional.of(croppedTo1920x1080))
+                        .videoProperties(
+                            Optional.of(
+                                VideoPlaybackFactsFixture.h264HighPropertiesBuilder().build()))
+                        .build()))
+            .build());
+
+    var session = createSession(seedMediaFile().getId(), landscapeHdDeclaration());
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+  }
+
   // An 8-bit SDR H.264 High profile source at level 5.1 and 24 fps that probe version 5 described.
   private static MediaProbe.MediaProbeBuilder probeVersion5At24(PictureSize decodedSize) {
     return defaultProbeBuilder()
