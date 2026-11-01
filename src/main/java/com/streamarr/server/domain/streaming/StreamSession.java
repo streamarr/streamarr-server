@@ -169,8 +169,8 @@ public class StreamSession {
   }
 
   /** Keeps the first short copy: every later job attempt reads the same source. */
-  public void markShortCopy(@NonNull ShortCopy end) {
-    shortCopy.compareAndSet(null, end);
+  public void markShortCopy(@NonNull ShortCopy copyThatRanShort) {
+    shortCopy.compareAndSet(null, copyThatRanShort);
   }
 
   /**

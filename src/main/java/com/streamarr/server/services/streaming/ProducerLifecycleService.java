@@ -248,7 +248,7 @@ public class ProducerLifecycleService {
       return RecoveryResult.SESSION_GONE;
     }
 
-    var pastShortCopy = shortCopyBefore(session, segmentName);
+    var pastShortCopy = answerPastAShortCopy(session, segmentName);
     if (pastShortCopy.isPresent()) {
       return pastShortCopy.get();
     }
@@ -1575,14 +1575,14 @@ public class ProducerLifecycleService {
   }
 
   private static boolean liesPastTheNormalEnd(StreamSession session, String segmentName) {
-    return shortCopyBefore(session, segmentName)
+    return answerPastAShortCopy(session, segmentName)
         .filter(RecoveryResult.PAST_THE_NORMAL_END::equals)
         .isPresent();
   }
 
   // How recovery answers a segment past the stream session's short copy, which no job attempt of
   // the copy can produce; empty for every other segment.
-  private static Optional<RecoveryResult> shortCopyBefore(
+  private static Optional<RecoveryResult> answerPastAShortCopy(
       StreamSession session, String segmentName) {
     return session
         .getShortCopy()
