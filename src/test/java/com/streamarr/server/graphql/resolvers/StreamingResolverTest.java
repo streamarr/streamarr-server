@@ -772,6 +772,8 @@ class StreamingResolverTest {
                     "This video needs converting, but the server can't find its frame rate. Ask your server admin to check the file."));
   }
 
+  // Original encodes on Auto's ladder when it cannot copy (ADR 0052), so switching to Auto cannot
+  // find a format that the device plays either.
   @Test
   @DisplayName("Should return a typed format error when no video format is eligible")
   void shouldReturnATypedFormatErrorWhenNoVideoFormatIsEligible() {
@@ -785,7 +787,7 @@ class StreamingResolverTest {
             Map.of(
                 "__typename", "NoEligibleVideoFormatError",
                 "message",
-                    "The server can't find a video format this device can play. Set Quality to Auto, or try another device."));
+                    "The server can't find a video format this device can play. Try another device."));
   }
 
   @Test
