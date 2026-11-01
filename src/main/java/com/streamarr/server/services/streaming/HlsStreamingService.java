@@ -225,6 +225,10 @@ public class HlsStreamingService implements StreamingService {
 
   private Optional<TranscodeDecision> stoppableEncodeCandidate(
       TranscodeDecisionRequest request, Set<String> excludedFamilies) {
+    if (!transcodeExecutor.isHealthy()) {
+      return Optional.empty();
+    }
+
     return verifiedEncodeCandidate(
             request.toBuilder().excludedEncodeCodecFamilies(excludedFamilies).build())
         .filter(decision -> encodeRejection(request, decision).isEmpty());
@@ -235,6 +239,8 @@ public class HlsStreamingService implements StreamingService {
       return refuseForLackOfCapacity(CapacityRefusal.NO_CONNECTED_WORKER);
     }
 
+    // Judged from the stream session's read of the connected workers alone, so a worker that
+    // disconnects during the refusal neither hides its busy encoder nor counts as missing one.
     if (verifiedEncodeCandidate(request).isPresent()) {
       return refuseForLackOfCapacity(CapacityRefusal.NO_ENCODER_WITH_FREE_SLOT);
     }
@@ -266,10 +272,6 @@ public class HlsStreamingService implements StreamingService {
   // workers' hardware encoders count too, so the encode is the one that the server would decide
   // once those workers had a free slot.
   private Optional<TranscodeDecision> verifiedEncodeCandidate(TranscodeDecisionRequest request) {
-    if (!transcodeExecutor.isHealthy()) {
-      return Optional.empty();
-    }
-
     return encodeCandidate(
         request.toBuilder()
             .hardwareEncodableVideoCodecFamilies(
