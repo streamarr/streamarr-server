@@ -63,6 +63,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.jooq.DSLContext;
@@ -309,9 +310,9 @@ class SchedulerBitrateScanIT extends AbstractProbeSchedulerIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should count a failed attempt and start over when the stored chunks measure different"
+      "Should mark the measurement unavailable after three scans whose chunks measure different"
           + " streams")
-  void shouldCountAFailedAttemptAndStartOverWhenTheStoredChunksMeasureDifferentStreams()
+  void shouldMarkTheMeasurementUnavailableAfterThreeScansWhoseChunksMeasureDifferentStreams()
       throws Exception {
     var request = probedCopyableFile();
     startScanScheduler(
@@ -320,17 +321,55 @@ class SchedulerBitrateScanIT extends AbstractProbeSchedulerIntegrationTest {
             return measured(chunk);
           }
 
-          var streams = ((BitrateScanChunkOutcome.Measured) measured(chunk)).streams();
-          return new BitrateScanChunkOutcome.Measured(streams.subList(0, 1));
+          return measuredWithoutAudio(chunk);
+        },
+        Clock.systemUTC());
+
+    for (var scan = 1; scan <= 3; scan++) {
+      awaitChunkCompletions(2);
+      assertThat(storedChunks(request)).as("A rejected assembly starts over").isZero();
+      retryPendingScansNow();
+    }
+
+    assertThat(storedMeasurementStatus(request)).isEqualTo("UNAVAILABLE FAILED_ATTEMPTS");
+    assertThat(scheduledScanPriorities()).isEmpty();
+    assertThat(meterRegistry.get(CHUNK_FAILURES_METRIC).tag("reason", "assembly").counter().count())
+        .isEqualTo(3);
+  }
+
+  @Test
+  @DisplayName(
+      "Should count only the next chunk's own failures when the server stops after storing the"
+          + " chunk whose attempts failed")
+  void shouldCountOnlyTheNextChunksOwnFailuresWhenTheServerStopsAfterStoringTheFailedChunk()
+      throws Exception {
+    var request = probedCopyableFile();
+    startScanScheduler(
+        chunk -> {
+          if (!chunk.firstChunk()) {
+            throw new ProbeWorkersBusyException("All compatible workers are busy");
+          }
+
+          return measured(chunk);
         },
         Clock.systemUTC());
     awaitChunkCompletions(2);
+    scanScheduler.stop();
+    // Two failed attempts of the first chunk, as a server that stopped after storing the chunk and
+    // before completing its execution leaves them.
+    replacePendingScan(
+        pending -> pending.toBuilder().failedAttempts(2).failedKeyframeInterval(0).build());
 
-    assertThat(storedChunks(request)).isZero();
+    retryPendingScansNow();
+    startScanScheduler(
+        _ -> {
+          throw new ProbeTimedOutException(new TimeoutException());
+        },
+        Clock.systemUTC());
+    awaitChunkCompletions(1);
+
+    assertThat(storedChunks(request)).isOne();
     assertThat(pendingScan().failedAttempts()).isOne();
-    assertThat(outcomes.findStreamMeasurements(request.mediaFileId())).isEmpty();
-    assertThat(meterRegistry.get(CHUNK_FAILURES_METRIC).tag("reason", "assembly").counter().count())
-        .isOne();
   }
 
   @Test
@@ -585,6 +624,12 @@ class SchedulerBitrateScanIT extends AbstractProbeSchedulerIntegrationTest {
             .toList());
   }
 
+  // A worker that leaves the audio stream out of a later chunk.
+  private static BitrateScanChunkOutcome measuredWithoutAudio(BitrateScanChunkRequest chunk) {
+    var measured = (BitrateScanChunkOutcome.Measured) measured(chunk);
+    return new BitrateScanChunkOutcome.Measured(measured.streams().subList(0, 1));
+  }
+
   private static MeasuredStream expectedStream(int index, long bytesPerInterval) {
     return MeasuredStream.builder()
         .streamIndex(index)
@@ -714,6 +759,20 @@ class SchedulerBitrateScanIT extends AbstractProbeSchedulerIntegrationTest {
         taskDataSerializer
             .deserialize(BitrateScanTaskRequest.class, row.value2())
             .failedAttempts());
+  }
+
+  private void replacePendingScan(UnaryOperator<BitrateScanTaskRequest> change) {
+    var data = DSL.field("task_data", byte[].class);
+    var table = DSL.table(KeyframePacketScanScheduler.TABLE_NAME);
+    var taskName = DSL.field("task_name", String.class).eq(BitrateScanTask.NAME);
+    var pending =
+        taskDataSerializer.deserialize(
+            BitrateScanTaskRequest.class,
+            dsl.select(data).from(table).where(taskName).fetchSingle().value1());
+    dsl.update(table)
+        .set(data, taskDataSerializer.serialize(change.apply(pending)))
+        .where(taskName)
+        .execute();
   }
 
   // Stands in for the retry delay elapsing.

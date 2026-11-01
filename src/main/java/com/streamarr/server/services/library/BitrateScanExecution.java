@@ -79,14 +79,14 @@ public class BitrateScanExecution {
           deferral.getMessage());
       return new BitrateScanResult.Deferred();
     } catch (ProbeTimedOutException _) {
-      return failed(request, "timed_out");
+      return failed(request, chunk, "timed_out");
     } catch (ProbeContractViolationException violation) {
       log.warn(
           "Bitrate scan chunk for media file {} got a worker reply that breaks the worker"
               + " contract: {}",
           request.mediaFileId(),
           violation.getMessage());
-      return failed(request, "contract_violation");
+      return failed(request, chunk, "contract_violation");
     }
 
     if (!sourceMatches(path, request.snapshot())) {
@@ -104,7 +104,7 @@ public class BitrateScanExecution {
                   .build());
       case BitrateScanChunkOutcome.CopyChangesPackets _ ->
           new BitrateScanResult.CopyChangesPackets();
-      case BitrateScanChunkOutcome.MediaError _ -> failed(request, "media_error");
+      case BitrateScanChunkOutcome.MediaError _ -> failed(request, chunk, "media_error");
     };
   }
 
@@ -157,10 +157,11 @@ public class BitrateScanExecution {
         .build();
   }
 
-  private BitrateScanResult failed(BitrateScanTaskRequest request, String reason) {
+  private BitrateScanResult failed(
+      BitrateScanTaskRequest request, BitrateScanChunks.PlannedChunk chunk, String reason) {
     log.warn("Bitrate scan chunk for media file {} failed: {}", request.mediaFileId(), reason);
     meterRegistry.counter(CHUNK_FAILURES_METRIC, "reason", reason).increment();
-    return new BitrateScanResult.Failed();
+    return new BitrateScanResult.Failed(chunk.firstKeyframeInterval());
   }
 
   private static boolean sourceMatches(Path path, SourceFileSnapshot expected) {

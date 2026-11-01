@@ -18,8 +18,8 @@ public sealed interface BitrateScanResult {
   /** No worker can start the chunk now, so it waits without counting as a failure. */
   record Deferred() implements BitrateScanResult {}
 
-  /** The chunk ran without a result. */
-  record Failed() implements BitrateScanResult {}
+  /** The chunk that starts at {@code firstKeyframeInterval} ran without a result. */
+  record Failed(int firstKeyframeInterval) implements BitrateScanResult {}
 
   /** A stream copy would change the size or the number of a measured stream's packets. */
   record CopyChangesPackets() implements BitrateScanResult {}
