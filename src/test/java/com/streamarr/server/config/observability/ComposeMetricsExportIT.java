@@ -1,6 +1,7 @@
 package com.streamarr.server.config.observability;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -53,6 +54,7 @@ class ComposeMetricsExportIT extends AbstractIntegrationTest {
   private static final Duration STORAGE_WAIT = Duration.ofSeconds(60);
   // The Compose documentation promises an export every 10 seconds.
   private static final double EXPORT_STEP_SECONDS = 10;
+  private static final double EXPORT_STEP_TOLERANCE_SECONDS = 4;
   // Shorter than one export step, so a larger gap means a later export left the meter out.
   private static final double LATER_EXPORT_GAP_SECONDS = EXPORT_STEP_SECONDS / 2;
   private static final String PROBES_WAITING = "__name__=\"streamarr_probes_waiting\"";
@@ -79,6 +81,26 @@ class ComposeMetricsExportIT extends AbstractIntegrationTest {
             () ->
                 assertThat(storedMetricNames())
                     .contains("streamarr_probes_waiting", "hikaricp_connections_active"));
+  }
+
+  @Test
+  @DisplayName(
+      "Should store a sample every ten seconds when the server runs with the Compose settings")
+  void shouldStoreASampleEveryTenSecondsWhenTheServerRunsWithTheComposeSettings() {
+    await()
+        .atMost(STORAGE_WAIT)
+        .untilAsserted(
+            () ->
+                assertThat(sampleSeconds(PROBES_WAITING))
+                    .as("stored samples")
+                    .hasSizeGreaterThan(1));
+
+    var samples = sampleSeconds(PROBES_WAITING);
+    var lastGap = samples.getLast() - samples.get(samples.size() - 2);
+
+    assertThat(lastGap)
+        .as("seconds between the last two stored samples of streamarr_probes_waiting")
+        .isCloseTo(EXPORT_STEP_SECONDS, within(EXPORT_STEP_TOLERANCE_SECONDS));
   }
 
   @Test
