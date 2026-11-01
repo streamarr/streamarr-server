@@ -33,6 +33,8 @@ class OtlpMetricsResourceConfiguration {
   private static final String RESOURCE_ATTRIBUTES = "resourceAttributes";
   private static final JsonMapper JSON = JsonMapper.builder().build();
 
+  private OtlpMetricsResourceConfiguration() {}
+
   @Bean
   static SdkResourceCapture otelSdkResourceCapture() {
     return new SdkResourceCapture();
