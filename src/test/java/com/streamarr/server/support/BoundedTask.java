@@ -4,12 +4,11 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.locks.LockSupport;
-import java.util.concurrent.locks.ReentrantLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * Runs a task on its own virtual thread and waits for it with a bound. A task that outlives its
@@ -19,8 +18,6 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 public final class BoundedTask<T> implements AutoCloseable {
 
   private static final Duration CLOSE_BOUND = Duration.ofSeconds(5);
-  private static final List<String> LOCK_CLASS_NAMES =
-      List.of(ReentrantLock.class.getName(), ReentrantReadWriteLock.class.getName());
 
   private final Thread thread;
   private final CompletableFuture<T> result;
@@ -66,24 +63,18 @@ public final class BoundedTask<T> implements AutoCloseable {
   }
 
   /**
-   * Returns whether the task's thread waits without a deadline for a signal, such as a latch or a
-   * condition. A thread that waits for a lock answers false, because it is only waiting its turn.
-   * The answer comes from one snapshot of the thread's stack, so it cannot combine a lock wait with
-   * a later wait.
+   * Returns whether the task's thread waits for a {@link CountDownLatch} without a deadline. One
+   * snapshot of the thread's stack answers, so a lock wait or a wait with a deadline never counts,
+   * even when it comes just before or after a latch wait.
    */
-  public boolean isAwaitingASignalWithoutDeadline() {
+  public boolean isAwaitingALatchWithoutDeadline() {
     var frames = List.of(thread.getStackTrace());
-    return frames.stream().anyMatch(BoundedTask::parksWithoutDeadline)
-        && frames.stream().noneMatch(BoundedTask::acquiresALock);
+    return frames.stream().anyMatch(frame -> isFrameOf(frame, LockSupport.class, "park"))
+        && frames.stream().anyMatch(frame -> isFrameOf(frame, CountDownLatch.class, "await"));
   }
 
-  private static boolean parksWithoutDeadline(StackTraceElement frame) {
-    return frame.getClassName().equals(LockSupport.class.getName())
-        && frame.getMethodName().equals("park");
-  }
-
-  private static boolean acquiresALock(StackTraceElement frame) {
-    return LOCK_CLASS_NAMES.stream().anyMatch(frame.getClassName()::startsWith);
+  private static boolean isFrameOf(StackTraceElement frame, Class<?> type, String methodName) {
+    return frame.getClassName().equals(type.getName()) && frame.getMethodName().equals(methodName);
   }
 
   /** Interrupts the task's thread, as a stopping server interrupts its workers. */

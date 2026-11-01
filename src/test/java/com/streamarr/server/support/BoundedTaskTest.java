@@ -7,6 +7,7 @@ import static org.awaitility.Awaitility.await;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -98,36 +99,35 @@ class BoundedTaskTest {
 
   @Test
   @DisplayName(
-      "Should answer that the task awaits a signal when it waits for a latch without a deadline")
-  void shouldAnswerThatTheTaskAwaitsASignalWhenItWaitsForALatchWithoutADeadline() {
+      "Should answer that the task awaits a latch when it waits for one without a deadline")
+  void shouldAnswerThatTheTaskAwaitsALatchWhenItWaitsForOneWithoutADeadline() {
     try (var task = BoundedTask.start(this::waitUntilInterrupted)) {
-      await().atMost(LONG_BOUND).until(task::isAwaitingASignalWithoutDeadline);
+      await().atMost(LONG_BOUND).until(task::isAwaitingALatchWithoutDeadline);
     }
   }
 
   @Test
-  @DisplayName(
-      "Should answer that the task awaits no signal when it waits for a latch with a deadline")
-  void shouldAnswerThatTheTaskAwaitsNoSignalWhenItWaitsForALatchWithADeadline() {
+  @DisplayName("Should answer that the task awaits no latch when it waits for one with a deadline")
+  void shouldAnswerThatTheTaskAwaitsNoLatchWhenItWaitsForOneWithADeadline() {
     try (var task = BoundedTask.start(() -> neverReleased.await(1, TimeUnit.MINUTES))) {
       await().atMost(LONG_BOUND).until(task::isWaiting);
 
-      assertThat(task.isAwaitingASignalWithoutDeadline()).isFalse();
+      assertThat(task.isAwaitingALatchWithoutDeadline()).isFalse();
     }
   }
 
   @Test
   @DisplayName(
-      "Should answer that the task awaits no signal while it waits for a lock that another thread holds")
-  void shouldAnswerThatTheTaskAwaitsNoSignalWhileItWaitsForALockThatAnotherThreadHolds() {
+      "Should answer that the task awaits no latch while it waits for a lock that another thread holds")
+  void shouldAnswerThatTheTaskAwaitsNoLatchWhileItWaitsForALockThatAnotherThreadHolds() {
     var lock = new ReentrantLock();
     lock.lock();
     try (var task = BoundedTask.start(() -> lockThenWaitUntilInterrupted(lock))) {
       await().atMost(LONG_BOUND).until(() -> lock.hasQueuedThreads() && task.isWaiting());
 
-      assertThat(task.isAwaitingASignalWithoutDeadline()).isFalse();
+      assertThat(task.isAwaitingALatchWithoutDeadline()).isFalse();
       lock.unlock();
-      await().atMost(LONG_BOUND).until(task::isAwaitingASignalWithoutDeadline);
+      await().atMost(LONG_BOUND).until(task::isAwaitingALatchWithoutDeadline);
     } finally {
       if (lock.isHeldByCurrentThread()) {
         lock.unlock();
@@ -137,20 +137,73 @@ class BoundedTaskTest {
 
   @Test
   @DisplayName(
-      "Should never answer that the task awaits a signal when it only takes a contended lock and waits with deadlines")
+      "Should answer that the task awaits no latch while it takes its lock back after a condition wait expires")
+  void shouldAnswerThatTheTaskAwaitsNoLatchWhileItTakesItsLockBackAfterAConditionWaitExpires() {
+    var lock = new ReentrantLock();
+    var condition = lock.newCondition();
+    try (var task =
+        BoundedTask.start(
+            () -> {
+              lock.lockInterruptibly();
+              try {
+                return condition.await(200, TimeUnit.MILLISECONDS);
+              } finally {
+                lock.unlock();
+              }
+            })) {
+      await()
+          .pollInSameThread()
+          .atMost(LONG_BOUND)
+          .until(() -> tryLockWhileTheConditionHasAWaiter(lock, condition));
+      try {
+        await().atMost(LONG_BOUND).until(() -> lock.hasQueuedThreads() && task.isWaiting());
+
+        assertThat(task.isAwaitingALatchWithoutDeadline()).isFalse();
+      } finally {
+        lock.unlock();
+      }
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should never answer that the task awaits a latch when it only takes a contended lock and waits with deadlines")
   void
-      shouldNeverAnswerThatTheTaskAwaitsASignalWhenItOnlyTakesAContendedLockAndWaitsWithDeadlines() {
+      shouldNeverAnswerThatTheTaskAwaitsALatchWhenItOnlyTakesAContendedLockAndWaitsWithDeadlines() {
     var lock = new ReentrantLock();
     try (var _ = BoundedTask.start(() -> takeTurnsUntilInterrupted(lock));
         var task = BoundedTask.start(() -> takeTurnsUntilInterrupted(lock))) {
       await().pollInterval(Duration.ZERO).atMost(LONG_BOUND).until(lock::hasQueuedThreads);
 
-      await()
-          .pollInterval(Duration.ZERO)
-          .during(SHORT_BOUND.multipliedBy(3))
-          .atMost(LONG_BOUND)
-          .until(() -> !task.isAwaitingASignalWithoutDeadline());
+      assertThat(latchWaitsSampledWithin(task, SHORT_BOUND.multipliedBy(3))).isZero();
     }
+  }
+
+  // Takes the lock only while the task waits on the condition, so the condition wait expires while
+  // this thread holds the lock that the task must take back.
+  private static boolean tryLockWhileTheConditionHasAWaiter(
+      ReentrantLock lock, Condition condition) {
+    if (!lock.tryLock()) {
+      return false;
+    }
+
+    if (lock.hasWaiters(condition)) {
+      return true;
+    }
+
+    lock.unlock();
+    return false;
+  }
+
+  private static int latchWaitsSampledWithin(BoundedTask<?> task, Duration window) {
+    var latchWaits = 0;
+    var end = System.nanoTime() + window.toNanos();
+    while (System.nanoTime() - end < 0) {
+      if (task.isAwaitingALatchWithoutDeadline()) {
+        latchWaits++;
+      }
+    }
+    return latchWaits;
   }
 
   private Void waitUntilInterrupted() throws InterruptedException {
