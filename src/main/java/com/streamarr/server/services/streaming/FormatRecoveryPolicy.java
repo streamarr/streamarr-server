@@ -20,10 +20,10 @@ final class FormatRecoveryPolicy {
   }
 
   NextFormatAttempt after(
-      @NonNull VideoQuality playbackChoice,
+      @NonNull PlayingChoice choice,
       @NonNull PlaybackSessionFailure failure,
       int formatAttemptCount) {
-    if (playbackChoice != VideoQuality.AUTO) {
+    if (choice.playbackChoice() != VideoQuality.AUTO) {
       return new NextFormatAttempt.Fail(failure);
     }
 
@@ -31,6 +31,6 @@ final class FormatRecoveryPolicy {
       return new NextFormatAttempt.Fail(new PlaybackSessionFailure.AttemptsExhausted());
     }
 
-    return new NextFormatAttempt.Encode();
+    return new NextFormatAttempt.Encode(choice);
   }
 }
