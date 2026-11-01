@@ -112,7 +112,13 @@ final class VideoCopyBandwidth {
                       PeakSegmentBitRate.of(
                           CopySegmentSizes.copiedAudio(copied, positions, playlist),
                           playlist.targetDurationSeconds()));
-      case TRANSCODE -> Optional.empty();
+      case TRANSCODE ->
+          encodedAudioFrames(source, audio)
+              .map(
+                  encoded ->
+                      PeakSegmentBitRate.of(
+                          CopySegmentSizes.encodedAudio(encoded, audio.bitrate(), playlist),
+                          playlist.targetDurationSeconds()));
     };
   }
 
@@ -155,9 +161,10 @@ final class VideoCopyBandwidth {
 
   /**
    * The bytes that the copy's media segments deliver over the playlist's duration, plus encoded
-   * audio's bitrate, or empty when the server did not measure the copied video or a copied audio
-   * track, when the encoded audio's framing is not known, or when no stream copy lists the media
-   * playlist. The copy carries the source's first audio stream.
+   * audio's bitrate. The encoder writes its frames over the playlist's duration with its priming
+   * samples. Empty when the server did not measure the copied video or a copied audio track, when
+   * the encoded audio's framing is not known, or when no stream copy lists the media playlist. The
+   * copy carries the source's first audio stream.
    */
   private static Optional<Long> measuredCost(
       MediaProbe source, AudioDecision audio, CopyMediaPlaylist playlist) {
@@ -175,7 +182,8 @@ final class VideoCopyBandwidth {
               .map(
                   copied -> averageBitRate(videoBytes.add(trackBytes(copied, segments)), playlist));
       case TRANSCODE ->
-          encodedAudioFrames(source, audio, playlist)
+          encodedAudioFrames(source, audio)
+              .map(encoded -> encoded.over(playlist.durationSeconds(), true))
               .map(
                   frames ->
                       averageBitRate(
@@ -209,12 +217,12 @@ final class VideoCopyBandwidth {
   }
 
   /**
-   * The frames that the session's audio encoder writes over the playlist's duration, with its
-   * priming samples, at the lowest rate that it takes at or above the source's first audio stream's
-   * rate, or at its highest rate when that rate is higher or not known.
+   * The frames that the session's audio encoder writes, at the lowest rate that it takes at or
+   * above the source's first audio stream's rate, or at its highest rate when that rate is higher
+   * or not known. Empty for an encoder whose framing is not known.
    */
-  private static Optional<BigInteger> encodedAudioFrames(
-      MediaProbe source, AudioDecision audio, CopyMediaPlaylist playlist) {
+  private static Optional<EncodedAudioFrames> encodedAudioFrames(
+      MediaProbe source, AudioDecision audio) {
     var encoder = Optional.ofNullable(audio.codec()).map(AUDIO_ENCODERS::get);
     if (encoder.isEmpty()) {
       return Optional.empty();
@@ -230,15 +238,8 @@ final class VideoCopyBandwidth {
       rate = encoder.get().rateAtOrAbove(sourceRate.getAsInt());
     }
 
-    var samples =
-        playlist
-            .durationSeconds()
-            .multiply(BigDecimal.valueOf(rate))
-            .add(BigDecimal.valueOf(encoder.get().primingSamples()));
     return Optional.of(
-        samples
-            .divide(BigDecimal.valueOf(encoder.get().frameSamples()), 0, RoundingMode.CEILING)
-            .toBigIntegerExact());
+        new EncodedAudioFrames(encoder.get().frameSamples(), encoder.get().primingSamples(), rate));
   }
 
   /** The bytes in bits per second of the playlist's EXTINF durations, rounded up. */

@@ -1877,6 +1877,54 @@ class HlsPlaylistServiceTest {
       assertThat(playlist).contains("BANDWIDTH=1201750,AVERAGE-BANDWIDTH=801750,");
     }
 
+    // ADR 0054: an encoded audio rendition's peak is 1.2 × its bitrate plus its framing. The AAC
+    // encoder runs at its highest rate, 96 kHz, since the source names none. A 6 s segment holds
+    // 6 × 96,000 / 1,024 frames rounded up, plus 1 for a frame that crosses an edge; segment 0
+    // also holds the 1,024 priming samples: 565 frames of 1,024 samples. Each frame carries
+    // 1.2 × 128,000 / 8 bytes a second over its 10.67 ms, 204.8 bytes, and 16 bytes of framing,
+    // and the segment 64: 124,816 bytes, 166,421.3 b/s. The video's segment 2 adds 1,203,200 b/s.
+    @Test
+    @DisplayName(
+        "Should add 1.2 times the encoded audio's bitrate plus its framing when the session encodes"
+            + " the audio")
+    void shouldAddOnePointTwoTimesEncodedAudiosBitratePlusItsFramingWhenSessionEncodesAudio() {
+      var source =
+          StreamMeasurementFixture.CopySource.builder()
+              .duration(Duration.ofSeconds(36))
+              .keyframeMillis(everySecond(36))
+              .videoBytes(concat(repeat(12, 50_000L), repeat(6, 150_000L), repeat(18, 50_000L)))
+              .audioBytes(repeat(36, 80_000L))
+              .audioPackets(repeat(36, 32L))
+              .build();
+
+      var playlist =
+          service.generateMultivariantPlaylist(copySession(source, AudioDecision.stereoAac()), "t");
+
+      assertThat(playlist).contains("BANDWIDTH=1369622,AVERAGE-BANDWIDTH=676623,");
+    }
+
+    // ADR 0037: encoded audio, like copied audio, fills each segment from its grid slot. Segments
+    // open at 0, 8 and 14 s, so the last segment lasts 4 s but carries slot 2's 6 s of audio: 564
+    // frames of 204.8 bytes and 16 bytes of framing each, and 64 bytes, 124,595.2 bytes over 4 s,
+    // 249,190.4 b/s. The video's last segment adds 2,960 b/s.
+    @Test
+    @DisplayName(
+        "Should size each segment's encoded audio by its grid slot when keyframes open segments"
+            + " late in their slots")
+    void shouldSizeEachSegmentsEncodedAudioByItsGridSlotWhenKeyframesOpenSegmentsLate() {
+      var source =
+          StreamMeasurementFixture.CopySource.builder()
+              .duration(Duration.ofSeconds(18))
+              .keyframeMillis(List.of(0L, 8_000L, 14_000L))
+              .videoBytes(repeat(3, 1_000L))
+              .build();
+
+      var playlist =
+          service.generateMultivariantPlaylist(copySession(source, AudioDecision.stereoAac()), "t");
+
+      assertThat(playlist).contains("BANDWIDTH=252151,AVERAGE-BANDWIDTH=142070,");
+    }
+
     // RFC 8216 §4.1 counts no run that holds the 2.6 s segment of 10,000,000 bytes: alone it lasts
     // less than 3 s, and with either 6.45 s neighbour more than 9 s. The runs then peak at the
     // last segment's 2,213.1 b/s, far below the copy's average of 1,213,973.3 b/s.

@@ -16,6 +16,10 @@ import java.util.List;
  */
 final class CopySegmentSizes {
 
+  // ADR 0054: an encoded audio rendition's peak is 1.2 × its bitrate, the headroom that ADR 0044
+  // gives every encoded rate.
+  private static final BigDecimal ENCODED_AUDIO_PEAK_HEADROOM = new BigDecimal("1.2");
+
   private CopySegmentSizes() {}
 
   /**
@@ -69,6 +73,32 @@ final class CopySegmentSizes {
   }
 
   /**
+   * Each segment's encoded audio, which the worker takes from the segment's grid slot as it does
+   * copied audio. The segment holds the frames that the encoder writes over the slot's audio, with
+   * its priming samples in segment 0, plus one frame that the snap can move across an edge. Each
+   * frame carries 1.2 × the encoded audio's bitrate over its length (ADR 0054) and its share of the
+   * audio track's framing.
+   */
+  static List<SegmentSize> encodedAudio(
+      EncodedAudioFrames encoded, long bitrate, CopyMediaPlaylist playlist) {
+    var peakBytesPerSecond =
+        BigDecimal.valueOf(bitrate)
+            .multiply(ENCODED_AUDIO_PEAK_HEADROOM)
+            .divide(BigDecimal.valueOf(Byte.SIZE));
+    var sizes = new ArrayList<SegmentSize>();
+    for (var segment = 0; segment < playlist.segmentCount(); segment++) {
+      var audioSeconds = slotAudioSeconds(playlist, segment);
+      var frames = encoded.over(audioSeconds, segment == 0).add(BigInteger.ONE);
+      var framing = SegmentFraming.trackBytes(BigInteger.ONE, frames);
+      var payload = peakBytesPerSecond.multiply(encoded.secondsOf(frames));
+      var bytes = payload.add(new BigDecimal(framing));
+      sizes.add(new SegmentSize(bytes, playlist.segments().get(segment).extinfSeconds()));
+    }
+
+    return sizes;
+  }
+
+  /**
    * Segment {@code N} holds the keyframe intervals from its opening keyframe up to the next
    * segment's. Segment 0 also holds the intervals before its opening keyframe, whose keyframes
    * present before zero, and the last segment also holds the intervals of the keyframes that
@@ -110,6 +140,19 @@ final class CopySegmentSizes {
     return new BigDecimal(audioTicksTimesBases)
         .divide(new BigDecimal(packetsTimesBases), 0, RoundingMode.CEILING)
         .toBigIntegerExact();
+  }
+
+  /**
+   * The seconds of audio in a segment's grid slot: the slot's length, or for the last segment the
+   * rest of the playlist from the slot's start.
+   */
+  private static BigDecimal slotAudioSeconds(CopyMediaPlaylist playlist, int segment) {
+    var slotSeconds = BigDecimal.valueOf(playlist.targetSegmentDurationSeconds());
+    if (segment + 1 < playlist.segmentCount()) {
+      return slotSeconds;
+    }
+
+    return playlist.durationSeconds().subtract(slotSeconds.multiply(BigDecimal.valueOf(segment)));
   }
 
   /**
