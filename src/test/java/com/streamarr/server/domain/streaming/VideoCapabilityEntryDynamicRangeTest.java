@@ -3,6 +3,7 @@ package com.streamarr.server.domain.streaming;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.av1EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.videoEntryBuilderFor;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.fixtures.VideoStreamCopyFixture;
@@ -288,55 +289,54 @@ class VideoCapabilityEntryDynamicRangeTest {
             true));
   }
 
+  // No entry can list profile 4, 7 or 10 on an SDR base, an unknown profile or Dolby Vision
+  // without a level, so the entry under test lists every base, Dolby Vision profile and HDR10+.
   @ParameterizedTest(name = "{0}")
   @MethodSource("undeclarableDolbyVisionCopies")
-  @DisplayName("Should refuse a Dolby Vision copy when no entry can list its profile or level")
-  void shouldRefuseADolbyVisionCopyWhenNoEntryCanListItsProfileOrLevel(
-      String scenario, VideoCapabilityEntry entry, VideoStreamCopy copy) {
-    assertThat(entry.acceptsHlsCopy(copy)).isFalse();
+  @DisplayName(
+      "Should refuse a Dolby Vision copy whatever the entry declares when no entry can list its"
+          + " profile or level")
+  void shouldRefuseADolbyVisionCopyWhateverTheEntryDeclaresWhenNoEntryCanListItsProfileOrLevel(
+      String scenario, VideoStreamCopy copy) {
+    var everyDynamicRange = everyDynamicRangeEntryFor(copy.codecFamily());
+
+    assertThat(everyDynamicRange.acceptsHlsCopy(copy)).isFalse();
   }
 
   static Stream<Arguments> undeclarableDolbyVisionCopies() {
     return Stream.of(
         Arguments.of(
             "7 on a PQ base",
-            pqEntryListing(DolbyVisionProfile.PROFILE_8_1, 6),
             hevcCopy(
                 declaredDolbyVision(
                     CompatibleBase.PQ,
                     configuration(7).baseLayerCompatibilityId(OptionalInt.of(6))))),
         Arguments.of(
             "7 named by its RPU header on a PQ base",
-            pqEntryListing(DolbyVisionProfile.PROFILE_8_1, 6),
             hevcCopy(dolbyVision(CompatibleBase.PQ, enhancementLayerRpuHeader()))),
         Arguments.of(
             "7 named by its RPU header on an SDR base",
-            hevcEntryBuilder().build(),
             hevcCopy(dolbyVision(CompatibleBase.SDR, enhancementLayerRpuHeader()))),
         Arguments.of(
             "4 from its record on an SDR base",
-            hevcEntryBuilder().build(),
             hevcCopy(
                 declaredDolbyVision(
                     CompatibleBase.SDR,
                     configuration(4).baseLayerCompatibilityId(OptionalInt.of(2))))),
         Arguments.of(
             "10 on an SDR base",
-            av1EntryBuilder().build(),
             av1Copy(
                 declaredDolbyVision(
                     CompatibleBase.SDR,
                     configuration(10).baseLayerCompatibilityId(OptionalInt.of(2))))),
         Arguments.of(
             "H.264 whose record names profile 8 on an SDR base",
-            h264EntryBuilder().build(),
             h264Copy(
                 declaredDolbyVision(
                     CompatibleBase.SDR,
                     configuration(8).baseLayerCompatibilityId(OptionalInt.of(2))))),
         Arguments.of(
             "an RPU header that names no profile",
-            hevcEntryBuilder().build(),
             hevcCopy(
                 dolbyVision(
                     CompatibleBase.SDR,
@@ -344,7 +344,6 @@ class VideoCapabilityEntryDynamicRangeTest {
                         DolbyVisionRpuHeader.builder().vdrRpuProfile(0).vdrBitDepth(10).build())))),
         Arguments.of(
             "unknown profile, with neither a record nor an RPU header",
-            hevcEntryBuilder().build(),
             hevcCopy(
                 new VideoDynamicRange(
                     CompatibleBase.SDR,
@@ -352,16 +351,18 @@ class VideoCapabilityEntryDynamicRangeTest {
                     new DolbyVision.Present(Optional.empty(), Presence.UNSPECIFIED)))),
         Arguments.of(
             "8.1 named by its RPU header, without a record level",
-            pqEntryListing(DolbyVisionProfile.PROFILE_8_1, 6),
             hevcCopy(dolbyVision(CompatibleBase.PQ, singleLayerRpuHeader()))),
         Arguments.of(
             "10.1 named by its RPU header, without a record level",
-            av1EntryBuilder()
-                .compatibleBases(List.of(CompatibleBase.PQ))
-                .dolbyVisionProfiles(
-                    List.of(dolbyVisionCapability(DolbyVisionProfile.PROFILE_10_1, 6)))
-                .build(),
             av1Copy(dolbyVision(CompatibleBase.PQ, singleLayerRpuHeader()))));
+  }
+
+  private static VideoCapabilityEntry everyDynamicRangeEntryFor(ProbedCodecFamily family) {
+    return videoEntryBuilderFor(family)
+        .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG))
+        .dolbyVisionProfiles(everyProfileAtTheHighestLevel())
+        .hdr10Plus(true)
+        .build();
   }
 
   private static VideoCapabilityEntry pqEntryListing(DolbyVisionProfile profile, int maxLevel) {
