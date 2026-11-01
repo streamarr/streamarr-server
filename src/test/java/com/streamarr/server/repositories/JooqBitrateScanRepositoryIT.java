@@ -245,11 +245,11 @@ class JooqBitrateScanRepositoryIT extends AbstractIntegrationTest
     assertThat(lockedInputs(UUID.randomUUID())).isEmpty();
   }
 
-  // V110 widens the reasons that V108's check allowed, so every stored row satisfies the new check.
+  // V111 widens the reasons that V110's check allowed, so every stored row satisfies the new check.
   // Validating it would only scan the table under ACCESS EXCLUSIVE.
   @Test
-  @DisplayName("Should leave the unavailable reason constraint unvalidated when V110 widens it")
-  void shouldLeaveTheUnavailableReasonConstraintUnvalidatedWhenV110WidensIt() {
+  @DisplayName("Should leave the unavailable reason constraint unvalidated when V111 widens it")
+  void shouldLeaveTheUnavailableReasonConstraintUnvalidatedWhenV111WidensIt() {
     var validated =
         dsl.fetchSingle(
                 """
@@ -265,8 +265,8 @@ class JooqBitrateScanRepositoryIT extends AbstractIntegrationTest
 
   @Test
   @DisplayName(
-      "Should refuse an unavailable reason V110 does not name when a stored mark changes to it")
-  void shouldRefuseAnUnavailableReasonV110DoesNotNameWhenAStoredMarkChangesToIt() {
+      "Should refuse an unavailable reason V111 does not name when a stored mark changes to it")
+  void shouldRefuseAnUnavailableReasonV111DoesNotNameWhenAStoredMarkChangesToIt() {
     var scan = createFileNeedingScan();
     var mediaFileId = scan.mediaFileId();
     repository.markMeasurementUnavailable(
