@@ -35,6 +35,7 @@ import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.exceptions.TranscodeLimitReachedException;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
@@ -471,6 +472,26 @@ class ProducerLifecycleServiceTest {
 
     assertThat(session.getVariantHandles()).containsOnlyKeys("1080p");
     assertThat(transcodeExecutor.isRunning(sessionId, "1080p")).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should start nothing when the transcode limit leaves no place for a stream session's first-listed variant")
+  void shouldStartNothingWhenTheTranscodeLimitLeavesNoPlaceForAStreamSessionsFirstListedVariant() {
+    var limited = lifecycleWith(new MutexFactory<>(), 1);
+    var running = defaultLadderSessionBuilder().build();
+    runtimeRegistry.save(running);
+    limited.startFirstListedVariant(running);
+    var refused = defaultLadderSessionBuilder().build();
+    runtimeRegistry.save(refused);
+
+    assertThatThrownBy(() -> limited.startFirstListedVariant(refused))
+        .isInstanceOf(TranscodeLimitReachedException.class);
+
+    assertThat(refused.getVariantHandles()).isEmpty();
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::sessionId)
+        .containsExactly(running.getSessionId());
   }
 
   private ProducerLifecycleService lifecycleWith(
