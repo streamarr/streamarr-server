@@ -2940,21 +2940,14 @@ class HlsStreamingServiceTest {
   // The 49 Mb/s copy exceeds the maximum bitrate beside every audio step, and its 3840x1920
   // picture exceeds the 720p tier and each maximum. The declaration takes the HEVC copy but no
   // H.264 or AV1 encode, so the server has nothing to encode to.
-  @ParameterizedTest
-  @CsvSource({"AUTO, , , 14333000", "HIGH_720P, , , ", "AUTO, 1920, , ", "AUTO, , 1080, "})
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("viewerLimitsThatTheWideUhdCopyExceeds")
   @DisplayName(
       "Should copy the video over the viewer's limits when the capability declaration accepts no"
           + " encode of the source")
   void shouldCopyTheVideoOverTheViewersLimitsWhenTheCapabilityDeclarationAcceptsNoEncodeOfTheSource(
-      VideoQuality quality, Integer maxWidth, Integer maxHeight, Integer maxBitrate) {
+      StreamingOptions options) {
     probeResults.setDefaultProbe(wideUhdHevcProbe().build());
-    var options =
-        StreamingOptions.builder()
-            .quality(quality)
-            .maxWidth(maxWidth)
-            .maxHeight(maxHeight)
-            .maxBitrate(maxBitrate)
-            .build();
 
     var session = accepted(createSessionDeclaring(declarationBuilderFor(HEVC).build(), options));
 
@@ -2963,6 +2956,14 @@ class HlsStreamingServiceTest {
         .extracting(AudioDecision::mode, AudioDecision::codec, AudioDecision::bitrate)
         .containsExactly(AudioMode.COPY, "aac", 128_000L);
     assertThat(session.getVariants()).isEmpty();
+  }
+
+  static Stream<StreamingOptions> viewerLimitsThatTheWideUhdCopyExceeds() {
+    return Stream.of(
+        OVER_THE_MAXIMUM_BITRATE,
+        StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build(),
+        StreamingOptions.builder().quality(VideoQuality.AUTO).maxWidth(1920).build(),
+        StreamingOptions.builder().quality(VideoQuality.AUTO).maxHeight(1080).build());
   }
 
   @ParameterizedTest
@@ -3005,7 +3006,7 @@ class HlsStreamingServiceTest {
   // A worker with an H.264 encoder is connected again right after the server reads the verified
   // encoders, either after none was connected or after a momentary disconnect. The read describes
   // a moment without a connected worker, so it never admits a copy over the viewer's limits.
-  @ParameterizedTest
+  @ParameterizedTest(name = "a worker was connected before the read: {0}")
   @ValueSource(booleans = {false, true})
   @DisplayName(
       "Should report transient capacity instead of copying over the viewer's limits when a worker"
@@ -3028,46 +3029,70 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
 
-  @Test
+  // A busy worker's verified encoder counts, so the session waits for its slot instead of copying.
+  // A free slot on an encoder for a codec that the declaration does not accept changes nothing.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("busyEncodersForACodecThatTheDeclarationAccepts")
   @DisplayName(
       "Should report transient capacity instead of copying over the viewer's limits when the"
           + " encoder that the declaration accepts is busy")
-  void shouldReportTransientCapacityInsteadOfCopyingOverTheViewersLimitsWhenTheEncoderIsBusy() {
+  void shouldReportTransientCapacityInsteadOfCopyingOverTheViewersLimitsWhenTheEncoderIsBusy(
+      BusyEncoder busy) {
     probeResults.setDefaultProbe(wideUhdHevcProbe().build());
-    transcodeExecutor.setEncodeSlots(Map.of("h264", 0));
+    transcodeExecutor.setEncodeSlots(busy.encodeSlots());
 
     assertThat(
             createSessionDeclaring(
-                declarationBuilderFor(HEVC, H264).build(), OVER_THE_MAXIMUM_BITRATE))
+                declarationBuilderFor(HEVC, busy.acceptedEncode()).build(),
+                OVER_THE_MAXIMUM_BITRATE))
         .isEqualTo(
             Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
     assertThat(capacityRefusals("no_encoder_with_free_slot")).isOne();
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
 
+  static Stream<BusyEncoder> busyEncodersForACodecThatTheDeclarationAccepts() {
+    return Stream.of(
+        BusyEncoder.builder().acceptedEncode(H264).encodeSlots(Map.of("h264", 0)).build(),
+        BusyEncoder.builder().acceptedEncode(AV1).encodeSlots(Map.of("h264", 1, "av1", 0)).build());
+  }
+
+  @Builder
+  record BusyEncoder(ProbedCodecFamily acceptedEncode, Map<String, Integer> encodeSlots) {}
+
   // Every worker image ships an H.264 and an AV1 encoder, so a connected worker without a verified
   // encoder for the codec that the declaration accepts is faulty, and no free slot would let the
   // server encode.
-  @ParameterizedTest
-  @CsvSource({"AV1, h264", "H264, av1", "H264, "})
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("connectedWorkersWithoutAnEncoderForTheAcceptedCodec")
   @DisplayName(
       "Should copy the video over the viewer's limits when no connected worker has a verified"
           + " encoder for a codec that the declaration accepts")
   void
       shouldCopyTheVideoOverTheViewersLimitsWhenNoConnectedWorkerHasAVerifiedEncoderForACodecThatTheDeclarationAccepts(
-          ProbedCodecFamily encodedFamily, String verifiedFamily) {
+          UnverifiedEncode unverified) {
     probeResults.setDefaultProbe(wideUhdHevcProbe().build());
-    transcodeExecutor.setEncodableVideoCodecFamilies(
-        Optional.ofNullable(verifiedFamily).map(Set::of).orElseGet(Set::of));
+    transcodeExecutor.setEncodableVideoCodecFamilies(unverified.verifiedFamilies());
 
     var session =
         accepted(
             createSessionDeclaring(
-                declarationBuilderFor(HEVC, encodedFamily).build(), OVER_THE_MAXIMUM_BITRATE));
+                declarationBuilderFor(HEVC, unverified.acceptedEncode()).build(),
+                OVER_THE_MAXIMUM_BITRATE));
 
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(session.getVariants()).isEmpty();
   }
+
+  static Stream<UnverifiedEncode> connectedWorkersWithoutAnEncoderForTheAcceptedCodec() {
+    return Stream.of(
+        UnverifiedEncode.builder().acceptedEncode(AV1).verifiedFamilies(Set.of("h264")).build(),
+        UnverifiedEncode.builder().acceptedEncode(H264).verifiedFamilies(Set.of("av1")).build(),
+        UnverifiedEncode.builder().acceptedEncode(H264).verifiedFamilies(Set.of()).build());
+  }
+
+  @Builder
+  record UnverifiedEncode(ProbedCodecFamily acceptedEncode, Set<String> verifiedFamilies) {}
 
   // A 1920x1 picture has no encoded size, so the H.264 entry accepts no encode that a worker runs.
   @Test
@@ -3087,24 +3112,75 @@ class HlsStreamingServiceTest {
 
   // The Auto picture maximum of 1080 lines refuses the 3840x1920 copy, and the declaration accepts
   // no encode of it. The 4.5 Mb/s video beside the copied 384 kb/s AAC 5.1 track costs 4,884 kb/s,
-  // so the audio steps down as beside a copy within the viewer's limits: to AAC 5.1 at 320 kb/s,
-  // then AAC stereo below 4,820 kb/s. Below every step the copy keeps the session's audio.
-  @ParameterizedTest
-  @CsvSource({
-    "4884000, REMUX, COPY, 6, 384000",
-    "4883999, AUDIO_TRANSCODE, TRANSCODE, 6, 320000",
-    "4819999, AUDIO_TRANSCODE, TRANSCODE, 2, 128000",
-    "1000000, REMUX, COPY, 6, 384000"
-  })
+  // which fits a maximum of exactly that much.
+  @Test
   @DisplayName(
-      "Should lower the audio beside a copy over the viewer's limits to the first step at which the"
-          + " copy fits the maximum bitrate, or else keep the session's audio")
-  void shouldLowerTheAudioBesideACopyOverTheViewersLimitsToTheFirstStepAtWhichTheCopyFits(
-      int maxBitrate,
-      TranscodeMode expectedMode,
-      AudioMode expectedAudioMode,
-      int expectedChannels,
-      long expectedBitrate) {
+      "Should keep the copied audio beside a copy over the viewer's picture limits when the copy's"
+          + " cost equals the maximum bitrate")
+  void
+      shouldKeepTheCopiedAudioBesideACopyOverTheViewersPictureLimitsWhenTheCopysCostEqualsTheMaximumBitrate() {
+    var session = createCopyOverThePictureLimitsWithAac51(4_884_000);
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(AudioDecision::mode, AudioDecision::channels, AudioDecision::bitrate)
+        .containsExactly(AudioMode.COPY, 6, 384_000L);
+    assertDeliversTheSessionsAudioWithinTheMaximumBitrate(session, 4_884_000);
+  }
+
+  // Under a maximum below the copy's 4,884 kb/s the audio steps down as beside a copy within the
+  // viewer's limits (ADR 0050): AAC 5.1 at 320 kb/s fits down to 4,820 kb/s, and AAC stereo at
+  // 128 kb/s below that.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("maximumsAndTheFirstAudioStepBesideACopyOverThePictureLimits")
+  @DisplayName(
+      "Should take the first audio step at which a copy over the viewer's picture limits fits the"
+          + " maximum bitrate when the session's audio leaves it over the maximum")
+  void
+      shouldTakeTheFirstAudioStepAtWhichACopyOverTheViewersPictureLimitsFitsWhenTheSessionsAudioLeavesItOverTheMaximum(
+          StepBesideCopyOverTheLimits expected) {
+    var session = createCopyOverThePictureLimitsWithAac51(expected.maxBitrate());
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
+        .containsExactly("aac", expected.channels(), expected.bitrate());
+    assertDeliversTheSessionsAudioWithinTheMaximumBitrate(session, expected.maxBitrate());
+  }
+
+  static Stream<StepBesideCopyOverTheLimits>
+      maximumsAndTheFirstAudioStepBesideACopyOverThePictureLimits() {
+    var aac51 = StepBesideCopyOverTheLimits.builder().channels(6).bitrate(320_000L);
+    var aacStereo = StepBesideCopyOverTheLimits.builder().channels(2).bitrate(128_000L);
+    return Stream.of(
+        aac51.maxBitrate(4_883_999).build(),
+        aac51.maxBitrate(4_820_000).build(),
+        aacStereo.maxBitrate(4_819_999).build());
+  }
+
+  @Builder
+  record StepBesideCopyOverTheLimits(int maxBitrate, int channels, long bitrate) {}
+
+  // At 1 Mb/s even the lowest audio step leaves the 4.5 Mb/s copy over the maximum. A lower step
+  // would not bring it within the maximum, so the copied track stays (ADR 0050).
+  @Test
+  @DisplayName(
+      "Should keep the session's audio beside a copy over the viewer's picture limits when no audio"
+          + " step fits the maximum bitrate")
+  void shouldKeepTheSessionsAudioBesideACopyOverTheViewersPictureLimitsWhenNoAudioStepFits() {
+    var session = createCopyOverThePictureLimitsWithAac51(1_000_000);
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(AudioDecision::mode, AudioDecision::channels, AudioDecision::bitrate)
+        .containsExactly(AudioMode.COPY, 6, 384_000L);
+  }
+
+  // A 3840x1920 HEVC source with 4.5 Mb/s of video beside a 384 kb/s AAC 5.1 track, for a client
+  // that accepts the HEVC copy and AAC up to 5.1 but no encode of the video, under Auto's 1080-line
+  // maximum and the given maximum bitrate.
+  private StreamSession createCopyOverThePictureLimitsWithAac51(int maxBitrate) {
     var probe = wideUhdHevcProbe().bitrate(5_000_000L);
     var streams =
         List.of(
@@ -3128,16 +3204,7 @@ class HlsStreamingServiceTest {
             .maxBitrate(maxBitrate)
             .build();
 
-    var session = accepted(createSessionDeclaring(declaration, options));
-
-    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(expectedMode);
-    assertThat(session.getTranscodeDecision().audioDecision())
-        .extracting(
-            AudioDecision::mode,
-            AudioDecision::codec,
-            AudioDecision::channels,
-            AudioDecision::bitrate)
-        .containsExactly(expectedAudioMode, "aac", expectedChannels, expectedBitrate);
+    return accepted(createSessionDeclaring(declaration, options));
   }
 
   // A 3840x1920 HEVC source at 49 Mb/s whose keyframes open every segment interval, beside a
