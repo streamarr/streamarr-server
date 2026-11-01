@@ -37,7 +37,7 @@ public class PlaybackSessionService implements AutoCloseable {
   private final PlaybackAuthorityGate authorityGate;
   private final Executor executor;
   private final Optional<ExecutorService> ownedExecutor;
-  private final int maximumFormatAttempts;
+  private final FormatRecoveryPolicy recoveryPolicy;
   private final Duration sessionRetention;
   private final Clock clock;
   private final ConcurrentHashMap<UUID, PlaybackSession> sessions = new ConcurrentHashMap<>();
@@ -54,13 +54,9 @@ public class PlaybackSessionService implements AutoCloseable {
       int maximumFormatAttempts,
       @NonNull Duration sessionRetention,
       Clock clock) {
-    if (maximumFormatAttempts <= 0) {
-      throw new IllegalArgumentException("Maximum format attempts must be positive");
-    }
-
+    this.recoveryPolicy = new FormatRecoveryPolicy(maximumFormatAttempts);
     this.streamingService = streamingService;
     this.authorityGate = authorityGate;
-    this.maximumFormatAttempts = maximumFormatAttempts;
     this.sessionRetention = sessionRetention;
     this.clock = clock == null ? Clock.systemUTC() : clock;
     if (executor == null) {
@@ -78,6 +74,7 @@ public class PlaybackSessionService implements AutoCloseable {
   private static class PlaybackSession {
     private final UUID id;
     private final StartPlaybackSessionCommand command;
+    private final VideoQuality playbackChoice;
     private PlaybackFormatAttempt current;
     private Instant lastAccessedAt;
     @Builder.Default private int formatAttemptCount = 1;
@@ -137,6 +134,8 @@ public class PlaybackSessionService implements AutoCloseable {
           PlaybackSession.builder()
               .id(UUID.randomUUID())
               .command(command)
+              .playbackChoice(
+                  Optional.ofNullable(command.options().quality()).orElse(VideoQuality.AUTO))
               .current(new PlaybackFormatAttempt.Pending(childId))
               .lastAccessedAt(clock.instant())
               .build();
@@ -305,14 +304,10 @@ public class PlaybackSessionService implements AutoCloseable {
       return Optional.empty();
     }
 
-    var quality = playback.command.options().quality();
-    if (quality != null && quality != VideoQuality.AUTO) {
-      return Optional.of(failPlayback(playback, failedId, fixedFailure));
-    }
-
-    if (playback.formatAttemptCount >= maximumFormatAttempts) {
-      return Optional.of(
-          failPlayback(playback, failedId, new PlaybackSessionFailure.AttemptsExhausted()));
+    var next =
+        recoveryPolicy.after(playback.playbackChoice, fixedFailure, playback.formatAttemptCount);
+    if (next instanceof NextFormatAttempt.Fail(var reason)) {
+      return Optional.of(failPlayback(playback, failedId, reason));
     }
 
     if (fixedFailure instanceof PlaybackSessionFailure.FixedFormatFailed
@@ -440,7 +435,7 @@ public class PlaybackSessionService implements AutoCloseable {
                 .capabilityDeclaration(playback.command.capabilityDeclaration())
                 .excludedEncodeCodecFamilies(Set.copyOf(playback.excludedEncodeCodecFamilies))
                 .videoFormatConstraint(
-                    playback.command.options().quality() == VideoQuality.ORIGINAL
+                    playback.playbackChoice == VideoQuality.ORIGINAL
                         ? VideoFormatConstraint.COPY_ONLY
                         : VideoFormatConstraint.COPY_OR_ENCODE));
   }
@@ -578,7 +573,7 @@ public class PlaybackSessionService implements AutoCloseable {
               PlaybackSessionSnapshot.builder()
                   .playbackSessionId(playback.id)
                   .formatAttemptCount(playback.formatAttemptCount)
-                  .maximumFormatAttempts(maximumFormatAttempts)
+                  .maximumFormatAttempts(recoveryPolicy.maximumFormatAttempts())
                   .currentFormatAttempt(playback.current)
                   .build());
         });
