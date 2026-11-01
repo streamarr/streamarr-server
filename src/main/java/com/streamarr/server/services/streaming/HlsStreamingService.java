@@ -5,6 +5,7 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.streaming.AudioSteps;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -117,23 +118,22 @@ public class HlsStreamingService implements StreamingService {
       return Outcome.rejected(encodeRejection.get());
     }
 
-    // The worker's job and the playlists read the audio step that the ladder takes (ADR 0050).
-    var ladder = resolveLadder(request, decisionWithSessionAudio);
-    var decision = decisionWithSessionAudio.withAudioDecision(ladder.audio());
-    var variants = ladder.variants();
+    var admission = admission(request, decisionWithSessionAudio);
     var sessionId = command.streamSessionId();
-    var refusal = capacityRefusalFor(decision);
+    var refusal = capacityRefusalFor(admission.decision());
     // A left variant only serves its own player's switch back, so it never keeps a new stream
     // session out (ADR 0019).
     if (refusal.isPresent() && isSlotShortage(refusal.get())) {
-      producerLifecycle.stopLeftVariantOfAnotherStreamSession(sessionId, decision);
-      refusal = capacityRefusalFor(decision);
+      producerLifecycle.stopLeftVariantOfAnotherStreamSession(sessionId, admission.decision());
+      refusal = capacityRefusalFor(admission.decision());
     }
 
     if (refusal.isPresent()) {
       return Outcome.rejected(refuseForLackOfCapacity(refusal.get()));
     }
 
+    var decision = admission.decision();
+    var variants = admission.variants();
     var now = Instant.now();
 
     var session =
@@ -170,6 +170,17 @@ public class HlsStreamingService implements StreamingService {
         variants.size());
 
     return Outcome.accepted(session);
+  }
+
+  // The decision that a stream session starts with, and the variants of its ladder.
+  private record Admission(TranscodeDecision decision, List<QualityVariant> variants) {}
+
+  // The worker's job and the playlists read the audio step that the ladder takes (ADR 0050).
+  private Admission admission(
+      TranscodeDecisionRequest request, TranscodeDecision decisionWithSessionAudio) {
+    var ladder = resolveLadder(request, decisionWithSessionAudio);
+    return new Admission(
+        decisionWithSessionAudio.withAudioDecision(ladder.audio()), ladder.variants());
   }
 
   // Why no worker can run the decision's encode, whatever slots are free.
@@ -216,12 +227,18 @@ public class HlsStreamingService implements StreamingService {
     // The first decision already refused a copy, so only an encode is decided again. The stopped
     // variant's worker may encode a family in hardware that no free worker encoded before.
     return transcodeDecisionService.decide(
-        request.toBuilder()
+        withEncodersFreeNow(request).toBuilder()
             .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
-            .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())
-            .hardwareEncodableVideoCodecFamilies(
-                transcodeExecutor.hardwareEncodableVideoCodecFamilies())
             .build());
+  }
+
+  // The request as the workers' encoders with a free slot stand now.
+  private TranscodeDecisionRequest withEncodersFreeNow(TranscodeDecisionRequest request) {
+    return request.toBuilder()
+        .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())
+        .hardwareEncodableVideoCodecFamilies(
+            transcodeExecutor.hardwareEncodableVideoCodecFamilies())
+        .build();
   }
 
   private Optional<TranscodeDecision> stoppableEncodeCandidate(
