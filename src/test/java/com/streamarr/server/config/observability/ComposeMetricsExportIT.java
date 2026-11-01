@@ -104,6 +104,14 @@ class ComposeMetricsExportIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should keep stored metrics for fifteen days when the retention variable is unset")
+  void shouldKeepStoredMetricsForFifteenDaysWhenTheRetentionVariableIsUnset() {
+    var retention = query("/api/v1/status/runtimeinfo").path("data").path("storageRetention");
+
+    assertThat(retention.asString()).isEqualTo("15d");
+  }
+
+  @Test
   @DisplayName("Should stop storing a meter in Prometheus when it is removed from the registry")
   void shouldStopStoringAMeterInPrometheusWhenItIsRemovedFromTheRegistry() {
     var worker = UUID.randomUUID().toString();
