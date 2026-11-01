@@ -4,9 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.protobuf.Descriptors.Descriptor;
 import com.streamarr.transcode.v1.CompatibleBase;
+import com.streamarr.transcode.v1.Deinterlace;
+import com.streamarr.transcode.v1.DeinterlaceOutput;
 import com.streamarr.transcode.v1.DolbyVisionAbsent;
 import com.streamarr.transcode.v1.EncoderKind;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
+import com.streamarr.transcode.v1.FieldOrder;
 import com.streamarr.transcode.v1.Fraction;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.MediaSourceRef;
@@ -299,6 +302,54 @@ class TranscodeWorkerContractTest {
     assertThat(decoded.getExecution().getOutputFrameRate().getDenominator()).isEqualTo(1_001);
     assertThat(VideoDecision.getDefaultInstance().hasStreamIndex()).isFalse();
     assertThat(TranscodeExecution.getDefaultInstance().hasOutputFrameRate()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry the field order and one frame per field when a job encodes an interlaced source")
+  void shouldCarryTheFieldOrderAndOneFramePerFieldWhenJobEncodesAnInterlacedSource()
+      throws Exception {
+    var job =
+        VariantJob.newBuilder()
+            .setDecision(
+                TranscodeDecision.newBuilder()
+                    .setVideo(
+                        VideoDecision.newBuilder()
+                            .setMode(VideoMode.VIDEO_MODE_ENCODE)
+                            .setDeinterlace(
+                                Deinterlace.newBuilder()
+                                    .setFieldOrder(FieldOrder.FIELD_ORDER_BB)
+                                    .setOutput(
+                                        DeinterlaceOutput.DEINTERLACE_OUTPUT_ONE_FRAME_PER_FIELD))))
+            .setExecution(
+                TranscodeExecution.newBuilder()
+                    .setOutputFrameRate(
+                        Fraction.newBuilder().setNumerator(60_000).setDenominator(1_001)))
+            .build();
+
+    var decoded = VariantJob.parseFrom(job.toByteArray());
+
+    var deinterlace = decoded.getDecision().getVideo().getDeinterlace();
+    assertThat(deinterlace.getFieldOrder()).isEqualTo(FieldOrder.FIELD_ORDER_BB);
+    assertThat(deinterlace.getOutput())
+        .isEqualTo(DeinterlaceOutput.DEINTERLACE_OUTPUT_ONE_FRAME_PER_FIELD);
+    assertThat(decoded.getExecution().getOutputFrameRate().getNumerator()).isEqualTo(60_000);
+  }
+
+  @Test
+  @DisplayName("Should leave the deinterlace instruction absent when a job omits it")
+  void shouldLeaveTheDeinterlaceInstructionAbsentWhenJobOmitsIt() throws Exception {
+    var progressiveEncode =
+        VideoDecision.newBuilder()
+            .setMode(VideoMode.VIDEO_MODE_ENCODE)
+            .setCodecFamily(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264)
+            .build();
+
+    var decoded = VideoDecision.parseFrom(progressiveEncode.toByteArray());
+
+    assertThat(decoded.hasDeinterlace()).isFalse();
+    assertThat(decoded.getDeinterlace().getOutput())
+        .isEqualTo(DeinterlaceOutput.DEINTERLACE_OUTPUT_UNSPECIFIED);
   }
 
   @Test

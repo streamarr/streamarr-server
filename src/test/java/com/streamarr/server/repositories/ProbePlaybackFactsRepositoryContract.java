@@ -50,6 +50,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -228,6 +229,46 @@ public interface ProbePlaybackFactsRepositoryContract {
                 .build());
 
     assertThat(storedOutcome(mediaFileId).streams()).isEqualTo(published.streams());
+  }
+
+  @ParameterizedTest(name = "{0} stream stores {1}")
+  @MethodSource("copyPacketByteStates")
+  @DisplayName(
+      "Should read whether a copy keeps every packet's bytes back when an outcome stores it")
+  default void shouldReadWhetherACopyKeepsEveryPacketsBytesBackWhenAnOutcomeStoresIt(
+      String codec, Optional<Boolean> kept) {
+    var mediaFileId = createMediaFile();
+    var chosen =
+        video()
+            .codec(Optional.of(codec))
+            .videoProperties(
+                Optional.of(VideoStreamProperties.builder().copyKeepsPacketBytes(kept).build()))
+            .build();
+    var published =
+        outcomeBuilder()
+            .streams(List.of(chosen))
+            .chosenVideoStream(Optional.of(new ChosenVideoStream(0, declaredFilmRate())))
+            .build();
+
+    repository()
+        .publish(
+            ProbePublication.builder()
+                .mediaFileId(mediaFileId)
+                .snapshot(PLAYBACK_FACTS_SNAPSHOT)
+                .probeVersion(ProbeVersion.FIRST_TO_REPORT_FRAME_FACTS)
+                .outcome(published)
+                .build());
+
+    assertThat(storedOutcome(mediaFileId).streams()).isEqualTo(published.streams());
+  }
+
+  static Stream<Arguments> copyPacketByteStates() {
+    return Stream.of(
+        Arguments.of("hevc", Optional.empty()),
+        Arguments.of("hevc", Optional.of(false)),
+        Arguments.of("hevc", Optional.of(true)),
+        Arguments.of("h264", Optional.of(false)),
+        Arguments.of("h264", Optional.of(true)));
   }
 
   @ParameterizedTest

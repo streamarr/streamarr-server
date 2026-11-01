@@ -496,6 +496,56 @@ message VideoDecision {
   // is false when the stored value is false or absent. The worker uses this
   // field only to decide whether to repair RPUs as described above.
   bool source_packets_carry_presentation_times = 11;
+  // The server sets this field to true only on a job that copies video when
+  // the chosen stream's stored ProbeStreamInfo.copy_keeps_packet_bytes is true.
+  // The field is false otherwise, including on every job that encodes video.
+  // When the field is true, the worker copies the video without the Annex B
+  // bitstream filter, so the delivered samples equal the source packets. When
+  // the field is false, the worker applies the filter as before.
+  bool copy_keeps_packet_bytes = 12;
+  // The server sets this field only on a job that encodes video from an
+  // interlaced source: a chosen stream whose stored field order is TT, BB, TB
+  // or BT. Every other job omits it.
+  //
+  // The worker deinterlaces every frame before any other filter, before the
+  // scaler, so that no filter mixes the two fields of a frame. The worker
+  // takes the field order from deinterlace.field_order, not from each frame's
+  // flags. The produced output is progressive. The worker fails the attempt
+  // with JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION in any of these cases:
+  // - A job that copies video includes this field.
+  // - field_order is any value other than TT, BB, TB or BT, including
+  //   UNSPECIFIED, PROGRESSIVE and a value that this contract does not define.
+  // - output is any value other than ONE_FRAME_PER_FIELD or
+  //   ONE_FRAME_PER_FRAME, including UNSPECIFIED and a value that this contract
+  //   does not define.
+  //
+  // The worker fails the attempt with JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH when
+  // the initialization segment of an encode declares interlaced video, with or
+  // without this field.
+  Deinterlace deinterlace = 13;
+}
+
+// This message tells the worker how to deinterlace the chosen video stream.
+message Deinterlace {
+  // The field order that the probe stored for the chosen video stream. The
+  // field displayed first is the earlier field: the top field for TT and BT,
+  // the bottom field for BB and TB.
+  FieldOrder field_order = 1;
+  DeinterlaceOutput output = 2;
+}
+
+// This value states how many frames the deinterlacer writes.
+// TranscodeExecution.output_frame_rate is the rate of the deinterlacer's
+// output in either case.
+enum DeinterlaceOutput {
+  DEINTERLACE_OUTPUT_UNSPECIFIED = 0;
+  // The deinterlacer writes one frame for each field. A source with 29.97
+  // frames per second, and so 59.94 fields per second, becomes 59.94 frames
+  // per second.
+  DEINTERLACE_OUTPUT_ONE_FRAME_PER_FIELD = 1;
+  // The deinterlacer writes one frame for each source frame. A source with
+  // 29.97 frames per second stays at 29.97 frames per second.
+  DEINTERLACE_OUTPUT_ONE_FRAME_PER_FRAME = 2;
 }
 
 message TranscodeDecision {
@@ -566,10 +616,12 @@ message TranscodeExecution {
   // of the attempt's first media segment. This version of the server sets the
   // field for no other attempt.
   google.protobuf.Duration seek_position = 6;
-  // This field reports the output frame rate that the probe stored for the
-  // chosen video stream. The worker passes the exact fraction to FFmpeg and
-  // never converts it to a decimal. Every encode requires positive numerator
-  // and denominator terms. A job that copies the video carries none.
+  // This field reports the frame rate of the encode's output. It is the output
+  // frame rate that the probe stored for the chosen video stream, or twice that
+  // rate when VideoDecision.deinterlace.output is ONE_FRAME_PER_FIELD. The
+  // worker passes the exact fraction to FFmpeg and never converts it to a
+  // decimal. Every encode requires positive numerator and denominator terms. A
+  // job that copies the video carries none.
   Fraction output_frame_rate = 7;
 }
 
@@ -1201,6 +1253,48 @@ message ProbeStreamInfo {
   // The value describes only the inspected packets. The worker assumes later
   // packets carry presentation times in the same way.
   optional bool first_packets_carry_presentation_times = 36;
+  // The worker reports this field only for H.264 and HEVC video streams. It
+  // reports true only when a stream copy without the Annex B bitstream filter
+  // delivers every packet of the stream with its bytes unchanged, under the
+  // same codec_string. That holds only when all these conditions hold:
+  // - The stream's decoder configuration record is a whole avcC or hvcC:
+  //   configurationVersion 1, every NAL unit that it counts ends within it,
+  //   and no NAL unit of an hvcC holds a start code. The record holds an SPS
+  //   and a PPS, and an hvcC also holds a VPS.
+  // - The record gives the samples 4-byte NAL unit lengths:
+  //   lengthSizeMinusOne is 3.
+  // - The record header names the profile, tier and level that the worker
+  //   reads from the record's parameter sets, so codec_string is the same with
+  //   or without the filter.
+  // - Every SEI message in an hvcC is user data unregistered, payload type 5,
+  //   such as x265's information message. An hvcC that holds any other SEI
+  //   message, such as mastering display or content light level, keeps the
+  //   filter: the filter is what repeats that record-only metadata in front of
+  //   every IRAP sample.
+  // - Every NAL unit in the record reaches FFmpeg's decoder: the unit holds
+  //   its whole NAL unit header and its forbidden_zero_bit is 0, an avcC unit
+  //   holds a byte other than 0, and an hvcC unit's nuh_layer_id is not 63
+  //   and its nuh_temporal_id_plus1 is not 0. FFmpeg's decoder never receives
+  //   a unit that fails these checks, so the probe reads the record without
+  //   it, but a copy without the filter delivers it.
+  // - Every NAL unit in an hvcC array has the NAL unit type that the array
+  //   names. Without the filter, FFmpeg's hvcC writer sorts each unit by its
+  //   array's type, so a VPS in an SEI array would leave the copy's record
+  //   without a VPS.
+  // - In an MP4 or MOV file, the stream's sample entry is avc1 or dva1 for
+  //   H.264 and hvc1 or dvh1 for HEVC. Other sample entries, such as avc3,
+  //   hev1, dvav and dvhe, can keep parameter sets only in the samples.
+  // - In an MP4 or MOV file, the stream's track has exactly one sample entry.
+  //   ffprobe describes only the first, and only the filter carries another
+  //   entry's parameter sets into the samples. A track whose sample entries
+  //   the worker cannot count counts as one with several.
+  //
+  // A Matroska track has no sample entry, so only the conditions on its record
+  // apply.
+  //
+  // The worker reports false otherwise. The field is absent when the worker did
+  // not report it. The server treats an absent value as false.
+  optional bool copy_keeps_packet_bytes = 37;
 }
 
 // These fields specify how many pixels the container crop removes from each

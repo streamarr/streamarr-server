@@ -40,6 +40,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -154,6 +155,32 @@ class RemoteProbeResultStreamPropertiesMapperTest {
     assertThat(stream.videoProperties())
         .flatMap(VideoStreamProperties::firstPacketsCarryPresentationTimes)
         .contains(false);
+  }
+
+  @ParameterizedTest(name = "{0} reports {1}")
+  @CsvSource({"h264, true", "h264, false", "hevc, true", "hevc, false"})
+  @DisplayName("Should keep whether a copy keeps every packet's bytes when the probe reports it")
+  void shouldKeepWhetherACopyKeepsEveryPacketsBytesWhenTheProbeReportsIt(
+      String codec, boolean kept) {
+    var video = hevc().setCodec(codec).setCopyKeepsPacketBytes(kept);
+
+    var stream = videoOf(version5(media -> media.setStreams(0, video)));
+
+    assertThat(stream.videoProperties())
+        .flatMap(VideoStreamProperties::copyKeepsPacketBytes)
+        .contains(kept);
+  }
+
+  @Test
+  @DisplayName(
+      "Should leave whether a copy keeps every packet's bytes empty when the probe does not report"
+          + " it")
+  void shouldLeaveWhetherACopyKeepsEveryPacketsBytesEmptyWhenTheProbeDoesNotReportIt() {
+    var stream = videoOf(version5(media -> media.setStreams(0, hevc())));
+
+    assertThat(stream.videoProperties())
+        .map(VideoStreamProperties::copyKeepsPacketBytes)
+        .contains(Optional.empty());
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
@@ -708,6 +735,18 @@ class RemoteProbeResultStreamPropertiesMapperTest {
             "presentation times on packets of a stream without a codec",
             sdrHevc().clearCodec().setFirstFramesRead(true),
             stream -> stream.setFirstPacketsCarryPresentationTimes(true)),
+        violation(
+            "whether a copy keeps every packet's bytes for an AV1 stream",
+            sdrHevc().setCodec("av1"),
+            stream -> stream.setCopyKeepsPacketBytes(false)),
+        violation(
+            "whether a copy keeps every packet's bytes for a VP9 stream",
+            sdrHevc().setCodec("vp9"),
+            stream -> stream.setCopyKeepsPacketBytes(true)),
+        violation(
+            "whether a copy keeps every packet's bytes for a stream without a codec",
+            sdrHevc().clearCodec(),
+            stream -> stream.setCopyKeepsPacketBytes(true)),
         violation(
             "a PQ transfer with an SDR compatible base",
             sdrHevc(),
