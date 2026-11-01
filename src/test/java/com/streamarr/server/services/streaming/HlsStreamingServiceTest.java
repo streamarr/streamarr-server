@@ -228,7 +228,6 @@ class HlsStreamingServiceTest {
     assertThat(service.createSession(command)).isEqualTo(Outcome.rejected(expectedRejection));
     assertThat(meters.get("streamarr.streaming.stream_copy_refusals").counter().count())
         .isEqualTo(1.0);
-    assertThat(missingEncoderSessions()).isZero();
     assertThat(service.getActiveSessionCount()).isZero();
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
@@ -248,7 +247,6 @@ class HlsStreamingServiceTest {
 
     assertThat(outcome)
         .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
-    assertThat(missingEncoderSessions()).isZero();
     assertThat(service.getActiveSessionCount()).isZero();
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
@@ -344,11 +342,84 @@ class HlsStreamingServiceTest {
 
   @Test
   @DisplayName(
+      "Should refuse for a missing worker without counting a missing encoder when the read lists no"
+          + " connected worker")
+  void
+      shouldRefuseForAMissingWorkerWithoutCountingAMissingEncoderWhenTheReadListsNoConnectedWorker() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("vp9").build());
+    // The connectivity check still sees the worker, which left before the workers were read.
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of());
+    transcodeExecutor.setVerifiedVideoCodecFamiliesByWorker(List.of());
+
+    var outcome =
+        service.createSession(
+            createStreamSessionCommand(
+                seedMediaFile().getId(), UUID.randomUUID(), defaultOptions()));
+
+    assertThat(outcome)
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(capacityRefusals("no_connected_worker")).isOne();
+    assertThat(missingEncoderSessions()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should not count a missing encoder when the worker's accepted encoder is busy")
+  void shouldNotCountAMissingEncoderWhenTheWorkersAcceptedEncoderIsBusy() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("vp9").build());
+    transcodeExecutor.setEncodeSlots(Map.of("h264", 0));
+    transcodeExecutor.setVerifiedVideoCodecFamiliesByWorker(
+        List.of(connectedWorker(Set.of("h264"))));
+
+    var outcome =
+        service.createSession(
+            createStreamSessionCommand(
+                seedMediaFile().getId(), UUID.randomUUID(), defaultOptions()));
+
+    assertThat(outcome)
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(missingEncoderSessions()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should not count a missing encoder when the request accepts only a video copy")
+  void shouldNotCountAMissingEncoderWhenTheRequestAcceptsOnlyAVideoCopy() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("vp9").build());
+    connectWorkerEncoding(Set.of());
+    var command =
+        createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+            .videoFormatConstraint(VideoFormatConstraint.COPY_ONLY)
+            .build();
+
+    var outcome = service.createSession(command);
+
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(missingEncoderSessions()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should not count a missing encoder when the declaration accepts no codec family that the server encodes")
+  void shouldNotCountAMissingEncoderWhenTheDeclarationAcceptsNoCodecFamilyThatTheServerEncodes() {
+    connectWorkerEncoding(Set.of());
+
+    var outcome =
+        service.createSession(createCommandDeclaring(declarationBuilderFor(HEVC).build()));
+
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(missingEncoderSessions()).isZero();
+  }
+
+  @Test
+  @DisplayName(
       "Should not count a missing encoder when the encode it would run has no probed frame rate")
   void shouldNotCountAMissingEncoderWhenTheEncodeItWouldRunHasNoProbedFrameRate() {
     probeResults.setDefaultProbe(
         defaultProbeBuilder().videoCodec("vp9").framerate(OptionalDouble.empty()).build());
-    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of());
+    connectWorkerEncoding(Set.of());
 
     var outcome =
         service.createSession(
