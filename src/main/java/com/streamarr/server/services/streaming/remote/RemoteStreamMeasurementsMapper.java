@@ -74,9 +74,7 @@ final class RemoteStreamMeasurementsMapper {
       throw violation("Worker probe measured a stream that is neither video nor audio");
     }
 
-    if (stream.getMeasuredBytes() < 0
-        || stream.getPacketCount() < 0
-        || stream.getMeasuredDuration() < 0) {
+    if (hasCountBeyondTheContractsRange(stream)) {
       throw violation(
           "Worker probe measured bytes, packets or duration exceed the contract's range");
     }
@@ -86,9 +84,7 @@ final class RemoteStreamMeasurementsMapper {
     }
 
     var part = partsByStream.get(stream.getStreamIndex());
-    if (part == null
-        || part.getKeyframeIntervalBytesCount() != keyframeCount
-        || part.getKeyframeIntervalPacketCountsCount() != keyframeCount) {
+    if (part == null || !hasAnIntervalForEachKeyframe(part, keyframeCount)) {
       throw violation("Worker probe measured stream's intervals differ from its keyframes");
     }
 
@@ -113,6 +109,19 @@ final class RemoteStreamMeasurementsMapper {
         .keyframeIntervalBytes(bytes)
         .keyframeIntervalPacketCounts(packets)
         .build();
+  }
+
+  // The contract's counts are unsigned 64-bit, so a count beyond a long's range reads as negative.
+  private static boolean hasCountBeyondTheContractsRange(MeasuredStreamOrBuilder stream) {
+    return stream.getMeasuredBytes() < 0
+        || stream.getPacketCount() < 0
+        || stream.getMeasuredDuration() < 0;
+  }
+
+  private static boolean hasAnIntervalForEachKeyframe(
+      ProbeStreamMeasurementPart part, int keyframeCount) {
+    return part.getKeyframeIntervalBytesCount() == keyframeCount
+        && part.getKeyframeIntervalPacketCountsCount() == keyframeCount;
   }
 
   private static int[] toArray(List<Integer> unsignedCounts) {
