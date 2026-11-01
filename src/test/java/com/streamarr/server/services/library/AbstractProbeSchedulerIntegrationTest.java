@@ -10,6 +10,7 @@ import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.github.kagkarlsson.scheduler.task.TaskInstanceId;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.config.KeyframePacketScanScheduler;
+import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
@@ -17,11 +18,14 @@ import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.media.BitrateScanRepository;
+import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import com.streamarr.server.services.streaming.FfprobeService;
+import com.streamarr.server.support.UnstartedSchedulerConfiguration;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,6 +37,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import javax.sql.DataSource;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
@@ -40,6 +45,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
+import org.springframework.core.env.Environment;
+import org.springframework.transaction.PlatformTransactionManager;
 
 abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegrationTest {
 
@@ -52,6 +59,12 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
   @Autowired private LibraryRepository libraries;
   @Autowired private DSLContext dsl;
   @Autowired private ApplicationContext applicationContext;
+  @Autowired private Environment environment;
+  @Autowired private DataSource dataSource;
+  @Autowired private PlatformTransactionManager transactionManager;
+  @Autowired private MediaFileContainerInfoRepository outcomes;
+  @Autowired private BitrateScanRepository bitrateScans;
+  @Autowired private ProbeSchedulingProperties probeScheduling;
 
   private final List<MediaFile> createdFiles = new ArrayList<>();
   private UUID libraryId;
@@ -121,6 +134,22 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
     var started = probeSchedulerStarter().start(execution, listener, clock);
     scheduler = started.scheduler();
     return started.client();
+  }
+
+  /**
+   * A scan scheduler builder with the application's table, settings and repositories, which picks
+   * due executions at once. The test supplies both executions, the clock, the meters and the
+   * listeners.
+   */
+  KeyframePacketScanScheduler.KeyframePacketScanSchedulerBuilder scanSchedulerBuilder() {
+    return KeyframePacketScanScheduler.builder()
+        .schedulerProperties(UnstartedSchedulerConfiguration.schedulerProperties(environment))
+        .customizer(probeSchedulerStarter().pickingCustomizer())
+        .dataSource(dataSource)
+        .transactionManager(transactionManager)
+        .outcomes(outcomes)
+        .bitrateScans(bitrateScans)
+        .properties(probeScheduling);
   }
 
   ProbeSchedulerStarter probeSchedulerStarter() {

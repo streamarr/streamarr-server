@@ -228,7 +228,7 @@ public class MediaFileStreamMeasurement extends TableImpl<MediaFileStreamMeasure
             Internal.createCheck(this, DSL.name("measured_status_names_its_source"), "(((status = 'MEASURED'::text) = (source IS NOT NULL)))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_measurement_source_check"), "((source = ANY (ARRAY['SAMPLE_TABLE'::text, 'KEYFRAME_PACKET_SCAN'::text, 'BITRATE_SCAN'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_measurement_status_check"), "((status = ANY (ARRAY['MEASURED'::text, 'UNAVAILABLE'::text])))", true),
-            Internal.createCheck(this, DSL.name("media_file_stream_measurement_unavailable_reason_check"), "((unavailable_reason = 'FAILED_ATTEMPTS'::text))", true),
+            Internal.createCheck(this, DSL.name("media_file_stream_measurement_unavailable_reason_check"), "((unavailable_reason = ANY (ARRAY['FAILED_ATTEMPTS'::text, 'COPY_CHANGES_PACKETS'::text])))", true),
             Internal.createCheck(this, DSL.name("unavailable_status_names_its_reason"), "(((status = 'UNAVAILABLE'::text) = (unavailable_reason IS NOT NULL)))", true)
         );
     }

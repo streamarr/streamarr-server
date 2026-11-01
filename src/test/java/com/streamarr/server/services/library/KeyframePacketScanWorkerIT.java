@@ -19,6 +19,7 @@ import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fixtures.BitrateScanRequesters;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -114,6 +115,7 @@ class KeyframePacketScanWorkerIT extends AbstractIntegrationTest {
       probeExecution.toBuilder()
           .producer(remote)
           .packetScans(packetScans)
+          .bitrateScans(BitrateScanRequesters.none())
           .build()
           .execute(request, ProbePriority.BACKGROUND);
 

@@ -114,6 +114,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
       insertKeyframePositions(publication.mediaFileId(), positions);
     }
 
+    measurementRows.deleteNotFollowingStoredOutcome(publication.mediaFileId());
     return true;
   }
 
@@ -535,7 +536,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
         .where(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(mediaFileId))
         .and(snapshotMatches(snapshot).not())
         .execute();
-    measurementRows.deleteUnlessSnapshotMatches(mediaFileId, snapshot);
+    measurementRows.deleteNotFollowingStoredOutcome(mediaFileId);
   }
 
   private boolean lockMediaFile(UUID mediaFileId) {
@@ -590,10 +591,10 @@ public class MediaFileContainerInfoRepositoryCustomImpl
     }
 
     dsl.executeInsert(row);
-    measurementRows.deleteUnlessSnapshotMatches(mediaFileId, publication.snapshot());
     if (!(publication.outcome()
         instanceof
         ProbeOutcome.Success(var container, var streams, var keyframes, _, _, var measurements))) {
+      measurementRows.deleteNotFollowingStoredOutcome(mediaFileId);
       return;
     }
 
@@ -602,6 +603,8 @@ public class MediaFileContainerInfoRepositoryCustomImpl
     if (keyframes instanceof KeyframeKnowledge.Known(var positions)) {
       insertKeyframePositions(mediaFileId, positions);
     }
+
+    measurementRows.deleteNotFollowingStoredOutcome(mediaFileId);
 
     if (container.chapters() instanceof ChapterKnowledge.Known(var chapters)
         && !chapters.isEmpty()) {
