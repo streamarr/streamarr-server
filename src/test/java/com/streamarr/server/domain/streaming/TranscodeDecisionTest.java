@@ -18,6 +18,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("Transcode Decision Tests")
 class TranscodeDecisionTest {
 
+  private static final Fraction NTSC_FRAME_RATE = new Fraction(30_000, 1_001);
+
   private static final VideoPlaybackFacts FACTS_WITHOUT_CODEC_STRING =
       VideoPlaybackFactsFixture.sdrH264FactsBuilder().codecString(Optional.empty()).build();
 
@@ -148,6 +150,76 @@ class TranscodeDecisionTest {
 
   @Builder
   record AudioChange(TranscodeMode mode, AudioMode audio, TranscodeMode modeWithAudio) {}
+
+  @ParameterizedTest
+  @EnumSource(
+      value = TranscodeMode.class,
+      names = {"VIDEO_TRANSCODE", "FULL_TRANSCODE"})
+  @DisplayName(
+      "Should deinterlace one frame per field at twice the stored rate when the decision encodes an interlaced source")
+  void
+      shouldDeinterlaceOneFramePerFieldAtTwiceTheStoredRateWhenTheDecisionEncodesAnInterlacedSource(
+          TranscodeMode mode) {
+    var decision =
+        decisionBuilder(mode).videoSource(Optional.of(interlacedFacts(FieldOrder.BT))).build();
+
+    assertThat(decision.deinterlace())
+        .contains(new Deinterlace(FieldOrder.BT, DeinterlaceOutput.ONE_FRAME_PER_FIELD));
+    assertThat(decision.outputFrameRate()).contains(new Fraction(60_000, 1_001));
+  }
+
+  @Test
+  @DisplayName("Should keep the stored rate and not deinterlace when the decision copies the video")
+  void shouldKeepTheStoredRateAndNotDeinterlaceWhenTheDecisionCopiesTheVideo() {
+    var decision =
+        decisionBuilder(TranscodeMode.REMUX)
+            .videoSource(Optional.of(interlacedFacts(FieldOrder.TT)))
+            .build();
+
+    assertThat(decision.deinterlace()).isEmpty();
+    assertThat(decision.outputFrameRate()).contains(NTSC_FRAME_RATE);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the stored rate and not deinterlace when the stored field order is progressive")
+  void shouldKeepTheStoredRateAndNotDeinterlaceWhenTheStoredFieldOrderIsProgressive() {
+    var decision =
+        decisionBuilder(TranscodeMode.FULL_TRANSCODE)
+            .videoSource(Optional.of(interlacedFacts(FieldOrder.PROGRESSIVE)))
+            .build();
+
+    assertThat(decision.deinterlace()).isEmpty();
+    assertThat(decision.outputFrameRate()).contains(NTSC_FRAME_RATE);
+  }
+
+  @Test
+  @DisplayName(
+      "Should report no output frame rate when the probe stored none for an interlaced source")
+  void shouldReportNoOutputFrameRateWhenTheProbeStoredNoneForAnInterlacedSource() {
+    var refused =
+        FrameRateRule.builder()
+            .outputFrameRate(Optional.empty())
+            .basis(OutputFrameRateBasis.REFUSED)
+            .inputs(FrameRateRuleInputs.builder().fieldOrder(Optional.of(FieldOrder.TT)).build())
+            .build();
+    var decision =
+        decisionBuilder(TranscodeMode.FULL_TRANSCODE)
+            .videoSource(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder().frameRateRule(refused).build()))
+            .build();
+
+    assertThat(decision.outputFrameRate()).isEmpty();
+    assertThat(decision.deinterlace())
+        .contains(new Deinterlace(FieldOrder.TT, DeinterlaceOutput.ONE_FRAME_PER_FRAME));
+  }
+
+  private static VideoPlaybackFacts interlacedFacts(FieldOrder fieldOrder) {
+    return VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+        .frameRateRule(VideoPlaybackFactsFixture.interlacedRateRule(NTSC_FRAME_RATE, fieldOrder))
+        .build();
+  }
 
   private static TranscodeDecision.TranscodeDecisionBuilder decisionBuilder(TranscodeMode mode) {
     return TranscodeDecision.builder()

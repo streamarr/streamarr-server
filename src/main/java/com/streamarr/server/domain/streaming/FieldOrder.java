@@ -10,5 +10,13 @@ public enum FieldOrder {
   /** Top field coded first, bottom field displayed first. */
   TB,
   /** Bottom field coded first, top field displayed first. */
-  BT
+  BT;
+
+  /** Whether each frame holds two fields captured at different moments. */
+  public boolean isInterlaced() {
+    return switch (this) {
+      case PROGRESSIVE -> false;
+      case TT, BB, TB, BT -> true;
+    };
+  }
 }

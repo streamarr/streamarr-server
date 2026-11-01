@@ -284,7 +284,7 @@ public class HlsStreamingService implements StreamingService {
   // worker state, so a caller decides from the workers that it has read.
   private Optional<TranscodeDecision> encodeCandidate(
       TranscodeDecisionRequest request, Set<String> encodableVideoCodecFamilies) {
-    if (request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
+    if (!request.videoFormatConstraint().permitsEncode(request.source())) {
       return Optional.empty();
     }
 

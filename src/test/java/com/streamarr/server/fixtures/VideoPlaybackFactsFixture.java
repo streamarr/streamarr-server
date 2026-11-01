@@ -6,6 +6,7 @@ import com.streamarr.server.domain.streaming.ColorRange;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
+import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRatePacketScan;
 import com.streamarr.server.domain.streaming.FrameRateRule;
@@ -128,6 +129,23 @@ public class VideoPlaybackFactsFixture {
         .outputFrameRate(Optional.of(outputFrameRate))
         .basis(OutputFrameRateBasis.DECLARED_RATE_FALLBACK)
         .inputs(declaredRates)
+        .build();
+  }
+
+  /**
+   * The rule's result for an interlaced stream whose declared rates agree on a listed rate. The
+   * rate counts frames, each of which holds two fields.
+   */
+  public static FrameRateRule interlacedRateRule(Fraction rate, FieldOrder fieldOrder) {
+    return FrameRateRule.builder()
+        .outputFrameRate(Optional.of(rate))
+        .basis(OutputFrameRateBasis.DECLARED_RATES)
+        .inputs(
+            FrameRateRuleInputs.builder()
+                .baseRate(Optional.of(rate))
+                .averageRate(Optional.of(rate))
+                .fieldOrder(Optional.of(fieldOrder))
+                .build())
         .build();
   }
 

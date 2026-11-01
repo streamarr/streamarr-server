@@ -71,7 +71,7 @@ public class TranscodeDecisionService {
     var sessionAudio = decideAudio(source, declaration);
     var audioBesideCopy = audioBesideVideoCopy(request, sessionAudio);
     boolean videoCopyable = audioBesideCopy.isPresent();
-    if (!videoCopyable && request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
+    if (!videoCopyable && !request.videoFormatConstraint().permitsEncode(source)) {
       return Optional.empty();
     }
 
@@ -148,7 +148,9 @@ public class TranscodeDecisionService {
 
   private boolean decideVideoCopy(MediaProbe source, ClientCapabilityDeclaration declaration) {
     var copyFits = VideoStreamCopy.of(source).filter(declaration::acceptsHlsCopy).isPresent();
-    if (!copyFits || !permitsCopyUntilHdrCopies(source)) {
+    // Apple's HLS Authoring Specification item 1.14 requires deinterlaced video, so the worker
+    // deinterlaces an interlaced source while it encodes (streamarr/streamarr-server#653).
+    if (!copyFits || source.isInterlaced() || !permitsCopyUntilHdrCopies(source)) {
       return false;
     }
 
