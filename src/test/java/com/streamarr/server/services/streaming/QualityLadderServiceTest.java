@@ -26,6 +26,8 @@ import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.stream.Stream;
+import lombok.Builder;
+import org.assertj.core.groups.Tuple;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -61,7 +63,7 @@ class QualityLadderServiceTest {
   @DisplayName(
       "Should fit a wide film to each tier's box when the film is shorter than the tier's height")
   void shouldFitAWideFilmToEachTiersBoxWhenTheFilmIsShorterThanTheTiersHeight() {
-    var probe = buildProbe(1920, 800, 8_000_000L);
+    var probe = buildProbeBuilder(1920, 800).bitrate(8_000_000L).build();
 
     var variants = generateVariants(probe, StreamingOptions.builder().build());
 
@@ -101,62 +103,103 @@ class QualityLadderServiceTest {
     assertThat(variants.get(1).label()).isEqualTo("360p");
   }
 
-  @ParameterizedTest
-  @CsvSource({
-    "LOW_360P, 640, 360, 800000",
-    "MEDIUM_480P, 854, 480, 1500000",
-    "HIGH_720P, 1280, 720, 3000000",
-    "FULL_HD_1080P, 1920, 1080, 5000000",
-    "UHD_4K, 3840, 2160, 8000000",
-    "ORIGINAL, 3840, 2160, 8000000"
-  })
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("fixedQualityBoxes")
   @DisplayName(
       "Should offer only a default variant within the fixed quality's box when the quality is"
           + " fixed")
   void shouldOfferOnlyADefaultVariantWithinTheFixedQualitysBoxWhenTheQualityIsFixed(
-      VideoQuality quality, int expectedWidth, int expectedHeight, long expectedBitrate) {
-    var probe = buildProbe(3840, 2160, 8_000_000L);
-    var options = StreamingOptions.builder().quality(quality).build();
+      FixedQualityCase fixedQuality) {
+    var probe = buildProbeBuilder(3840, 2160).bitrate(8_000_000L).build();
+    var options = StreamingOptions.builder().quality(fixedQuality.quality()).build();
 
     var variants = generateVariants(probe, options);
 
     assertThat(variants)
-        .extracting(
-            QualityVariant::width,
-            QualityVariant::height,
-            QualityVariant::videoBitrate,
-            QualityVariant::label)
+        .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::label)
         .containsExactly(
-            tuple(expectedWidth, expectedHeight, expectedBitrate, StreamSession.defaultVariant()));
+            tuple(
+                fixedQuality.picture().width(),
+                fixedQuality.picture().height(),
+                StreamSession.defaultVariant()));
+    assertThat(variants)
+        .extracting(QualityVariant::videoBitrate)
+        .containsExactly(fixedQuality.videoBitrate());
   }
 
-  @ParameterizedTest
-  @CsvSource({"1080, 1920, FULL_HD_1080P, 1080, 1920", "1920, 1080, UHD_4K, 1920, 1080"})
+  // ADR 0050's tier boxes. The 4K fixed quality's box is the 2160p tier's, and the source's 8 Mb/s
+  // caps the 2160p tier's nominal bitrate.
+  static Stream<FixedQualityCase> fixedQualityBoxes() {
+    return Stream.of(
+        FixedQualityCase.builder()
+            .quality(VideoQuality.LOW_360P)
+            .picture(new PictureSize(640, 360))
+            .videoBitrate(800_000L)
+            .build(),
+        FixedQualityCase.builder()
+            .quality(VideoQuality.MEDIUM_480P)
+            .picture(new PictureSize(854, 480))
+            .videoBitrate(1_500_000L)
+            .build(),
+        FixedQualityCase.builder()
+            .quality(VideoQuality.HIGH_720P)
+            .picture(new PictureSize(1280, 720))
+            .videoBitrate(3_000_000L)
+            .build(),
+        FixedQualityCase.builder()
+            .quality(VideoQuality.FULL_HD_1080P)
+            .picture(new PictureSize(1920, 1080))
+            .videoBitrate(5_000_000L)
+            .build(),
+        FixedQualityCase.builder()
+            .quality(VideoQuality.UHD_4K)
+            .picture(new PictureSize(3840, 2160))
+            .videoBitrate(8_000_000L)
+            .build());
+  }
+
+  @Builder
+  record FixedQualityCase(VideoQuality quality, PictureSize picture, long videoBitrate) {}
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("sourcesWithinTheirFixedQualitysBox")
   @DisplayName(
       "Should keep the source's size when it fits the fixed quality's box turned to its"
           + " orientation")
   void shouldKeepTheSourcesSizeWhenItFitsTheFixedQualitysBoxTurnedToItsOrientation(
-      int sourceWidth,
-      int sourceHeight,
-      VideoQuality quality,
-      int expectedWidth,
-      int expectedHeight) {
-    var probe = buildProbe(sourceWidth, sourceHeight, 8_000_000L);
-    var options = StreamingOptions.builder().quality(quality).build();
+      SourceInBox sourceInBox) {
+    var source = sourceInBox.source();
+    var probe = buildProbeBuilder(source.width(), source.height()).bitrate(8_000_000L).build();
+    var options = StreamingOptions.builder().quality(sourceInBox.quality()).build();
 
     var variants = generateVariants(probe, options);
 
     assertThat(variants)
-        .extracting(QualityVariant::width, QualityVariant::height)
-        .containsExactly(tuple(expectedWidth, expectedHeight));
+        .extracting(variant -> new PictureSize(variant.width(), variant.height()))
+        .containsExactly(source);
   }
+
+  static Stream<SourceInBox> sourcesWithinTheirFixedQualitysBox() {
+    return Stream.of(
+        SourceInBox.builder()
+            .source(new PictureSize(1080, 1920))
+            .quality(VideoQuality.FULL_HD_1080P)
+            .build(),
+        SourceInBox.builder()
+            .source(new PictureSize(1920, 1080))
+            .quality(VideoQuality.UHD_4K)
+            .build());
+  }
+
+  @Builder
+  record SourceInBox(PictureSize source, VideoQuality quality) {}
 
   @Test
   @DisplayName(
       "Should encode a fixed quality within the viewer's maximum bitrate when the source's bitrate"
           + " is higher")
   void shouldEncodeAFixedQualityWithinTheViewersMaximumBitrateWhenTheSourcesBitrateIsHigher() {
-    var probe = buildProbe(1920, 1080, 8_000_000L);
+    var probe = buildProbeBuilder(1920, 1080).bitrate(8_000_000L).build();
     var options =
         StreamingOptions.builder().quality(VideoQuality.HIGH_720P).maxBitrate(1_000_000).build();
 
@@ -165,29 +208,43 @@ class QualityLadderServiceTest {
     assertThat(variants).extracting(QualityVariant::videoBitrate).containsExactly(1_000_000L);
   }
 
-  @ParameterizedTest
-  @CsvSource({
-    "3840, 2160, 20000000",
-    "2560, 1440, 12000000",
-    "1920, 1080, 5000000",
-    "1280, 720, 3000000",
-    "1000, 562, 3000000",
-    "854, 480, 1500000",
-    "320, 180, 800000"
-  })
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("picturesAndTheirSmallestTiersBitrate")
   @DisplayName(
       "Should encode at the nominal bitrate of the smallest tier whose box holds the picture when"
           + " the probe names no source bitrate")
   void
       shouldEncodeAtTheNominalBitrateOfTheSmallestTierWhoseBoxHoldsThePictureWhenTheProbeNamesNoSourceBitrate(
-          int width, int height, long expectedBitrate) {
-    var probe = buildProbe(width, height, 0L);
+          PictureBitrate expected) {
+    var picture = expected.picture();
+    var probe = buildProbeBuilder(picture.width(), picture.height()).bitrate(0L).build();
     var options = StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build();
 
     var variants = generateVariants(probe, options);
 
-    assertThat(variants).extracting(QualityVariant::videoBitrate).containsExactly(expectedBitrate);
+    assertThat(variants)
+        .extracting(QualityVariant::videoBitrate)
+        .containsExactly(expected.bitrate());
   }
+
+  // ADR 0050's H.264 tier bitrates. A 1000×562 picture fits the 720p box, not the 480p box.
+  static Stream<PictureBitrate> picturesAndTheirSmallestTiersBitrate() {
+    return Stream.of(
+        pictureBitrate(new PictureSize(3840, 2160), 20_000_000L),
+        pictureBitrate(new PictureSize(2560, 1440), 12_000_000L),
+        pictureBitrate(new PictureSize(1920, 1080), 5_000_000L),
+        pictureBitrate(new PictureSize(1280, 720), 3_000_000L),
+        pictureBitrate(new PictureSize(1000, 562), 3_000_000L),
+        pictureBitrate(new PictureSize(854, 480), 1_500_000L),
+        pictureBitrate(new PictureSize(320, 180), 800_000L));
+  }
+
+  private static PictureBitrate pictureBitrate(PictureSize picture, long bitrate) {
+    return PictureBitrate.builder().picture(picture).bitrate(bitrate).build();
+  }
+
+  @Builder
+  record PictureBitrate(PictureSize picture, long bitrate) {}
 
   @ParameterizedTest
   @CsvSource({
@@ -202,7 +259,7 @@ class QualityLadderServiceTest {
   void
       shouldEncodeAFixedQualityAtTheNominalBitrateOfTheTierThatHoldsTheEncodedPictureWhenTheProbeNamesNoSourceBitrate(
           VideoQuality quality, long expectedBitrate) {
-    var probe = buildProbe(1920, 1080, 0L);
+    var probe = buildProbeBuilder(1920, 1080).bitrate(0L).build();
     var options = StreamingOptions.builder().quality(quality).build();
 
     var variants = generateVariants(probe, options);
@@ -210,26 +267,53 @@ class QualityLadderServiceTest {
     assertThat(variants).extracting(QualityVariant::videoBitrate).containsExactly(expectedBitrate);
   }
 
-  @ParameterizedTest
-  @CsvSource({
-    "1920, 1080, UHD_4K, 5000000",
-    "1080, 1920, UHD_4K, 5000000",
-    "1280, 536, FULL_HD_1080P, 3000000",
-    "3840, 2160, UHD_4K, 20000000"
-  })
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("fixedQualitiesOfSourcesAboveTheirTiersBitrate")
   @DisplayName(
       "Should encode a fixed quality at the nominal bitrate of the smallest tier whose box holds"
           + " the encoded picture in either orientation when the source names a higher bitrate")
   void
       shouldEncodeAFixedQualityAtTheNominalBitrateOfTheSmallestTierWhoseBoxHoldsTheEncodedPictureInEitherOrientationWhenTheSourceNamesAHigherBitrate(
-          int width, int height, VideoQuality quality, long expectedBitrate) {
-    var probe = buildProbe(width, height, 40_000_000L);
-    var options = StreamingOptions.builder().quality(quality).build();
+          FixedQualityBitrate fixedQuality) {
+    var source = fixedQuality.source();
+    var probe = buildProbeBuilder(source.width(), source.height()).bitrate(40_000_000L).build();
+    var options = StreamingOptions.builder().quality(fixedQuality.quality()).build();
 
     var variants = generateVariants(probe, options);
 
-    assertThat(variants).extracting(QualityVariant::videoBitrate).containsExactly(expectedBitrate);
+    assertThat(variants)
+        .extracting(QualityVariant::videoBitrate)
+        .containsExactly(fixedQuality.videoBitrate());
   }
+
+  // A fixed 4K of a 1080p source encodes a picture that the 1080p box holds, upright or not, and a
+  // fixed 1080p of a 1280×536 source one that the 720p box holds.
+  static Stream<FixedQualityBitrate> fixedQualitiesOfSourcesAboveTheirTiersBitrate() {
+    return Stream.of(
+        FixedQualityBitrate.builder()
+            .source(new PictureSize(1920, 1080))
+            .quality(VideoQuality.UHD_4K)
+            .videoBitrate(5_000_000L)
+            .build(),
+        FixedQualityBitrate.builder()
+            .source(new PictureSize(1080, 1920))
+            .quality(VideoQuality.UHD_4K)
+            .videoBitrate(5_000_000L)
+            .build(),
+        FixedQualityBitrate.builder()
+            .source(new PictureSize(1280, 536))
+            .quality(VideoQuality.FULL_HD_1080P)
+            .videoBitrate(3_000_000L)
+            .build(),
+        FixedQualityBitrate.builder()
+            .source(new PictureSize(3840, 2160))
+            .quality(VideoQuality.UHD_4K)
+            .videoBitrate(20_000_000L)
+            .build());
+  }
+
+  @Builder
+  record FixedQualityBitrate(PictureSize source, VideoQuality quality, long videoBitrate) {}
 
   @ParameterizedTest
   @CsvSource({"20000000, 5000000", "2000000, 2000000"})
@@ -239,7 +323,7 @@ class QualityLadderServiceTest {
   void
       shouldEncodeAtTheLowerOfTheNominalBitrateAndTheViewersMaximumWhenTheProbeNamesNoSourceBitrate(
           int maxBitrate, long expectedBitrate) {
-    var probe = buildProbe(1920, 1080, 0L);
+    var probe = buildProbeBuilder(1920, 1080).bitrate(0L).build();
     var options =
         StreamingOptions.builder()
             .quality(VideoQuality.FULL_HD_1080P)
@@ -256,7 +340,7 @@ class QualityLadderServiceTest {
       "Should cap the nominal bitrate at the entry's codec level when the probe names no source"
           + " bitrate")
   void shouldCapTheNominalBitrateAtTheEntrysCodecLevelWhenTheProbeNamesNoSourceBitrate() {
-    var probe = buildProbe(1920, 1080, 0L);
+    var probe = buildProbeBuilder(1920, 1080).bitrate(0L).build();
     var options = StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build();
     var levelTwelveOnly =
         defaultDeclarationBuilder()
@@ -284,7 +368,7 @@ class QualityLadderServiceTest {
   @DisplayName(
       "Should skip every tier wider than the viewer's maximum width when the viewer sets one")
   void shouldSkipEveryTierWiderThanTheViewersMaximumWidthWhenTheViewerSetsOne() {
-    var probe = buildProbe(1920, 1080, 8_000_000L);
+    var probe = buildProbeBuilder(1920, 1080).bitrate(8_000_000L).build();
     var options = StreamingOptions.builder().maxWidth(1000).build();
 
     var variants = generateVariants(probe, options);
@@ -298,7 +382,7 @@ class QualityLadderServiceTest {
   @DisplayName(
       "Should size the only variant within the viewer's maximum width when every tier is wider")
   void shouldSizeTheOnlyVariantWithinTheViewersMaximumWidthWhenEveryTierIsWider() {
-    var probe = buildProbe(1920, 1080, 8_000_000L);
+    var probe = buildProbeBuilder(1920, 1080).bitrate(8_000_000L).build();
     var options = StreamingOptions.builder().maxWidth(500).build();
 
     var variants = generateVariants(probe, options);
@@ -313,7 +397,7 @@ class QualityLadderServiceTest {
       "Should encode the only variant within the viewer's maximum bitrate when the viewer's limits"
           + " leave no tier")
   void shouldEncodeTheOnlyVariantWithinTheViewersMaximumBitrateWhenTheViewersLimitsLeaveNoTier() {
-    var probe = buildProbe(1920, 1080, 8_000_000L);
+    var probe = buildProbeBuilder(1920, 1080).bitrate(8_000_000L).build();
     var options = StreamingOptions.builder().maxWidth(500).maxBitrate(1_000_000).build();
 
     var variants = generateVariants(probe, options);
@@ -328,7 +412,7 @@ class QualityLadderServiceTest {
       "Should keep the smaller tier's bitrate when an entry shrinks a larger tier to the smaller"
           + " tier's size")
   void shouldKeepTheSmallerTiersBitrateWhenAnEntryShrinksALargerTierToTheSmallerTiersSize() {
-    var probe = buildProbe(1920, 1080, 8_000_000L);
+    var probe = buildProbeBuilder(1920, 1080).bitrate(8_000_000L).build();
     var declaration =
         defaultDeclarationBuilder()
             .video(List.of(h264EntryBuilder().maxWidth(1280).maxHeight(720).build()))
@@ -395,63 +479,154 @@ class QualityLadderServiceTest {
   }
 
   // ADR 0050: a variant costs its video bitrate plus the stream session's audio bitrate.
-  @ParameterizedTest
-  @CsvSource({
-    "0, 3100000, '720p, 480p, 360p'",
-    "128000, 3100000, '480p, 360p'",
-    "384000, 1800000, '360p'"
-  })
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("audioBitratesAndTheTiersTheyLeave")
   @DisplayName(
       "Should offer a tier only when its video bitrate plus the session's audio bitrate is within"
           + " the viewer's maximum bitrate")
   void shouldOfferATierOnlyWhenItsVideoPlusAudioBitrateIsWithinTheViewersMaximumBitrate(
-      long audioBitrate, int maxBitrate, String expectedLabels) {
-    var probe = buildProbe(1920, 1080, 8_000_000L);
-    var options = StreamingOptions.builder().maxBitrate(maxBitrate).build();
+      TiersWithinBudget budget) {
+    var probe = buildProbeBuilder(1920, 1080).bitrate(8_000_000L).build();
+    var options = StreamingOptions.builder().maxBitrate(budget.maxBitrate()).build();
 
     var variants =
-        service.generateVariants(ladderRequest(probe, options).audioBitrate(audioBitrate).build());
+        service.generateVariants(
+            ladderRequest(probe, options).audioBitrate(budget.audioBitrate()).build());
 
     assertThat(variants)
         .extracting(QualityVariant::label)
-        .containsExactly(expectedLabels.split(", "));
+        .containsExactlyElementsOf(budget.labels());
   }
 
-  @ParameterizedTest
-  @CsvSource({
-    "FULL_HD_1080P, 8000000, 128000, 2000000, 1920, 1080, 1872000",
-    "FULL_HD_1080P, 8000000, 128000, 928000, 1920, 1080, 800000",
-    "FULL_HD_1080P, 8000000, 128000, 927999, 640, 360, 800000",
-    "FULL_HD_1080P, 8000000, 128000, 700000, 640, 360, 700000",
-    "FULL_HD_1080P, 8000000, 128000, 128000, 640, 360, 128000",
-    "FULL_HD_1080P, 8000000, 384000, 100000, 640, 360, 100000",
-    "FULL_HD_1080P, 300000, 128000, 500000, 640, 360, 300000",
-    "FULL_HD_1080P, 0, 128000, 500000, 640, 360, 500000",
-    "AUTO, 8000000, 128000, 500000, 640, 360, 500000",
-    "AUTO, 300000, 128000, 500000, 640, 360, 300000"
-  })
+  // 720p's 3 Mb/s fits a 3.1 Mb/s maximum only without audio, and 480p's 1.5 Mb/s fits 1.8 Mb/s
+  // only with less than 300 kb/s of audio.
+  static Stream<TiersWithinBudget> audioBitratesAndTheTiersTheyLeave() {
+    return Stream.of(
+        TiersWithinBudget.builder()
+            .audioBitrate(0L)
+            .maxBitrate(3_100_000)
+            .labels(List.of("720p", "480p", "360p"))
+            .build(),
+        TiersWithinBudget.builder()
+            .audioBitrate(128_000L)
+            .maxBitrate(3_100_000)
+            .labels(List.of("480p", "360p"))
+            .build(),
+        TiersWithinBudget.builder()
+            .audioBitrate(384_000L)
+            .maxBitrate(1_800_000)
+            .labels(List.of("360p"))
+            .build());
+  }
+
+  @Builder
+  record TiersWithinBudget(long audioBitrate, int maxBitrate, List<String> labels) {}
+
+  // ADR 0050: a single variant's video gets at most the maximum bitrate less the audio bitrate.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("budgetsThatHoldThe360pTiersBitrate")
   @DisplayName(
-      "Should bound the single variant by the maximum bitrate less the audio, or by the 360p box"
-          + " and the 360p tier's bitrate, when the viewer sets a maximum bitrate")
+      "Should encode the single variant at the maximum bitrate less the audio when that leaves at"
+          + " least the 360p tier's bitrate")
   void
-      shouldBoundTheSingleVariantByTheMaximumBitrateLessTheAudioOrByThe360pBoxWhenTheViewerSetsAMaximumBitrate(
-          VideoQuality quality,
-          long sourceBitrate,
-          long audioBitrate,
-          int maxBitrate,
-          int expectedWidth,
-          int expectedHeight,
-          long expectedVideoBitrate) {
-    var probe = buildProbe(1920, 1080, sourceBitrate);
-    var options = StreamingOptions.builder().quality(quality).maxBitrate(maxBitrate).build();
+      shouldEncodeTheSingleVariantAtTheMaximumBitrateLessTheAudioWhenThatLeavesAtLeastThe360pTiersBitrate(
+          SingleVariantBudget budget) {
+    assertThat(singleVariantWithin(budget))
+        .containsExactly(
+            tuple(budget.picture().width(), budget.picture().height(), budget.videoBitrate()));
+  }
+
+  static Stream<SingleVariantBudget> budgetsThatHoldThe360pTiersBitrate() {
+    return Stream.of(
+        fixed1080pBudget().maxBitrate(2_000_000).videoBitrate(1_872_000L).build(),
+        fixed1080pBudget().maxBitrate(928_000).videoBitrate(800_000L).build());
+  }
+
+  // An encoder reads a zero bitrate as no limit, so the video never gets the remainder when the
+  // audio leaves less than the 360p tier's bitrate, or nothing at all.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("budgetsBelowThe360pTiersBitrate")
+  @DisplayName(
+      "Should encode the single variant in the 360p box at the 360p tier's bitrate within the"
+          + " maximum when the audio leaves less than that bitrate")
+  void
+      shouldEncodeTheSingleVariantInThe360pBoxAtThe360pTiersBitrateWithinTheMaximumWhenTheAudioLeavesLessThanThatBitrate(
+          SingleVariantBudget budget) {
+    assertThat(singleVariantWithin(budget)).containsExactly(tuple(640, 360, budget.videoBitrate()));
+  }
+
+  static Stream<SingleVariantBudget> budgetsBelowThe360pTiersBitrate() {
+    return Stream.of(
+        fixed1080pBudget().maxBitrate(927_999).videoBitrate(800_000L).build(),
+        fixed1080pBudget().maxBitrate(700_000).videoBitrate(700_000L).build(),
+        fixed1080pBudget().maxBitrate(128_000).videoBitrate(128_000L).build(),
+        fixed1080pBudget()
+            .audioBitrate(384_000L)
+            .maxBitrate(100_000)
+            .videoBitrate(100_000L)
+            .build(),
+        fixed1080pBudget().sourceBitrate(0L).maxBitrate(500_000).videoBitrate(500_000L).build(),
+        fixed1080pBudget()
+            .quality(VideoQuality.AUTO)
+            .maxBitrate(500_000)
+            .videoBitrate(500_000L)
+            .build());
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("budgetsAboveTheSourcesBitrate")
+  @DisplayName(
+      "Should cap the single variant at the source's known bitrate when the budget leaves more")
+  void shouldCapTheSingleVariantAtTheSourcesKnownBitrateWhenTheBudgetLeavesMore(
+      SingleVariantBudget budget) {
+    assertThat(singleVariantWithin(budget))
+        .containsExactly(tuple(640, 360, budget.sourceBitrate()));
+  }
+
+  static Stream<SingleVariantBudget> budgetsAboveTheSourcesBitrate() {
+    return Stream.of(
+        fixed1080pBudget().sourceBitrate(300_000L).maxBitrate(500_000).build(),
+        fixed1080pBudget()
+            .quality(VideoQuality.AUTO)
+            .sourceBitrate(300_000L)
+            .maxBitrate(500_000)
+            .build());
+  }
+
+  private List<Tuple> singleVariantWithin(SingleVariantBudget budget) {
+    var probe = buildProbeBuilder(1920, 1080).bitrate(budget.sourceBitrate()).build();
+    var options =
+        StreamingOptions.builder()
+            .quality(budget.quality())
+            .maxBitrate(budget.maxBitrate())
+            .build();
 
     var variants =
-        service.generateVariants(ladderRequest(probe, options).audioBitrate(audioBitrate).build());
+        service.generateVariants(
+            ladderRequest(probe, options).audioBitrate(budget.audioBitrate()).build());
 
-    assertThat(variants)
-        .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::videoBitrate)
-        .containsExactly(tuple(expectedWidth, expectedHeight, expectedVideoBitrate));
+    return variants.stream()
+        .map(variant -> tuple(variant.width(), variant.height(), variant.videoBitrate()))
+        .toList();
   }
+
+  // A fixed 1080p of an 8 Mb/s 1920×1080 source beside 128 kb/s of audio, at the full picture.
+  private static SingleVariantBudget.SingleVariantBudgetBuilder fixed1080pBudget() {
+    return SingleVariantBudget.builder()
+        .quality(VideoQuality.FULL_HD_1080P)
+        .sourceBitrate(8_000_000L)
+        .audioBitrate(128_000L)
+        .picture(new PictureSize(1920, 1080));
+  }
+
+  @Builder
+  record SingleVariantBudget(
+      VideoQuality quality,
+      long sourceBitrate,
+      long audioBitrate,
+      int maxBitrate,
+      PictureSize picture,
+      long videoBitrate) {}
 
   @Test
   @DisplayName("Should filter tiers when client specifies max bitrate")
@@ -486,7 +661,7 @@ class QualityLadderServiceTest {
       "Should compute aspect-ratio-correct dimensions when generating variants for each quality tier")
   void shouldComputeAspectRatioCorrectDimensionsWhenGeneratingVariantsForEachQualityTier(
       String scenario, PictureSize source, List<PictureSize> expected) {
-    var probe = buildProbe(source.width(), source.height(), 8_000_000L);
+    var probe = buildProbeBuilder(source.width(), source.height()).bitrate(8_000_000L).build();
     var options = StreamingOptions.builder().build();
 
     var variants = generateVariants(probe, options);
@@ -552,7 +727,7 @@ class QualityLadderServiceTest {
   @DisplayName(
       "Should offer every tier up to 2160p when the source is larger than every tier's box")
   void shouldOfferEveryTierUpTo2160pWhenTheSourceIsLargerThanEveryTiersBox() {
-    var probe = buildProbe(7680, 4320, 80_000_000L);
+    var probe = buildProbeBuilder(7680, 4320).bitrate(80_000_000L).build();
 
     var variants = generateVariants(probe, StreamingOptions.builder().build());
 
@@ -616,7 +791,7 @@ class QualityLadderServiceTest {
   @DisplayName(
       "Should align width to even number when the source is smaller than the 360p tier's box")
   void shouldAlignWidthToEvenNumberWhenTheSourceIsSmallerThanThe360pTiersBox() {
-    var probe = buildProbe(319, 179, 500_000L);
+    var probe = buildProbeBuilder(319, 179).bitrate(500_000L).build();
     var options = StreamingOptions.builder().build();
 
     var variants = generateVariants(probe, options);
@@ -627,37 +802,50 @@ class QualityLadderServiceTest {
     assertThat(variants.get(0).label()).isEqualTo("178p");
   }
 
-  @ParameterizedTest
-  @CsvSource({
-    "640, 360, 360p",
-    "360, 640, 360p",
-    "638, 360, 360p",
-    "320, 180, 180p",
-    "180, 320, 180p",
-    "1920, 800, 1080p",
-    "2560, 1072, 1440p"
-  })
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("variantSizesAndTheirLabels")
   @DisplayName(
       "Should label the variant by the tier whose box it reaches, or else by its shorter side, when"
           + " the source is the variant's size")
   void
       shouldLabelTheVariantByTheTierWhoseBoxItReachesOrElseByItsShorterSideWhenTheSourceIsTheVariantsSize(
-          int width, int height, String expectedLabel) {
-    var probe = buildProbe(width, height, 8_000_000L);
+          LabelledPicture expected) {
+    var picture = expected.picture();
+    var probe = buildProbeBuilder(picture.width(), picture.height()).bitrate(8_000_000L).build();
 
     var variants = generateVariants(probe, StreamingOptions.builder().build());
 
     assertThat(variants.getFirst())
         .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::label)
-        .containsExactly(width, height, expectedLabel);
+        .containsExactly(picture.width(), picture.height(), expected.label());
   }
+
+  // ADR 0050's labelling examples. A 638×360 picture reaches the 360p box because the worker's
+  // next larger picture of it is too tall.
+  static Stream<LabelledPicture> variantSizesAndTheirLabels() {
+    return Stream.of(
+        labelledPicture(new PictureSize(640, 360), "360p"),
+        labelledPicture(new PictureSize(360, 640), "360p"),
+        labelledPicture(new PictureSize(638, 360), "360p"),
+        labelledPicture(new PictureSize(320, 180), "180p"),
+        labelledPicture(new PictureSize(180, 320), "180p"),
+        labelledPicture(new PictureSize(1920, 800), "1080p"),
+        labelledPicture(new PictureSize(2560, 1072), "1440p"));
+  }
+
+  private static LabelledPicture labelledPicture(PictureSize picture, String label) {
+    return LabelledPicture.builder().picture(picture).label(label).build();
+  }
+
+  @Builder
+  record LabelledPicture(PictureSize picture, String label) {}
 
   @Test
   @DisplayName(
       "Should label the only variant by its shorter side when the viewer's maximum width bounds a"
           + " portrait picture")
   void shouldLabelTheOnlyVariantByItsShorterSideWhenTheViewersMaximumWidthBoundsAPortraitPicture() {
-    var probe = buildProbe(1080, 1920, 8_000_000L);
+    var probe = buildProbeBuilder(1080, 1920).bitrate(8_000_000L).build();
     var options = StreamingOptions.builder().maxWidth(300).build();
 
     var variants = generateVariants(probe, options);
@@ -680,10 +868,6 @@ class QualityLadderServiceTest {
         .capabilityDeclaration(defaultDeclarationBuilder().build())
         .codecProfile(EncodeCodecProfile.H264_HIGH)
         .frameRate(new Fraction(24, 1));
-  }
-
-  private MediaProbe buildProbe(int width, int height, long bitrate) {
-    return buildProbeBuilder(width, height).bitrate(bitrate).build();
   }
 
   private static MediaProbe.MediaProbeBuilder buildProbeBuilder(int width, int height) {
