@@ -3,6 +3,9 @@ package com.streamarr.server.services.streaming.remote;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 
 import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.domain.streaming.BitrateScanChunkOutcome;
+import com.streamarr.server.domain.streaming.BitrateScanChunkRequest;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
@@ -24,6 +27,7 @@ public final class RemoteFfprobeService implements FfprobeService {
   private final UUID sourceNamespaceId;
   private final RemoteMediaSourceMapper sourceMapper;
   private final RemoteProbeResultMapper resultMapper = new RemoteProbeResultMapper();
+  private final RemoteBitrateScanChunkMapper chunkMapper = new RemoteBitrateScanChunkMapper();
 
   public RemoteFfprobeService(WorkerSessionServer server, UUID sourceNamespaceId, Path sourceRoot) {
     this.server = server;
@@ -56,6 +60,17 @@ public final class RemoteFfprobeService implements FfprobeService {
         resultMapper::map);
   }
 
+  /** Serves {@link com.streamarr.server.services.streaming.BitrateScanner}. */
+  public BitrateScanChunkOutcome scanBitrateScanChunk(BitrateScanChunkRequest request) {
+    var chunk = chunkMapper.chunk(request);
+    return dispatch(
+        probeRequest(request.sourcePath(), request.attemptId(), ProbeVersion.CURRENT)
+            .setPriority(priorityOf(ProbePriority.BACKGROUND))
+            .setBitrateScanChunk(chunk)
+            .build(),
+        report -> chunkMapper.map(chunk, report));
+  }
+
   // The domain and the worker contract both name a probe's priority ProbePriority.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.transcode.v1.ProbePriority priorityOf(ProbePriority priority) {
@@ -66,10 +81,14 @@ public final class RemoteFfprobeService implements FfprobeService {
   }
 
   private ProbeRequest.Builder probeRequest(ProbeExecutionRequest request) {
+    return probeRequest(request.sourcePath(), request.attemptId(), request.probeVersion());
+  }
+
+  private ProbeRequest.Builder probeRequest(Path sourcePath, UUID attemptId, int probeVersion) {
     return ProbeRequest.newBuilder()
-        .setProbeAttemptId(toProto(request.attemptId()))
-        .setProbeVersion(request.probeVersion())
-        .setSource(sourceMapper.map(request.sourcePath()));
+        .setProbeAttemptId(toProto(attemptId))
+        .setProbeVersion(probeVersion)
+        .setSource(sourceMapper.map(sourcePath));
   }
 
   private <T> T dispatch(ProbeRequest request, Function<ProbeAttemptReport, T> mapper) {

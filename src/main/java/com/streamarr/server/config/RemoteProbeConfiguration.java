@@ -1,6 +1,7 @@
 package com.streamarr.server.config;
 
 import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.services.streaming.BitrateScanner;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.KeyframePacketScanner;
 import com.streamarr.server.services.streaming.ProbeCapacitySource;
@@ -30,6 +31,13 @@ public class RemoteProbeConfiguration {
   public KeyframePacketScanner keyframePacketScanner(
       WorkerSessionServer workerSessionServer, RemoteTranscodeProperties properties) {
     return remoteFfprobeService(workerSessionServer, properties)::scanKeyframePackets;
+  }
+
+  // A method reference, for the same reason as the KeyframePacketScanner bean.
+  @Bean
+  public BitrateScanner bitrateScanner(
+      WorkerSessionServer workerSessionServer, RemoteTranscodeProperties properties) {
+    return remoteFfprobeService(workerSessionServer, properties)::scanBitrateScanChunk;
   }
 
   @Bean

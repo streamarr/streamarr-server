@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming.remote;
 
 import static com.google.protobuf.Duration.newBuilder;
+import static com.streamarr.server.domain.streaming.StreamMeasurements.CURRENT_VERSION;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
@@ -9,14 +10,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.domain.streaming.BitrateScanChunkOutcome;
+import com.streamarr.server.domain.streaming.BitrateScanChunkRequest;
 import com.streamarr.server.domain.streaming.Chapter;
 import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.ChosenVideoStream;
 import com.streamarr.server.domain.streaming.ChromaticityCoordinates;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.ContentLightLevel;
+import com.streamarr.server.domain.streaming.KeyframeIntervalCounts;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.MasteringDisplayColorVolume;
+import com.streamarr.server.domain.streaming.MeasuredChunkStream;
+import com.streamarr.server.domain.streaming.MeasuredChunkStream.PacketTimes;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -34,6 +41,10 @@ import com.streamarr.server.fixtures.LoopbackProbeWorker;
 import com.streamarr.server.fixtures.StreamMeasurementFixture;
 import com.streamarr.server.fixtures.WorkerProbeResultFixture;
 import com.streamarr.server.support.BoundedTask;
+import com.streamarr.transcode.v1.BitrateScanChunk;
+import com.streamarr.transcode.v1.BitrateScanChunkResult;
+import com.streamarr.transcode.v1.BitrateScanChunkStream;
+import com.streamarr.transcode.v1.BitrateScanChunkStreams;
 import com.streamarr.transcode.v1.KeyframePositionSource;
 import com.streamarr.transcode.v1.KeyframePositions;
 import com.streamarr.transcode.v1.MeasuredStream;
@@ -457,6 +468,142 @@ class RemoteFfprobeServiceIT {
     return ProbeStreamMeasurementPart.newBuilder()
         .setProbeAttemptId(dispatched.getProbeAttemptId())
         .setStreamIndex(streamIndex);
+  }
+
+  @Test
+  @DisplayName(
+      "Should send the chunk's keyframes and return each stream's bytes in every keyframe interval"
+          + " when a worker measures a bitrate scan chunk")
+  // The domain and the worker contract both name a probe's priority ProbePriority.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  void shouldSendTheChunksKeyframesAndReturnEachStreamsIntervalsWhenAWorkerMeasuresAChunk()
+      throws Exception {
+    try (var server = server()) {
+      server.start();
+      try (var worker = chunkWorker(server.port())) {
+        var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
+        var request = chunkRequest().build();
+        try (var scan = BoundedTask.start(() -> service.scanBitrateScanChunk(request))) {
+          var dispatched = worker.nextResponse().getStartProbe().getRequest();
+          worker.sendStreamMeasurementPart(
+              measurementPart(dispatched, 0)
+                  .addAllKeyframeIntervalBytes(List.of(700, 300))
+                  .addAllKeyframeIntervalPacketCounts(List.of(12, 36))
+                  .build());
+          worker.sendStreamMeasurementPart(
+              measurementPart(dispatched, 1)
+                  .addAllKeyframeIntervalBytes(List.of(40, 60))
+                  .addAllKeyframeIntervalPacketCounts(List.of(46, 48))
+                  .build());
+          worker.reply(
+              answer(dispatched)
+                  .setBitrateScanChunk(
+                      BitrateScanChunkResult.newBuilder()
+                          .setMeasured(
+                              BitrateScanChunkStreams.newBuilder()
+                                  .addStreams(chunkVideoStream())
+                                  .addStreams(chunkAudioStream())))
+                  .build());
+
+          var outcome = scan.await(Duration.ofSeconds(5));
+
+          assertThat(dispatched)
+              .isEqualTo(
+                  ProbeRequest.newBuilder()
+                      .setProbeAttemptId(toProto(request.attemptId()))
+                      .setProbeVersion(ProbeVersion.CURRENT)
+                      .setSource(
+                          MediaSourceRef.newBuilder()
+                              .setSourceNamespaceId(toProto(SOURCE_NAMESPACE_ID))
+                              .setRelativeKey("movie.mkv"))
+                      .setPriority(
+                          com.streamarr.transcode.v1.ProbePriority.PROBE_PRIORITY_BACKGROUND)
+                      .setBitrateScanChunk(
+                          BitrateScanChunk.newBuilder()
+                              .setMeasurementVersion(CURRENT_VERSION)
+                              .setChosenVideoStreamIndex(0)
+                              .addAllMeasuredStreamIndexes(List.of(0, 1))
+                              .setTimeBaseNumerator(1)
+                              .setTimeBaseDenominator(90_000)
+                              .addAllPresentationTimeDeltas(List.of(183_000L, 87_000L))
+                              .addAllDecodeTimeDeltas(List.of(180_000L, 90_000L))
+                              .setEndPresentationTime(363_000L)
+                              .setEndDecodeTime(360_000L))
+                      .build());
+          assertThat(outcome)
+              .isEqualTo(
+                  new BitrateScanChunkOutcome.Measured(
+                      List.of(
+                          MeasuredChunkStream.builder()
+                              .streamIndex(0)
+                              .measuredBytes(1_000)
+                              .packetCount(48)
+                              .timeBaseNumerator(1)
+                              .timeBaseDenominator(90_000)
+                              .packetTimes(Optional.of(new PacketTimes(180_000, 363_000)))
+                              .keyframeIntervalBytes(KeyframeIntervalCounts.of(700, 300))
+                              .keyframeIntervalPacketCounts(KeyframeIntervalCounts.of(12, 36))
+                              .build(),
+                          MeasuredChunkStream.builder()
+                              .streamIndex(1)
+                              .measuredBytes(100)
+                              .packetCount(94)
+                              .timeBaseNumerator(1)
+                              .timeBaseDenominator(48_000)
+                              .packetTimes(Optional.of(new PacketTimes(96_000, 192_000)))
+                              .keyframeIntervalBytes(KeyframeIntervalCounts.of(40, 60))
+                              .keyframeIntervalPacketCounts(KeyframeIntervalCounts.of(46, 48))
+                              .build())));
+        }
+      }
+    }
+  }
+
+  private static LoopbackProbeWorker chunkWorker(int port) throws Exception {
+    return LoopbackProbeWorker.builder()
+        .port(port)
+        .probeVersion(ProbeVersion.CURRENT)
+        .availableSlots(1)
+        .backgroundProbeCapacity(1)
+        .measurementVersion(CURRENT_VERSION)
+        .build();
+  }
+
+  private BitrateScanChunkRequest.BitrateScanChunkRequestBuilder chunkRequest() {
+    return BitrateScanChunkRequest.builder()
+        .sourcePath(directory.resolve("movie.mkv"))
+        .attemptId(UUID.randomUUID())
+        .measurementVersion(CURRENT_VERSION)
+        .chosenVideoStreamIndex(0)
+        .measuredStreamIndexes(List.of(0, 1))
+        .timeBaseNumerator(1)
+        .timeBaseDenominator(90_000)
+        .keyframes(
+            List.of(new KeyframePosition(183_000, 180_000), new KeyframePosition(270_000, 270_000)))
+        .end(Optional.of(new KeyframePosition(363_000, 360_000)))
+        .firstChunk(false);
+  }
+
+  private static BitrateScanChunkStream.Builder chunkVideoStream() {
+    return BitrateScanChunkStream.newBuilder()
+        .setStreamIndex(0)
+        .setMeasuredBytes(1_000)
+        .setPacketCount(48)
+        .setTimeBaseNumerator(1)
+        .setTimeBaseDenominator(90_000)
+        .setFirstPresentationTime(180_000)
+        .setEndTime(363_000);
+  }
+
+  private static BitrateScanChunkStream.Builder chunkAudioStream() {
+    return BitrateScanChunkStream.newBuilder()
+        .setStreamIndex(1)
+        .setMeasuredBytes(100)
+        .setPacketCount(94)
+        .setTimeBaseNumerator(1)
+        .setTimeBaseDenominator(48_000)
+        .setFirstPresentationTime(96_000)
+        .setEndTime(192_000);
   }
 
   @Test
