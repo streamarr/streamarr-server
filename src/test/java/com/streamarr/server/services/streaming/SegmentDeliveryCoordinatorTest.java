@@ -25,6 +25,7 @@ import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture.StreamingRig;
 import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.List;
@@ -154,6 +155,27 @@ class SegmentDeliveryCoordinatorTest {
         .deliveryCoordinator(coordinator)
         .build()
         .destroySession(sessionId);
+  }
+
+  // Settles the completion of the copy's job attempt after its stored segments, which every source
+  // stream outlasts by nothing, then ends the job attempt as the worker's completion report does.
+  private void completeShort(StreamSession copy) {
+    new ShortCopyListener(lifecycle)
+        .onJobAttemptCompleted(
+            JobAttemptCompletedEvent.builder()
+                .streamSessionId(copy.getSessionId())
+                .jobAttemptId(copy.getHandle().orElseThrow().attemptId())
+                .variantLabel(StreamSession.defaultVariant())
+                .build());
+    assertThat(copy.getNormalEnd()).isPresent();
+    transcodeExecutor.markDead(copy.getSessionId());
+  }
+
+  private static void assertStillHeld(CompletableFuture<SegmentDelivery> delivery) {
+    await()
+        .during(Duration.ofMillis(300))
+        .atMost(Duration.ofSeconds(2))
+        .until(() -> !delivery.isDone());
   }
 
   private HeldSegmentRequests heldRequests() {
@@ -336,6 +358,51 @@ class SegmentDeliveryCoordinatorTest {
 
     assertThat(outcome.get()).isInstanceOf(SegmentDelivery.Ready.class);
     assertThat(((SegmentDelivery.Ready) outcome.get()).data()).containsExactly(0x47);
+  }
+
+  // ADR 0052: no job attempt can make a segment past a short copy's normal end, and a refusal
+  // would race with the client's own end of playback.
+  @Test
+  @DisplayName(
+      "Should hold a request past the normal end without a job attempt until the stream session ends")
+  void shouldHoldARequestPastTheNormalEndWithoutAJobAttemptUntilTheStreamSessionEnds()
+      throws Exception {
+    var copy = startedSession();
+    var sessionId = copy.getSessionId();
+    upload(sessionId, "segment0.m4s", new byte[] {1});
+    upload(sessionId, "segment1.m4s", new byte[] {2});
+    completeShort(copy);
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    var pastTheEnd = deliverAsync(sessionId, "segment2.m4s");
+    advanceClockThenWake(sessionId, STALL_THRESHOLD.multipliedBy(3));
+
+    assertThat(coordinator.deliver(sessionId, StreamSession.defaultVariant(), "segment1.m4s"))
+        .isEqualTo(new SegmentDelivery.Ready(new byte[] {2}));
+    assertStillHeld(pastTheEnd);
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
+    destroy(sessionId);
+    assertThat(pastTheEnd.get(2, TimeUnit.SECONDS)).isEqualTo(new SegmentDelivery.SessionEnded());
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep holding a request that waited for the copy when the copy's completion shows the normal end")
+  void shouldKeepHoldingARequestThatWaitedForTheCopyWhenTheCopysCompletionShowsTheNormalEnd()
+      throws Exception {
+    var copy = startedSession();
+    var sessionId = copy.getSessionId();
+    upload(sessionId, "segment0.m4s", new byte[] {1});
+    var waiting = heldDelivery(sessionId, "segment3.m4s");
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    completeShort(copy);
+    advanceClockThenWake(sessionId, STALL_THRESHOLD.multipliedBy(3));
+
+    assertStillHeld(waiting);
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
+    destroy(sessionId);
+    assertThat(waiting.get(2, TimeUnit.SECONDS)).isEqualTo(new SegmentDelivery.SessionEnded());
   }
 
   @Test

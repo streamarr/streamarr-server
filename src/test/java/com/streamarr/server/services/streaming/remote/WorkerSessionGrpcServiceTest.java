@@ -20,6 +20,7 @@ import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
+import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
@@ -71,6 +72,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.UnaryOperator;
 import java.util.stream.LongStream;
 import java.util.stream.Stream;
@@ -698,6 +700,104 @@ class WorkerSessionGrpcServiceTest {
     assertThat(registry.hasConnectedWorker(sourceNamespaceId)).isTrue();
     assertThat(registry.isRunning(streamSessionId, job.getVariant().getVariantLabel())).isTrue();
     assertThat(registry.availableSlots(sourceNamespaceId)).isZero();
+  }
+
+  // ADR 0052: a request that the completion wakes must find the short copy that it showed.
+  @Test
+  @DisplayName(
+      "Should publish the completion while the job attempt still runs when its worker reports it"
+          + " completed")
+  void shouldPublishTheCompletionWhileTheJobAttemptStillRunsWhenItsWorkerReportsItCompleted()
+      throws Exception {
+    var runningAtCompletion = new ArrayList<Boolean>();
+    var completions = new ArrayList<JobAttemptCompletedEvent>();
+    var registryHolder = new AtomicReference<LiveWorkerConnectionRegistry>();
+    var registry =
+        LiveWorkerConnectionRegistry.builder()
+            .configuration(WorkerSessionServerConfiguration.builder().build())
+            .meterRegistry(new SimpleMeterRegistry())
+            .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
+            .eventPublisher(
+                event -> {
+                  if (event instanceof JobAttemptCompletedEvent completion) {
+                    completions.add(completion);
+                    runningAtCompletion.add(
+                        registryHolder
+                            .get()
+                            .isRunning(completion.streamSessionId(), completion.variantLabel()));
+                  }
+                })
+            .build();
+    registryHolder.set(registry);
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var session = workerSession(service, workerId, new IgnoringResponseObserver());
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setRegistration(registration(worker(workerId), sourceNamespaceId))
+            .build());
+    var job = variantJob(sourceNamespaceId);
+    assertThat(registry.dispatch(job)).isPresent();
+
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptCompleted(
+                JobAttemptCompleted.newBuilder().setJobAttemptId(job.getJobAttemptId()))
+            .build());
+
+    assertThat(completions)
+        .containsExactly(
+            JobAttemptCompletedEvent.builder()
+                .streamSessionId(fromProto(job.getStreamSessionId()))
+                .jobAttemptId(fromProto(job.getJobAttemptId()))
+                .variantLabel(job.getVariant().getVariantLabel())
+                .build());
+    assertThat(runningAtCompletion).containsExactly(true);
+    assertThat(
+            registry.isRunning(
+                fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel()))
+        .isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should publish no completion when a worker reports the completion of a job attempt that"
+          + " the server stopped")
+  void shouldPublishNoCompletionWhenAWorkerReportsTheCompletionOfAJobAttemptThatTheServerStopped()
+      throws Exception {
+    var events = new CapturingEventPublisher();
+    var registry =
+        LiveWorkerConnectionRegistry.builder()
+            .configuration(WorkerSessionServerConfiguration.builder().build())
+            .meterRegistry(new SimpleMeterRegistry())
+            .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
+            .eventPublisher(events)
+            .build();
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var session =
+        workerSession(
+            service, workerId, new CollectingResponseObserver(new CopyOnWriteArrayList<>()));
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setRegistration(registration(worker(workerId), sourceNamespaceId))
+            .build());
+    var job = variantJob(sourceNamespaceId);
+    assertThat(registry.dispatch(job)).isPresent();
+    assertThat(
+            registry.stopVariant(
+                fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel()))
+        .isTrue();
+
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptCompleted(
+                JobAttemptCompleted.newBuilder().setJobAttemptId(job.getJobAttemptId()))
+            .build());
+
+    assertThat(events.getEventsOfType(JobAttemptCompletedEvent.class)).isEmpty();
   }
 
   @Test

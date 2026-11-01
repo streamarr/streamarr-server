@@ -1,6 +1,7 @@
 package com.streamarr.server.domain.streaming;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
@@ -52,6 +53,10 @@ public class StreamSession {
   @Builder.Default
   private final AtomicReference<PlaybackSnapshot> playbackSnapshot =
       new AtomicReference<>(new PlaybackSnapshot(0, PlaybackState.STOPPED, Instant.now()));
+
+  @Getter(lombok.AccessLevel.NONE)
+  @Builder.Default
+  private final AtomicReference<ShortCopy> shortCopy = new AtomicReference<>();
 
   public boolean isOwnedBy(UUID candidateProfileId) {
     return authority.profileId().equals(candidateProfileId);
@@ -154,6 +159,26 @@ public class StreamSession {
 
   public boolean hasActiveTranscodes() {
     return variantHandles.values().stream().anyMatch(h -> h.status() == TranscodeStatus.ACTIVE);
+  }
+
+  /**
+   * Where the stream session's copy ran short, once a job attempt that read the source shows it.
+   */
+  public Optional<ShortCopy> getShortCopy() {
+    return Optional.ofNullable(shortCopy.get());
+  }
+
+  /** Keeps the first short copy: every later job attempt reads the same source. */
+  public void markShortCopy(@NonNull ShortCopy end) {
+    shortCopy.compareAndSet(null, end);
+  }
+
+  /**
+   * Where playback ends normally: the media end of a copy that ran short after every source stream
+   * ended (ADR 0052).
+   */
+  public Optional<Duration> getNormalEnd() {
+    return getShortCopy().filter(ShortCopy::everySourceStreamEnded).map(ShortCopy::mediaEnd);
   }
 
   public static String defaultVariant() {

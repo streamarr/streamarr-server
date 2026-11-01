@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
+import com.streamarr.server.domain.streaming.ShortCopy;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
@@ -87,7 +88,10 @@ public class ProducerLifecycleService {
     VARIANT_NOT_RUNNING,
     // A newer request positioned the variant, and the request's segment needs the variant
     // relocated or resumed. Only a request at least as new may relocate or resume it (ADR 0019).
-    SUPERSEDED
+    SUPERSEDED,
+    // The segment lies past the normal end of the stream session's short copy, which no job attempt
+    // can produce (ADR 0052).
+    PAST_THE_NORMAL_END
   }
 
   private record VariantKey(UUID sessionId, String variantLabel) {}
@@ -239,6 +243,10 @@ public class ProducerLifecycleService {
 
     if (!session.offersVariant(variantLabel)) {
       return RecoveryResult.SESSION_GONE;
+    }
+
+    if (liesPastTheNormalEnd(session, segmentName)) {
+      return RecoveryResult.PAST_THE_NORMAL_END;
     }
 
     if (transcodeExecutor.terminalFailure(sessionId).isPresent()) {
@@ -1496,6 +1504,81 @@ public class ProducerLifecycleService {
     var gapSegments =
         FORWARD_RELOCATION_GAP.toSeconds() / properties.targetSegmentDuration().toSeconds();
     return Math.max(1, (int) gapSegments);
+  }
+
+  /**
+   * Settles the end of a stream copy's job attempt that read its source to the end (ADR 0052). The
+   * worker reports the completion only after the server accepted the attempt's last segment, so a
+   * copy whose stored media segments from the attempt's first one stop before the playlist's last
+   * ran short there. The stream session keeps the first short copy that a completion shows. Answers
+   * the short copy when this completion showed it.
+   */
+  public Optional<ShortCopy> settleCompletedJobAttempt(
+      UUID sessionId, String variantLabel, UUID attemptId) {
+    return withSessionLock(
+        sessionId,
+        () ->
+            runtimeRegistry
+                .findById(sessionId)
+                .filter(session -> session.getTranscodeDecision().transcodeMode().copiesVideo())
+                .filter(session -> session.getShortCopy().isEmpty())
+                .flatMap(session -> shortCopyShownBy(session, variantLabel, attemptId)));
+  }
+
+  private Optional<ShortCopy> shortCopyShownBy(
+      StreamSession session, String variantLabel, UUID attemptId) {
+    var handle =
+        session
+            .getVariantHandle(variantLabel)
+            .filter(current -> current.attemptId().equals(attemptId));
+    if (handle.isEmpty()) {
+      return Optional.empty();
+    }
+
+    var timeline = timelineOf(session);
+    var firstMissing = handle.get().startSequenceNumber();
+    while (timeline.advertises(firstMissing)
+        && segmentStore.segmentExists(
+            session.getSessionId(),
+            SegmentNames.storedSegmentName(
+                variantLabel, SegmentNames.mediaSegmentName(firstMissing)))) {
+      firstMissing++;
+    }
+
+    // The worker fails a job attempt that stores no media segment instead of completing it.
+    if (!timeline.advertises(firstMissing) || firstMissing == handle.get().startSequenceNumber()) {
+      return Optional.empty();
+    }
+
+    var shortCopy = ShortCopy.endingWith(firstMissing - 1, timeline, session.getMediaProbe());
+    session.markShortCopy(shortCopy);
+    runtimeRegistry.save(session);
+    log.info(
+        "Copy of session {} ran short after media segment {} of {}: every source stream ended: {}",
+        session.getSessionId(),
+        shortCopy.lastMediaSegmentIndex(),
+        timeline.mediaSegmentCount(),
+        shortCopy.everySourceStreamEnded());
+    return Optional.of(shortCopy);
+  }
+
+  /** Whether the segment lies past the normal end of the stream session's short copy. */
+  public boolean liesPastTheNormalEnd(UUID sessionId, String segmentName) {
+    return runtimeRegistry
+        .findById(sessionId)
+        .map(session -> liesPastTheNormalEnd(session, segmentName))
+        .orElse(false);
+  }
+
+  private static boolean liesPastTheNormalEnd(StreamSession session, String segmentName) {
+    return session
+        .getShortCopy()
+        .filter(ShortCopy::everySourceStreamEnded)
+        .filter(
+            shortCopy ->
+                SegmentNames.indexOf(segmentName).stream()
+                    .anyMatch(index -> index > shortCopy.lastMediaSegmentIndex()))
+        .isPresent();
   }
 
   /** A session that no longer exists advertises nothing to refuse, so this answers false. */
