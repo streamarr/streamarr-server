@@ -59,9 +59,7 @@ public record TranscodeDecision(
       return Optional.empty();
     }
 
-    return videoSource
-        .flatMap(VideoPlaybackFacts::interlacedFieldOrder)
-        .map(fieldOrder -> Deinterlace.of(fieldOrder, storedOutputFrameRate()));
+    return videoSource.flatMap(VideoPlaybackFacts::deinterlace);
   }
 
   /**
@@ -69,12 +67,11 @@ public record TranscodeDecision(
    * source, or the deinterlacer's rate. Empty when the probe stored no rate.
    */
   public Optional<Fraction> outputFrameRate() {
-    return storedOutputFrameRate()
-        .map(stored -> deinterlace().map(it -> it.outputFrameRate(stored)).orElse(stored));
-  }
+    if (transcodeMode == null || transcodeMode.copiesVideo()) {
+      return videoSource.flatMap(VideoPlaybackFacts::outputFrameRate);
+    }
 
-  private Optional<Fraction> storedOutputFrameRate() {
-    return videoSource.flatMap(VideoPlaybackFacts::outputFrameRate);
+    return videoSource.flatMap(VideoPlaybackFacts::encodedFrameRate);
   }
 
   // Lombok builder defaults — their generated setters assign them

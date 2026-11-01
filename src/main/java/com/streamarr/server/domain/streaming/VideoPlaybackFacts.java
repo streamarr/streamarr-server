@@ -42,6 +42,23 @@ public record VideoPlaybackFacts(
   }
 
   /**
+   * How an encode of the stream deinterlaces it; empty for a progressive or unspecified field
+   * order.
+   */
+  public Optional<Deinterlace> deinterlace() {
+    return interlacedFieldOrder().map(fieldOrder -> Deinterlace.of(fieldOrder, outputFrameRate()));
+  }
+
+  /**
+   * The rate at which an encode of the stream runs: the output frame rate, or the deinterlacer's
+   * rate for an interlaced stream. Empty when the rule refuses an output frame rate.
+   */
+  public Optional<Fraction> encodedFrameRate() {
+    return outputFrameRate()
+        .map(rate -> deinterlace().map(it -> it.outputFrameRate(rate)).orElse(rate));
+  }
+
+  /**
    * The size that FFmpeg scales an encode from, and that a player shows. FFmpeg crops the coded
    * picture first and then turns it a quarter turn for a rotation of 90 or -90 degrees. It applies
    * no other rotation before scaling. Its crop filter rounds the size down to whole chroma samples.
