@@ -19,7 +19,10 @@ import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.transcode.v1.CompatibleBase;
 import com.streamarr.transcode.v1.ContainerFormat;
+import com.streamarr.transcode.v1.Deinterlace;
+import com.streamarr.transcode.v1.DeinterlaceOutput;
 import com.streamarr.transcode.v1.DolbyVisionAbsent;
+import com.streamarr.transcode.v1.FieldOrder;
 import com.streamarr.transcode.v1.Presence;
 import com.streamarr.transcode.v1.TranscodeExecution;
 import com.streamarr.transcode.v1.VariantJob;
@@ -73,7 +76,13 @@ final class RemoteVariantJobMapper {
     var source = request.transcodeDecision().videoSource();
     var encode = request.videoEncodeDecision();
     if (encode.isPresent()) {
-      return decision.setVideo(encode(encode.get(), source)).build();
+      var video = encode(encode.get(), source).toBuilder();
+      request
+          .transcodeDecision()
+          .deinterlace()
+          .map(RemoteVariantJobMapper::deinterlace)
+          .ifPresent(video::setDeinterlace);
+      return decision.setVideo(video).build();
     }
 
     return decision.setVideo(copy(request.transcodeDecision(), source.orElseThrow())).build();
@@ -105,6 +114,36 @@ final class RemoteVariantJobMapper {
                     sourcePacketsCarryPresentationTimes(facts)));
     encode.tier().map(RemoteVariantJobMapper::tier).ifPresent(video::setTier);
     return video.build();
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static Deinterlace deinterlace(
+      com.streamarr.server.domain.streaming.Deinterlace deinterlace) {
+    return Deinterlace.newBuilder()
+        .setFieldOrder(fieldOrder(deinterlace.fieldOrder()))
+        .setOutput(deinterlaceOutput(deinterlace.output()))
+        .build();
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static FieldOrder fieldOrder(
+      com.streamarr.server.domain.streaming.FieldOrder fieldOrder) {
+    return switch (fieldOrder) {
+      case PROGRESSIVE -> FieldOrder.FIELD_ORDER_PROGRESSIVE;
+      case TT -> FieldOrder.FIELD_ORDER_TT;
+      case BB -> FieldOrder.FIELD_ORDER_BB;
+      case TB -> FieldOrder.FIELD_ORDER_TB;
+      case BT -> FieldOrder.FIELD_ORDER_BT;
+    };
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static DeinterlaceOutput deinterlaceOutput(
+      com.streamarr.server.domain.streaming.DeinterlaceOutput output) {
+    return switch (output) {
+      case ONE_FRAME_PER_FIELD -> DeinterlaceOutput.DEINTERLACE_OUTPUT_ONE_FRAME_PER_FIELD;
+      case ONE_FRAME_PER_FRAME -> DeinterlaceOutput.DEINTERLACE_OUTPUT_ONE_FRAME_PER_FRAME;
+    };
   }
 
   // A copy forces no codec profile, tier or level, and carries no planned output range until

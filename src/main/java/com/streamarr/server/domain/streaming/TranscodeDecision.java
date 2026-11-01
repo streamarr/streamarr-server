@@ -50,8 +50,30 @@ public record TranscodeDecision(
         .build();
   }
 
-  /** The output frame rate of the video source that the decision read, empty without one. */
+  /**
+   * How the encode deinterlaces an interlaced source; empty for a copy and for a source whose
+   * stored field order is progressive or unspecified. An interlaced source is never copied.
+   */
+  public Optional<Deinterlace> deinterlace() {
+    if (transcodeMode == null || transcodeMode.copiesVideo()) {
+      return Optional.empty();
+    }
+
+    return videoSource
+        .flatMap(VideoPlaybackFacts::interlacedFieldOrder)
+        .map(fieldOrder -> Deinterlace.of(fieldOrder, storedOutputFrameRate()));
+  }
+
+  /**
+   * The frame rate that the decision's encode runs at: the stored output frame rate of the video
+   * source, or the deinterlacer's rate. Empty when the probe stored no rate.
+   */
   public Optional<Fraction> outputFrameRate() {
+    return storedOutputFrameRate()
+        .map(stored -> deinterlace().map(it -> it.outputFrameRate(stored)).orElse(stored));
+  }
+
+  private Optional<Fraction> storedOutputFrameRate() {
     return videoSource.flatMap(VideoPlaybackFacts::outputFrameRate);
   }
 
