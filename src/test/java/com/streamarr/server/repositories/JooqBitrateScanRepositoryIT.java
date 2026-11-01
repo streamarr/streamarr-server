@@ -2,8 +2,10 @@ package com.streamarr.server.repositories;
 
 import static com.streamarr.server.fixtures.StreamMeasurementFixture.measurement;
 import static com.streamarr.server.fixtures.StreamMeasurementFixture.positions;
+import static com.streamarr.server.jooq.generated.tables.MediaFileStreamMeasurement.MEDIA_FILE_STREAM_MEASUREMENT;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -19,6 +21,7 @@ import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.domain.streaming.StreamMeasurementUnavailableReason;
 import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.domain.task.BitrateScanChunkPublication;
 import com.streamarr.server.domain.task.BitrateScanInputs;
@@ -30,6 +33,7 @@ import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.media.BitrateScanRepository;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.support.ConstraintViolations;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -38,6 +42,7 @@ import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.stream.Stream;
+import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -46,6 +51,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -65,6 +71,7 @@ class JooqBitrateScanRepositoryIT extends AbstractIntegrationTest
   @Autowired private MediaFileRepository mediaFiles;
   @Autowired private LibraryRepository libraries;
   @Autowired private PlatformTransactionManager transactionManager;
+  @Autowired private DSLContext dsl;
 
   private final List<MediaFile> createdFiles = new ArrayList<>();
   private final List<Library> createdLibraries = new ArrayList<>();
@@ -236,6 +243,26 @@ class JooqBitrateScanRepositoryIT extends AbstractIntegrationTest
     assertThat(lockedInputs(scan.mediaFileId()))
         .hasValueSatisfying(inputs -> assertThat(inputs.key()).isEqualTo(scan.key()));
     assertThat(lockedInputs(UUID.randomUUID())).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse an unavailable reason V110 does not name when a stored mark changes to it")
+  void shouldRefuseAnUnavailableReasonV110DoesNotNameWhenAStoredMarkChangesToIt() {
+    var scan = createFileNeedingScan();
+    var mediaFileId = scan.mediaFileId();
+    repository.markMeasurementUnavailable(
+        mediaFileId, scan.key(), StreamMeasurementUnavailableReason.COPY_CHANGES_PACKETS);
+
+    assertThatThrownBy(
+            () ->
+                dsl.update(MEDIA_FILE_STREAM_MEASUREMENT)
+                    .set(MEDIA_FILE_STREAM_MEASUREMENT.UNAVAILABLE_REASON, "NO_PACKETS")
+                    .where(MEDIA_FILE_STREAM_MEASUREMENT.MEDIA_FILE_ID.eq(mediaFileId))
+                    .execute())
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .extracting(ConstraintViolations::constraintName)
+        .isEqualTo("media_file_stream_measurement_unavailable_reason_check");
   }
 
   private Optional<BitrateScanInputs> lockedInputs(UUID mediaFileId) {
