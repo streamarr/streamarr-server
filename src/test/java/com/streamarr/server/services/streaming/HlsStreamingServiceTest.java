@@ -3029,6 +3029,53 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
 
+  // A worker with an AV1 encoder connects after the server reads the verified encoders but before
+  // it reads the encoders with a free slot. An encoder with a free slot is verified, so the
+  // server encodes in AV1 instead of copying over the viewer's limits.
+  @Test
+  @DisplayName(
+      "Should encode the video instead of copying over the viewer's limits when a worker with an"
+          + " accepted encoder connects right after the server reads the verified encoders")
+  void
+      shouldEncodeTheVideoInsteadOfCopyingOverTheViewersLimitsWhenAWorkerWithAnAcceptedEncoderConnectsRightAfterTheVerifiedEncodersAreRead() {
+    probeResults.setDefaultProbe(wideUhdHevcProbe().build());
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("h264"));
+    transcodeExecutor.changeWorkersAroundNextVerifiedFamiliesRead(
+        () -> {}, () -> transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("h264", "av1")));
+
+    var session =
+        accepted(
+            createSessionDeclaring(
+                declarationBuilderFor(HEVC, AV1).build(), OVER_THE_MAXIMUM_BITRATE));
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
+    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo("av1");
+  }
+
+  // The only worker with an H.264 encoder leaves right after the server reads the verified
+  // encoders, beside a connected worker without one. The read refused the copy because an H.264
+  // encoder was verified, so the stream session fails for capacity with an answer that the client
+  // can retry, not with a refusal that blames the viewer's device.
+  @Test
+  @DisplayName(
+      "Should report transient capacity instead of refusing the video format when the worker with"
+          + " the accepted encoder leaves right after the server reads the verified encoders")
+  void
+      shouldReportTransientCapacityInsteadOfRefusingTheVideoFormatWhenTheWorkerWithTheAcceptedEncoderLeavesRightAfterTheVerifiedEncodersAreRead() {
+    probeResults.setDefaultProbe(wideUhdHevcProbe().build());
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("h264"));
+    transcodeExecutor.changeWorkersAroundNextVerifiedFamiliesRead(
+        () -> {}, () -> transcodeExecutor.setEncodeSlots(Map.of()));
+
+    assertThat(
+            createSessionDeclaring(
+                declarationBuilderFor(HEVC, H264).build(), OVER_THE_MAXIMUM_BITRATE))
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(capacityRefusals("no_encoder_with_free_slot")).isOne();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
   // A busy worker's verified encoder counts, so the session waits for its slot instead of copying.
   // A free slot on an encoder for a codec that the declaration does not accept changes nothing.
   @ParameterizedTest(name = "{0}")
