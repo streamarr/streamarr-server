@@ -46,10 +46,13 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -64,68 +67,75 @@ class WorkerPlaybackRecoveryIT {
 
   @TempDir Path tempDir;
 
+  private final WorkerEvents events = new WorkerEvents();
+  private Path sourceRoot;
+  private LocalSegmentStore segments;
+  private WorkerSessionServer server;
+  private WorkerContainerFixture worker;
+
+  @BeforeEach
+  void startWorker() throws Exception {
+    sourceRoot = Files.createDirectory(tempDir.resolve("media"));
+    segments = new LocalSegmentStore(tempDir.resolve("segments"));
+    server =
+        WorkerSessionServer.builder()
+            .configuration(serverConfigurationBuilder().build())
+            .eventPublisher(events)
+            .meterRegistry(new SimpleMeterRegistry())
+            .segmentStore(segments)
+            .build();
+    worker =
+        WorkerContainerFixture.builder()
+            .workerSessions(server)
+            .sourceNamespaceId(SOURCE_NAMESPACE)
+            .sourceRoot(sourceRoot)
+            .availableSlots(2)
+            .build();
+    server.start();
+    worker.start();
+  }
+
+  @AfterEach
+  void stopWorker() {
+    try (var _ = server;
+        var _ = worker) {
+      // Closes the worker, then the server that it connects to.
+    } finally {
+      segments.shutdown();
+    }
+  }
+
   @Test
   @DisplayName(
       "Should replace a rejected copy with a matching encoded playlist when the source changes after probing")
   void shouldReplaceARejectedCopyWithAMatchingEncodedPlaylistWhenTheSourceChangesAfterProbing()
       throws Exception {
-    var sourceRoot = Files.createDirectory(tempDir.resolve("media"));
-    var segments = new LocalSegmentStore(tempDir.resolve("segments"));
-    var mismatches = new LinkedBlockingQueue<VideoCopyOutputMismatchEvent>();
-    var listeners = new CopyOnWriteArrayList<Consumer<VideoCopyOutputMismatchEvent>>();
-    ApplicationEventPublisher events =
-        event -> {
-          if (event instanceof VideoCopyOutputMismatchEvent mismatch) {
-            mismatches.add(mismatch);
-            listeners.forEach(listener -> listener.accept(mismatch));
-          }
-        };
+    var mismatches = events.collect(VideoCopyOutputMismatchEvent.class);
+    var source = worker.generateMedia(sourceRoot.resolve("movie.mp4"), sourceArguments("3.1"));
+    try (var playback = new PlaybackRig(source)) {
+      worker.generateMedia(source, sourceArguments("3.2"));
 
-    try (var server =
-            WorkerSessionServer.builder()
-                .configuration(serverConfigurationBuilder().build())
-                .eventPublisher(events)
-                .meterRegistry(new SimpleMeterRegistry())
-                .segmentStore(segments)
-                .build();
-        var worker =
-            WorkerContainerFixture.builder()
-                .workerSessions(server)
-                .sourceNamespaceId(SOURCE_NAMESPACE)
-                .sourceRoot(sourceRoot)
-                .availableSlots(2)
-                .build()) {
-      server.start();
-      worker.start();
-      var source = worker.generateMedia(sourceRoot.resolve("movie.mp4"), sourceArguments("3.1"));
-      try (var playback = new PlaybackRig(server, segments, source)) {
-        listeners.add(playback.sessions::onVideoCopyOutputMismatch);
-        worker.generateMedia(source, sourceArguments("3.2"));
+      var initial = accepted(playback.sessions.start(playback.command));
+      var mismatch = mismatches.poll(15, TimeUnit.SECONDS);
+      assertThat(mismatch).as("the real worker rejects the stale copy codec string").isNotNull();
+      assertThat(worker.commandFor(mismatch.jobAttemptId()).orElseThrow())
+          .containsSubsequence("-c:v", "copy");
+      var replacement = playback.awaitReplacement(initial);
 
-        var initial = accepted(playback.sessions.start(playback.command));
-        var mismatch = mismatches.poll(15, TimeUnit.SECONDS);
-        assertThat(mismatch).as("the real worker rejects the stale copy codec string").isNotNull();
-        assertThat(worker.commandFor(mismatch.jobAttemptId()).orElseThrow())
-            .containsSubsequence("-c:v", "copy");
-        var replacement = playback.awaitReplacement(initial);
+      assertThat(replacement.getSessionId()).isNotEqualTo(mismatch.streamSessionId());
+      assertThat(replacement.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
+      assertThat(playback.streams.getAllSessions()).containsExactly(replacement);
+      assertThat(segments.segmentExists(mismatch.streamSessionId(), "init.mp4")).isFalse();
+      var variant = replacement.getVariants().getFirst().label();
+      var initialization = playback.deliver(replacement, variant, "init.mp4");
+      var media = playback.deliver(replacement, variant, "segment0.m4s");
+      var playlist = playback.playlists.generateMultivariantPlaylist(replacement, "test-token");
 
-        assertThat(replacement.getSessionId()).isNotEqualTo(mismatch.streamSessionId());
-        assertThat(replacement.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
-        assertThat(playback.streams.getAllSessions()).containsExactly(replacement);
-        assertThat(segments.segmentExists(mismatch.streamSessionId(), "init.mp4")).isFalse();
-        var variant = replacement.getVariants().getFirst().label();
-        var initialization = playback.deliver(replacement, variant, "init.mp4");
-        var media = playback.deliver(replacement, variant, "segment0.m4s");
-        var playlist = playback.playlists.generateMultivariantPlaylist(replacement, "test-token");
-
-        assertThat(playlist)
-            .contains("CODECS=\"" + Fmp4Fixture.avcCodecString(initialization) + "\"");
-        var served = Files.write(sourceRoot.resolve("served.mp4"), combine(initialization, media));
-        assertThat(worker.decodedVideoFrameCount(served)).isPositive();
-        assertThat(mismatches).isEmpty();
-      }
-    } finally {
-      segments.shutdown();
+      assertThat(playlist)
+          .contains("CODECS=\"" + Fmp4Fixture.avcCodecString(initialization) + "\"");
+      var served = Files.write(sourceRoot.resolve("served.mp4"), combine(initialization, media));
+      assertThat(worker.decodedVideoFrameCount(served)).isPositive();
+      assertThat(mismatches).isEmpty();
     }
   }
 
@@ -165,14 +175,40 @@ class WorkerPlaybackRecoveryIT {
         .array();
   }
 
-  private static final class PlaybackRig implements AutoCloseable {
+  // Hands each event that the worker session server publishes to the listeners of its type, as
+  // Spring's event multicaster does.
+  private static final class WorkerEvents implements ApplicationEventPublisher {
+    private final List<Consumer<Object>> listeners = new CopyOnWriteArrayList<>();
+
+    @Override
+    public void publishEvent(Object event) {
+      listeners.forEach(listener -> listener.accept(event));
+    }
+
+    private <T> void listen(Class<T> type, Consumer<T> listener) {
+      listeners.add(
+          event -> {
+            if (type.isInstance(event)) {
+              listener.accept(type.cast(event));
+            }
+          });
+    }
+
+    private <T> BlockingQueue<T> collect(Class<T> type) {
+      var published = new LinkedBlockingQueue<T>();
+      listen(type, published::add);
+      return published;
+    }
+  }
+
+  private final class PlaybackRig implements AutoCloseable {
     private final HlsStreamingService streams;
     private final PlaybackSessionService sessions;
     private final StartPlaybackSessionCommand command;
     private final SegmentDeliveryCoordinator delivery;
     private final HlsPlaylistService playlists;
 
-    private PlaybackRig(WorkerSessionServer server, LocalSegmentStore segments, Path source) {
+    private PlaybackRig(Path source) {
       var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE, source.getParent());
       var outcome =
           new RemoteFfprobeService(server, SOURCE_NAMESPACE, source.getParent())
@@ -235,6 +271,7 @@ class WorkerPlaybackRecoveryIT {
               .maximumFormatAttempts(3)
               .sessionRetention(Duration.ofMinutes(1))
               .build();
+      events.listen(VideoCopyOutputMismatchEvent.class, sessions::onVideoCopyOutputMismatch);
       playlists = new HlsPlaylistService(properties);
       command =
           StartPlaybackSessionCommand.builder()
