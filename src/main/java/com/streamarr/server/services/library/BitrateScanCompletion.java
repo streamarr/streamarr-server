@@ -34,8 +34,9 @@ public class BitrateScanCompletion {
 
   static final String FINISHED_SCANS_METRIC = "streamarr.probes.bitrate_scans_finished";
 
-  // Three attempts of one chunk without a result show that the chunk cannot be measured, so the
-  // copy keeps its unmeasured cost.
+  // Three attempts of one chunk without a result, or three scans whose chunks cannot be joined,
+  // show
+  // that the file cannot be measured, so the copy keeps its unmeasured cost.
   private static final int MAX_FAILED_ATTEMPTS = 3;
 
   private final BitrateScanRepository scans;
@@ -80,7 +81,8 @@ public class BitrateScanCompletion {
           publishOrContinue(request, inputs, complete, operations);
       case BitrateScanResult.Deferred _ ->
           retryAfter(complete, request, properties.busyWorkerRetryDelay());
-      case BitrateScanResult.Failed _ -> countFailedAttempt(request, complete, operations);
+      case BitrateScanResult.Failed(var firstKeyframeInterval) ->
+          countFailedChunkAttempt(request, firstKeyframeInterval, complete, operations);
       case BitrateScanResult.CopyChangesPackets _ ->
           markUnavailable(
               request, StreamMeasurementUnavailableReason.COPY_CHANGES_PACKETS, operations);
@@ -95,7 +97,7 @@ public class BitrateScanCompletion {
     var chunks = scans.findChunks(request.mediaFileId(), request.key());
     var keyframeCount = inputs.positions().keyframes().size();
     if (BitrateScanChunks.coveredIntervals(chunks) < keyframeCount) {
-      retryAfter(complete, request.toBuilder().failedAttempts(0).build(), Duration.ZERO);
+      retryAfter(complete, request, Duration.ZERO);
       return;
     }
 
@@ -105,7 +107,7 @@ public class BitrateScanCompletion {
       meterRegistry
           .counter(BitrateScanExecution.CHUNK_FAILURES_METRIC, "reason", "assembly")
           .increment();
-      countFailedAttempt(request, complete, operations);
+      countFailedAssembly(request, complete, operations);
       return;
     }
 
@@ -119,19 +121,46 @@ public class BitrateScanCompletion {
     operations.remove();
   }
 
-  private void countFailedAttempt(
+  // The failed attempts belong to the chunk that starts at their keyframe interval, so a chunk that
+  // was stored before its execution completed leaves the next chunk a full set of attempts.
+  private void countFailedChunkAttempt(
       BitrateScanTaskRequest request,
+      int firstKeyframeInterval,
       ExecutionComplete complete,
       ExecutionOperations<BitrateScanTaskRequest> operations) {
-    if (request.failedAttempts() + 1 >= MAX_FAILED_ATTEMPTS) {
+    var attempts = 1;
+    if (request.failedAttempts() > 0 && request.failedKeyframeInterval() == firstKeyframeInterval) {
+      attempts = request.failedAttempts() + 1;
+    }
+
+    if (attempts >= MAX_FAILED_ATTEMPTS) {
       markUnavailable(request, StreamMeasurementUnavailableReason.FAILED_ATTEMPTS, operations);
       return;
     }
 
     retryAfter(
         complete,
-        request.toBuilder().failedAttempts(request.failedAttempts() + 1).build(),
-        CappedExponentialBackoff.delayAfter(request.failedAttempts()));
+        request.toBuilder()
+            .failedAttempts(attempts)
+            .failedKeyframeInterval(firstKeyframeInterval)
+            .build(),
+        CappedExponentialBackoff.delayAfter(attempts - 1));
+  }
+
+  private void countFailedAssembly(
+      BitrateScanTaskRequest request,
+      ExecutionComplete complete,
+      ExecutionOperations<BitrateScanTaskRequest> operations) {
+    var assemblies = request.failedAssemblies() + 1;
+    if (assemblies >= MAX_FAILED_ATTEMPTS) {
+      markUnavailable(request, StreamMeasurementUnavailableReason.FAILED_ATTEMPTS, operations);
+      return;
+    }
+
+    retryAfter(
+        complete,
+        request.toBuilder().failedAssemblies(assemblies).build(),
+        CappedExponentialBackoff.delayAfter(assemblies - 1));
   }
 
   private void markUnavailable(
@@ -161,6 +190,8 @@ public class BitrateScanCompletion {
         .keyframePositionsDigest(inputs.key().keyframePositionsDigest())
         .measurementVersion(inputs.key().measurementVersion())
         .failedAttempts(0)
+        .failedKeyframeInterval(0)
+        .failedAssemblies(0)
         .build();
   }
 }
