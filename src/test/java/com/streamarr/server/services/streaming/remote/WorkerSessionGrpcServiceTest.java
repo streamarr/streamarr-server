@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.hardwareEncoder;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.keyframeVerifiedHardwareEncoder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.streamCopyDecision;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
@@ -18,6 +19,7 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
+import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
@@ -62,6 +64,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
@@ -1001,6 +1004,69 @@ class WorkerSessionGrpcServiceTest {
     assertThat(missingEncoder(meterRegistry, workerId, "h264")).isEqualTo(1);
   }
 
+  @Test
+  @DisplayName(
+      "Should report H.264 as missing when the worker's H.264 encoder is hardware without keyframe verification")
+  void shouldReportH264AsMissingWhenWorkersH264EncoderIsHardwareWithoutKeyframeVerification()
+      throws Exception {
+    var missingH264 =
+        missingH264AfterRegistering(
+            hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc"));
+
+    assertThat(missingH264).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should report no missing H.264 when the worker's H.264 encoder is keyframe-verified hardware")
+  void shouldReportNoMissingH264WhenWorkersH264EncoderIsKeyframeVerifiedHardware()
+      throws Exception {
+    var missingH264 =
+        missingH264AfterRegistering(
+            keyframeVerifiedHardwareEncoder(
+                VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc"));
+
+    assertThat(missingH264).isZero();
+  }
+
+  private static double missingH264AfterRegistering(WorkerVerifiedVideoEncoder h264Encoder)
+      throws Exception {
+    var meterRegistry = new SimpleMeterRegistry();
+    var registry =
+        LiveWorkerConnectionRegistry.builder()
+            .eventPublisher(new CapturingEventPublisher())
+            .configuration(WorkerSessionServerConfiguration.builder().build())
+            .meterRegistry(meterRegistry)
+            .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
+            .build();
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var workerId = UUID.randomUUID();
+    var registration = registration(worker(workerId), UUID.randomUUID()).toBuilder();
+    registration
+        .getCapabilitiesBuilder()
+        .addVideoEncoders(h264Encoder)
+        .addVideoEncoders(softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "libsvtav1"));
+    workerSession(service, workerId, new IgnoringResponseObserver())
+        .onNext(EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build());
+    return missingEncoder(meterRegistry, workerId, "h264");
+  }
+
+  @Test
+  @DisplayName(
+      "Should report a worker's verified codec families when every playback slot of that worker is busy")
+  void shouldReportWorkersVerifiedCodecFamiliesWhenEveryPlaybackSlotOfThatWorkerIsBusy()
+      throws Exception {
+    // The started encode holds the worker's only playback slot.
+    var started = startedEncode(new SimpleMeterRegistry());
+    var workerId = fromProto(started.worker().getWorkerId());
+
+    var workers =
+        started.registry().verifiedVideoCodecFamiliesByWorker(started.sourceNamespaceId());
+
+    assertThat(started.isRunning()).isTrue();
+    assertThat(workers).containsExactly(new WorkerVerifiedCodecFamilies(workerId, Set.of("h264")));
+  }
+
   private static double missingEncoder(
       SimpleMeterRegistry meterRegistry, UUID workerId, String codecFamily) {
     return meterRegistry
@@ -1319,6 +1385,7 @@ class WorkerSessionGrpcServiceTest {
         .service(service)
         .segmentStore(segmentStore)
         .worker(registration.getWorker())
+        .sourceNamespaceId(sourceNamespaceId)
         .workerSessionId(fromProto(responses.getFirst().getSessionAccepted().getWorkerSessionId()))
         .session(session)
         .job(job)
@@ -1332,6 +1399,7 @@ class WorkerSessionGrpcServiceTest {
       WorkerSessionGrpcService service,
       FakeSegmentStore segmentStore,
       WorkerIdentity worker,
+      UUID sourceNamespaceId,
       UUID workerSessionId,
       StreamObserver<EstablishWorkerSessionRequest> session,
       VariantJob job,
