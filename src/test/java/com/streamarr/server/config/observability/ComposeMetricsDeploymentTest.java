@@ -2,6 +2,8 @@ package com.streamarr.server.config.observability;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -37,12 +39,7 @@ class ComposeMetricsDeploymentTest {
   @DisplayName("Should keep the stored metrics in a named volume when Compose recreates Prometheus")
   void shouldKeepTheStoredMetricsInANamedVolumeWhenComposeRecreatesPrometheus() {
     var prometheus = ComposeFile.service("prometheus");
-    var storagePath =
-        prometheus.path("command").values().stream()
-            .map(JsonNode::asString)
-            .filter(argument -> argument.startsWith(STORAGE_PATH_FLAG))
-            .map(argument -> argument.substring(STORAGE_PATH_FLAG.length()))
-            .findFirst();
+    var storagePath = prometheusFlag(STORAGE_PATH_FLAG, Map.of());
 
     assertThat(storagePath).as("Prometheus storage path").isPresent();
     assertThat(prometheus.path("volumes").values())
@@ -52,5 +49,13 @@ class ComposeMetricsDeploymentTest {
     assertThat(ComposeFile.volumes().has(METRICS_VOLUME))
         .as("top-level declaration of the %s volume", METRICS_VOLUME)
         .isTrue();
+  }
+
+  private static Optional<String> prometheusFlag(String flag, Map<String, String> variables) {
+    return ComposeFile.service("prometheus").path("command").values().stream()
+        .map(argument -> ComposeFile.withVariables(argument.asString(), variables))
+        .filter(argument -> argument.startsWith(flag))
+        .map(argument -> argument.substring(flag.length()))
+        .findFirst();
   }
 }
