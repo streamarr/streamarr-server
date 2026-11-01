@@ -23,13 +23,6 @@ import lombok.NonNull;
  */
 final class VideoCopyBandwidth {
 
-  // A copy's media segment is one moof and one mdat (worker_session.proto, MeasuredStream): the
-  // moof header, the mfhd and the mdat header; then for each track a traf header, a tfhd, a
-  // version 1 tfdt and the trun header; and a trun entry for each sample.
-  private static final long SEGMENT_FRAMING_BYTES = 32;
-  private static final long TRACK_FRAMING_BYTES = 64;
-  private static final long SAMPLE_FRAMING_BYTES = 16;
-
   private static final List<Integer> AAC_SAMPLE_RATES =
       List.of(
           7_350, 8_000, 11_025, 12_000, 16_000, 22_050, 24_000, 32_000, 44_100, 48_000, 64_000,
@@ -106,10 +99,7 @@ final class VideoCopyBandwidth {
     }
 
     var segments = BigInteger.valueOf(playlist.segmentCount());
-    var videoBytes =
-        segments
-            .multiply(BigInteger.valueOf(SEGMENT_FRAMING_BYTES))
-            .add(trackBytes(video.get(), segments));
+    var videoBytes = SegmentFraming.segmentBytes(segments).add(trackBytes(video.get(), segments));
     return switch (audio.mode()) {
       case NONE -> Optional.of(averageBitRate(videoBytes, playlist));
       case COPY ->
@@ -120,7 +110,8 @@ final class VideoCopyBandwidth {
           encodedAudioFrames(source, audio, playlist)
               .map(
                   frames ->
-                      averageBitRate(videoBytes.add(framingBytes(segments, frames)), playlist))
+                      averageBitRate(
+                          videoBytes.add(SegmentFraming.trackBytes(segments, frames)), playlist))
               .map(bitRate -> saturatedSum(bitRate, audio.bitrate()));
     };
   }
@@ -144,13 +135,9 @@ final class VideoCopyBandwidth {
   /** A track's measured bytes and its framing in every segment. */
   private static BigInteger trackBytes(MeasuredStream stream, BigInteger segments) {
     return BigInteger.valueOf(stream.measuredBytes())
-        .add(framingBytes(segments, new BigInteger(Long.toUnsignedString(stream.packetCount()))));
-  }
-
-  private static BigInteger framingBytes(BigInteger segments, BigInteger samples) {
-    return segments
-        .multiply(BigInteger.valueOf(TRACK_FRAMING_BYTES))
-        .add(samples.multiply(BigInteger.valueOf(SAMPLE_FRAMING_BYTES)));
+        .add(
+            SegmentFraming.trackBytes(
+                segments, new BigInteger(Long.toUnsignedString(stream.packetCount()))));
   }
 
   /**
