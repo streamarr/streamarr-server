@@ -229,9 +229,10 @@ class JooqBitrateScanRepositoryIT extends AbstractIntegrationTest
   @DisplayName("Should require the caller's transaction when the scan inputs are locked")
   void shouldRequireTheCallersTransactionWhenTheScanInputsAreLocked() {
     var scan = createFileNeedingScan();
+    var mediaFileId = scan.mediaFileId();
 
     assertThatExceptionOfType(IllegalTransactionStateException.class)
-        .isThrownBy(() -> repository.lockBitrateScanInputs(scan.mediaFileId()));
+        .isThrownBy(() -> repository.lockBitrateScanInputs(mediaFileId));
     assertThat(lockedInputs(scan.mediaFileId()))
         .hasValueSatisfying(inputs -> assertThat(inputs.key()).isEqualTo(scan.key()));
     assertThat(lockedInputs(UUID.randomUUID())).isEmpty();
