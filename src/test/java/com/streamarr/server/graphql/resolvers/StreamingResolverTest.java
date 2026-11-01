@@ -1318,6 +1318,58 @@ class StreamingResolverTest {
     assertThat(STUB_SERVICE.getAllSessions()).isEmpty();
   }
 
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("capabilitiesWithValuesTheSchemaDoesNotName")
+  @DisplayName("Should refuse the request when its declaration names a value the schema does not")
+  void shouldRefuseTheRequestWhenItsDeclarationNamesAValueTheSchemaDoesNot(
+      String scenario, String capabilities, String undefinedValue) {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+
+    var result =
+        dgsQueryExecutor.execute(
+            """
+            mutation {
+              createPlaybackSession(input: {mediaFileId: "%s", capabilities: %s}) {
+                playbackSession { id }
+              }
+            }
+            """
+                .formatted(UUID.randomUUID(), capabilities));
+
+    assertThat(result.getErrors())
+        .singleElement()
+        .satisfies(
+            error -> {
+              assertThat(error.getErrorType()).hasToString("INVALID_ARGUMENT");
+              assertThat(error.getMessage()).contains(undefinedValue);
+            });
+    assertThat(STUB_SERVICE.getAllSessions()).isEmpty();
+  }
+
+  // ADR 0049 declares no Dolby Vision profile 7 and no NONE or UNSPECIFIED compatible base, and
+  // issue 395 declares no VP9 codec family.
+  static Stream<Arguments> capabilitiesWithValuesTheSchemaDoesNotName() {
+    return Stream.of(
+        Arguments.of(
+            "Dolby Vision profile 7",
+            CAPABILITIES.replace(
+                "dolbyVisionProfiles: []",
+                "dolbyVisionProfiles: [{profile: PROFILE_7, maxLevel: 6}]"),
+            "PROFILE_7"),
+        Arguments.of(
+            "compatible base NONE",
+            CAPABILITIES.replace("compatibleBases: [SDR]", "compatibleBases: [NONE]"),
+            "NONE"),
+        Arguments.of(
+            "compatible base UNSPECIFIED",
+            CAPABILITIES.replace("compatibleBases: [SDR]", "compatibleBases: [UNSPECIFIED]"),
+            "UNSPECIFIED"),
+        Arguments.of(
+            "codec family VP9",
+            CAPABILITIES.replace("codecFamily: H264", "codecFamily: VP9"),
+            "VP9"));
+  }
+
   @Test
   @DisplayName("Should refuse the request when it carries no capability declaration")
   void shouldRefuseTheRequestWhenItCarriesNoCapabilityDeclaration() {
