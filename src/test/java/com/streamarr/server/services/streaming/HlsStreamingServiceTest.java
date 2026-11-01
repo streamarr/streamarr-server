@@ -484,21 +484,29 @@ class HlsStreamingServiceTest {
   }
 
   @ParameterizedTest
-  @CsvSource({"AUTO, 1, 0", "AUTO, 0, 1", "FULL_HD_1080P, 1, 0", "FULL_HD_1080P, 0, 1"})
+  @MethodSource("viewerMaximumsThatLeaveNoPicture")
   @DisplayName(
       "Should reject an encode as an invalid picture size when the viewer's maximums leave no"
           + " picture")
   void shouldRejectAnEncodeAsAnInvalidPictureSizeWhenTheViewersMaximumsLeaveNoPicture(
-      VideoQuality quality, int maxHeight, int maxWidth) {
+      StreamingOptions options) {
     probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
-    var options =
-        StreamingOptions.builder().quality(quality).maxHeight(maxHeight).maxWidth(maxWidth).build();
     var command = createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), options);
 
     assertThat(service.createSession(command))
         .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.InvalidPictureSize()));
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
     assertThat(service.getActiveSessionCount()).isZero();
+  }
+
+  // The worker encodes no picture below two pixels in either direction.
+  static Stream<StreamingOptions> viewerMaximumsThatLeaveNoPicture() {
+    return Stream.of(VideoQuality.AUTO, VideoQuality.FULL_HD_1080P)
+        .flatMap(
+            quality ->
+                Stream.of(
+                    StreamingOptions.builder().quality(quality).maxHeight(1).build(),
+                    StreamingOptions.builder().quality(quality).maxWidth(1).build()));
   }
 
   @Test
@@ -521,108 +529,203 @@ class HlsStreamingServiceTest {
             });
   }
 
-  @ParameterizedTest
-  @CsvSource({
-    "FULL_HD_1080P, 0, 0, 5000000",
-    "FULL_HD_1080P, 0, 2000000, 1872000",
-    "FULL_HD_1080P, 0, 700000, 700000",
-    "FULL_HD_1080P, 0, 100000, 100000",
-    "AUTO, 300, 0, 800000",
-    "AUTO, 300, 1000000, 800000",
-    "FULL_HD_1080P, 0, 20000000, 5000000",
-    "AUTO, 300, 20000000, 800000"
-  })
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("budgetsForASourceWithoutABitrate")
   @DisplayName(
       "Should dispatch a positive bitrate and advertise it in the playlist when the probe names no"
           + " source bitrate")
   void shouldDispatchAPositiveBitrateAndAdvertiseItInThePlaylistWhenTheProbeNamesNoSourceBitrate(
-      VideoQuality quality, int maxHeight, int maxBitrate, long expectedBitrate) {
+      UnknownSourceBitrate budget) {
     probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").bitrate(0).build());
-    var options =
-        StreamingOptions.builder()
-            .quality(quality)
-            .maxHeight(maxHeight)
-            .maxBitrate(maxBitrate)
-            .build();
 
-    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), budget.options());
     var playlist =
         new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
 
     var audioBitrate = session.getTranscodeDecision().audioDecision().bitrate();
     assertThat(transcodeExecutor.getStartedRequests())
         .singleElement()
-        .satisfies(request -> assertThat(request.bitrate()).isEqualTo(expectedBitrate));
-    assertThat(playlist).contains(",AVERAGE-BANDWIDTH=" + (expectedBitrate + audioBitrate) + ",");
+        .satisfies(request -> assertThat(request.bitrate()).isEqualTo(budget.videoBitrate()));
+    assertThat(playlist)
+        .contains(",AVERAGE-BANDWIDTH=" + (budget.videoBitrate() + audioBitrate) + ",");
   }
 
-  // The 2160p tier's H.264 nominal bitrate is 20 Mb/s, and the 1080p tier's is 5 Mb/s.
-  @ParameterizedTest
-  @CsvSource({
-    "LOW_360P, 1920, 1080, 8000000, 800000",
-    "HIGH_720P, 1920, 1080, 8000000, 3000000",
-    "FULL_HD_1080P, 1920, 1080, 2000000, 2000000",
-    "UHD_4K, 1920, 1080, 8000000, 5000000",
-    "UHD_4K, 1920, 1080, 0, 5000000",
-    "UHD_4K, 3840, 2160, 40000000, 20000000",
-    "UHD_4K, 3840, 2160, 8000000, 8000000"
-  })
+  // ADR 0050: without a source bitrate, a single variant takes the nominal bitrate of the tier that
+  // holds its picture within the maximum bitrate less 128 kb/s of audio, and the 360p tier's
+  // bitrate within the maximum when less than that remains.
+  static Stream<UnknownSourceBitrate> budgetsForASourceWithoutABitrate() {
+    return Stream.of(
+        unknownSourceBitrate(fixed1080p().build(), 5_000_000L),
+        unknownSourceBitrate(fixed1080p().maxBitrate(20_000_000).build(), 5_000_000L),
+        unknownSourceBitrate(fixed1080p().maxBitrate(2_000_000).build(), 1_872_000L),
+        unknownSourceBitrate(fixed1080p().maxBitrate(700_000).build(), 700_000L),
+        unknownSourceBitrate(fixed1080p().maxBitrate(100_000).build(), 100_000L),
+        unknownSourceBitrate(autoAt300Lines().build(), 800_000L),
+        unknownSourceBitrate(autoAt300Lines().maxBitrate(1_000_000).build(), 800_000L),
+        unknownSourceBitrate(autoAt300Lines().maxBitrate(20_000_000).build(), 800_000L));
+  }
+
+  private static StreamingOptions.StreamingOptionsBuilder fixed1080p() {
+    return StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P);
+  }
+
+  private static StreamingOptions.StreamingOptionsBuilder autoAt300Lines() {
+    return StreamingOptions.builder().quality(VideoQuality.AUTO).maxHeight(300);
+  }
+
+  private static UnknownSourceBitrate unknownSourceBitrate(
+      StreamingOptions options, long videoBitrate) {
+    return UnknownSourceBitrate.builder().options(options).videoBitrate(videoBitrate).build();
+  }
+
+  @Builder
+  record UnknownSourceBitrate(StreamingOptions options, long videoBitrate) {}
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("fixedQualitiesAndTheirTiersBitrate")
   @DisplayName(
       "Should encode a fixed quality at the nominal bitrate of the tier that holds the encoded"
           + " picture, capped by the source's known bitrate, when the viewer sets no maximum"
           + " bitrate")
   void
       shouldEncodeAFixedQualityAtTheNominalBitrateOfTheTierThatHoldsTheEncodedPictureCappedByTheSourcesKnownBitrateWhenTheViewerSetsNoMaximumBitrate(
-          VideoQuality quality, int width, int height, long sourceBitrate, long expectedBitrate) {
+          FixedQualitySource fixedQuality) {
+    var source = fixedQuality.source();
     probeResults.setDefaultProbe(
         defaultProbeBuilder()
             .videoCodec("hevc")
-            .width(width)
-            .height(height)
-            .bitrate(sourceBitrate)
+            .width(source.width())
+            .height(source.height())
+            .bitrate(fixedQuality.sourceBitrate())
             .build());
-    var options = StreamingOptions.builder().quality(quality).build();
+    var options = StreamingOptions.builder().quality(fixedQuality.quality()).build();
 
     var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
 
     assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo("h264");
     assertThat(transcodeExecutor.getStartedRequests())
         .singleElement()
-        .satisfies(request -> assertThat(request.bitrate()).isEqualTo(expectedBitrate));
+        .satisfies(request -> assertThat(request.bitrate()).isEqualTo(fixedQuality.videoBitrate()));
   }
+
+  // The 2160p tier's H.264 nominal bitrate is 20 Mb/s, and the 1080p tier's is 5 Mb/s.
+  static Stream<FixedQualitySource> fixedQualitiesAndTheirTiersBitrate() {
+    var uhd = new PictureSize(3840, 2160);
+    return Stream.of(
+        fixedQualitySource().quality(VideoQuality.LOW_360P).videoBitrate(800_000L).build(),
+        fixedQualitySource().quality(VideoQuality.HIGH_720P).videoBitrate(3_000_000L).build(),
+        fixedQualitySource()
+            .quality(VideoQuality.FULL_HD_1080P)
+            .sourceBitrate(2_000_000L)
+            .videoBitrate(2_000_000L)
+            .build(),
+        fixedQualitySource().quality(VideoQuality.UHD_4K).videoBitrate(5_000_000L).build(),
+        fixedQualitySource()
+            .quality(VideoQuality.UHD_4K)
+            .sourceBitrate(0L)
+            .videoBitrate(5_000_000L)
+            .build(),
+        fixedQualitySource()
+            .quality(VideoQuality.UHD_4K)
+            .source(uhd)
+            .sourceBitrate(40_000_000L)
+            .videoBitrate(20_000_000L)
+            .build(),
+        fixedQualitySource()
+            .quality(VideoQuality.UHD_4K)
+            .source(uhd)
+            .videoBitrate(8_000_000L)
+            .build());
+  }
+
+  // An 8 Mb/s 1920×1080 source.
+  private static FixedQualitySource.FixedQualitySourceBuilder fixedQualitySource() {
+    return FixedQualitySource.builder()
+        .source(new PictureSize(1920, 1080))
+        .sourceBitrate(8_000_000L);
+  }
+
+  @Builder
+  record FixedQualitySource(
+      VideoQuality quality, PictureSize source, long sourceBitrate, long videoBitrate) {}
 
   // ADR 0050: a variant costs its video bitrate plus the stream session's audio bitrate, here a
   // 128 kb/s stereo AAC encode.
-  @ParameterizedTest
-  @CsvSource({
-    "FULL_HD_1080P, , 2000000, 1920, 1080, 1872000",
-    "FULL_HD_1080P, , 1000000, 1920, 1080, 872000",
-    "FULL_HD_1080P, , 700000, 640, 360, 700000",
-    "FULL_HD_1080P, , 100000, 640, 360, 100000",
-    "AUTO, 500, 1000000, 498, 280, 872000",
-    "AUTO, , 500000, 640, 360, 500000"
-  })
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("budgetsThatHoldThe360pTiersBitrateBesideTheAudio")
   @DisplayName(
-      "Should encode the single variant within the maximum bitrate less the audio, or in the 360p"
-          + " box, when the viewer sets a maximum bitrate")
+      "Should encode the single variant within the maximum bitrate less the audio when that leaves"
+          + " at least the 360p tier's bitrate")
   void
-      shouldEncodeTheSingleVariantWithinTheMaximumBitrateLessTheAudioOrInThe360pBoxWhenTheViewerSetsAMaximumBitrate(
-          VideoQuality quality,
-          Integer maxWidth,
-          int maxBitrate,
-          int expectedWidth,
-          int expectedHeight,
-          long expectedVideoBitrate) {
+      shouldEncodeTheSingleVariantWithinTheMaximumBitrateLessTheAudioWhenThatLeavesAtLeastThe360pTiersBitrate(
+          SingleVariantOutcome expected) {
+    assertSingleVariantAndItsBandwidth(expected);
+  }
+
+  static Stream<SingleVariantOutcome> budgetsThatHoldThe360pTiersBitrateBesideTheAudio() {
+    return Stream.of(
+        SingleVariantOutcome.builder()
+            .options(fixed1080p().maxBitrate(2_000_000).build())
+            .picture(new PictureSize(1920, 1080))
+            .videoBitrate(1_872_000L)
+            .build(),
+        SingleVariantOutcome.builder()
+            .options(fixed1080p().maxBitrate(1_000_000).build())
+            .picture(new PictureSize(1920, 1080))
+            .videoBitrate(872_000L)
+            .build(),
+        SingleVariantOutcome.builder()
+            .options(
+                StreamingOptions.builder()
+                    .quality(VideoQuality.AUTO)
+                    .maxWidth(500)
+                    .maxBitrate(1_000_000)
+                    .build())
+            .picture(new PictureSize(498, 280))
+            .videoBitrate(872_000L)
+            .build());
+  }
+
+  // An encoder reads a zero bitrate as no limit (ADR 0050).
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("budgetsBelowThe360pTiersBitrateBesideTheAudio")
+  @DisplayName(
+      "Should encode the single variant in the 360p box within the maximum bitrate when the audio"
+          + " leaves less than the 360p tier's bitrate")
+  void
+      shouldEncodeTheSingleVariantInThe360pBoxWithinTheMaximumBitrateWhenTheAudioLeavesLessThanThe360pTiersBitrate(
+          SingleVariantOutcome expected) {
+    assertSingleVariantAndItsBandwidth(expected);
+  }
+
+  static Stream<SingleVariantOutcome> budgetsBelowThe360pTiersBitrateBesideTheAudio() {
+    var box360p = new PictureSize(640, 360);
+    return Stream.of(
+        SingleVariantOutcome.builder()
+            .options(fixed1080p().maxBitrate(700_000).build())
+            .picture(box360p)
+            .videoBitrate(700_000L)
+            .build(),
+        SingleVariantOutcome.builder()
+            .options(fixed1080p().maxBitrate(100_000).build())
+            .picture(box360p)
+            .videoBitrate(100_000L)
+            .build(),
+        SingleVariantOutcome.builder()
+            .options(
+                StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(500_000).build())
+            .picture(box360p)
+            .videoBitrate(500_000L)
+            .build());
+  }
+
+  // The 8 Mb/s source's job attempt and its BANDWIDTH and AVERAGE-BANDWIDTH, which add the audio
+  // and allow a fifth above the average.
+  private void assertSingleVariantAndItsBandwidth(SingleVariantOutcome expected) {
     probeResults.setDefaultProbe(
         defaultProbeBuilder().videoCodec("hevc").bitrate(8_000_000L).build());
-    var options =
-        StreamingOptions.builder()
-            .quality(quality)
-            .maxWidth(maxWidth)
-            .maxBitrate(maxBitrate)
-            .build();
 
-    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), expected.options());
     var playlist =
         new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
 
@@ -631,11 +734,11 @@ class HlsStreamingServiceTest {
         .singleElement()
         .satisfies(
             request -> {
-              assertThat(request.width()).isEqualTo(expectedWidth);
-              assertThat(request.height()).isEqualTo(expectedHeight);
-              assertThat(request.bitrate()).isEqualTo(expectedVideoBitrate);
+              assertThat(new PictureSize(request.width(), request.height()))
+                  .isEqualTo(expected.picture());
+              assertThat(request.bitrate()).isEqualTo(expected.videoBitrate());
             });
-    var averageBandwidth = expectedVideoBitrate + 128_000L;
+    var averageBandwidth = expected.videoBitrate() + 128_000L;
     assertThat(playlist)
         .contains(
             "BANDWIDTH="
@@ -645,34 +748,52 @@ class HlsStreamingServiceTest {
                 + ",");
   }
 
-  // A stereo DTS source encodes 128 kb/s AAC, and a 7.1 one 768 kb/s E-AC-3 5.1.
-  @ParameterizedTest
-  @CsvSource({
-    "2, 3100000, 128000, '480p, 360p'",
-    "2, 1800000, 128000, '480p, 360p'",
-    "8, 1800000, 768000, '360p'",
-    "8, 2000000, 768000, '360p'"
-  })
+  @Builder
+  record SingleVariantOutcome(StreamingOptions options, PictureSize picture, long videoBitrate) {}
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("audioEncodesAndTheTiersTheyLeave")
   @DisplayName(
       "Should offer a tier only when its video bitrate plus the session's audio bitrate is within"
           + " the viewer's maximum bitrate")
   void shouldOfferATierOnlyWhenItsVideoPlusAudioBitrateIsWithinTheViewersMaximumBitrate(
-      int sourceChannels, int maxBitrate, long audioBitrate, String expectedLabels) {
+      TiersBesideEncodedAudio expected) {
     var options =
-        StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(maxBitrate).build();
+        StreamingOptions.builder()
+            .quality(VideoQuality.AUTO)
+            .maxBitrate(expected.maxBitrate())
+            .build();
 
-    var session = createDtsSession(sourceChannels, options);
+    var session = createDtsSession(expected.sourceChannels(), options);
     var playlist =
         new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
 
-    assertThat(session.getTranscodeDecision().audioDecision().bitrate()).isEqualTo(audioBitrate);
+    assertThat(session.getTranscodeDecision().audioDecision().bitrate())
+        .isEqualTo(expected.audioBitrate());
     assertThat(session.getVariants())
         .extracting(QualityVariant::label)
-        .containsExactlyInAnyOrder(expectedLabels.split(", "));
+        .containsExactlyInAnyOrderElementsOf(expected.labels());
     assertThat(averageBandwidths(playlist))
         .isNotEmpty()
-        .allSatisfy(bandwidth -> assertThat(bandwidth).isLessThanOrEqualTo(maxBitrate));
+        .allSatisfy(bandwidth -> assertThat(bandwidth).isLessThanOrEqualTo(expected.maxBitrate()));
   }
+
+  // A stereo DTS source encodes 128 kb/s AAC, and a 7.1 one 768 kb/s E-AC-3 5.1. 720p's 3 Mb/s
+  // fits 3.1 Mb/s only without audio, and 480p's 1.5 Mb/s fits 2 Mb/s only beside less than 500
+  // kb/s.
+  static Stream<TiersBesideEncodedAudio> audioEncodesAndTheTiersTheyLeave() {
+    var stereo = TiersBesideEncodedAudio.builder().sourceChannels(2).audioBitrate(128_000L);
+    var surround = TiersBesideEncodedAudio.builder().sourceChannels(8).audioBitrate(768_000L);
+    return Stream.of(
+        stereo.maxBitrate(3_100_000).labels(List.of("480p", "360p")).build(),
+        stereo.maxBitrate(1_800_000).labels(List.of("480p", "360p")).build(),
+        surround.maxBitrate(1_800_000).labels(List.of("360p")).build(),
+        surround.maxBitrate(2_000_000).labels(List.of("360p")).build());
+  }
+
+  @Builder
+  record TiersBesideEncodedAudio(
+      int sourceChannels, long audioBitrate, int maxBitrate, List<String> labels) {}
 
   @ParameterizedTest
   @CsvSource({"2, 128000", "8, 768000"})
@@ -1330,98 +1451,151 @@ class HlsStreamingServiceTest {
             });
   }
 
-  @ParameterizedTest
-  @CsvSource({
-    "1919, , , 5000000, '720p, 480p, 360p'",
-    ", 1079, , 5000000, '720p, 480p, 360p'",
-    ", , 4000000, 40000000, '720p, 480p, 360p'"
-  })
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("copyableSourcesOverOneViewerLimit")
   @DisplayName(
       "Should encode the video in Auto when a copyable source exceeds one of the viewer's limits")
   void shouldEncodeTheVideoInAutoWhenACopyableSourceExceedsOneOfTheViewersLimits(
-      Integer maxWidth,
-      Integer maxHeight,
-      Integer maxBitrate,
-      long sourceBitrate,
-      String expectedLabels) {
-    probeResults.setDefaultProbe(defaultProbeBuilder().bitrate(sourceBitrate).build());
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.AUTO)
-            .maxWidth(maxWidth)
-            .maxHeight(maxHeight)
-            .maxBitrate(maxBitrate)
-            .build();
+      SourceAndLimits sourceAndLimits) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().bitrate(sourceAndLimits.sourceBitrate()).build());
 
-    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+    var session =
+        createSession(seedMediaFile().getId(), UUID.randomUUID(), sourceAndLimits.options());
 
     assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
     assertThat(session.getVariants())
         .extracting(QualityVariant::label)
-        .containsExactlyInAnyOrder(expectedLabels.split(", "));
+        .containsExactlyInAnyOrder("720p", "480p", "360p");
   }
 
-  @ParameterizedTest
-  @CsvSource({
-    "AUTO, 1920, 1080, 5000000, 5000000",
-    "AUTO, , , 4000000, 0",
-    "FULL_HD_1080P, , , , 5000000"
-  })
-  @DisplayName(
-      "Should copy the video when the source fits every one of the viewer's limits or its"
-          + " bitrate is unknown")
-  void shouldCopyTheVideoWhenTheSourceFitsEveryOneOfTheViewersLimitsOrItsBitrateIsUnknown(
-      VideoQuality quality,
-      Integer maxWidth,
-      Integer maxHeight,
-      Integer maxBitrate,
-      long sourceBitrate) {
-    probeResults.setDefaultProbe(defaultProbeBuilder().bitrate(sourceBitrate).build());
-    var options =
-        StreamingOptions.builder()
-            .quality(quality)
-            .maxWidth(maxWidth)
-            .maxHeight(maxHeight)
-            .maxBitrate(maxBitrate)
-            .build();
+  // The 1920×1080 H.264 source fits the default declaration, so only a viewer's limit refuses the
+  // copy. Each limit also leaves out the 1080p tier.
+  static Stream<SourceAndLimits> copyableSourcesOverOneViewerLimit() {
+    return Stream.of(
+        SourceAndLimits.builder()
+            .options(autoOptions().maxWidth(1919).build())
+            .sourceBitrate(5_000_000L)
+            .build(),
+        SourceAndLimits.builder()
+            .options(autoOptions().maxHeight(1079).build())
+            .sourceBitrate(5_000_000L)
+            .build(),
+        SourceAndLimits.builder()
+            .options(autoOptions().maxBitrate(4_000_000).build())
+            .sourceBitrate(40_000_000L)
+            .build());
+  }
 
-    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+  private static StreamingOptions.StreamingOptionsBuilder autoOptions() {
+    return StreamingOptions.builder().quality(VideoQuality.AUTO);
+  }
+
+  @Builder
+  record SourceAndLimits(StreamingOptions options, long sourceBitrate) {}
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("sourcesWithinEveryViewerLimit")
+  @DisplayName("Should copy the video when the source fits every one of the viewer's limits")
+  void shouldCopyTheVideoWhenTheSourceFitsEveryOneOfTheViewersLimits(
+      SourceAndLimits sourceAndLimits) {
+    assertCopiesTheVideo(sourceAndLimits);
+  }
+
+  static Stream<SourceAndLimits> sourcesWithinEveryViewerLimit() {
+    return Stream.of(
+        SourceAndLimits.builder()
+            .options(autoOptions().maxWidth(1920).maxHeight(1080).maxBitrate(5_000_000).build())
+            .sourceBitrate(5_000_000L)
+            .build(),
+        SourceAndLimits.builder()
+            .options(StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P).build())
+            .sourceBitrate(5_000_000L)
+            .build());
+  }
+
+  // A probe that names no container bitrate reports 0 (ADR 0050).
+  @Test
+  @DisplayName(
+      "Should copy the video when the viewer sets a maximum bitrate and the source's bitrate is"
+          + " unknown")
+  void shouldCopyTheVideoWhenTheViewerSetsAMaximumBitrateAndTheSourcesBitrateIsUnknown() {
+    assertCopiesTheVideo(
+        SourceAndLimits.builder()
+            .options(autoOptions().maxBitrate(4_000_000).build())
+            .sourceBitrate(0L)
+            .build());
+  }
+
+  private void assertCopiesTheVideo(SourceAndLimits sourceAndLimits) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().bitrate(sourceAndLimits.sourceBitrate()).build());
+
+    var session =
+        createSession(seedMediaFile().getId(), UUID.randomUUID(), sourceAndLimits.options());
 
     assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
     assertThat(session.getVariants()).isEmpty();
   }
 
-  // The fixed quality's box holds a picture in either orientation; the client's maximum width and
-  // height apply as it gives them.
-  @ParameterizedTest
-  @CsvSource({
-    "FULL_HD_1080P, , , true",
-    "HIGH_720P, , , false",
-    "AUTO, 1080, 1920, true",
-    "AUTO, 1920, 1080, false"
-  })
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"FULL_HD_1080P", "UHD_4K"})
   @DisplayName(
-      "Should copy a portrait source only when it fits the fixed quality's box in either"
-          + " orientation and the viewer's maximum width and height as given")
-  void shouldCopyAPortraitSourceOnlyWhenItFitsTheFixedQualitysBoxAndTheViewersMaximumsAsGiven(
-      VideoQuality quality, Integer maxWidth, Integer maxHeight, boolean copiesVideo) {
+      "Should copy a portrait source when it fits the fixed quality's box turned to its"
+          + " orientation")
+  void shouldCopyAPortraitSourceWhenItFitsTheFixedQualitysBoxTurnedToItsOrientation(
+      VideoQuality quality) {
+    assertThat(portraitSessionCopiesVideo(StreamingOptions.builder().quality(quality).build()))
+        .isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode a portrait source when it is larger than the fixed quality's box in either"
+          + " orientation")
+  void shouldEncodeAPortraitSourceWhenItIsLargerThanTheFixedQualitysBoxInEitherOrientation() {
+    var options = StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build();
+
+    assertThat(portraitSessionCopiesVideo(options)).isFalse();
+  }
+
+  // ADR 0050: a client's maximum width and height describe a window or a screen, which has an
+  // orientation, so they are not turned with the picture.
+  @Test
+  @DisplayName(
+      "Should copy a portrait source when it fits the viewer's maximum width and height as the"
+          + " client gives them")
+  void shouldCopyAPortraitSourceWhenItFitsTheViewersMaximumWidthAndHeightAsTheClientGivesThem() {
+    var options = autoOptions().maxWidth(1080).maxHeight(1920).build();
+
+    assertThat(portraitSessionCopiesVideo(options)).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode a portrait source when it fits the viewer's maximum width and height only"
+          + " turned on their side")
+  void shouldEncodeAPortraitSourceWhenItFitsTheViewersMaximumWidthAndHeightOnlyTurnedOnTheirSide() {
+    var options = autoOptions().maxWidth(1920).maxHeight(1080).build();
+
+    assertThat(portraitSessionCopiesVideo(options)).isFalse();
+  }
+
+  // Whether a session copies a 1080×1920 H.264 source for a player whose entry plays it.
+  private boolean portraitSessionCopiesVideo(StreamingOptions options) {
     probeResults.setDefaultProbe(probeVersion5At24(new PictureSize(1080, 1920)).build());
-    var landscapeHd =
-        defaultDeclarationBuilder()
-            .video(List.of(h264EntryBuilder().maxWidth(1920).maxHeight(1080).build()))
-            .build();
-    var options =
-        StreamingOptions.builder().quality(quality).maxWidth(maxWidth).maxHeight(maxHeight).build();
 
     var session =
         accepted(
             service.createSession(
                 createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
                     .options(options)
-                    .capabilityDeclaration(landscapeHd)
+                    .capabilityDeclaration(landscapeHdDeclaration())
                     .build()));
 
-    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isEqualTo(copiesVideo);
+    return session.getTranscodeDecision().transcodeMode().copiesVideo();
   }
 
   @Test
@@ -1474,18 +1648,12 @@ class HlsStreamingServiceTest {
   }
 
   @ParameterizedTest
-  @CsvSource({"HIGH_720P, , ", "AUTO, 720, ", "AUTO, , 1000000"})
+  @MethodSource("viewerLimitsThatRefuseTheDefaultSourcesCopy")
   @DisplayName(
       "Should copy a source that has no usable frame rate when the viewer's limits refuse its copy")
   void shouldCopyASourceThatHasNoUsableFrameRateWhenTheViewersLimitsRefuseItsCopy(
-      VideoQuality quality, Integer maxHeight, Integer maxBitrate) {
+      StreamingOptions options) {
     probeResults.setDefaultProbe(defaultProbeBuilder().framerate(OptionalDouble.empty()).build());
-    var options =
-        StreamingOptions.builder()
-            .quality(quality)
-            .maxHeight(maxHeight)
-            .maxBitrate(maxBitrate)
-            .build();
 
     var outcome =
         service.createSession(
@@ -1493,6 +1661,15 @@ class HlsStreamingServiceTest {
 
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
     assertThat(accepted(outcome).getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+  }
+
+  // The fixed quality's box, the maximum height and the maximum bitrate each refuse the copy of
+  // the 1920×1080 source at 5 Mb/s.
+  static Stream<StreamingOptions> viewerLimitsThatRefuseTheDefaultSourcesCopy() {
+    return Stream.of(
+        StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build(),
+        autoOptions().maxHeight(720).build(),
+        autoOptions().maxBitrate(1_000_000).build());
   }
 
   @Test
@@ -1519,16 +1696,12 @@ class HlsStreamingServiceTest {
       shouldEncodeAPortraitSourceAtItsFullSizeWhenTheCapabilityEntrysMaximumFitsItTurnedOnItsSide() {
     probeResults.setDefaultProbe(
         defaultProbeBuilder().videoCodec("hevc").width(1080).height(1920).build());
-    var landscapeHd =
-        defaultDeclarationBuilder()
-            .video(List.of(h264EntryBuilder().maxWidth(1920).maxHeight(1080).build()))
-            .build();
 
     accepted(
         service.createSession(
             createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
                 .options(StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P).build())
-                .capabilityDeclaration(landscapeHd)
+                .capabilityDeclaration(landscapeHdDeclaration())
                 .build()));
 
     assertThat(transcodeExecutor.getStartedRequests())
@@ -2879,7 +3052,11 @@ class HlsStreamingServiceTest {
 
     assertThat(session.getVariants())
         .extracting(QualityVariant::label, QualityVariant::width, QualityVariant::height)
-        .contains(tuple("900p", 1600, 900), tuple("720p", 1280, 720));
+        .containsExactlyInAnyOrder(
+            tuple("900p", 1600, 900),
+            tuple("720p", 1280, 720),
+            tuple("480p", 854, 480),
+            tuple("360p", 640, 360));
     assertThat(playlist).contains("900p/stream.m3u8?t=t").doesNotContain("1080p/");
   }
 
@@ -2934,17 +3111,23 @@ class HlsStreamingServiceTest {
 
     assertThat(session.getVariants())
         .extracting(QualityVariant::label, QualityVariant::width, QualityVariant::height)
-        .contains(tuple("2160p", 3840, 2160), tuple("1440p", 2560, 1440));
+        .containsExactlyInAnyOrder(
+            tuple("2160p", 3840, 2160),
+            tuple("1440p", 2560, 1440),
+            tuple("1080p", 1920, 1080),
+            tuple("720p", 1280, 720),
+            tuple("480p", 854, 480),
+            tuple("360p", 640, 360));
   }
 
-  @ParameterizedTest
-  @CsvSource({"av1, 11600000, 8100000", "h264, 20000000, 12000000"})
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("codecFamiliesAndTheirLargestTiersBitrates")
   @DisplayName(
       "Should give the 2160p and 1440p tiers a codec family's nominal bitrates when the encode uses"
           + " that family")
   void shouldGiveThe2160pAnd1440pTiersACodecFamilysNominalBitratesWhenTheEncodeUsesThatFamily(
-      String codecFamily, long bitrate2160p, long bitrate1440p) {
-    transcodeExecutor.setEncodeSlots(Map.of(codecFamily, 3));
+      FamilyBitrates family) {
+    transcodeExecutor.setEncodeSlots(Map.of(family.codecFamily(), 3));
     probeResults.setDefaultProbe(
         defaultProbeBuilder()
             .videoCodec("hevc")
@@ -2955,12 +3138,36 @@ class HlsStreamingServiceTest {
 
     var session = createSession(seedMediaFile().getId(), av1AndH264Declaration());
 
-    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo(codecFamily);
+    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo(family.codecFamily());
     assertThat(session.getVariants())
         .extracting(QualityVariant::label, QualityVariant::videoBitrate)
-        .contains(
-            tuple("2160p", bitrate2160p), tuple("1440p", bitrate1440p), tuple("1080p", 5_000_000L));
+        .containsExactlyInAnyOrder(
+            tuple("2160p", family.bitrate2160p()),
+            tuple("1440p", family.bitrate1440p()),
+            tuple("1080p", 5_000_000L),
+            tuple("720p", 3_000_000L),
+            tuple("480p", 1_500_000L),
+            tuple("360p", 800_000L));
   }
+
+  // The AV1 rates follow the HEVC ladder of Apple's HLS Authoring Specification, and H.264 needs
+  // more for the same picture (ADR 0050). Smaller tiers keep one rate for both families.
+  static Stream<FamilyBitrates> codecFamiliesAndTheirLargestTiersBitrates() {
+    return Stream.of(
+        FamilyBitrates.builder()
+            .codecFamily("av1")
+            .bitrate2160p(11_600_000L)
+            .bitrate1440p(8_100_000L)
+            .build(),
+        FamilyBitrates.builder()
+            .codecFamily("h264")
+            .bitrate2160p(20_000_000L)
+            .bitrate1440p(12_000_000L)
+            .build());
+  }
+
+  @Builder
+  record FamilyBitrates(String codecFamily, long bitrate2160p, long bitrate1440p) {}
 
   @Test
   @DisplayName(
@@ -3203,36 +3410,56 @@ class HlsStreamingServiceTest {
     assertThat(session.getHandle()).isPresent();
   }
 
-  @ParameterizedTest
-  @CsvSource({
-    "3840, 2160, FULL_HD_1080P, 1920, 1080",
-    "3840, 2160, UHD_4K, 3840, 2160",
-    "1920, 1080, UHD_4K, 1920, 1080",
-    "3840, 2160, LOW_360P, 640, 360"
-  })
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("fixedQualitiesAndTheirEncodedPictures")
   @DisplayName(
       "Should encode a fixed quality within its picture box when the source is larger, never"
           + " enlarging it")
   void shouldEncodeAFixedQualityWithinItsPictureBoxWhenTheSourceIsLargerNeverEnlargingIt(
-      int sourceWidth,
-      int sourceHeight,
-      VideoQuality quality,
-      int expectedWidth,
-      int expectedHeight) {
+      FixedQualityPicture fixedQuality) {
+    var source = fixedQuality.source();
     probeResults.setDefaultProbe(
-        defaultProbeBuilder().videoCodec("hevc").width(sourceWidth).height(sourceHeight).build());
-    var options = StreamingOptions.builder().quality(quality).build();
+        defaultProbeBuilder()
+            .videoCodec("hevc")
+            .width(source.width())
+            .height(source.height())
+            .build());
+    var options = StreamingOptions.builder().quality(fixedQuality.quality()).build();
 
     createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
 
     assertThat(transcodeExecutor.getStartedRequests())
         .singleElement()
         .satisfies(
-            request -> {
-              assertThat(request.width()).isEqualTo(expectedWidth);
-              assertThat(request.height()).isEqualTo(expectedHeight);
-            });
+            request ->
+                assertThat(new PictureSize(request.width(), request.height()))
+                    .isEqualTo(fixedQuality.picture()));
   }
+
+  static Stream<FixedQualityPicture> fixedQualitiesAndTheirEncodedPictures() {
+    var uhd = new PictureSize(3840, 2160);
+    var fullHd = new PictureSize(1920, 1080);
+    return Stream.of(
+        FixedQualityPicture.builder()
+            .source(uhd)
+            .quality(VideoQuality.FULL_HD_1080P)
+            .picture(fullHd)
+            .build(),
+        FixedQualityPicture.builder().source(uhd).quality(VideoQuality.UHD_4K).picture(uhd).build(),
+        FixedQualityPicture.builder()
+            .source(fullHd)
+            .quality(VideoQuality.UHD_4K)
+            .picture(fullHd)
+            .build(),
+        FixedQualityPicture.builder()
+            .source(uhd)
+            .quality(VideoQuality.LOW_360P)
+            .picture(new PictureSize(640, 360))
+            .build());
+  }
+
+  @Builder
+  record FixedQualityPicture(PictureSize source, VideoQuality quality, PictureSize picture) {}
 
   @Test
   @DisplayName(
