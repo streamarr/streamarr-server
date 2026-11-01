@@ -20,14 +20,12 @@ record FormatRecoveryPolicy(int maximumFormatAttempts) {
   }
 
   NextFormatAttempt after(
-      @NonNull PlayingChoice choice,
-      @NonNull PlaybackSessionFailure failure,
-      int formatAttemptCount) {
+      @NonNull PlayingChoice choice, @NonNull FailedFormatAttempt failed, int formatAttemptCount) {
     return switch (choice.playbackChoice()) {
       case AUTO -> encodeWithinBudget(choice, formatAttemptCount);
       case ORIGINAL -> encodeWithinBudget(AUTO_AFTER_A_FAILED_COPY, formatAttemptCount);
       case LOW_360P, MEDIUM_480P, HIGH_720P, FULL_HD_1080P, UHD_4K ->
-          new NextFormatAttempt.Fail(failure);
+          new NextFormatAttempt.Fail(failed.reason());
     };
   }
 

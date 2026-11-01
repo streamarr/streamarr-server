@@ -321,20 +321,30 @@ public class PlaybackSessionService implements AutoCloseable {
       return Optional.empty();
     }
 
+    var failed = failedAttempt(playback, fixedFailure);
     // A failed encode keeps its codec family out of every later format attempt.
-    if (fixedFailure instanceof PlaybackSessionFailure.FixedFormatFailed
-        && playback.current instanceof PlaybackFormatAttempt.Ready(var session)
-        && !session.getTranscodeDecision().transcodeMode().copiesVideo()) {
+    if (!failed.copiedVideo()
+        && playback.current instanceof PlaybackFormatAttempt.Ready(var session)) {
       playback.excludedEncodeCodecFamilies.add(session.getTranscodeDecision().videoCodecFamily());
     }
 
-    return switch (recoveryPolicy.after(
-        playback.choice, fixedFailure, playback.formatAttemptCount)) {
+    return switch (recoveryPolicy.after(playback.choice, failed, playback.formatAttemptCount)) {
       case NextFormatAttempt.Fail(var reason) ->
           Optional.of(failPlayback(playback, failedId, reason));
       case NextFormatAttempt.Encode(var choice) ->
           Optional.of(reserveEncode(playback, failedId, choice));
     };
+  }
+
+  // Only a copy's output can mismatch its source, so a mismatch names a copy even before the
+  // format attempt is ready.
+  private static FailedFormatAttempt failedAttempt(
+      PlaybackSession playback, PlaybackSessionFailure reason) {
+    var copiedVideo =
+        reason instanceof PlaybackSessionFailure.OutputMismatch
+            || (playback.current instanceof PlaybackFormatAttempt.Ready(var session)
+                && session.getTranscodeDecision().transcodeMode().copiesVideo());
+    return new FailedFormatAttempt(reason, copiedVideo);
   }
 
   private FormatAttemptReservation reserveEncode(
