@@ -1,5 +1,6 @@
 package com.streamarr.server.domain.streaming;
 
+import java.util.Arrays;
 import lombok.Builder;
 import lombok.NonNull;
 
@@ -22,12 +23,8 @@ public record MeasuredStream(
     @NonNull KeyframeIntervalCounts keyframeIntervalPacketCounts) {
 
   public MeasuredStream {
-    if (streamIndex < 0
-        || measuredBytes < 0
-        || packetCount < 0
-        || measuredDuration < 0
-        || timeBaseNumerator <= 0
-        || timeBaseDenominator <= 0) {
+    if (anyIsNegative(streamIndex, measuredBytes, packetCount, measuredDuration)
+        || anyIsNotPositive(timeBaseNumerator, timeBaseDenominator)) {
       throw new IllegalArgumentException(
           "A measured stream needs a stream index, counts that are not negative and a positive"
               + " time base");
@@ -37,5 +34,13 @@ public record MeasuredStream(
       throw new IllegalArgumentException(
           "A measured stream needs its packets and its bytes in the same keyframe intervals");
     }
+  }
+
+  private static boolean anyIsNegative(long... values) {
+    return Arrays.stream(values).anyMatch(value -> value < 0);
+  }
+
+  private static boolean anyIsNotPositive(long... values) {
+    return Arrays.stream(values).anyMatch(value -> value <= 0);
   }
 }
