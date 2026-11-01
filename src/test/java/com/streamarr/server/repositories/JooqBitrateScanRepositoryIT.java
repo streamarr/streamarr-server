@@ -272,12 +272,12 @@ class JooqBitrateScanRepositoryIT extends AbstractIntegrationTest
     repository.markMeasurementUnavailable(
         mediaFileId, scan.key(), StreamMeasurementUnavailableReason.COPY_CHANGES_PACKETS);
 
-    assertThatThrownBy(
-            () ->
-                dsl.update(MEDIA_FILE_STREAM_MEASUREMENT)
-                    .set(MEDIA_FILE_STREAM_MEASUREMENT.UNAVAILABLE_REASON, "NO_PACKETS")
-                    .where(MEDIA_FILE_STREAM_MEASUREMENT.MEDIA_FILE_ID.eq(mediaFileId))
-                    .execute())
+    var unnamedReason =
+        dsl.update(MEDIA_FILE_STREAM_MEASUREMENT)
+            .set(MEDIA_FILE_STREAM_MEASUREMENT.UNAVAILABLE_REASON, "NO_PACKETS")
+            .where(MEDIA_FILE_STREAM_MEASUREMENT.MEDIA_FILE_ID.eq(mediaFileId));
+
+    assertThatThrownBy(unnamedReason::execute)
         .isInstanceOf(DataIntegrityViolationException.class)
         .extracting(ConstraintViolations::constraintName)
         .isEqualTo("media_file_stream_measurement_unavailable_reason_check");
