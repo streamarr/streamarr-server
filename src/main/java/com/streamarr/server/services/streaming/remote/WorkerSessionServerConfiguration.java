@@ -12,6 +12,7 @@ public record WorkerSessionServerConfiguration(
     int port,
     Duration probeTimeout,
     Duration keyframeScanTimeout,
+    Duration bitrateScanChunkTimeout,
     Duration probeCancellationTimeout,
     Duration startReportTimeout,
     WorkerSessionKeepalive keepalive) {
@@ -19,6 +20,7 @@ public record WorkerSessionServerConfiguration(
   public WorkerSessionServerConfiguration {
     probeTimeout = requireNonNullElse(probeTimeout, Duration.ofMinutes(1));
     keyframeScanTimeout = requireNonNullElse(keyframeScanTimeout, Duration.ofMinutes(30));
+    bitrateScanChunkTimeout = requireNonNullElse(bitrateScanChunkTimeout, Duration.ofMinutes(5));
     probeCancellationTimeout = requireNonNullElse(probeCancellationTimeout, Duration.ofSeconds(5));
     startReportTimeout = requireNonNullElse(startReportTimeout, Duration.ofSeconds(10));
     keepalive = requireNonNullElse(keepalive, WorkerSessionKeepalive.DEFAULT);
@@ -29,6 +31,10 @@ public record WorkerSessionServerConfiguration(
 
     if (keyframeScanTimeout.isZero() || keyframeScanTimeout.isNegative()) {
       throw new IllegalArgumentException("Worker keyframe scan timeout must be positive");
+    }
+
+    if (bitrateScanChunkTimeout.isZero() || bitrateScanChunkTimeout.isNegative()) {
+      throw new IllegalArgumentException("Worker bitrate scan chunk timeout must be positive");
     }
 
     if (probeCancellationTimeout.isZero() || probeCancellationTimeout.isNegative()) {

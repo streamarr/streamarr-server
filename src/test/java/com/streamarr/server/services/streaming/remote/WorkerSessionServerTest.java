@@ -37,6 +37,7 @@ class WorkerSessionServerTest {
     var defaults = WorkerSessionServerConfiguration.builder().port(0).build();
     var probeTimeout = defaults.probeTimeout();
     var keyframeScanTimeout = defaults.keyframeScanTimeout();
+    var bitrateScanChunkTimeout = defaults.bitrateScanChunkTimeout();
     var cancellationTimeout = defaults.probeCancellationTimeout();
     var startReportTimeout = defaults.startReportTimeout();
     var keepalive = defaults.keepalive();
@@ -48,6 +49,7 @@ class WorkerSessionServerTest {
                     0,
                     probeTimeout,
                     keyframeScanTimeout,
+                    bitrateScanChunkTimeout,
                     cancellationTimeout,
                     startReportTimeout,
                     keepalive))

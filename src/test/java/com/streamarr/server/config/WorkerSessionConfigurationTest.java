@@ -34,6 +34,8 @@ class WorkerSessionConfigurationTest {
     "probe-timeout,-1s",
     "keyframe-scan-timeout,0s",
     "keyframe-scan-timeout,-1s",
+    "bitrate-scan-chunk-timeout,0s",
+    "bitrate-scan-chunk-timeout,-1s",
     "probe-cancellation-timeout,0s",
     "probe-cancellation-timeout,-1s",
     "start-report-timeout,0s",

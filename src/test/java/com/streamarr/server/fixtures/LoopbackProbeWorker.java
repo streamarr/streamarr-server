@@ -21,12 +21,14 @@ import io.grpc.ManagedChannel;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import lombok.Builder;
+import lombok.Singular;
 
 /** A gRPC worker session driven by the test: it records server commands and sends replies. */
 public final class LoopbackProbeWorker implements AutoCloseable {
@@ -41,7 +43,7 @@ public final class LoopbackProbeWorker implements AutoCloseable {
    * Registers a worker session that advertises the probe version, the playback slots and the probe
    * capacities. The worker is {@code WORKER_ID} unless the test names another worker. Unset, the
    * playback probe capacity is 2 and the keyframe packet scan capacity is 1, as a worker grants
-   * them while it runs no job attempt.
+   * them while it runs no job attempt, and the worker lists no measurement version.
    */
   @Builder
   @SuppressWarnings("java:S107") // The builder names each argument at the call site.
@@ -52,7 +54,8 @@ public final class LoopbackProbeWorker implements AutoCloseable {
       int backgroundProbeCapacity,
       Integer playbackProbeCapacity,
       Integer keyframePacketScanCapacity,
-      UUID workerId)
+      UUID workerId,
+      @Singular List<Integer> measurementVersions)
       throws Exception {
     var worker = WORKER_ID;
     if (workerId != null) {
@@ -106,7 +109,8 @@ public final class LoopbackProbeWorker implements AutoCloseable {
                     .setCapabilities(
                         WorkerCapabilities.newBuilder()
                             .addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID))
-                            .addProbeVersions(probeVersion)))
+                            .addProbeVersions(probeVersion)
+                            .addAllMeasurementVersions(measurementVersions)))
             .build());
     assertThat(nextResponse().hasSessionAccepted()).isTrue();
   }

@@ -149,6 +149,7 @@ A packet scan reads every packet of the source's video stream, which takes longe
 A timeout requests worker cancellation and lets the scheduler retry.
 After three packet scans of a source time out, report no keyframes, or get a worker reply that breaks the worker contract, the server stores its keyframes as unavailable, so playback encodes the source.
 Packet scans run on a scheduler of their own, so they never take the threads that run probes.
+`STREAMING_WORKER_SESSION_BITRATE_SCAN_CHUNK_TIMEOUT` bounds each chunk of a bitrate scan on the server. It defaults to `5m`.
 A bitrate scan measures every packet of a source's video and audio streams in chunks of keyframe intervals (https://github.com/streamarr/streamarr-adr/blob/main/adr/0054-workers-measure-each-stream-bitrate-and-a-copy-advertises-its-measured-peak.adoc[ADR 0054]).
 A chunk uses the worker's keyframe packet scan capacity, and the server sends it only to a worker that lists the server's stream measurement version in `WorkerCapabilities.measurement_versions`.
 Each cancel command carries a reason: the probe timeout, a server shutdown, or another reason.

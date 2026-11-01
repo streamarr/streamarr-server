@@ -90,6 +90,7 @@ final class LiveWorkerConnectionRegistry {
       command -> Thread.ofVirtual().name("worker-probe-deadline").start(command);
   private final long probeTimeoutNanos;
   private final long keyframeScanTimeoutNanos;
+  private final long bitrateScanChunkTimeoutNanos;
   private final long probeCancellationTimeoutNanos;
   private final long startReportTimeoutNanos;
   private final Counter initializationSegmentMismatches;
@@ -114,6 +115,7 @@ final class LiveWorkerConnectionRegistry {
     this.meterRegistry = meterRegistry;
     probeTimeoutNanos = configuration.probeTimeout().toNanos();
     keyframeScanTimeoutNanos = configuration.keyframeScanTimeout().toNanos();
+    bitrateScanChunkTimeoutNanos = configuration.bitrateScanChunkTimeout().toNanos();
     probeCancellationTimeoutNanos = configuration.probeCancellationTimeout().toNanos();
     startReportTimeoutNanos = configuration.startReportTimeout().toNanos();
     initializationSegmentMismatches =
@@ -725,6 +727,7 @@ final class LiveWorkerConnectionRegistry {
     private final WorkerIdentity worker;
     private final Set<Uuid> sourceNamespaceIds;
     private final Set<Integer> probeVersions;
+    private final Set<Integer> measurementVersions;
     // The worker-verified encoder that counts for each codec family, keyed by family name. A start
     // report that names another backend withdraws the family's entry for this worker session.
     private final Map<String, WorkerVerifiedEncoder> countedEncoders;
@@ -750,6 +753,7 @@ final class LiveWorkerConnectionRegistry {
       worker = registration.getWorker();
       sourceNamespaceIds = Set.copyOf(registration.getCapabilities().getSourceNamespaceIdsList());
       probeVersions = Set.copyOf(registration.getCapabilities().getProbeVersionsList());
+      measurementVersions = Set.copyOf(registration.getCapabilities().getMeasurementVersionsList());
       countedEncoders =
           new ConcurrentHashMap<>(
               registration.getCapabilities().getVideoEncodersList().stream()
@@ -802,7 +806,8 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private synchronized ProbeDispatch tryDispatchProbe(ProbeRequest request) {
-      if (!canRunProbes(request.getSource().getSourceNamespaceId(), request.getProbeVersion())) {
+      if (!canRunProbes(request.getSource().getSourceNamespaceId(), request.getProbeVersion())
+          || !canRunBitrateScanChunk(request)) {
         return new ProbeDispatch.Refused(ProbeRefusal.NO_COMPATIBLE_WORKER);
       }
 
@@ -854,6 +859,10 @@ final class LiveWorkerConnectionRegistry {
     private long timeoutNanos(ProbeRequest request) {
       if (request.getScanKeyframePackets()) {
         return keyframeScanTimeoutNanos;
+      }
+
+      if (request.hasBitrateScanChunk()) {
+        return bitrateScanChunkTimeoutNanos;
       }
 
       return probeTimeoutNanos;
@@ -964,8 +973,7 @@ final class LiveWorkerConnectionRegistry {
       }
 
       // The contract discards the parts of an attempt whose result reports no measurement.
-      if (result.getMedia().hasStreamMeasurements()
-          && pending.streamMeasurementParts().violatesContract()) {
+      if (reportsMeasurement(result) && pending.streamMeasurementParts().violatesContract()) {
         pending
             .result()
             .completeExceptionally(
@@ -986,11 +994,16 @@ final class LiveWorkerConnectionRegistry {
 
     private static List<ProbeStreamMeasurementPart> measurementParts(
         ProbeAttemptResult result, ReceivedStreamMeasurementParts received) {
-      if (!result.getMedia().hasStreamMeasurements()) {
+      if (!reportsMeasurement(result)) {
         return List.of();
       }
 
       return received.parts();
+    }
+
+    private static boolean reportsMeasurement(ProbeAttemptResult result) {
+      return result.getMedia().hasStreamMeasurements()
+          || result.getBitrateScanChunk().hasMeasured();
     }
 
     private boolean acceptStreamMeasurementPart(ProbeStreamMeasurementPart part) {
@@ -1187,6 +1200,11 @@ final class LiveWorkerConnectionRegistry {
 
     private boolean canRunProbes(Uuid sourceNamespaceId, int probeVersion) {
       return probeVersions.contains(probeVersion) && canAccessSourceNamespace(sourceNamespaceId);
+    }
+
+    private boolean canRunBitrateScanChunk(ProbeRequest request) {
+      return !request.hasBitrateScanChunk()
+          || measurementVersions.contains(request.getBitrateScanChunk().getMeasurementVersion());
     }
 
     private List<ProbeKind> runningProbeKinds() {

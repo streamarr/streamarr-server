@@ -8,8 +8,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.domain.streaming.BitrateScanChunkRequest;
+import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbePriority;
+import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.exceptions.ProbeTimedOutException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
@@ -25,6 +28,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -150,6 +155,55 @@ class RemoteFfprobeServiceTest {
           assertThatThrownBy(() -> scan.await(BOUND)).isInstanceOf(ProbeTimedOutException.class);
           assertThat(withoutTarget(worker.nextResponse().getCancelProbe()))
               .isEqualTo(cancel(request, ProbeCancelReason.PROBE_CANCEL_REASON_TIMEOUT));
+        }
+      }
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell the worker that the chunk timed out when a bitrate scan chunk reaches the chunk"
+          + " timeout")
+  void shouldTellWorkerChunkTimedOutWhenBitrateScanChunkReachesChunkTimeout() throws Exception {
+    var configuration =
+        serverConfigurationBuilder()
+            .keyframeScanTimeout(Duration.ofHours(1))
+            .bitrateScanChunkTimeout(ELAPSED_TIMEOUT)
+            .build();
+    try (var server = server(configuration)) {
+      server.start();
+      try (var worker =
+          LoopbackProbeWorker.builder()
+              .port(server.port())
+              .probeVersion(ProbeVersion.CURRENT)
+              .backgroundProbeCapacity(1)
+              .measurementVersion(StreamMeasurements.CURRENT_VERSION)
+              .build()) {
+        var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, sourceRoot());
+        var chunk =
+            BitrateScanChunkRequest.builder()
+                .sourcePath(Files.createFile(sourceRoot().resolve("film.mkv")))
+                .attemptId(UUID.randomUUID())
+                .measurementVersion(StreamMeasurements.CURRENT_VERSION)
+                .measuredStreamIndexes(List.of(0))
+                .timeBaseNumerator(1)
+                .timeBaseDenominator(90_000)
+                .keyframes(List.of(new KeyframePosition(0, 0)))
+                .end(Optional.empty())
+                .firstChunk(true)
+                .build();
+
+        try (var scan = BoundedTask.start(() -> service.scanBitrateScanChunk(chunk))) {
+          assertThat(worker.nextResponse().getStartProbe().getRequest().hasBitrateScanChunk())
+              .isTrue();
+
+          assertThatThrownBy(() -> scan.await(BOUND)).isInstanceOf(ProbeTimedOutException.class);
+          assertThat(withoutTarget(worker.nextResponse().getCancelProbe()))
+              .isEqualTo(
+                  CancelProbeCommand.newBuilder()
+                      .setProbeAttemptId(toProto(chunk.attemptId()))
+                      .setReason(ProbeCancelReason.PROBE_CANCEL_REASON_TIMEOUT)
+                      .build());
         }
       }
     }
