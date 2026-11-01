@@ -2,7 +2,6 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.EncoderPreset;
-import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
@@ -10,7 +9,6 @@ import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
-import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.exceptions.TranscodeLimitReachedException;
@@ -1554,12 +1552,7 @@ public class ProducerLifecycleService {
 
   private TranscodeRequest.TranscodeRequestBuilder baseRequest(
       StreamSession session, String variantLabel, int startSequenceNumber) {
-    var frameRate =
-        session
-            .getTranscodeDecision()
-            .videoSource()
-            .map(VideoPlaybackFacts::frameRateRule)
-            .flatMap(FrameRateRule::outputFrameRate);
+    var frameRate = session.getTranscodeDecision().outputFrameRate();
     var timeline = timelineOf(session);
     return TranscodeRequest.builder()
         .sessionId(session.getSessionId())
