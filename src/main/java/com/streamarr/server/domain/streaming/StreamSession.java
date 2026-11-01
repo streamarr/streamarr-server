@@ -168,9 +168,12 @@ public class StreamSession {
     return Optional.ofNullable(shortCopy.get());
   }
 
-  /** Keeps the first short copy: every later job attempt reads the same source. */
-  public void markShortCopy(@NonNull ShortCopy copyThatRanShort) {
-    shortCopy.compareAndSet(null, copyThatRanShort);
+  /**
+   * Keeps the first short copy, because every later job attempt reads the same source. Answers
+   * whether this call kept it.
+   */
+  public boolean tryMarkShortCopy(@NonNull ShortCopy copyThatRanShort) {
+    return shortCopy.compareAndSet(null, copyThatRanShort);
   }
 
   /**

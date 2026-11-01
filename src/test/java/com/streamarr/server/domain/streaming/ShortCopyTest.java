@@ -33,7 +33,8 @@ class ShortCopyTest {
   @Test
   @DisplayName(
       "Should leave media after the copy when a source stream ends more than one target segment duration after the copy's end")
-  void shouldLeaveMediaAfterTheCopyWhenASourceStreamEndsMoreThanOneTargetSegmentDurationLater() {
+  void
+      shouldLeaveMediaAfterTheCopyWhenASourceStreamEndsMoreThanOneTargetSegmentDurationAfterTheCopysEnd() {
     var probe = probeWithStreamsEndingAt(Duration.ofSeconds(24), Duration.ofMillis(30_001));
 
     var shortCopy = ShortCopy.endingWith(3, GRID, probe);
