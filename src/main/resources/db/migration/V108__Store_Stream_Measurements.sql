@@ -27,21 +27,23 @@ CREATE TABLE media_file_stream_measurement
     CONSTRAINT media_file_stream_measurement_status_key UNIQUE (media_file_id, status)
 );
 
--- encoded_keyframe_interval_bytes holds one unsigned 32-bit count for each keyframe interval in
--- KeyframeIntervalBytesCodec's format. The foreign key admits a row only while its measurement's
--- status is MEASURED.
+-- encoded_keyframe_interval_bytes and encoded_keyframe_interval_packet_counts each hold one unsigned
+-- 32-bit count for each keyframe interval in KeyframeIntervalCountsCodec's format: the stream's bytes
+-- and its packets in that interval. The foreign key admits a row only while its measurement's status
+-- is MEASURED.
 CREATE TABLE media_file_measured_stream
 (
-    media_file_id                   UUID    NOT NULL,
-    status                          TEXT GENERATED ALWAYS AS ('MEASURED') STORED,
-    stream_index                    INTEGER NOT NULL CHECK (stream_index >= 0),
-    measured_bytes                  BIGINT  NOT NULL CHECK (measured_bytes >= 0),
-    packet_count                    BIGINT  NOT NULL CHECK (packet_count >= 0),
-    time_base_numerator             INTEGER NOT NULL CHECK (time_base_numerator > 0),
-    time_base_denominator           INTEGER NOT NULL CHECK (time_base_denominator > 0),
-    measured_duration               BIGINT  NOT NULL CHECK (measured_duration >= 0),
-    keyframe_interval_count         INTEGER NOT NULL CHECK (keyframe_interval_count > 0),
-    encoded_keyframe_interval_bytes BYTEA   NOT NULL,
+    media_file_id                           UUID     NOT NULL,
+    status                                  TEXT     GENERATED ALWAYS AS ('MEASURED') STORED,
+    stream_index                            INTEGER  NOT NULL CHECK (stream_index >= 0),
+    measured_bytes                          BIGINT   NOT NULL CHECK (measured_bytes >= 0),
+    packet_count                            BIGINT   NOT NULL CHECK (packet_count >= 0),
+    time_base_numerator                     INTEGER  NOT NULL CHECK (time_base_numerator > 0),
+    time_base_denominator                   INTEGER  NOT NULL CHECK (time_base_denominator > 0),
+    measured_duration                       BIGINT   NOT NULL CHECK (measured_duration >= 0),
+    keyframe_interval_count                 INTEGER  NOT NULL CHECK (keyframe_interval_count > 0),
+    encoded_keyframe_interval_bytes         BYTEA    NOT NULL,
+    encoded_keyframe_interval_packet_counts BYTEA    NOT NULL,
     PRIMARY KEY (media_file_id, stream_index),
     CONSTRAINT measured_stream_requires_measured_status
         FOREIGN KEY (media_file_id, status)

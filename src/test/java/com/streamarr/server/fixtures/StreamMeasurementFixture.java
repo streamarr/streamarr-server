@@ -78,6 +78,7 @@ public class StreamMeasurementFixture {
         .timeBaseDenominator(12_288)
         .measuredDuration(24_576)
         .keyframeIntervalBytes(KeyframeIntervalCounts.of(700, 0xFFFF_FFFFL))
+        .keyframeIntervalPacketCounts(KeyframeIntervalCounts.of(12, 36))
         .build();
   }
 
@@ -90,6 +91,7 @@ public class StreamMeasurementFixture {
         .timeBaseDenominator(48_000)
         .measuredDuration(96_000)
         .keyframeIntervalBytes(KeyframeIntervalCounts.of(40, 60))
+        .keyframeIntervalPacketCounts(KeyframeIntervalCounts.of(46, 48))
         .build();
   }
 }

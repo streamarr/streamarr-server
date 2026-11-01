@@ -114,6 +114,12 @@ public class MediaFileMeasuredStream extends TableImpl<MediaFileMeasuredStreamRe
      */
     public final TableField<MediaFileMeasuredStreamRecord, byte[]> ENCODED_KEYFRAME_INTERVAL_BYTES = createField(DSL.name("encoded_keyframe_interval_bytes"), SQLDataType.BLOB.nullable(false), this, "");
 
+    /**
+     * The column
+     * <code>public.media_file_measured_stream.encoded_keyframe_interval_packet_counts</code>.
+     */
+    public final TableField<MediaFileMeasuredStreamRecord, byte[]> ENCODED_KEYFRAME_INTERVAL_PACKET_COUNTS = createField(DSL.name("encoded_keyframe_interval_packet_counts"), SQLDataType.BLOB.nullable(false), this, "");
+
     private MediaFileMeasuredStream(Name alias, Table<MediaFileMeasuredStreamRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

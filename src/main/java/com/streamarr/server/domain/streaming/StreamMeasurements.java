@@ -17,7 +17,7 @@ public record StreamMeasurements(
    * The format of the measurements that the server stores. A new value discards every stored
    * measurement, apart from the probe version.
    */
-  public static final int CURRENT_VERSION = 1;
+  public static final int CURRENT_VERSION = 2;
 
   public StreamMeasurements {
     streams = List.copyOf(streams);

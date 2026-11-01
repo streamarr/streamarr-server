@@ -6,8 +6,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The keyframe interval bytes that one pending probe attempt has received so far. Each stream's
- * parts are joined into one part in the order they arrived.
+ * The keyframe interval bytes and packet counts that one pending probe attempt has received so far.
+ * Each stream's parts are joined into one part in the order they arrived.
  */
 final class ReceivedStreamMeasurementParts {
 
@@ -30,6 +30,7 @@ final class ReceivedStreamMeasurementParts {
     var partEntries = part.getKeyframeIntervalBytesCount();
     var namesNewStream = !received.containsKey(part.getStreamIndex());
     if (partEntries == 0
+        || part.getKeyframeIntervalPacketCountsCount() != partEntries
         || partEntries > MAXIMUM_ENTRIES_PER_PART
         || entries + partEntries > MAXIMUM_ENTRIES_PER_PROBE
         || (namesNewStream && received.size() == MAXIMUM_STREAMS_PER_PROBE)) {
@@ -46,7 +47,8 @@ final class ReceivedStreamMeasurementParts {
                 ProbeStreamMeasurementPart.newBuilder()
                     .setProbeAttemptId(part.getProbeAttemptId())
                     .setStreamIndex(streamIndex))
-        .addAllKeyframeIntervalBytes(part.getKeyframeIntervalBytesList());
+        .addAllKeyframeIntervalBytes(part.getKeyframeIntervalBytesList())
+        .addAllKeyframeIntervalPacketCounts(part.getKeyframeIntervalPacketCountsList());
   }
 
   synchronized boolean violatesContract() {

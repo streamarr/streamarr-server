@@ -76,6 +76,42 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
         .isEqualTo(KeyframeIntervalCounts.of(1, 2));
   }
 
+  @Test
+  @DisplayName("Should keep each interval's packets when the worker reports them")
+  void shouldKeepEachIntervalsPacketsWhenWorkerReportsThem() {
+    var report =
+        report(
+            measurements(video(30).setPacketCount(5), audio(3).setPacketCount(7)),
+            List.of(
+                intervals(VIDEO, List.of(10, 20), List.of(2, 3)),
+                intervals(AUDIO, List.of(1, 2), List.of(3, 4))));
+
+    var outcome = (ProbeOutcome.Success) new RemoteProbeResultMapper().map(report);
+
+    var measured = outcome.streamMeasurements().orElseThrow();
+    assertThat(measured.stream(VIDEO).orElseThrow().keyframeIntervalPacketCounts())
+        .isEqualTo(KeyframeIntervalCounts.of(2, 3));
+    assertThat(measured.stream(AUDIO).orElseThrow().keyframeIntervalPacketCounts())
+        .isEqualTo(KeyframeIntervalCounts.of(3, 4));
+  }
+
+  @Test
+  @DisplayName("Should read each interval's packets as unsigned when a count uses the top bit")
+  void shouldReadEachIntervalsPacketsAsUnsignedWhenCountUsesTopBit() {
+    var report =
+        report(
+            measurements(video(30).setPacketCount(0x1_0000_0001L), audio(3)),
+            List.of(intervals(VIDEO, List.of(10, 20), List.of(-1, 2)), intervals(AUDIO, 1, 2)));
+
+    var outcome = (ProbeOutcome.Success) new RemoteProbeResultMapper().map(report);
+
+    assertThat(
+            outcome.streamMeasurements().orElseThrow().stream(VIDEO)
+                .orElseThrow()
+                .keyframeIntervalPacketCounts())
+        .isEqualTo(KeyframeIntervalCounts.of(0xFFFF_FFFFL, 2));
+  }
+
   @ParameterizedTest
   @CsvSource({
     "STREAM_MEASUREMENT_SOURCE_SAMPLE_TABLE, SAMPLE_TABLE",
@@ -187,6 +223,21 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
             report(measurements(video(31)), List.of(intervals(VIDEO, 10, 20))),
             "Worker probe measured stream's intervals differ from its measured bytes"),
         arguments(
+            "fewer interval packet counts than interval bytes",
+            report(measurements(video(30)), List.of(intervals(VIDEO, List.of(10, 20), List.of(2)))),
+            "Worker probe measured stream's intervals differ from its keyframes"),
+        arguments(
+            "more interval packet counts than interval bytes",
+            report(
+                measurements(video(30)),
+                List.of(intervals(VIDEO, List.of(10, 20), List.of(1, 1, 0)))),
+            "Worker probe measured stream's intervals differ from its keyframes"),
+        arguments(
+            "interval packet counts that differ from the packet count",
+            report(
+                measurements(video(30)), List.of(intervals(VIDEO, List.of(10, 20), List.of(1, 2)))),
+            "Worker probe measured stream's intervals differ from its packet count"),
+        arguments(
             "no source",
             report(
                 measurements(video(30))
@@ -261,12 +312,22 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
         .setMeasuredDuration(180_000);
   }
 
+  /** One packet in each interval. */
   private static ProbeStreamMeasurementPart intervals(int streamIndex, int... bytes) {
     var part = ProbeStreamMeasurementPart.newBuilder().setStreamIndex(streamIndex);
     for (var count : bytes) {
-      part.addKeyframeIntervalBytes(count);
+      part.addKeyframeIntervalBytes(count).addKeyframeIntervalPacketCounts(1);
     }
 
     return part.build();
+  }
+
+  private static ProbeStreamMeasurementPart intervals(
+      int streamIndex, List<Integer> bytes, List<Integer> packets) {
+    return ProbeStreamMeasurementPart.newBuilder()
+        .setStreamIndex(streamIndex)
+        .addAllKeyframeIntervalBytes(bytes)
+        .addAllKeyframeIntervalPacketCounts(packets)
+        .build();
   }
 }

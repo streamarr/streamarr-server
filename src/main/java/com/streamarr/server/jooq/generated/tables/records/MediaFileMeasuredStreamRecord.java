@@ -170,6 +170,22 @@ public class MediaFileMeasuredStreamRecord extends UpdatableRecordImpl<MediaFile
         return (byte[]) get(9);
     }
 
+    /**
+     * Setter for
+     * <code>public.media_file_measured_stream.encoded_keyframe_interval_packet_counts</code>.
+     */
+    public void setEncodedKeyframeIntervalPacketCounts(byte[] value) {
+        set(10, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_measured_stream.encoded_keyframe_interval_packet_counts</code>.
+     */
+    public byte[] getEncodedKeyframeIntervalPacketCounts() {
+        return (byte[]) get(10);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -193,7 +209,7 @@ public class MediaFileMeasuredStreamRecord extends UpdatableRecordImpl<MediaFile
     /**
      * Create a detached, initialised MediaFileMeasuredStreamRecord
      */
-    public MediaFileMeasuredStreamRecord(UUID mediaFileId, String status, Integer streamIndex, Long measuredBytes, Long packetCount, Integer timeBaseNumerator, Integer timeBaseDenominator, Long measuredDuration, Integer keyframeIntervalCount, byte[] encodedKeyframeIntervalBytes) {
+    public MediaFileMeasuredStreamRecord(UUID mediaFileId, String status, Integer streamIndex, Long measuredBytes, Long packetCount, Integer timeBaseNumerator, Integer timeBaseDenominator, Long measuredDuration, Integer keyframeIntervalCount, byte[] encodedKeyframeIntervalBytes, byte[] encodedKeyframeIntervalPacketCounts) {
         super(MediaFileMeasuredStream.MEDIA_FILE_MEASURED_STREAM);
 
         setMediaFileId(mediaFileId);
@@ -206,6 +222,7 @@ public class MediaFileMeasuredStreamRecord extends UpdatableRecordImpl<MediaFile
         setMeasuredDuration(measuredDuration);
         setKeyframeIntervalCount(keyframeIntervalCount);
         setEncodedKeyframeIntervalBytes(encodedKeyframeIntervalBytes);
+        setEncodedKeyframeIntervalPacketCounts(encodedKeyframeIntervalPacketCounts);
         resetTouchedOnNotNull();
     }
 }

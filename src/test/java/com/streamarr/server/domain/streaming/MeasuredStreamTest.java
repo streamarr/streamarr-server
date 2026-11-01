@@ -47,10 +47,31 @@ class MeasuredStreamTest {
   @DisplayName("Should refuse a measured stream when its interval bytes are missing")
   void shouldRefuseMeasuredStreamWhenItsIntervalBytesAreMissing() {
     var builder = validStream();
+    var packets = KeyframeIntervalCounts.of(1);
 
     assertThatNullPointerException().isThrownBy(() -> builder.keyframeIntervalBytes(null));
     assertThatNullPointerException()
-        .isThrownBy(() -> new MeasuredStream(0, 3, 1, 1, 1_000, 40, null));
+        .isThrownBy(() -> new MeasuredStream(0, 3, 1, 1, 1_000, 40, null, packets));
+  }
+
+  @Test
+  @DisplayName("Should refuse a measured stream when its interval packet counts are missing")
+  void shouldRefuseMeasuredStreamWhenItsIntervalPacketCountsAreMissing() {
+    var builder = validStream();
+    var bytes = KeyframeIntervalCounts.of(3);
+
+    assertThatNullPointerException().isThrownBy(() -> builder.keyframeIntervalPacketCounts(null));
+    assertThatNullPointerException()
+        .isThrownBy(() -> new MeasuredStream(0, 3, 1, 1, 1_000, 40, bytes, null));
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse a measured stream when its packet counts cover other intervals than its bytes")
+  void shouldRefuseMeasuredStreamWhenItsPacketCountsCoverOtherIntervalsThanItsBytes() {
+    var builder = validStream().keyframeIntervalPacketCounts(KeyframeIntervalCounts.of(1, 0));
+
+    assertThatIllegalArgumentException().isThrownBy(builder::build);
   }
 
   private static UnaryOperator<MeasuredStream.MeasuredStreamBuilder> op(
@@ -66,6 +87,7 @@ class MeasuredStreamTest {
         .timeBaseNumerator(1)
         .timeBaseDenominator(1_000)
         .measuredDuration(40)
-        .keyframeIntervalBytes(KeyframeIntervalCounts.of(3));
+        .keyframeIntervalBytes(KeyframeIntervalCounts.of(3))
+        .keyframeIntervalPacketCounts(KeyframeIntervalCounts.of(1));
   }
 }

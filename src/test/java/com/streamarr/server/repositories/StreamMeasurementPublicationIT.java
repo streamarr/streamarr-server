@@ -13,11 +13,13 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.PersistedProbeOutcome;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.KeyframeIntervalCounts;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.repositories.media.KeyframeIntervalCountsCodec;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.probe.PersistedProbeReader;
@@ -156,6 +158,24 @@ class StreamMeasurementPublicationIT extends AbstractIntegrationTest {
 
     dsl.update(MEDIA_FILE_MEASURED_STREAM)
         .set(MEDIA_FILE_MEASURED_STREAM.ENCODED_KEYFRAME_INTERVAL_BYTES, new byte[] {9})
+        .where(MEDIA_FILE_MEASURED_STREAM.MEDIA_FILE_ID.eq(file.getId()))
+        .execute();
+
+    assertThat(measurementOf(file)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the outcome without a measurement when stored interval packet counts cover"
+          + " other intervals than the bytes")
+  void shouldKeepOutcomeWithoutMeasurementWhenStoredIntervalPacketCountsCoverOtherIntervals() {
+    var file = createMediaFile();
+    repository.publish(publication(file, ProbeVersion.CURRENT, measured(positions(90_000))));
+
+    dsl.update(MEDIA_FILE_MEASURED_STREAM)
+        .set(
+            MEDIA_FILE_MEASURED_STREAM.ENCODED_KEYFRAME_INTERVAL_PACKET_COUNTS,
+            KeyframeIntervalCountsCodec.encode(KeyframeIntervalCounts.of(1, 2, 3)))
         .where(MEDIA_FILE_MEASURED_STREAM.MEDIA_FILE_ID.eq(file.getId()))
         .execute();
 

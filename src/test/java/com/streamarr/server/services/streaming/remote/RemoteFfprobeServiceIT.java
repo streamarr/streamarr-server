@@ -382,13 +382,25 @@ class RemoteFfprobeServiceIT {
                   .addAllDecodeTimeDeltas(List.of(0L, 90_000L))
                   .build());
           worker.sendStreamMeasurementPart(
-              measurementPart(dispatched, 0).addKeyframeIntervalBytes(700).build());
+              measurementPart(dispatched, 0)
+                  .addKeyframeIntervalBytes(700)
+                  .addKeyframeIntervalPacketCounts(12)
+                  .build());
           worker.sendStreamMeasurementPart(
-              measurementPart(dispatched, 1).addKeyframeIntervalBytes(40).build());
+              measurementPart(dispatched, 1)
+                  .addKeyframeIntervalBytes(40)
+                  .addKeyframeIntervalPacketCounts(46)
+                  .build());
           worker.sendStreamMeasurementPart(
-              measurementPart(dispatched, 0).addKeyframeIntervalBytes(-1).build());
+              measurementPart(dispatched, 0)
+                  .addKeyframeIntervalBytes(-1)
+                  .addKeyframeIntervalPacketCounts(36)
+                  .build());
           worker.sendStreamMeasurementPart(
-              measurementPart(dispatched, 1).addKeyframeIntervalBytes(60).build());
+              measurementPart(dispatched, 1)
+                  .addKeyframeIntervalBytes(60)
+                  .addKeyframeIntervalPacketCounts(48)
+                  .build());
           worker.reply(
               answer(dispatched)
                   .setMedia(
@@ -443,12 +455,16 @@ class RemoteFfprobeServiceIT {
           assertThat(video.measuredDuration()).isEqualTo(24_576);
           assertThat(video.keyframeIntervalBytes())
               .isEqualTo(KeyframeIntervalCounts.of(700, 0xFFFF_FFFFL));
+          assertThat(video.keyframeIntervalPacketCounts())
+              .isEqualTo(KeyframeIntervalCounts.of(12, 36));
           var audio = measurements.stream(1).orElseThrow();
           assertThat(audio.measuredBytes()).isEqualTo(100);
           assertThat(audio.packetCount()).isEqualTo(94);
           assertThat(audio.timeBaseDenominator()).isEqualTo(48_000);
           assertThat(audio.measuredDuration()).isEqualTo(96_000);
           assertThat(audio.keyframeIntervalBytes()).isEqualTo(KeyframeIntervalCounts.of(40, 60));
+          assertThat(audio.keyframeIntervalPacketCounts())
+              .isEqualTo(KeyframeIntervalCounts.of(46, 48));
         }
       }
     }

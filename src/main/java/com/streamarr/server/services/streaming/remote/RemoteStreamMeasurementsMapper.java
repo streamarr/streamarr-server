@@ -86,19 +86,21 @@ final class RemoteStreamMeasurementsMapper {
     }
 
     var part = partsByStream.get(stream.getStreamIndex());
-    if (part == null || part.getKeyframeIntervalBytesCount() != keyframeCount) {
+    if (part == null
+        || part.getKeyframeIntervalBytesCount() != keyframeCount
+        || part.getKeyframeIntervalPacketCountsCount() != keyframeCount) {
       throw violation("Worker probe measured stream's intervals differ from its keyframes");
     }
 
-    var intervals = new int[keyframeCount];
-    var total = 0L;
-    for (var i = 0; i < keyframeCount; i++) {
-      intervals[i] = part.getKeyframeIntervalBytes(i);
-      total += Integer.toUnsignedLong(intervals[i]);
+    var bytes = KeyframeIntervalCounts.ofUnsigned(toArray(part.getKeyframeIntervalBytesList()));
+    if (sum(bytes) != stream.getMeasuredBytes()) {
+      throw violation("Worker probe measured stream's intervals differ from its measured bytes");
     }
 
-    if (total != stream.getMeasuredBytes()) {
-      throw violation("Worker probe measured stream's intervals differ from its measured bytes");
+    var packets =
+        KeyframeIntervalCounts.ofUnsigned(toArray(part.getKeyframeIntervalPacketCountsList()));
+    if (sum(packets) != stream.getPacketCount()) {
+      throw violation("Worker probe measured stream's intervals differ from its packet count");
     }
 
     return MeasuredStream.builder()
@@ -108,8 +110,22 @@ final class RemoteStreamMeasurementsMapper {
         .timeBaseNumerator(stream.getTimeBaseNumerator())
         .timeBaseDenominator(stream.getTimeBaseDenominator())
         .measuredDuration(stream.getMeasuredDuration())
-        .keyframeIntervalBytes(KeyframeIntervalCounts.ofUnsigned(intervals))
+        .keyframeIntervalBytes(bytes)
+        .keyframeIntervalPacketCounts(packets)
         .build();
+  }
+
+  private static int[] toArray(List<Integer> unsignedCounts) {
+    return unsignedCounts.stream().mapToInt(Integer::intValue).toArray();
+  }
+
+  private static long sum(KeyframeIntervalCounts counts) {
+    var total = 0L;
+    for (var interval = 0; interval < counts.intervalCount(); interval++) {
+      total += counts.countOf(interval);
+    }
+
+    return total;
   }
 
   private static Set<Integer> audioStreamIndexes(ProbeMediaInfo media) {

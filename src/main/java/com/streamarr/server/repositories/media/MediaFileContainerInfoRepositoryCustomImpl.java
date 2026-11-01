@@ -399,10 +399,12 @@ public class MediaFileContainerInfoRepositoryCustomImpl
   }
 
   private static MeasuredStream toMeasuredStream(MediaFileMeasuredStreamRecord row) {
-    var intervals = KeyframeIntervalCountsCodec.decode(row.getEncodedKeyframeIntervalBytes());
-    if (intervals.intervalCount() != row.getKeyframeIntervalCount()) {
+    var bytes = KeyframeIntervalCountsCodec.decode(row.getEncodedKeyframeIntervalBytes());
+    var packets = KeyframeIntervalCountsCodec.decode(row.getEncodedKeyframeIntervalPacketCounts());
+    if (bytes.intervalCount() != row.getKeyframeIntervalCount()
+        || packets.intervalCount() != row.getKeyframeIntervalCount()) {
       throw new MalformedStreamMeasurementException(
-          "Stored keyframe interval bytes differ from their interval count");
+          "Stored keyframe interval counts differ from their interval count");
     }
 
     return MeasuredStream.builder()
@@ -412,7 +414,8 @@ public class MediaFileContainerInfoRepositoryCustomImpl
         .timeBaseNumerator(row.getTimeBaseNumerator())
         .timeBaseDenominator(row.getTimeBaseDenominator())
         .measuredDuration(row.getMeasuredDuration())
-        .keyframeIntervalBytes(intervals)
+        .keyframeIntervalBytes(bytes)
+        .keyframeIntervalPacketCounts(packets)
         .build();
   }
 
@@ -608,6 +611,8 @@ public class MediaFileContainerInfoRepositoryCustomImpl
     row.setKeyframeIntervalCount(stream.keyframeIntervalBytes().intervalCount());
     row.setEncodedKeyframeIntervalBytes(
         KeyframeIntervalCountsCodec.encode(stream.keyframeIntervalBytes()));
+    row.setEncodedKeyframeIntervalPacketCounts(
+        KeyframeIntervalCountsCodec.encode(stream.keyframeIntervalPacketCounts()));
     return row;
   }
 

@@ -367,6 +367,25 @@ class WorkerSessionGrpcServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should fail a probe when a measurement part counts packets for other intervals than its"
+          + " bytes")
+  void shouldFailProbeWhenMeasurementPartCountsPacketsForOtherIntervalsThanItsBytes()
+      throws Exception {
+    var probe = SessionProbe.dispatch();
+    var part = measurementPart(probe, 0, 1, 2);
+    part.getProbeStreamMeasurementPartBuilder().addKeyframeIntervalPacketCounts(1);
+
+    probe.send(part);
+    probe.send(measurementPart(probe, 0, 3));
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(measuredResult(probe)));
+
+    assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
+        .isInstanceOf(ExecutionException.class)
+        .hasCauseInstanceOf(ProbeContractViolationException.class);
+  }
+
+  @Test
   @DisplayName("Should fail a probe when a measurement part holds no entries")
   void shouldFailProbeWhenMeasurementPartHoldsNoEntries() throws Exception {
     var probe = SessionProbe.dispatch();
@@ -427,7 +446,7 @@ class WorkerSessionGrpcServiceTest {
             .setProbeAttemptId(probe.attemptId())
             .setStreamIndex(streamIndex);
     for (var bytes : intervalBytes) {
-      part.addKeyframeIntervalBytes(bytes);
+      part.addKeyframeIntervalBytes(bytes).addKeyframeIntervalPacketCounts(bytes + 100);
     }
 
     return EstablishWorkerSessionRequest.newBuilder().setProbeStreamMeasurementPart(part);
