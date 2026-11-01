@@ -9,22 +9,14 @@ import lombok.NonNull;
  * Auto encodes again while its budget lasts. Original plays only copies, because an encode that it
  * reaches plays in Auto, so its failure is a failed copy: it falls back to an encode in Auto.
  */
-final class FormatRecoveryPolicy {
+record FormatRecoveryPolicy(int maximumFormatAttempts) {
   private static final PlayingChoice AUTO_AFTER_A_FAILED_COPY =
       new PlayingChoice(VideoQuality.AUTO, Optional.of(PlaybackFormatChange.COPY_FAILED));
 
-  private final int maximumFormatAttempts;
-
-  FormatRecoveryPolicy(int maximumFormatAttempts) {
+  FormatRecoveryPolicy {
     if (maximumFormatAttempts <= 0) {
       throw new IllegalArgumentException("Maximum format attempts must be positive");
     }
-
-    this.maximumFormatAttempts = maximumFormatAttempts;
-  }
-
-  int maximumFormatAttempts() {
-    return maximumFormatAttempts;
   }
 
   NextFormatAttempt after(
