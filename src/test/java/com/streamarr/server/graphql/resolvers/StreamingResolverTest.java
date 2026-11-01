@@ -8,8 +8,10 @@ import static com.streamarr.server.fixtures.MediaEntityFixture.buildEpisode;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildMovie;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeason;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeries;
+import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackAuthorityFor;
+import static com.streamarr.server.fixtures.StreamSessionFixture.remuxDecisionBuilder;
 import static com.streamarr.server.support.TokenTestSupport.decode;
 import static com.streamarr.server.support.TokenTestSupport.tokenProperties;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -338,6 +340,105 @@ class StreamingResolverTest {
             "This device can't play the quality you chose. Set Quality to Auto and try again.");
   }
 
+  // ADR 0052: the server names what the viewer asked for, what plays and why they differ.
+  @Test
+  @DisplayName("Should expose the change to Auto when Original starts with an encode")
+  void shouldExposeTheChangeToAutoWhenOriginalStartsWithAnEncode() {
+    STUB_SERVICE.setNextResult(
+        buildSessionDeciding(UUID.randomUUID(), fullTranscodeDecision("h264")));
+
+    var created = startPlaybackReadingChoices(VideoQuality.ORIGINAL);
+
+    assertThat(created.read(CREATED_PLAYBACK + ".requestedChoice", String.class))
+        .isEqualTo("ORIGINAL");
+    assertThat(created.read(CREATED_PLAYBACK + ".playbackChoice", String.class)).isEqualTo("AUTO");
+    assertThat(created.read(CREATED_PLAYBACK + ".formatChange", String.class))
+        .isEqualTo("STARTED_WITH_ENCODE");
+    assertThat(created.read(CREATED_PLAYBACK + ".offeredChoices", List.class))
+        .containsExactly(
+            "ORIGINAL", "AUTO", "FULL_HD_1080P", "HIGH_720P", "MEDIUM_480P", "LOW_360P");
+    assertThat(
+            created.read(
+                CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.videoRange", String.class))
+        .isEqualTo("SDR");
+    assertThat(
+            created.read(
+                CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.mediaEndSeconds",
+                Object.class))
+        .isNull();
+  }
+
+  @Test
+  @DisplayName("Should expose the change to Auto when Original's copy fails")
+  void shouldExposeTheChangeToAutoWhenOriginalsCopyFails() {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+    var created = startPlaybackReadingChoices(VideoQuality.ORIGINAL);
+
+    var reported =
+        reportFailure(
+            created.read(CREATED_PLAYBACK + ".id", String.class),
+            created.read(CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.id", String.class),
+            "DECODE_ERROR");
+
+    assertThat(created.read(CREATED_PLAYBACK + ".playbackChoice", String.class))
+        .isEqualTo("ORIGINAL");
+    assertThat(created.read(CREATED_PLAYBACK + ".formatChange", Object.class)).isNull();
+    assertThat(reported.read(REPORTED_PLAYBACK + ".currentFormatAttempt.__typename", String.class))
+        .isEqualTo("PendingPlaybackFormatAttempt");
+    assertThat(reported.read(REPORTED_PLAYBACK + ".requestedChoice", String.class))
+        .isEqualTo("ORIGINAL");
+    assertThat(reported.read(REPORTED_PLAYBACK + ".playbackChoice", String.class))
+        .isEqualTo("AUTO");
+    assertThat(reported.read(REPORTED_PLAYBACK + ".formatChange", String.class))
+        .isEqualTo("COPY_FAILED");
+  }
+
+  // Every encode is SDR until the server encodes HDR (#397); a copy keeps the source's base.
+  @ParameterizedTest
+  @CsvSource({"SDR, SDR", "PQ, PQ", "HLG, HLG"})
+  @DisplayName("Should expose the video range of the stream session that plays")
+  void shouldExposeTheVideoRangeOfTheStreamSessionThatPlays(CompatibleBase base, String expected) {
+    var copy =
+        remuxDecisionBuilder()
+            .videoSource(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(base))
+                        .build()))
+            .build();
+    STUB_SERVICE.setNextResult(buildSessionDeciding(UUID.randomUUID(), copy));
+
+    var created = startPlaybackReadingChoices(VideoQuality.AUTO);
+
+    assertThat(
+            created.read(
+                CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.videoRange", String.class))
+        .isEqualTo(expected);
+    assertThat(created.read(CREATED_PLAYBACK + ".formatChange", Object.class)).isNull();
+  }
+
+  private DocumentContext startPlaybackReadingChoices(VideoQuality quality) {
+    return dgsQueryExecutor.executeAndGetDocumentContext(
+        """
+        mutation {
+          createPlaybackSession(
+            input: {mediaFileId: "%s", options: {quality: %s}, capabilities: %s}
+          ) {
+            playbackSession {
+              id requestedChoice playbackChoice formatChange offeredChoices
+              currentFormatAttempt {
+                ... on ReadyPlaybackFormatAttempt {
+                  streamSession { id videoRange mediaEndSeconds }
+                }
+              }
+            }
+            userErrors { __typename }
+          }
+        }
+        """
+            .formatted(UUID.randomUUID(), quality, CAPABILITIES));
+  }
+
   @Test
   @DisplayName("Should expose the typed worker mismatch when a fixed quality's copy mismatches")
   void shouldExposeTheTypedWorkerMismatchWhenAFixedQualitysCopyMismatches() {
@@ -492,7 +593,7 @@ class StreamingResolverTest {
         mutation {
           reportPlaybackFormatFailure(input: {playbackSessionId: "%s", streamSessionId: "%s", reason: %s}) {
             playbackSession {
-              id formatAttemptCount maximumFormatAttempts
+              id formatAttemptCount maximumFormatAttempts requestedChoice playbackChoice formatChange
               currentFormatAttempt {
                 __typename
                 ... on PendingPlaybackFormatAttempt { streamSessionId }
@@ -1105,6 +1206,20 @@ class StreamingResolverTest {
 
   private StreamSession buildSession(UUID sessionId) {
     return buildSessionOwnedBy(sessionId, TestIdentityConstants.PROFILE_ID);
+  }
+
+  private StreamSession buildSessionDeciding(UUID sessionId, TranscodeDecision decision) {
+    var session = buildSession(sessionId);
+    return StreamSession.builder()
+        .sessionId(sessionId)
+        .authority(session.getAuthority())
+        .mediaFileId(session.getMediaFileId())
+        .sourcePath(session.getSourcePath())
+        .mediaProbe(session.getMediaProbe())
+        .transcodeDecision(decision)
+        .options(session.getOptions())
+        .createdAt(session.getCreatedAt())
+        .build();
   }
 
   private StreamSession buildSessionOwnedBy(UUID sessionId, UUID profileId) {
