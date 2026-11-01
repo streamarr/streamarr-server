@@ -92,45 +92,65 @@ class ViewerLimitsTest {
         copyOf(fullHd).options(auto().maxWidth(0).maxHeight(0).build()).allowed(true).build());
   }
 
-  // The source's container bitrate holds the copied audio track, so the copy costs that bitrate.
-  @ParameterizedTest
-  @CsvSource({
-    "4000000, 4000000, true",
-    "4000001, 4000000, false",
-    "0, 4000000, true",
-    "40000000, 0, true",
-    "40000000, , true"
-  })
+  // The 4 Mb/s container bitrate stands in for the video of a probe that lists no streams and holds
+  // the copied audio track, so the copy costs 4 Mb/s.
+  @Test
   @DisplayName(
-      "Should keep the copied audio beside a copy only when the source's known container bitrate is"
-          + " within the viewer's maximum bitrate")
-  void
-      shouldKeepTheCopiedAudioBesideACopyOnlyWhenTheSourcesKnownContainerBitrateIsWithinTheViewersMaximumBitrate(
-          long sourceBitrate, Integer maxBitrate, boolean allowed) {
-    var limits =
-        ViewerLimits.of(
-            StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(maxBitrate).build());
+      "Should keep the session's audio beside a copy when the copy's cost equals the maximum"
+          + " bitrate")
+  void shouldKeepTheSessionsAudioBesideACopyWhenTheCopysCostEqualsTheMaximumBitrate() {
+    var limits = ViewerLimits.of(auto().maxBitrate(4_000_000).build());
 
     var audio =
         limits.audioStepBesideCopyOf(
-            defaultProbeBuilder().bitrate(sourceBitrate).build(), COPIED_AAC_ONLY);
+            defaultProbeBuilder().bitrate(4_000_000L).build(), COPIED_AAC_ONLY);
 
-    assertThat(audio.isPresent()).isEqualTo(allowed);
-    audio.ifPresent(step -> assertThat(step).isEqualTo(COPIED_AAC_ONLY.sessionAudio()));
+    assertThat(audio).contains(COPIED_AAC_ONLY.sessionAudio());
+  }
+
+  @Test
+  @DisplayName(
+      "Should find no audio step when a copy exceeds the maximum bitrate beside every audio step")
+  void shouldFindNoAudioStepWhenACopyExceedsTheMaximumBitrateBesideEveryAudioStep() {
+    var limits = ViewerLimits.of(auto().maxBitrate(4_000_000).build());
+
+    var audio =
+        limits.audioStepBesideCopyOf(
+            defaultProbeBuilder().bitrate(4_000_001L).build(), COPIED_AAC_ONLY);
+
+    assertThat(audio).isEmpty();
+  }
+
+  // A maximum at or below zero is none.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("limitsWithoutAMaximumBitrate")
+  @DisplayName(
+      "Should keep the session's audio beside a copy when the viewer sets no maximum bitrate")
+  void shouldKeepTheSessionsAudioBesideACopyWhenTheViewerSetsNoMaximumBitrate(
+      StreamingOptions options) {
+    var audio =
+        ViewerLimits.of(options)
+            .audioStepBesideCopyOf(
+                defaultProbeBuilder().bitrate(40_000_000L).build(), COPIED_AAC_ONLY);
+
+    assertThat(audio).contains(COPIED_AAC_ONLY.sessionAudio());
+  }
+
+  static Stream<StreamingOptions> limitsWithoutAMaximumBitrate() {
+    return Stream.of(auto().build(), auto().maxBitrate(0).build());
   }
 
   // A copy of 4.5 Mb/s video costs 5,268 kb/s beside 768 kb/s E-AC-3 5.1 and 4,948 kb/s beside
   // 448 kb/s.
-  @ParameterizedTest
-  @CsvSource({"5268000, 768000", "5000000, 448000", "4500000, -1"})
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("maximumsBelowTheCopyBesideTheSessionsAudio")
   @DisplayName(
-      "Should take the first audio step beside which a copy fits the maximum bitrate when the"
-          + " session's audio does not")
-  void shouldTakeTheFirstAudioStepBesideWhichACopyFitsTheMaximumBitrateWhenTheSessionsAudioDoesNot(
-      int maxBitrate, long expectedBitrate) {
-    var limits =
-        ViewerLimits.of(
-            StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(maxBitrate).build());
+      "Should take the first audio step beside which a copy fits when the session's audio leaves"
+          + " the copy over the maximum bitrate")
+  void
+      shouldTakeTheFirstAudioStepBesideWhichACopyFitsWhenTheSessionsAudioLeavesTheCopyOverTheMaximumBitrate(
+          FirstStepBesideCopy expected) {
+    var limits = ViewerLimits.of(auto().maxBitrate(expected.maxBitrate()).build());
     var probe = defaultProbeBuilder();
     var source =
         probe
@@ -146,8 +166,17 @@ class ViewerLimitsTest {
 
     var audio = limits.audioStepBesideCopyOf(source, steps);
 
-    assertThat(audio.map(AudioDecision::bitrate).orElse(-1L)).isEqualTo(expectedBitrate);
+    assertThat(audio.map(AudioDecision::bitrate)).contains(expected.bitrate());
   }
+
+  static Stream<FirstStepBesideCopy> maximumsBelowTheCopyBesideTheSessionsAudio() {
+    return Stream.of(
+        FirstStepBesideCopy.builder().maxBitrate(5_267_999).bitrate(448_000L).build(),
+        FirstStepBesideCopy.builder().maxBitrate(4_948_000).bitrate(448_000L).build());
+  }
+
+  @Builder
+  record FirstStepBesideCopy(int maxBitrate, long bitrate) {}
 
   // A probe without playback facts names no copied stream, so the container bitrate stands in for
   // the video.
@@ -215,17 +244,12 @@ class ViewerLimitsTest {
 
   private static boolean allowsCopy(CopyAgainstLimits copy) {
     var source =
-        defaultProbeBuilder()
-            .width(copy.source().width())
-            .height(copy.source().height())
-            .bitrate(copy.sourceBitrate())
-            .build();
+        defaultProbeBuilder().width(copy.source().width()).height(copy.source().height()).build();
     return ViewerLimits.of(copy.options()).allowsCopyPictureOf(source);
   }
 
-  // A 5 Mb/s source of this size.
   private static CopyAgainstLimits.CopyAgainstLimitsBuilder copyOf(PictureSize source) {
-    return CopyAgainstLimits.builder().source(source).sourceBitrate(5_000_000L);
+    return CopyAgainstLimits.builder().source(source);
   }
 
   private static StreamingOptions quality(VideoQuality quality) {
@@ -237,6 +261,5 @@ class ViewerLimitsTest {
   }
 
   @Builder
-  record CopyAgainstLimits(
-      PictureSize source, long sourceBitrate, StreamingOptions options, boolean allowed) {}
+  record CopyAgainstLimits(PictureSize source, StreamingOptions options, boolean allowed) {}
 }
