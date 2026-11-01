@@ -2518,6 +2518,51 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
 
+  // At 25 frames per second a 10 fps entry would need a third of the rate, 8.33, which is below
+  // the lowest rate an encode runs at. Deinterlaced one frame per field, the source runs at 50, and
+  // a fifth of that is 10 (ADR 0049).
+  @Test
+  @DisplayName(
+      "Should encode an interlaced source at a divided field rate when the capability entry caps the"
+          + " frame rate below the stored rate")
+  void
+      shouldEncodeAnInterlacedSourceAtADividedFieldRateWhenTheCapabilityEntryCapsTheFrameRateBelowTheStoredRate() {
+    probeResults.setDefaultOutcome(
+        outcomeWithFrameRateRule(
+            VideoPlaybackFactsFixture.interlacedRateRule(new Fraction(25, 1), FieldOrder.TT)));
+    var declaration =
+        defaultDeclarationBuilder().video(List.of(h264EntryBuilder().maxFrameRate(10).build()));
+
+    var session = accepted(service.createSession(createCommandDeclaring(declaration.build())));
+
+    assertThat(session.getVariants())
+        .isNotEmpty()
+        .extracting(variant -> variant.frameRate().toDouble())
+        .containsOnly(10.0);
+  }
+
+  // AV1 is encoded in hardware, which the codec preference puts first on a tie, but its entry caps
+  // the deinterlaced 59.94 at 29.97 while H.264 keeps it (ADR 0049).
+  @Test
+  @DisplayName(
+      "Should encode an interlaced source in the codec whose entry keeps the field rate when another"
+          + " entry caps it")
+  void shouldEncodeAnInterlacedSourceInTheCodecWhoseEntryKeepsTheFieldRateWhenAnotherEntryCapsIt() {
+    probeResults.setDefaultOutcome(interlacedOutcome(FieldOrder.TT));
+    transcodeExecutor.setHardwareEncodableVideoCodecFamilies(Set.of("av1"));
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(av1EntryBuilder().maxFrameRate(30).build(), h264EntryBuilder().build()));
+
+    var session = accepted(service.createSession(createCommandDeclaring(declaration.build())));
+
+    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo("h264");
+    assertThat(session.getVariants())
+        .isNotEmpty()
+        .extracting(QualityVariant::frameRate)
+        .containsOnly(new Fraction(60_000, 1_001));
+  }
+
   @ParameterizedTest
   @CsvSource({"ORIGINAL, COPY_ONLY", "AUTO, COPY_OR_ENCODE"})
   @DisplayName(
