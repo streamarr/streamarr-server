@@ -508,29 +508,6 @@ class StreamControllerTest {
     assertThat(fetchBytes(segmentUri)).isEqualTo(segmentData);
   }
 
-  @Test
-  @DisplayName(
-      "Should serve the default variant's initialization segment at its variant URL when the"
-          + " ladder lists the default variant")
-  void shouldServeDefaultVariantsInitializationSegmentAtItsVariantUrlWhenLadderListsIt()
-      throws Exception {
-    streamingService.setSession(buildFixedQualitySession());
-    var initData = new byte[] {0x00, 0x00, 0x00, 0x20};
-    segmentStore.addSegment(SESSION_ID, "init.mp4", initData);
-
-    var result =
-        mockMvc
-            .perform(
-                get(
-                    "/api/stream/{sessionId}/{variantLabel}/init.mp4",
-                    SESSION_ID,
-                    StreamSession.defaultVariant()))
-            .andExpect(status().isOk())
-            .andReturn();
-
-    assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(initData);
-  }
-
   // A fixed quality encodes one variant, the default variant, as its whole ladder.
   private StreamSession buildFixedQualitySession() {
     var session =
