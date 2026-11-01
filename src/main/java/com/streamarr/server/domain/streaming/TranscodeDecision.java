@@ -74,6 +74,28 @@ public record TranscodeDecision(
     return videoSource.flatMap(VideoPlaybackFacts::encodedFrameRate);
   }
 
+  /**
+   * The dynamic range of the decision's video output. A copy keeps the source's compatible base,
+   * and Dolby Vision without one is PQ. Every encode is SDR until the server encodes HDR (#397).
+   */
+  public VideoRange videoRange() {
+    if (transcodeMode == null || !transcodeMode.copiesVideo()) {
+      return VideoRange.SDR;
+    }
+
+    return videoSource
+        .map(facts -> rangeOf(facts.dynamicRange().compatibleBase()))
+        .orElse(VideoRange.SDR);
+  }
+
+  private static VideoRange rangeOf(CompatibleBase base) {
+    return switch (base) {
+      case SDR, UNSPECIFIED -> VideoRange.SDR;
+      case PQ, NONE -> VideoRange.PQ;
+      case HLG -> VideoRange.HLG;
+    };
+  }
+
   // Lombok builder defaults — their generated setters assign them
   @SuppressWarnings({"java:S1068", "java:S9438"})
   public static class TranscodeDecisionBuilder {
