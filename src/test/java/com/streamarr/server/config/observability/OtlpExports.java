@@ -1,11 +1,14 @@
 package com.streamarr.server.config.observability;
 
+import com.google.protobuf.ByteString;
 import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest;
 import io.opentelemetry.proto.common.v1.AnyValue;
 import io.opentelemetry.proto.common.v1.KeyValue;
+import io.opentelemetry.proto.metrics.v1.Exemplar;
 import io.opentelemetry.proto.metrics.v1.Metric;
 import io.opentelemetry.proto.metrics.v1.ScopeMetrics;
 import io.opentelemetry.proto.resource.v1.Resource;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -52,6 +55,21 @@ final class OtlpExports {
         .flatMap(scope -> scope.getMetricsList().stream())
         .filter(metric -> metric.getName().equals(meter))
         .toList();
+  }
+
+  /** The exemplars on every histogram data point of the meter in the exports. */
+  static List<Exemplar> histogramExemplars(
+      List<ExportMetricsServiceRequest> exports, String meter) {
+    return exports.stream()
+        .flatMap(export -> metricsNamed(export, meter).stream())
+        .flatMap(metric -> metric.getHistogram().getDataPointsList().stream())
+        .flatMap(point -> point.getExemplarsList().stream())
+        .toList();
+  }
+
+  /** A trace or span ID as the lower-case hex that W3C trace context carries. */
+  static String hex(ByteString id) {
+    return HexFormat.of().formatHex(id.toByteArray());
   }
 
   static Set<String> scopesExporting(
