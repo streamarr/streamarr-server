@@ -76,7 +76,9 @@ class TranscodeExecutorHealthIndicatorTest {
     var health = indicator.health();
 
     assertThat(health.getStatus().getCode()).isEqualTo("DEGRADED");
-    assertThat(health.getStatus().getDescription()).isNotBlank();
+    assertThat(health.getStatus().getDescription())
+        .isNotBlank()
+        .doesNotContain(worker.workerId().toString());
     assertThat(health.getDetails()).containsExactly(entry("availableSlots", 2));
   }
 
