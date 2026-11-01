@@ -205,6 +205,7 @@ class BoundedTaskTest {
         latchWaits++;
       }
     }
+
     return latchWaits;
   }
 
@@ -235,8 +236,10 @@ class BoundedTaskTest {
       } finally {
         lock.unlock();
       }
+
       neverReleased.await(1, TimeUnit.MILLISECONDS);
     }
+
     return null;
   }
 
