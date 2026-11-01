@@ -1648,22 +1648,99 @@ class HlsStreamingServiceTest {
       VideoQuality quality, int maxBitrate, String codec, int channels, long bitrate) {}
 
   // At 4,563,999 kb/s even AAC stereo at 64 kb/s leaves the 4.5 Mb/s copy over the maximum, so the
-  // video is encoded. The encode takes its audio step by its own rule, and E-AC-3 5.1 at 768 kb/s
-  // leaves room for the 360p tier.
-  @Test
+  // video is encoded. The encode then takes its audio step by its own rule (ADR 0050): E-AC-3 5.1
+  // at 768 kb/s leaves room for the 360p tier there, and under 1,400 kb/s the 360p tier's 800 kb/s
+  // fits only beside 448 kb/s.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("maximumsBelowTheCopyBesideEveryAudioStep")
   @DisplayName(
       "Should encode the video beside the encode's own audio step when no audio step fits beside a"
           + " video copy")
-  void shouldEncodeTheVideoBesideTheEncodesOwnAudioStepWhenNoAudioStepFitsBesideAVideoCopy() {
+  void shouldEncodeTheVideoBesideTheEncodesOwnAudioStepWhenNoAudioStepFitsBesideAVideoCopy(
+      EncodeBesideStep expected) {
     var session =
         createCopySessionWithSurroundOpus(
-            surroundOpusSource().options(autoOptions().maxBitrate(4_563_999).build()).build());
+            surroundOpusSource()
+                .options(autoOptions().maxBitrate(expected.maxBitrate()).build())
+                .build());
 
     assertThat(session.getTranscodeDecision().transcodeMode())
         .isEqualTo(TranscodeMode.FULL_TRANSCODE);
     assertThat(session.getTranscodeDecision().audioDecision())
         .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
-        .containsExactly("eac3", 6, 768_000L);
+        .containsExactly("eac3", 6, expected.bitrate());
+  }
+
+  static Stream<EncodeBesideStep> maximumsBelowTheCopyBesideEveryAudioStep() {
+    return Stream.of(
+        EncodeBesideStep.builder().maxBitrate(4_563_999).bitrate(768_000L).build(),
+        EncodeBesideStep.builder().maxBitrate(1_400_000).bitrate(448_000L).build());
+  }
+
+  @Builder
+  record EncodeBesideStep(int maxBitrate, long bitrate) {}
+
+  // The probe knows the 4.5 Mb/s copied video's bitrate but not the container's, so the copy still
+  // costs the video plus E-AC-3 5.1, and under 5 Mb/s it takes 448 kb/s.
+  @Test
+  @DisplayName(
+      "Should lower the audio beside a copy whose video bitrate the probe knows when the probe does"
+          + " not know the container bitrate")
+  void
+      shouldLowerTheAudioBesideACopyWhoseVideoBitrateTheProbeKnowsWhenTheProbeDoesNotKnowTheContainerBitrate() {
+    var session =
+        createCopySessionWithSurroundOpus(
+            surroundOpusSource()
+                .options(autoOptions().maxBitrate(5_000_000).build())
+                .containerBitrate(0L)
+                .build());
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
+    assertThat(session.getTranscodeDecision().audioDecision().bitrate()).isEqualTo(448_000L);
+  }
+
+  // ADR 0050: a copy whose video bitrate and container bitrate are both unknown passes the bitrate
+  // check, so the copied stereo AAC track stays a copy under a maximum below its own 128 kb/s.
+  @Test
+  @DisplayName(
+      "Should keep the copied audio track beside a copy when the probe knows neither the copied"
+          + " video's bitrate nor the container bitrate")
+  void
+      shouldKeepTheCopiedAudioTrackBesideACopyWhenTheProbeKnowsNeitherTheCopiedVideosBitrateNorTheContainerBitrate() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().bitrate(0L).build());
+
+    var session =
+        createSession(
+            seedMediaFile().getId(), UUID.randomUUID(), autoOptions().maxBitrate(100_000).build());
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(AudioDecision::mode, AudioDecision::bitrate)
+        .containsExactly(AudioMode.COPY, 128_000L);
+  }
+
+  // ADR 0050: the 1920×1080 source has no usable frame rate, so it copies over the fixed 720p's
+  // box. Beside that copy the server still takes the first audio step that fits: the copy of
+  // 4.5 Mb/s video fits 5 Mb/s beside E-AC-3 5.1 at 448 kb/s.
+  @Test
+  @DisplayName(
+      "Should take the first audio step at which a copy fits when a source without a usable frame"
+          + " rate copies over the fixed quality's picture box")
+  void
+      shouldTakeTheFirstAudioStepAtWhichACopyFitsWhenASourceWithoutAUsableFrameRateCopiesOverTheFixedQualitysPictureBox() {
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.HIGH_720P).maxBitrate(5_000_000).build();
+
+    var session =
+        createCopySessionWithSurroundOpus(
+            surroundOpusSource().options(options).framerate(OptionalDouble.empty()).build());
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
+        .containsExactly("eac3", 6, 448_000L);
   }
 
   // A Matroska source names no bitrate for its 5 Mb/s video stream. Encoded 768 kb/s E-AC-3 5.1
