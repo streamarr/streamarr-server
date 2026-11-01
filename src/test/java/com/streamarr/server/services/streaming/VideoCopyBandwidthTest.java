@@ -181,29 +181,40 @@ class VideoCopyBandwidthTest {
         .isEqualTo(expected);
   }
 
-  @Test
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("playlistsWithoutASegmentOrADuration")
   @DisplayName("Should keep the unmeasured cost when a stream copy cannot list the media playlist")
-  void shouldKeepUnmeasuredCostWhenStreamCopyCannotListMediaPlaylist() {
+  void shouldKeepUnmeasuredCostWhenStreamCopyCannotListMediaPlaylist(CopyMediaPlaylist playlist) {
     var source = measuredSource(List.of()).build();
 
-    assertThat(
-            VideoCopyBandwidth.averageBandwidth(
-                source, AudioDecision.none(), CopyMediaPlaylist.UNKNOWN))
-        .isEqualTo(4_000_000L);
-    assertThat(
-            VideoCopyBandwidth.averageBandwidth(
-                source, AudioDecision.none(), new CopyMediaPlaylist(3, BigDecimal.ZERO)))
+    assertThat(VideoCopyBandwidth.averageBandwidth(source, AudioDecision.none(), playlist))
         .isEqualTo(4_000_000L);
   }
 
-  @Test
-  @DisplayName("Should keep the unmeasured cost when the server encodes audio of another codec")
-  void shouldKeepUnmeasuredCostWhenServerEncodesAudioOfAnotherCodec() {
-    var source = measuredSource(List.of()).build();
-    var opus = AudioDecision.stereoAac().toBuilder().codec("opus").build();
+  static Stream<CopyMediaPlaylist> playlistsWithoutASegmentOrADuration() {
+    return Stream.of(
+        CopyMediaPlaylist.UNKNOWN,
+        new CopyMediaPlaylist(3, BigDecimal.ZERO),
+        new CopyMediaPlaylist(0, new BigDecimal("9.000000")));
+  }
 
-    assertThat(VideoCopyBandwidth.averageBandwidth(source, opus, NINE_SECONDS))
+  // The server knows the framing of only the AAC, AC-3 and E-AC-3 encoders.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("encodesWhoseFramingTheServerDoesNotKnow")
+  @DisplayName(
+      "Should keep the unmeasured cost when the session encodes audio whose framing the server"
+          + " does not know")
+  void shouldKeepUnmeasuredCostWhenSessionEncodesAudioWhoseFramingServerDoesNotKnow(
+      AudioDecision encoded) {
+    var source = measuredSource(List.of()).build();
+
+    assertThat(VideoCopyBandwidth.averageBandwidth(source, encoded, NINE_SECONDS))
         .isEqualTo(4_128_000L);
+  }
+
+  static Stream<AudioDecision> encodesWhoseFramingTheServerDoesNotKnow() {
+    var encode = AudioDecision.stereoAac().toBuilder();
+    return Stream.of(encode.codec("opus").build(), encode.codec(null).build());
   }
 
   @Test
