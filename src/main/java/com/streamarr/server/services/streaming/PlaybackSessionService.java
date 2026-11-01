@@ -306,7 +306,7 @@ public class PlaybackSessionService implements AutoCloseable {
 
   private Optional<FormatAttemptReservation> reserveFailure(
       PlaybackSession playback, UUID failedId, PlaybackSessionFailure reason) {
-    if (!isCurrentAttempt(playback, failedId)) {
+    if (!isCurrentAttempt(playback, failedId) || endedNormally(playback)) {
       return Optional.empty();
     }
 
@@ -316,6 +316,7 @@ public class PlaybackSessionService implements AutoCloseable {
   private Optional<FormatAttemptReservation> reserveFormatAttempt(
       PlaybackSession playback, UUID failedId, PlaybackSessionFailure fixedFailure) {
     if (!isCurrentAttempt(playback, failedId)
+        || endedNormally(playback)
         || (fixedFailure instanceof PlaybackSessionFailure.FixedFormatFailed
             && playback.current instanceof PlaybackFormatAttempt.Pending)) {
       return Optional.empty();
@@ -367,6 +368,13 @@ public class PlaybackSessionService implements AutoCloseable {
     return owns(playback)
         && playback.current.streamSessionId().equals(streamId)
         && !(playback.current instanceof PlaybackFormatAttempt.Failed);
+  }
+
+  // A copy that ran short after every source stream ended ends playback normally, which wins over
+  // every failure in its stream session (ADR 0052).
+  private static boolean endedNormally(PlaybackSession playback) {
+    return playback.current instanceof PlaybackFormatAttempt.Ready(var session)
+        && session.getNormalEnd().isPresent();
   }
 
   private FormatAttemptReservation failPlayback(
