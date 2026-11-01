@@ -13,6 +13,7 @@ import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.ProbeCapacity;
 import com.streamarr.server.services.streaming.SegmentPublication;
+import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.transcode.v1.BackgroundProbeCapacityControl;
@@ -489,16 +490,15 @@ final class LiveWorkerConnectionRegistry {
     return connectionsFor(sourceNamespaceId).findAny().isPresent();
   }
 
-  Optional<Set<String>> verifiedVideoCodecFamilies(UUID sourceNamespaceId) {
-    var connected = connectionsFor(sourceNamespaceId).toList();
-    if (connected.isEmpty()) {
-      return Optional.empty();
-    }
-
-    return Optional.of(
-        connected.stream()
-            .flatMap(connection -> connection.countedEncoders.keySet().stream())
-            .collect(Collectors.toUnmodifiableSet()));
+  List<WorkerVerifiedCodecFamilies> verifiedVideoCodecFamiliesByWorker(UUID sourceNamespaceId) {
+    var sourceNamespace = toProto(sourceNamespaceId);
+    return connections.entrySet().stream()
+        .filter(entry -> entry.getValue().canAccessSourceNamespace(sourceNamespace))
+        .map(
+            entry ->
+                new WorkerVerifiedCodecFamilies(
+                    entry.getKey(), entry.getValue().countedEncoders.keySet()))
+        .toList();
   }
 
   boolean hasProbeWorker(UUID sourceNamespaceId, int probeVersion) {

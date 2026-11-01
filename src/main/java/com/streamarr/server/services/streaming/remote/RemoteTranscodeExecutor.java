@@ -9,7 +9,9 @@ import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
+import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -138,8 +140,8 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
-  public Optional<Set<String>> verifiedVideoCodecFamilies() {
-    return workerServer.verifiedVideoCodecFamilies(sourceNamespaceId);
+  public List<WorkerVerifiedCodecFamilies> verifiedVideoCodecFamiliesByWorker() {
+    return workerServer.verifiedVideoCodecFamiliesByWorker(sourceNamespaceId);
   }
 
   @Override

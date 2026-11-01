@@ -22,6 +22,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 
@@ -77,8 +78,8 @@ public class HlsStreamingService implements StreamingService {
 
     // Without a connected worker no encoder is verified. That moment must not read as faulty
     // workers and admit a copy over the viewer's limits once a worker connects.
-    var verifiedFamilies = transcodeExecutor.verifiedVideoCodecFamilies();
-    if (verifiedFamilies.isEmpty()) {
+    var verifiedWorkers = transcodeExecutor.verifiedVideoCodecFamiliesByWorker();
+    if (verifiedWorkers.isEmpty()) {
       return Outcome.rejected(refuseForLackOfCapacity(CapacityRefusal.NO_CONNECTED_WORKER));
     }
 
@@ -94,7 +95,7 @@ public class HlsStreamingService implements StreamingService {
             .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())
             .hardwareEncodableVideoCodecFamilies(
                 transcodeExecutor.hardwareEncodableVideoCodecFamilies())
-            .verifiedVideoCodecFamilies(verifiedFamilies.get())
+            .verifiedVideoCodecFamilies(codecFamiliesOf(verifiedWorkers))
             .viewerLimits(ViewerLimits.of(options))
             .build();
     var candidate = transcodeDecisionService.decide(request);
@@ -254,6 +255,12 @@ public class HlsStreamingService implements StreamingService {
             .hardwareEncodableVideoCodecFamilies(
                 transcodeExecutor.verifiedHardwareVideoCodecFamilies())
             .build());
+  }
+
+  private static Set<String> codecFamiliesOf(List<WorkerVerifiedCodecFamilies> workers) {
+    return workers.stream()
+        .flatMap(worker -> worker.codecFamilies().stream())
+        .collect(Collectors.toUnmodifiableSet());
   }
 
   private CreateStreamSessionRejection refuseForLackOfCapacity(CapacityRefusal refusal) {

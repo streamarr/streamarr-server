@@ -39,6 +39,7 @@ import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.ProducerLifecycleService;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
@@ -1071,7 +1072,9 @@ class WorkerSessionServerIT {
         assertThat(worker.nextResponse().hasStartVariant()).isTrue();
 
         assertThat(executor.encodableVideoCodecFamilies()).isEmpty();
-        assertThat(executor.verifiedVideoCodecFamilies()).contains(Set.of("h264"));
+        assertThat(executor.verifiedVideoCodecFamiliesByWorker())
+            .containsExactly(
+                new WorkerVerifiedCodecFamilies(AUTHENTICATED_WORKER_ID, Set.of("h264")));
       } finally {
         shutdown(channel);
       }
@@ -1079,18 +1082,18 @@ class WorkerSessionServerIT {
   }
 
   // The stream session tells "no connected worker" apart from "connected workers without a
-  // verified encoder" by whether the verified encoder families are present at all.
+  // verified encoder" by whether the read lists any worker at all.
   @Test
-  @DisplayName("Should answer no encoder families when no connected worker can access the source")
-  void shouldAnswerNoEncoderFamiliesWhenNoConnectedWorkerCanAccessTheSource() throws Exception {
+  @DisplayName("Should list no worker when no connected worker can access the source")
+  void shouldListNoWorkerWhenNoConnectedWorkerCanAccessTheSource() throws Exception {
     try (var server = server()) {
       server.start();
-      assertThat(server.verifiedVideoCodecFamilies(SOURCE_NAMESPACE_ID)).isEmpty();
+      assertThat(server.verifiedVideoCodecFamiliesByWorker(SOURCE_NAMESPACE_ID)).isEmpty();
       var channel = workerChannel(server.port());
       try (var worker = connect(channel, AUTHENTICATED_WORKER_ID)) {
         assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
 
-        assertThat(server.verifiedVideoCodecFamilies(UUID.randomUUID())).isEmpty();
+        assertThat(server.verifiedVideoCodecFamiliesByWorker(UUID.randomUUID())).isEmpty();
       } finally {
         shutdown(channel);
       }
@@ -1099,7 +1102,7 @@ class WorkerSessionServerIT {
           .atMost(5, TimeUnit.SECONDS)
           .until(() -> !server.hasConnectedWorker(SOURCE_NAMESPACE_ID));
       assertThat(server.encodableVideoCodecFamilies(SOURCE_NAMESPACE_ID)).isEmpty();
-      assertThat(server.verifiedVideoCodecFamilies(SOURCE_NAMESPACE_ID)).isEmpty();
+      assertThat(server.verifiedVideoCodecFamiliesByWorker(SOURCE_NAMESPACE_ID)).isEmpty();
     }
   }
 
@@ -1107,9 +1110,9 @@ class WorkerSessionServerIT {
   // the viewer's limits (ADR 0050), so its answer must differ from no connected worker at all.
   @Test
   @DisplayName(
-      "Should answer an empty set of verified encoder families when the connected worker has no"
-          + " verified encoder")
-  void shouldAnswerAnEmptySetOfVerifiedEncoderFamiliesWhenTheConnectedWorkerHasNoVerifiedEncoder()
+      "Should list the connected worker with no verified encoder families when it has no verified"
+          + " encoder")
+  void shouldListTheConnectedWorkerWithNoVerifiedEncoderFamiliesWhenItHasNoVerifiedEncoder()
       throws Exception {
     var withoutEncoders =
         WorkerCapabilities.newBuilder().addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID)).build();
@@ -1123,7 +1126,8 @@ class WorkerSessionServerIT {
               withoutEncoders)) {
         assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
 
-        assertThat(server.verifiedVideoCodecFamilies(SOURCE_NAMESPACE_ID)).contains(Set.of());
+        assertThat(server.verifiedVideoCodecFamiliesByWorker(SOURCE_NAMESPACE_ID))
+            .containsExactly(new WorkerVerifiedCodecFamilies(AUTHENTICATED_WORKER_ID, Set.of()));
       } finally {
         shutdown(channel);
       }
