@@ -9,8 +9,13 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.micrometer.metrics.autoconfigure.MetricsAutoConfiguration;
+import org.springframework.boot.micrometer.metrics.autoconfigure.export.otlp.OtlpMetricsConnectionDetails;
 import org.springframework.boot.micrometer.metrics.autoconfigure.export.otlp.OtlpMetricsExportAutoConfiguration;
 import org.springframework.boot.micrometer.metrics.autoconfigure.export.simple.SimpleMetricsExportAutoConfiguration;
+import org.springframework.boot.ssl.DefaultSslBundleRegistry;
+import org.springframework.boot.ssl.SslBundle;
+import org.springframework.boot.ssl.SslBundles;
+import org.springframework.boot.ssl.SslStoreBundle;
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
@@ -62,6 +67,26 @@ class MetricExportConfigurationTest {
             context ->
                 assertThat(context.getBean(OtlpConfig.class).url())
                     .isEqualTo("http://collector.example:4318/v1/metrics"));
+  }
+
+  @Test
+  @DisplayName("Should keep the configured SSL bundle when metrics go to the starter's endpoint")
+  void shouldKeepTheConfiguredSslBundleWhenMetricsGoToTheStartersEndpoint() {
+    var collectorBundle = SslBundle.of(SslStoreBundle.NONE);
+    CONTEXT_RUNNER
+        .withBean(
+            SslBundles.class, () -> new DefaultSslBundleRegistry("collector", collectorBundle))
+        .withPropertyValues(
+            "spring.profiles.active=observability",
+            "management.otlp.metrics.export.ssl.bundle=collector")
+        .run(
+            context ->
+                assertThat(context.getBean(OtlpMetricsConnectionDetails.class))
+                    .satisfies(
+                        details ->
+                            assertThat(details.getUrl())
+                                .isEqualTo("http://otel-collector:4318/v1/metrics"),
+                        details -> assertThat(details.getSslBundle()).isSameAs(collectorBundle)));
   }
 
   @Test
