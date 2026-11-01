@@ -47,7 +47,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -1214,13 +1213,12 @@ class HlsPlaylistServiceTest {
       assertThat(streamInf(session)).singleElement().asString().contains(",RESOLUTION=1920x800,");
     }
 
-    @ParameterizedTest(name = "{0} fps")
-    @CsvSource({"24000, 1001, 23.976", "30000, 1001, 29.970", "60, 1, 60.000", "25, 1, 25.000"})
+    @ParameterizedTest(name = "{1} fps")
+    @MethodSource("outputFrameRates")
     @DisplayName(
         "Should advertise the output frame rate to three decimals when every variant encodes")
     void shouldAdvertiseTheOutputFrameRateToThreeDecimalsWhenEveryVariantEncodes(
-        int numerator, int denominator, String frameRate) {
-      var rate = new Fraction(numerator, denominator);
+        Fraction rate, String frameRate) {
       var decision = encodedDecision("h264", rate);
       var ladder = StreamSessionFixture.defaultLadderSessionBuilder().build().getVariants();
       var session =
@@ -1237,6 +1235,15 @@ class HlsPlaylistServiceTest {
       assertThat(streamInf(session))
           .hasSize(4)
           .allSatisfy(line -> assertThat(line).contains(",FRAME-RATE=" + frameRate));
+    }
+
+    // RFC 8216 section 4.3.4.2 gives FRAME-RATE to three decimals.
+    static Stream<Arguments> outputFrameRates() {
+      return Stream.of(
+          Arguments.of(new Fraction(24_000, 1_001), "23.976"),
+          Arguments.of(new Fraction(30_000, 1_001), "29.970"),
+          Arguments.of(new Fraction(60, 1), "60.000"),
+          Arguments.of(new Fraction(25, 1), "25.000"));
     }
 
     @ParameterizedTest(name = "{0}")

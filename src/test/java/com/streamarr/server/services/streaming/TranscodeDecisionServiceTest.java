@@ -66,6 +66,7 @@ import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.stream.Stream;
+import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -124,27 +125,43 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
   }
 
-  @ParameterizedTest
-  @CsvSource({"COPY_OR_ENCODE, VIDEO_TRANSCODE", "COPY_ONLY, "})
-  @DisplayName("Should not copy the video when the source exceeds the viewer's limits")
-  void shouldNotCopyTheVideoWhenTheSourceExceedsTheViewersLimits(
-      VideoFormatConstraint constraint, TranscodeMode expectedMode) {
+  @Test
+  @DisplayName(
+      "Should encode the video when the source exceeds the viewer's limits and the format attempt"
+          + " may copy or encode")
+  void
+      shouldEncodeTheVideoWhenTheSourceExceedsTheViewersLimitsAndTheFormatAttemptMayCopyOrEncode() {
+    var decision = decideOverAFixed720p(VideoFormatConstraint.COPY_OR_ENCODE);
+
+    assertThat(decision.map(TranscodeDecision::transcodeMode))
+        .contains(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(meterRegistry.find(STREAM_COPY_REFUSALS).counter()).isNull();
+  }
+
+  @Test
+  @DisplayName(
+      "Should return no decision when the source exceeds the viewer's limits and the format attempt"
+          + " only copies")
+  void shouldReturnNoDecisionWhenTheSourceExceedsTheViewersLimitsAndTheFormatAttemptOnlyCopies() {
+    var decision = decideOverAFixed720p(VideoFormatConstraint.COPY_ONLY);
+
+    assertThat(decision).isEmpty();
+    assertThat(meterRegistry.find(STREAM_COPY_REFUSALS).counter()).isNull();
+  }
+
+  // A copyable 1920×1080 H.264 source against the fixed 720p's 1280×720 box.
+  private Optional<TranscodeDecision> decideOverAFixed720p(VideoFormatConstraint constraint) {
     var limits =
         ViewerLimits.of(StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build());
 
-    var decision =
-        service.decide(
-            TranscodeDecisionRequest.builder()
-                .source(probe("h264", "aac"))
-                .capabilityDeclaration(declaring(H264))
-                .encodableVideoCodecFamilies(Set.of("h264"))
-                .videoFormatConstraint(constraint)
-                .viewerLimits(limits)
-                .build());
-
-    assertThat(decision.map(TranscodeDecision::transcodeMode))
-        .isEqualTo(Optional.ofNullable(expectedMode));
-    assertThat(meterRegistry.find(STREAM_COPY_REFUSALS).counter()).isNull();
+    return service.decide(
+        TranscodeDecisionRequest.builder()
+            .source(probe("h264", "aac"))
+            .capabilityDeclaration(declaring(H264))
+            .encodableVideoCodecFamilies(Set.of("h264"))
+            .videoFormatConstraint(constraint)
+            .viewerLimits(limits)
+            .build());
   }
 
   @Test
@@ -733,17 +750,14 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.videoCodecFamily()).isEqualTo(expectedCodecFamily);
   }
 
-  @ParameterizedTest
+  @ParameterizedTest(name = "{0}")
   @MethodSource("entryFrameRatesHardwareEncodedFamiliesAndExpectedEncode")
   @DisplayName(
       "Should encode the codec family that keeps the higher frame rate before preferring a codec"
           + " family when the families' entries allow different frame rates")
   void
       shouldEncodeTheCodecFamilyThatKeepsTheHigherFrameRateBeforePreferringACodecFamilyWhenTheFamiliesEntriesAllowDifferentRates(
-          double av1MaxFrameRate,
-          double h264MaxFrameRate,
-          Set<String> hardwareEncodedFamilies,
-          String expectedCodecFamily) {
+          FamilyFrameRates families) {
     var source =
         probeVersion5H264(
             new PictureSize(1920, 1080),
@@ -752,8 +766,8 @@ class TranscodeDecisionServiceTest {
         defaultDeclarationBuilder()
             .video(
                 List.of(
-                    av1EntryBuilder().maxFrameRate(av1MaxFrameRate).build(),
-                    h264EntryBuilder().maxFrameRate(h264MaxFrameRate).build()))
+                    av1EntryBuilder().maxFrameRate(families.av1MaxFrameRate()).build(),
+                    h264EntryBuilder().maxFrameRate(families.h264MaxFrameRate()).build()))
             .build();
 
     var decision =
@@ -764,20 +778,49 @@ class TranscodeDecisionServiceTest {
                     .capabilityDeclaration(declaration)
                     .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
-                    .hardwareEncodableVideoCodecFamilies(hardwareEncodedFamilies)
+                    .hardwareEncodableVideoCodecFamilies(families.hardwareEncodedFamilies())
                     .build())
             .orElseThrow();
 
-    assertThat(decision.videoCodecFamily()).isEqualTo(expectedCodecFamily);
+    assertThat(decision.videoCodecFamily()).isEqualTo(families.encodedFamily());
   }
 
-  static Stream<Arguments> entryFrameRatesHardwareEncodedFamiliesAndExpectedEncode() {
+  // ADR 0049 keeps the higher frame rate first, and ADR 0009's preference breaks a tie: a family
+  // that a worker encodes in hardware, then H.264.
+  static Stream<FamilyFrameRates> entryFrameRatesHardwareEncodedFamiliesAndExpectedEncode() {
     return Stream.of(
-        Arguments.of(30.0, 60.0, Set.of("av1"), "h264"),
-        Arguments.of(60.0, 30.0, Set.of(), "av1"),
-        Arguments.of(30.0, 30.0, Set.of("av1"), "av1"),
-        Arguments.of(30.0, 30.0, Set.of(), "h264"));
+        FamilyFrameRates.builder()
+            .av1MaxFrameRate(30)
+            .h264MaxFrameRate(60)
+            .hardwareEncodedFamilies(Set.of("av1"))
+            .encodedFamily("h264")
+            .build(),
+        FamilyFrameRates.builder()
+            .av1MaxFrameRate(60)
+            .h264MaxFrameRate(30)
+            .hardwareEncodedFamilies(Set.of())
+            .encodedFamily("av1")
+            .build(),
+        FamilyFrameRates.builder()
+            .av1MaxFrameRate(30)
+            .h264MaxFrameRate(30)
+            .hardwareEncodedFamilies(Set.of("av1"))
+            .encodedFamily("av1")
+            .build(),
+        FamilyFrameRates.builder()
+            .av1MaxFrameRate(30)
+            .h264MaxFrameRate(30)
+            .hardwareEncodedFamilies(Set.of())
+            .encodedFamily("h264")
+            .build());
   }
+
+  @Builder
+  record FamilyFrameRates(
+      double av1MaxFrameRate,
+      double h264MaxFrameRate,
+      Set<String> hardwareEncodedFamilies,
+      String encodedFamily) {}
 
   @Test
   @DisplayName(
