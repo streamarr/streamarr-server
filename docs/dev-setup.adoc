@@ -158,7 +158,8 @@ The HTTP server's latency histogram is `http.server.requests`, with buckets.
 When the server removes a meter, its series ends.
 For example, the meters tagged with a worker's UUID end when that worker disconnects.
 * `OTEL_EXPORTER_OTLP_ENDPOINT` moves spans, logs and metrics to another collector.
-`OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, when set, is the full metrics URL, used as written, and the metric exports and their `OTEL_EXPORTER_OTLP_METRICS_HEADERS` go there alone.
+`OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, when set, is the full metrics URL, used as written.
+`OTEL_EXPORTER_OTLP_METRICS_HEADERS`, when set, replaces `OTEL_EXPORTER_OTLP_HEADERS` on metric exports, as OpenTelemetry does for each signal.
 `OTEL_SERVICE_NAME` renames the service on all three; it defaults to `streamarr-server`.
 `deployment.environment` is `DEPLOYMENT_ENV` (default `dev`).
 A collector that needs a private CA or a client certificate for metrics takes a Spring Boot SSL bundle named by `management.otlp.metrics.export.ssl.bundle`; the `OTEL_EXPORTER_OTLP_CERTIFICATE` and client-key variables reach spans and logs only.

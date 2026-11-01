@@ -11,13 +11,15 @@ import org.springframework.test.context.ContextConfiguration;
 
 /**
  * Runs with {@code OTEL_EXPORTER_OTLP_METRICS_ENDPOINT} naming a collector other than {@code
- * OTEL_EXPORTER_OTLP_ENDPOINT}'s. Micrometer attaches {@code OTEL_EXPORTER_OTLP_METRICS_HEADERS} to
- * every metric export, so metrics that went to the shared endpoint would carry the metrics
- * collector's credentials to another collector.
+ * OTEL_EXPORTER_OTLP_ENDPOINT}'s, and with headers for each, as a deployment whose collectors take
+ * different credentials sets them. Each collector's credentials must reach that collector alone.
  */
 @DisplayName("Metric Export To The Metrics Endpoint Integration Tests")
 @ContextConfiguration(initializers = MetricExportToTheMetricsEndpointIT.DeploymentVariables.class)
 class MetricExportToTheMetricsEndpointIT extends AbstractObservabilityProfileIntegrationTest {
+
+  private static final String SHARED_HEADER = "x-shared-key";
+  private static final String METRICS_HEADER = "x-metrics-key";
 
   private static final RecordingOtlpCollector SHARED_COLLECTOR =
       RecordingOtlpCollector.start(EXPORT_WAIT);
@@ -43,6 +45,16 @@ class MetricExportToTheMetricsEndpointIT extends AbstractObservabilityProfileInt
     assertThat(SHARED_COLLECTOR.metricExports().all()).isEmpty();
   }
 
+  @Test
+  @DisplayName("Should send only the metrics headers to the metrics endpoint when both are set")
+  void shouldSendOnlyTheMetricsHeadersToTheMetricsEndpointWhenBothAreSet() throws Exception {
+    exportOfTheServersMetersCollectedAfter(METRICS_COLLECTOR.metricExports().position());
+
+    assertThat(METRICS_COLLECTOR.requestHeaderNames())
+        .contains(METRICS_HEADER)
+        .doesNotContain(SHARED_HEADER);
+  }
+
   static class DeploymentVariables
       implements ApplicationContextInitializer<ConfigurableApplicationContext> {
 
@@ -51,6 +63,8 @@ class MetricExportToTheMetricsEndpointIT extends AbstractObservabilityProfileInt
       var variables = collectorVariables(SHARED_COLLECTOR);
       variables.put(
           "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", METRICS_COLLECTOR.endpoint() + "v1/metrics");
+      variables.put("OTEL_EXPORTER_OTLP_HEADERS", SHARED_HEADER + "=shared-token");
+      variables.put("OTEL_EXPORTER_OTLP_METRICS_HEADERS", METRICS_HEADER + "=metrics-token");
       setDeploymentVariables(context, variables);
     }
   }

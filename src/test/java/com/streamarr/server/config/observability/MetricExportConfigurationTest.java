@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.micrometer.registry.otlp.OtlpConfig;
 import io.micrometer.registry.otlp.OtlpMeterRegistry;
 import java.time.Duration;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -104,6 +105,34 @@ class MetricExportConfigurationTest {
             context ->
                 assertThat(context.getBean(OtlpConfig.class).url())
                     .isEqualTo("https://metrics.example:4318/custom/metrics"));
+  }
+
+  @Test
+  @DisplayName("Should send only the metrics headers when metrics headers are set")
+  void shouldSendOnlyTheMetricsHeadersWhenMetricsHeadersAreSet() {
+    CONTEXT_RUNNER
+        .withPropertyValues(
+            "spring.profiles.active=observability",
+            "otel.exporter.otlp.headers=x-shared-key=shared",
+            "otel.exporter.otlp.metrics.headers=x-metrics-key=metrics%20token")
+        .run(
+            context ->
+                assertThat(context.getBean(OtlpConfig.class).headers())
+                    .containsExactlyEntriesOf(Map.of("x-metrics-key", "metrics token")));
+  }
+
+  @Test
+  @DisplayName("Should send the shared headers when no metrics headers are set")
+  void shouldSendTheSharedHeadersWhenNoMetricsHeadersAreSet() {
+    CONTEXT_RUNNER
+        .withPropertyValues(
+            "spring.profiles.active=observability",
+            "otel.exporter.otlp.headers=x-shared-key=shared, x-tenant=one")
+        .run(
+            context ->
+                assertThat(context.getBean(OtlpConfig.class).headers())
+                    .containsExactlyInAnyOrderEntriesOf(
+                        Map.of("x-shared-key", "shared", "x-tenant", "one")));
   }
 
   @Test

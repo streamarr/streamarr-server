@@ -10,6 +10,9 @@ import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 
@@ -23,6 +26,7 @@ final class RecordingOtlpCollector implements AutoCloseable {
   private final Exports<ExportMetricsServiceRequest> metricExports;
   private final Exports<ExportTraceServiceRequest> traceExports;
   private final Exports<ExportLogsServiceRequest> logExports;
+  private final Set<String> requestHeaderNames = ConcurrentHashMap.newKeySet();
 
   private RecordingOtlpCollector(HttpServer server, Duration bound) {
     this.server = server;
@@ -65,6 +69,11 @@ final class RecordingOtlpCollector implements AutoCloseable {
     return logExports;
   }
 
+  /** The names, in lower case, of the headers that any export request carried. */
+  Set<String> requestHeaderNames() {
+    return Set.copyOf(requestHeaderNames);
+  }
+
   @Override
   public void close() {
     server.stop(0);
@@ -75,6 +84,9 @@ final class RecordingOtlpCollector implements AutoCloseable {
         path,
         exchange -> {
           try (exchange) {
+            exchange.getRequestHeaders().keySet().stream()
+                .map(name -> name.toLowerCase(Locale.ROOT))
+                .forEach(requestHeaderNames::add);
             exports.add(parser.parse(exchange.getRequestBody().readAllBytes()));
             exchange.sendResponseHeaders(200, -1);
           }
