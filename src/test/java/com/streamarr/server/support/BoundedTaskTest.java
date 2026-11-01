@@ -2,10 +2,12 @@ package com.streamarr.server.support;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -94,12 +96,60 @@ class BoundedTaskTest {
     }
   }
 
+  @Test
+  @DisplayName(
+      "Should answer that the task awaits a signal when it waits for a latch without a deadline")
+  void shouldAnswerThatTheTaskAwaitsASignalWhenItWaitsForALatchWithoutADeadline() {
+    try (var task = BoundedTask.start(this::waitUntilInterrupted)) {
+      await().atMost(LONG_BOUND).until(task::isAwaitingASignalWithoutDeadline);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer that the task awaits no signal when it waits for a latch with a deadline")
+  void shouldAnswerThatTheTaskAwaitsNoSignalWhenItWaitsForALatchWithADeadline() {
+    try (var task = BoundedTask.start(() -> neverReleased.await(1, TimeUnit.MINUTES))) {
+      await().atMost(LONG_BOUND).until(task::isWaiting);
+
+      assertThat(task.isAwaitingASignalWithoutDeadline()).isFalse();
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer that the task awaits no signal while it waits for a lock that another thread holds")
+  void shouldAnswerThatTheTaskAwaitsNoSignalWhileItWaitsForALockThatAnotherThreadHolds() {
+    var lock = new ReentrantLock();
+    lock.lock();
+    try (var task = BoundedTask.start(() -> lockThenWaitUntilInterrupted(lock))) {
+      await().atMost(LONG_BOUND).until(() -> lock.hasQueuedThreads() && task.isWaiting());
+
+      assertThat(task.isAwaitingASignalWithoutDeadline()).isFalse();
+      lock.unlock();
+      await().atMost(LONG_BOUND).until(task::isAwaitingASignalWithoutDeadline);
+    } finally {
+      if (lock.isHeldByCurrentThread()) {
+        lock.unlock();
+      }
+    }
+  }
+
   private Void waitUntilInterrupted() throws InterruptedException {
     try {
       neverReleased.await();
       return null;
     } finally {
       stopped.countDown();
+    }
+  }
+
+  private Void lockThenWaitUntilInterrupted(ReentrantLock lock) throws InterruptedException {
+    lock.lockInterruptibly();
+    try {
+      return waitUntilInterrupted();
+    } finally {
+      lock.unlock();
     }
   }
 
