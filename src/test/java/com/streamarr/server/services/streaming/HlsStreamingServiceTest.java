@@ -2480,37 +2480,56 @@ class HlsStreamingServiceTest {
     assertThat(started.framerate()).isEqualTo(OptionalDouble.of(60_000.0 / 1_001));
   }
 
-  @Test
+  // ADR 0052: an encode that Original reaches plays Auto's ladder, within the viewer's limits. A
+  // maximum of 0 is no maximum.
+  @ParameterizedTest
+  @CsvSource({"0, 0", "2000000, 0", "0, 720"})
   @DisplayName(
-      "Should encode an interlaced source at the source's picture size and bitrate when the quality is Original")
-  void shouldEncodeAnInterlacedSourceAtTheSourcesPictureSizeAndBitrateWhenTheQualityIsOriginal() {
+      "Should encode an interlaced source on Auto's ladder within the viewer's limits when the"
+          + " quality is Original")
+  void shouldEncodeAnInterlacedSourceOnAutosLadderWithinTheViewersLimitsWhenTheQualityIsOriginal(
+      int maxBitrate, int maxHeight) {
     probeResults.setDefaultOutcome(interlacedOutcome(FieldOrder.BB));
+    var autoOptions =
+        StreamingOptions.builder()
+            .quality(VideoQuality.AUTO)
+            .maxBitrate(maxBitrate)
+            .maxHeight(maxHeight)
+            .build();
+    var originalOptions =
+        StreamingOptions.builder()
+            .quality(VideoQuality.ORIGINAL)
+            .maxBitrate(maxBitrate)
+            .maxHeight(maxHeight)
+            .build();
 
-    var session =
+    var auto =
         accepted(
             service.createSession(
-                interlacedSourceCommand(VideoQuality.ORIGINAL, VideoFormatConstraint.COPY_ONLY)));
-    var started = transcodeExecutor.getStartedRequests().getFirst();
+                interlacedSourceCommand(autoOptions, VideoFormatConstraint.COPY_OR_ENCODE)));
+    var original =
+        accepted(
+            service.createSession(
+                interlacedSourceCommand(originalOptions, VideoFormatConstraint.COPY_ONLY)));
 
-    assertThat(session.getVariants())
-        .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::videoBitrate)
-        .containsExactly(tuple(1920, 1080, 5_000_000L));
-    assertThat(started.width()).isEqualTo(1920);
-    assertThat(started.height()).isEqualTo(1080);
-    assertThat(started.bitrate()).isEqualTo(5_000_000L);
+    assertThat(auto.getVariants()).hasSizeGreaterThan(1);
+    assertThat(original.getVariants()).isEqualTo(auto.getVariants());
+    assertThat(original.getTranscodeDecision().audioDecision())
+        .isEqualTo(auto.getTranscodeDecision().audioDecision());
   }
 
-  @Test
+  @ParameterizedTest
+  @CsvSource({"AUTO, COPY_OR_ENCODE", "ORIGINAL, COPY_ONLY"})
   @DisplayName(
-      "Should report missing capacity instead of no eligible format when Original must encode an interlaced source and every encoder is busy")
+      "Should report missing capacity instead of no eligible format when Auto or Original must"
+          + " encode an interlaced source and every encoder is busy")
   void
-      shouldReportMissingCapacityInsteadOfNoEligibleFormatWhenOriginalMustEncodeAnInterlacedSourceAndEveryEncoderIsBusy() {
+      shouldReportMissingCapacityInsteadOfNoEligibleFormatWhenAutoOrOriginalMustEncodeAnInterlacedSourceAndEveryEncoderIsBusy(
+          VideoQuality quality, VideoFormatConstraint constraint) {
     probeResults.setDefaultOutcome(interlacedOutcome(FieldOrder.TT));
     transcodeExecutor.setEncodeSlots(Map.of("h264", 0));
 
-    var outcome =
-        service.createSession(
-            interlacedSourceCommand(VideoQuality.ORIGINAL, VideoFormatConstraint.COPY_ONLY));
+    var outcome = service.createSession(interlacedSourceCommand(quality, constraint));
 
     assertThat(outcome)
         .isEqualTo(

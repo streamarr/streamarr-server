@@ -408,7 +408,7 @@ public class HlsStreamingService implements StreamingService {
     var request =
         QualityLadderRequest.builder()
             .probe(decisionRequest.source())
-            .viewerLimits(decisionRequest.viewerLimits())
+            .viewerLimits(ladderLimits(decisionRequest))
             .capabilityDeclaration(declaration)
             .codecProfile(codecProfile)
             // The stream session refuses an encode without an output frame rate before it sizes a
@@ -419,6 +419,16 @@ public class HlsStreamingService implements StreamingService {
     var ladder = qualityLadderService.generateVariants(request);
     return new QualityLadder(
         MultivariantPlaylistOrder.of(ladder.variants(), ladder.audio().bitrate()), ladder.audio());
+  }
+
+  // Original's constraint encodes only a source that no copy may carry, and that encode plays
+  // Auto's ladder (ADR 0052).
+  private static ViewerLimits ladderLimits(TranscodeDecisionRequest request) {
+    if (request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
+      return request.viewerLimits().inAuto();
+    }
+
+    return request.viewerLimits();
   }
 
   // Creating a stream session starts one job attempt, so a session needs one free slot whatever

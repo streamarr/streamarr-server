@@ -7,8 +7,8 @@ import lombok.NonNull;
 public enum VideoFormatConstraint {
   COPY_OR_ENCODE,
   /**
-   * Original's constraint. It still encodes, at original quality, an interlaced source, which no
-   * copy may carry (streamarr/streamarr-server#653).
+   * Original's constraint. It still encodes an interlaced source, which no copy may carry
+   * (streamarr/streamarr-server#653), on Auto's ladder (ADR 0052).
    */
   COPY_ONLY,
   ENCODE_ONLY;
