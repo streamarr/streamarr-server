@@ -99,6 +99,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -411,6 +412,51 @@ class HlsStreamingServiceTest {
     assertThat(outcome)
         .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
     assertThat(missingEncoderSessions()).isZero();
+  }
+
+  // The read saw the worker's busy H.264 encoder. The worker's connection then flaps while the
+  // server refuses the stream session: each connectivity check after the read answers the
+  // opposite of the one before it, starting disconnected.
+  @Test
+  @DisplayName(
+      "Should refuse for a busy encoder without counting a missing encoder when the worker's"
+          + " connection flaps during the refusal")
+  void
+      shouldRefuseForABusyEncoderWithoutCountingAMissingEncoderWhenTheWorkersConnectionFlapsDuringTheRefusal() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("vp9").build());
+    var executor = new WorkerWithAFlappingConnection();
+    executor.setEncodeSlots(Map.of("h264", 0));
+    var flappingService = serviceWith(executor, runtimeRegistry);
+
+    var outcome =
+        flappingService.createSession(createCommandDeclaring(declarationBuilderFor(H264).build()));
+
+    assertThat(outcome)
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(capacityRefusals("no_encoder_with_free_slot")).isOne();
+    assertThat(missingEncoderSessions()).isZero();
+  }
+
+  private static final class WorkerWithAFlappingConnection extends FakeTranscodeExecutor {
+
+    private final AtomicBoolean read = new AtomicBoolean();
+    private final AtomicBoolean connected = new AtomicBoolean(true);
+
+    @Override
+    public List<WorkerVerifiedCodecFamilies> verifiedVideoCodecFamiliesByWorker() {
+      read.set(true);
+      return super.verifiedVideoCodecFamiliesByWorker();
+    }
+
+    @Override
+    public boolean isHealthy() {
+      if (!read.get()) {
+        return super.isHealthy();
+      }
+
+      return !connected.getAndSet(!connected.get());
+    }
   }
 
   @Test
