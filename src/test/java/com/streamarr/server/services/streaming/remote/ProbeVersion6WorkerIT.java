@@ -40,7 +40,9 @@ import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.domain.task.ProbePublication;
+import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
@@ -48,13 +50,19 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.library.ProbeExecution;
+import com.streamarr.server.services.library.ProbeExecutionResult;
+import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.support.security.WithProfileContext;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -97,6 +105,8 @@ class ProbeVersion6WorkerIT extends AbstractIntegrationTest {
   @Autowired private MovieRepository movieRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private MediaFileContainerInfoRepository containerInfoRepository;
+  @Autowired private ProbeExecution probeExecution;
+  @Autowired private PersistedProbeReader reader;
 
   @ParameterizedTest
   @ValueSource(strings = {"chapters.mkv", "chapters.mp4"})
@@ -113,7 +123,7 @@ class ProbeVersion6WorkerIT extends AbstractIntegrationTest {
       worker.start();
       var source = worker.generateMedia(mediaRoot.resolve(filename), chapteredMedia());
       var outcome = probe(server, mediaRoot, source);
-      var file = createMediaFile(filename);
+      var file = createMediaFile(source);
       publish(file, outcome);
 
       var chapters = queryChapters(file);
@@ -189,7 +199,7 @@ class ProbeVersion6WorkerIT extends AbstractIntegrationTest {
       server.start();
       worker.start();
       var source = worker.generateMedia(mediaRoot.resolve("bt709.mkv"), bt709Media());
-      var file = createMediaFile("bt709.mkv");
+      var file = createMediaFile(source);
       publish(file, probe(server, mediaRoot, source));
 
       var stored =
@@ -227,9 +237,10 @@ class ProbeVersion6WorkerIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should store each stream's bitrate from its statistics tags when the worker probes a file that mkvmerge wrote")
-  void shouldStoreEachStreamsBitrateFromItsStatisticsTagsWhenTheWorkerProbesAFileThatMkvmergeWrote()
-      throws Exception {
+      "Should store each stream's bitrate from its statistics tags when the probe job probes a file that mkvmerge wrote")
+  void
+      shouldStoreEachStreamsBitrateFromItsStatisticsTagsWhenTheProbeJobProbesAFileThatMkvmergeWrote()
+          throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var fixture = getClass().getResource("/matroska-statistics/statistics-tags.mkv");
     assertThat(fixture).isNotNull();
@@ -239,17 +250,22 @@ class ProbeVersion6WorkerIT extends AbstractIntegrationTest {
         var worker = workerBuilder(server, mediaRoot).build()) {
       server.start();
       worker.start();
-      var file = createMediaFile("statistics-tags.mkv");
-      publish(file, probe(server, mediaRoot, source));
+      var file = createMediaFile(source);
 
-      var stored =
-          containerInfoRepository
-              .findByMediaFileId(file.getId())
-              .orElseThrow()
-              .getOutcome(KeyframeKnowledge.NotReported::new, ChapterKnowledge.NotReported::new);
+      var result =
+          probeExecution.toBuilder()
+              .producer(new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, mediaRoot))
+              .packetScans(new CapturingKeyframePacketScanRequests())
+              .build()
+              .execute(probeTaskRequest(file, source), ProbePriority.BACKGROUND);
 
+      assertThat(result).isEqualTo(new ProbeExecutionResult.Completed());
+      var stored = reader.find(file.getId()).orElseThrow();
+      assertThat(stored.probeVersion())
+          .as("the probe version that reads statistics tags")
+          .isEqualTo(6);
       // The BPS tags that mkvmerge wrote. ffprobe reports no bitrate for either stream.
-      assertThat(stored)
+      assertThat(stored.outcome())
           .isInstanceOfSatisfying(
               ProbeOutcome.Success.class,
               success ->
@@ -443,7 +459,7 @@ class ProbeVersion6WorkerIT extends AbstractIntegrationTest {
     return arguments;
   }
 
-  private MediaFile createMediaFile(String filename) {
+  private MediaFile createMediaFile(Path source) {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     var movie =
         movieRepository.saveAndFlush(Movie.builder().title("Chapters").library(library).build());
@@ -452,9 +468,21 @@ class ProbeVersion6WorkerIT extends AbstractIntegrationTest {
             .mediaId(movie.getId())
             .libraryId(library.getId())
             .status(MediaFileStatus.MATCHED)
-            .filename(filename)
-            .filepathUri("file:///media/" + UUID.randomUUID() + "/" + filename)
+            .filename(source.getFileName().toString())
+            .filepathUri(FilepathCodec.encode(source))
             .build());
+  }
+
+  private static ProbeTaskRequest probeTaskRequest(MediaFile file, Path source) throws IOException {
+    var attributes = Files.readAttributes(source, BasicFileAttributes.class);
+    return ProbeTaskRequest.builder()
+        .mediaFileId(file.getId())
+        .libraryId(file.getLibraryId())
+        .filepathUri(file.getFilepathUri())
+        .snapshot(
+            new SourceFileSnapshot(attributes.size(), attributes.lastModifiedTime().toInstant()))
+        .probeVersion(ProbeVersion.CURRENT)
+        .build();
   }
 
   private void publish(MediaFile file, ProbeOutcome.Success outcome) {
