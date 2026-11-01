@@ -18,14 +18,17 @@ import com.streamarr.server.support.AuthTestSupport;
 import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest;
 import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest;
 import io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest;
+import io.opentelemetry.proto.common.v1.AnyValue;
 import io.opentelemetry.proto.common.v1.KeyValue;
 import io.opentelemetry.proto.logs.v1.ResourceLogs;
 import io.opentelemetry.proto.resource.v1.Resource;
 import io.opentelemetry.proto.trace.v1.Span;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
@@ -38,6 +41,7 @@ import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import tools.jackson.databind.json.JsonMapper;
 
 @Slf4j
 @DisplayName("Metric Export Integration Tests")
@@ -181,24 +185,40 @@ class MetricExportIT extends AbstractObservabilityProfileIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should export spans without the process command line when a request is served")
-  void shouldExportSpansWithoutTheProcessCommandLineWhenARequestIsServed() throws Exception {
-    var position = COLLECTOR.traceExports().position();
-    mockMvc.perform(get("/actuator/health"));
+  @DisplayName("Should export metrics under the resource of the spans when a request is served")
+  void shouldExportMetricsUnderTheResourceOfTheSpansWhenARequestIsServed() throws Exception {
+    var spanResource = spanResourceOfARequest();
+    var metricResource =
+        exportOfTheServersMetersCollectedAfter(COLLECTOR.metricExports().position())
+            .getResourceMetrics(0)
+            .getResource();
 
-    var spanResource =
-        COLLECTOR
-            .traceExports()
-            .awaitAfter(position, received -> !received.isEmpty())
-            .getFirst()
-            .getResourceSpans(0)
+    // telemetry.* names the SDK that sent the export, which differs by design. Micrometer sends
+    // every attribute as a string, so the span attributes are compared in their string form.
+    assertThat(attributesAsText(metricResource))
+        .containsKeys("service.instance.id", "host.name", "process.pid")
+        .isEqualTo(attributesAsText(spanResource));
+  }
+
+  @Test
+  @DisplayName(
+      "Should export spans and metrics without the process command line when a request is served")
+  void shouldExportSpansAndMetricsWithoutTheProcessCommandLineWhenARequestIsServed()
+      throws Exception {
+    var spanResource = spanResourceOfARequest();
+    var metricResource =
+        exportOfTheServersMetersCollectedAfter(COLLECTOR.metricExports().position())
+            .getResourceMetrics(0)
             .getResource();
 
     // A command line can carry credentials, such as a -D system property naming a token.
-    assertThat(spanResource.getAttributesList())
-        .extracting(KeyValue::getKey)
-        .contains("process.executable.path")
-        .doesNotContain("process.command_args", "process.command_line");
+    assertThat(List.of(spanResource, metricResource))
+        .allSatisfy(
+            resource ->
+                assertThat(resource.getAttributesList())
+                    .extracting(KeyValue::getKey)
+                    .contains("process.executable.path")
+                    .doesNotContain("process.command_args", "process.command_line"));
   }
 
   @Test
@@ -216,6 +236,47 @@ class MetricExportIT extends AbstractObservabilityProfileIntegrationTest {
     assertThat(resourcesLogging(exports, message))
         .extracting(resource -> attribute(resource, "service.name"))
         .containsOnly(Optional.of(SERVICE_NAME));
+  }
+
+  private Resource spanResourceOfARequest() throws Exception {
+    var position = COLLECTOR.traceExports().position();
+    mockMvc.perform(get("/actuator/health"));
+
+    return COLLECTOR
+        .traceExports()
+        .awaitAfter(position, received -> !received.isEmpty())
+        .getFirst()
+        .getResourceSpans(0)
+        .getResource();
+  }
+
+  private static Map<String, String> attributesAsText(Resource resource) {
+    return resource.getAttributesList().stream()
+        .filter(attribute -> !attribute.getKey().startsWith("telemetry."))
+        .collect(Collectors.toMap(KeyValue::getKey, attribute -> text(attribute.getValue())));
+  }
+
+  // OpenTelemetry's rule for a non-OTLP string form: an array becomes a JSON array.
+  private static String text(AnyValue value) {
+    return switch (value.getValueCase()) {
+      case ARRAY_VALUE ->
+          JsonMapper.shared()
+              .writeValueAsString(
+                  value.getArrayValue().getValuesList().stream()
+                      .map(MetricExportIT::scalar)
+                      .toList());
+      default -> String.valueOf(scalar(value));
+    };
+  }
+
+  private static Object scalar(AnyValue value) {
+    return switch (value.getValueCase()) {
+      case STRING_VALUE -> value.getStringValue();
+      case INT_VALUE -> value.getIntValue();
+      case DOUBLE_VALUE -> value.getDoubleValue();
+      case BOOL_VALUE -> value.getBoolValue();
+      default -> throw new AssertionError("Unexpected resource attribute value: " + value);
+    };
   }
 
   private static String traceparent(String traceId, String callerSpanId) {

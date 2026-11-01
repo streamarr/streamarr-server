@@ -157,6 +157,9 @@ The HTTP server's latency histogram is `http.server.requests`, with buckets.
 * A counter, timer or distribution summary recorded while a sampled span is current carries that span's trace and span IDs as an exemplar, so a backend can open the trace behind a metric.
 An observation's timer carries the span that was current when the observation started, so `http.server.requests` points to the request's server span even when the request completes asynchronously.
 Meters recorded on threads that carry no span, such as worker connections and scheduled jobs, have no exemplars.
+* Metrics carry the resource of the spans and logs: the same `service.name`, `service.instance.id`, `deployment.environment`, host, OS and process attributes, so a backend can join the three signals by service instance.
+Micrometer sends each attribute as a string, and an array as a JSON array.
+`telemetry.*` still names the SDK that sent each export.
 * Each export carries the meters that are registered at that moment.
 When the server removes a meter, its series ends.
 For example, the meters tagged with a worker's UUID end when that worker disconnects.

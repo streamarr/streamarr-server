@@ -25,8 +25,10 @@ otel:
     runtime-telemetry:
       enabled: false
 
-# Metrics follow the OpenTelemetry starter's service name and resource, so OTEL_SERVICE_NAME renames
-# spans, logs and metrics together. OtlpMetricsEndpointConfiguration sends them to its endpoint.
+# Metrics carry the OpenTelemetry starter's resource (OtlpMetricsResourceConfiguration), so spans,
+# logs and metrics share one resource and OTEL_SERVICE_NAME renames all three. The resource
+# attributes below name the service only when OTEL_SDK_DISABLED turns the SDK off.
+# OtlpMetricsEndpointConfiguration sends metrics to the starter's endpoint.
 management:
   endpoints:
     web:
