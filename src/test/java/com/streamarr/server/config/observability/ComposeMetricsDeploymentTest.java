@@ -25,6 +25,15 @@ class ComposeMetricsDeploymentTest {
   }
 
   @Test
+  @DisplayName("Should publish the Prometheus UI on host port 9090 when the port variable is unset")
+  void shouldPublishThePrometheusUiOnHostPort9090WhenThePortVariableIsUnset() {
+    var port = ComposeFile.service("prometheus").path("ports").get(0).asString();
+    var hostPort = ComposeFile.withDefaults(port).split(":")[1];
+
+    assertThat(hostPort).isEqualTo("9090");
+  }
+
+  @Test
   @DisplayName("Should keep the stored metrics in a named volume when Compose recreates Prometheus")
   void shouldKeepTheStoredMetricsInANamedVolumeWhenComposeRecreatesPrometheus() {
     var prometheus = ComposeFile.service("prometheus");
