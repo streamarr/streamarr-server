@@ -198,7 +198,7 @@ class SegmentDeliveryCoordinatorTest {
     await()
         .pollInterval(Duration.ofMillis(1))
         .atMost(Duration.ofSeconds(5))
-        .until(delivery::isAwaitingASignalWithoutDeadline);
+        .until(delivery::isAwaitingALatchWithoutDeadline);
   }
 
   private HeldSegmentRequests heldRequests() {

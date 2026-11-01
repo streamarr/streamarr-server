@@ -174,7 +174,7 @@ class WorkerPlaybackRecoveryIT {
       try (var pastTheEnd =
           BoundedTask.start(() -> playback.deliverDefault(copy, "segment1.m4s"))) {
         // Only a request past the normal end waits for a wake without a deadline.
-        await().atMost(5, TimeUnit.SECONDS).until(pastTheEnd::isAwaitingASignalWithoutDeadline);
+        await().atMost(5, TimeUnit.SECONDS).until(pastTheEnd::isAwaitingALatchWithoutDeadline);
         assertThat(copy.getNormalEnd()).contains(Duration.ofSeconds(6));
         assertThat(copy.getHandle().orElseThrow().attemptId()).isEqualTo(copyAttempt);
         var snapshot = playback.sessions.access(playback.requestFor(started)).orElseThrow();
