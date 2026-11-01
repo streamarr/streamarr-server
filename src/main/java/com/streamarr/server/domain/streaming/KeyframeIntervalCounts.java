@@ -4,40 +4,40 @@ import java.util.Arrays;
 import lombok.NonNull;
 
 /**
- * One stream's bytes in each keyframe interval of the chosen video stream, in interval order. Each
- * count is an unsigned 32-bit value.
+ * One count of a stream for each keyframe interval of the chosen video stream, such as its bytes or
+ * its packets, in interval order. Each count is an unsigned 32-bit value.
  */
-public final class KeyframeIntervalBytes {
+public final class KeyframeIntervalCounts {
 
   private final int[] unsignedCounts;
 
-  private KeyframeIntervalBytes(int[] unsignedCounts) {
+  private KeyframeIntervalCounts(int[] unsignedCounts) {
     this.unsignedCounts = unsignedCounts;
   }
 
   /** The counts as unsigned 32-bit values, in interval order. The array is copied. */
-  public static KeyframeIntervalBytes ofUnsigned(int @NonNull [] unsignedCounts) {
-    return new KeyframeIntervalBytes(unsignedCounts.clone());
+  public static KeyframeIntervalCounts ofUnsigned(int @NonNull [] unsignedCounts) {
+    return new KeyframeIntervalCounts(unsignedCounts.clone());
   }
 
-  public static KeyframeIntervalBytes of(long @NonNull ... counts) {
+  public static KeyframeIntervalCounts of(long @NonNull ... counts) {
     var unsigned = new int[counts.length];
     for (var i = 0; i < counts.length; i++) {
       if (counts[i] < 0 || counts[i] > 0xFFFF_FFFFL) {
-        throw new IllegalArgumentException("A keyframe interval's bytes must fit 32 unsigned bits");
+        throw new IllegalArgumentException("A keyframe interval's count must fit 32 unsigned bits");
       }
 
       unsigned[i] = (int) counts[i];
     }
 
-    return new KeyframeIntervalBytes(unsigned);
+    return new KeyframeIntervalCounts(unsigned);
   }
 
   public int intervalCount() {
     return unsignedCounts.length;
   }
 
-  public long bytesOf(int interval) {
+  public long countOf(int interval) {
     return Integer.toUnsignedLong(unsignedCounts[interval]);
   }
 
@@ -48,7 +48,7 @@ public final class KeyframeIntervalBytes {
 
   @Override
   public boolean equals(Object other) {
-    return other instanceof KeyframeIntervalBytes that
+    return other instanceof KeyframeIntervalCounts that
         && Arrays.equals(unsignedCounts, that.unsignedCounts);
   }
 
@@ -59,6 +59,6 @@ public final class KeyframeIntervalBytes {
 
   @Override
   public String toString() {
-    return "KeyframeIntervalBytes[intervals=" + unsignedCounts.length + "]";
+    return "KeyframeIntervalCounts[intervals=" + unsignedCounts.length + "]";
   }
 }

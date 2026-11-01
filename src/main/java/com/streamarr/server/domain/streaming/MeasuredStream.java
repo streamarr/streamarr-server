@@ -17,7 +17,7 @@ public record MeasuredStream(
     int timeBaseNumerator,
     int timeBaseDenominator,
     long measuredDuration,
-    @NonNull KeyframeIntervalBytes keyframeIntervalBytes) {
+    @NonNull KeyframeIntervalCounts keyframeIntervalBytes) {
 
   public MeasuredStream {
     if (streamIndex < 0

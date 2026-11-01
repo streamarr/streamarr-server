@@ -1,6 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
-import com.streamarr.server.domain.streaming.KeyframeIntervalBytes;
+import com.streamarr.server.domain.streaming.KeyframeIntervalCounts;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MeasuredStream;
 import com.streamarr.server.domain.streaming.StreamMeasurementSource;
@@ -108,7 +108,7 @@ final class RemoteStreamMeasurementsMapper {
         .timeBaseNumerator(stream.getTimeBaseNumerator())
         .timeBaseDenominator(stream.getTimeBaseDenominator())
         .measuredDuration(stream.getMeasuredDuration())
-        .keyframeIntervalBytes(KeyframeIntervalBytes.ofUnsigned(intervals))
+        .keyframeIntervalBytes(KeyframeIntervalCounts.ofUnsigned(intervals))
         .build();
   }
 

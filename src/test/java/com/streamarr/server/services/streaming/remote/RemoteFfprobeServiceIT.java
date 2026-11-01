@@ -15,7 +15,7 @@ import com.streamarr.server.domain.streaming.ChosenVideoStream;
 import com.streamarr.server.domain.streaming.ChromaticityCoordinates;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.ContentLightLevel;
-import com.streamarr.server.domain.streaming.KeyframeIntervalBytes;
+import com.streamarr.server.domain.streaming.KeyframeIntervalCounts;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MasteringDisplayColorVolume;
 import com.streamarr.server.domain.streaming.ProbeError;
@@ -442,13 +442,13 @@ class RemoteFfprobeServiceIT {
           assertThat(video.timeBaseDenominator()).isEqualTo(12_288);
           assertThat(video.measuredDuration()).isEqualTo(24_576);
           assertThat(video.keyframeIntervalBytes())
-              .isEqualTo(KeyframeIntervalBytes.of(700, 0xFFFF_FFFFL));
+              .isEqualTo(KeyframeIntervalCounts.of(700, 0xFFFF_FFFFL));
           var audio = measurements.stream(1).orElseThrow();
           assertThat(audio.measuredBytes()).isEqualTo(100);
           assertThat(audio.packetCount()).isEqualTo(94);
           assertThat(audio.timeBaseDenominator()).isEqualTo(48_000);
           assertThat(audio.measuredDuration()).isEqualTo(96_000);
-          assertThat(audio.keyframeIntervalBytes()).isEqualTo(KeyframeIntervalBytes.of(40, 60));
+          assertThat(audio.keyframeIntervalBytes()).isEqualTo(KeyframeIntervalCounts.of(40, 60));
         }
       }
     }

@@ -399,7 +399,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
   }
 
   private static MeasuredStream toMeasuredStream(MediaFileMeasuredStreamRecord row) {
-    var intervals = KeyframeIntervalBytesCodec.decode(row.getEncodedKeyframeIntervalBytes());
+    var intervals = KeyframeIntervalCountsCodec.decode(row.getEncodedKeyframeIntervalBytes());
     if (intervals.intervalCount() != row.getKeyframeIntervalCount()) {
       throw new MalformedStreamMeasurementException(
           "Stored keyframe interval bytes differ from their interval count");
@@ -607,7 +607,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
     row.setMeasuredDuration(stream.measuredDuration());
     row.setKeyframeIntervalCount(stream.keyframeIntervalBytes().intervalCount());
     row.setEncodedKeyframeIntervalBytes(
-        KeyframeIntervalBytesCodec.encode(stream.keyframeIntervalBytes()));
+        KeyframeIntervalCountsCodec.encode(stream.keyframeIntervalBytes()));
     return row;
   }
 

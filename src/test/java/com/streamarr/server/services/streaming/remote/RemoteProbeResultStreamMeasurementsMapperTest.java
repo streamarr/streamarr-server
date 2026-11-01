@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 
-import com.streamarr.server.domain.streaming.KeyframeIntervalBytes;
+import com.streamarr.server.domain.streaming.KeyframeIntervalCounts;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.transcode.v1.KeyframePacketScanReason;
@@ -71,9 +71,9 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
     var measured = outcome.streamMeasurements().orElseThrow();
     assertThat(measured.stream(COVER_ART)).isEmpty();
     assertThat(measured.stream(VIDEO).orElseThrow().keyframeIntervalBytes())
-        .isEqualTo(KeyframeIntervalBytes.of(10, 20));
+        .isEqualTo(KeyframeIntervalCounts.of(10, 20));
     assertThat(measured.stream(AUDIO).orElseThrow().keyframeIntervalBytes())
-        .isEqualTo(KeyframeIntervalBytes.of(1, 2));
+        .isEqualTo(KeyframeIntervalCounts.of(1, 2));
   }
 
   @ParameterizedTest

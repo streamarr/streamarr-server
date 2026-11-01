@@ -66,6 +66,6 @@ class MeasuredStreamTest {
         .timeBaseNumerator(1)
         .timeBaseDenominator(1_000)
         .measuredDuration(40)
-        .keyframeIntervalBytes(KeyframeIntervalBytes.of(3));
+        .keyframeIntervalBytes(KeyframeIntervalCounts.of(3));
   }
 }

@@ -1,6 +1,6 @@
 package com.streamarr.server.fixtures;
 
-import com.streamarr.server.domain.streaming.KeyframeIntervalBytes;
+import com.streamarr.server.domain.streaming.KeyframeIntervalCounts;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
@@ -77,7 +77,7 @@ public class StreamMeasurementFixture {
         .timeBaseNumerator(1)
         .timeBaseDenominator(12_288)
         .measuredDuration(24_576)
-        .keyframeIntervalBytes(KeyframeIntervalBytes.of(700, 0xFFFF_FFFFL))
+        .keyframeIntervalBytes(KeyframeIntervalCounts.of(700, 0xFFFF_FFFFL))
         .build();
   }
 
@@ -89,7 +89,7 @@ public class StreamMeasurementFixture {
         .timeBaseNumerator(1)
         .timeBaseDenominator(48_000)
         .measuredDuration(96_000)
-        .keyframeIntervalBytes(KeyframeIntervalBytes.of(40, 60))
+        .keyframeIntervalBytes(KeyframeIntervalCounts.of(40, 60))
         .build();
   }
 }

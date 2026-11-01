@@ -3,7 +3,7 @@ package com.streamarr.server.repositories.media;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streamarr.server.domain.streaming.KeyframeIntervalBytes;
+import com.streamarr.server.domain.streaming.KeyframeIntervalCounts;
 import com.streamarr.server.exceptions.MalformedStreamMeasurementException;
 import java.util.stream.LongStream;
 import org.junit.jupiter.api.DisplayName;
@@ -13,15 +13,15 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
-@DisplayName("Keyframe Interval Bytes Codec Tests")
-class KeyframeIntervalBytesCodecTest {
+@DisplayName("Keyframe Interval Counts Codec Tests")
+class KeyframeIntervalCountsCodecTest {
 
   @Test
   @DisplayName("Should round-trip every count when the counts span the unsigned 32-bit range")
   void shouldRoundTripEveryCountWhenCountsSpanUnsigned32BitRange() {
-    var intervals = KeyframeIntervalBytes.of(0, 1, 0x7FFF_FFFFL, 0x8000_0000L, 0xFFFF_FFFFL);
+    var intervals = KeyframeIntervalCounts.of(0, 1, 0x7FFF_FFFFL, 0x8000_0000L, 0xFFFF_FFFFL);
 
-    var decoded = KeyframeIntervalBytesCodec.decode(KeyframeIntervalBytesCodec.encode(intervals));
+    var decoded = KeyframeIntervalCountsCodec.decode(KeyframeIntervalCountsCodec.encode(intervals));
 
     assertThat(decoded).isEqualTo(intervals);
   }
@@ -31,12 +31,12 @@ class KeyframeIntervalBytesCodecTest {
       "Should take four bytes for each interval when a three-hour source has a keyframe every"
           + " half second")
   void shouldTakeFourBytesForEachIntervalWhenThreeHourSourceHasKeyframeEveryHalfSecond() {
-    var intervals = KeyframeIntervalBytes.of(LongStream.range(0, 21_600).toArray());
+    var intervals = KeyframeIntervalCounts.of(LongStream.range(0, 21_600).toArray());
 
-    var encoded = KeyframeIntervalBytesCodec.encode(intervals);
+    var encoded = KeyframeIntervalCountsCodec.encode(intervals);
 
     assertThat(encoded).hasSize(1 + 4 * 21_600);
-    assertThat(KeyframeIntervalBytesCodec.decode(encoded)).isEqualTo(intervals);
+    assertThat(KeyframeIntervalCountsCodec.decode(encoded)).isEqualTo(intervals);
   }
 
   @Test
@@ -44,9 +44,9 @@ class KeyframeIntervalBytesCodecTest {
   void shouldRejectStoredBytesWhenTheyNameUnknownFormat() {
     var encoded = new byte[] {2, 0, 0, 0, 1};
 
-    assertThatThrownBy(() -> KeyframeIntervalBytesCodec.decode(encoded))
+    assertThatThrownBy(() -> KeyframeIntervalCountsCodec.decode(encoded))
         .isInstanceOf(MalformedStreamMeasurementException.class)
-        .hasMessage("Unknown keyframe interval bytes format");
+        .hasMessage("Unknown keyframe interval counts format");
   }
 
   @Test
@@ -54,9 +54,9 @@ class KeyframeIntervalBytesCodecTest {
   void shouldRejectStoredBytesWhenTheyAreEmpty() {
     var encoded = new byte[0];
 
-    assertThatThrownBy(() -> KeyframeIntervalBytesCodec.decode(encoded))
+    assertThatThrownBy(() -> KeyframeIntervalCountsCodec.decode(encoded))
         .isInstanceOf(MalformedStreamMeasurementException.class)
-        .hasMessage("Unknown keyframe interval bytes format");
+        .hasMessage("Unknown keyframe interval counts format");
   }
 
   @ParameterizedTest
@@ -66,8 +66,8 @@ class KeyframeIntervalBytesCodecTest {
     var encoded = new byte[length];
     encoded[0] = 1;
 
-    assertThatThrownBy(() -> KeyframeIntervalBytesCodec.decode(encoded))
+    assertThatThrownBy(() -> KeyframeIntervalCountsCodec.decode(encoded))
         .isInstanceOf(MalformedStreamMeasurementException.class)
-        .hasMessage("Keyframe interval bytes end inside a count");
+        .hasMessage("Keyframe interval counts end inside a count");
   }
 }
