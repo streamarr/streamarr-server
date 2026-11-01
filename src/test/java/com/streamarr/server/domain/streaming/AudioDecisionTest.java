@@ -5,11 +5,14 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Optional;
+import java.util.stream.Stream;
+import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Audio Decision Tests")
@@ -22,21 +25,29 @@ class AudioDecisionTest {
     assertThat(AudioDecision.normalizeChannels(sourceChannels)).isEqualTo(expected);
   }
 
-  @ParameterizedTest(name = "{0} at channels={1} → bitrate={2}")
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("announcedBitrates")
   @DisplayName("Should calculate bitrate when codec and channel count given")
-  @CsvSource({
-    "aac, 1, 64000",
-    "aac, 2, 128000",
-    "aac, 6, 384000",
-    "aac, 8, 512000",
-    "ac3, 6, 640000",
-    "eac3, 6, 768000",
-    "eac3, 8, 768000"
-  })
-  void shouldCalculateBitrateWhenCodecAndChannelCountGiven(
-      String codec, int channels, long expectedBitrate) {
-    assertThat(AudioDecision.bitrateFor(codec, channels)).isEqualTo(expectedBitrate);
+  void shouldCalculateBitrateWhenCodecAndChannelCountGiven(BitrateCase bitrate) {
+    assertThat(AudioDecision.bitrateFor(bitrate.codec(), bitrate.channels()))
+        .isEqualTo(bitrate.expected());
   }
+
+  // AC-3 takes the 640 kb/s that FFmpeg's encoder stops at, and E-AC-3 the 768 kb/s that streamed
+  // 5.1 E-AC-3 commonly uses; a 7.1 track never announces less than its codec's 5.1 bitrate.
+  static Stream<BitrateCase> announcedBitrates() {
+    return Stream.of(
+        BitrateCase.builder().codec("aac").channels(1).expected(64_000L).build(),
+        BitrateCase.builder().codec("aac").channels(2).expected(128_000L).build(),
+        BitrateCase.builder().codec("aac").channels(6).expected(384_000L).build(),
+        BitrateCase.builder().codec("aac").channels(8).expected(512_000L).build(),
+        BitrateCase.builder().codec("ac3").channels(6).expected(640_000L).build(),
+        BitrateCase.builder().codec("eac3").channels(6).expected(768_000L).build(),
+        BitrateCase.builder().codec("eac3").channels(8).expected(768_000L).build());
+  }
+
+  @Builder
+  record BitrateCase(String codec, int channels, long expected) {}
 
   @Test
   @DisplayName("Should reject a bitrate lookup when the codec is missing")
