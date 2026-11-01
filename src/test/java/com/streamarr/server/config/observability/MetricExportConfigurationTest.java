@@ -93,6 +93,20 @@ class MetricExportConfigurationTest {
   }
 
   @Test
+  @DisplayName("Should send metrics to the metrics endpoint as written when one is set")
+  void shouldSendMetricsToTheMetricsEndpointAsWrittenWhenOneIsSet() {
+    CONTEXT_RUNNER
+        .withPropertyValues(
+            "spring.profiles.active=observability",
+            "otel.exporter.otlp.endpoint=http://traces.example:4318",
+            "otel.exporter.otlp.metrics.endpoint=https://metrics.example:4318/custom/metrics")
+        .run(
+            context ->
+                assertThat(context.getBean(OtlpConfig.class).url())
+                    .isEqualTo("https://metrics.example:4318/custom/metrics"));
+  }
+
+  @Test
   @DisplayName("Should keep the configured SSL bundle when metrics go to the starter's endpoint")
   void shouldKeepTheConfiguredSslBundleWhenMetricsGoToTheStartersEndpoint() {
     var collectorBundle = SslBundle.of(SslStoreBundle.NONE);

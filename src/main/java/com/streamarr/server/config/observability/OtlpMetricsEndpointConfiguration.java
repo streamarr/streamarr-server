@@ -11,8 +11,9 @@ import org.springframework.util.StringUtils;
 
 /**
  * Sends metrics to the OpenTelemetry starter's OTLP endpoint, so {@code
- * OTEL_EXPORTER_OTLP_ENDPOINT} moves metrics together with spans and logs. It takes the place of
- * {@code management.otlp.metrics.export.url}; the SSL bundle still comes from {@code
+ * OTEL_EXPORTER_OTLP_ENDPOINT} moves metrics together with spans and logs. {@code
+ * OTEL_EXPORTER_OTLP_METRICS_ENDPOINT}, when set, names the metrics URL as written. It takes the
+ * place of {@code management.otlp.metrics.export.url}; the SSL bundle still comes from {@code
  * management.otlp.metrics.export.ssl.bundle}.
  */
 @Configuration(proxyBeanMethods = false)
@@ -23,16 +24,27 @@ class OtlpMetricsEndpointConfiguration {
   @Bean
   OtlpMetricsConnectionDetails otlpMetricsConnectionDetails(
       @Value("${otel.exporter.otlp.endpoint:http://localhost:4318}") String endpoint,
+      @Value("${otel.exporter.otlp.metrics.endpoint:}") String metricsEndpoint,
       @Value("${management.otlp.metrics.export.ssl.bundle:}") String sslBundleName,
       ObjectProvider<SslBundles> sslBundles) {
-    // An endpoint may end in a slash; the starter's span and log paths tolerate one.
-    var url = StringUtils.trimTrailingCharacter(endpoint, '/') + METRICS_PATH;
+    var url = metricsUrl(endpoint, metricsEndpoint);
     if (!StringUtils.hasText(sslBundleName)) {
       return () -> url;
     }
 
     var sslBundle = sslBundles.getObject().getBundle(sslBundleName);
     return new StarterEndpointConnectionDetails(url, sslBundle);
+  }
+
+  // Micrometer attaches OTEL_EXPORTER_OTLP_METRICS_HEADERS to every export, so metrics must go to
+  // the endpoint those credentials belong to. OpenTelemetry uses a signal's endpoint as written.
+  private static String metricsUrl(String endpoint, String metricsEndpoint) {
+    if (StringUtils.hasText(metricsEndpoint)) {
+      return metricsEndpoint;
+    }
+
+    // An endpoint may end in a slash; the starter's span and log paths tolerate one.
+    return StringUtils.trimTrailingCharacter(endpoint, '/') + METRICS_PATH;
   }
 
   private record StarterEndpointConnectionDetails(String url, SslBundle sslBundle)
