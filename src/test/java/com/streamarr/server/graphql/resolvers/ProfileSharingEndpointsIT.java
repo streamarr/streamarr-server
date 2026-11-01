@@ -81,13 +81,13 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
 
   @BeforeEach
   void setUp() {
+    dsl.deleteFrom(SECURITY_AUDIT_EVENT).execute();
     owner = authTestSupport.createIdentity();
     host = authTestSupport.createIdentity();
   }
 
   @AfterEach
   void tearDown() {
-    dsl.deleteFrom(SECURITY_AUDIT_EVENT).execute();
     authTestSupport.deleteIdentity(host);
     authTestSupport.deleteIdentity(owner);
   }

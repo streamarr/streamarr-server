@@ -30,6 +30,7 @@ abstract class IdentityLifecycleEndpointTestSupport extends AbstractIntegrationT
 
   @BeforeEach
   void setUpIdentityLifecycleFixtures() {
+    dsl.deleteFrom(SECURITY_AUDIT_EVENT).execute();
     admin = authTestSupport.createAdminIdentity();
     host = authTestSupport.createIdentity();
   }
@@ -37,7 +38,6 @@ abstract class IdentityLifecycleEndpointTestSupport extends AbstractIntegrationT
   @AfterEach
   void tearDownIdentityLifecycleFixtures() {
     dsl.deleteFrom(SERVER_BOOTSTRAP).execute();
-    dsl.deleteFrom(SECURITY_AUDIT_EVENT).execute();
     authTestSupport.deleteIdentity(host);
     authTestSupport.deleteIdentity(admin);
   }
