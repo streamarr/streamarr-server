@@ -41,6 +41,16 @@ public final class KeyframeIntervalCounts {
     return Integer.toUnsignedLong(unsignedCounts[interval]);
   }
 
+  /** The sum of the counts of every interval. */
+  public long total() {
+    var total = 0L;
+    for (var count : unsignedCounts) {
+      total += Integer.toUnsignedLong(count);
+    }
+
+    return total;
+  }
+
   /** The counts as unsigned 32-bit values, in interval order. The array is a copy. */
   public int[] toUnsignedArray() {
     return unsignedCounts.clone();
