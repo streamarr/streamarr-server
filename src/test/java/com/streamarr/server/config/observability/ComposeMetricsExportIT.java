@@ -7,6 +7,8 @@ import static org.awaitility.Awaitility.await;
 import com.streamarr.server.AbstractIntegrationTest;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.logs.LoggerProvider;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
@@ -64,6 +66,7 @@ class ComposeMetricsExportIT extends AbstractIntegrationTest {
   private static final HttpClient HTTP = HttpClient.newHttpClient();
 
   @Autowired private MeterRegistry meterRegistry;
+  @Autowired private OpenTelemetry openTelemetry;
 
   @AfterAll
   static void stopPrometheus() {
@@ -109,6 +112,20 @@ class ComposeMetricsExportIT extends AbstractIntegrationTest {
     var retention = query("/api/v1/status/runtimeinfo").path("data").path("storageRetention");
 
     assertThat(retention.asString()).isEqualTo("15d");
+  }
+
+  @Test
+  @DisplayName(
+      "Should produce no spans or log records when the server runs with the Compose settings")
+  void shouldProduceNoSpansOrLogRecordsWhenTheServerRunsWithTheComposeSettings() {
+    var span = openTelemetry.getTracer(SERVICE).spanBuilder("compose").startSpan();
+    var spanRecording = span.isRecording();
+    span.end();
+
+    assertThat(spanRecording).as("span recording").isFalse();
+    assertThat(openTelemetry.getLogsBridge())
+        .as("log record provider")
+        .isSameAs(LoggerProvider.noop());
   }
 
   @Test
