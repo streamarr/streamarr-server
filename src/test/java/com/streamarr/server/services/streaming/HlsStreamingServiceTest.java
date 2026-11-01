@@ -339,6 +339,24 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
 
+  // An encode codec counts by its codec profile alone when the worker encodes no picture of the
+  // source, so a client that lists no encode codec profile has no encode at all.
+  @Test
+  @DisplayName(
+      "Should reject the session as having no eligible format when no entry lists an encode codec"
+          + " profile and the worker encodes no picture of the source")
+  void
+      shouldRejectTheSessionAsHavingNoEligibleFormatWhenNoEntryListsAnEncodeCodecProfileAndTheWorkerEncodesNoPictureOfTheSource() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().width(1).height(3).build());
+
+    var outcome =
+        service.createSession(createCommandDeclaring(declarationBuilderFor(HEVC).build()));
+
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
   static Stream<Arguments> picturesWithoutArea() {
     var pictures =
         List.of(
@@ -1470,7 +1488,8 @@ class HlsStreamingServiceTest {
   }
 
   // The 1920×1080 H.264 source fits the default declaration, so only a viewer's limit refuses the
-  // copy. Each limit also leaves out the 1080p tier.
+  // copy. Each limit also leaves out the 1080p tier. A source whose bitrate is unknown passes the
+  // maximum bitrate, but its picture must still fit the maximum width (ADR 0050).
   static Stream<SourceAndLimits> copyableSourcesOverOneViewerLimit() {
     return Stream.of(
         SourceAndLimits.builder()
@@ -1484,6 +1503,10 @@ class HlsStreamingServiceTest {
         SourceAndLimits.builder()
             .options(autoOptions().maxBitrate(4_000_000).build())
             .sourceBitrate(40_000_000L)
+            .build(),
+        SourceAndLimits.builder()
+            .options(autoOptions().maxWidth(1919).maxBitrate(4_000_000).build())
+            .sourceBitrate(0L)
             .build());
   }
 
@@ -1644,6 +1667,42 @@ class HlsStreamingServiceTest {
               assertThat(request.width()).isEqualTo(1280);
               assertThat(request.height()).isEqualTo(720);
               assertThat(request.bitrate()).isEqualTo(1_872_000L);
+            });
+  }
+
+  // ADR 0050: Original has no fixed quality, so no picture box bounds its encode.
+  @Test
+  @DisplayName(
+      "Should encode Original at the source's size when no capability entry accepts a copy and the"
+          + " viewer sets no limits")
+  void
+      shouldEncodeOriginalAtTheSourcesSizeWhenNoCapabilityEntryAcceptsACopyAndTheViewerSetsNoLimits() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .videoCodec("hevc")
+            .width(3840)
+            .height(2160)
+            .bitrate(8_000_000L)
+            .build());
+    var options = StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build();
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    // The source's 8 Mb/s caps the encode below the 2160p tier's 20 Mb/s.
+    assertThat(session.getVariants())
+        .extracting(
+            QualityVariant::width,
+            QualityVariant::height,
+            QualityVariant::videoBitrate,
+            QualityVariant::label)
+        .containsExactly(tuple(3840, 2160, 8_000_000L, StreamSession.defaultVariant()));
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(new PictureSize(request.width(), request.height()))
+                  .isEqualTo(new PictureSize(3840, 2160));
+              assertThat(request.bitrate()).isEqualTo(8_000_000L);
             });
   }
 
