@@ -133,6 +133,7 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
 
   @BeforeEach
   void setUp() {
+    dsl.deleteFrom(SECURITY_AUDIT_EVENT).execute();
     serverAdmin = authTestSupport.createAdminIdentity();
     resident = authTestSupport.createIdentity();
   }
@@ -140,7 +141,6 @@ class AdministrationEndpointsIT extends AbstractIntegrationTest {
   @AfterEach
   void tearDown() {
     dsl.deleteFrom(SERVER_BOOTSTRAP).execute();
-    dsl.deleteFrom(SECURITY_AUDIT_EVENT).execute();
     authTestSupport.deleteIdentity(resident);
     authTestSupport.deleteIdentity(serverAdmin);
   }

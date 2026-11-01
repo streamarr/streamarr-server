@@ -128,12 +128,12 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
 
   @BeforeEach
   void setUp() {
+    dsl.deleteFrom(SECURITY_AUDIT_EVENT).execute();
     serverAdmin = authTestSupport.createAdminIdentity();
   }
 
   @AfterEach
   void tearDown() {
-    dsl.deleteFrom(SECURITY_AUDIT_EVENT).execute();
     managerInvitationRepository.deleteAll();
     invitationRepository.deleteAll();
     resetCodeRepository.deleteAll();
