@@ -480,8 +480,8 @@ class RemotePlaybackIT {
 
   @Test
   @DisplayName(
-      "Should stream an MP3 source whose sample rate fragmented MP4 cannot carry when the client supports MP3")
-  void shouldStreamMp3SourceWhoseSampleRateFragmentedMp4CannotCarryWhenClientSupportsMp3()
+      "Should stream an MP3 source whose sample rate fragmented MP4 cannot carry when the client declares AAC")
+  void shouldStreamMp3SourceWhoseSampleRateFragmentedMp4CannotCarryWhenTheClientDeclaresAac()
       throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var segmentStore = new PublishingSegmentStore(tempDir.resolve("server-segments"));
