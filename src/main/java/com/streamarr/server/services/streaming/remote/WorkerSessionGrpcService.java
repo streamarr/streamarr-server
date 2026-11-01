@@ -301,8 +301,15 @@ final class WorkerSessionGrpcService
 
     private void finishOrWarn(Uuid jobAttemptId, String detail) {
       var attemptId = fromProto(jobAttemptId);
-      switch (workerConnections.endReportedJobAttempt(
-          authenticatedWorkerId, workerSessionId, attemptId)) {
+      logReportedEnd(
+          workerConnections.endReportedJobAttempt(
+              authenticatedWorkerId, workerSessionId, attemptId),
+          attemptId,
+          detail);
+    }
+
+    private void logReportedEnd(ReportedJobAttemptEnd end, UUID attemptId, String detail) {
+      switch (end) {
         case ReportedJobAttemptEnd.Released(var job) ->
             log.debug(
                 "Worker {} ended job attempt {} for stream session {} variant {} ({})",
