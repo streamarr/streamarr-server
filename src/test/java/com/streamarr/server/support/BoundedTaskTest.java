@@ -137,8 +137,8 @@ class BoundedTaskTest {
 
   @Test
   @DisplayName(
-      "Should answer that the task awaits no latch while it takes its lock back after a condition wait expires")
-  void shouldAnswerThatTheTaskAwaitsNoLatchWhileItTakesItsLockBackAfterAConditionWaitExpires() {
+      "Should answer that the task awaits no latch while it takes its lock back after a condition is signalled")
+  void shouldAnswerThatTheTaskAwaitsNoLatchWhileItTakesItsLockBackAfterAConditionIsSignalled() {
     var lock = new ReentrantLock();
     var condition = lock.newCondition();
     try (var task =
@@ -146,7 +146,8 @@ class BoundedTaskTest {
             () -> {
               lock.lockInterruptibly();
               try {
-                return condition.await(200, TimeUnit.MILLISECONDS);
+                condition.await();
+                return null;
               } finally {
                 lock.unlock();
               }
@@ -156,6 +157,7 @@ class BoundedTaskTest {
           .atMost(LONG_BOUND)
           .until(() -> tryLockWhileTheConditionHasAWaiter(lock, condition));
       try {
+        condition.signal();
         await().atMost(LONG_BOUND).until(() -> lock.hasQueuedThreads() && task.isWaiting());
 
         assertThat(task.isAwaitingALatchWithoutDeadline()).isFalse();
@@ -179,8 +181,8 @@ class BoundedTaskTest {
     }
   }
 
-  // Takes the lock only while the task waits on the condition, so the condition wait expires while
-  // this thread holds the lock that the task must take back.
+  // Takes the lock only while the task waits on the condition, so a signal sends the task back for
+  // the lock that this thread holds.
   private static boolean tryLockWhileTheConditionHasAWaiter(
       ReentrantLock lock, Condition condition) {
     if (!lock.tryLock()) {
