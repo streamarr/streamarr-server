@@ -5914,6 +5914,47 @@ class HlsStreamingServiceTest {
     assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
   }
 
+  // The H.264 worker keeps a free slot, so H.264 is decided before the stop. The stop frees a
+  // place under the transcode limit and a slot on the worker that encodes AV1 in hardware.
+  @Test
+  @DisplayName(
+      "Should encode AV1 when stopping a left variant to free a place under the transcode limit"
+          + " frees the only worker that encodes AV1 in hardware")
+  void
+      shouldEncodeAv1WhenStoppingALeftVariantToFreeAPlaceUnderTheTranscodeLimitFreesTheOnlyWorkerThatEncodesAv1InHardware()
+          throws Exception {
+    useAnAv1WorkerWithTwoSlotsAndAnH264WorkerWithOne(av1Nvenc());
+    transcodeExecutor.limitJobSlots(H264_WORKER, 2);
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .framerate(OptionalDouble.of(23.976))
+            .videoCodec("hevc")
+            .bitrate(8_000_000L)
+            .build());
+    var switching = createSession(seedMediaFile().getId(), av1AndH264Declaration());
+    var switchingId = switching.getSessionId();
+    var switched = switchFrom480pTo1080pKeeping480pAsTheLeftVariant(switchingId);
+    createSession(
+        seedMediaFile().getId(),
+        UUID.randomUUID(),
+        StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build());
+    assertThat(transcodeExecutor.encodableVideoCodecFamilies()).containsExactly("h264");
+
+    var admitted = accepted(service.createSession(createCommandDeclaring(av1AndH264Declaration())));
+
+    assertThat(admitted.getTranscodeDecision().videoCodecFamily()).isEqualTo("av1");
+    assertThat(admitted.getVariantHandles().keySet())
+        .singleElement()
+        .satisfies(
+            started ->
+                assertThat(
+                        transcodeExecutor.runningExecutionTarget(admitted.getSessionId(), started))
+                    .contains(AV1_WORKER));
+    assertThat(switching.getVariantHandles()).containsOnlyKeys("1080p");
+    upload(switchingId, "1080p", "1080p/segment1.m4s");
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
   @Test
   @DisplayName(
       "Should keep another stream session's left variant when a stream session whose encode has no"

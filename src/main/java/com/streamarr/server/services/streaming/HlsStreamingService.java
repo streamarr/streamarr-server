@@ -125,6 +125,7 @@ public class HlsStreamingService implements StreamingService {
     // session out (ADR 0019).
     if (refusal.isPresent() && isSlotShortage(refusal.get())) {
       producerLifecycle.stopLeftVariantOfAnotherStreamSession(sessionId, admission.decision());
+      admission = admissionWithEncodersFreeNow(request).orElse(admission);
       refusal = capacityRefusalFor(admission.decision());
     }
 
@@ -181,6 +182,16 @@ public class HlsStreamingService implements StreamingService {
     var ladder = resolveLadder(request, decisionWithSessionAudio);
     return new Admission(
         decisionWithSessionAudio.withAudioDecision(ladder.audio()), ladder.variants());
+  }
+
+  // A stopped left variant's worker may encode a codec family in hardware that no free worker
+  // encoded before, so the stream session is decided again against the encoders free now.
+  private Optional<Admission> admissionWithEncodersFreeNow(TranscodeDecisionRequest request) {
+    var freeNow = withEncodersFreeNow(request);
+    return transcodeDecisionService
+        .decide(freeNow)
+        .filter(decision -> encodeRejection(freeNow, decision).isEmpty())
+        .map(decision -> admission(freeNow, decision));
   }
 
   // Why no worker can run the decision's encode, whatever slots are free.
