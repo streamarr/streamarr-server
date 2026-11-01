@@ -192,8 +192,8 @@ class TranscodeDecisionServiceTest {
 
   @ParameterizedTest(name = "{1}")
   @MethodSource("keyframesThatRuleOutAStreamCopy")
-  @DisplayName("Should count a refused stream copy by why the keyframes rule it out")
-  void shouldCountARefusedStreamCopyByWhyTheKeyframesRuleItOut(
+  @DisplayName("Should count a refused stream copy by its reason when the keyframes rule it out")
+  void shouldCountARefusedStreamCopyByItsReasonWhenTheKeyframesRuleItOut(
       KeyframeKnowledge keyframes, String reason) {
     var source =
         probeBuilder("h264", "aac").duration(Duration.ofSeconds(20)).keyframes(keyframes).build();
@@ -1235,8 +1235,8 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("Should copy stereo AAC passthrough")
-  void shouldCopyStereoAacPassthrough() {
+  @DisplayName("Should copy stereo AAC when the client plays stereo AAC")
+  void shouldCopyStereoAacWhenTheClientPlaysStereoAac() {
     var source =
         probeBuilder("h264", "aac")
             .audioChannels(OptionalInt.of(2))
