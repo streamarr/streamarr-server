@@ -263,6 +263,8 @@ class HlsStreamingServiceTest {
       String acceptedCodecs, String verifiedFamilies, String expectedFamily) {
     probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("vp9").build());
     transcodeExecutor.setEncodableVideoCodecFamilies(familiesOf(verifiedFamilies));
+    transcodeExecutor.setVerifiedVideoCodecFamiliesByWorker(
+        List.of(connectedWorker(familiesOf(verifiedFamilies))));
 
     var outcome =
         service.createSession(createCommandDeclaring(declarationAccepting(acceptedCodecs)));
@@ -270,6 +272,31 @@ class HlsStreamingServiceTest {
     assertThat(outcome)
         .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
     assertThat(missingEncoderSessions(expectedFamily)).isOne();
+    assertThat(missingEncoderSessions()).isOne();
+  }
+
+  // A worker with a busy H.264 encoder connects right after the stream session reads the connected
+  // workers. That read refused the stream session for the missing encoder, so the count follows it.
+  @Test
+  @DisplayName(
+      "Should count the missing encoder that refused the stream session when a worker with that"
+          + " encoder connects right after the workers are read")
+  void
+      shouldCountTheMissingEncoderThatRefusedTheStreamSessionWhenAWorkerWithThatEncoderConnectsRightAfterTheWorkersAreRead() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("vp9").build());
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of());
+    transcodeExecutor.changeWorkersAroundNextVerifiedFamiliesRead(
+        () -> {},
+        () ->
+            transcodeExecutor.setVerifiedVideoCodecFamiliesByWorker(
+                List.of(connectedWorker(Set.of()), connectedWorker(Set.of("h264")))));
+
+    var outcome =
+        service.createSession(createCommandDeclaring(declarationBuilderFor(H264).build()));
+
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(missingEncoderSessions("h264")).isOne();
     assertThat(missingEncoderSessions()).isOne();
   }
 
@@ -2531,6 +2558,13 @@ class HlsStreamingServiceTest {
     return meters.find(MISSING_ENCODER_SESSIONS_METRIC).counters().stream()
         .mapToDouble(Counter::count)
         .sum();
+  }
+
+  private static WorkerVerifiedCodecFamilies connectedWorker(Set<String> codecFamilies) {
+    return WorkerVerifiedCodecFamilies.builder()
+        .workerId(UUID.randomUUID())
+        .codecFamilies(codecFamilies)
+        .build();
   }
 
   // One video capability entry for each comma-separated probed codec family name.
