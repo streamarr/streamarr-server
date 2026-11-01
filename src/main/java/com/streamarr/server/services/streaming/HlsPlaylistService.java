@@ -6,7 +6,6 @@ import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.EncodedVideoOutput;
 import com.streamarr.server.domain.streaming.MediaProbe;
-import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.VideoEncodeDecision;
@@ -15,7 +14,6 @@ import com.streamarr.server.domain.streaming.VideoStreamCopy;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.List;
 import java.util.OptionalDouble;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -239,7 +237,7 @@ public class HlsPlaylistService {
     }
 
     sb.append("#EXT-X-TARGETDURATION:")
-        .append(targetDurationSeconds(timeline, extinfDurations))
+        .append(ExtinfDurations.targetDurationSeconds(timeline, extinfDurations))
         .append("\n");
     sb.append("#EXT-X-MEDIA-SEQUENCE:0\n");
     sb.append("#EXT-X-PLAYLIST-TYPE:VOD\n");
@@ -257,18 +255,5 @@ public class HlsPlaylistService {
     sb.append("#EXT-X-ENDLIST\n");
 
     return sb.toString();
-  }
-
-  // RFC 8216 §4.3.3.1: every EXTINF, rounded to the nearest integer, must not exceed the target
-  // duration. A stream copy's segment can run longer than the target segment duration.
-  private static int targetDurationSeconds(
-      MediaSegmentTimeline timeline, List<BigDecimal> extinfDurations) {
-    var targetDuration = timeline.targetSegmentDurationSeconds();
-    for (var extinf : extinfDurations) {
-      targetDuration =
-          Math.max(targetDuration, extinf.setScale(0, RoundingMode.HALF_UP).intValueExact());
-    }
-
-    return targetDuration;
   }
 }
