@@ -1,13 +1,14 @@
 otel:
   sdk:
     disabled: false
+  service:
+    name: streamarr-server
   exporter:
     otlp:
       endpoint: http://otel-collector:4318
       protocol: http/protobuf
   resource:
-    attributes: &resource-attributes
-      service.name: streamarr-server
+    attributes:
       deployment.environment: ${DEPLOYMENT_ENV:dev}
   traces:
     sampler:
@@ -17,6 +18,8 @@ otel:
   metrics:
     exporter: none
 
+# Metrics follow the OpenTelemetry starter's endpoint and resource, so OTEL_EXPORTER_OTLP_ENDPOINT
+# and OTEL_SERVICE_NAME move spans, logs and metrics together.
 management:
   endpoints:
     web:
@@ -26,6 +29,13 @@ management:
     metrics:
       export:
         enabled: true
-        url: http://otel-collector:4318/v1/metrics
+        url: ${otel.exporter.otlp.endpoint}/v1/metrics
   opentelemetry:
-    resource-attributes: *resource-attributes
+    resource-attributes:
+      service.name: ${otel.service.name}
+      deployment.environment: ${otel.resource.attributes.deployment.environment}
+  # The SDK's HTTP server histogram is not exported, so Micrometer's request timer carries the buckets.
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true

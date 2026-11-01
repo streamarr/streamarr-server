@@ -9,16 +9,19 @@ import com.sun.net.httpserver.HttpServer;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest;
+import io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest;
 import io.opentelemetry.proto.common.v1.AnyValue;
 import io.opentelemetry.proto.common.v1.KeyValue;
 import io.opentelemetry.proto.metrics.v1.Metric;
 import io.opentelemetry.proto.metrics.v1.ResourceMetrics;
 import io.opentelemetry.proto.metrics.v1.ScopeMetrics;
+import io.opentelemetry.proto.resource.v1.Resource;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -32,28 +35,36 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContextInitializer;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.core.env.SystemEnvironmentPropertySource;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * Runs the server under the {@code observability} profile against a local OTLP receiver in place of
- * the collector, and reads what the server sends it.
+ * the collector, and reads what the server sends it. The receiver's address and a service name
+ * reach the server as the OpenTelemetry environment variables that a deployment would set.
  */
 @Tag("IntegrationTest")
 @DisplayName("Metric export integration tests")
 @ActiveProfiles("observability")
+@ContextConfiguration(initializers = MetricExportIT.OpenTelemetryEnvironment.class)
 class MetricExportIT extends AbstractIntegrationTest {
 
   private static final Duration EXPORT_WAIT = Duration.ofSeconds(30);
+  private static final String SERVICE_NAME = "streamarr-server-under-test";
   private static final String STARTUP_METER = "streamarr.probes.waiting";
   private static final String POOL_METER = "hikaricp.connections.active";
   private static final String PRODUCTION_SPEED_METER = "streamarr.streaming.production_speed";
+  private static final String HTTP_SERVER_METER = "http.server.requests";
 
   private static final List<ExportMetricsServiceRequest> METRIC_EXPORTS =
       new CopyOnWriteArrayList<>();
-  private static final List<byte[]> TRACE_EXPORTS = new CopyOnWriteArrayList<>();
+  private static final List<ExportTraceServiceRequest> TRACE_EXPORTS = new CopyOnWriteArrayList<>();
   private static final HttpServer COLLECTOR = startCollector();
 
   @Autowired private MeterRegistry meterRegistry;
@@ -61,12 +72,9 @@ class MetricExportIT extends AbstractIntegrationTest {
   @Autowired private MockMvc mockMvc;
 
   @DynamicPropertySource
-  static void sendTelemetryToTheLocalCollector(DynamicPropertyRegistry registry) {
-    var collector = "http://127.0.0.1:" + COLLECTOR.getAddress().getPort();
-    registry.add("otel.exporter.otlp.endpoint", () -> collector);
+  static void exportOften(DynamicPropertyRegistry registry) {
     registry.add("otel.metric.export.interval", () -> "100");
     registry.add("otel.bsp.schedule.delay", () -> "100");
-    registry.add("management.otlp.metrics.export.url", () -> collector + "/v1/metrics");
     registry.add("management.otlp.metrics.export.step", () -> "1s");
   }
 
@@ -76,8 +84,9 @@ class MetricExportIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should export the server's meters as streamarr-server when the profile is active")
-  void shouldExportTheServersMetersAsStreamarrServerWhenTheProfileIsActive() {
+  @DisplayName(
+      "Should export the server's meters under the service name when the profile is active")
+  void shouldExportTheServersMetersUnderTheServiceNameWhenTheProfileIsActive() {
     await()
         .atMost(EXPORT_WAIT)
         .untilAsserted(
@@ -90,10 +99,10 @@ class MetricExportIT extends AbstractIntegrationTest {
                     .satisfies(
                         resource -> assertThat(metricNames(resource)).contains(POOL_METER),
                         resource ->
-                            assertThat(resourceAttribute(resource, "service.name"))
-                                .hasValue("streamarr-server"),
+                            assertThat(attribute(resource.getResource(), "service.name"))
+                                .hasValue(SERVICE_NAME),
                         resource ->
-                            assertThat(resourceAttribute(resource, "deployment.environment"))
+                            assertThat(attribute(resource.getResource(), "deployment.environment"))
                                 .hasValue("dev")));
   }
 
@@ -146,11 +155,37 @@ class MetricExportIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep exporting spans when metrics leave through Micrometer")
-  void shouldKeepExportingSpansWhenMetricsLeaveThroughMicrometer() throws Exception {
+  @DisplayName("Should export spans under the service name of the metrics when a request is served")
+  void shouldExportSpansUnderTheServiceNameOfTheMetricsWhenARequestIsServed() throws Exception {
     mockMvc.perform(get("/actuator/health"));
 
-    await().atMost(EXPORT_WAIT).untilAsserted(() -> assertThat(TRACE_EXPORTS).isNotEmpty());
+    await()
+        .atMost(EXPORT_WAIT)
+        .untilAsserted(
+            () ->
+                assertThat(TRACE_EXPORTS)
+                    .flatMap(ExportTraceServiceRequest::getResourceSpansList)
+                    .extracting(spans -> attribute(spans.getResource(), "service.name"))
+                    .isNotEmpty()
+                    .containsOnly(Optional.of(SERVICE_NAME)));
+  }
+
+  @Test
+  @DisplayName("Should export HTTP server latency buckets when a request is served")
+  void shouldExportHttpServerLatencyBucketsWhenARequestIsServed() throws Exception {
+    mockMvc.perform(get("/actuator/health"));
+
+    await()
+        .atMost(EXPORT_WAIT)
+        .untilAsserted(
+            () ->
+                assertThat(latestExportOfTheServersMeters())
+                    .get()
+                    .extracting(export -> metricsNamed(export, HTTP_SERVER_METER))
+                    .asInstanceOf(InstanceOfAssertFactories.list(Metric.class))
+                    .flatMap(metric -> metric.getHistogram().getDataPointsList())
+                    .isNotEmpty()
+                    .allSatisfy(point -> assertThat(point.getExplicitBoundsList()).isNotEmpty()));
   }
 
   private static Optional<ExportMetricsServiceRequest> latestExportOfTheServersMeters() {
@@ -160,10 +195,15 @@ class MetricExportIT extends AbstractIntegrationTest {
         .findFirst();
   }
 
-  private static Set<String> workersOf(ExportMetricsServiceRequest export, String meter) {
+  private static List<Metric> metricsNamed(ExportMetricsServiceRequest export, String meter) {
     return scopes(export)
         .flatMap(scope -> scope.getMetricsList().stream())
         .filter(metric -> metric.getName().equals(meter))
+        .toList();
+  }
+
+  private static Set<String> workersOf(ExportMetricsServiceRequest export, String meter) {
+    return metricsNamed(export, meter).stream()
         .flatMap(metric -> metric.getHistogram().getDataPointsList().stream())
         .flatMap(point -> point.getAttributesList().stream())
         .filter(attribute -> attribute.getKey().equals("worker"))
@@ -194,8 +234,8 @@ class MetricExportIT extends AbstractIntegrationTest {
     return scope.getMetricsList().stream().map(Metric::getName).collect(Collectors.toSet());
   }
 
-  private static Optional<String> resourceAttribute(ResourceMetrics resource, String key) {
-    return resource.getResource().getAttributesList().stream()
+  private static Optional<String> attribute(Resource resource, String key) {
+    return resource.getAttributesList().stream()
         .filter(attribute -> attribute.getKey().equals(key))
         .map(KeyValue::getValue)
         .map(AnyValue::getStringValue)
@@ -218,7 +258,8 @@ class MetricExportIT extends AbstractIntegrationTest {
           "/v1/traces",
           exchange -> {
             try (exchange) {
-              TRACE_EXPORTS.add(exchange.getRequestBody().readAllBytes());
+              TRACE_EXPORTS.add(
+                  ExportTraceServiceRequest.parseFrom(exchange.getRequestBody().readAllBytes()));
               exchange.sendResponseHeaders(200, -1);
             }
           });
@@ -234,6 +275,24 @@ class MetricExportIT extends AbstractIntegrationTest {
       return server;
     } catch (IOException e) {
       throw new UncheckedIOException(e);
+    }
+  }
+
+  static class OpenTelemetryEnvironment
+      implements ApplicationContextInitializer<ConfigurableApplicationContext> {
+
+    @Override
+    public void initialize(ConfigurableApplicationContext context) {
+      var variables =
+          Map.<String, Object>of(
+              "OTEL_EXPORTER_OTLP_ENDPOINT",
+              "http://127.0.0.1:" + COLLECTOR.getAddress().getPort(),
+              "OTEL_SERVICE_NAME",
+              SERVICE_NAME);
+      context
+          .getEnvironment()
+          .getPropertySources()
+          .addFirst(new SystemEnvironmentPropertySource("openTelemetryVariables", variables));
     }
   }
 }

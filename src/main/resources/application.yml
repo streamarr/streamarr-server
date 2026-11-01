@@ -80,6 +80,10 @@ management:
     metrics:
       export:
         enabled: false
+  # Spring Boot would otherwise map OTEL_* variables onto its own settings: OTEL_METRICS_EXPORTER
+  # would switch Micrometer's export on or off whatever the profile says.
+  opentelemetry:
+    map-environment-variables: false
   endpoint:
     health:
       status:
