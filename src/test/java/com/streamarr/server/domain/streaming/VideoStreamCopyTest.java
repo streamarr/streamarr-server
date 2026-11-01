@@ -26,21 +26,37 @@ class VideoStreamCopyTest {
           + " that rate")
   void shouldRunACopyAtTheRateTheSourcesFramesRunAtWhenTheFrameRateRuleSnappedThatRate(
       String scenario, FrameRateRule rule, OptionalDouble expected) {
-    var source =
-        MediaProbe.builder()
-            .framerate(OptionalDouble.empty())
-            .width(1920)
-            .height(1080)
-            .videoCodec("h264")
-            .keyframes(new KeyframeKnowledge.NotReported())
-            .videoPlaybackFacts(
-                Optional.of(
-                    VideoPlaybackFactsFixture.sdrH264FactsBuilder().frameRateRule(rule).build()))
-            .build();
-
-    var copy = VideoStreamCopy.of(source).orElseThrow();
+    var copy = VideoStreamCopy.of(sourceWith(rule)).orElseThrow();
 
     assertThat(copy.frameRate()).isEqualTo(expected);
+  }
+
+  // Without a rate that the source's frames run at, the output frame rate is the rule's only rate.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("rulesWithoutASourceRate")
+  @DisplayName(
+      "Should run a copy at the output frame rate when the frame-rate rule kept no rate that the"
+          + " source's frames run at")
+  void shouldRunACopyAtTheOutputFrameRateWhenTheFrameRateRuleKeptNoRateThatTheSourcesFramesRunAt(
+      String scenario, FrameRateRule rule) {
+    var copy = VideoStreamCopy.of(sourceWith(rule)).orElseThrow();
+
+    assertThat(copy.frameRate()).isEqualTo(OptionalDouble.of(30));
+  }
+
+  @Test
+  @DisplayName("Should leave a copy's frame rate empty when the frame-rate rule refused a rate")
+  void shouldLeaveACopysFrameRateEmptyWhenTheFrameRateRuleRefusedARate() {
+    var refused =
+        FrameRateRule.builder()
+            .outputFrameRate(Optional.empty())
+            .basis(OutputFrameRateBasis.REFUSED)
+            .inputs(FrameRateRuleInputs.builder().build())
+            .build();
+
+    var copy = VideoStreamCopy.of(sourceWith(refused)).orElseThrow();
+
+    assertThat(copy.frameRate()).isEmpty();
   }
 
   @ParameterizedTest(name = "{0}×{1}")
@@ -118,18 +134,6 @@ class VideoStreamCopyTest {
             VideoPlaybackFactsFixture.packetScanRule(8, new Fraction(10, 1)),
             OptionalDouble.of(8)),
         Arguments.of(
-            "packet scan without a motion rate",
-            FrameRateRule.builder()
-                .outputFrameRate(Optional.of(new Fraction(30, 1)))
-                .basis(OutputFrameRateBasis.PACKET_SCAN)
-                .inputs(
-                    FrameRateRuleInputs.builder()
-                        .packetScan(
-                            Optional.of(FrameRatePacketScan.builder().scannedFrameCount(1).build()))
-                        .build())
-                .build(),
-            OptionalDouble.of(30)),
-        Arguments.of(
             "120 fps average rate divided to 60 after a scan found fewer than 2 frames",
             VideoPlaybackFactsFixture.declaredRateFallbackRule(
                 FrameRateRuleInputs.builder()
@@ -154,19 +158,38 @@ class VideoStreamCopyTest {
                     .baseRate(Optional.of(new Fraction(75, 2)))
                     .build(),
                 new Fraction(30, 1)),
-            OptionalDouble.of(37.5)),
+            OptionalDouble.of(37.5)));
+  }
+
+  static Stream<Arguments> rulesWithoutASourceRate() {
+    return Stream.of(
+        Arguments.of(
+            "packet scan without a motion rate",
+            FrameRateRule.builder()
+                .outputFrameRate(Optional.of(new Fraction(30, 1)))
+                .basis(OutputFrameRateBasis.PACKET_SCAN)
+                .inputs(
+                    FrameRateRuleInputs.builder()
+                        .packetScan(
+                            Optional.of(FrameRatePacketScan.builder().scannedFrameCount(1).build()))
+                        .build())
+                .build()),
         Arguments.of(
             "declared-rate fallback without a declared rate",
             VideoPlaybackFactsFixture.declaredRateFallbackRule(
-                FrameRateRuleInputs.builder().build(), new Fraction(30, 1)),
-            OptionalDouble.of(30)),
-        Arguments.of(
-            "refused rule",
-            FrameRateRule.builder()
-                .outputFrameRate(Optional.empty())
-                .basis(OutputFrameRateBasis.REFUSED)
-                .inputs(FrameRateRuleInputs.builder().build())
-                .build(),
-            OptionalDouble.empty()));
+                FrameRateRuleInputs.builder().build(), new Fraction(30, 1))));
+  }
+
+  private static MediaProbe sourceWith(FrameRateRule rule) {
+    return MediaProbe.builder()
+        .framerate(OptionalDouble.empty())
+        .width(1920)
+        .height(1080)
+        .videoCodec("h264")
+        .keyframes(new KeyframeKnowledge.NotReported())
+        .videoPlaybackFacts(
+            Optional.of(
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder().frameRateRule(rule).build()))
+        .build();
   }
 }

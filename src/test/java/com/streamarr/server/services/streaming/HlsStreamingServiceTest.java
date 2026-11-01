@@ -38,6 +38,7 @@ import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
@@ -832,38 +833,54 @@ class HlsStreamingServiceTest {
   }
 
   // A phone records portrait video as a portrait picture, so a landscape maximum bounds it turned.
-  @ParameterizedTest
-  @CsvSource({"1080, 1920, REMUX", "1080, 2400, VIDEO_TRANSCODE"})
+  @Test
   @DisplayName(
-      "Should copy a portrait source only when its picture fits the capability entry's maximum"
-          + " turned on its side")
-  void shouldCopyAPortraitSourceOnlyWhenItsPictureFitsTheCapabilityEntrysMaximumTurnedOnItsSide(
-      int width, int height, TranscodeMode expectedMode) {
-    probeResults.setDefaultProbe(
-        defaultProbeBuilder()
-            .width(width)
-            .height(height)
-            .videoPlaybackFacts(
-                Optional.of(
-                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
-                        .streamIndex(0)
-                        .frameRateRule(
-                            VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))
-                        .videoProperties(
-                            Optional.of(
-                                VideoPlaybackFactsFixture.h264HighPropertiesBuilder()
-                                    .codecLevel(OptionalInt.of(51))
-                                    .build()))
-                        .build()))
-            .build());
-    var landscapeHd =
-        defaultDeclarationBuilder()
-            .video(List.of(h264EntryBuilder().maxWidth(1920).maxHeight(1080).build()))
-            .build();
+      "Should copy a portrait source when its picture fits the capability entry's maximum turned on"
+          + " its side")
+  void shouldCopyAPortraitSourceWhenItsPictureFitsTheCapabilityEntrysMaximumTurnedOnItsSide() {
+    probeResults.setDefaultProbe(probeVersion5At24(new PictureSize(1080, 1920)).build());
 
-    var session = createSession(seedMediaFile().getId(), landscapeHd);
+    var session = createSession(seedMediaFile().getId(), landscapeHdDeclaration());
 
-    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(expectedMode);
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode a portrait source when its longer side exceeds the capability entry's larger"
+          + " maximum")
+  void shouldEncodeAPortraitSourceWhenItsLongerSideExceedsTheCapabilityEntrysLargerMaximum() {
+    probeResults.setDefaultProbe(probeVersion5At24(new PictureSize(1080, 2400)).build());
+
+    var session = createSession(seedMediaFile().getId(), landscapeHdDeclaration());
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+  }
+
+  // An 8-bit SDR H.264 High profile source at level 5.1 and 24 fps that probe version 5 described.
+  private static MediaProbe.MediaProbeBuilder probeVersion5At24(PictureSize decodedSize) {
+    return defaultProbeBuilder()
+        .width(decodedSize.width())
+        .height(decodedSize.height())
+        .videoPlaybackFacts(
+            Optional.of(
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                    .streamIndex(0)
+                    .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))
+                    .videoProperties(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.h264HighPropertiesBuilder()
+                                .codecLevel(OptionalInt.of(51))
+                                .build()))
+                    .build()));
+  }
+
+  // A player that plays H.264 up to 1920×1080.
+  private static ClientCapabilityDeclaration landscapeHdDeclaration() {
+    return defaultDeclarationBuilder()
+        .video(List.of(h264EntryBuilder().maxWidth(1920).maxHeight(1080).build()))
+        .build();
   }
 
   private PlaybackFormatAttempt startPlayback(
