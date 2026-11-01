@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Function;
 
 public final class RemoteFfprobeService implements FfprobeService {
 
@@ -32,7 +33,9 @@ public final class RemoteFfprobeService implements FfprobeService {
 
   @Override
   public ProbeOutcome probe(ProbeExecutionRequest request) {
-    return dispatch(probeRequest(request).setPriority(priorityOf(request.priority())).build());
+    return dispatch(
+        probeRequest(request).setPriority(priorityOf(request.priority())).build(),
+        resultMapper::map);
   }
 
   /** Serves {@link com.streamarr.server.services.streaming.ProbeWorkers}. */
@@ -49,7 +52,8 @@ public final class RemoteFfprobeService implements FfprobeService {
         probeRequest(request)
             .setScanKeyframePackets(true)
             .setPriority(priorityOf(ProbePriority.BACKGROUND))
-            .build());
+            .build(),
+        resultMapper::map);
   }
 
   // The domain and the worker contract both name a probe's priority ProbePriority.
@@ -68,7 +72,7 @@ public final class RemoteFfprobeService implements FfprobeService {
         .setSource(sourceMapper.map(request.sourcePath()));
   }
 
-  private ProbeOutcome dispatch(ProbeRequest request) {
+  private <T> T dispatch(ProbeRequest request, Function<ProbeAttemptReport, T> mapper) {
     var dispatch = server.dispatchProbe(request);
     var pending =
         switch (dispatch) {
@@ -76,7 +80,7 @@ public final class RemoteFfprobeService implements FfprobeService {
           case ProbeDispatch.Refused(var reason) -> throw refusal(reason);
         };
     try {
-      return resultMapper.map(pending.get());
+      return mapper.apply(pending.get());
     } catch (InterruptedException exception) {
       pending.cancel(true);
       Thread.currentThread().interrupt();
