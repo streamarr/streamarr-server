@@ -1590,8 +1590,8 @@ class HlsStreamingServiceTest {
   }
 
   // ADR 0050: under a maximum below the copy's 5,268 kb/s the audio steps down first, so the video
-  // copy keeps the source's full quality. Each maximum is the copy's cost beside its step, or just
-  // below the cost beside the step above.
+  // copy keeps the source's full quality. Each maximum is at or above the copy's cost beside its
+  // step and below its cost beside the step above.
   @ParameterizedTest(name = "{0}")
   @MethodSource("maximumsAndTheFirstAudioStepBesideAVideoCopy")
   @DisplayName(
