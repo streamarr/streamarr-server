@@ -39,6 +39,7 @@ import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.Fraction;
+import com.streamarr.server.domain.streaming.KeyframeIntervalCounts;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
@@ -50,6 +51,8 @@ import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.domain.streaming.StreamMeasurementSource;
+import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
@@ -73,6 +76,7 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.HardwareEncodedFamiliesAndExpectedEncode;
 import com.streamarr.server.fixtures.ProbeFixture;
+import com.streamarr.server.fixtures.StreamMeasurementFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.services.concurrency.MutexFactory;
@@ -1592,6 +1596,46 @@ class HlsStreamingServiceTest {
     assertDeliversTheSessionsAudioWithinTheMaximumBitrate(session, 5_268_000);
   }
 
+  // ADR 0054: the server measured the copied video at 2,700,000,000 bytes in 172,800 packets, 24
+  // fps over the 2-hour source. Its 1,200 segments add 2,880,000 bytes of framing, and the
+  // session's
+  // E-AC-3 at its highest rate of 48 kHz writes 225,001 frames, whose framing adds 3,676,816 bytes.
+  // The copy averages 3,007,286 b/s beside the E-AC-3's 768 kb/s, 3,775,286 b/s in all, far below
+  // the 4.5 Mb/s probed video that no audio step fits beside.
+  @Test
+  @DisplayName(
+      "Should copy the video beside the session's audio when the copy's measured average equals the"
+          + " maximum bitrate")
+  void
+      shouldCopyTheVideoBesideTheSessionsAudioWhenTheCopysMeasuredAverageEqualsTheMaximumBitrate() {
+    var measurement =
+        new StreamMeasurements(
+            StreamMeasurementSource.SAMPLE_TABLE,
+            List.of(
+                StreamMeasurementFixture.measuredStreamBuilder(0, 2_700_000_000L)
+                    .packetCount(172_800)
+                    .keyframeIntervalPacketCounts(KeyframeIntervalCounts.of(172_800))
+                    .measuredDuration(7_200_000)
+                    .build()));
+
+    var session =
+        createCopySessionWithSurroundOpus(
+            surroundOpusSource()
+                .options(autoOptions().maxBitrate(3_775_286).build())
+                .streamMeasurements(Optional.of(measurement))
+                .build());
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
+        .containsExactly("eac3", 6, 768_000L);
+    assertThat(
+            new HlsPlaylistService(streamingProperties())
+                .generateMultivariantPlaylist(session, "t"))
+        .contains("AVERAGE-BANDWIDTH=3775286,");
+  }
+
   // ADR 0050: under a maximum below the copy's 5,268 kb/s the audio steps down first, so the video
   // copy keeps the source's full quality. Each maximum is at or above the copy's cost beside its
   // step and below its cost beside the step above.
@@ -1971,7 +2015,10 @@ class HlsStreamingServiceTest {
                 .channels(OptionalInt.of(8))
                 .bitrate(OptionalLong.of(450_000L))
                 .build());
-    probeResults.setDefaultOutcome(ProbeFixture.completeProbe(probe.streams(streams).build()));
+    probeResults.setDefaultOutcome(
+        ProbeFixture.completeProbeBuilder(probe.streams(streams).build())
+            .streamMeasurements(source.streamMeasurements())
+            .build());
     var declaration =
         defaultDeclarationBuilder()
             .audio(
@@ -1993,7 +2040,8 @@ class HlsStreamingServiceTest {
         .options(autoOptions().build())
         .containerBitrate(5_000_000L)
         .videoBitrate(OptionalLong.of(4_500_000L))
-        .framerate(OptionalDouble.of(24.0));
+        .framerate(OptionalDouble.of(24.0))
+        .streamMeasurements(Optional.empty());
   }
 
   @Builder
@@ -2001,7 +2049,8 @@ class HlsStreamingServiceTest {
       StreamingOptions options,
       long containerBitrate,
       OptionalLong videoBitrate,
-      OptionalDouble framerate) {}
+      OptionalDouble framerate,
+      Optional<StreamMeasurements> streamMeasurements) {}
 
   private StreamSession createDtsSession(int sourceChannels, StreamingOptions options) {
     return createDtsSession(defaultProbeBuilder().videoCodec("hevc"), sourceChannels, options);
