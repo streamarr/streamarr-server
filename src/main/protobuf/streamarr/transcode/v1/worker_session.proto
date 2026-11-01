@@ -1209,28 +1209,27 @@ message ProbeStreamInfo {
   // packets carry presentation times in the same way.
   optional bool first_packets_carry_presentation_times = 36;
   // The worker reports this field only for H.264 and HEVC video streams. It
-  // reports true when a stream copy under the tag rule delivers every packet of
-  // the stream with its bytes unchanged. That holds only when all these
-  // conditions hold:
-  // - The stream's decoder configuration record, avcC or hvcC, holds the
-  //   parameter sets, has configurationVersion 1 and uses 4-byte NAL unit
-  //   lengths.
-  // - The source's sample entry is not one that keeps parameter sets in the
-  //   samples: avc3, hev1, dvav or dvhe.
-  // - The profile, tier and level in the record header equal those of the
-  //   record's parameter sets, so the copy's codec_string is the same with or
-  //   without the Annex B bitstream filter.
-  // - An hvcC holds no NAL unit of a type other than VPS, SPS, PPS and SEI, and
-  //   none with nuh_layer_id above 0.
-  // - Every SEI message in an hvcC is user data unregistered, payload type 5.
+  // reports true only when a stream copy without the Annex B bitstream filter
+  // delivers every packet of the stream with its bytes unchanged, under the
+  // same codec_string. That holds only when all these conditions hold:
+  // - The stream's decoder configuration record is a whole avcC or hvcC:
+  //   configurationVersion 1, and every NAL unit that it counts ends within
+  //   it. The record holds an SPS and a PPS, and an hvcC also holds a VPS.
+  // - The record's NAL unit lengths take 4 bytes.
+  // - The record header names the profile, tier and level that the worker
+  //   reads from the record's parameter sets, so codec_string is the same with
+  //   or without the filter.
+  // - Every SEI message in an hvcC is user data unregistered, payload type 5,
+  //   such as x265's information message. An hvcC that holds any other SEI
+  //   message, such as mastering display or content light level, keeps the
+  //   filter: the filter is what repeats that record-only metadata in front of
+  //   every IRAP sample.
+  // - In an MP4 or MOV file, the stream's sample entry is avc1 or dva1 for
+  //   H.264 and hvc1 or dvh1 for HEVC. Other sample entries, such as avc3,
+  //   hev1, dvav and dvhe, can keep parameter sets only in the samples.
   //
-  // An hvcC that holds any other SEI message, such as mastering display or
-  // content light level, makes the field false. The filter is what repeats that
-  // record-only HDR metadata in front of every IRAP sample.
-  //
-  // The worker reports false when the copy may change packet bytes. The field
-  // is absent when the worker did not report it. The server treats an absent
-  // value as false.
+  // The worker reports false otherwise. The field is absent when the worker did
+  // not report it. The server treats an absent value as false.
   optional bool copy_keeps_packet_bytes = 37;
 }
 
