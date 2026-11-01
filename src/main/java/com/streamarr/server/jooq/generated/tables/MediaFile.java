@@ -11,6 +11,7 @@ import com.streamarr.server.jooq.generated.enums.ItemResultFailureReason;
 import com.streamarr.server.jooq.generated.enums.MediaFileStatus;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable.BaseCollectablePath;
 import com.streamarr.server.jooq.generated.tables.Library.LibraryPath;
+import com.streamarr.server.jooq.generated.tables.MediaFileBitrateScanChunk.MediaFileBitrateScanChunkPath;
 import com.streamarr.server.jooq.generated.tables.MediaFileContainerInfo.MediaFileContainerInfoPath;
 import com.streamarr.server.jooq.generated.tables.MediaFileProbeTaskRequest.MediaFileProbeTaskRequestPath;
 import com.streamarr.server.jooq.generated.tables.MediaFileStreamMeasurement.MediaFileStreamMeasurementPath;
@@ -247,6 +248,19 @@ public class MediaFile extends TableImpl<MediaFileRecord> {
             _sessionProgress = new SessionProgressPath(this, null, Keys.SESSION_PROGRESS__FK_SESSION_PROGRESS_MEDIA_FILE.getInverseKey());
 
         return _sessionProgress;
+    }
+
+    private transient MediaFileBitrateScanChunkPath _mediaFileBitrateScanChunk;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.media_file_bitrate_scan_chunk</code> table
+     */
+    public MediaFileBitrateScanChunkPath mediaFileBitrateScanChunk() {
+        if (_mediaFileBitrateScanChunk == null)
+            _mediaFileBitrateScanChunk = new MediaFileBitrateScanChunkPath(this, null, Keys.MEDIA_FILE_BITRATE_SCAN_CHUNK__MEDIA_FILE_BITRATE_SCAN_CHUNK_MEDIA_FILE_ID_FKEY.getInverseKey());
+
+        return _mediaFileBitrateScanChunk;
     }
 
     private transient MediaFileContainerInfoPath _mediaFileContainerInfo;

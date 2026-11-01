@@ -31,6 +31,7 @@ import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fixtures.BitrateScanRequesters;
 import com.streamarr.server.fixtures.LoopbackProbeWorker;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
@@ -38,7 +39,6 @@ import com.streamarr.server.services.probe.ProbeTaskRequests;
 import com.streamarr.server.services.streaming.KeyframePacketScanner;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
-import com.streamarr.server.support.UnstartedSchedulerConfiguration;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeFailure;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -62,7 +62,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
-import javax.sql.DataSource;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
@@ -73,9 +72,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.env.Environment;
 import org.springframework.test.context.TestPropertySource;
-import org.springframework.transaction.PlatformTransactionManager;
 
 @TestPropertySource(properties = "PROBE_KEYFRAME_PACKET_SCAN_SCHEDULER_THREADS=1")
 @Tag("IntegrationTest")
@@ -101,11 +98,9 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
   @Autowired private ProbeTaskRequests scheduling;
   @Autowired private MediaFileContainerInfoRepository outcomes;
   @Autowired private ProbeSchedulingProperties probeScheduling;
-  @Autowired private PlatformTransactionManager transactionManager;
-  @Autowired private DataSource dataSource;
-  @Autowired private Environment environment;
   @Autowired private DSLContext dsl;
   @Autowired private MediaFileProbeTaskScheduler probeTaskScheduler;
+  @Autowired private BitrateScanExecution bitrateScanExecution;
 
   private final BlockingQueue<ExecutionComplete> scanCompletions = new LinkedBlockingQueue<>();
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
@@ -412,6 +407,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
                 _ -> {
                   throw new IllegalStateException("The scan table is unavailable");
                 })
+            .bitrateScans(BitrateScanRequesters.none())
             .build();
 
     assertThatIllegalStateException()
@@ -437,14 +433,10 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
             .meterRegistry(meterRegistry)
             .build();
     scanScheduler =
-        KeyframePacketScanScheduler.builder()
-            .schedulerProperties(UnstartedSchedulerConfiguration.schedulerProperties(environment))
-            .customizer(probeSchedulerStarter().pickingCustomizer())
-            .dataSource(dataSource)
-            .transactionManager(transactionManager)
+        scanSchedulerBuilder()
             .execution(execution)
-            .outcomes(outcomes)
-            .properties(probeScheduling)
+            .bitrateScanExecution(bitrateScanExecution)
+            .meterRegistry(meterRegistry)
             .clock(clock)
             .listeners(List.of(recordingScanCompletions()))
             .build();

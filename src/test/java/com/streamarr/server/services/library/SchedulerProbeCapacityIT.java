@@ -11,6 +11,7 @@ import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fakes.FakeFfprobeService;
+import com.streamarr.server.fixtures.BitrateScanRequesters;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
@@ -98,6 +99,7 @@ class SchedulerProbeCapacityIT extends AbstractProbeSchedulerIntegrationTest {
             .fileSystem(FileSystems.getDefault())
             .outcomes(outcomes)
             .packetScans(new CapturingKeyframePacketScanRequests())
+            .bitrateScans(BitrateScanRequesters.none())
             .transactionManager(transactionManager)
             .playbackProbeClaims(
                 new PlaybackProbeClaims(System::nanoTime, new SimpleMeterRegistry()))

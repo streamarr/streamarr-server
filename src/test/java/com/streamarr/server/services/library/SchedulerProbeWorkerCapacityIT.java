@@ -38,6 +38,7 @@ import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fixtures.BitrateScanRequesters;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.LoopbackProbeWorker;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -849,6 +850,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
             .fileSystem(FileSystems.getDefault())
             .outcomes(outcomes)
             .packetScans(new CapturingKeyframePacketScanRequests())
+            .bitrateScans(BitrateScanRequesters.none())
             .transactionManager(transactionManager)
             .playbackProbeClaims(playbackProbeClaims)
             .build();

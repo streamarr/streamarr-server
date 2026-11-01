@@ -26,6 +26,8 @@ import com.streamarr.server.jooq.generated.tables.Library;
 import com.streamarr.server.jooq.generated.tables.LibraryMetadata;
 import com.streamarr.server.jooq.generated.tables.LibraryOperation;
 import com.streamarr.server.jooq.generated.tables.MediaFile;
+import com.streamarr.server.jooq.generated.tables.MediaFileBitrateScanChunk;
+import com.streamarr.server.jooq.generated.tables.MediaFileBitrateScanChunkStream;
 import com.streamarr.server.jooq.generated.tables.MediaFileChapter;
 import com.streamarr.server.jooq.generated.tables.MediaFileContainerInfo;
 import com.streamarr.server.jooq.generated.tables.MediaFileKeyframePositions;
@@ -129,6 +131,8 @@ public class Public extends SchemaImpl {
             LibraryMetadata.LIBRARY_METADATA,
             LibraryOperation.LIBRARY_OPERATION,
             MediaFile.MEDIA_FILE,
+            MediaFileBitrateScanChunk.MEDIA_FILE_BITRATE_SCAN_CHUNK,
+            MediaFileBitrateScanChunkStream.MEDIA_FILE_BITRATE_SCAN_CHUNK_STREAM,
             MediaFileChapter.MEDIA_FILE_CHAPTER,
             MediaFileContainerInfo.MEDIA_FILE_CONTAINER_INFO,
             MediaFileKeyframePositions.MEDIA_FILE_KEYFRAME_POSITIONS,
