@@ -339,10 +339,10 @@ class StreamingResolverTest {
   }
 
   @Test
-  @DisplayName("Should expose the typed worker mismatch when Original cannot copy its source")
-  void shouldExposeTheTypedWorkerMismatchWhenOriginalCannotCopyItsSource() {
+  @DisplayName("Should expose the typed worker mismatch when a fixed quality's copy mismatches")
+  void shouldExposeTheTypedWorkerMismatchWhenAFixedQualitysCopyMismatches() {
     STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
-    var created = startPlayback(VideoQuality.ORIGINAL);
+    var created = startPlayback(VideoQuality.HIGH_720P);
     var playbackId = created.read(CREATED_PLAYBACK + ".id", String.class);
     var streamId =
         created.read(CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.id", String.class);

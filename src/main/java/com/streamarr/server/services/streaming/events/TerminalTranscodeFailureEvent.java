@@ -8,7 +8,7 @@ import lombok.NonNull;
 /**
  * A job attempt failed in a way that a replacement attempt would repeat, and no other format
  * attempt follows it. A copy's output mismatch publishes {@link VideoCopyOutputMismatchEvent}
- * instead, because Auto falls back to an encode.
+ * instead, because Auto and Original fall back to an encode.
  */
 @Builder
 public record TerminalTranscodeFailureEvent(
