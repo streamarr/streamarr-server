@@ -5,4 +5,4 @@
 ALTER TABLE media_file_stream_info
     ADD COLUMN copy_keeps_packet_bytes BOOLEAN,
     ADD CONSTRAINT copy_keeps_packet_bytes_requires_h264_or_hevc CHECK (
-        copy_keeps_packet_bytes IS NULL OR (codec IN ('h264', 'hevc')) IS TRUE);
+        copy_keeps_packet_bytes IS NULL OR (codec IN ('h264', 'hevc')) IS TRUE) NOT VALID;

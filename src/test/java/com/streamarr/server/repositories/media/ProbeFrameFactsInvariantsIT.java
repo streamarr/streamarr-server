@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.media;
 
 import static com.streamarr.server.jooq.generated.tables.MediaFileStreamInfo.MEDIA_FILE_STREAM_INFO;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -50,6 +51,7 @@ import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -103,6 +105,24 @@ class ProbeFrameFactsInvariantsIT extends AbstractIntegrationTest {
         .isInstanceOf(DataIntegrityViolationException.class)
         .extracting(ConstraintViolations::constraintName)
         .isEqualTo(broken.constraint());
+  }
+
+  // V109 adds the column in the same statement, so every existing row is NULL and satisfies the
+  // check. Validating it would only scan the table under ACCESS EXCLUSIVE.
+  @Test
+  @DisplayName("Should leave the copy fact's constraint unvalidated when V109 adds it")
+  void shouldLeaveTheCopyFactsConstraintUnvalidatedWhenV109AddsIt() {
+    var validated =
+        dsl.fetchSingle(
+                """
+                SELECT convalidated FROM pg_constraint
+                WHERE conrelid = ?::regclass AND conname = ?
+                """,
+                MEDIA_FILE_STREAM_INFO.getName(),
+                "copy_keeps_packet_bytes_requires_h264_or_hevc")
+            .get(0, Boolean.class);
+
+    assertThat(validated).isFalse();
   }
 
   static Stream<BrokenFrameFacts> brokenFrameFacts() {
