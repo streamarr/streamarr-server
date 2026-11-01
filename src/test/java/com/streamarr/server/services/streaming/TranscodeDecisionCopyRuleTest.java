@@ -1,6 +1,9 @@
 package com.streamarr.server.services.streaming;
 
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.declarationBuilderFor;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.StreamingProperties;
@@ -8,6 +11,8 @@ import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
+import com.streamarr.server.domain.streaming.DolbyVisionProfile;
+import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
@@ -32,6 +37,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
@@ -207,6 +213,66 @@ class TranscodeDecisionCopyRuleTest {
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
     assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("hdrSources")
+  @DisplayName(
+      "Should encode an HDR source when the client declares every HDR format that the source carries")
+  void shouldEncodeAnHdrSourceWhenTheClientDeclaresEveryHdrFormatThatTheSourceCarries(
+      String scenario, Source source) {
+    var hdrEntry =
+        hevcEntryBuilder()
+            .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG))
+            .dolbyVisionProfiles(
+                List.of(
+                    DolbyVisionProfileCapability.builder()
+                        .profile(DolbyVisionProfile.PROFILE_8_1)
+                        .maxLevel(13)
+                        .build(),
+                    DolbyVisionProfileCapability.builder()
+                        .profile(DolbyVisionProfile.PROFILE_8_4)
+                        .maxLevel(13)
+                        .build()))
+            .hdr10Plus(true)
+            .build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source.probe())
+                    .capabilityDeclaration(
+                        defaultDeclarationBuilder()
+                            .video(List.of(hdrEntry, h264EntryBuilder().build()))
+                            .build())
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+  }
+
+  // Each source's formats are ones the HDR entry above declares.
+  static Stream<Arguments> hdrSources() {
+    return Stream.of(
+        Arguments.of("HDR10", hdrSource(CompatibleBase.PQ, new DolbyVision.Absent())),
+        Arguments.of("HLG", hdrSource(CompatibleBase.HLG, new DolbyVision.Absent())),
+        Arguments.of(
+            "Dolby Vision 8.1 on a PQ base",
+            hdrSource(CompatibleBase.PQ, dolbyVisionRecord(OptionalInt.of(1)))),
+        Arguments.of(
+            "Dolby Vision 8.4 on an HLG base",
+            hdrSource(CompatibleBase.HLG, dolbyVisionRecord(OptionalInt.of(4)))));
+  }
+
+  private static Source hdrSource(CompatibleBase base, DolbyVision dolbyVision) {
+    return Source.builder()
+        .sampleEntry(SampleEntry.HVC1)
+        .dynamicRange(new VideoDynamicRange(base, Presence.UNSPECIFIED, dolbyVision))
+        .bitDepth(OptionalInt.of(10))
+        .build();
   }
 
   @Test
