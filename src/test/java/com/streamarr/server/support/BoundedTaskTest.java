@@ -135,6 +135,24 @@ class BoundedTaskTest {
     }
   }
 
+  @Test
+  @DisplayName(
+      "Should never answer that the task awaits a signal when it only takes a contended lock and waits with deadlines")
+  void
+      shouldNeverAnswerThatTheTaskAwaitsASignalWhenItOnlyTakesAContendedLockAndWaitsWithDeadlines() {
+    var lock = new ReentrantLock();
+    try (var _ = BoundedTask.start(() -> takeTurnsUntilInterrupted(lock));
+        var task = BoundedTask.start(() -> takeTurnsUntilInterrupted(lock))) {
+      await().pollInterval(Duration.ZERO).atMost(LONG_BOUND).until(lock::hasQueuedThreads);
+
+      await()
+          .pollInterval(Duration.ZERO)
+          .during(SHORT_BOUND.multipliedBy(3))
+          .atMost(LONG_BOUND)
+          .until(() -> !task.isAwaitingASignalWithoutDeadline());
+    }
+  }
+
   private Void waitUntilInterrupted() throws InterruptedException {
     try {
       neverReleased.await();
@@ -151,6 +169,20 @@ class BoundedTaskTest {
     } finally {
       lock.unlock();
     }
+  }
+
+  // Alternates between the lock, which the other caller contends, and a wait with a deadline.
+  private Void takeTurnsUntilInterrupted(ReentrantLock lock) throws InterruptedException {
+    while (!Thread.currentThread().isInterrupted()) {
+      lock.lockInterruptibly();
+      try {
+        neverReleased.await(1, TimeUnit.MILLISECONDS);
+      } finally {
+        lock.unlock();
+      }
+      neverReleased.await(1, TimeUnit.MILLISECONDS);
+    }
+    return null;
   }
 
   private Void ignoreInterruptsUntilReleased() {
