@@ -66,13 +66,10 @@ class RecordingOtlpCollectorTest {
   void shouldFailWhenNoExportAfterThePositionSatisfiesTheConditionInTime() throws Exception {
     try (var impatientCollector = RecordingOtlpCollector.start(Duration.ofMillis(200))) {
       send(impatientCollector, exportOf("before.position"));
-      var position = impatientCollector.metricExports().position();
+      var exports = impatientCollector.metricExports();
+      var position = exports.position();
 
-      assertThatThrownBy(
-              () ->
-                  impatientCollector
-                      .metricExports()
-                      .awaitAfter(position, received -> !received.isEmpty()))
+      assertThatThrownBy(() -> exports.awaitAfter(position, received -> !received.isEmpty()))
           .isInstanceOf(AssertionError.class);
     }
   }
