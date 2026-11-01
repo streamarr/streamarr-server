@@ -163,6 +163,7 @@ For example, the meters tagged with a worker's UUID end when that worker disconn
 `OTEL_SERVICE_NAME` renames the service on all three; it defaults to `streamarr-server`.
 `deployment.environment` is `DEPLOYMENT_ENV` (default `dev`).
 A collector that needs a private CA or a client certificate for metrics takes a Spring Boot SSL bundle named by `management.otlp.metrics.export.ssl.bundle`; the `OTEL_EXPORTER_OTLP_CERTIFICATE` and client-key variables reach spans and logs only.
-Spring Boot's own mapping of `OTEL_*` variables onto its settings is off, so the profile alone decides whether metrics are exported.
+Spring Boot's own mapping of `OTEL_*` variables onto its settings is off, so `OTEL_METRICS_EXPORTER` never turns Micrometer's export on or off.
 
-Without the profile, the server exports nothing.
+Without the profile, the server exports nothing, unless `management.otlp.metrics.export.enabled` turns on the meter registry by itself.
+The Compose file does that to store the server's metrics in Prometheus, as the Docker Compose section of `docs/distributed-transcoding.adoc` describes.

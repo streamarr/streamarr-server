@@ -26,17 +26,14 @@ services:
       STREAMING_WORKER_SESSION_PORT: ${STREAMARR_WORKER_SESSION_PORT:-9090}
       STREAMING_REMOTE_SOURCE_NAMESPACE_ID: ${STREAMARR_SOURCE_NAMESPACE_ID:-cccccccc-cccc-cccc-cccc-cccccccccccc}
       STREAMING_REMOTE_SOURCE_ROOT: /media
-      # Exports the Micrometer meters to Prometheus. Every other OpenTelemetry instrumentation stays
-      # off, so the server's database and request paths are unchanged, and no spans or log records
-      # are produced. The starter cannot bind OTEL_METRICS_EXPORTER or OTEL_LOGS_EXPORTER from the
-      # environment, and the server fails to start with either of them.
-      OTEL_SDK_DISABLED: "false"
-      OTEL_SERVICE_NAME: streamarr-server
-      OTEL_INSTRUMENTATION_COMMON_DEFAULT_ENABLED: "false"
-      OTEL_INSTRUMENTATION_MICROMETER_ENABLED: "true"
-      OTEL_EXPORTER_OTLP_METRICS_PROTOCOL: http/protobuf
-      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: http://prometheus:9090/api/v1/otlp/v1/metrics
-      OTEL_METRIC_EXPORT_INTERVAL: "10000"
+      # Spring Boot's OTLP meter registry sends every Micrometer meter to Prometheus every 10 s, at
+      # the OTLP endpoint followed by /v1/metrics. The OpenTelemetry SDK stays disabled, so the
+      # server produces no spans or log records: Compose runs no backend for them. The metrics'
+      # service.name, which Prometheus stores as the job label, is the Spring application name.
+      SPRING_APPLICATION_NAME: streamarr-server
+      MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: "true"
+      MANAGEMENT_OTLP_METRICS_EXPORT_STEP: 10s
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://prometheus:9090/api/v1/otlp
     volumes:
       - ${STREAMARR_MEDIA_PATH:-/mpool/media/clean/movies}:/media:ro
     depends_on:
