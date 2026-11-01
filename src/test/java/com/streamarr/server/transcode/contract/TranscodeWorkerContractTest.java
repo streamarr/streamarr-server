@@ -3,6 +3,12 @@ package com.streamarr.server.transcode.contract;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.protobuf.Descriptors.Descriptor;
+import com.google.protobuf.Descriptors.FieldDescriptor.Type;
+import com.streamarr.transcode.v1.BitrateScanChunk;
+import com.streamarr.transcode.v1.BitrateScanChunkResult;
+import com.streamarr.transcode.v1.BitrateScanChunkStream;
+import com.streamarr.transcode.v1.BitrateScanChunkStreams;
+import com.streamarr.transcode.v1.BitrateScanCopyChangesPackets;
 import com.streamarr.transcode.v1.CompatibleBase;
 import com.streamarr.transcode.v1.Deinterlace;
 import com.streamarr.transcode.v1.DeinterlaceOutput;
@@ -14,6 +20,9 @@ import com.streamarr.transcode.v1.Fraction;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.Presence;
+import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbePriority;
+import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.StartVariantCommand;
@@ -350,6 +359,180 @@ class TranscodeWorkerContractTest {
     assertThat(decoded.hasDeinterlace()).isFalse();
     assertThat(decoded.getDeinterlace().getOutput())
         .isEqualTo(DeinterlaceOutput.DEINTERLACE_OUTPUT_UNSPECIFIED);
+  }
+
+  @Test
+  @DisplayName(
+      "Should advertise the stream measurement versions whose bitrate scan chunks a worker runs when a worker registers")
+  void
+      shouldAdvertiseTheStreamMeasurementVersionsWhoseBitrateScanChunksAWorkerRunsWhenWorkerRegisters()
+          throws Exception {
+    var measuring = WorkerCapabilities.newBuilder().addMeasurementVersions(1).build();
+    var withoutBitrateScans = WorkerCapabilities.getDefaultInstance();
+
+    var parsedMeasuring = WorkerCapabilities.parseFrom(measuring.toByteArray());
+    var parsedWithoutBitrateScans = WorkerCapabilities.parseFrom(withoutBitrateScans.toByteArray());
+
+    assertThat(parsedMeasuring.getMeasurementVersionsList()).containsExactly(1);
+    assertThat(parsedWithoutBitrateScans.getMeasurementVersionsList()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry the chunk's keyframes and where its last interval ends when the server asks for a bitrate scan chunk")
+  void shouldCarryTheChunkKeyframesAndWhereItsLastIntervalEndsWhenServerAsksForBitrateScanChunk()
+      throws Exception {
+    var chunk =
+        BitrateScanChunk.newBuilder()
+            .setMeasurementVersion(1)
+            .setChosenVideoStreamIndex(0)
+            .addMeasuredStreamIndexes(0)
+            .addMeasuredStreamIndexes(1)
+            .setTimeBaseNumerator(1)
+            .setTimeBaseDenominator(90_000)
+            .addPresentationTimeDeltas(-3_003)
+            .addPresentationTimeDeltas(180_180)
+            .addDecodeTimeDeltas(-6_006)
+            .addDecodeTimeDeltas(180_180)
+            .setEndPresentationTime(357_357)
+            .setEndDecodeTime(354_354)
+            .setFirstChunk(true)
+            .build();
+    var request =
+        ProbeRequest.newBuilder()
+            .setProbeAttemptId(uuid(UUID.randomUUID()))
+            .setProbeVersion(7)
+            .setPriority(ProbePriority.PROBE_PRIORITY_BACKGROUND)
+            .setBitrateScanChunk(chunk)
+            .build();
+
+    var parsed = ProbeRequest.parseFrom(request.toByteArray());
+
+    assertThat(parsed.getScanKeyframePackets()).isFalse();
+    assertThat(parsed.getBitrateScanChunk()).isEqualTo(chunk);
+    assertThat(parsed.getBitrateScanChunk().getPresentationTimeDeltasList())
+        .containsExactly(-3_003L, 180_180L);
+    assertThat(parsed.getBitrateScanChunk().hasEndPresentationTime()).isTrue();
+    assertThat(parsed.getBitrateScanChunk().hasEndDecodeTime()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should leave the end times absent when the server asks for the last bitrate scan chunk")
+  void shouldLeaveTheEndTimesAbsentWhenServerAsksForTheLastBitrateScanChunk() throws Exception {
+    var lastChunk =
+        BitrateScanChunk.newBuilder()
+            .setMeasurementVersion(1)
+            .addMeasuredStreamIndexes(0)
+            .setTimeBaseNumerator(1)
+            .setTimeBaseDenominator(1_000)
+            .addPresentationTimeDeltas(0)
+            .addDecodeTimeDeltas(0)
+            .build();
+
+    var parsed = BitrateScanChunk.parseFrom(lastChunk.toByteArray());
+
+    assertThat(parsed.hasEndPresentationTime()).isFalse();
+    assertThat(parsed.hasEndDecodeTime()).isFalse();
+    assertThat(parsed.getFirstChunk()).isFalse();
+    assertThat(ProbeRequest.getDefaultInstance().hasBitrateScanChunk()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should report each measured stream in place of media when a worker answers a bitrate scan chunk")
+  void shouldReportEachMeasuredStreamInPlaceOfMediaWhenWorkerAnswersBitrateScanChunk()
+      throws Exception {
+    var video =
+        BitrateScanChunkStream.newBuilder()
+            .setStreamIndex(0)
+            .setMeasuredBytes(4_194_304)
+            .setPacketCount(240)
+            .setTimeBaseNumerator(1)
+            .setTimeBaseDenominator(90_000)
+            .setFirstPresentationTime(-3_003)
+            .setEndTime(357_357)
+            .build();
+    var silentAudio =
+        BitrateScanChunkStream.newBuilder()
+            .setStreamIndex(1)
+            .setTimeBaseNumerator(1)
+            .setTimeBaseDenominator(48_000)
+            .build();
+    var result =
+        ProbeAttemptResult.newBuilder()
+            .setProbeAttemptId(uuid(UUID.randomUUID()))
+            .setProbeVersion(7)
+            .setBitrateScanChunk(
+                BitrateScanChunkResult.newBuilder()
+                    .setMeasured(
+                        BitrateScanChunkStreams.newBuilder()
+                            .addStreams(video)
+                            .addStreams(silentAudio)))
+            .build();
+
+    var parsed = ProbeAttemptResult.parseFrom(result.toByteArray());
+
+    assertThat(parsed.getOutcomeCase())
+        .isEqualTo(ProbeAttemptResult.OutcomeCase.BITRATE_SCAN_CHUNK);
+    assertThat(parsed.hasMedia()).isFalse();
+    assertThat(parsed.getBitrateScanChunk().getMeasured().getStreamsList())
+        .containsExactly(video, silentAudio);
+    assertThat(parsed.getBitrateScanChunk().getMeasured().getStreams(1).hasFirstPresentationTime())
+        .isFalse();
+    assertThat(parsed.getBitrateScanChunk().getMeasured().getStreams(1).hasEndTime()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should name the stream whose packets a copy would change when a worker cannot measure a bitrate scan chunk")
+  void shouldNameTheStreamWhosePacketsACopyWouldChangeWhenWorkerCannotMeasureBitrateScanChunk()
+      throws Exception {
+    var result =
+        BitrateScanChunkResult.newBuilder()
+            .setCopyChangesPackets(BitrateScanCopyChangesPackets.newBuilder().setStreamIndex(2))
+            .build();
+
+    var parsed = BitrateScanChunkResult.parseFrom(result.toByteArray());
+
+    assertThat(parsed.getResultCase())
+        .isEqualTo(BitrateScanChunkResult.ResultCase.COPY_CHANGES_PACKETS);
+    assertThat(parsed.getCopyChangesPackets().getStreamIndex()).isEqualTo(2);
+    assertThat(parsed.hasMeasured()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the field numbers, types and oneofs that workers build against when publishing the bitrate scan chunk contract")
+  void
+      shouldKeepTheFieldNumbersTypesAndOneofsThatWorkersBuildAgainstWhenPublishingBitrateScanChunkContract() {
+    var request = ProbeRequest.getDescriptor().findFieldByName("bitrate_scan_chunk");
+    var reply = ProbeAttemptResult.getDescriptor().findFieldByName("bitrate_scan_chunk");
+    var versions = WorkerCapabilities.getDescriptor().findFieldByName("measurement_versions");
+    var chunk = BitrateScanChunk.getDescriptor();
+    var measured = BitrateScanChunkResult.getDescriptor().findFieldByName("measured");
+    var copyChangesPackets =
+        BitrateScanChunkResult.getDescriptor().findFieldByName("copy_changes_packets");
+    var stream = BitrateScanChunkStream.getDescriptor();
+
+    assertThat(request.getNumber()).isEqualTo(6);
+    assertThat(reply.getNumber()).isEqualTo(5);
+    assertThat(reply.getRealContainingOneof().getName()).isEqualTo("outcome");
+    assertThat(versions.getNumber()).isEqualTo(4);
+    assertThat(versions.getType()).isEqualTo(Type.UINT32);
+    assertThat(versions.isRepeated()).isTrue();
+    assertThat(chunk.findFieldByName("presentation_time_deltas").getNumber()).isEqualTo(6);
+    assertThat(chunk.findFieldByName("decode_time_deltas").getType()).isEqualTo(Type.SINT64);
+    assertThat(chunk.findFieldByName("end_presentation_time").getNumber()).isEqualTo(8);
+    assertThat(chunk.findFieldByName("end_decode_time").getType()).isEqualTo(Type.SINT64);
+    assertThat(chunk.findFieldByName("first_chunk").getNumber()).isEqualTo(10);
+    assertThat(measured.getRealContainingOneof().getName()).isEqualTo("result");
+    assertThat(measured.getNumber()).isEqualTo(1);
+    assertThat(copyChangesPackets.getRealContainingOneof().getName()).isEqualTo("result");
+    assertThat(copyChangesPackets.getNumber()).isEqualTo(2);
+    assertThat(stream.findFieldByName("measured_bytes").getType()).isEqualTo(Type.UINT64);
+    assertThat(stream.findFieldByName("first_presentation_time").getType()).isEqualTo(Type.SINT64);
+    assertThat(stream.findFieldByName("end_time").getNumber()).isEqualTo(7);
   }
 
   @Test
