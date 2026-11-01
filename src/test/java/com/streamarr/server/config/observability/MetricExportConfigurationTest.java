@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.micrometer.registry.otlp.OtlpConfig;
 import io.micrometer.registry.otlp.OtlpMeterRegistry;
+import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -54,6 +55,28 @@ class MetricExportConfigurationTest {
                   .containsEntry("service.name", "streamarr-server")
                   .containsEntry("deployment.environment", "dev");
             });
+  }
+
+  @Test
+  @DisplayName("Should export metrics once a minute when the observability profile is active")
+  void shouldExportMetricsOnceAMinuteWhenTheObservabilityProfileIsActive() {
+    CONTEXT_RUNNER
+        .withPropertyValues("spring.profiles.active=observability")
+        .run(
+            context ->
+                assertThat(context.getBean(OtlpConfig.class).step())
+                    .isEqualTo(Duration.ofMinutes(1)));
+  }
+
+  @Test
+  @DisplayName("Should export metrics under the deployment environment when DEPLOYMENT_ENV is set")
+  void shouldExportMetricsUnderTheDeploymentEnvironmentWhenDeploymentEnvIsSet() {
+    CONTEXT_RUNNER
+        .withPropertyValues("spring.profiles.active=observability", "DEPLOYMENT_ENV=staging")
+        .run(
+            context ->
+                assertThat(context.getBean(OtlpConfig.class).resourceAttributes())
+                    .containsEntry("deployment.environment", "staging"));
   }
 
   @Test
