@@ -10,6 +10,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.TranscodeLimitReachedException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.mutation.Outcome;
@@ -131,6 +132,12 @@ public class HlsStreamingService implements StreamingService {
     try {
       runtimeRegistry.save(session);
       session = producerLifecycle.startFirstListedVariant(session);
+    } catch (TranscodeLimitReachedException _) {
+      // Another start took the last place under the transcode limit after this admission, so no
+      // job attempt of this stream session was dispatched.
+      runtimeRegistry.removeById(sessionId);
+      return Outcome.rejected(
+          refuseForLackOfCapacity(CapacityRefusal.NO_FREE_CONFIGURED_TRANSCODE_SLOT));
     } catch (RuntimeException startupFailure) {
       rollbackFailedStartup(sessionId, startupFailure);
       throw startupFailure;
