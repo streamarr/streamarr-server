@@ -129,6 +129,7 @@ class OtlpMetricsExemplarConfigurationTest {
                   Span.wrap(spanContext(TRACE_ID, TraceFlags.getSampled())).makeCurrent()) {
                 observation.start();
               }
+
               // An asynchronous request's observation stops after the server span's scope closes.
               observation.stop();
               // Closing the registry sends its last export.
