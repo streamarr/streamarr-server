@@ -1451,6 +1451,46 @@ class TranscodeDecisionServiceTest {
                     VideoFormatConstraint.COPY_ONLY)));
   }
 
+  // A declared 29.97 or 59.94 lies just below the exact NTSC rate, 30000/1001 or 60000/1001.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("exactNtscRatesAgainstTheirRoundedMaximums")
+  @DisplayName(
+      "Should copy video at the exact NTSC rate when the entry declares that rate rounded to two"
+          + " decimals")
+  void shouldCopyVideoAtTheExactNtscRateWhenTheEntryDeclaresThatRateRoundedToTwoDecimals(
+      String scenario, Fraction ntscRate, double declaredMaximum) {
+    var source =
+        probeVersion5H264(
+            new PictureSize(1920, 1080), VideoPlaybackFactsFixture.declaredRateRule(ntscRate));
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    h264EntryBuilder()
+                        .maxWidth(1920)
+                        .maxHeight(1080)
+                        .maxFrameRate(declaredMaximum)
+                        .build()))
+            .build();
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .capabilityDeclaration(declaration)
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .videoFormatConstraint(VideoFormatConstraint.COPY_ONLY)
+                .build());
+
+    assertThat(decision.map(TranscodeDecision::transcodeMode)).contains(TranscodeMode.REMUX);
+  }
+
+  static Stream<Arguments> exactNtscRatesAgainstTheirRoundedMaximums() {
+    return Stream.of(
+        Arguments.of("30000/1001 against 29.97", new Fraction(30_000, 1_001), 29.97),
+        Arguments.of("60000/1001 against 59.94", new Fraction(60_000, 1_001), 59.94));
+  }
+
   // ADR 0037's frame-rate rule snaps the rate that the source's frames run at to a listed output
   // frame rate, which only an encode runs at. A copy keeps every source frame at its own rate.
   @ParameterizedTest(name = "{0}")
