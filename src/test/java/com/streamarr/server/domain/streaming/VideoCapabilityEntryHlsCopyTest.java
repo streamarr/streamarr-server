@@ -227,11 +227,28 @@ class VideoCapabilityEntryHlsCopyTest {
   }
 
   // A stream without a usable frame rate cannot be encoded, so a copy is its only path.
-  @Test
-  @DisplayName("Should fit an unknown frame rate when the entry accepts every known property")
-  void shouldFitAnUnknownFrameRateWhenTheEntryAcceptsEveryKnownProperty() {
-    assertThat(ENTRY.acceptsHlsCopy(fittingCopy().frameRate(OptionalDouble.empty()).build()))
-        .isTrue();
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("unknownFrameRate")
+  @DisplayName(
+      "Should fit an unknown frame rate only when the entry accepts every known property of the copy")
+  void shouldFitAnUnknownFrameRateOnlyWhenTheEntryAcceptsEveryKnownPropertyOfTheCopy(
+      String scenario, VideoStreamCopy copy, boolean fits) {
+    assertThat(ENTRY.acceptsHlsCopy(copy)).isEqualTo(fits);
+  }
+
+  static Stream<Arguments> unknownFrameRate() {
+    return Stream.of(
+        Arguments.of(
+            "every known property fits",
+            fittingCopy().frameRate(OptionalDouble.empty()).build(),
+            true),
+        Arguments.of(
+            "known size above the maximum",
+            fittingCopy()
+                .frameRate(OptionalDouble.empty())
+                .decodedSize(Optional.of(new PictureSize(3840, 2160)))
+                .build(),
+            false));
   }
 
   @Test
