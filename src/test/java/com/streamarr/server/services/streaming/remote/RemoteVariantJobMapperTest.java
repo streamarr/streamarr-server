@@ -804,6 +804,27 @@ class RemoteVariantJobMapperTest {
                 .build());
   }
 
+  // Twice 50 frames per second exceeds the 60 that Apple's HLS Authoring Specification item 1.19
+  // allows, so the worker writes one frame per source frame at the stored rate.
+  @Test
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @DisplayName(
+      "Should tell the worker to deinterlace one frame per source frame at the stored rate when twice the stored rate exceeds 60")
+  void
+      shouldTellTheWorkerToDeinterlaceOneFramePerSourceFrameAtTheStoredRateWhenTwiceTheStoredRateExceeds60() {
+    var job = mapper.map(interlacedEncodeAttempt(FieldOrder.BB, new Fraction(50, 1)).build());
+
+    assertThat(job.getDecision().getVideo().getDeinterlace().getOutput())
+        .isEqualTo(
+            com.streamarr.transcode.v1.DeinterlaceOutput.DEINTERLACE_OUTPUT_ONE_FRAME_PER_FRAME);
+    assertThat(job.getExecution().getOutputFrameRate())
+        .isEqualTo(
+            com.streamarr.transcode.v1.Fraction.newBuilder()
+                .setNumerator(50)
+                .setDenominator(1)
+                .build());
+  }
+
   // H.264 level 4.0 allows 1080p only up to 30 frames per second; level 4.2 allows 60 (ITU-T H.264
   // table A-1), so the encode of 1080i at one frame per field forces level 4.2.
   @Test
@@ -893,6 +914,11 @@ class RemoteVariantJobMapperTest {
   // 1080i at 29.97 frames, 59.94 fields, per second.
   private static TranscodeRequest.TranscodeRequestBuilder interlacedEncodeAttempt(
       FieldOrder fieldOrder) {
+    return interlacedEncodeAttempt(fieldOrder, new Fraction(30_000, 1_001));
+  }
+
+  private static TranscodeRequest.TranscodeRequestBuilder interlacedEncodeAttempt(
+      FieldOrder fieldOrder, Fraction storedOutputFrameRate) {
     var decision =
         TranscodeDecision.builder()
             .transcodeMode(TranscodeMode.FULL_TRANSCODE)
@@ -904,7 +930,7 @@ class RemoteVariantJobMapperTest {
                     VideoPlaybackFactsFixture.sdrH264FactsBuilder()
                         .frameRateRule(
                             VideoPlaybackFactsFixture.interlacedRateRule(
-                                new Fraction(30_000, 1_001), fieldOrder))
+                                storedOutputFrameRate, fieldOrder))
                         .build()))
             .build();
     return encodeAttempt("h264").bitrate(8_000_000L).transcodeDecision(decision);
