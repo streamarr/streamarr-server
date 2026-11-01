@@ -2,9 +2,12 @@ package com.streamarr.server.config.observability;
 
 import static com.streamarr.server.config.observability.OtlpExports.MICROMETER;
 import static com.streamarr.server.config.observability.OtlpExports.attribute;
+import static com.streamarr.server.config.observability.OtlpExports.hex;
+import static com.streamarr.server.config.observability.OtlpExports.histogramExemplars;
 import static com.streamarr.server.config.observability.OtlpExports.metricNames;
 import static com.streamarr.server.config.observability.OtlpExports.metricsNamed;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
 import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest;
@@ -13,6 +16,7 @@ import io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest;
 import io.opentelemetry.proto.common.v1.KeyValue;
 import io.opentelemetry.proto.logs.v1.ResourceLogs;
 import io.opentelemetry.proto.resource.v1.Resource;
+import io.opentelemetry.proto.trace.v1.Span;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -34,6 +38,7 @@ class MetricExportIT extends AbstractObservabilityProfileIntegrationTest {
   private static final String POOL_METER = "hikaricp.connections.active";
   private static final String HTTP_SERVER_METER = "http.server.requests";
   private static final String DEPLOYMENT_ENVIRONMENT = "metric-export-test";
+  private static final String TRACEPARENT = "traceparent";
 
   private static final RecordingOtlpCollector COLLECTOR = RecordingOtlpCollector.start(EXPORT_WAIT);
 
@@ -99,6 +104,24 @@ class MetricExportIT extends AbstractObservabilityProfileIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should link HTTP server latency to the request's span when a request is served")
+  void shouldLinkHttpServerLatencyToTheRequestsSpanWhenARequestIsServed() throws Exception {
+    var traceId = UUID.randomUUID().toString().replace("-", "");
+    var callerSpanId = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+    var metricPosition = COLLECTOR.metricExports().position();
+    var tracePosition = COLLECTOR.traceExports().position();
+
+    mockMvc.perform(
+        get("/actuator/health").header(TRACEPARENT, traceparent(traceId, callerSpanId)));
+
+    var serverSpan = awaitServerSpan(tracePosition, traceId, callerSpanId);
+
+    assertThat(histogramExemplars(exportsCollectedSince(metricPosition), HTTP_SERVER_METER))
+        .extracting(exemplar -> hex(exemplar.getTraceId()), exemplar -> hex(exemplar.getSpanId()))
+        .contains(tuple(traceId, hex(serverSpan.getSpanId())));
+  }
+
+  @Test
   @DisplayName("Should export spans under the service name of the metrics when a request is served")
   void shouldExportSpansUnderTheServiceNameOfTheMetricsWhenARequestIsServed() throws Exception {
     var position = COLLECTOR.traceExports().position();
@@ -148,6 +171,44 @@ class MetricExportIT extends AbstractObservabilityProfileIntegrationTest {
     assertThat(resourcesLogging(exports, message))
         .extracting(resource -> attribute(resource, "service.name"))
         .containsOnly(Optional.of(SERVICE_NAME));
+  }
+
+  private static String traceparent(String traceId, String callerSpanId) {
+    return "00-%s-%s-01".formatted(traceId, callerSpanId);
+  }
+
+  private Span awaitServerSpan(int tracePosition, String traceId, String callerSpanId)
+      throws InterruptedException {
+    var exports =
+        COLLECTOR
+            .traceExports()
+            .awaitAfter(
+                tracePosition, received -> serverSpan(received, traceId, callerSpanId).isPresent());
+    return serverSpan(exports, traceId, callerSpanId).orElseThrow();
+  }
+
+  private static Optional<Span> serverSpan(
+      List<ExportTraceServiceRequest> exports, String traceId, String callerSpanId) {
+    return exports.stream()
+        .flatMap(export -> export.getResourceSpansList().stream())
+        .flatMap(resource -> resource.getScopeSpansList().stream())
+        .flatMap(scope -> scope.getSpansList().stream())
+        .filter(span -> span.getKind() == Span.SpanKind.SPAN_KIND_SERVER)
+        .filter(span -> hex(span.getTraceId()).equals(traceId))
+        .filter(span -> hex(span.getParentSpanId()).equals(callerSpanId))
+        .findFirst();
+  }
+
+  /**
+   * Returns the metric exports received since {@code position}, once one collected after a
+   * measurement made before this call has arrived. The registry sends an exemplar once, in the
+   * first export it collects after the measurement, so that export is among those returned.
+   */
+  private List<ExportMetricsServiceRequest> exportsCollectedSince(int position)
+      throws InterruptedException {
+    exportsCollectedAfter(COLLECTOR.metricExports().position());
+    var exports = COLLECTOR.metricExports().all();
+    return exports.subList(position, exports.size());
   }
 
   private static List<Resource> resourcesLogging(
