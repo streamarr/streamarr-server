@@ -10,11 +10,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
+import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
@@ -24,139 +24,228 @@ class AudioStepsTest {
   private static final String STEREO_STEPS = "aac 2 128000, aac 2 96000, aac 2 64000";
 
   @ParameterizedTest(name = "{0}")
-  @MethodSource("encodedSessionAudio")
+  @MethodSource("surroundEncodes")
   @DisplayName(
-      "Should step an encode through its codec's multichannel bitrates and then AAC stereo when the"
-          + " session encodes the audio")
+      "Should step a surround encode through its codec's multichannel bitrates and then AAC stereo"
+          + " when the session encodes the audio")
   void
-      shouldStepAnEncodeThroughItsCodecsMultichannelBitratesAndThenAacStereoWhenTheSessionEncodesTheAudio(
-          String sessionAudio, List<AudioCapabilityEntry> entries, String expectedSteps) {
-    var declaration = defaultDeclarationBuilder().audio(entries).build();
-
-    var steps = AudioSteps.below(encode(sessionAudio), declaration);
-
-    assertThat(describe(steps)).isEqualTo(expectedSteps);
+      shouldStepASurroundEncodeThroughItsCodecsMultichannelBitratesAndThenAacStereoWhenTheSessionEncodesTheAudio(
+          StepsCase stepsCase) {
+    assertSteps(stepsCase);
   }
 
-  static Stream<Arguments> encodedSessionAudio() {
+  static Stream<StepsCase> surroundEncodes() {
     return Stream.of(
-        Arguments.of(
-            "eac3 6 768000",
-            entries(AudioCodec.EAC3, 6),
-            "eac3 6 768000, eac3 6 640000, eac3 6 448000, eac3 6 384000, " + STEREO_STEPS),
-        Arguments.of(
-            "ac3 6 640000",
-            entries(AudioCodec.AC3, 6),
-            "ac3 6 640000, ac3 6 448000, ac3 6 384000, " + STEREO_STEPS),
-        Arguments.of(
-            "aac 6 384000",
-            entries(AudioCodec.AAC, 6),
-            "aac 6 384000, aac 6 320000, " + STEREO_STEPS),
-        Arguments.of(
-            "aac 8 512000",
-            entries(AudioCodec.AAC, 8),
-            "aac 8 512000, aac 8 448000, aac 6 320000, " + STEREO_STEPS),
-        Arguments.of("aac 2 128000", List.of(aacEntryBuilder().build()), STEREO_STEPS),
-        Arguments.of("aac 1 64000", List.of(aacEntryBuilder().build()), "aac 1 64000"));
+        StepsCase.builder()
+            .sessionAudio(encode("eac3").channels(6).bitrate(768_000L).build())
+            .entries(entries(AudioCodec.EAC3, 6))
+            .steps(
+                List.of(
+                    "eac3 6 768000",
+                    "eac3 6 640000",
+                    "eac3 6 448000",
+                    "eac3 6 384000",
+                    STEREO_STEPS))
+            .build(),
+        StepsCase.builder()
+            .sessionAudio(encode("ac3").channels(6).bitrate(640_000L).build())
+            .entries(entries(AudioCodec.AC3, 6))
+            .steps(List.of("ac3 6 640000", "ac3 6 448000", "ac3 6 384000", STEREO_STEPS))
+            .build(),
+        StepsCase.builder()
+            .sessionAudio(encode("aac").channels(6).bitrate(384_000L).build())
+            .entries(entries(AudioCodec.AAC, 6))
+            .steps(List.of("aac 6 384000", "aac 6 320000", STEREO_STEPS))
+            .build());
+  }
+
+  // AAC 5.1 at 320 kb/s needs no entry beyond the one that accepts AAC 7.1.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("aacAbove51")
+  @DisplayName(
+      "Should step AAC above 5.1 through AAC 5.1 before stereo when the track has more than 5.1")
+  void shouldStepAacAbove51ThroughAac51BeforeStereoWhenTheTrackHasMoreThan51(StepsCase stepsCase) {
+    assertSteps(stepsCase);
+  }
+
+  static Stream<StepsCase> aacAbove51() {
+    var aac71 = StepsCase.builder().entries(entries(AudioCodec.AAC, 8));
+    return Stream.of(
+        aac71
+            .sessionAudio(encode("aac").channels(8).bitrate(512_000L).build())
+            .steps(List.of("aac 8 512000", "aac 8 448000", "aac 6 320000", STEREO_STEPS))
+            .build(),
+        aac71
+            .sessionAudio(copy("aac").channels(8).bitrate(640_000L).build())
+            .steps(List.of("aac 8 640000", "aac 8 448000", "aac 6 320000", STEREO_STEPS))
+            .build(),
+        aac71
+            .sessionAudio(copy("aac").channels(8).bitrate(400_000L).build())
+            .steps(List.of("aac 8 400000", "aac 6 320000", STEREO_STEPS))
+            .build());
+  }
+
+  // A copied codec that the server also encodes adds its own multichannel bitrates: the steps of
+  // both codecs below the copy, highest bitrate first, the copied codec first at an equal bitrate.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("copiesInACodecTheServerEncodes")
+  @DisplayName(
+      "Should step a copy through its own codec's and the server's encode's multichannel bitrates,"
+          + " highest first, when the server encodes the copied codec")
+  void
+      shouldStepACopyThroughItsOwnCodecsAndTheServersEncodesMultichannelBitratesHighestFirstWhenTheServerEncodesTheCopiedCodec(
+          StepsCase stepsCase) {
+    assertSteps(stepsCase);
+  }
+
+  static Stream<StepsCase> copiesInACodecTheServerEncodes() {
+    return Stream.of(
+        StepsCase.builder()
+            .sessionAudio(copy("ac3").channels(6).bitrate(640_000L).build())
+            .entries(entries(AudioCodec.AC3, 6))
+            .steps(List.of("ac3 6 640000", "ac3 6 448000", "ac3 6 384000", STEREO_STEPS))
+            .build(),
+        StepsCase.builder()
+            .sessionAudio(copy("ac3").channels(6).bitrate(640_000L).build())
+            .entries(
+                List.of(
+                    aacEntryBuilder().build(),
+                    audioEntryBuilder(AudioCodec.AC3).maxChannels(6).build(),
+                    audioEntryBuilder(AudioCodec.EAC3).maxChannels(6).build()))
+            .steps(List.of("ac3 6 640000", "ac3 6 448000", "ac3 6 384000", STEREO_STEPS))
+            .build(),
+        StepsCase.builder()
+            .sessionAudio(copy("aac").channels(6).bitrate(640_000L).build())
+            .entries(aac51AndEac351())
+            .steps(
+                List.of(
+                    "aac 6 640000", "eac3 6 448000", "eac3 6 384000", "aac 6 320000", STEREO_STEPS))
+            .build(),
+        StepsCase.builder()
+            .sessionAudio(copy("aac").channels(8).bitrate(512_000L).build())
+            .entries(
+                List.of(
+                    aacEntryBuilder().maxChannels(8).build(),
+                    audioEntryBuilder(AudioCodec.EAC3).maxChannels(6).build()))
+            .steps(
+                List.of(
+                    "aac 8 512000", "aac 8 448000", "eac3 6 384000", "aac 6 320000", STEREO_STEPS))
+            .build(),
+        StepsCase.builder()
+            .sessionAudio(copy("eac3").channels(8).bitrate(1_024_000L).build())
+            .entries(entries(AudioCodec.EAC3, 8))
+            .steps(
+                List.of(
+                    "eac3 8 1024000",
+                    "eac3 6 640000",
+                    "eac3 6 448000",
+                    "eac3 6 384000",
+                    STEREO_STEPS))
+            .build());
+  }
+
+  // The server encodes E-AC-3 and then AC-3 in surround, but not Opus or FLAC.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("copiesInACodecTheServerDoesNotEncode")
+  @DisplayName(
+      "Should step a copy through the server's encode only when the server does not encode the"
+          + " copied codec")
+  void shouldStepACopyThroughTheServersEncodeOnlyWhenTheServerDoesNotEncodeTheCopiedCodec(
+      StepsCase stepsCase) {
+    assertSteps(stepsCase);
+  }
+
+  static Stream<StepsCase> copiesInACodecTheServerDoesNotEncode() {
+    return Stream.of(
+        StepsCase.builder()
+            .sessionAudio(copy("opus").channels(6).bitrate(450_000L).build())
+            .entries(
+                List.of(
+                    aacEntryBuilder().build(),
+                    audioEntryBuilder(AudioCodec.OPUS).maxChannels(6).build(),
+                    audioEntryBuilder(AudioCodec.EAC3).maxChannels(6).build()))
+            .steps(List.of("opus 6 450000", "eac3 6 448000", "eac3 6 384000", STEREO_STEPS))
+            .build(),
+        StepsCase.builder()
+            .sessionAudio(copy("flac").channels(6).bitrate(2_500_000L).build())
+            .entries(
+                List.of(
+                    aacEntryBuilder().build(),
+                    audioEntryBuilder(AudioCodec.FLAC).maxChannels(6).build(),
+                    audioEntryBuilder(AudioCodec.AC3).maxChannels(6).build()))
+            .steps(List.of("flac 6 2500000", "ac3 6 448000", "ac3 6 384000", STEREO_STEPS))
+            .build());
   }
 
   @ParameterizedTest(name = "{0}")
-  @MethodSource("copiedSessionAudio")
+  @MethodSource("sessionAudioAtOrBelowAStepsBitrate")
   @DisplayName(
-      "Should step a copy through the encode that the server would choose for the track and the"
-          + " copied codec's own encode when the session copies the audio")
-  void
-      shouldStepACopyThroughTheEncodeThatTheServerWouldChooseForTheTrackAndTheCopiedCodecsOwnEncodeWhenTheSessionCopiesTheAudio(
-          String sessionAudio, List<AudioCapabilityEntry> entries, String expectedSteps) {
-    var declaration = defaultDeclarationBuilder().audio(entries).build();
-
-    var steps = AudioSteps.below(copy(sessionAudio), declaration);
-
-    assertThat(describe(steps)).isEqualTo(expectedSteps);
+      "Should leave out a step when its bitrate is not below the bitrate of every step before it")
+  void shouldLeaveOutAStepWhenItsBitrateIsNotBelowTheBitrateOfEveryStepBeforeIt(
+      StepsCase stepsCase) {
+    assertSteps(stepsCase);
   }
 
-  // A copied codec that the server does not encode steps through the encode that the server would
-  // choose, E-AC-3 and then AC-3. A copied codec that the server encodes also steps through its own
-  // multichannel bitrates: the steps of both codecs below the copy, highest bitrate first, the
-  // copied codec first at an equal bitrate. AAC above 5.1 also steps through AAC 5.1. A copy at or
-  // below every multichannel bitrate goes straight to the stereo steps.
-  static Stream<Arguments> copiedSessionAudio() {
+  // A copy at or below a multichannel bitrate skips that step, and a stereo encode at 128 kb/s
+  // skips the 128 kb/s stereo step.
+  static Stream<StepsCase> sessionAudioAtOrBelowAStepsBitrate() {
     return Stream.of(
-        Arguments.of(
-            "ac3 6 640000",
-            entries(AudioCodec.AC3, 6),
-            "ac3 6 640000, ac3 6 448000, ac3 6 384000, " + STEREO_STEPS),
-        Arguments.of(
-            "ac3 6 640000",
-            List.of(
-                aacEntryBuilder().build(),
-                audioEntryBuilder(AudioCodec.AC3).maxChannels(6).build(),
-                audioEntryBuilder(AudioCodec.EAC3).maxChannels(6).build()),
-            "ac3 6 640000, ac3 6 448000, ac3 6 384000, " + STEREO_STEPS),
-        Arguments.of(
-            "aac 6 640000",
-            List.of(
-                aacEntryBuilder().maxChannels(6).build(),
-                audioEntryBuilder(AudioCodec.EAC3).maxChannels(6).build()),
-            "aac 6 640000, eac3 6 448000, eac3 6 384000, aac 6 320000, " + STEREO_STEPS),
-        Arguments.of(
-            "aac 8 512000",
-            List.of(
-                aacEntryBuilder().maxChannels(8).build(),
-                audioEntryBuilder(AudioCodec.EAC3).maxChannels(6).build()),
-            "aac 8 512000, aac 8 448000, eac3 6 384000, aac 6 320000, " + STEREO_STEPS),
-        Arguments.of(
-            "aac 8 640000",
-            entries(AudioCodec.AAC, 8),
-            "aac 8 640000, aac 8 448000, aac 6 320000, " + STEREO_STEPS),
-        Arguments.of(
-            "aac 8 400000",
-            entries(AudioCodec.AAC, 8),
-            "aac 8 400000, aac 6 320000, " + STEREO_STEPS),
-        Arguments.of(
-            "eac3 8 1024000",
-            entries(AudioCodec.EAC3, 8),
-            "eac3 8 1024000, eac3 6 640000, eac3 6 448000, eac3 6 384000, " + STEREO_STEPS),
-        Arguments.of(
-            "opus 6 450000",
-            List.of(
-                aacEntryBuilder().build(),
-                audioEntryBuilder(AudioCodec.OPUS).maxChannels(6).build(),
-                audioEntryBuilder(AudioCodec.EAC3).maxChannels(6).build()),
-            "opus 6 450000, eac3 6 448000, eac3 6 384000, " + STEREO_STEPS),
-        Arguments.of(
-            "flac 6 2500000",
-            List.of(
-                aacEntryBuilder().build(),
-                audioEntryBuilder(AudioCodec.FLAC).maxChannels(6).build(),
-                audioEntryBuilder(AudioCodec.AC3).maxChannels(6).build()),
-            "flac 6 2500000, ac3 6 448000, ac3 6 384000, " + STEREO_STEPS),
-        Arguments.of(
-            "aac 6 384000",
-            List.of(
-                aacEntryBuilder().maxChannels(6).build(),
-                audioEntryBuilder(AudioCodec.EAC3).maxChannels(6).build()),
-            "aac 6 384000, aac 6 320000, " + STEREO_STEPS),
-        Arguments.of(
-            "aac 6 320000",
-            List.of(
-                aacEntryBuilder().maxChannels(6).build(),
-                audioEntryBuilder(AudioCodec.EAC3).maxChannels(6).build()),
-            "aac 6 320000, " + STEREO_STEPS),
-        Arguments.of(
-            "eac3 6 384000", entries(AudioCodec.EAC3, 6), "eac3 6 384000, " + STEREO_STEPS),
-        Arguments.of(
-            "aac 2 256000", List.of(aacEntryBuilder().build()), "aac 2 256000, " + STEREO_STEPS),
-        Arguments.of("ac3 1 96000", entries(AudioCodec.AC3, 6), "ac3 1 96000, aac 1 64000"));
+        StepsCase.builder()
+            .sessionAudio(copy("aac").channels(6).bitrate(384_000L).build())
+            .entries(aac51AndEac351())
+            .steps(List.of("aac 6 384000", "aac 6 320000", STEREO_STEPS))
+            .build(),
+        StepsCase.builder()
+            .sessionAudio(copy("aac").channels(6).bitrate(320_000L).build())
+            .entries(aac51AndEac351())
+            .steps(List.of("aac 6 320000", STEREO_STEPS))
+            .build(),
+        StepsCase.builder()
+            .sessionAudio(copy("eac3").channels(6).bitrate(384_000L).build())
+            .entries(entries(AudioCodec.EAC3, 6))
+            .steps(List.of("eac3 6 384000", STEREO_STEPS))
+            .build(),
+        StepsCase.builder()
+            .sessionAudio(copy("aac").channels(2).bitrate(256_000L).build())
+            .entries(List.of(aacEntryBuilder().build()))
+            .steps(List.of("aac 2 256000", STEREO_STEPS))
+            .build(),
+        StepsCase.builder()
+            .sessionAudio(encode("aac").channels(2).bitrate(128_000L).build())
+            .entries(List.of(aacEntryBuilder().build()))
+            .steps(List.of(STEREO_STEPS))
+            .build());
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("monoTracks")
+  @DisplayName("Should step a mono track only to AAC mono at 64 kb/s when the track is mono")
+  void shouldStepAMonoTrackOnlyToAacMonoAt64KbpsWhenTheTrackIsMono(StepsCase stepsCase) {
+    assertSteps(stepsCase);
+  }
+
+  static Stream<StepsCase> monoTracks() {
+    return Stream.of(
+        StepsCase.builder()
+            .sessionAudio(encode("aac").channels(1).bitrate(64_000L).build())
+            .entries(List.of(aacEntryBuilder().build()))
+            .steps(List.of("aac 1 64000"))
+            .build(),
+        StepsCase.builder()
+            .sessionAudio(copy("ac3").channels(1).bitrate(96_000L).build())
+            .entries(entries(AudioCodec.AC3, 6))
+            .steps(List.of("ac3 1 96000", "aac 1 64000"))
+            .build());
   }
 
   @Test
   @DisplayName(
-      "Should step a surround track straight to AAC stereo when the player declares only stereo AAC")
+      "Should step a surround track straight to AAC stereo when the player declares only stereo"
+          + " AAC")
   void shouldStepASurroundTrackStraightToAacStereoWhenThePlayerDeclaresOnlyStereoAac() {
     var steps =
         AudioSteps.below(
-            copy("flac 6 2500000"),
+            copy("flac").channels(6).bitrate(2_500_000L).build(),
             defaultDeclarationBuilder()
                 .audio(
                     List.of(
@@ -172,7 +261,7 @@ class AudioStepsTest {
   void shouldEncodeEveryStepBelowTheSessionsAudioWhenTheSessionCopiesIt() {
     var declaration = defaultDeclarationBuilder().audio(entries(AudioCodec.AC3, 6)).build();
 
-    var steps = AudioSteps.below(copy("ac3 6 640000"), declaration);
+    var steps = AudioSteps.below(copy("ac3").channels(6).bitrate(640_000L).build(), declaration);
 
     assertThat(steps.highestFirst().subList(1, steps.highestFirst().size()))
         .isNotEmpty()
@@ -196,7 +285,7 @@ class AudioStepsTest {
             .audio(List.of(aacEntryBuilder().maxChannels(4).build()))
             .build();
 
-    var steps = AudioSteps.below(encode("aac 4 128000"), declaration);
+    var steps = AudioSteps.below(encode("aac").channels(4).bitrate(128_000L).build(), declaration);
 
     assertThat(describe(steps)).isEqualTo("aac 4 128000, aac 2 96000, aac 2 64000");
   }
@@ -242,24 +331,29 @@ class AudioStepsTest {
         aacEntryBuilder().build(), audioEntryBuilder(codec).maxChannels(maxChannels).build());
   }
 
-  private static AudioDecision encode(String described) {
-    return decision(described).mode(AudioMode.TRANSCODE).build();
+  private static List<AudioCapabilityEntry> aac51AndEac351() {
+    return List.of(
+        aacEntryBuilder().maxChannels(6).build(),
+        audioEntryBuilder(AudioCodec.EAC3).maxChannels(6).build());
   }
 
-  private static AudioDecision copy(String described) {
-    return decision(described)
-        .mode(AudioMode.COPY)
-        .sourceCodecString(Optional.of("copied"))
-        .build();
+  private static AudioDecision.AudioDecisionBuilder encode(String codec) {
+    return AudioDecision.builder().mode(AudioMode.TRANSCODE).codec(codec);
   }
 
-  // "codec channels bitrate", such as "eac3 6 768000".
-  private static AudioDecision.AudioDecisionBuilder decision(String described) {
-    var parts = described.split(" ");
+  private static AudioDecision.AudioDecisionBuilder copy(String codec) {
     return AudioDecision.builder()
-        .codec(parts[0])
-        .channels(Integer.parseInt(parts[1]))
-        .bitrate(Long.parseLong(parts[2]));
+        .mode(AudioMode.COPY)
+        .codec(codec)
+        .sourceCodecString(Optional.of("copied"));
+  }
+
+  private static void assertSteps(StepsCase stepsCase) {
+    var declaration = defaultDeclarationBuilder().audio(stepsCase.entries()).build();
+
+    var steps = AudioSteps.below(stepsCase.sessionAudio(), declaration);
+
+    assertThat(describe(steps)).isEqualTo(String.join(", ", stepsCase.steps()));
   }
 
   private static String describe(AudioSteps steps) {
@@ -269,4 +363,9 @@ class AudioStepsTest {
             .map(step -> step.codec() + " " + step.channels() + " " + step.bitrate())
             .toList());
   }
+
+  // Each step as "codec channels bitrate", such as "eac3 6 768000", highest first.
+  @Builder
+  record StepsCase(
+      AudioDecision sessionAudio, List<AudioCapabilityEntry> entries, List<String> steps) {}
 }
