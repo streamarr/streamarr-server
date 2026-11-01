@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -31,7 +32,8 @@ class MediaSegmentTimelineTest {
     "PT0S, 0"
   })
   @DisplayName(
-      "Should count media segments over the whole milliseconds of the media when sizing the timeline")
+      "Should count media segments over the whole milliseconds of the media when sizing the"
+          + " timeline")
   void shouldCountMediaSegmentsOverTheWholeMillisecondsOfTheMediaWhenSizingTheTimeline(
       Duration mediaDuration, int expectedCount) {
     var timeline = new MediaSegmentTimeline.PlainGrid(mediaDuration, SIX_SECONDS);
@@ -105,6 +107,20 @@ class MediaSegmentTimelineTest {
   }
 
   @Test
+  @DisplayName(
+      "Should keep each opening keyframe's index in the positions when a grid opens at keyframes")
+  void shouldKeepEachOpeningKeyframesIndexInThePositionsWhenAGridOpensAtKeyframes() {
+    var positions = millisecondPositions(0, 2_000, 6_000, 8_000, 12_000);
+    var grid = new MediaSegmentTimeline.PlainGrid(Duration.ofSeconds(12), SIX_SECONDS);
+
+    var timeline = grid.openedAt(positions, new StreamCopySegments.Starts(List.of(0, 2, 4)));
+
+    assertThat(timeline.openingKeyframes())
+        .extracting(MediaSegmentTimeline.OpeningKeyframe::keyframeIndex)
+        .containsExactly(0, 2);
+  }
+
+  @Test
   @DisplayName("Should advertise no stream copy segment when the first keyframe follows the end")
   void shouldAdvertiseNoStreamCopySegmentWhenTheFirstKeyframeFollowsTheEnd() {
     var timeline = streamCopyOver(Duration.ofMillis(400), 500);
@@ -134,7 +150,7 @@ class MediaSegmentTimelineTest {
             .build();
     var grid = new MediaSegmentTimeline.PlainGrid(Duration.ofSeconds(12), SIX_SECONDS);
 
-    var timeline = grid.openedAt(positions, new StreamCopySegments.Starts(positions.keyframes()));
+    var timeline = grid.openedAt(positions, everyKeyframeOf(positions));
 
     assertThat(durations(timeline))
         .containsExactly(Duration.ofMillis(6_006), Duration.ofMillis(5_994));
@@ -154,7 +170,7 @@ class MediaSegmentTimelineTest {
             .build();
     var grid = new MediaSegmentTimeline.PlainGrid(Duration.ofSeconds(12), SIX_SECONDS);
 
-    var timeline = grid.openedAt(positions, new StreamCopySegments.Starts(positions.keyframes()));
+    var timeline = grid.openedAt(positions, everyKeyframeOf(positions));
 
     assertThat(timeline.keyframeSeekPosition(0)).isEmpty();
     assertThat(timeline.keyframeSeekPosition(1)).hasValue(Duration.ofNanos(5_964_291_667L));
@@ -168,9 +184,9 @@ class MediaSegmentTimelineTest {
             Duration.ofSeconds(12),
             SIX_SECONDS,
             List.of(
-                new MediaSegmentTimeline.OpeningKeyframe(Duration.ZERO, Duration.ZERO),
+                new MediaSegmentTimeline.OpeningKeyframe(0, Duration.ZERO, Duration.ZERO),
                 new MediaSegmentTimeline.OpeningKeyframe(
-                    Duration.ofSeconds(6), Duration.ofMillis(-1))));
+                    1, Duration.ofSeconds(6), Duration.ofMillis(-1))));
 
     assertThat(timeline.keyframeSeekPosition(1)).hasValue(Duration.ZERO);
   }
@@ -186,13 +202,13 @@ class MediaSegmentTimelineTest {
   @Test
   @DisplayName("Should keep the opening keyframes it was given when the caller's list changes")
   void shouldKeepTheOpeningKeyframesItWasGivenWhenTheCallersListChanges() {
-    var first = new MediaSegmentTimeline.OpeningKeyframe(Duration.ZERO, Duration.ZERO);
+    var first = new MediaSegmentTimeline.OpeningKeyframe(0, Duration.ZERO, Duration.ZERO);
     var openingKeyframes = new ArrayList<>(List.of(first));
     var timeline =
         new MediaSegmentTimeline.StreamCopy(Duration.ofSeconds(6), SIX_SECONDS, openingKeyframes);
 
     openingKeyframes.add(
-        new MediaSegmentTimeline.OpeningKeyframe(Duration.ofSeconds(3), Duration.ofSeconds(3)));
+        new MediaSegmentTimeline.OpeningKeyframe(1, Duration.ofSeconds(3), Duration.ofSeconds(3)));
 
     assertThat(timeline.openingKeyframes()).containsExactly(first);
   }
@@ -219,14 +235,14 @@ class MediaSegmentTimelineTest {
   @DisplayName("Should reject an opening keyframe without a presentation time")
   void shouldRejectAnOpeningKeyframeWithoutAPresentationTime() {
     assertThatNullPointerException()
-        .isThrownBy(() -> new MediaSegmentTimeline.OpeningKeyframe(null, Duration.ZERO));
+        .isThrownBy(() -> new MediaSegmentTimeline.OpeningKeyframe(0, null, Duration.ZERO));
   }
 
   @Test
   @DisplayName("Should reject an opening keyframe without a decode time")
   void shouldRejectAnOpeningKeyframeWithoutADecodeTime() {
     assertThatNullPointerException()
-        .isThrownBy(() -> new MediaSegmentTimeline.OpeningKeyframe(Duration.ZERO, null));
+        .isThrownBy(() -> new MediaSegmentTimeline.OpeningKeyframe(0, Duration.ZERO, null));
   }
 
   @Test
@@ -240,7 +256,7 @@ class MediaSegmentTimelineTest {
   @DisplayName("Should reject opening a grid without keyframe positions")
   void shouldRejectOpeningAGridWithoutKeyframePositions() {
     var grid = new MediaSegmentTimeline.PlainGrid(Duration.ofSeconds(12), SIX_SECONDS);
-    var starts = new StreamCopySegments.Starts(List.of(new KeyframePosition(0, 0)));
+    var starts = new StreamCopySegments.Starts(List.of(0));
 
     assertThatNullPointerException().isThrownBy(() -> grid.openedAt(null, starts));
   }
@@ -255,14 +271,19 @@ class MediaSegmentTimelineTest {
   }
 
   private static List<MediaSegmentTimeline.OpeningKeyframe> openingKeyframeAtZero() {
-    return List.of(new MediaSegmentTimeline.OpeningKeyframe(Duration.ZERO, Duration.ZERO));
+    return List.of(new MediaSegmentTimeline.OpeningKeyframe(0, Duration.ZERO, Duration.ZERO));
   }
 
   private static MediaSegmentTimeline.StreamCopy streamCopyOver(
       Duration mediaDuration, long... keyframeMillis) {
     var positions = millisecondPositions(keyframeMillis);
     return new MediaSegmentTimeline.PlainGrid(mediaDuration, SIX_SECONDS)
-        .openedAt(positions, new StreamCopySegments.Starts(positions.keyframes()));
+        .openedAt(positions, everyKeyframeOf(positions));
+  }
+
+  private static StreamCopySegments.Starts everyKeyframeOf(KeyframePositions positions) {
+    return new StreamCopySegments.Starts(
+        IntStream.range(0, positions.keyframes().size()).boxed().toList());
   }
 
   private static KeyframePositions millisecondPositions(long... keyframeMillis) {

@@ -16,14 +16,12 @@ class StreamCopySegmentsTest {
   @Test
   @DisplayName("Should keep the segment starts it was given when the caller's list changes")
   void shouldKeepTheSegmentStartsItWasGivenWhenTheCallersListChanges() {
-    var first = new KeyframePosition(0, 0);
-    var second = new KeyframePosition(6_000, 6_000);
-    var openingKeyframes = new ArrayList<>(List.of(first, second));
-    var starts = new StreamCopySegments.Starts(openingKeyframes);
+    var openingKeyframeIndexes = new ArrayList<>(List.of(0, 3));
+    var starts = new StreamCopySegments.Starts(openingKeyframeIndexes);
 
-    openingKeyframes.add(new KeyframePosition(12_000, 12_000));
+    openingKeyframeIndexes.add(6);
 
-    assertThat(starts.openingKeyframes()).containsExactly(first, second);
+    assertThat(starts.openingKeyframeIndexes()).containsExactly(0, 3);
   }
 
   @Test

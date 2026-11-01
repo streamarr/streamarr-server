@@ -1,6 +1,5 @@
 package com.streamarr.server.services.streaming;
 
-import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.StreamCopySegments;
 import java.util.ArrayList;
@@ -21,7 +20,7 @@ final class KeyframeSegmentBoundaries {
     }
 
     var keyframes = positions.keyframes();
-    var openingKeyframes = new ArrayList<KeyframePosition>();
+    var openingKeyframes = new ArrayList<Integer>();
     for (var index = 0; index < keyframes.size(); index++) {
       var presentationTime = keyframes.get(index).presentationTime();
       if (index > 0 && presentationTime < keyframes.get(index - 1).presentationTime()) {
@@ -46,7 +45,7 @@ final class KeyframeSegmentBoundaries {
         return new StreamCopySegments.DecodeTimeOutOfRange(index);
       }
 
-      openingKeyframes.add(keyframes.get(index));
+      openingKeyframes.add(index);
     }
 
     if (openingKeyframes.isEmpty()) {

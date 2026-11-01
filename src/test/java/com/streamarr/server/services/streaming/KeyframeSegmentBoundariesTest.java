@@ -54,7 +54,8 @@ class KeyframeSegmentBoundariesTest {
 
     var segments = KeyframeSegmentBoundaries.forStreamCopy(positions, fixture.periodSeconds());
 
-    assertThat(segments).isEqualTo(startsAt(fixture.segmentStarts()));
+    assertThat(segments)
+        .isEqualTo(startsAt(fixture.keyframePresentationTimes(), fixture.segmentStarts()));
   }
 
   @Test
@@ -88,7 +89,7 @@ class KeyframeSegmentBoundariesTest {
 
     var segments = KeyframeSegmentBoundaries.forStreamCopy(positions, 6);
 
-    assertThat(segments).isEqualTo(startsAt(List.of(0L, 6_000L)));
+    assertThat(segments).isEqualTo(new StreamCopySegments.Starts(List.of(1, 2)));
   }
 
   @Test
@@ -178,8 +179,7 @@ class KeyframeSegmentBoundariesTest {
 
     var segments = KeyframeSegmentBoundaries.forStreamCopy(positions, 6);
 
-    assertThat(segments)
-        .isEqualTo(new StreamCopySegments.Starts(List.of(new KeyframePosition(0, 0))));
+    assertThat(segments).isEqualTo(new StreamCopySegments.Starts(List.of(0)));
   }
 
   @Test
@@ -197,7 +197,7 @@ class KeyframeSegmentBoundariesTest {
 
     var segments = KeyframeSegmentBoundaries.forStreamCopy(positions, 6);
 
-    assertThat(segments).isEqualTo(startsAt(List.of(0L)));
+    assertThat(segments).isEqualTo(new StreamCopySegments.Starts(List.of(0)));
   }
 
   @Test
@@ -238,8 +238,11 @@ class KeyframeSegmentBoundariesTest {
     }
   }
 
-  private static StreamCopySegments.Starts startsAt(List<Long> presentationTimes) {
-    return new StreamCopySegments.Starts(keyframesAt(presentationTimes));
+  // Segments open at the indexes of the keyframes that present at their starts.
+  private static StreamCopySegments.Starts startsAt(
+      List<Long> keyframePresentationTimes, List<Long> segmentStarts) {
+    return new StreamCopySegments.Starts(
+        segmentStarts.stream().map(keyframePresentationTimes::indexOf).toList());
   }
 
   // The rule reads presentation times only. The recordings hold no decode times, and these
