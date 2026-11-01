@@ -50,6 +50,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -230,16 +231,16 @@ public interface ProbePlaybackFactsRepositoryContract {
     assertThat(storedOutcome(mediaFileId).streams()).isEqualTo(published.streams());
   }
 
-  @ParameterizedTest
+  @ParameterizedTest(name = "{0} stream stores {1}")
   @MethodSource("copyPacketByteStates")
   @DisplayName(
       "Should read whether a copy keeps every packet's bytes back when an outcome stores it")
   default void shouldReadWhetherACopyKeepsEveryPacketsBytesBackWhenAnOutcomeStoresIt(
-      Optional<Boolean> kept) {
+      String codec, Optional<Boolean> kept) {
     var mediaFileId = createMediaFile();
     var chosen =
         video()
-            .codec(Optional.of("hevc"))
+            .codec(Optional.of(codec))
             .videoProperties(
                 Optional.of(VideoStreamProperties.builder().copyKeepsPacketBytes(kept).build()))
             .build();
@@ -261,8 +262,13 @@ public interface ProbePlaybackFactsRepositoryContract {
     assertThat(storedOutcome(mediaFileId).streams()).isEqualTo(published.streams());
   }
 
-  static Stream<Optional<Boolean>> copyPacketByteStates() {
-    return Stream.of(Optional.empty(), Optional.of(false), Optional.of(true));
+  static Stream<Arguments> copyPacketByteStates() {
+    return Stream.of(
+        Arguments.of("hevc", Optional.empty()),
+        Arguments.of("hevc", Optional.of(false)),
+        Arguments.of("hevc", Optional.of(true)),
+        Arguments.of("h264", Optional.of(false)),
+        Arguments.of("h264", Optional.of(true)));
   }
 
   @ParameterizedTest

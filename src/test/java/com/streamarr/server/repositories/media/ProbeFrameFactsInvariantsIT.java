@@ -154,6 +154,12 @@ class ProbeFrameFactsInvariantsIT extends AbstractIntegrationTest {
             "copy_keeps_packet_bytes_requires_h264_or_hevc",
             Map.of(stream.CODEC, DSL.val("av1"))),
         broken(
+            "that a copy does not keep every packet's bytes on an AV1 stream",
+            "copy_keeps_packet_bytes_requires_h264_or_hevc",
+            Map.of(
+                stream.CODEC, DSL.val("av1"),
+                stream.COPY_KEEPS_PACKET_BYTES, DSL.val(false))),
+        broken(
             "whether a copy keeps every packet's bytes on a stream without a codec",
             "copy_keeps_packet_bytes_requires_h264_or_hevc",
             Map.of(stream.CODEC, nullOf(stream.CODEC))),
