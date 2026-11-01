@@ -8,6 +8,7 @@ import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 import com.google.protobuf.ByteString;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
@@ -31,8 +32,11 @@ import com.streamarr.transcode.v1.ProbeCapacityChanged;
 import com.streamarr.transcode.v1.ProbeFailure;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeRequest;
+import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
+import com.streamarr.transcode.v1.StreamMeasurementSource;
+import com.streamarr.transcode.v1.StreamMeasurements;
 import com.streamarr.transcode.v1.TranscodeDecision;
 import com.streamarr.transcode.v1.TranscodeMode;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
@@ -55,6 +59,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -63,14 +68,18 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.function.UnaryOperator;
 import java.util.stream.LongStream;
+import java.util.stream.Stream;
 import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
@@ -81,6 +90,13 @@ class WorkerSessionGrpcServiceTest {
   private static final int MAXIMUM_KEYFRAME_POSITIONS_PER_PROBE = 1_048_576;
   // worker_session.proto bounds each list of a keyframe positions part to 4,096 entries.
   private static final int MAXIMUM_ENTRIES_PER_PART = 4_096;
+  // worker_session.proto bounds the measurement parts of one probe attempt to 8,388,608 entries.
+  private static final int MAXIMUM_MEASUREMENT_ENTRIES_PER_PROBE = 8_388_608;
+  // worker_session.proto bounds the streams that the measurement parts of one attempt name to
+  // 1,024.
+  private static final int MAXIMUM_MEASURED_STREAMS_PER_PROBE = 1_024;
+  private static final int VIDEO_STREAM = 0;
+  private static final int AUDIO_STREAM = 1;
   private static final String ENCODER_BACKEND_MISMATCH_METRIC =
       "streamarr.streaming.encoder_backend_mismatches";
   private static final String UNKNOWN_JOB_ATTEMPT_REPORTS_METRIC =
@@ -291,6 +307,227 @@ class WorkerSessionGrpcServiceTest {
         .hasCauseInstanceOf(ProbeContractViolationException.class);
   }
 
+  @Test
+  @DisplayName(
+      "Should join each stream's measurement parts in order when a worker interleaves the streams")
+  void shouldJoinEachStreamsMeasurementPartsInOrderWhenWorkerInterleavesStreams() throws Exception {
+    var probe = SessionProbe.dispatch();
+
+    probe.sendMeasurementPart(
+        probe
+            .measurementPart(VIDEO_STREAM)
+            .addAllKeyframeIntervalBytes(List.of(1, 2))
+            .addAllKeyframeIntervalPacketCounts(List.of(11, 12)));
+    probe.sendMeasurementPart(
+        probe
+            .measurementPart(AUDIO_STREAM)
+            .addKeyframeIntervalBytes(7)
+            .addKeyframeIntervalPacketCounts(17));
+    probe.sendMeasurementPart(
+        probe
+            .measurementPart(VIDEO_STREAM)
+            .addKeyframeIntervalBytes(3)
+            .addKeyframeIntervalPacketCounts(13));
+    probe.sendMeasuredResult();
+
+    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts())
+        .containsExactly(
+            probe
+                .measurementPart(VIDEO_STREAM)
+                .addAllKeyframeIntervalBytes(List.of(1, 2, 3))
+                .addAllKeyframeIntervalPacketCounts(List.of(11, 12, 13))
+                .build(),
+            probe
+                .measurementPart(AUDIO_STREAM)
+                .addKeyframeIntervalBytes(7)
+                .addKeyframeIntervalPacketCounts(17)
+                .build());
+  }
+
+  @Test
+  @DisplayName(
+      "Should report no measurement parts when a worker sends them for another probe attempt")
+  void shouldReportNoMeasurementPartsWhenWorkerSendsThemForAnotherProbeAttempt() throws Exception {
+    var probe = SessionProbe.dispatch();
+
+    probe.sendMeasurementPart(
+        withEntries(probe.measurementPart(VIDEO_STREAM), 1)
+            .setProbeAttemptId(toProto(UUID.randomUUID())));
+    probe.sendMeasuredResult();
+
+    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should accept a measurement part when it holds exactly as many entries as one part allows")
+  void shouldAcceptMeasurementPartWhenItHoldsExactlyAsManyEntriesAsOnePartAllows()
+      throws Exception {
+    var probe = SessionProbe.dispatch();
+
+    probe.sendMeasurementPart(
+        withEntries(probe.measurementPart(VIDEO_STREAM), MAXIMUM_ENTRIES_PER_PART));
+    probe.sendMeasuredResult();
+
+    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts())
+        .singleElement()
+        .extracting(ProbeStreamMeasurementPart::getKeyframeIntervalBytesCount)
+        .isEqualTo(MAXIMUM_ENTRIES_PER_PART);
+  }
+
+  @Test
+  @DisplayName(
+      "Should fail a probe when a measurement part holds more entries than one part allows")
+  void shouldFailProbeWhenMeasurementPartHoldsMoreEntriesThanOnePartAllows() throws Exception {
+    var probe = SessionProbe.dispatch();
+
+    probe.sendMeasurementPart(
+        withEntries(probe.measurementPart(VIDEO_STREAM), MAXIMUM_ENTRIES_PER_PART + 1));
+    probe.sendMeasuredResult();
+
+    assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
+        .isInstanceOf(ExecutionException.class)
+        .hasCauseInstanceOf(ProbeContractViolationException.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should accept measurement parts when they hold exactly as many entries as one probe allows")
+  void shouldAcceptMeasurementPartsWhenTheyHoldExactlyAsManyEntriesAsOneProbeAllows()
+      throws Exception {
+    var probe = SessionProbe.dispatch();
+
+    sendFullMeasurementParts(probe, MAXIMUM_MEASUREMENT_ENTRIES_PER_PROBE);
+    probe.sendMeasuredResult();
+
+    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts())
+        .singleElement()
+        .extracting(ProbeStreamMeasurementPart::getKeyframeIntervalBytesCount)
+        .isEqualTo(MAXIMUM_MEASUREMENT_ENTRIES_PER_PROBE);
+  }
+
+  @Test
+  @DisplayName(
+      "Should fail a probe when a worker sends more measurement entries than one probe allows")
+  void shouldFailProbeWhenWorkerSendsMoreMeasurementEntriesThanOneProbeAllows() throws Exception {
+    var probe = SessionProbe.dispatch();
+
+    sendFullMeasurementParts(probe, MAXIMUM_MEASUREMENT_ENTRIES_PER_PROBE);
+    probe.sendMeasurementPart(withEntries(probe.measurementPart(AUDIO_STREAM), 1));
+    probe.sendMeasuredResult();
+
+    assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
+        .isInstanceOf(ExecutionException.class)
+        .hasCauseInstanceOf(ProbeContractViolationException.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should fail a probe when a measurement part counts packets for other intervals than its"
+          + " bytes")
+  void shouldFailProbeWhenMeasurementPartCountsPacketsForOtherIntervalsThanItsBytes()
+      throws Exception {
+    var probe = SessionProbe.dispatch();
+
+    probe.sendMeasurementPart(
+        probe
+            .measurementPart(VIDEO_STREAM)
+            .addAllKeyframeIntervalBytes(List.of(1, 2))
+            .addAllKeyframeIntervalPacketCounts(List.of(1, 1, 1)));
+    probe.sendMeasuredResult();
+
+    assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
+        .isInstanceOf(ExecutionException.class)
+        .hasCauseInstanceOf(ProbeContractViolationException.class);
+  }
+
+  @Test
+  @DisplayName("Should fail a probe when a measurement part holds no entries")
+  void shouldFailProbeWhenMeasurementPartHoldsNoEntries() throws Exception {
+    var probe = SessionProbe.dispatch();
+
+    probe.sendMeasurementPart(probe.measurementPart(VIDEO_STREAM));
+    probe.sendMeasuredResult();
+
+    assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
+        .isInstanceOf(ExecutionException.class)
+        .hasCauseInstanceOf(ProbeContractViolationException.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should accept measurement parts when they name exactly as many streams as one probe allows")
+  void shouldAcceptMeasurementPartsWhenTheyNameExactlyAsManyStreamsAsOneProbeAllows()
+      throws Exception {
+    var probe = SessionProbe.dispatch();
+
+    for (var streamIndex = 0; streamIndex < MAXIMUM_MEASURED_STREAMS_PER_PROBE; streamIndex++) {
+      probe.sendMeasurementPart(withEntries(probe.measurementPart(streamIndex), 1));
+    }
+
+    probe.sendMeasurementPart(withEntries(probe.measurementPart(VIDEO_STREAM), 1));
+    probe.sendMeasuredResult();
+
+    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts())
+        .hasSize(MAXIMUM_MEASURED_STREAMS_PER_PROBE)
+        .first()
+        .extracting(ProbeStreamMeasurementPart::getKeyframeIntervalBytesCount)
+        .isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("Should fail a probe when measurement parts name more streams than one probe allows")
+  void shouldFailProbeWhenMeasurementPartsNameMoreStreamsThanOneProbeAllows() throws Exception {
+    var probe = SessionProbe.dispatch();
+
+    for (var streamIndex = 0; streamIndex <= MAXIMUM_MEASURED_STREAMS_PER_PROBE; streamIndex++) {
+      probe.sendMeasurementPart(withEntries(probe.measurementPart(streamIndex), 1));
+    }
+
+    probe.sendMeasuredResult();
+
+    assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
+        .isInstanceOf(ExecutionException.class)
+        .hasCauseInstanceOf(ProbeContractViolationException.class);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("measurementPartsOfUnmeasuredResult")
+  @DisplayName("Should discard the measurement parts when the result reports no measurement")
+  void shouldDiscardMeasurementPartsWhenResultReportsNoMeasurement(
+      String parts, UnaryOperator<ProbeStreamMeasurementPart.Builder> fill) throws Exception {
+    var probe = SessionProbe.dispatch();
+
+    probe.sendMeasurementPart(fill.apply(probe.measurementPart(VIDEO_STREAM)));
+    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
+
+    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts()).isEmpty();
+  }
+
+  static Stream<Arguments> measurementPartsOfUnmeasuredResult() {
+    return Stream.of(
+        arguments(
+            "a part that keeps the contract",
+            (UnaryOperator<ProbeStreamMeasurementPart.Builder>) part -> withEntries(part, 1)),
+        arguments(
+            "a part that breaks the contract",
+            UnaryOperator.<ProbeStreamMeasurementPart.Builder>identity()));
+  }
+
+  private static void sendFullMeasurementParts(SessionProbe probe, int entries) {
+    for (var sent = 0; sent < entries / MAXIMUM_ENTRIES_PER_PART; sent++) {
+      probe.sendMeasurementPart(
+          withEntries(probe.measurementPart(VIDEO_STREAM), MAXIMUM_ENTRIES_PER_PART));
+    }
+  }
+
+  /** Adds this many keyframe intervals to the part, each with no bytes and no packets. */
+  private static ProbeStreamMeasurementPart.Builder withEntries(
+      ProbeStreamMeasurementPart.Builder part, int entries) {
+    var zeros = Collections.nCopies(entries, 0);
+    return part.addAllKeyframeIntervalBytes(zeros).addAllKeyframeIntervalPacketCounts(zeros);
+  }
+
   private static List<ProbeKeyframePositionsPart> withoutAttemptIds(ProbeAttemptReport report) {
     return report.keyframePositionsParts().stream()
         .map(part -> part.toBuilder().clearProbeAttemptId().build())
@@ -350,6 +587,27 @@ class WorkerSessionGrpcServiceTest {
 
     private void send(EstablishWorkerSessionRequest.Builder event) {
       session.onNext(event.build());
+    }
+
+    private ProbeStreamMeasurementPart.Builder measurementPart(int streamIndex) {
+      return ProbeStreamMeasurementPart.newBuilder()
+          .setProbeAttemptId(attemptId())
+          .setStreamIndex(streamIndex);
+    }
+
+    private void sendMeasurementPart(ProbeStreamMeasurementPart.Builder part) {
+      send(EstablishWorkerSessionRequest.newBuilder().setProbeStreamMeasurementPart(part));
+    }
+
+    private void sendMeasuredResult() {
+      var media =
+          result().getMedia().toBuilder()
+              .setStreamMeasurements(
+                  StreamMeasurements.newBuilder()
+                      .setSource(StreamMeasurementSource.STREAM_MEASUREMENT_SOURCE_SAMPLE_TABLE));
+      send(
+          EstablishWorkerSessionRequest.newBuilder()
+              .setProbeResult(result().toBuilder().setMedia(media)));
     }
   }
 

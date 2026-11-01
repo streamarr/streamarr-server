@@ -29,8 +29,10 @@ import com.streamarr.server.jooq.generated.tables.MediaFile;
 import com.streamarr.server.jooq.generated.tables.MediaFileChapter;
 import com.streamarr.server.jooq.generated.tables.MediaFileContainerInfo;
 import com.streamarr.server.jooq.generated.tables.MediaFileKeyframePositions;
+import com.streamarr.server.jooq.generated.tables.MediaFileMeasuredStream;
 import com.streamarr.server.jooq.generated.tables.MediaFileProbeTaskRequest;
 import com.streamarr.server.jooq.generated.tables.MediaFileStreamInfo;
+import com.streamarr.server.jooq.generated.tables.MediaFileStreamMeasurement;
 import com.streamarr.server.jooq.generated.tables.Movie;
 import com.streamarr.server.jooq.generated.tables.MovieCompany;
 import com.streamarr.server.jooq.generated.tables.MovieDirector;
@@ -130,8 +132,10 @@ public class Public extends SchemaImpl {
             MediaFileChapter.MEDIA_FILE_CHAPTER,
             MediaFileContainerInfo.MEDIA_FILE_CONTAINER_INFO,
             MediaFileKeyframePositions.MEDIA_FILE_KEYFRAME_POSITIONS,
+            MediaFileMeasuredStream.MEDIA_FILE_MEASURED_STREAM,
             MediaFileProbeTaskRequest.MEDIA_FILE_PROBE_TASK_REQUEST,
             MediaFileStreamInfo.MEDIA_FILE_STREAM_INFO,
+            MediaFileStreamMeasurement.MEDIA_FILE_STREAM_MEASUREMENT,
             Movie.MOVIE,
             MovieCompany.MOVIE_COMPANY,
             MovieDirector.MOVIE_DIRECTOR,

@@ -31,10 +31,12 @@ import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.LoopbackProbeWorker;
+import com.streamarr.server.fixtures.StreamMeasurementFixture;
 import com.streamarr.server.fixtures.WorkerProbeResultFixture;
 import com.streamarr.server.support.BoundedTask;
 import com.streamarr.transcode.v1.KeyframePositionSource;
 import com.streamarr.transcode.v1.KeyframePositions;
+import com.streamarr.transcode.v1.MeasuredStream;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeChapter;
@@ -45,6 +47,9 @@ import com.streamarr.transcode.v1.ProbeKeyframes;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
+import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
+import com.streamarr.transcode.v1.StreamMeasurementSource;
+import com.streamarr.transcode.v1.StreamMeasurements;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
 import io.grpc.Status;
@@ -353,6 +358,105 @@ class RemoteFfprobeServiceIT {
         }
       }
     }
+  }
+
+  @Test
+  @DisplayName(
+      "Should return each stream's measurement when the worker measures the streams beside the"
+          + " keyframe positions")
+  void shouldReturnEachStreamsMeasurementWhenTheWorkerMeasuresTheStreamsBesideTheKeyframePositions()
+      throws Exception {
+    try (var server = server()) {
+      server.start();
+      try (var worker = worker(server.port(), ProbeVersion.CURRENT)) {
+        var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
+        var request = request().probeVersion(ProbeVersion.CURRENT).build();
+        try (var probe = BoundedTask.start(() -> service.probe(request))) {
+          var dispatched = worker.nextResponse().getStartProbe().getRequest();
+          worker.sendKeyframePositionsPart(
+              ProbeKeyframePositionsPart.newBuilder()
+                  .setProbeAttemptId(dispatched.getProbeAttemptId())
+                  .addAllPresentationTimeDeltas(List.of(0L, 90_000L))
+                  .addAllDecodeTimeDeltas(List.of(0L, 90_000L))
+                  .build());
+          worker.sendStreamMeasurementPart(
+              measurementPart(dispatched, 0)
+                  .addKeyframeIntervalBytes(700)
+                  .addKeyframeIntervalPacketCounts(12)
+                  .build());
+          worker.sendStreamMeasurementPart(
+              measurementPart(dispatched, 1)
+                  .addKeyframeIntervalBytes(40)
+                  .addKeyframeIntervalPacketCounts(46)
+                  .build());
+          worker.sendStreamMeasurementPart(
+              measurementPart(dispatched, 0)
+                  .addKeyframeIntervalBytes(-1)
+                  .addKeyframeIntervalPacketCounts(36)
+                  .build());
+          worker.sendStreamMeasurementPart(
+              measurementPart(dispatched, 1)
+                  .addKeyframeIntervalBytes(60)
+                  .addKeyframeIntervalPacketCounts(48)
+                  .build());
+          worker.reply(
+              answer(dispatched)
+                  .setMedia(
+                      WorkerProbeResultFixture.version4MediaBuilder()
+                          .addStreams(
+                              ProbeStreamInfo.newBuilder().setIndex(1).setCodecType("audio"))
+                          .setKeyframes(
+                              ProbeKeyframes.newBuilder()
+                                  .setPositions(
+                                      KeyframePositions.newBuilder()
+                                          .setStreamIndex(0)
+                                          .setTimeBaseNumerator(1)
+                                          .setTimeBaseDenominator(90_000)
+                                          .setSource(
+                                              KeyframePositionSource
+                                                  .KEYFRAME_POSITION_SOURCE_CONTAINER_INDEX)
+                                          .setKeyframeCount(2)))
+                          .setStreamMeasurements(
+                              StreamMeasurements.newBuilder()
+                                  .setSource(
+                                      StreamMeasurementSource
+                                          .STREAM_MEASUREMENT_SOURCE_SAMPLE_TABLE)
+                                  .addStreams(
+                                      MeasuredStream.newBuilder()
+                                          .setStreamIndex(0)
+                                          .setMeasuredBytes(700L + 0xFFFF_FFFFL)
+                                          .setPacketCount(48)
+                                          .setTimeBaseNumerator(1)
+                                          .setTimeBaseDenominator(12_288)
+                                          .setMeasuredDuration(24_576))
+                                  .addStreams(
+                                      MeasuredStream.newBuilder()
+                                          .setStreamIndex(1)
+                                          .setMeasuredBytes(100)
+                                          .setPacketCount(94)
+                                          .setTimeBaseNumerator(1)
+                                          .setTimeBaseDenominator(48_000)
+                                          .setMeasuredDuration(96_000))))
+                  .build());
+
+          var outcome = probe.await(Duration.ofSeconds(5));
+
+          assertThat(outcome)
+              .isInstanceOfSatisfying(
+                  ProbeOutcome.Success.class,
+                  success ->
+                      assertThat(success.streamMeasurements())
+                          .contains(StreamMeasurementFixture.measurement()));
+        }
+      }
+    }
+  }
+
+  private static ProbeStreamMeasurementPart.Builder measurementPart(
+      ProbeRequest dispatched, int streamIndex) {
+    return ProbeStreamMeasurementPart.newBuilder()
+        .setProbeAttemptId(dispatched.getProbeAttemptId())
+        .setStreamIndex(streamIndex);
   }
 
   @Test

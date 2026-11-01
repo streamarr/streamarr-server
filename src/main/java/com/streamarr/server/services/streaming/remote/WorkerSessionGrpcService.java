@@ -11,6 +11,7 @@ import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeCapacityChanged;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
+import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.UploadSegmentResponse;
@@ -206,6 +207,8 @@ final class WorkerSessionGrpcService
         case PROBE_RESULT -> completeProbe(request.getProbeResult());
         case PROBE_KEYFRAME_POSITIONS_PART ->
             acceptKeyframePositionsPart(request.getProbeKeyframePositionsPart());
+        case PROBE_STREAM_MEASUREMENT_PART ->
+            acceptStreamMeasurementPart(request.getProbeStreamMeasurementPart());
         case PROBE_CAPACITY_CHANGED -> changeProbeCapacity(request.getProbeCapacityChanged());
         default ->
             log.warn(
@@ -256,6 +259,18 @@ final class WorkerSessionGrpcService
 
       log.warn(
           "Worker {} sent keyframe positions for unaccepted probe attempt {}",
+          authenticatedWorkerId,
+          fromProto(part.getProbeAttemptId()));
+    }
+
+    private void acceptStreamMeasurementPart(ProbeStreamMeasurementPart part) {
+      if (workerConnections.acceptStreamMeasurementPart(
+          authenticatedWorkerId, workerSessionId, part)) {
+        return;
+      }
+
+      log.warn(
+          "Worker {} sent stream measurements for unaccepted probe attempt {}",
           authenticatedWorkerId,
           fromProto(part.getProbeAttemptId()));
     }

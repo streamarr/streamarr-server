@@ -107,6 +107,12 @@ public class MediaFileKeyframePositions extends TableImpl<MediaFileKeyframePosit
      */
     public final TableField<MediaFileKeyframePositionsRecord, String> SOURCE = createField(DSL.name("source"), SQLDataType.CLOB.nullable(false), this, "");
 
+    /**
+     * The column
+     * <code>public.media_file_keyframe_positions.positions_digest</code>.
+     */
+    public final TableField<MediaFileKeyframePositionsRecord, byte[]> POSITIONS_DIGEST = createField(DSL.name("positions_digest"), SQLDataType.BLOB, this, "");
+
     private MediaFileKeyframePositions(Name alias, Table<MediaFileKeyframePositionsRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

@@ -7,6 +7,7 @@ import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileContainerInfo;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.PersistedProbeOutcome;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.ChapterKnowledge;
@@ -22,8 +23,10 @@ import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
 import com.streamarr.server.domain.task.ProbeInputs;
+import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
@@ -32,6 +35,7 @@ import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
+import com.streamarr.server.fixtures.StreamMeasurementFixture;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.PlaybackProbeClaims;
@@ -44,6 +48,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
@@ -106,6 +111,40 @@ class ProbeExecutionTest {
               assertThat(publication.probeVersion()).isEqualTo(ProbeVersion.CURRENT);
               assertThat(publication.outcome()).isEqualTo(producer.probe(anyRequestFor(source)));
             });
+  }
+
+  @Test
+  @DisplayName("Should give playback each stream's measurement when the probe measures the streams")
+  void shouldGivePlaybackEachStreamsMeasurementWhenProbeMeasuresStreams() {
+    producer.answerWith(
+        StreamMeasurementFixture.measured(StreamMeasurementFixture.positions(90_000)));
+
+    execution().execute(request(ProbeVersion.CURRENT), ProbePriority.BACKGROUND);
+
+    assertThat(playbackMeasurement()).contains(StreamMeasurementFixture.measurement());
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the stream measurement when a new probe version probes the file without"
+          + " measuring it")
+  void shouldKeepStreamMeasurementWhenNewProbeVersionProbesFileWithoutMeasuringIt() {
+    var positions = StreamMeasurementFixture.positions(90_000);
+    outcomes.publish(
+        ProbePublication.builder()
+            .mediaFileId(mediaFile.getId())
+            .snapshot(snapshot(source))
+            .probeVersion(ProbeVersion.CURRENT - 1)
+            .outcome(StreamMeasurementFixture.measured(positions))
+            .build());
+    producer.answerWith(StreamMeasurementFixture.unmeasured(positions));
+
+    execution().execute(request(ProbeVersion.CURRENT), ProbePriority.BACKGROUND);
+
+    assertThat(outcomes.findByMediaFileId(mediaFile.getId()))
+        .hasValueSatisfying(
+            row -> assertThat(row.getProbeVersion()).isEqualTo(ProbeVersion.CURRENT));
+    assertThat(playbackMeasurement()).contains(StreamMeasurementFixture.measurement());
   }
 
   @Test
@@ -408,6 +447,18 @@ class ProbeExecutionTest {
 
     assertThat(result).isEqualTo(new ProbeExecutionResult.Deferred(request));
     assertThat(outcomes.publications()).isEmpty();
+  }
+
+  private Optional<StreamMeasurements> playbackMeasurement() {
+    return new PersistedProbeReader(outcomes)
+        .find(mediaFile.getId())
+        .map(PersistedProbeOutcome::outcome)
+        .flatMap(
+            outcome ->
+                switch (outcome) {
+                  case ProbeOutcome.Success success -> success.mediaProbe().streamMeasurements();
+                  case ProbeOutcome.Failure _ -> Optional.empty();
+                });
   }
 
   private ProbeExecution execution() {

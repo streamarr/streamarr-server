@@ -6,6 +6,7 @@ import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.StreamMeasurements;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
@@ -109,6 +110,17 @@ public class MediaFileContainerInfo {
   public ProbeOutcome getOutcome(
       @NonNull Supplier<KeyframeKnowledge> keyframes,
       @NonNull Supplier<ChapterKnowledge> chapters) {
+    return getOutcome(keyframes, chapters, Optional::empty);
+  }
+
+  /**
+   * As {@link #getOutcome(Supplier, Supplier)}, with the measurement of the source's streams, which
+   * this entity does not map either.
+   */
+  public ProbeOutcome getOutcome(
+      @NonNull Supplier<KeyframeKnowledge> keyframes,
+      @NonNull Supplier<ChapterKnowledge> chapters,
+      @NonNull Supplier<Optional<StreamMeasurements>> streamMeasurements) {
     if (probeError != null) {
       return new ProbeOutcome.Failure(probeError);
     }
@@ -121,6 +133,7 @@ public class MediaFileContainerInfo {
         .chosenVideoStream(
             Optional.ofNullable(chosenVideoStream)
                 .map(ChosenVideoStreamColumns::toChosenVideoStream))
+        .streamMeasurements(streamMeasurements.get())
         .build();
   }
 

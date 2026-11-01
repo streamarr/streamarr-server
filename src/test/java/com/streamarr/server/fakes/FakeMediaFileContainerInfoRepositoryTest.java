@@ -2,6 +2,7 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.repositories.MediaFileContainerInfoRepositoryContract;
 import com.streamarr.server.repositories.ProbePlaybackFactsRepositoryContract;
+import com.streamarr.server.repositories.StreamMeasurementRepositoryContract;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -11,7 +12,9 @@ import org.junit.jupiter.api.Tag;
 @Tag("UnitTest")
 @DisplayName("Fake Media File Container Info Repository Tests")
 class FakeMediaFileContainerInfoRepositoryTest
-    implements MediaFileContainerInfoRepositoryContract, ProbePlaybackFactsRepositoryContract {
+    implements MediaFileContainerInfoRepositoryContract,
+        ProbePlaybackFactsRepositoryContract,
+        StreamMeasurementRepositoryContract {
 
   private final FakeMediaFileContainerInfoRepository repository =
       new FakeMediaFileContainerInfoRepository();
