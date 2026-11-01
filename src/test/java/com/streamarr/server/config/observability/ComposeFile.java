@@ -16,6 +16,10 @@ final class ComposeFile {
     return read().path("services").path(name);
   }
 
+  static JsonNode volumes() {
+    return read().path("volumes");
+  }
+
   private static JsonNode read() {
     try {
       return new ObjectMapper()
