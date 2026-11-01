@@ -496,6 +496,13 @@ message VideoDecision {
   // is false when the stored value is false or absent. The worker uses this
   // field only to decide whether to repair RPUs as described above.
   bool source_packets_carry_presentation_times = 11;
+  // The server sets this field to true only on a job that copies video when
+  // the chosen stream's stored ProbeStreamInfo.copy_keeps_packet_bytes is true.
+  // The field is false otherwise, including on every job that encodes video.
+  // When the field is true, the worker copies the video without the Annex B
+  // bitstream filter, so the delivered samples equal the source packets. When
+  // the field is false, the worker applies the filter as before.
+  bool copy_keeps_packet_bytes = 12;
 }
 
 message TranscodeDecision {

@@ -359,6 +359,63 @@ class RemoteVariantJobMapperTest {
     assertThat(video.getSourcePacketsCarryPresentationTimes()).isEqualTo(carried);
   }
 
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("storedCopyPacketBytes")
+  @DisplayName(
+      "Should tell a copy to keep every packet's bytes only when the probe stored that it can")
+  void shouldTellACopyToKeepEveryPacketsBytesOnlyWhenTheProbeStoredThatItCan(
+      String stored, Optional<VideoStreamProperties> properties, boolean kept) {
+    var request =
+        copyAttempt()
+            .transcodeDecision(
+                copyDecisionBuilder()
+                    .videoSource(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                                .videoProperties(properties)
+                                .build()))
+                    .build())
+            .build();
+
+    var video = mapper.map(request).getDecision().getVideo();
+
+    assertThat(video.getCopyKeepsPacketBytes()).isEqualTo(kept);
+  }
+
+  static Stream<Arguments> storedCopyPacketBytes() {
+    return Stream.of(
+        Arguments.of("stored true", propertiesWithCopyPacketBytes(Optional.of(true)), true),
+        Arguments.of("stored false", propertiesWithCopyPacketBytes(Optional.of(false)), false),
+        Arguments.of("stored no value", propertiesWithCopyPacketBytes(Optional.empty()), false),
+        Arguments.of("probed before version 5", Optional.empty(), false));
+  }
+
+  @Test
+  @DisplayName(
+      "Should not tell an encode to keep every packet's bytes when the probe stored that a copy"
+          + " can")
+  void shouldNotTellAnEncodeToKeepEveryPacketsBytesWhenTheProbeStoredThatACopyCan() {
+    var request =
+        encodeAttempt("h264")
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                    .videoCodecFamily("h264")
+                    .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
+                    .videoSource(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                                .videoProperties(propertiesWithCopyPacketBytes(Optional.of(true)))
+                                .build()))
+                    .build())
+            .build();
+
+    var video = mapper.map(request).getDecision().getVideo();
+
+    assertThat(video.getCopyKeepsPacketBytes()).isFalse();
+  }
+
   @ParameterizedTest
   @ValueSource(booleans = {true, false})
   @DisplayName("Should omit the retired codec family string when mapping a video decision")
@@ -719,6 +776,11 @@ class RemoteVariantJobMapperTest {
             .firstFramesRead(true)
             .firstPacketsCarryPresentationTimes(carried)
             .build());
+  }
+
+  private static Optional<VideoStreamProperties> propertiesWithCopyPacketBytes(
+      Optional<Boolean> kept) {
+    return Optional.of(VideoStreamProperties.builder().copyKeepsPacketBytes(kept).build());
   }
 
   private static TranscodeRequest.TranscodeRequestBuilder encodeAttempt(String videoCodecFamily) {
