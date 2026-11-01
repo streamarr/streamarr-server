@@ -11,8 +11,9 @@ import org.springframework.util.StringUtils;
 
 /**
  * Sends metrics to the OpenTelemetry starter's OTLP endpoint, so {@code
- * OTEL_EXPORTER_OTLP_ENDPOINT} moves metrics together with spans and logs. The SSL bundle still
- * comes from {@code management.otlp.metrics.export.ssl.bundle}.
+ * OTEL_EXPORTER_OTLP_ENDPOINT} moves metrics together with spans and logs. It takes the place of
+ * {@code management.otlp.metrics.export.url}; the SSL bundle still comes from {@code
+ * management.otlp.metrics.export.ssl.bundle}.
  */
 @Configuration(proxyBeanMethods = false)
 class OtlpMetricsEndpointConfiguration {
