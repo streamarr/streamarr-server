@@ -8,6 +8,7 @@ import static com.streamarr.server.jooq.generated.tables.MediaFileMeasuredStream
 import static com.streamarr.server.jooq.generated.tables.MediaFileProbeTaskRequest.MEDIA_FILE_PROBE_TASK_REQUEST;
 import static com.streamarr.server.jooq.generated.tables.MediaFileStreamInfo.MEDIA_FILE_STREAM_INFO;
 import static com.streamarr.server.jooq.generated.tables.MediaFileStreamMeasurement.MEDIA_FILE_STREAM_MEASUREMENT;
+import static com.streamarr.server.repositories.media.StoredOutcomeConditions.snapshotMatches;
 
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
@@ -46,7 +47,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Record;
@@ -56,11 +56,16 @@ import org.jooq.impl.DSL;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-@RequiredArgsConstructor
 public class MediaFileContainerInfoRepositoryCustomImpl
     implements MediaFileContainerInfoRepositoryCustom {
 
   private final DSLContext dsl;
+  private final StreamMeasurementRows measurementRows;
+
+  public MediaFileContainerInfoRepositoryCustomImpl(DSLContext dsl) {
+    this.dsl = dsl;
+    this.measurementRows = new StreamMeasurementRows(dsl);
+  }
 
   @Override
   @Transactional
@@ -382,7 +387,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
             .join(MEDIA_FILE_MEASURED_STREAM)
             .on(MEDIA_FILE_MEASURED_STREAM.MEDIA_FILE_ID.eq(measurement.MEDIA_FILE_ID))
             .where(measurement.MEDIA_FILE_ID.eq(mediaFileId))
-            .and(measurement.STATUS.eq(MeasurementStatus.MEASURED.name()))
+            .and(measurement.STATUS.eq(StreamMeasurementRows.Status.MEASURED.name()))
             .and(measurement.MEASUREMENT_VERSION.eq(StreamMeasurements.CURRENT_VERSION))
             .orderBy(MEDIA_FILE_MEASURED_STREAM.STREAM_INDEX)
             .fetch();
@@ -530,90 +535,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
         .where(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(mediaFileId))
         .and(snapshotMatches(snapshot).not())
         .execute();
-    deleteMeasurementUnlessSnapshotMatches(mediaFileId, snapshot);
-  }
-
-  private void deleteMeasurementUnlessSnapshotMatches(
-      UUID mediaFileId, SourceFileSnapshot snapshot) {
-    var measurement = MEDIA_FILE_STREAM_MEASUREMENT;
-    dsl.deleteFrom(measurement)
-        .where(measurement.MEDIA_FILE_ID.eq(mediaFileId))
-        .and(
-            measurement
-                .SOURCE_SIZE
-                .eq(snapshot.size())
-                .and(
-                    measurement.SOURCE_MODIFIED_EPOCH_SECOND.eq(
-                        snapshot.modifiedAt().getEpochSecond()))
-                .and(measurement.SOURCE_MODIFIED_NANOS.eq(snapshot.modifiedAt().getNano()))
-                .not())
-        .execute();
-  }
-
-  /**
-   * Stores the measurement in place of the file's earlier one, only while the stored outcome holds
-   * the publication's snapshot and keyframe positions, which the measurement's intervals follow.
-   */
-  private void replaceMeasurement(
-      UUID mediaFileId, SourceFileSnapshot snapshot, StreamMeasurements measurements) {
-    var measurement = MEDIA_FILE_STREAM_MEASUREMENT;
-    dsl.deleteFrom(measurement).where(measurement.MEDIA_FILE_ID.eq(mediaFileId)).execute();
-    var stored =
-        dsl.insertInto(
-                measurement,
-                measurement.MEDIA_FILE_ID,
-                measurement.SOURCE_SIZE,
-                measurement.SOURCE_MODIFIED_EPOCH_SECOND,
-                measurement.SOURCE_MODIFIED_NANOS,
-                measurement.MEASUREMENT_VERSION,
-                measurement.KEYFRAME_POSITIONS_DIGEST,
-                measurement.STATUS,
-                measurement.SOURCE)
-            .select(
-                dsl.select(
-                        MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID,
-                        MEDIA_FILE_CONTAINER_INFO.SOURCE_SIZE,
-                        MEDIA_FILE_CONTAINER_INFO.SOURCE_MODIFIED_EPOCH_SECOND,
-                        MEDIA_FILE_CONTAINER_INFO.SOURCE_MODIFIED_NANOS,
-                        DSL.val(StreamMeasurements.CURRENT_VERSION),
-                        MEDIA_FILE_KEYFRAME_POSITIONS.POSITIONS_DIGEST,
-                        DSL.val(MeasurementStatus.MEASURED.name()),
-                        DSL.val(measurements.source().name()))
-                    .from(MEDIA_FILE_CONTAINER_INFO)
-                    .join(MEDIA_FILE_KEYFRAME_POSITIONS)
-                    .on(
-                        MEDIA_FILE_KEYFRAME_POSITIONS.MEDIA_FILE_ID.eq(
-                            MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID))
-                    .where(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(mediaFileId))
-                    .and(snapshotMatches(snapshot)))
-            .execute();
-    if (stored == 0) {
-      return;
-    }
-
-    dsl.batchInsert(
-            measurements.streams().stream()
-                .map(stream -> toMeasuredStreamRow(mediaFileId, stream))
-                .toList())
-        .execute();
-  }
-
-  private MediaFileMeasuredStreamRecord toMeasuredStreamRow(
-      UUID mediaFileId, MeasuredStream stream) {
-    var row = dsl.newRecord(MEDIA_FILE_MEASURED_STREAM);
-    row.setMediaFileId(mediaFileId);
-    row.setStreamIndex(stream.streamIndex());
-    row.setMeasuredBytes(stream.measuredBytes());
-    row.setPacketCount(stream.packetCount());
-    row.setTimeBaseNumerator(stream.timeBaseNumerator());
-    row.setTimeBaseDenominator(stream.timeBaseDenominator());
-    row.setMeasuredDuration(stream.measuredDuration());
-    row.setKeyframeIntervalCount(stream.keyframeIntervalBytes().intervalCount());
-    row.setEncodedKeyframeIntervalBytes(
-        KeyframeIntervalCountsCodec.encode(stream.keyframeIntervalBytes()));
-    row.setEncodedKeyframeIntervalPacketCounts(
-        KeyframeIntervalCountsCodec.encode(stream.keyframeIntervalPacketCounts()));
-    return row;
+    measurementRows.deleteUnlessSnapshotMatches(mediaFileId, snapshot);
   }
 
   private boolean lockMediaFile(UUID mediaFileId) {
@@ -631,16 +553,6 @@ public class MediaFileContainerInfoRepositoryCustomImpl
         .where(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(publication.mediaFileId()))
         .and(snapshotMatches(publication.snapshot()))
         .and(MEDIA_FILE_CONTAINER_INFO.PROBE_VERSION.gt(publication.probeVersion()));
-  }
-
-  private static Condition snapshotMatches(SourceFileSnapshot snapshot) {
-    return MEDIA_FILE_CONTAINER_INFO
-        .SOURCE_SIZE
-        .eq(snapshot.size())
-        .and(
-            MEDIA_FILE_CONTAINER_INFO.SOURCE_MODIFIED_EPOCH_SECOND.eq(
-                snapshot.modifiedAt().getEpochSecond()))
-        .and(MEDIA_FILE_CONTAINER_INFO.SOURCE_MODIFIED_NANOS.eq(snapshot.modifiedAt().getNano()));
   }
 
   private void replaceOutcome(ProbePublication publication) {
@@ -678,7 +590,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
     }
 
     dsl.executeInsert(row);
-    deleteMeasurementUnlessSnapshotMatches(mediaFileId, publication.snapshot());
+    measurementRows.deleteUnlessSnapshotMatches(mediaFileId, publication.snapshot());
     if (!(publication.outcome()
         instanceof
         ProbeOutcome.Success(var container, var streams, var keyframes, _, _, var measurements))) {
@@ -697,7 +609,9 @@ public class MediaFileContainerInfoRepositoryCustomImpl
     }
 
     measurements.ifPresent(
-        measured -> replaceMeasurement(mediaFileId, publication.snapshot(), measured));
+        measured ->
+            measurementRows.replace(
+                mediaFileId, snapshotMatches(publication.snapshot()), measured));
   }
 
   private static void setChapterStatus(
@@ -768,10 +682,6 @@ public class MediaFileContainerInfoRepositoryCustomImpl
   private enum ChapterStatus {
     KNOWN,
     OMITTED
-  }
-
-  private enum MeasurementStatus {
-    MEASURED
   }
 
   private MediaFileStreamInfoRecord toStreamRow(UUID mediaFileId, StreamInfo stream) {
