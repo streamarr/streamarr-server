@@ -32,6 +32,7 @@ class MetricExportIT extends AbstractObservabilityProfileIntegrationTest {
 
   private static final String POOL_METER = "hikaricp.connections.active";
   private static final String HTTP_SERVER_METER = "http.server.requests";
+  private static final String DEPLOYMENT_ENVIRONMENT = "metric-export-test";
 
   private static final RecordingOtlpCollector COLLECTOR = RecordingOtlpCollector.start(EXPORT_WAIT);
 
@@ -49,8 +50,9 @@ class MetricExportIT extends AbstractObservabilityProfileIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should export the server's meters under the service name when the profile is active")
-  void shouldExportTheServersMetersUnderTheServiceNameWhenTheProfileIsActive() throws Exception {
+      "Should export the server's meters under the deployment variables when the profile is active")
+  void shouldExportTheServersMetersUnderTheDeploymentVariablesWhenTheProfileIsActive()
+      throws Exception {
     var export = exportOfTheServersMetersCollectedAfter(COLLECTOR.metricExports().position());
 
     assertThat(metricNames(export)).contains(POOL_METER);
@@ -62,7 +64,7 @@ class MetricExportIT extends AbstractObservabilityProfileIntegrationTest {
                     .hasValue(SERVICE_NAME),
             resource ->
                 assertThat(attribute(resource.getResource(), "deployment.environment"))
-                    .hasValue("dev"));
+                    .hasValue(DEPLOYMENT_ENVIRONMENT));
   }
 
   @Test
@@ -144,7 +146,9 @@ class MetricExportIT extends AbstractObservabilityProfileIntegrationTest {
 
     @Override
     public void initialize(ConfigurableApplicationContext context) {
-      setDeploymentVariables(context, collectorVariables(COLLECTOR));
+      var variables = collectorVariables(COLLECTOR);
+      variables.put("DEPLOYMENT_ENV", DEPLOYMENT_ENVIRONMENT);
+      setDeploymentVariables(context, variables);
     }
   }
 }
