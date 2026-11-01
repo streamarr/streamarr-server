@@ -10,6 +10,9 @@ otel:
   resource:
     attributes:
       deployment.environment: ${DEPLOYMENT_ENV:dev}
+    # A command line can carry credentials, such as a -D system property naming a token.
+    disabled:
+      keys: process.command_args,process.command_line
   traces:
     sampler:
       arg: 1.0

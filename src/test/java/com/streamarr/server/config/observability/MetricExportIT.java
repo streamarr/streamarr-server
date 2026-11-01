@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest;
 import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest;
 import io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest;
+import io.opentelemetry.proto.common.v1.KeyValue;
 import io.opentelemetry.proto.logs.v1.ResourceLogs;
 import io.opentelemetry.proto.resource.v1.Resource;
 import java.util.List;
@@ -109,6 +110,27 @@ class MetricExportIT extends AbstractObservabilityProfileIntegrationTest {
         .flatMap(ExportTraceServiceRequest::getResourceSpansList)
         .extracting(spans -> attribute(spans.getResource(), "service.name"))
         .containsOnly(Optional.of(SERVICE_NAME));
+  }
+
+  @Test
+  @DisplayName("Should export spans without the process command line when a request is served")
+  void shouldExportSpansWithoutTheProcessCommandLineWhenARequestIsServed() throws Exception {
+    var position = COLLECTOR.traceExports().position();
+    mockMvc.perform(get("/actuator/health"));
+
+    var spanResource =
+        COLLECTOR
+            .traceExports()
+            .awaitAfter(position, received -> !received.isEmpty())
+            .getFirst()
+            .getResourceSpans(0)
+            .getResource();
+
+    // A command line can carry credentials, such as a -D system property naming a token.
+    assertThat(spanResource.getAttributesList())
+        .extracting(KeyValue::getKey)
+        .contains("process.executable.path")
+        .doesNotContain("process.command_args", "process.command_line");
   }
 
   @Test

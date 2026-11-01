@@ -162,6 +162,7 @@ For example, the meters tagged with a worker's UUID end when that worker disconn
 `OTEL_EXPORTER_OTLP_METRICS_HEADERS`, when set, replaces `OTEL_EXPORTER_OTLP_HEADERS` on metric exports, as OpenTelemetry does for each signal.
 `OTEL_SERVICE_NAME` renames the service on all three; it defaults to `streamarr-server`.
 `deployment.environment` is `DEPLOYMENT_ENV` (default `dev`).
+The resource leaves out `process.command_args` and `process.command_line`, because a command line can carry credentials.
 A collector that needs a private CA or a client certificate for metrics takes a Spring Boot SSL bundle named by `management.otlp.metrics.export.ssl.bundle`; the `OTEL_EXPORTER_OTLP_CERTIFICATE` and client-key variables reach spans and logs only.
 Spring Boot's own mapping of `OTEL_*` variables onto its settings is off, so `OTEL_METRICS_EXPORTER` never turns Micrometer's export on or off.
 
