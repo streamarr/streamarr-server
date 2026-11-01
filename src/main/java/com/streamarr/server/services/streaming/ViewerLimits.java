@@ -60,6 +60,15 @@ public record ViewerLimits(
     return OptionalInt.of(maximum);
   }
 
+  /** These limits in Auto: the same maximum width, height and bitrate, with no fixed quality. */
+  ViewerLimits inAuto() {
+    return ViewerLimits.builder()
+        .maxWidth(maxWidth)
+        .maxHeight(maxHeight)
+        .maxBitrate(maxBitrate)
+        .build();
+  }
+
   /** The tier of the fixed quality that the viewer picked, or empty for Auto and Original. */
   Optional<QualityTier> fixedTier() {
     return QualityTier.ofFixedQuality(quality);
