@@ -84,6 +84,86 @@ class PlaybackSessionServiceTest {
             });
   }
 
+  // ADR 0052: an encode that Original reaches plays in Auto, and the playback session says so.
+  @Test
+  @DisplayName("Should play the encode in Auto when Original cannot copy the source")
+  void shouldPlayTheEncodeInAutoWhenOriginalCannotCopyTheSource() {
+    streams.copiesTheSource = false;
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+
+    var snapshot = accepted(service.start(command));
+
+    assertThat(snapshot.requestedChoice()).isEqualTo(VideoQuality.ORIGINAL);
+    assertThat(snapshot.playbackChoice()).isEqualTo(VideoQuality.AUTO);
+    assertThat(snapshot.formatChange()).contains(PlaybackFormatChange.STARTED_WITH_ENCODE);
+    assertThat(snapshot.formatAttemptCount()).isEqualTo(1);
+    assertThat(snapshot.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready ->
+                assertThat(ready.session().getTranscodeDecision().transcodeMode().copiesVideo())
+                    .isFalse());
+  }
+
+  @Test
+  @DisplayName("Should recover as Auto does when the encode that Original started with fails")
+  void shouldRecoverAsAutoDoesWhenTheEncodeThatOriginalStartedWithFails() {
+    streams.copiesTheSource = false;
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var initial = accepted(service.start(command));
+
+    var recovered = service.reportFormatFailure(report(initial, command).build()).orElseThrow();
+
+    assertThat(recovered.formatAttemptCount()).isEqualTo(2);
+    assertThat(recovered.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+    assertThat(recovered.playbackChoice()).isEqualTo(VideoQuality.AUTO);
+    assertThat(recovered.formatChange()).contains(PlaybackFormatChange.STARTED_WITH_ENCODE);
+    assertThat(streams.createdCommands.getLast())
+        .satisfies(
+            replacement -> {
+              assertThat(replacement.options().quality()).isEqualTo(VideoQuality.AUTO);
+              assertThat(replacement.excludedEncodeCodecFamilies()).containsExactly("h264");
+            });
+  }
+
+  @Test
+  @DisplayName("Should keep Original without a format change when Original copies the source")
+  void shouldKeepOriginalWithoutAFormatChangeWhenOriginalCopiesTheSource() {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+
+    var snapshot = accepted(service.start(command));
+
+    assertThat(snapshot.requestedChoice()).isEqualTo(VideoQuality.ORIGINAL);
+    assertThat(snapshot.playbackChoice()).isEqualTo(VideoQuality.ORIGINAL);
+    assertThat(snapshot.formatChange()).isEmpty();
+    assertThat(snapshot.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready ->
+                assertThat(ready.session().getTranscodeDecision().transcodeMode().copiesVideo())
+                    .isTrue());
+  }
+
+  // A fixed quality's own encode is the output that the viewer asked for.
+  @ParameterizedTest
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"AUTO", "LOW_360P", "MEDIUM_480P", "HIGH_720P", "FULL_HD_1080P", "UHD_4K"})
+  @DisplayName(
+      "Should keep the playback choice without a format change when Auto or a fixed"
+          + " quality starts with an encode")
+  void shouldKeepThePlaybackChoiceWithoutAFormatChangeWhenAutoOrAFixedQualityStartsWithAnEncode(
+      VideoQuality quality) {
+    streams.copiesTheSource = false;
+    var command = startCommand().options(qualityOptions(quality)).build();
+
+    var snapshot = accepted(service.start(command));
+
+    assertThat(snapshot.requestedChoice()).isEqualTo(quality);
+    assertThat(snapshot.playbackChoice()).isEqualTo(quality);
+    assertThat(snapshot.formatChange()).isEmpty();
+  }
+
   @Test
   @DisplayName("Should replace the copy when its mismatch arrives before initial creation returns")
   void shouldReplaceTheCopyWhenItsMismatchArrivesBeforeInitialCreationReturns() {
@@ -962,6 +1042,10 @@ class PlaybackSessionServiceTest {
         .reason(PlaybackFormatFailure.DECODE_ERROR);
   }
 
+  private static StreamingOptions qualityOptions(VideoQuality quality) {
+    return StreamingOptions.builder().quality(quality).build();
+  }
+
   private StartPlaybackSessionCommand.StartPlaybackSessionCommandBuilder startCommand() {
     return StartPlaybackSessionCommand.builder()
         .mediaFileId(UUID.randomUUID())
@@ -988,6 +1072,8 @@ class PlaybackSessionServiceTest {
     private boolean failDestroy;
     private Runnable afterNextDestroy;
     private RuntimeException destroyFailure;
+    // Whether a capability entry accepts a copy of the source, as the transcode decision finds.
+    private boolean copiesTheSource = true;
 
     @Override
     public Outcome<StreamSession, CreateStreamSessionRejection> createSession(
@@ -1003,16 +1089,16 @@ class PlaybackSessionServiceTest {
         return Outcome.rejected(rejection);
       }
 
+      var encodes =
+          command.videoFormatConstraint() == VideoFormatConstraint.ENCODE_ONLY || !copiesTheSource;
+
       var session =
           defaultSessionBuilder()
               .sessionId(command.streamSessionId())
               .mediaFileId(command.mediaFileId())
               .authority(command.identity().playbackAuthority())
               .options(command.options())
-              .transcodeDecision(
-                  command.videoFormatConstraint() == VideoFormatConstraint.ENCODE_ONLY
-                      ? fullTranscodeDecision("h264")
-                      : remuxDecision())
+              .transcodeDecision(encodes ? fullTranscodeDecision("h264") : remuxDecision())
               .build();
       sessions.put(session.getSessionId(), session);
       if (duringNextCreation != null) {

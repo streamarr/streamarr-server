@@ -8,6 +8,7 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
+import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.TranscodeLimitReachedException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -284,10 +285,6 @@ public class HlsStreamingService implements StreamingService {
   // worker state, so a caller decides from the workers that it has read.
   private Optional<TranscodeDecision> encodeCandidate(
       TranscodeDecisionRequest request, Set<String> encodableVideoCodecFamilies) {
-    if (!request.videoFormatConstraint().permitsEncode(request.source())) {
-      return Optional.empty();
-    }
-
     return transcodeDecisionService.decide(
         request.toBuilder()
             .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
@@ -421,10 +418,9 @@ public class HlsStreamingService implements StreamingService {
         MultivariantPlaylistOrder.of(ladder.variants(), ladder.audio().bitrate()), ladder.audio());
   }
 
-  // Original's constraint encodes only a source that no copy may carry, and that encode plays
-  // Auto's ladder (ADR 0052).
+  // An encode that Original reaches plays Auto's ladder (ADR 0052).
   private static ViewerLimits ladderLimits(TranscodeDecisionRequest request) {
-    if (request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
+    if (request.viewerLimits().quality() == VideoQuality.ORIGINAL) {
       return request.viewerLimits().inAuto();
     }
 

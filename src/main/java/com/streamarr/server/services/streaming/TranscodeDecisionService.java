@@ -71,10 +71,6 @@ public class TranscodeDecisionService {
     var sessionAudio = decideAudio(source, declaration);
     var audioBesideCopy = audioBesideVideoCopy(request, sessionAudio);
     boolean videoCopyable = audioBesideCopy.isPresent();
-    if (!videoCopyable && !request.videoFormatConstraint().permitsEncode(source)) {
-      return Optional.empty();
-    }
-
     var encodeCodecProfile =
         videoCopyable ? Optional.<EncodeCodecProfile>empty() : selectEncodeCodecProfile(request);
     if (!videoCopyable && encodeCodecProfile.isEmpty()) {

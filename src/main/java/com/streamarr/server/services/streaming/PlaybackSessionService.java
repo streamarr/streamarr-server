@@ -74,7 +74,10 @@ public class PlaybackSessionService implements AutoCloseable {
   private static class PlaybackSession {
     private final UUID id;
     private final StartPlaybackSessionCommand command;
-    private final VideoQuality playbackChoice;
+    private final VideoQuality requestedChoice;
+    // The playback choice that plays now, which every later format attempt follows (ADR 0052).
+    private VideoQuality playbackChoice;
+    @Builder.Default private Optional<PlaybackFormatChange> formatChange = Optional.empty();
     private PlaybackFormatAttempt current;
     private Instant lastAccessedAt;
     @Builder.Default private int formatAttemptCount = 1;
@@ -130,12 +133,14 @@ public class PlaybackSessionService implements AutoCloseable {
         throw new PlaybackSessionClosedException();
       }
 
+      // A missing quality is Auto.
+      var requested = Optional.ofNullable(command.options().quality()).orElse(VideoQuality.AUTO);
       var playback =
           PlaybackSession.builder()
               .id(UUID.randomUUID())
               .command(command)
-              .playbackChoice(
-                  Optional.ofNullable(command.options().quality()).orElse(VideoQuality.AUTO))
+              .requestedChoice(requested)
+              .playbackChoice(requested)
               .current(new PlaybackFormatAttempt.Pending(childId))
               .lastAccessedAt(clock.instant())
               .build();
@@ -431,13 +436,10 @@ public class PlaybackSessionService implements AutoCloseable {
                 .streamSessionId(streamId)
                 .mediaFileId(playback.command.mediaFileId())
                 .identity(playback.command.identity())
-                .options(playback.command.options())
+                .options(
+                    playback.command.options().toBuilder().quality(playback.playbackChoice).build())
                 .capabilityDeclaration(playback.command.capabilityDeclaration())
-                .excludedEncodeCodecFamilies(Set.copyOf(playback.excludedEncodeCodecFamilies))
-                .videoFormatConstraint(
-                    playback.playbackChoice == VideoQuality.ORIGINAL
-                        ? VideoFormatConstraint.COPY_ONLY
-                        : VideoFormatConstraint.COPY_OR_ENCODE));
+                .excludedEncodeCodecFamilies(Set.copyOf(playback.excludedEncodeCodecFamilies)));
   }
 
   private void requireAuthority(AuthenticatedIdentity identity, PlaybackAuthority authority) {
@@ -538,11 +540,21 @@ public class PlaybackSessionService implements AutoCloseable {
                 return false;
               }
 
-              playback.current = new PlaybackFormatAttempt.Ready(session);
+              adopt(playback, session);
               return true;
             });
     if (!accepted) {
       streamingService.destroySession(session.getSessionId());
+    }
+  }
+
+  // Original that reaches an encode plays it in Auto (ADR 0052).
+  private static void adopt(PlaybackSession playback, StreamSession session) {
+    playback.current = new PlaybackFormatAttempt.Ready(session);
+    if (playback.playbackChoice == VideoQuality.ORIGINAL
+        && !session.getTranscodeDecision().transcodeMode().copiesVideo()) {
+      playback.playbackChoice = VideoQuality.AUTO;
+      playback.formatChange = Optional.of(PlaybackFormatChange.STARTED_WITH_ENCODE);
     }
   }
 
@@ -574,6 +586,9 @@ public class PlaybackSessionService implements AutoCloseable {
                   .playbackSessionId(playback.id)
                   .formatAttemptCount(playback.formatAttemptCount)
                   .maximumFormatAttempts(recoveryPolicy.maximumFormatAttempts())
+                  .requestedChoice(playback.requestedChoice)
+                  .playbackChoice(playback.playbackChoice)
+                  .formatChange(playback.formatChange)
                   .currentFormatAttempt(playback.current)
                   .build());
         });
