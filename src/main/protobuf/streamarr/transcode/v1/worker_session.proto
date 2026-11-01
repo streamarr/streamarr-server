@@ -513,8 +513,11 @@ message VideoDecision {
   // flags. The produced output is progressive. The worker fails the attempt
   // with JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION in any of these cases:
   // - A job that copies video includes this field.
-  // - field_order is UNSPECIFIED or PROGRESSIVE.
-  // - output is UNSPECIFIED.
+  // - field_order is any value other than TT, BB, TB or BT, including
+  //   UNSPECIFIED, PROGRESSIVE and a value that this contract does not define.
+  // - output is any value other than ONE_FRAME_PER_FIELD or
+  //   ONE_FRAME_PER_FRAME, including UNSPECIFIED and a value that this contract
+  //   does not define.
   //
   // The worker fails the attempt with JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH when
   // the initialization segment of an encode declares interlaced video, with or
