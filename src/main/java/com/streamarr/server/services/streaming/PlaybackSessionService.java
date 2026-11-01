@@ -79,6 +79,7 @@ public class PlaybackSessionService implements AutoCloseable {
     private PlayingChoice choice;
     private PlaybackFormatAttempt current;
     private Instant lastAccessedAt;
+    @Builder.Default private List<VideoQuality> offeredChoices = List.of();
     @Builder.Default private int formatAttemptCount = 1;
     private final Set<String> excludedEncodeCodecFamilies = new HashSet<>();
     private final Set<UUID> streamIds = new HashSet<>();
@@ -111,6 +112,7 @@ public class PlaybackSessionService implements AutoCloseable {
       var outcome = streamingService.createSession(childCommand(playback, childId).build());
       return switch (outcome) {
         case Outcome.Accepted(var session) -> {
+          offerChoicesOf(playback, session);
           settle(playback, session);
           yield Outcome.accepted(
               snapshot(playback).orElseThrow(PlaybackSessionClosedException::new));
@@ -124,6 +126,17 @@ public class PlaybackSessionService implements AutoCloseable {
       discardAfterFailure(playback, failure);
       throw failure;
     }
+  }
+
+  // Every format attempt plays the same source, so the first one fixes the offered choices.
+  private void offerChoicesOf(PlaybackSession playback, StreamSession session) {
+    var offered = QualityTier.offeredChoicesFor(session.getMediaProbe().displayedSize());
+    locked(
+        playback,
+        () -> {
+          playback.offeredChoices = offered;
+          return true;
+        });
   }
 
   private PlaybackSession register(StartPlaybackSessionCommand command, UUID childId) {
@@ -597,6 +610,7 @@ public class PlaybackSessionService implements AutoCloseable {
                   .requestedChoice(playback.requestedChoice)
                   .playbackChoice(playback.choice.playbackChoice())
                   .formatChange(playback.choice.formatChange())
+                  .offeredChoices(playback.offeredChoices)
                   .currentFormatAttempt(playback.current)
                   .build());
         });

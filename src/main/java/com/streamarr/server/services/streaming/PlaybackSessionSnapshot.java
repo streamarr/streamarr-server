@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.VideoQuality;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;
@@ -19,4 +20,5 @@ public record PlaybackSessionSnapshot(
     @NonNull VideoQuality requestedChoice,
     @NonNull VideoQuality playbackChoice,
     @NonNull Optional<PlaybackFormatChange> formatChange,
+    @NonNull List<VideoQuality> offeredChoices,
     @NonNull PlaybackFormatAttempt currentFormatAttempt) {}

@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -62,6 +63,34 @@ enum QualityTier {
       case FULL_HD_1080P -> Optional.of(TIER_1080P);
       case UHD_4K -> Optional.of(TIER_2160P);
       case AUTO, ORIGINAL -> Optional.empty();
+    };
+  }
+
+  /**
+   * The playback choices that a source offers, in the order that a quality control lists them:
+   * Original, Auto, then the fixed quality of each tier that the ladder offers for the source,
+   * largest first. A fixed quality larger than the source would not enlarge it, so it is left out.
+   */
+  static List<VideoQuality> offeredChoicesFor(@NonNull PictureSize source) {
+    var choices = new ArrayList<VideoQuality>();
+    choices.add(VideoQuality.ORIGINAL);
+    choices.add(VideoQuality.AUTO);
+    offeredFor(source).stream()
+        .map(QualityTier::fixedQuality)
+        .flatMap(Optional::stream)
+        .forEach(choices::add);
+    return List.copyOf(choices);
+  }
+
+  // The fixed quality whose box this tier has. No fixed quality has the 1440p box.
+  private Optional<VideoQuality> fixedQuality() {
+    return switch (this) {
+      case TIER_2160P -> Optional.of(VideoQuality.UHD_4K);
+      case TIER_1440P -> Optional.empty();
+      case TIER_1080P -> Optional.of(VideoQuality.FULL_HD_1080P);
+      case TIER_720P -> Optional.of(VideoQuality.HIGH_720P);
+      case TIER_480P -> Optional.of(VideoQuality.MEDIUM_480P);
+      case TIER_360P -> Optional.of(VideoQuality.LOW_360P);
     };
   }
 

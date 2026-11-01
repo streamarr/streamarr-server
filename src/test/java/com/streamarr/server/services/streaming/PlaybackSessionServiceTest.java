@@ -8,6 +8,7 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.d
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
@@ -16,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
+import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
@@ -28,6 +30,7 @@ import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -143,6 +146,36 @@ class PlaybackSessionServiceTest {
             ready ->
                 assertThat(ready.session().getTranscodeDecision().transcodeMode().copiesVideo())
                     .isTrue());
+  }
+
+  // A fixed quality larger than the source would not enlarge it, so it is not offered. The 1440p
+  // tier has no fixed quality, and a 1080×1920 portrait source fits the 1080p tier's box.
+  @ParameterizedTest
+  @CsvSource({
+    "3840, 2160, 'ORIGINAL,AUTO,UHD_4K,FULL_HD_1080P,HIGH_720P,MEDIUM_480P,LOW_360P'",
+    "2560, 1440, 'ORIGINAL,AUTO,FULL_HD_1080P,HIGH_720P,MEDIUM_480P,LOW_360P'",
+    "1920, 1080, 'ORIGINAL,AUTO,FULL_HD_1080P,HIGH_720P,MEDIUM_480P,LOW_360P'",
+    "1920, 1088, 'ORIGINAL,AUTO,FULL_HD_1080P,HIGH_720P,MEDIUM_480P,LOW_360P'",
+    "1080, 1920, 'ORIGINAL,AUTO,FULL_HD_1080P,HIGH_720P,MEDIUM_480P,LOW_360P'",
+    "1280, 720, 'ORIGINAL,AUTO,HIGH_720P,MEDIUM_480P,LOW_360P'",
+    "720, 480, 'ORIGINAL,AUTO,MEDIUM_480P,LOW_360P'",
+    "320, 240, 'ORIGINAL,AUTO,LOW_360P'"
+  })
+  @DisplayName(
+      "Should offer Original, Auto and each fixed quality up to the source's tier when playback"
+          + " starts")
+  void shouldOfferOriginalAutoAndEachFixedQualityUpToTheSourcesTierWhenPlaybackStarts(
+      int width, int height, String expected) {
+    streams.sourceProbe = defaultProbeBuilder().width(width).height(height).build();
+    var command = startCommand().build();
+
+    var snapshot = accepted(service.start(command));
+
+    assertThat(snapshot.offeredChoices())
+        .containsExactlyElementsOf(
+            Arrays.stream(expected.split(",")).map(VideoQuality::valueOf).toList());
+    var recovered = service.reportFormatFailure(report(snapshot, command).build()).orElseThrow();
+    assertThat(recovered.offeredChoices()).isEqualTo(snapshot.offeredChoices());
   }
 
   // A fixed quality's own encode is the output that the viewer asked for.
@@ -1194,6 +1227,7 @@ class PlaybackSessionServiceTest {
     private RuntimeException destroyFailure;
     // Whether a capability entry accepts a copy of the source, as the transcode decision finds.
     private boolean copiesTheSource = true;
+    private MediaProbe sourceProbe = defaultProbeBuilder().build();
 
     @Override
     public Outcome<StreamSession, CreateStreamSessionRejection> createSession(
@@ -1218,6 +1252,7 @@ class PlaybackSessionServiceTest {
               .mediaFileId(command.mediaFileId())
               .authority(command.identity().playbackAuthority())
               .options(command.options())
+              .mediaProbe(sourceProbe)
               .transcodeDecision(encodes ? fullTranscodeDecision("h264") : remuxDecision())
               .build();
       sessions.put(session.getSessionId(), session);
