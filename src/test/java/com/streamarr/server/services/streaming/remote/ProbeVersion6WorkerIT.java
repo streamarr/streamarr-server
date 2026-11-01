@@ -224,6 +224,9 @@ class ProbeVersion6WorkerIT extends AbstractIntegrationTest {
                             .colorRange(Optional.of(ColorRange.LIMITED))
                             .firstFramesRead(true)
                             .firstPacketsCarryPresentationTimes(Optional.of(true))
+                            // libx264 writes a whole avcC with 4-byte NAL unit lengths, and a
+                            // Matroska track has no sample entry, so a copy keeps every packet.
+                            .copyKeepsPacketBytes(Optional.of(true))
                             .build());
                 // For H.264 the worker walks the units of the frames that it read, so it reports
                 // HDR10+ and an RPU as absent rather than unknown.
