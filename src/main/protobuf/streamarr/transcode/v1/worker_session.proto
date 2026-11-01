@@ -1213,9 +1213,11 @@ message ProbeStreamInfo {
   // delivers every packet of the stream with its bytes unchanged, under the
   // same codec_string. That holds only when all these conditions hold:
   // - The stream's decoder configuration record is a whole avcC or hvcC:
-  //   configurationVersion 1, and every NAL unit that it counts ends within
-  //   it. The record holds an SPS and a PPS, and an hvcC also holds a VPS.
-  // - The record's NAL unit lengths take 4 bytes.
+  //   configurationVersion 1, every NAL unit that it counts ends within it,
+  //   and no NAL unit of an hvcC holds a start code. The record holds an SPS
+  //   and a PPS, and an hvcC also holds a VPS.
+  // - The record gives the samples 4-byte NAL unit lengths:
+  //   lengthSizeMinusOne is 3.
   // - The record header names the profile, tier and level that the worker
   //   reads from the record's parameter sets, so codec_string is the same with
   //   or without the filter.
@@ -1224,9 +1226,26 @@ message ProbeStreamInfo {
   //   message, such as mastering display or content light level, keeps the
   //   filter: the filter is what repeats that record-only metadata in front of
   //   every IRAP sample.
+  // - Every NAL unit in the record reaches FFmpeg's decoder: the unit holds
+  //   its whole NAL unit header and its forbidden_zero_bit is 0, an avcC unit
+  //   holds a byte other than 0, and an hvcC unit's nuh_layer_id is not 63
+  //   and its nuh_temporal_id_plus1 is not 0. FFmpeg's decoder never receives
+  //   a unit that fails these checks, so the probe reads the record without
+  //   it, but a copy without the filter delivers it.
+  // - Every NAL unit in an hvcC array has the NAL unit type that the array
+  //   names. Without the filter, FFmpeg's hvcC writer sorts each unit by its
+  //   array's type, so a VPS in an SEI array would leave the copy's record
+  //   without a VPS.
   // - In an MP4 or MOV file, the stream's sample entry is avc1 or dva1 for
   //   H.264 and hvc1 or dvh1 for HEVC. Other sample entries, such as avc3,
   //   hev1, dvav and dvhe, can keep parameter sets only in the samples.
+  // - In an MP4 or MOV file, the stream's track has exactly one sample entry.
+  //   ffprobe describes only the first, and only the filter carries another
+  //   entry's parameter sets into the samples. A track whose sample entries
+  //   the worker cannot count counts as one with several.
+  //
+  // A Matroska track has no sample entry, so only the conditions on its record
+  // apply.
   //
   // The worker reports false otherwise. The field is absent when the worker did
   // not report it. The server treats an absent value as false.
