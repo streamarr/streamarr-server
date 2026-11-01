@@ -408,7 +408,7 @@ class StreamingResolverTest {
             STUB_SERVICE
                 .sessions
                 .get(command.streamSessionId())
-                .markShortCopy(
+                .tryMarkShortCopy(
                     new ShortCopy(205, Duration.ofMillis(1_234_500), everySourceStreamEnded)));
 
     var created = startPlaybackReadingChoices(VideoQuality.ORIGINAL);

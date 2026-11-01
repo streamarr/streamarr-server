@@ -659,7 +659,7 @@ class PlaybackSessionServiceTest {
 
   private static StreamSession endNormally(PlaybackSessionSnapshot snapshot) {
     var copy = ((PlaybackFormatAttempt.Ready) snapshot.currentFormatAttempt()).session();
-    copy.markShortCopy(new ShortCopy(3, Duration.ofSeconds(24), true));
+    copy.tryMarkShortCopy(new ShortCopy(3, Duration.ofSeconds(24), true));
     return copy;
   }
 

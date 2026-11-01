@@ -8,6 +8,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.sessionWithDura
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ShortCopy;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
@@ -72,15 +73,7 @@ class ShortCopyListenerTest {
   @DisplayName(
       "Should publish the failed copy when a source stream still has media after the copy's end")
   void shouldPublishTheFailedCopyWhenASourceStreamStillHasMediaAfterTheCopysEnd() {
-    var probe =
-        defaultProbeBuilder()
-            .streams(
-                List.of(
-                    audioStreamBuilder("aac")
-                        .endTime(Optional.of(Duration.ofMillis(30_001)))
-                        .build()))
-            .build();
-    var copy = started(defaultSessionBuilder().mediaProbe(probe).build());
+    var copy = started(defaultSessionBuilder().mediaProbe(probeWithMediaAfter24Seconds()).build());
     storeSegments(copy, 4);
     var completion = completionBuilderOf(copy).build();
 
@@ -149,21 +142,23 @@ class ShortCopyListenerTest {
     assertThat(encode.getShortCopy()).isEmpty();
   }
 
-  // Every job attempt reads the same source, so a later completion cannot move the real end.
+  // Every job attempt reads the same source, so a later completion moves neither the copy's end
+  // nor starts a second fallback.
   @Test
-  @DisplayName("Should keep the first short copy when a later job attempt completes")
-  void shouldKeepTheFirstShortCopyWhenALaterJobAttemptCompletes() {
-    var copy = started(defaultSessionBuilder().build());
+  @DisplayName("Should keep the first short copy when a later job attempt of the copy completes")
+  void shouldKeepTheFirstShortCopyWhenALaterJobAttemptOfTheCopyCompletes() {
+    var copy = started(defaultSessionBuilder().mediaProbe(probeWithMediaAfter24Seconds()).build());
     storeSegments(copy, 2);
     listener.onJobAttemptCompleted(completionBuilderOf(copy).build());
     var later = new TranscodeHandle(2L, UUID.randomUUID(), TranscodeStatus.ACTIVE, 0);
     copy.setHandle(later);
-    storeSegments(copy, 5);
+    storeSegments(copy, 3);
 
     listener.onJobAttemptCompleted(
         completionBuilderOf(copy).jobAttemptId(later.attemptId()).build());
 
-    assertThat(copy.getShortCopy()).contains(new ShortCopy(1, Duration.ofSeconds(12), true));
+    assertThat(copy.getShortCopy()).contains(new ShortCopy(1, Duration.ofSeconds(12), false));
+    assertThat(events.getEventsOfType(CopiedVariantRanShortEvent.class)).hasSize(1);
   }
 
   @Test
@@ -177,6 +172,15 @@ class ShortCopyListenerTest {
     listener.onJobAttemptCompleted(completion);
 
     assertThat(copy.getShortCopy()).isEmpty();
+  }
+
+  // An audio stream that ends just over one target segment duration after the fourth segment.
+  private static MediaProbe probeWithMediaAfter24Seconds() {
+    return defaultProbeBuilder()
+        .streams(
+            List.of(
+                audioStreamBuilder("aac").endTime(Optional.of(Duration.ofMillis(30_001))).build()))
+        .build();
   }
 
   private StreamSession started(StreamSession session) {

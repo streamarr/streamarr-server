@@ -1525,7 +1525,6 @@ public class ProducerLifecycleService {
             runtimeRegistry
                 .findById(sessionId)
                 .filter(session -> session.getTranscodeDecision().transcodeMode().copiesVideo())
-                .filter(session -> session.getShortCopy().isEmpty())
                 .flatMap(session -> shortCopyShownBy(session, variantLabel, attemptId)));
   }
 
@@ -1555,7 +1554,10 @@ public class ProducerLifecycleService {
     }
 
     var shortCopy = ShortCopy.endingWith(firstMissing - 1, timeline, session.getMediaProbe());
-    session.markShortCopy(shortCopy);
+    if (!session.tryMarkShortCopy(shortCopy)) {
+      return Optional.empty();
+    }
+
     runtimeRegistry.save(session);
     log.info(
         "Copy of session {} ran short after media segment {} of {}: every source stream ended: {}",

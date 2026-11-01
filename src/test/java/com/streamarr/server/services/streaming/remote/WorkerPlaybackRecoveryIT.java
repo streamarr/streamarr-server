@@ -52,8 +52,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -171,13 +171,11 @@ class WorkerPlaybackRecoveryIT {
       assertThat(playback.deliverDefault(copy, "segment0.m4s"))
           .isInstanceOf(SegmentDelivery.Ready.class);
       await().atMost(15, TimeUnit.SECONDS).until(copy::getNormalEnd, Optional::isPresent);
-      var pastTheEnd =
-          CompletableFuture.supplyAsync(() -> playback.deliverDefault(copy, "segment1.m4s"));
+      var pastTheEnd = new FutureTask<>(() -> playback.deliverDefault(copy, "segment1.m4s"));
+      var delivering = Thread.ofPlatform().start(pastTheEnd);
 
-      await()
-          .during(3, TimeUnit.SECONDS)
-          .atMost(5, TimeUnit.SECONDS)
-          .until(() -> !pastTheEnd.isDone());
+      // Only a request past the normal end waits without a deadline.
+      await().atMost(5, TimeUnit.SECONDS).until(delivering::getState, Thread.State.WAITING::equals);
       assertThat(copy.getNormalEnd()).contains(Duration.ofSeconds(6));
       assertThat(copy.getHandle().orElseThrow().attemptId()).isEqualTo(copyAttempt);
       var snapshot = playback.sessions.access(playback.requestFor(started)).orElseThrow();
