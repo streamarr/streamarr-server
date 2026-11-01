@@ -209,19 +209,19 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
             "bytes beyond a signed 64-bit count",
             report(
                 measurements(video(30).setMeasuredBytes(-1L)), List.of(intervals(VIDEO, 10, 20))),
-            "Worker probe measured bytes, packets or duration exceed the contract's range"),
+            "Worker probe measured bytes, packets, or duration exceed the contract's range"),
         arguments(
             "a duration beyond a signed 64-bit count",
             report(
                 measurements(video(30).setMeasuredDuration(-1L)),
                 List.of(intervals(VIDEO, 10, 20))),
-            "Worker probe measured bytes, packets or duration exceed the contract's range"),
+            "Worker probe measured bytes, packets, or duration exceed the contract's range"),
         arguments(
             "a packet count beyond a signed 64-bit count",
             report(
                 measurements(video(30).setPacketCount(-1L), audio(3)),
                 List.of(intervals(VIDEO, 10, 20), intervals(AUDIO, 1, 2))),
-            "Worker probe measured bytes, packets or duration exceed the contract's range"),
+            "Worker probe measured bytes, packets, or duration exceed the contract's range"),
         arguments(
             "a zero time base",
             report(

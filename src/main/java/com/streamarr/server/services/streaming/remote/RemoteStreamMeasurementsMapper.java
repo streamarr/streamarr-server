@@ -76,7 +76,7 @@ final class RemoteStreamMeasurementsMapper {
 
     if (hasCountBeyondTheContractsRange(stream)) {
       throw violation(
-          "Worker probe measured bytes, packets or duration exceed the contract's range");
+          "Worker probe measured bytes, packets, or duration exceed the contract's range");
     }
 
     if (stream.getTimeBaseNumerator() <= 0 || stream.getTimeBaseDenominator() <= 0) {

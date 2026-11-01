@@ -26,8 +26,8 @@ public record MeasuredStream(
     if (anyIsNegative(streamIndex, measuredBytes, packetCount, measuredDuration)
         || anyIsNotPositive(timeBaseNumerator, timeBaseDenominator)) {
       throw new IllegalArgumentException(
-          "A measured stream needs a stream index, counts that are not negative and a positive"
-              + " time base");
+          "A measured stream needs a stream index, counts that are not negative, and a"
+              + " positive time base");
     }
 
     if (keyframeIntervalPacketCounts.intervalCount() != keyframeIntervalBytes.intervalCount()) {
