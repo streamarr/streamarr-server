@@ -310,6 +310,32 @@ class VideoCapabilityEntryHlsEncodeTest {
             });
   }
 
+  @Test
+  @DisplayName(
+      "Should cap an AV1 encode's bitrate at the Main tier limit of the entry's maximum level when"
+          + " the requested bitrate needs a higher level")
+  void
+      shouldCapAnAv1EncodesBitrateAtTheMainTierLimitOfTheEntrysMaximumLevelWhenTheRequestedBitrateNeedsAHigherLevel() {
+    var entry =
+        av1EntryBuilder()
+            .codecProfiles(
+                List.of(
+                    VideoCodecProfileCapability.builder()
+                        .profile(VideoCodecProfile.AV1_MAIN)
+                        .maxLevel(40)
+                        .maxTier(Optional.of(VideoCodecTier.MAIN))
+                        .build()))
+            .build();
+
+    var output =
+        entry.fitHlsEncode(
+            fullHdRequest().codecProfile(EncodeCodecProfile.AV1_MAIN).bitrate(20_000_000L).build());
+
+    // AV1 Annex A.3 allows level 4.0 12 Mb/s in the Main tier.
+    assertThat(output.map(EncodedVideoOutput::bitrate)).contains(12_000_000L);
+    assertThat(pictureOf(output)).contains(FULL_HD);
+  }
+
   @ParameterizedTest(name = "{0}")
   @MethodSource("entriesThatRefuseAnEncode")
   @DisplayName("Should refuse the encode when the entry refuses one of its fixed properties")
