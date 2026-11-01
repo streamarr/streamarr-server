@@ -4183,8 +4183,13 @@ class HlsStreamingServiceTest {
 
   private CreateStreamSessionCommand interlacedSourceCommand(
       VideoQuality quality, VideoFormatConstraint constraint) {
+    return interlacedSourceCommand(StreamingOptions.builder().quality(quality).build(), constraint);
+  }
+
+  private CreateStreamSessionCommand interlacedSourceCommand(
+      StreamingOptions options, VideoFormatConstraint constraint) {
     return createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
-        .options(StreamingOptions.builder().quality(quality).build())
+        .options(options)
         .videoFormatConstraint(constraint)
         .build();
   }
