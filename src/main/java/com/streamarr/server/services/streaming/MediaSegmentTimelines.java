@@ -6,6 +6,7 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.StreamCopySegments;
 import com.streamarr.server.domain.streaming.StreamSession;
+import java.util.Optional;
 
 /**
  * The one derivation of a probed media file's media segment timeline, shared by the media playlist
@@ -26,20 +27,34 @@ final class MediaSegmentTimelines {
    */
   static MediaSegmentTimeline of(StreamSession session, StreamingProperties properties) {
     var probe = session.getMediaProbe();
-    var grid = of(probe, properties);
     if (!session.getTranscodeDecision().transcodeMode().copiesVideo()) {
-      return grid;
+      return of(probe, properties);
     }
 
+    return streamCopyOf(probe, properties)
+        .orElseThrow(
+            () ->
+                new IllegalStateException(
+                    "A stream copy session needs the source's keyframes and a keyframe in every"
+                        + " segment"));
+  }
+
+  /**
+   * The segments of a stream copy of the source, which open at its keyframes, or empty when the
+   * keyframes are not known or a grid interval holds none.
+   */
+  static Optional<MediaSegmentTimeline.StreamCopy> streamCopyOf(
+      MediaProbe probe, StreamingProperties properties) {
     if (!(probe.keyframes() instanceof KeyframeKnowledge.Known(var positions))) {
-      throw new IllegalStateException("A stream copy session needs the source's keyframes");
+      return Optional.empty();
     }
 
+    var grid = of(probe, properties);
     if (!(KeyframeSegmentBoundaries.forStreamCopy(positions, grid.targetSegmentDurationSeconds())
         instanceof StreamCopySegments.Starts starts)) {
-      throw new IllegalStateException("A stream copy session needs a keyframe in every segment");
+      return Optional.empty();
     }
 
-    return grid.openedAt(positions, starts);
+    return Optional.of(grid.openedAt(positions, starts));
   }
 }
