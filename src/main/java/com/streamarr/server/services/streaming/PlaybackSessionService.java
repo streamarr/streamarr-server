@@ -75,9 +75,8 @@ public class PlaybackSessionService implements AutoCloseable {
     private final UUID id;
     private final StartPlaybackSessionCommand command;
     private final VideoQuality requestedChoice;
-    // The playback choice that plays now, which every later format attempt follows (ADR 0052).
-    private VideoQuality playbackChoice;
-    @Builder.Default private Optional<PlaybackFormatChange> formatChange = Optional.empty();
+    // Every later format attempt follows the playback choice that plays now (ADR 0052).
+    private PlayingChoice choice;
     private PlaybackFormatAttempt current;
     private Instant lastAccessedAt;
     @Builder.Default private int formatAttemptCount = 1;
@@ -140,7 +139,7 @@ public class PlaybackSessionService implements AutoCloseable {
               .id(UUID.randomUUID())
               .command(command)
               .requestedChoice(requested)
-              .playbackChoice(requested)
+              .choice(PlayingChoice.requested(requested))
               .current(new PlaybackFormatAttempt.Pending(childId))
               .lastAccessedAt(clock.instant())
               .build();
@@ -309,18 +308,25 @@ public class PlaybackSessionService implements AutoCloseable {
       return Optional.empty();
     }
 
-    var next =
-        recoveryPolicy.after(playback.playbackChoice, fixedFailure, playback.formatAttemptCount);
-    if (next instanceof NextFormatAttempt.Fail(var reason)) {
-      return Optional.of(failPlayback(playback, failedId, reason));
-    }
-
+    // A failed encode keeps its codec family out of every later format attempt.
     if (fixedFailure instanceof PlaybackSessionFailure.FixedFormatFailed
         && playback.current instanceof PlaybackFormatAttempt.Ready(var session)
         && !session.getTranscodeDecision().transcodeMode().copiesVideo()) {
       playback.excludedEncodeCodecFamilies.add(session.getTranscodeDecision().videoCodecFamily());
     }
 
+    return switch (recoveryPolicy.after(
+        playback.choice, fixedFailure, playback.formatAttemptCount)) {
+      case NextFormatAttempt.Fail(var reason) ->
+          Optional.of(failPlayback(playback, failedId, reason));
+      case NextFormatAttempt.Encode(var choice) ->
+          Optional.of(reserveEncode(playback, failedId, choice));
+    };
+  }
+
+  private FormatAttemptReservation reserveEncode(
+      PlaybackSession playback, UUID failedId, PlayingChoice choice) {
+    playback.choice = choice;
     playback.lastAccessedAt = clock.instant();
     var childId = UUID.randomUUID();
     playback.current = new PlaybackFormatAttempt.Pending(childId);
@@ -328,12 +334,11 @@ public class PlaybackSessionService implements AutoCloseable {
     playback.streamIds.add(childId);
     streamOwners.remove(failedId, playback);
     streamOwners.put(childId, playback);
-    return Optional.of(
-        FormatAttemptReservation.builder()
-            .playback(playback)
-            .retiredStreamId(failedId)
-            .streamId(Optional.of(childId))
-            .build());
+    return FormatAttemptReservation.builder()
+        .playback(playback)
+        .retiredStreamId(failedId)
+        .streamId(Optional.of(childId))
+        .build();
   }
 
   private boolean isCurrentAttempt(PlaybackSession playback, UUID streamId) {
@@ -437,7 +442,9 @@ public class PlaybackSessionService implements AutoCloseable {
                 .mediaFileId(playback.command.mediaFileId())
                 .identity(playback.command.identity())
                 .options(
-                    playback.command.options().toBuilder().quality(playback.playbackChoice).build())
+                    playback.command.options().toBuilder()
+                        .quality(playback.choice.playbackChoice())
+                        .build())
                 .capabilityDeclaration(playback.command.capabilityDeclaration())
                 .excludedEncodeCodecFamilies(Set.copyOf(playback.excludedEncodeCodecFamilies)));
   }
@@ -551,10 +558,11 @@ public class PlaybackSessionService implements AutoCloseable {
   // Original that reaches an encode plays it in Auto (ADR 0052).
   private static void adopt(PlaybackSession playback, StreamSession session) {
     playback.current = new PlaybackFormatAttempt.Ready(session);
-    if (playback.playbackChoice == VideoQuality.ORIGINAL
+    if (playback.choice.playbackChoice() == VideoQuality.ORIGINAL
         && !session.getTranscodeDecision().transcodeMode().copiesVideo()) {
-      playback.playbackChoice = VideoQuality.AUTO;
-      playback.formatChange = Optional.of(PlaybackFormatChange.STARTED_WITH_ENCODE);
+      playback.choice =
+          new PlayingChoice(
+              VideoQuality.AUTO, Optional.of(PlaybackFormatChange.STARTED_WITH_ENCODE));
     }
   }
 
@@ -587,8 +595,8 @@ public class PlaybackSessionService implements AutoCloseable {
                   .formatAttemptCount(playback.formatAttemptCount)
                   .maximumFormatAttempts(recoveryPolicy.maximumFormatAttempts())
                   .requestedChoice(playback.requestedChoice)
-                  .playbackChoice(playback.playbackChoice)
-                  .formatChange(playback.formatChange)
+                  .playbackChoice(playback.choice.playbackChoice())
+                  .formatChange(playback.choice.formatChange())
                   .currentFormatAttempt(playback.current)
                   .build());
         });
