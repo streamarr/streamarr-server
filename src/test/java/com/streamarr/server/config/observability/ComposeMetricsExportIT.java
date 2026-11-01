@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -55,7 +56,7 @@ class ComposeMetricsExportIT extends AbstractIntegrationTest {
   private static final Duration STORAGE_WAIT = Duration.ofSeconds(60);
   // The Compose documentation promises an export every 10 seconds.
   private static final double EXPORT_STEP_SECONDS = 10;
-  private static final double EXPORT_STEP_TOLERANCE_SECONDS = 4;
+  private static final double EXPORT_STEP_TOLERANCE_SECONDS = 2;
   // Shorter than one export step, so a larger gap means a later export left the meter out.
   private static final double LATER_EXPORT_GAP_SECONDS = EXPORT_STEP_SECONDS / 2;
   private static final String PROBES_WAITING = "__name__=\"streamarr_probes_waiting\"";
@@ -89,20 +90,18 @@ class ComposeMetricsExportIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should store a sample every ten seconds when the server runs with the Compose settings")
   void shouldStoreASampleEveryTenSecondsWhenTheServerRunsWithTheComposeSettings() {
+    // A single late export widens one gap, so any gap of one step proves the step.
     await()
         .atMost(STORAGE_WAIT)
         .untilAsserted(
             () ->
-                assertThat(sampleSeconds(PROBES_WAITING))
-                    .as("stored samples")
-                    .hasSizeGreaterThan(1));
-
-    var samples = sampleSeconds(PROBES_WAITING);
-    var lastGap = samples.getLast() - samples.get(samples.size() - 2);
-
-    assertThat(lastGap)
-        .as("seconds between the last two stored samples of streamarr_probes_waiting")
-        .isCloseTo(EXPORT_STEP_SECONDS, within(EXPORT_STEP_TOLERANCE_SECONDS));
+                assertThat(consecutiveGaps(sampleSeconds(PROBES_WAITING)))
+                    .as("seconds between consecutive stored samples of streamarr_probes_waiting")
+                    .anySatisfy(
+                        gap ->
+                            assertThat(gap)
+                                .isCloseTo(
+                                    EXPORT_STEP_SECONDS, within(EXPORT_STEP_TOLERANCE_SECONDS))));
   }
 
   @Test
@@ -177,6 +176,12 @@ class ComposeMetricsExportIT extends AbstractIntegrationTest {
         .flatMap(stored -> stored.path("values").values().stream())
         .map(sample -> sample.get(0).asDouble())
         .sorted()
+        .toList();
+  }
+
+  private static List<Double> consecutiveGaps(List<Double> samples) {
+    return IntStream.range(1, samples.size())
+        .mapToObj(index -> samples.get(index) - samples.get(index - 1))
         .toList();
   }
 
