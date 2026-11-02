@@ -8,10 +8,10 @@ import static org.awaitility.Awaitility.await;
 import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.AudioStreamProperties;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamingOptions;
-import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbePublication;
@@ -22,10 +22,9 @@ import com.streamarr.server.services.streaming.FfprobeService;
 import java.io.IOException;
 import java.sql.Connection;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.OptionalLong;
+import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -43,16 +42,21 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.bean.override.convention.TestBean;
 
 @Tag("IntegrationTest")
-@DisplayName("Probe Version 6 Upgrade Integration Tests")
-@Import(ProbeVersion6UpgradeIT.UpgradeConfiguration.class)
+@DisplayName("Probe Version 7 Upgrade Integration Tests")
+@Import(ProbeVersion7UpgradeIT.UpgradeConfiguration.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
-class ProbeVersion6UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
+class ProbeVersion7UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
 
-  private static final int VERSION_5 = ProbeVersion.FIRST_TO_REPORT_FRAME_FACTS;
-  // Version 6 adds the video and audio bitrates that the worker reads from a Matroska file's
-  // trusted statistics tags. A version 5 result of such a file has no video bitrate.
-  private static final int VERSION_6 = 6;
-  private static final long VERSION_6_VIDEO_BITRATE = 2_500_000;
+  private static final int VERSION_6 = ProbeVersion.FIRST_TO_REPORT_AUDIO_FACTS - 1;
+  // Version 7 adds each audio stream's channel layout and the other audio facts. A version 6
+  // result has none of them.
+  private static final int VERSION_7 = ProbeVersion.FIRST_TO_REPORT_AUDIO_FACTS;
+  private static final AudioStreamProperties VERSION_7_AUDIO_FACTS =
+      AudioStreamProperties.builder()
+          .channelLayout(Optional.of("quad"))
+          .sampleFormat(Optional.of("s32"))
+          .flacMinimumBlockSizeSamples(OptionalInt.of(4_608))
+          .build();
 
   private static final FakeFfprobeService PROBE = new FakeFfprobeService();
   private static final CountDownLatch RELEASE_LATER_PROBES = new CountDownLatch(1);
@@ -61,9 +65,9 @@ class ProbeVersion6UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
   @TestBean FfprobeService ffprobeService;
 
   // The first probe stores its result at once and every later probe waits, so the test observes
-  // one file on its version 6 result while the other still has only its version 5 result.
+  // one file on its version 7 result while the other still has only its version 6 result.
   static FfprobeService ffprobeService() {
-    PROBE.answerWith(probeOutcome(OptionalLong.of(VERSION_6_VIDEO_BITRATE)));
+    PROBE.answerWith(probeOutcome(Optional.of(VERSION_7_AUDIO_FACTS)));
     PROBE.runDuringProbe(
         () -> {
           if (STARTED_PROBES.incrementAndGet() > 1) {
@@ -81,14 +85,22 @@ class ProbeVersion6UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
     }
   }
 
-  private static ProbeOutcome.Success probeOutcome(OptionalLong videoBitrate) {
+  private static ProbeOutcome.Success probeOutcome(
+      Optional<AudioStreamProperties> audioProperties) {
     var probe = completeProbe();
-    var video = retainedVideo(probe.streams().getFirst()).bitrate(videoBitrate).build();
-    var streams = new ArrayList<>(probe.streams());
-    streams.set(0, video);
+    var video = retainedVideo(probe.streams().getFirst()).build();
+    var audio =
+        StreamInfo.builder()
+            .index(video.index() + 1)
+            .codecType("audio")
+            .codec(Optional.of("flac"))
+            .channels(OptionalInt.of(4))
+            .comment(audioProperties.map(_ -> false))
+            .audioProperties(audioProperties)
+            .build();
     return ProbeOutcome.Success.builder()
         .container(probe.container())
-        .streams(List.copyOf(streams))
+        .streams(List.of(video, audio))
         .keyframes(probe.keyframes())
         .chosenVideoStream(probe.chosenVideoStream())
         .streamTitlesOmitted(Optional.of(false))
@@ -97,9 +109,9 @@ class ProbeVersion6UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should play each file from its version 5 result until its version 6 result is stored when the server starts after upgrading")
+      "Should play each file from its version 6 result until its version 7 result is stored when the server starts after upgrading")
   void
-      shouldPlayEachFileFromItsVersion5ResultUntilItsVersion6ResultIsStoredWhenTheServerStartsAfterUpgrading()
+      shouldPlayEachFileFromItsVersion6ResultUntilItsVersion7ResultIsStoredWhenTheServerStartsAfterUpgrading()
           throws InterruptedException {
     var mediaFileIds = fixture.mediaFileIds();
     // Nothing signals that the startup scan has requested its probes, so the test polls for them.
@@ -111,8 +123,8 @@ class ProbeVersion6UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
                     .hasSize(2)
                     .allSatisfy(
                         state -> {
-                          assertThat(requestedVersion(state)).contains(VERSION_6);
-                          assertThat(storedVersion(state)).contains(VERSION_5);
+                          assertThat(requestedVersion(state)).contains(VERSION_7);
+                          assertThat(storedVersion(state)).contains(VERSION_6);
                         }));
     assertThat(jdbc.queryForList("SELECT kind::text FROM library_operation", String.class))
         .containsExactly("SCAN", "SCAN");
@@ -121,26 +133,25 @@ class ProbeVersion6UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
     assertThat(PROBE.probeCount()).isZero();
     mediaFileIds.forEach(
         mediaFileId ->
-            assertThat(playedVideoBitrate(mediaFileId)).as("the version 5 result").isEmpty());
+            assertThat(playedAudioFacts(mediaFileId)).as("the version 6 result").isEmpty());
 
     var scheduler = startProbeScheduler();
     try {
       progress.awaitProbeAttemptsEnded(1);
       var states = outcomes.findProbeStates(mediaFileIds);
-      var reprobed = fileStoredAt(states, VERSION_6);
-      var waiting = fileStoredAt(states, VERSION_5);
-      assertThat(playedVideoBitrate(reprobed))
-          .as("the re-probed file's version 6 result")
-          .hasValue(VERSION_6_VIDEO_BITRATE);
-      assertThat(playedVideoBitrate(waiting)).as("the waiting file's version 5 result").isEmpty();
+      var reprobed = fileStoredAt(states, VERSION_7);
+      var waiting = fileStoredAt(states, VERSION_6);
+      assertThat(playedAudioFacts(reprobed))
+          .as("the re-probed file's version 7 result")
+          .contains(VERSION_7_AUDIO_FACTS);
+      assertThat(playedAudioFacts(waiting)).as("the waiting file's version 6 result").isEmpty();
 
       RELEASE_LATER_PROBES.countDown();
       progress.awaitProbeAttemptsEnded(1);
       assertThat(outcomes.findProbeStates(mediaFileIds))
-          .allSatisfy(state -> assertThat(storedVersion(state)).contains(VERSION_6));
+          .allSatisfy(state -> assertThat(storedVersion(state)).contains(VERSION_7));
       mediaFileIds.forEach(
-          mediaFileId ->
-              assertThat(playedVideoBitrate(mediaFileId)).hasValue(VERSION_6_VIDEO_BITRATE));
+          mediaFileId -> assertThat(playedAudioFacts(mediaFileId)).contains(VERSION_7_AUDIO_FACTS));
       assertThat(PROBE.probeCount()).isEqualTo(2);
       progress.awaitScansEnded(mediaFileIds.size());
       assertThat(jdbc.queryForList("SELECT status::text FROM library", String.class))
@@ -170,21 +181,17 @@ class ProbeVersion6UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
     return files.getFirst();
   }
 
-  private OptionalLong playedVideoBitrate(UUID mediaFileId) {
+  private Optional<AudioStreamProperties> playedAudioFacts(UUID mediaFileId) {
     var options = StreamingOptions.builder().quality(VideoQuality.AUTO).build();
     var session =
         accepted(
             streaming.createSession(
                 createStreamSessionCommand(mediaFileId, UUID.randomUUID(), options)));
     try {
-      var probe = session.getMediaProbe();
-      var chosenIndex =
-          probe.videoPlaybackFacts().map(VideoPlaybackFacts::streamIndex).orElseThrow();
-      return probe.streams().stream()
-          .filter(stream -> stream.index() == chosenIndex)
+      return session.getMediaProbe().streams().stream()
+          .filter(stream -> "audio".equals(stream.codecType()))
           .findFirst()
-          .map(StreamInfo::bitrate)
-          .orElseThrow();
+          .flatMap(StreamInfo::audioProperties);
     } finally {
       streaming.destroySession(session.getSessionId());
     }
@@ -196,20 +203,20 @@ class ProbeVersion6UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
 
     @Bean
     ProbeUpgradeFixture upgradeFixture() throws IOException {
-      return ProbeUpgradeFixture.create(List.of(VERSION_5, VERSION_5));
+      return ProbeUpgradeFixture.create(List.of(VERSION_6, VERSION_6));
     }
 
     @Bean
-    FlywayMigrationStrategy storeVersion5Results(ProbeUpgradeFixture fixture) {
+    FlywayMigrationStrategy storeVersion6Results(ProbeUpgradeFixture fixture) {
       return flyway -> {
         flyway.migrate();
-        fixture.seed(flyway.getConfiguration().getDataSource(), ProbeVersion6UpgradeIT::seedResult);
+        fixture.seed(flyway.getConfiguration().getDataSource(), ProbeVersion7UpgradeIT::seedResult);
       };
     }
   }
 
-  // The version 5 results go through the repository's own request and publication writes, so they
-  // are stored exactly as a version 5 probe stored them.
+  // The version 6 results go through the repository's own request and publication writes, so they
+  // are stored exactly as a version 6 probe stored them.
   private static void seedResult(
       Connection connection, ProbeUpgradeFixture.UpgradeFile file, SourceFileSnapshot snapshot) {
     var repository =
@@ -224,7 +231,7 @@ class ProbeVersion6UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
                     .mediaFileId(file.mediaFileId())
                     .snapshot(snapshot)
                     .probeVersion(file.probeVersion())
-                    .outcome(probeOutcome(OptionalLong.empty()))
+                    .outcome(probeOutcome(Optional.empty()))
                     .build()))
         .isTrue();
   }

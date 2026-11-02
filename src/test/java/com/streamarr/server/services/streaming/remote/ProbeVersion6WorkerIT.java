@@ -265,8 +265,8 @@ class ProbeVersion6WorkerIT extends AbstractIntegrationTest {
       assertThat(result).isEqualTo(new ProbeExecutionResult.Completed());
       var stored = reader.find(file.getId()).orElseThrow();
       assertThat(stored.probeVersion())
-          .as("the probe version that reads statistics tags")
-          .isEqualTo(6);
+          .as("the probe version that the server requests")
+          .isEqualTo(ProbeVersion.CURRENT);
       // The BPS tags that mkvmerge wrote. ffprobe reports no bitrate for either stream.
       assertThat(stored.outcome())
           .isInstanceOfSatisfying(
