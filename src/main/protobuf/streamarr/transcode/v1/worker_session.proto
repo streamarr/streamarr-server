@@ -878,12 +878,17 @@ message JobAttemptStopped {
 //
 // Each report whose output_end lies later than every earlier report for the
 // attempt restarts the server's stall clock for the attempt, as a published
-// media segment does (ADR 0019). An encode that runs below real time therefore
-// keeps its attempt while its output advances, however long the open segment
-// lasts, and an attempt whose output stops advancing is replaced after the
-// stall threshold. The server ignores a report for an attempt that is not
-// running and a report that does not advance the output. A server that reads
-// this report ships before any worker that sends it.
+// media segment does (ADR 0019). Each chunk of a media segment upload that the
+// server receives for the attempt (UploadSegmentRequest) also restarts it,
+// because the producer's budget can hold FFmpeg back while a large segment
+// uploads, so output_end stops advancing although the upload's bytes still
+// arrive. The worker's acknowledgment deadline still bounds each upload. An
+// encode that runs below real time therefore keeps its attempt while its
+// output advances, however long the open segment lasts, and an attempt whose
+// output stops advancing and that uploads nothing is replaced after the stall
+// threshold. The server ignores a report for an attempt that is not running
+// and a report that does not advance the output. A server that reads this
+// report ships before any worker that sends it.
 message JobAttemptProgress {
   Uuid job_attempt_id = 1;
   // The end of the latest video sample that the producer has read from
