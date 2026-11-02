@@ -4,6 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor.Type;
+import com.google.protobuf.Duration;
+import com.google.protobuf.Timestamp;
+import com.streamarr.transcode.v1.AudioDecision;
+import com.streamarr.transcode.v1.AudioMode;
 import com.streamarr.transcode.v1.BitrateScanChunk;
 import com.streamarr.transcode.v1.BitrateScanChunkResult;
 import com.streamarr.transcode.v1.BitrateScanChunkStream;
@@ -17,6 +21,9 @@ import com.streamarr.transcode.v1.EncoderKind;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.FieldOrder;
 import com.streamarr.transcode.v1.Fraction;
+import com.streamarr.transcode.v1.JobAttemptCompleted;
+import com.streamarr.transcode.v1.JobAttemptFailed;
+import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.Presence;
@@ -25,6 +32,10 @@ import com.streamarr.transcode.v1.ProbePriority;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
+import com.streamarr.transcode.v1.SourceEndedEarly;
+import com.streamarr.transcode.v1.SourceSnapshot;
+import com.streamarr.transcode.v1.SourceStreamEnd;
+import com.streamarr.transcode.v1.SourceStreamWithoutSamples;
 import com.streamarr.transcode.v1.StartVariantCommand;
 import com.streamarr.transcode.v1.TranscodeDecision;
 import com.streamarr.transcode.v1.TranscodeExecution;
@@ -533,6 +544,341 @@ class TranscodeWorkerContractTest {
     assertThat(stream.findFieldByName("measured_bytes").getType()).isEqualTo(Type.UINT64);
     assertThat(stream.findFieldByName("first_presentation_time").getType()).isEqualTo(Type.SINT64);
     assertThat(stream.findFieldByName("end_time").getNumber()).isEqualTo(7);
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry the advertised end with a held last frame and silence padding when a job encodes both chosen streams")
+  void
+      shouldCarryTheAdvertisedEndWithAHeldLastFrameAndSilencePaddingWhenJobEncodesBothChosenStreams()
+          throws Exception {
+    var job =
+        VariantJob.newBuilder()
+            .setDecision(
+                TranscodeDecision.newBuilder()
+                    .setVideo(
+                        VideoDecision.newBuilder()
+                            .setMode(VideoMode.VIDEO_MODE_ENCODE)
+                            .setHoldLastFrameToAdvertisedEnd(true))
+                    .setAudio(
+                        AudioDecision.newBuilder()
+                            .setMode(AudioMode.AUDIO_MODE_TRANSCODE)
+                            .setPadWithSilenceToAdvertisedEnd(true)))
+            .setExecution(
+                TranscodeExecution.newBuilder()
+                    .setMediaSegmentCount(14)
+                    .setAdvertisedEnd(Duration.newBuilder().setSeconds(84)))
+            .build();
+
+    var decoded = VariantJob.parseFrom(job.toByteArray());
+
+    assertThat(decoded.getDecision().getVideo().getHoldLastFrameToAdvertisedEnd()).isTrue();
+    assertThat(decoded.getDecision().getAudio().getPadWithSilenceToAdvertisedEnd()).isTrue();
+    assertThat(decoded.getExecution().getAdvertisedEnd().getSeconds()).isEqualTo(84);
+  }
+
+  @Test
+  @DisplayName(
+      "Should leave the early-end instructions off and the advertised end absent when a job copies both chosen streams")
+  void
+      shouldLeaveTheEarlyEndInstructionsOffAndTheAdvertisedEndAbsentWhenJobCopiesBothChosenStreams()
+          throws Exception {
+    var copy =
+        VariantJob.newBuilder()
+            .setDecision(
+                TranscodeDecision.newBuilder()
+                    .setVideo(VideoDecision.newBuilder().setMode(VideoMode.VIDEO_MODE_COPY))
+                    .setAudio(AudioDecision.newBuilder().setMode(AudioMode.AUDIO_MODE_COPY)))
+            .setExecution(TranscodeExecution.newBuilder().setMediaSegmentCount(14))
+            .build();
+
+    var decoded = VariantJob.parseFrom(copy.toByteArray());
+
+    assertThat(decoded.getDecision().getVideo().getHoldLastFrameToAdvertisedEnd()).isFalse();
+    assertThat(decoded.getDecision().getAudio().getPadWithSilenceToAdvertisedEnd()).isFalse();
+    assertThat(decoded.getExecution().hasAdvertisedEnd()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry the keyframe to read from apart from the first segment's start when an attempt that holds the last frame starts after the video's end")
+  void
+      shouldCarryTheKeyframeToReadFromApartFromTheFirstSegmentStartWhenHoldingAttemptStartsAfterVideoEnd()
+          throws Exception {
+    // The video's last keyframe is at 60.06 s, so the attempt reads from the keyframe before it.
+    var keyframeBeforeLastKeyframe = Duration.newBuilder().setSeconds(54).setNanos(54_000_000);
+    var job =
+        VariantJob.newBuilder()
+            .setDecision(
+                TranscodeDecision.newBuilder()
+                    .setVideo(
+                        VideoDecision.newBuilder()
+                            .setMode(VideoMode.VIDEO_MODE_ENCODE)
+                            .setHoldLastFrameToAdvertisedEnd(true)))
+            .setExecution(
+                TranscodeExecution.newBuilder()
+                    .setStartSequenceNumber(11)
+                    .setSeekPositionSeconds(66)
+                    .setSeekPosition(keyframeBeforeLastKeyframe)
+                    .setMediaSegmentCount(14)
+                    .setAdvertisedEnd(Duration.newBuilder().setSeconds(84)))
+            .build();
+
+    var decoded = VariantJob.parseFrom(job.toByteArray()).getExecution();
+
+    assertThat(decoded.getSeekPosition()).isEqualTo(keyframeBeforeLastKeyframe.build());
+    assertThat(decoded.getSeekPositionSeconds()).isEqualTo(66);
+    assertThat(decoded.getStartSequenceNumber()).isEqualTo(11);
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry the source snapshot that the stream session's probe read when a job is sent")
+  void shouldCarryTheSourceSnapshotThatTheStreamSessionProbeReadWhenJobIsSent() throws Exception {
+    var modifiedAt = Timestamp.newBuilder().setSeconds(1_793_000_000L).setNanos(123_456_789);
+    var job =
+        VariantJob.newBuilder()
+            .setSourceSnapshot(
+                SourceSnapshot.newBuilder().setSizeBytes(8_589_934_592L).setModifiedAt(modifiedAt))
+            .build();
+
+    var decoded = VariantJob.parseFrom(job.toByteArray());
+
+    assertThat(decoded.hasSourceSnapshot()).isTrue();
+    assertThat(decoded.getSourceSnapshot().getSizeBytes()).isEqualTo(8_589_934_592L);
+    assertThat(decoded.getSourceSnapshot().getModifiedAt()).isEqualTo(modifiedAt.build());
+    assertThat(VariantJob.getDefaultInstance().hasSourceSnapshot()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should name the chosen audio stream by its container index when a job copies or encodes the audio")
+  void shouldNameTheChosenAudioStreamByItsContainerIndexWhenJobCopiesOrEncodesTheAudio()
+      throws Exception {
+    var copy = AudioDecision.newBuilder().setMode(AudioMode.AUDIO_MODE_COPY).setStreamIndex(2);
+    var encode =
+        AudioDecision.newBuilder().setMode(AudioMode.AUDIO_MODE_TRANSCODE).setStreamIndex(0);
+
+    var decodedCopy = AudioDecision.parseFrom(copy.build().toByteArray());
+    var decodedEncode = AudioDecision.parseFrom(encode.build().toByteArray());
+
+    assertThat(decodedCopy.getStreamIndex()).isEqualTo(2);
+    assertThat(decodedEncode.hasStreamIndex()).isTrue();
+    assertThat(decodedEncode.getStreamIndex()).isZero();
+    assertThat(AudioDecision.newBuilder().setMode(AudioMode.AUDIO_MODE_NONE).hasStreamIndex())
+        .isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should report each chosen stream's end when an attempt completes through the last advertised segment")
+  void shouldReportEachChosenStreamEndWhenAttemptCompletesThroughTheLastAdvertisedSegment()
+      throws Exception {
+    var video =
+        SourceStreamEnd.newBuilder()
+            .setStreamIndex(0)
+            .setEndTime(Duration.newBuilder().setSeconds(84))
+            .build();
+    var audioEndingEarly =
+        SourceStreamEnd.newBuilder()
+            .setStreamIndex(1)
+            .setEndTime(Duration.newBuilder().setSeconds(20))
+            .build();
+    var completed =
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptCompleted(
+                JobAttemptCompleted.newBuilder()
+                    .setJobAttemptId(uuid(UUID.randomUUID()))
+                    .addStreamEnds(video)
+                    .addStreamEnds(audioEndingEarly))
+            .build();
+
+    var parsed = EstablishWorkerSessionRequest.parseFrom(completed.toByteArray());
+
+    assertThat(parsed.getJobAttemptCompleted().getStreamEndsList())
+        .containsExactly(video, audioEndingEarly);
+    assertThat(parsed.getJobAttemptCompleted().hasSourceEndedEarly()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should report the last segment with source media when an encode's source ends before its last advertised segment")
+  void shouldReportTheLastSegmentWithSourceMediaWhenEncodeSourceEndsBeforeItsLastAdvertisedSegment()
+      throws Exception {
+    var completed =
+        JobAttemptCompleted.newBuilder()
+            .setJobAttemptId(uuid(UUID.randomUUID()))
+            .setSourceEndedEarly(SourceEndedEarly.newBuilder().setLastSegmentWithSourceMedia(10))
+            .addStreamEnds(
+                SourceStreamEnd.newBuilder()
+                    .setStreamIndex(0)
+                    .setEndTime(Duration.newBuilder().setSeconds(64)))
+            .build();
+
+    var parsed = JobAttemptCompleted.parseFrom(completed.toByteArray());
+
+    assertThat(parsed.getSourceEndedEarly().getLastSegmentWithSourceMedia()).isEqualTo(10);
+    assertThat(parsed.getSourceEndedEarly().getStreamIndexesWithMediaAfterLastSegmentList())
+        .isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should name the stream that still had media when a copy's source ends before its last advertised segment")
+  void shouldNameTheStreamThatStillHadMediaWhenCopySourceEndsBeforeItsLastAdvertisedSegment()
+      throws Exception {
+    var report =
+        SourceEndedEarly.newBuilder()
+            .setLastSegmentWithSourceMedia(10)
+            .addStreamIndexesWithMediaAfterLastSegment(1)
+            .build();
+
+    var parsed = SourceEndedEarly.parseFrom(report.toByteArray());
+
+    assertThat(parsed.getStreamIndexesWithMediaAfterLastSegmentList()).containsExactly(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell a report that names no last segment apart from one that names segment 0 when a worker reports that the source ended early")
+  void shouldTellAReportThatNamesNoLastSegmentApartFromOneThatNamesSegmentZeroWhenSourceEndedEarly()
+      throws Exception {
+    var withoutLastSegment = SourceEndedEarly.newBuilder().build();
+    var namingSegmentZero = SourceEndedEarly.newBuilder().setLastSegmentWithSourceMedia(0).build();
+
+    var parsedWithout = SourceEndedEarly.parseFrom(withoutLastSegment.toByteArray());
+    var parsedZero = SourceEndedEarly.parseFrom(namingSegmentZero.toByteArray());
+
+    assertThat(parsedWithout.hasLastSegmentWithSourceMedia()).isFalse();
+    assertThat(parsedZero.hasLastSegmentWithSourceMedia()).isTrue();
+    assertThat(parsedZero.getLastSegmentWithSourceMedia()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should report the audio stream and the read position beside the video's end when a padded encode reads no audio sample")
+  void
+      shouldReportTheAudioStreamAndTheReadPositionBesideTheVideoEndWhenPaddedEncodeReadsNoAudioSample()
+          throws Exception {
+    var readFrom = Duration.newBuilder().setSeconds(54).setNanos(54_000_000).build();
+    var audioWithoutSamples =
+        SourceStreamWithoutSamples.newBuilder().setStreamIndex(1).setReadFrom(readFrom).build();
+    var video =
+        SourceStreamEnd.newBuilder()
+            .setStreamIndex(0)
+            .setEndTime(Duration.newBuilder().setSeconds(84))
+            .build();
+    var completed =
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptCompleted(
+                JobAttemptCompleted.newBuilder()
+                    .setJobAttemptId(uuid(UUID.randomUUID()))
+                    .addStreamEnds(video)
+                    .addStreamsWithoutSamples(audioWithoutSamples))
+            .build();
+
+    var parsed =
+        EstablishWorkerSessionRequest.parseFrom(completed.toByteArray()).getJobAttemptCompleted();
+
+    assertThat(parsed.getStreamsWithoutSamplesList()).containsExactly(audioWithoutSamples);
+    assertThat(parsed.getStreamEndsList()).containsExactly(video);
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry the stream and the read position with the failure when an attempt can't stand in for a stream that delivered no sample")
+  void shouldCarryTheStreamAndTheReadPositionWithTheFailureWhenAttemptCannotStandInForStream()
+      throws Exception {
+    var copiedAudio =
+        SourceStreamWithoutSamples.newBuilder()
+            .setStreamIndex(0)
+            .setReadFrom(Duration.newBuilder().setSeconds(30).setNanos(30_000_000))
+            .build();
+    var failed =
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptFailed(
+                JobAttemptFailed.newBuilder()
+                    .setJobAttemptId(uuid(UUID.randomUUID()))
+                    .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES)
+                    .setStreamWithoutSamples(copiedAudio))
+            .build();
+
+    var parsed =
+        EstablishWorkerSessionRequest.parseFrom(failed.toByteArray()).getJobAttemptFailed();
+
+    assertThat(parsed.getFailure())
+        .isEqualTo(JobAttemptFailure.JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES);
+    assertThat(parsed.getStreamWithoutSamples()).isEqualTo(copiedAudio);
+    assertThat(parsed.getStreamWithoutSamples().hasStreamIndex()).isTrue();
+    assertThat(JobAttemptFailed.getDefaultInstance().hasStreamWithoutSamples()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the field numbers and types that workers build against when publishing the early end contract")
+  void shouldKeepTheFieldNumbersAndTypesThatWorkersBuildAgainstWhenPublishingTheEarlyEndContract() {
+    var hold = VideoDecision.getDescriptor().findFieldByName("hold_last_frame_to_advertised_end");
+    var pad = AudioDecision.getDescriptor().findFieldByName("pad_with_silence_to_advertised_end");
+    var audioStreamIndex = AudioDecision.getDescriptor().findFieldByName("stream_index");
+    var sourceSnapshot = VariantJob.getDescriptor().findFieldByName("source_snapshot");
+    var snapshot = SourceSnapshot.getDescriptor();
+    var advertisedEnd = TranscodeExecution.getDescriptor().findFieldByName("advertised_end");
+    var completed = JobAttemptCompleted.getDescriptor();
+    var report = SourceEndedEarly.getDescriptor();
+    var lastSegment = report.findFieldByName("last_segment_with_source_media");
+    var streamEnd = SourceStreamEnd.getDescriptor();
+
+    assertThat(hold.getNumber()).isEqualTo(14);
+    assertThat(hold.getType()).isEqualTo(Type.BOOL);
+    assertThat(pad.getNumber()).isEqualTo(6);
+    assertThat(pad.getType()).isEqualTo(Type.BOOL);
+    assertThat(audioStreamIndex.getNumber()).isEqualTo(7);
+    assertThat(audioStreamIndex.getType()).isEqualTo(Type.UINT32);
+    assertThat(audioStreamIndex.hasPresence()).isTrue();
+    assertThat(sourceSnapshot.getNumber()).isEqualTo(8);
+    assertThat(snapshot.findFieldByName("size_bytes").getNumber()).isEqualTo(1);
+    assertThat(snapshot.findFieldByName("size_bytes").getType()).isEqualTo(Type.UINT64);
+    assertThat(snapshot.findFieldByName("modified_at").getNumber()).isEqualTo(2);
+    assertThat(snapshot.findFieldByName("modified_at").getMessageType())
+        .isEqualTo(Timestamp.getDescriptor());
+    assertThat(advertisedEnd.getNumber()).isEqualTo(8);
+    assertThat(advertisedEnd.getMessageType()).isEqualTo(Duration.getDescriptor());
+    assertThat(completed.findFieldByName("source_ended_early").getNumber()).isEqualTo(2);
+    assertThat(completed.findFieldByName("stream_ends").getNumber()).isEqualTo(3);
+    assertThat(lastSegment.getNumber()).isEqualTo(1);
+    assertThat(lastSegment.getType()).isEqualTo(Type.UINT32);
+    assertThat(lastSegment.hasPresence()).isTrue();
+    assertThat(report.findFieldByName("stream_indexes_with_media_after_last_segment").getNumber())
+        .isEqualTo(2);
+    assertThat(streamEnd.findFieldByName("stream_index").getNumber()).isEqualTo(1);
+    assertThat(streamEnd.findFieldByName("end_time").getNumber()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the field numbers and types that workers build against when publishing the report of a stream that delivered no sample")
+  void
+      shouldKeepTheFieldNumbersAndTypesThatWorkersBuildAgainstWhenPublishingStreamWithoutSamples() {
+    var withoutSamples = SourceStreamWithoutSamples.getDescriptor();
+    var streamIndex = withoutSamples.findFieldByName("stream_index");
+    var readFrom = withoutSamples.findFieldByName("read_from");
+    var completedReport =
+        JobAttemptCompleted.getDescriptor().findFieldByName("streams_without_samples");
+    var failedReport = JobAttemptFailed.getDescriptor().findFieldByName("stream_without_samples");
+
+    assertThat(streamIndex.getNumber()).isEqualTo(1);
+    assertThat(streamIndex.getType()).isEqualTo(Type.UINT32);
+    assertThat(streamIndex.hasPresence()).isTrue();
+    assertThat(readFrom.getNumber()).isEqualTo(2);
+    assertThat(readFrom.getMessageType()).isEqualTo(Duration.getDescriptor());
+    assertThat(completedReport.getNumber()).isEqualTo(4);
+    assertThat(completedReport.isRepeated()).isTrue();
+    assertThat(completedReport.getMessageType()).isEqualTo(withoutSamples);
+    assertThat(failedReport.getNumber()).isEqualTo(3);
+    assertThat(failedReport.isRepeated()).isFalse();
+    assertThat(failedReport.getMessageType()).isEqualTo(withoutSamples);
+    assertThat(JobAttemptFailure.JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES.getNumber())
+        .isEqualTo(7);
   }
 
   @Test

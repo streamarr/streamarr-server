@@ -6,6 +6,7 @@ syntax = "proto3";
 package streamarr.transcode.v1;
 
 import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
 
 option java_multiple_files = true;
 option java_outer_classname = "WorkerSessionProto";
@@ -185,6 +186,23 @@ message AudioDecision {
   optional string codec = 2;
   uint32 channels = 3;
   uint64 bitrate_bits_per_second = 4;
+  // When true, the worker appends digital silence, zero samples in the
+  // encoder's input format, rate and layout, to the chosen audio stream
+  // directly after its last source sample, changes no source sample, and stops
+  // the stream at TranscodeExecution.advertised_end. An attempt that reads no
+  // sample of the stream encodes only that silence, with the same
+  // initialization segment as the variant's other attempts, completes, and
+  // reports the stream in JobAttemptCompleted.streams_without_samples. The
+  // worker fails the attempt with JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION
+  // when the field is true and the job does not encode audio or omits
+  // advertised_end (ADR 0037, early ends).
+  bool pad_with_silence_to_advertised_end = 6;
+  // The chosen audio stream's ProbeStreamInfo.index, set on every job whose
+  // mode is AUDIO_MODE_COPY or AUDIO_MODE_TRANSCODE. The worker selects exactly
+  // that stream. It fails the attempt with
+  // JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION when such a job omits the field
+  // or an AUDIO_MODE_NONE job sets it.
+  optional uint32 stream_index = 7;
 }
 
 message SubtitleDecision {
@@ -532,6 +550,17 @@ message VideoDecision {
   // the initialization segment of an encode declares interlaced video, with or
   // without this field.
   Deinterlace deinterlace = 13;
+  // When true, the worker repeats the last picture that its video filters
+  // produce from the source, after deinterlacing and scaling, at
+  // output_frame_rate up to TranscodeExecution.advertised_end, and no repeated
+  // picture passes through a filter again. An attempt that starts after the
+  // video's last frame still reads the last frames, as
+  // TranscodeExecution.seek_position describes, and holds the same picture, so
+  // it never fails with JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES for the
+  // video. The worker fails the attempt with
+  // JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION when the field is true and the
+  // job does not encode video or omits advertised_end (ADR 0037, early ends).
+  bool hold_last_frame_to_advertised_end = 14;
 }
 
 // This message tells the worker how to deinterlace the chosen video stream.
@@ -622,8 +651,24 @@ message TranscodeExecution {
   // timeline. When the field is set, the worker seeks to it instead of
   // seek_position_seconds. The server chooses the position. For an attempt that
   // copies video, the server sends the decode time of the first source keyframe
-  // of the attempt's first media segment. This version of the server sets the
-  // field for no other attempt.
+  // of the attempt's first media segment.
+  //
+  // For an attempt that sets VideoDecision.hold_last_frame_to_advertised_end
+  // and whose start_sequence_number is above zero, the server sends the decode
+  // time of the last stored keyframe at or before 0.5 s ahead of the earlier of
+  // the first media segment's start and the video's last stored keyframe, or
+  // the first stored keyframe when none is, or a fixed read-back before
+  // seek_position_seconds while it stores no keyframes (ADR 0037, decode-only
+  // early-start seek). The worker reads from it with -noaccurate_seek, and
+  // decodes and filters but does not encode the pictures before
+  // seek_position_seconds. When the position decodes no picture because it lies
+  // past the video's last keyframe, the worker finds that keyframe itself with
+  // ADR 0037's backward packet search and reads from the last keyframe at least
+  // 0.5 s before it, or the first keyframe (ADR 0037, early ends). When no
+  // keyframe lies before the position, it fails the attempt with
+  // JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED.
+  //
+  // This version of the server sets the field for no other attempt.
   google.protobuf.Duration seek_position = 6;
   // This field reports the frame rate of the encode's output. It is the output
   // frame rate that the probe stored for the chosen video stream, or twice that
@@ -632,6 +677,14 @@ message TranscodeExecution {
   // decimal. Every encode requires positive numerator and denominator terms. A
   // job that copies the video carries none.
   Fraction output_frame_rate = 7;
+  // The end of the variant's last advertised media segment,
+  // media_segment_count - 1, on the zero-based timeline of seek_position. The
+  // server sets it on every job that holds the last frame or pads audio, with
+  // the same value on every attempt of the variant. No padded picture or audio
+  // frame starts at or after it. The last one keeps its full duration, so a
+  // padded stream can end less than one frame past it; the worker never
+  // shortens a sample to end here.
+  google.protobuf.Duration advertised_end = 8;
 }
 
 message VariantJob {
@@ -645,6 +698,18 @@ message VariantJob {
   TranscodeDecision decision = 5;
   VariantSpec variant = 6;
   TranscodeExecution execution = 7;
+  // The source snapshot of the probe outcome that the stream session was built
+  // from (ADR 0032), set on every job. JobAttemptCompleted.stream_ends belong
+  // to it.
+  SourceSnapshot source_snapshot = 8;
+}
+
+// One version of a source file, as ADR 0032's source snapshot identifies it.
+// Two snapshots are equal only when both fields are equal, the modification
+// time to the nanosecond.
+message SourceSnapshot {
+  uint64 size_bytes = 1;
+  google.protobuf.Timestamp modified_at = 2;
 }
 
 message JobAttemptStarted {
@@ -664,15 +729,80 @@ enum JobAttemptFailure {
   // decision on the same encoder backend produces the same mismatch, so a
   // replacement job attempt fails the same way.
   JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH = 5;
+  // The attempt read no sample of a chosen stream from where it began reading
+  // and can't stand in for it: a copied stream, audio encoded without
+  // AudioDecision.pad_with_silence_to_advertised_end, or video encoded without
+  // VideoDecision.hold_last_frame_to_advertised_end. The worker reports this
+  // value instead of JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED, also when FFmpeg
+  // exits with status 0, and names the stream in
+  // JobAttemptFailed.stream_without_samples (ADR 0037, early ends).
+  JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES = 7;
 }
 
 message JobAttemptFailed {
   Uuid job_attempt_id = 1;
   JobAttemptFailure failure = 2;
+  // Set only with JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES: the first chosen
+  // stream that delivered no sample and that the attempt can't stand in for.
+  // Left out, with the same failure, when the snapshot rule of
+  // JobAttemptCompleted.stream_ends is not met.
+  SourceStreamWithoutSamples stream_without_samples = 3;
 }
 
 message JobAttemptCompleted {
   Uuid job_attempt_id = 1;
+  // Set exactly when the variant's last media segment that holds a source
+  // sample comes before the last advertised media segment,
+  // media_segment_count - 1. It is a report, not a failure.
+  SourceEndedEarly source_ended_early = 2;
+  // One entry per chosen stream whose last source sample the attempt read.
+  // Empty when the source's size or modification time, read when the worker
+  // opens the source and again before it reports, differs from
+  // VariantJob.source_snapshot (ADR 0037, early ends).
+  repeated SourceStreamEnd stream_ends = 3;
+  // One entry per chosen stream that the attempt stood in for because it read
+  // no sample of it from where it began reading: the chosen audio stream, when
+  // the job pads it. The snapshot rule of stream_ends applies.
+  repeated SourceStreamWithoutSamples streams_without_samples = 4;
+}
+
+// Where the source ended in an attempt whose source ended before the variant's
+// last advertised media segment. An attempt that holds the last frame delivers
+// every advertised media segment from start_sequence_number on, and any other
+// attempt none after last_segment_with_source_media. An attempt that starts
+// after every source sample completes with this report (ADR 0037, early ends).
+message SourceEndedEarly {
+  // The number of the variant's last media segment that holds a source sample,
+  // counted like start_sequence_number and below media_segment_count - 1. It
+  // lies before start_sequence_number when the attempt starts after every
+  // source sample. Always set.
+  optional uint32 last_segment_with_source_media = 1;
+  // The ProbeStreamInfo.index of each chosen stream with a source sample that
+  // starts at or after the end of last_segment_with_source_media's interval,
+  // which no delivered media segment carries. Empty for an attempt that holds
+  // the last frame.
+  repeated uint32 stream_indexes_with_media_after_last_segment = 2;
+}
+
+// A chosen source stream of which a job attempt read no sample from read_from
+// on.
+message SourceStreamWithoutSamples {
+  // The stream's ProbeStreamInfo.index within the container.
+  optional uint32 stream_index = 1;
+  // Where the attempt began reading, on the zero-based timeline of
+  // TranscodeExecution.seek_position: seek_position when the job sets it,
+  // otherwise seek_position_seconds.
+  google.protobuf.Duration read_from = 2;
+}
+
+// Where one chosen source stream ended.
+message SourceStreamEnd {
+  // The stream's ProbeStreamInfo.index within the container.
+  optional uint32 stream_index = 1;
+  // The end of the stream's last source sample, its presentation time plus its
+  // duration, on the zero-based timeline of TranscodeExecution.seek_position.
+  // The worker observes it in the source and never takes it from the probe.
+  google.protobuf.Duration end_time = 2;
 }
 
 message JobAttemptStopped {
