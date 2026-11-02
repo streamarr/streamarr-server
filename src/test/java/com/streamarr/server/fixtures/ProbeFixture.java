@@ -45,6 +45,25 @@ public class ProbeFixture {
         .codecString(Optional.ofNullable(AUDIO_CODEC_STRINGS.get(codec)));
   }
 
+  /** The video stream that {@link #completeProbe} stores for a probe that lists no streams. */
+  public static StreamInfo.StreamInfoBuilder videoStreamBuilder(MediaProbe probe) {
+    var facts = probe.videoPlaybackFacts();
+    return StreamInfo.builder()
+        .index(facts.map(VideoPlaybackFacts::streamIndex).orElse(0))
+        .codecType("video")
+        .codec(Optional.ofNullable(probe.videoCodec()))
+        .width(OptionalInt.of(probe.width()))
+        .height(OptionalInt.of(probe.height()))
+        .framerate(probe.framerate())
+        .dynamicRange(facts.map(VideoPlaybackFacts::dynamicRange))
+        .bitDepth(facts.map(VideoPlaybackFacts::bitDepth).orElse(OptionalInt.empty()))
+        .chromaSubsampling(facts.flatMap(VideoPlaybackFacts::chromaSubsampling))
+        .codecString(facts.flatMap(VideoPlaybackFacts::codecString))
+        .rotationDegrees(facts.map(VideoPlaybackFacts::rotationDegrees).orElse(OptionalInt.empty()))
+        .containerCropping(facts.flatMap(VideoPlaybackFacts::containerCropping))
+        .videoProperties(facts.flatMap(VideoPlaybackFacts::videoProperties));
+  }
+
   /**
    * A probe outcome whose {@link ProbeOutcome.Success#mediaProbe()} reads back the given probe. A
    * probe that names its chosen video stream reads back as a probe version 4 outcome.
@@ -126,33 +145,16 @@ public class ProbeFixture {
       return probe.streams();
     }
 
-    var facts = probe.videoPlaybackFacts();
-    var videoIndex = facts.map(VideoPlaybackFacts::streamIndex).orElse(0);
+    var video = videoStreamBuilder(probe).build();
     var streams = new ArrayList<StreamInfo>();
-    streams.add(
-        StreamInfo.builder()
-            .index(videoIndex)
-            .codecType("video")
-            .codec(Optional.ofNullable(probe.videoCodec()))
-            .width(OptionalInt.of(probe.width()))
-            .height(OptionalInt.of(probe.height()))
-            .framerate(probe.framerate())
-            .dynamicRange(facts.map(VideoPlaybackFacts::dynamicRange))
-            .bitDepth(facts.map(VideoPlaybackFacts::bitDepth).orElse(OptionalInt.empty()))
-            .chromaSubsampling(facts.flatMap(VideoPlaybackFacts::chromaSubsampling))
-            .codecString(facts.flatMap(VideoPlaybackFacts::codecString))
-            .rotationDegrees(
-                facts.map(VideoPlaybackFacts::rotationDegrees).orElse(OptionalInt.empty()))
-            .containerCropping(facts.flatMap(VideoPlaybackFacts::containerCropping))
-            .videoProperties(facts.flatMap(VideoPlaybackFacts::videoProperties))
-            .build());
+    streams.add(video);
     if (probe.audioCodec() == null) {
       return streams;
     }
 
     streams.add(
         audioStreamBuilder(probe.audioCodec())
-            .index(videoIndex + 1)
+            .index(video.index() + 1)
             .channels(probe.audioChannels())
             .bitrate(probe.audioBitrate())
             .build());

@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
+import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.stream.Stream;
 import lombok.Builder;
@@ -1311,6 +1312,203 @@ class HlsPlaylistServiceTest {
           .lines()
           .filter(line -> line.startsWith("#EXT-X-STREAM-INF:"))
           .toList();
+    }
+  }
+
+  // ADR 0050: a copy costs its own video bitrate plus the stream session's audio bitrate. For a
+  // copied audio track that is the track's bitrate; for an encoded one, the encode's bitrate.
+  @Nested
+  @DisplayName("Bandwidth of a video copy")
+  class CopyBandwidthTests {
+
+    private static final AudioDecision AC3_SURROUND_COPY =
+        AudioDecision.builder()
+            .mode(AudioMode.COPY)
+            .codec("ac3")
+            .channels(6)
+            .bitrate(640_000L)
+            .sourceCodecString(Optional.of("ac-3"))
+            .build();
+
+    // The bitrate the audio decision takes for a 5.1 FLAC track whose bitrate the probe does not
+    // know. A lossless track runs far above it.
+    private static final AudioDecision FLAC_SURROUND_COPY =
+        AudioDecision.builder()
+            .mode(AudioMode.COPY)
+            .codec("flac")
+            .channels(6)
+            .bitrate(384_000L)
+            .sourceCodecString(Optional.of("fLaC"))
+            .build();
+
+    // An 8 Mb/s container also holds audio tracks that the session does not deliver, and 0 is a
+    // container bitrate that the probe does not know.
+    @ParameterizedTest(name = "container bitrate {0}")
+    @ValueSource(longs = {5_000_000L, 8_000_000L, 0L})
+    @DisplayName(
+        "Should advertise the copied stream's bitrate plus the copied audio track's bitrate when the"
+            + " probe knows both")
+    void shouldAdvertiseTheCopiedStreamsBitratePlusTheCopiedAudioTracksBitrateWhenTheProbeKnowsBoth(
+        long containerBitrate) {
+      var probe =
+          withVideoAndAudioStreams(
+              ac3SurroundProbeBuilder().bitrate(containerBitrate), OptionalLong.of(4_500_000L));
+
+      var playlist =
+          service.generateMultivariantPlaylist(
+              copySession(probe, remuxDecisionCopying(AC3_SURROUND_COPY)), "test-token");
+
+      assertThat(playlist).contains("BANDWIDTH=6168000,AVERAGE-BANDWIDTH=5140000,");
+    }
+
+    // A known container bitrate holds the copied video and every other track, so it is never below
+    // the video's own bitrate.
+    @Test
+    @DisplayName(
+        "Should count the container bitrate as the copied video's bitrate when the probe does not"
+            + " know the copied stream's bitrate")
+    void
+        shouldCountTheContainerBitrateAsTheCopiedVideosBitrateWhenTheProbeDoesNotKnowTheCopiedStreamsBitrate() {
+      var probe =
+          withVideoAndAudioStreams(
+              ac3SurroundProbeBuilder().bitrate(5_000_000L), OptionalLong.empty());
+
+      var playlist =
+          service.generateMultivariantPlaylist(
+              copySession(probe, remuxDecisionCopying(AC3_SURROUND_COPY)), "test-token");
+
+      assertThat(playlist).contains("BANDWIDTH=6768000,AVERAGE-BANDWIDTH=5640000,");
+    }
+
+    @Test
+    @DisplayName(
+        "Should advertise the copied stream's bitrate when the source holds another video stream"
+            + " first")
+    void shouldAdvertiseTheCopiedStreamsBitrateWhenTheSourceHoldsAnotherVideoStreamFirst() {
+      var facts = VideoPlaybackFactsFixture.sdrH264FactsBuilder().streamIndex(1).build();
+      var probe = ac3SurroundProbeBuilder().videoPlaybackFacts(Optional.of(facts));
+      var source = probe.build();
+      var streams =
+          List.of(
+              ProbeFixture.videoStreamBuilder(source)
+                  .index(0)
+                  .bitrate(OptionalLong.of(1_000_000L))
+                  .build(),
+              ProbeFixture.videoStreamBuilder(source).bitrate(OptionalLong.of(4_500_000L)).build(),
+              ProbeFixture.audioStreamBuilder("ac3")
+                  .index(2)
+                  .channels(source.audioChannels())
+                  .bitrate(source.audioBitrate())
+                  .build());
+
+      var playlist =
+          service.generateMultivariantPlaylist(
+              copySession(probe.streams(streams).build(), remuxDecisionCopying(AC3_SURROUND_COPY)),
+              "test-token");
+
+      assertThat(playlist).contains("BANDWIDTH=6168000,AVERAGE-BANDWIDTH=5140000,");
+    }
+
+    // The 8 Mb/s container holds the 4.5 Mb/s copied video and the FLAC track that the session
+    // copies, so the FLAC track runs at up to 3.5 Mb/s, not at its 384 kb/s nominal bitrate.
+    @Test
+    @DisplayName(
+        "Should advertise the container bitrate when the session copies an audio track whose"
+            + " bitrate the probe does not know and the container bitrate exceeds the nominal sum")
+    void
+        shouldAdvertiseTheContainerBitrateWhenTheSessionCopiesAnAudioTrackWhoseBitrateTheProbeDoesNotKnowAndTheContainerBitrateExceedsTheNominalSum() {
+      var probe =
+          withVideoAndAudioStreams(
+              flacSurroundProbeBuilder().bitrate(8_000_000L), OptionalLong.of(4_500_000L));
+
+      var playlist =
+          service.generateMultivariantPlaylist(
+              copySession(probe, remuxDecisionCopying(FLAC_SURROUND_COPY)), "test-token");
+
+      assertThat(playlist).contains("BANDWIDTH=9600000,AVERAGE-BANDWIDTH=8000000,");
+    }
+
+    @ParameterizedTest(name = "container bitrate {0}")
+    @ValueSource(longs = {4_000_000L, 0L})
+    @DisplayName(
+        "Should advertise the copied stream's bitrate plus the audio track's nominal bitrate when"
+            + " the session copies an audio track whose bitrate the probe does not know and the"
+            + " container bitrate is lower or unknown")
+    void
+        shouldAdvertiseTheCopiedStreamsBitratePlusTheAudioTracksNominalBitrateWhenTheSessionCopiesAnAudioTrackWhoseBitrateTheProbeDoesNotKnowAndTheContainerBitrateIsLowerOrUnknown(
+            long containerBitrate) {
+      var probe =
+          withVideoAndAudioStreams(
+              flacSurroundProbeBuilder().bitrate(containerBitrate), OptionalLong.of(4_500_000L));
+
+      var playlist =
+          service.generateMultivariantPlaylist(
+              copySession(probe, remuxDecisionCopying(FLAC_SURROUND_COPY)), "test-token");
+
+      assertThat(playlist).contains("BANDWIDTH=5860800,AVERAGE-BANDWIDTH=4884000,");
+    }
+
+    // The session delivers the encode, whose bitrate is known, so the container bitrate never
+    // stands in for the audio.
+    @Test
+    @DisplayName(
+        "Should advertise the copied stream's bitrate plus the encoded audio's bitrate when the"
+            + " session encodes an audio track whose bitrate the probe does not know")
+    void
+        shouldAdvertiseTheCopiedStreamsBitratePlusTheEncodedAudiosBitrateWhenTheSessionEncodesAnAudioTrackWhoseBitrateTheProbeDoesNotKnow() {
+      var probe =
+          withVideoAndAudioStreams(
+              flacSurroundProbeBuilder().bitrate(8_000_000L), OptionalLong.of(4_500_000L));
+      var decision =
+          StreamSessionFixture.remuxDecisionBuilder()
+              .transcodeMode(TranscodeMode.AUDIO_TRANSCODE)
+              .audioDecision(AudioDecision.stereoAac());
+
+      var playlist =
+          service.generateMultivariantPlaylist(copySession(probe, decision), "test-token");
+
+      assertThat(playlist).contains("BANDWIDTH=5553600,AVERAGE-BANDWIDTH=4628000,");
+    }
+
+    private static MediaProbe.MediaProbeBuilder ac3SurroundProbeBuilder() {
+      return StreamSessionFixture.defaultProbeBuilder()
+          .audioCodec("ac3")
+          .audioChannels(OptionalInt.of(6))
+          .audioBitrate(OptionalLong.of(640_000L));
+    }
+
+    private static MediaProbe.MediaProbeBuilder flacSurroundProbeBuilder() {
+      return StreamSessionFixture.defaultProbeBuilder()
+          .audioCodec("flac")
+          .audioChannels(OptionalInt.of(6))
+          .audioBitrate(OptionalLong.empty());
+    }
+
+    // Lists the probe's video stream at the given bitrate, then its audio stream.
+    private static MediaProbe withVideoAndAudioStreams(
+        MediaProbe.MediaProbeBuilder probe, OptionalLong videoBitrate) {
+      var source = probe.build();
+      var video = ProbeFixture.videoStreamBuilder(source).bitrate(videoBitrate).build();
+      var audio =
+          ProbeFixture.audioStreamBuilder(source.audioCodec())
+              .index(video.index() + 1)
+              .channels(source.audioChannels())
+              .bitrate(source.audioBitrate())
+              .build();
+      return probe.streams(List.of(video, audio)).build();
+    }
+
+    private static TranscodeDecision.TranscodeDecisionBuilder remuxDecisionCopying(
+        AudioDecision audio) {
+      return StreamSessionFixture.remuxDecisionBuilder().audioDecision(audio);
+    }
+
+    private static StreamSession copySession(
+        MediaProbe probe, TranscodeDecision.TranscodeDecisionBuilder decision) {
+      return StreamSessionFixture.defaultSessionBuilder()
+          .mediaProbe(probe)
+          .transcodeDecision(decision.videoSource(probe.videoPlaybackFacts()).build())
+          .build();
     }
   }
 }
