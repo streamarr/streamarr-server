@@ -157,7 +157,7 @@ public class TranscodeDecisionService {
    * it, before the keyframe check that refuses a copy whose keyframes leave an interval empty.
    */
   static boolean isCopyAcceptedBeforeTheKeyframeCheck(
-      @NonNull MediaProbe source, @NonNull ClientCapabilityDeclaration declaration) {
+      MediaProbe source, ClientCapabilityDeclaration declaration) {
     var copyFits = VideoStreamCopy.of(source).filter(declaration::acceptsHlsCopy).isPresent();
     // Apple's HLS Authoring Specification item 1.14 requires deinterlaced video, so the worker
     // deinterlaces an interlaced source while it encodes (streamarr/streamarr-server#653).
@@ -172,9 +172,7 @@ public class TranscodeDecisionService {
    * is checked, at a frame rate of 0 for every family.
    */
   static OptionalDouble encodedFrameRate(
-      @NonNull ClientCapabilityDeclaration declaration,
-      @NonNull MediaProbe source,
-      @NonNull EncodeCodecProfile profile) {
+      ClientCapabilityDeclaration declaration, MediaProbe source, EncodeCodecProfile profile) {
     var variantRequest = encodedVariantRequest(source, profile);
     if (variantRequest.isPresent()) {
       return declaration
