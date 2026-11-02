@@ -39,6 +39,16 @@ public sealed interface MediaSegmentTimeline {
     return index * targetSegmentDurationSeconds();
   }
 
+  /**
+   * The media segment that starts the given distance before segment {@code index}, counted in whole
+   * target segment durations and at least one segment back. The index falls below zero when the
+   * distance reaches past the first media segment.
+   */
+  default int mediaSegmentIndexBefore(int index, @NonNull Duration distance) {
+    var segmentsBack = distance.toSeconds() / targetSegmentDurationSeconds();
+    return index - Math.max(1, (int) segmentsBack);
+  }
+
   /** Where the media segment ends: the sum of its own and every earlier segment's duration. */
   default Duration mediaSegmentEnd(int index) {
     return IntStream.rangeClosed(0, index)

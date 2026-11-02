@@ -60,6 +60,37 @@ class MediaSegmentTimelineTest {
     assertThat(timeline.mediaSegmentStartSeconds(900)).isEqualTo(5_400);
   }
 
+  @ParameterizedTest
+  @CsvSource({"PT24S, 46", "PT25S, 46", "PT6S, 49", "PT5S, 49", "PT0S, 49"})
+  @DisplayName(
+      "Should count whole target segment durations back, and at least one segment, when finding a"
+          + " media segment before another")
+  void shouldCountWholeTargetSegmentDurationsBackWhenFindingAMediaSegmentBeforeAnother(
+      Duration distance, int expectedIndex) {
+    var timeline = new MediaSegmentTimeline.PlainGrid(Duration.ofHours(2), SIX_SECONDS);
+
+    assertThat(timeline.mediaSegmentIndexBefore(50, distance)).isEqualTo(expectedIndex);
+  }
+
+  @Test
+  @DisplayName(
+      "Should find a media segment before the first one when the distance reaches past the start")
+  void shouldFindAMediaSegmentBeforeTheFirstOneWhenTheDistanceReachesPastTheStart() {
+    var timeline = new MediaSegmentTimeline.PlainGrid(Duration.ofHours(2), SIX_SECONDS);
+
+    assertThat(timeline.mediaSegmentIndexBefore(2, Duration.ofSeconds(24))).isEqualTo(-2);
+  }
+
+  @Test
+  @DisplayName("Should reject finding a media segment before another without a distance")
+  void shouldRejectFindingAMediaSegmentBeforeAnotherWithoutADistance() {
+    var timeline = new MediaSegmentTimeline.PlainGrid(Duration.ofHours(2), SIX_SECONDS);
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> timeline.mediaSegmentIndexBefore(2, null))
+        .withMessageContaining("distance");
+  }
+
   @Test
   @DisplayName("Should advertise only the indices inside the timeline when asked about an index")
   void shouldAdvertiseOnlyTheIndicesInsideTheTimelineWhenAskedAboutAnIndex() {

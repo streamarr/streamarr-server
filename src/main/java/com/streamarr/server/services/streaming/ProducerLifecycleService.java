@@ -1473,7 +1473,9 @@ public class ProducerLifecycleService {
       return true;
     }
 
-    var probeIndex = requestedIndex.getAsInt() - forwardGapSegments();
+    var probeIndex =
+        timelineOf(session)
+            .mediaSegmentIndexBefore(requestedIndex.getAsInt(), FORWARD_RELOCATION_GAP);
     if (probeIndex < startSequenceNumber) {
       return false;
     }
@@ -1505,12 +1507,6 @@ public class ProducerLifecycleService {
     log.info(
         "Relocated variant {} of session {} to segment {}", variantLabel, sessionId, segmentIndex);
     return true;
-  }
-
-  private int forwardGapSegments() {
-    var gapSegments =
-        FORWARD_RELOCATION_GAP.toSeconds() / properties.targetSegmentDuration().toSeconds();
-    return Math.max(1, (int) gapSegments);
   }
 
   /**
