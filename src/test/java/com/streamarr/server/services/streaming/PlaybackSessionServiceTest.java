@@ -273,6 +273,23 @@ class PlaybackSessionServiceTest {
                                     .build()))
                         .build())),
             originalAutoAndUhd),
+        // An encode takes the codec family that plays the source at the fastest frame rate.
+        Arguments.of(
+            Named.of(
+                "a UHD source at 60 fps on H.264 up to 1080p60 and AV1 up to UHD at 30 fps",
+                new DeclaredSource(
+                    probedSource(
+                        3840,
+                        2160,
+                        h264Facts(VideoCodecProfile.H264_HIGH, 52)
+                            .frameRateRule(
+                                VideoPlaybackFactsFixture.declaredRateRule(new Fraction(60, 1)))
+                            .build()),
+                    fullHdH264Declaration()
+                        .video(
+                            List.of(fullHdH264Entry(), av1EntryBuilder().maxFrameRate(30).build()))
+                        .build())),
+            belowUhd),
         // Deinterlacing doubles the frame rate, so level 3.0 shrinks the 480p encode to 504x336.
         Arguments.of(
             Named.of(

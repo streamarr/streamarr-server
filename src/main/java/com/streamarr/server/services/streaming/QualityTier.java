@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import lombok.NonNull;
 
 /**
@@ -93,9 +94,9 @@ enum QualityTier {
   // A copy plays the source's own picture, so it reaches the tier when the source fits the tier's
   // box. The keyframe check is left out: it refuses few sources, and the encode that replaces a
   // refused copy of the source's own tier usually reaches it too. An encode reaches the tier when
-  // one capability entry fits the tier's picture, in a codec
-  // family that the server encodes, without shrinking it into a smaller tier's box. The workers
-  // connected now do not count, because the offered choices last for the whole playback session.
+  // one capability entry fits the tier's picture, in the codec family that the encode takes,
+  // without shrinking it into a smaller tier's box. The workers connected now do not count,
+  // because the offered choices last for the whole playback session.
   private boolean isReachedIn(MediaProbe source, ClientCapabilityDeclaration declaration) {
     var picture = source.displayedSize();
     if (picture.fitsWithinEitherOrientation(box)
@@ -108,7 +109,7 @@ enum QualityTier {
       return false;
     }
 
-    return Arrays.stream(EncodeCodecProfile.values())
+    return fastestEncodeCodecProfiles(source, declaration).stream()
         .map(
             codecProfile ->
                 EncodedVariantRequest.builder()
@@ -121,6 +122,25 @@ enum QualityTier {
         .map(declaration::fitHlsEncode)
         .flatMap(Optional::stream)
         .anyMatch(output -> containing(new PictureSize(output.width(), output.height())) == this);
+  }
+
+  // The codec profiles whose entries encode the source-sized variant at the fastest frame rate. On
+  // a tie the encode follows a codec preference that depends on the workers, so each tied profile
+  // counts.
+  private static List<EncodeCodecProfile> fastestEncodeCodecProfiles(
+      MediaProbe source, ClientCapabilityDeclaration declaration) {
+    var fastest =
+        Arrays.stream(EncodeCodecProfile.values())
+            .map(profile -> TranscodeDecisionService.encodedFrameRate(declaration, source, profile))
+            .flatMapToDouble(OptionalDouble::stream)
+            .max();
+    return Arrays.stream(EncodeCodecProfile.values())
+        .filter(
+            profile ->
+                fastest.isPresent()
+                    && TranscodeDecisionService.encodedFrameRate(declaration, source, profile)
+                        .equals(fastest))
+        .toList();
   }
 
   // The fixed quality whose box this tier has. No fixed quality has the 1440p box.
