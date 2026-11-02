@@ -5,6 +5,7 @@ import static com.streamarr.server.domain.streaming.ProbedCodecFamily.H264;
 import static com.streamarr.server.domain.streaming.ProbedCodecFamily.HEVC;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.aacEntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.audioEntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.av1EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.declarationBuilderFor;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
@@ -16,12 +17,15 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBui
 import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest;
+import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.av1Nvenc;
+import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libsvtav1;
 import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libx264;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static com.streamarr.server.support.OutcomeTestSupport.rejectionOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.config.StreamingProperties;
@@ -31,6 +35,7 @@ import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
+import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
@@ -51,7 +56,10 @@ import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.domain.streaming.VideoCodecProfile;
+import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.exceptions.TranscodeException;
@@ -62,6 +70,7 @@ import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
+import com.streamarr.server.fixtures.HardwareEncodedFamiliesAndExpectedEncode;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
@@ -83,6 +92,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.Builder;
@@ -92,6 +102,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.ArgumentsSource;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -269,6 +280,45 @@ class HlsStreamingServiceTest {
   @Builder
   record EncodeCase(String audioCodec, VideoQuality quality, TranscodeMode encodingMode) {}
 
+  @Test
+  @DisplayName(
+      "Should refuse an encode for its unknown frame rate when the probe outcome names no output"
+          + " frame rate")
+  void shouldRefuseAnEncodeForItsUnknownFrameRateWhenTheProbeOutcomeNamesNoOutputFrameRate() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").videoPlaybackFacts(Optional.empty()).build());
+    var command =
+        createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(service.createSession(command))
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.FrameRateUnknown()));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"AUTO", "HIGH_720P"})
+  @DisplayName(
+      "Should refuse an encode for its unknown frame rate before sizing a variant when the picture"
+          + " is also too short to encode")
+  void
+      shouldRefuseAnEncodeForItsUnknownFrameRateBeforeSizingAVariantWhenThePictureIsAlsoTooShortToEncode(
+          VideoQuality quality) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .videoCodec("hevc")
+            .height(1)
+            .framerate(OptionalDouble.empty())
+            .build());
+    var options = StreamingOptions.builder().quality(quality).build();
+    var command = createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    assertThat(service.createSession(command))
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.FrameRateUnknown()));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
   @ParameterizedTest(name = "{0} in {1}")
   @MethodSource("picturesWithoutArea")
   @DisplayName("Should reject session creation when the displayed picture has no area")
@@ -286,6 +336,24 @@ class HlsStreamingServiceTest {
     assertThat(service.createSession(command))
         .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.InvalidPictureSize()));
     assertThat(service.getActiveSessionCount()).isZero();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  // An encode codec counts by its codec profile alone when the worker encodes no picture of the
+  // source, so a client that lists no encode codec profile has no encode at all.
+  @Test
+  @DisplayName(
+      "Should reject the session as having no eligible format when no entry lists an encode codec"
+          + " profile and the worker encodes no picture of the source")
+  void
+      shouldRejectTheSessionAsHavingNoEligibleFormatWhenNoEntryListsAnEncodeCodecProfileAndTheWorkerEncodesNoPictureOfTheSource() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().width(1).height(3).build());
+
+    var outcome =
+        service.createSession(createCommandDeclaring(declarationBuilderFor(HEVC).build()));
+
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
 
@@ -309,7 +377,7 @@ class HlsStreamingServiceTest {
   void shouldPlanEvenOutputDimensionsWhenAFixedQualityEncodesAnOddCroppedPicture(
       ChromaSubsampling subsampling, int expectedWidth) {
     probeResults.setDefaultProbe(oddCroppedProbe(subsampling).build());
-    var options = StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build();
+    var options = StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P).build();
 
     var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
     var playlist =
@@ -329,8 +397,10 @@ class HlsStreamingServiceTest {
 
   @ParameterizedTest
   @CsvSource({"CHROMA_444, 316", "CHROMA_422, 314"})
-  @DisplayName("Should plan even output dimensions when Auto encodes below the smallest tier")
-  void shouldPlanEvenOutputDimensionsWhenAutoEncodesBelowTheSmallestTier(
+  @DisplayName(
+      "Should plan even output dimensions when Auto encodes a source smaller than the 360p tier's"
+          + " box")
+  void shouldPlanEvenOutputDimensionsWhenAutoEncodesASourceSmallerThanThe360pTiersBox(
       ChromaSubsampling subsampling, int expectedWidth) {
     probeResults.setDefaultProbe(oddCroppedProbe(subsampling).width(320).height(240).build());
 
@@ -365,9 +435,10 @@ class HlsStreamingServiceTest {
   }
 
   @ParameterizedTest
-  @CsvSource({"AUTO, 3", "HIGH_720P, 3", "AUTO, 1080"})
-  @DisplayName("Should reject an encode when a planned output width rounds to zero")
-  void shouldRejectAnEncodeWhenAPlannedOutputWidthRoundsToZero(VideoQuality quality, int height) {
+  @CsvSource({"AUTO, 3", "HIGH_720P, 3"})
+  @DisplayName("Should reject an encode when every planned output width rounds to zero")
+  void shouldRejectAnEncodeWhenEveryPlannedOutputWidthRoundsToZero(
+      VideoQuality quality, int height) {
     probeResults.setDefaultProbe(
         defaultProbeBuilder().videoCodec("hevc").width(1).height(height).build());
     var options = StreamingOptions.builder().quality(quality).build();
@@ -377,6 +448,451 @@ class HlsStreamingServiceTest {
         .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.InvalidPictureSize()));
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
     assertThat(service.getActiveSessionCount()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode the next codec family when the preferred family's entries shrink the source"
+          + " below the smallest picture")
+  void
+      shouldEncodeTheNextCodecFamilyWhenThePreferredFamilysEntriesShrinkTheSourceBelowTheSmallestPicture() {
+    transcodeExecutor.setHardwareEncodableVideoCodecFamilies(Set.of("av1"));
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").width(4096).height(2).build());
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    av1EntryBuilder().maxWidth(1280).maxHeight(720).build(),
+                    h264EntryBuilder().maxWidth(4096).build()))
+            .build();
+
+    var outcome = service.createSession(createCommandDeclaring(declaration));
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.transcodeDecision().videoCodecFamily()).isEqualTo("h264");
+              assertThat(request.width()).isEqualTo(4096);
+              assertThat(request.height()).isEqualTo(2);
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject the session as having no eligible format when every entry shrinks the source"
+          + " below the smallest picture")
+  void
+      shouldRejectTheSessionAsHavingNoEligibleFormatWhenEveryEntryShrinksTheSourceBelowTheSmallestPicture() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").width(4096).height(2).build());
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().maxWidth(1280).maxHeight(720).build()))
+            .build();
+
+    var outcome = service.createSession(createCommandDeclaring(declaration));
+
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+    assertThat(service.getActiveSessionCount()).isZero();
+  }
+
+  @ParameterizedTest
+  @MethodSource("viewerMaximumsThatLeaveNoPicture")
+  @DisplayName(
+      "Should reject an encode as an invalid picture size when the viewer's maximums leave no"
+          + " picture")
+  void shouldRejectAnEncodeAsAnInvalidPictureSizeWhenTheViewersMaximumsLeaveNoPicture(
+      StreamingOptions options) {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
+    var command = createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    assertThat(service.createSession(command))
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.InvalidPictureSize()));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+    assertThat(service.getActiveSessionCount()).isZero();
+  }
+
+  // The worker encodes no picture below two pixels in either direction.
+  static Stream<StreamingOptions> viewerMaximumsThatLeaveNoPicture() {
+    return Stream.of(VideoQuality.AUTO, VideoQuality.FULL_HD_1080P)
+        .flatMap(
+            quality ->
+                Stream.of(
+                    StreamingOptions.builder().quality(quality).maxHeight(1).build(),
+                    StreamingOptions.builder().quality(quality).maxWidth(1).build()));
+  }
+
+  @Test
+  @DisplayName("Should encode at the viewer's maximum height when it is below every Auto tier")
+  void shouldEncodeAtTheViewersMaximumHeightWhenItIsBelowEveryAutoTier() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
+    var options = StreamingOptions.builder().quality(VideoQuality.AUTO).maxHeight(300).build();
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::label)
+        .containsExactly(tuple(534, 300, "300p"));
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(534);
+              assertThat(request.height()).isEqualTo(300);
+            });
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("budgetsForASourceWithoutABitrate")
+  @DisplayName(
+      "Should dispatch a positive bitrate and advertise it in the playlist when the probe names no"
+          + " source bitrate")
+  void shouldDispatchAPositiveBitrateAndAdvertiseItInThePlaylistWhenTheProbeNamesNoSourceBitrate(
+      UnknownSourceBitrate budget) {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").bitrate(0).build());
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), budget.options());
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    var audioBitrate = session.getTranscodeDecision().audioDecision().bitrate();
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(request -> assertThat(request.bitrate()).isEqualTo(budget.videoBitrate()));
+    assertThat(playlist)
+        .contains(",AVERAGE-BANDWIDTH=" + (budget.videoBitrate() + audioBitrate) + ",");
+  }
+
+  // ADR 0050: without a source bitrate, a single variant takes the nominal bitrate of the tier that
+  // holds its picture within the maximum bitrate less 128 kb/s of audio, and the 360p tier's
+  // bitrate within the maximum when less than that remains.
+  static Stream<UnknownSourceBitrate> budgetsForASourceWithoutABitrate() {
+    return Stream.of(
+        unknownSourceBitrate(fixed1080p().build(), 5_000_000L),
+        unknownSourceBitrate(fixed1080p().maxBitrate(20_000_000).build(), 5_000_000L),
+        unknownSourceBitrate(fixed1080p().maxBitrate(2_000_000).build(), 1_872_000L),
+        unknownSourceBitrate(fixed1080p().maxBitrate(700_000).build(), 700_000L),
+        unknownSourceBitrate(fixed1080p().maxBitrate(100_000).build(), 100_000L),
+        unknownSourceBitrate(autoAt300Lines().build(), 800_000L),
+        unknownSourceBitrate(autoAt300Lines().maxBitrate(1_000_000).build(), 800_000L),
+        unknownSourceBitrate(autoAt300Lines().maxBitrate(20_000_000).build(), 800_000L));
+  }
+
+  private static StreamingOptions.StreamingOptionsBuilder fixed1080p() {
+    return StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P);
+  }
+
+  private static StreamingOptions.StreamingOptionsBuilder autoAt300Lines() {
+    return StreamingOptions.builder().quality(VideoQuality.AUTO).maxHeight(300);
+  }
+
+  private static UnknownSourceBitrate unknownSourceBitrate(
+      StreamingOptions options, long videoBitrate) {
+    return UnknownSourceBitrate.builder().options(options).videoBitrate(videoBitrate).build();
+  }
+
+  @Builder
+  record UnknownSourceBitrate(StreamingOptions options, long videoBitrate) {}
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("fixedQualitiesAndTheirTiersBitrate")
+  @DisplayName(
+      "Should encode a fixed quality at the nominal bitrate of the tier that holds the encoded"
+          + " picture, capped by the source's known bitrate, when the viewer sets no maximum"
+          + " bitrate")
+  void
+      shouldEncodeAFixedQualityAtTheNominalBitrateOfTheTierThatHoldsTheEncodedPictureCappedByTheSourcesKnownBitrateWhenTheViewerSetsNoMaximumBitrate(
+          FixedQualitySource fixedQuality) {
+    var source = fixedQuality.source();
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .videoCodec("hevc")
+            .width(source.width())
+            .height(source.height())
+            .bitrate(fixedQuality.sourceBitrate())
+            .build());
+    var options = StreamingOptions.builder().quality(fixedQuality.quality()).build();
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo("h264");
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(request -> assertThat(request.bitrate()).isEqualTo(fixedQuality.videoBitrate()));
+  }
+
+  // The 2160p tier's H.264 nominal bitrate is 20 Mb/s, and the 1080p tier's is 5 Mb/s.
+  static Stream<FixedQualitySource> fixedQualitiesAndTheirTiersBitrate() {
+    var uhd = new PictureSize(3840, 2160);
+    return Stream.of(
+        fixedQualitySource().quality(VideoQuality.LOW_360P).videoBitrate(800_000L).build(),
+        fixedQualitySource().quality(VideoQuality.HIGH_720P).videoBitrate(3_000_000L).build(),
+        fixedQualitySource()
+            .quality(VideoQuality.FULL_HD_1080P)
+            .sourceBitrate(2_000_000L)
+            .videoBitrate(2_000_000L)
+            .build(),
+        fixedQualitySource().quality(VideoQuality.UHD_4K).videoBitrate(5_000_000L).build(),
+        fixedQualitySource()
+            .quality(VideoQuality.UHD_4K)
+            .sourceBitrate(0L)
+            .videoBitrate(5_000_000L)
+            .build(),
+        fixedQualitySource()
+            .quality(VideoQuality.UHD_4K)
+            .source(uhd)
+            .sourceBitrate(40_000_000L)
+            .videoBitrate(20_000_000L)
+            .build(),
+        fixedQualitySource()
+            .quality(VideoQuality.UHD_4K)
+            .source(uhd)
+            .videoBitrate(8_000_000L)
+            .build());
+  }
+
+  // An 8 Mb/s 1920×1080 source.
+  private static FixedQualitySource.FixedQualitySourceBuilder fixedQualitySource() {
+    return FixedQualitySource.builder()
+        .source(new PictureSize(1920, 1080))
+        .sourceBitrate(8_000_000L);
+  }
+
+  @Builder
+  record FixedQualitySource(
+      VideoQuality quality, PictureSize source, long sourceBitrate, long videoBitrate) {}
+
+  // ADR 0050: a variant costs its video bitrate plus the stream session's audio bitrate, here a
+  // 128 kb/s stereo AAC encode.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("budgetsThatHoldThe360pTiersBitrateBesideTheAudio")
+  @DisplayName(
+      "Should encode the single variant within the maximum bitrate less the audio when that leaves"
+          + " at least the 360p tier's bitrate")
+  void
+      shouldEncodeTheSingleVariantWithinTheMaximumBitrateLessTheAudioWhenThatLeavesAtLeastThe360pTiersBitrate(
+          SingleVariantOutcome expected) {
+    assertSingleVariantAndItsBandwidth(expected);
+  }
+
+  static Stream<SingleVariantOutcome> budgetsThatHoldThe360pTiersBitrateBesideTheAudio() {
+    return Stream.of(
+        SingleVariantOutcome.builder()
+            .options(fixed1080p().maxBitrate(2_000_000).build())
+            .picture(new PictureSize(1920, 1080))
+            .videoBitrate(1_872_000L)
+            .build(),
+        SingleVariantOutcome.builder()
+            .options(fixed1080p().maxBitrate(1_000_000).build())
+            .picture(new PictureSize(1920, 1080))
+            .videoBitrate(872_000L)
+            .build(),
+        SingleVariantOutcome.builder()
+            .options(
+                StreamingOptions.builder()
+                    .quality(VideoQuality.AUTO)
+                    .maxWidth(500)
+                    .maxBitrate(1_000_000)
+                    .build())
+            .picture(new PictureSize(498, 280))
+            .videoBitrate(872_000L)
+            .build());
+  }
+
+  // An encoder reads a zero bitrate as no limit (ADR 0050).
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("budgetsBelowThe360pTiersBitrateBesideTheAudio")
+  @DisplayName(
+      "Should encode the single variant in the 360p box within the maximum bitrate when the audio"
+          + " leaves less than the 360p tier's bitrate")
+  void
+      shouldEncodeTheSingleVariantInThe360pBoxWithinTheMaximumBitrateWhenTheAudioLeavesLessThanThe360pTiersBitrate(
+          SingleVariantOutcome expected) {
+    assertSingleVariantAndItsBandwidth(expected);
+  }
+
+  static Stream<SingleVariantOutcome> budgetsBelowThe360pTiersBitrateBesideTheAudio() {
+    var box360p = new PictureSize(640, 360);
+    return Stream.of(
+        SingleVariantOutcome.builder()
+            .options(fixed1080p().maxBitrate(700_000).build())
+            .picture(box360p)
+            .videoBitrate(700_000L)
+            .build(),
+        SingleVariantOutcome.builder()
+            .options(fixed1080p().maxBitrate(100_000).build())
+            .picture(box360p)
+            .videoBitrate(100_000L)
+            .build(),
+        SingleVariantOutcome.builder()
+            .options(
+                StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(500_000).build())
+            .picture(box360p)
+            .videoBitrate(500_000L)
+            .build());
+  }
+
+  // The 8 Mb/s source's job attempt and its BANDWIDTH and AVERAGE-BANDWIDTH, which add the audio
+  // and allow a fifth above the average.
+  private void assertSingleVariantAndItsBandwidth(SingleVariantOutcome expected) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").bitrate(8_000_000L).build());
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), expected.options());
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(session.getTranscodeDecision().audioDecision().bitrate()).isEqualTo(128_000L);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(new PictureSize(request.width(), request.height()))
+                  .isEqualTo(expected.picture());
+              assertThat(request.bitrate()).isEqualTo(expected.videoBitrate());
+            });
+    var averageBandwidth = expected.videoBitrate() + 128_000L;
+    assertThat(playlist)
+        .contains(
+            "BANDWIDTH="
+                + (averageBandwidth + averageBandwidth / 5)
+                + ",AVERAGE-BANDWIDTH="
+                + averageBandwidth
+                + ",");
+  }
+
+  @Builder
+  record SingleVariantOutcome(StreamingOptions options, PictureSize picture, long videoBitrate) {}
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("audioEncodesAndTheTiersTheyLeave")
+  @DisplayName(
+      "Should offer a tier only when its video bitrate plus the session's audio bitrate is within"
+          + " the viewer's maximum bitrate")
+  void shouldOfferATierOnlyWhenItsVideoPlusAudioBitrateIsWithinTheViewersMaximumBitrate(
+      TiersBesideEncodedAudio expected) {
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.AUTO)
+            .maxBitrate(expected.maxBitrate())
+            .build();
+
+    var session = createDtsSession(expected.sourceChannels(), options);
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(session.getTranscodeDecision().audioDecision().bitrate())
+        .isEqualTo(expected.audioBitrate());
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label)
+        .containsExactlyInAnyOrderElementsOf(expected.labels());
+    assertThat(averageBandwidths(playlist))
+        .isNotEmpty()
+        .allSatisfy(bandwidth -> assertThat(bandwidth).isLessThanOrEqualTo(expected.maxBitrate()));
+  }
+
+  // A stereo DTS source encodes 128 kb/s AAC, and a 7.1 one 768 kb/s E-AC-3 5.1. 720p's 3 Mb/s
+  // fits 3.1 Mb/s only without audio, and 480p's 1.5 Mb/s fits 2 Mb/s only beside less than 500
+  // kb/s.
+  static Stream<TiersBesideEncodedAudio> audioEncodesAndTheTiersTheyLeave() {
+    var stereo = TiersBesideEncodedAudio.builder().sourceChannels(2).audioBitrate(128_000L);
+    var surround = TiersBesideEncodedAudio.builder().sourceChannels(8).audioBitrate(768_000L);
+    return Stream.of(
+        stereo.maxBitrate(3_100_000).labels(List.of("480p", "360p")).build(),
+        stereo.maxBitrate(1_800_000).labels(List.of("480p", "360p")).build(),
+        surround.maxBitrate(1_800_000).labels(List.of("360p")).build(),
+        surround.maxBitrate(2_000_000).labels(List.of("360p")).build());
+  }
+
+  @Builder
+  record TiersBesideEncodedAudio(
+      int sourceChannels, long audioBitrate, int maxBitrate, List<String> labels) {}
+
+  @ParameterizedTest
+  @CsvSource({"2, 128000", "8, 768000"})
+  @DisplayName(
+      "Should advertise a BANDWIDTH of at least the video plus audio bitrate for each encoded"
+          + " variant when the audio is encoded")
+  void
+      shouldAdvertiseABandwidthOfAtLeastTheVideoPlusAudioBitrateForEachEncodedVariantWhenTheAudioIsEncoded(
+          int sourceChannels, long audioBitrate) {
+    var options = StreamingOptions.builder().quality(VideoQuality.AUTO).build();
+
+    var session = createDtsSession(sourceChannels, options);
+    var peakBandwidths =
+        peakBandwidthsByVariant(
+            new HlsPlaylistService(streamingProperties())
+                .generateMultivariantPlaylist(session, "t"));
+
+    assertThat(session.getTranscodeDecision().audioDecision().bitrate()).isEqualTo(audioBitrate);
+    assertThat(session.getVariants())
+        .isNotEmpty()
+        .hasSize(peakBandwidths.size())
+        .allSatisfy(
+            variant ->
+                assertThat(peakBandwidths.get(variant.label()))
+                    .isGreaterThanOrEqualTo(variant.videoBitrate() + audioBitrate));
+  }
+
+  // The declaration lists stereo AAC and 7.1 E-AC-3 but no DTS, so the session encodes the audio.
+  private StreamSession createDtsSession(int sourceChannels, StreamingOptions options) {
+    probeResults.setDefaultOutcome(
+        ProbeFixture.completeProbe(
+            defaultProbeBuilder()
+                .videoCodec("hevc")
+                .audioCodec("dts")
+                .audioChannels(OptionalInt.of(sourceChannels))
+                .build()));
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(
+                List.of(
+                    aacEntryBuilder().build(),
+                    audioEntryBuilder(AudioCodec.EAC3).maxChannels(8).build()))
+            .build();
+    return accepted(
+        service.createSession(
+            createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                .options(options)
+                .capabilityDeclaration(declaration)
+                .build()));
+  }
+
+  // Each encoded variant's BANDWIDTH, keyed by the label that names its media playlist.
+  private static Map<String, Long> peakBandwidthsByVariant(String playlist) {
+    return Pattern.compile("#EXT-X-STREAM-INF:BANDWIDTH=(\\d+),.*\n([^/\n]+)/stream\\.m3u8")
+        .matcher(playlist)
+        .results()
+        .collect(
+            Collectors.toMap(match -> match.group(2), match -> Long.parseLong(match.group(1))));
+  }
+
+  private static List<Long> averageBandwidths(String playlist) {
+    return Pattern.compile("AVERAGE-BANDWIDTH=(\\d+)")
+        .matcher(playlist)
+        .results()
+        .map(match -> Long.parseLong(match.group(1)))
+        .toList();
+  }
+
+  @Test
+  @DisplayName(
+      "Should offer only the tiers the worker encodes when a narrow picture rounds the smaller tiers"
+          + " to zero width")
+  void shouldOfferOnlyTheTiersTheWorkerEncodesWhenANarrowPictureRoundsTheSmallerTiersToZeroWidth() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").width(1).height(1080).build());
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::width, QualityVariant::height)
+        .containsExactly(tuple(2, 1080));
   }
 
   @Test
@@ -419,6 +935,24 @@ class HlsStreamingServiceTest {
               assertThat(request.height()).isEqualTo(1077);
             });
     assertThat(playlist).contains(",RESOLUTION=1917x1077,");
+  }
+
+  @Test
+  @DisplayName("Should advertise the copied frame rate when the source video is copied")
+  void shouldAdvertiseTheCopiedFrameRateWhenTheSourceVideoIsCopied() {
+    probeResults.setDefaultProbe(probeAt(VideoPlaybackFactsFixture.FILM_RATE).build());
+    var command =
+        createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    var session = accepted(service.createSession(command));
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+    assertThat(playlist.lines().filter(line -> line.startsWith("#EXT-X-STREAM-INF:")))
+        .singleElement()
+        .asString()
+        .contains(",FRAME-RATE=23.976");
   }
 
   private static MediaProbe.MediaProbeBuilder oddCroppedProbe(ChromaSubsampling subsampling) {
@@ -915,6 +1449,329 @@ class HlsStreamingServiceTest {
         .build();
   }
 
+  // ADR 0050: outside Original, the server copies the video only when the source fits every one
+  // of the viewer's limits.
+  @Test
+  @DisplayName(
+      "Should encode the fixed quality's picture box when a copyable source is larger than the box")
+  void shouldEncodeTheFixedQualitysPictureBoxWhenACopyableSourceIsLargerThanTheBox() {
+    var options = StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build();
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(1280);
+              assertThat(request.height()).isEqualTo(720);
+            });
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("copyableSourcesOverOneViewerLimit")
+  @DisplayName(
+      "Should encode the video in Auto when a copyable source exceeds one of the viewer's limits")
+  void shouldEncodeTheVideoInAutoWhenACopyableSourceExceedsOneOfTheViewersLimits(
+      SourceAndLimits sourceAndLimits) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().bitrate(sourceAndLimits.sourceBitrate()).build());
+
+    var session =
+        createSession(seedMediaFile().getId(), UUID.randomUUID(), sourceAndLimits.options());
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label)
+        .containsExactlyInAnyOrder("720p", "480p", "360p");
+  }
+
+  // The 1920×1080 H.264 source fits the default declaration, so only a viewer's limit refuses the
+  // copy. Each limit also leaves out the 1080p tier. A source whose bitrate is unknown passes the
+  // maximum bitrate, but its picture must still fit the maximum width (ADR 0050).
+  static Stream<SourceAndLimits> copyableSourcesOverOneViewerLimit() {
+    return Stream.of(
+        SourceAndLimits.builder()
+            .options(autoOptions().maxWidth(1919).build())
+            .sourceBitrate(5_000_000L)
+            .build(),
+        SourceAndLimits.builder()
+            .options(autoOptions().maxHeight(1079).build())
+            .sourceBitrate(5_000_000L)
+            .build(),
+        SourceAndLimits.builder()
+            .options(autoOptions().maxBitrate(4_000_000).build())
+            .sourceBitrate(40_000_000L)
+            .build(),
+        SourceAndLimits.builder()
+            .options(autoOptions().maxWidth(1919).maxBitrate(4_000_000).build())
+            .sourceBitrate(0L)
+            .build());
+  }
+
+  private static StreamingOptions.StreamingOptionsBuilder autoOptions() {
+    return StreamingOptions.builder().quality(VideoQuality.AUTO);
+  }
+
+  @Builder
+  record SourceAndLimits(StreamingOptions options, long sourceBitrate) {}
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("sourcesWithinEveryViewerLimit")
+  @DisplayName("Should copy the video when the source fits every one of the viewer's limits")
+  void shouldCopyTheVideoWhenTheSourceFitsEveryOneOfTheViewersLimits(
+      SourceAndLimits sourceAndLimits) {
+    assertCopiesTheVideo(sourceAndLimits);
+  }
+
+  static Stream<SourceAndLimits> sourcesWithinEveryViewerLimit() {
+    return Stream.of(
+        SourceAndLimits.builder()
+            .options(autoOptions().maxWidth(1920).maxHeight(1080).maxBitrate(5_000_000).build())
+            .sourceBitrate(5_000_000L)
+            .build(),
+        SourceAndLimits.builder()
+            .options(StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P).build())
+            .sourceBitrate(5_000_000L)
+            .build());
+  }
+
+  // A probe that names no container bitrate reports 0 (ADR 0050).
+  @Test
+  @DisplayName(
+      "Should copy the video when the viewer sets a maximum bitrate and the source's bitrate is"
+          + " unknown")
+  void shouldCopyTheVideoWhenTheViewerSetsAMaximumBitrateAndTheSourcesBitrateIsUnknown() {
+    assertCopiesTheVideo(
+        SourceAndLimits.builder()
+            .options(autoOptions().maxBitrate(4_000_000).build())
+            .sourceBitrate(0L)
+            .build());
+  }
+
+  private void assertCopiesTheVideo(SourceAndLimits sourceAndLimits) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().bitrate(sourceAndLimits.sourceBitrate()).build());
+
+    var session =
+        createSession(seedMediaFile().getId(), UUID.randomUUID(), sourceAndLimits.options());
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+    assertThat(session.getVariants()).isEmpty();
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"FULL_HD_1080P", "UHD_4K"})
+  @DisplayName(
+      "Should copy a portrait source when it fits the fixed quality's box turned to its"
+          + " orientation")
+  void shouldCopyAPortraitSourceWhenItFitsTheFixedQualitysBoxTurnedToItsOrientation(
+      VideoQuality quality) {
+    assertThat(portraitSessionCopiesVideo(StreamingOptions.builder().quality(quality).build()))
+        .isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode a portrait source when it is larger than the fixed quality's box in either"
+          + " orientation")
+  void shouldEncodeAPortraitSourceWhenItIsLargerThanTheFixedQualitysBoxInEitherOrientation() {
+    var options = StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build();
+
+    assertThat(portraitSessionCopiesVideo(options)).isFalse();
+  }
+
+  // ADR 0050: a client's maximum width and height describe a window or a screen, which has an
+  // orientation, so they are not turned with the picture.
+  @Test
+  @DisplayName(
+      "Should copy a portrait source when it fits the viewer's maximum width and height as the"
+          + " client gives them")
+  void shouldCopyAPortraitSourceWhenItFitsTheViewersMaximumWidthAndHeightAsTheClientGivesThem() {
+    var options = autoOptions().maxWidth(1080).maxHeight(1920).build();
+
+    assertThat(portraitSessionCopiesVideo(options)).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode a portrait source when it fits the viewer's maximum width and height only"
+          + " turned on their side")
+  void shouldEncodeAPortraitSourceWhenItFitsTheViewersMaximumWidthAndHeightOnlyTurnedOnTheirSide() {
+    var options = autoOptions().maxWidth(1920).maxHeight(1080).build();
+
+    assertThat(portraitSessionCopiesVideo(options)).isFalse();
+  }
+
+  // Whether a session copies a 1080×1920 H.264 source for a player whose entry plays it.
+  private boolean portraitSessionCopiesVideo(StreamingOptions options) {
+    probeResults.setDefaultProbe(probeVersion5At24(new PictureSize(1080, 1920)).build());
+
+    var session =
+        accepted(
+            service.createSession(
+                createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                    .options(options)
+                    .capabilityDeclaration(landscapeHdDeclaration())
+                    .build()));
+
+    return session.getTranscodeDecision().transcodeMode().copiesVideo();
+  }
+
+  @Test
+  @DisplayName(
+      "Should copy the video in Original when the source exceeds every one of the viewer's limits")
+  void shouldCopyTheVideoInOriginalWhenTheSourceExceedsEveryOneOfTheViewersLimits() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().bitrate(40_000_000L).build());
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.ORIGINAL)
+            .maxWidth(640)
+            .maxHeight(360)
+            .maxBitrate(4_000_000)
+            .build();
+
+    var attempt = accepted(logicalPlayback().start(logicalStart().options(options).build()));
+
+    assertThat(attempt.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready ->
+                assertThat(ready.session().getTranscodeDecision().transcodeMode().copiesVideo())
+                    .isTrue());
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode Original within the viewer's limits when no capability entry accepts a copy")
+  void shouldEncodeOriginalWithinTheViewersLimitsWhenNoCapabilityEntryAcceptsACopy() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").bitrate(8_000_000L).build());
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.ORIGINAL)
+            .maxWidth(1280)
+            .maxBitrate(2_000_000)
+            .build();
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    assertThat(session.getTranscodeDecision().audioDecision().bitrate()).isEqualTo(128_000L);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(1280);
+              assertThat(request.height()).isEqualTo(720);
+              assertThat(request.bitrate()).isEqualTo(1_872_000L);
+            });
+  }
+
+  // ADR 0050: Original has no fixed quality, so no picture box bounds its encode.
+  @Test
+  @DisplayName(
+      "Should encode Original at the source's size when no capability entry accepts a copy and the"
+          + " viewer sets no limits")
+  void
+      shouldEncodeOriginalAtTheSourcesSizeWhenNoCapabilityEntryAcceptsACopyAndTheViewerSetsNoLimits() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .videoCodec("hevc")
+            .width(3840)
+            .height(2160)
+            .bitrate(8_000_000L)
+            .build());
+    var options = StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build();
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    // The source's 8 Mb/s caps the encode below the 2160p tier's 20 Mb/s.
+    assertThat(session.getVariants())
+        .extracting(
+            QualityVariant::width,
+            QualityVariant::height,
+            QualityVariant::videoBitrate,
+            QualityVariant::label)
+        .containsExactly(tuple(3840, 2160, 8_000_000L, StreamSession.defaultVariant()));
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(new PictureSize(request.width(), request.height()))
+                  .isEqualTo(new PictureSize(3840, 2160));
+              assertThat(request.bitrate()).isEqualTo(8_000_000L);
+            });
+  }
+
+  @ParameterizedTest
+  @MethodSource("viewerLimitsThatRefuseTheDefaultSourcesCopy")
+  @DisplayName(
+      "Should copy a source that has no usable frame rate when the viewer's limits refuse its copy")
+  void shouldCopyASourceThatHasNoUsableFrameRateWhenTheViewersLimitsRefuseItsCopy(
+      StreamingOptions options) {
+    probeResults.setDefaultProbe(defaultProbeBuilder().framerate(OptionalDouble.empty()).build());
+
+    var outcome =
+        service.createSession(
+            createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), options));
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(accepted(outcome).getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+  }
+
+  // The fixed quality's box, the maximum height and the maximum bitrate each refuse the copy of
+  // the 1920×1080 source at 5 Mb/s.
+  static Stream<StreamingOptions> viewerLimitsThatRefuseTheDefaultSourcesCopy() {
+    return Stream.of(
+        StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build(),
+        autoOptions().maxHeight(720).build(),
+        autoOptions().maxBitrate(1_000_000).build());
+  }
+
+  @Test
+  @DisplayName(
+      "Should report transient capacity when the viewer's limits refuse a copy and every video"
+          + " encoder is busy")
+  void shouldReportTransientCapacityWhenTheViewersLimitsRefuseACopyAndEveryVideoEncoderIsBusy() {
+    transcodeExecutor.setEncodeSlots(Map.of("h264", 0));
+    var options = StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build();
+    var command = createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    assertThat(service.createSession(command))
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(capacityRefusals("no_encoder_with_free_slot")).isOne();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode a portrait source at its full size when the capability entry's maximum fits"
+          + " it turned on its side")
+  void
+      shouldEncodeAPortraitSourceAtItsFullSizeWhenTheCapabilityEntrysMaximumFitsItTurnedOnItsSide() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").width(1080).height(1920).build());
+
+    accepted(
+        service.createSession(
+            createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                .options(StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P).build())
+                .capabilityDeclaration(landscapeHdDeclaration())
+                .build()));
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(1080);
+              assertThat(request.height()).isEqualTo(1920);
+            });
+  }
+
   private PlaybackFormatAttempt startPlayback(
       VideoQuality quality, ClientCapabilityDeclaration declaration) {
     var result =
@@ -943,6 +1800,242 @@ class HlsStreamingServiceTest {
                             VideoPlaybackFactsFixture.h264HighPropertiesBuilder()
                                 .codecLevel(OptionalInt.of(52))
                                 .build()))
+                    .build()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should cap Auto's variants at the largest size the only entry accepts when the source is"
+          + " larger")
+  void shouldCapAutosVariantsAtTheLargestSizeTheOnlyEntryAcceptsWhenTheSourceIsLarger() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
+
+    var session = createSession(seedMediaFile().getId(), hdAt30Declaration());
+
+    assertThat(session.getVariants())
+        .extracting(
+            QualityVariant::label,
+            QualityVariant::width,
+            QualityVariant::height,
+            QualityVariant::videoBitrate)
+        .containsExactlyInAnyOrder(
+            tuple("720p", 1280, 720, 3_000_000L),
+            tuple("480p", 854, 480, 1_500_000L),
+            tuple("360p", 640, 360, 800_000L));
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode a fixed quality at the largest size the only entry accepts when the source is"
+          + " larger")
+  void shouldEncodeAFixedQualityAtTheLargestSizeTheOnlyEntryAcceptsWhenTheSourceIsLarger() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
+    var command =
+        createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+            .options(StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P).build())
+            .capabilityDeclaration(hdAt30Declaration())
+            .build();
+
+    var session = accepted(service.createSession(command));
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(1280);
+              assertThat(request.height()).isEqualTo(720);
+            });
+    assertThat(playlist).contains(",RESOLUTION=1280x720,");
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode a 60 fps source at 30 fps in the job and the playlist when the only entry"
+          + " allows 30 fps")
+  void shouldEncodeA60FpsSourceAt30FpsInTheJobAndThePlaylistWhenTheOnlyEntryAllows30Fps() {
+    probeResults.setDefaultProbe(probeAt(new Fraction(60, 1)).videoCodec("hevc").build());
+
+    var session = createSession(seedMediaFile().getId(), hdAt30Declaration());
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::frameRate)
+        .containsOnly(new Fraction(30, 1));
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.outputFrameRate()).contains(new Fraction(30, 1));
+              assertThat(request.framerate()).hasValue(30.0);
+              assertThat(request.videoEncodeDecision().orElseThrow().level())
+                  .isLessThanOrEqualTo(31);
+            });
+    assertThat(playlist.lines().filter(line -> line.startsWith("#EXT-X-STREAM-INF:")))
+        .isNotEmpty()
+        .allSatisfy(line -> assertThat(line).contains(",FRAME-RATE=30.000"));
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject the stream session when only dividing the frame rate below 10 fps fits the"
+          + " entry")
+  void shouldRejectTheStreamSessionWhenOnlyDividingTheFrameRateBelow10FpsFitsTheEntry() {
+    probeResults.setDefaultProbe(probeAt(new Fraction(60, 1)).videoCodec("hevc").build());
+    var declaration =
+        defaultDeclarationBuilder().video(List.of(h264EntryBuilder().maxFrameRate(0.1).build()));
+
+    var result = service.createSession(createCommandDeclaring(declaration.build()));
+
+    assertThat(result)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode each Auto variant in the entry that keeps its frame rate when two entries"
+          + " trade size for frame rate")
+  void
+      shouldEncodeEachAutoVariantInTheEntryThatKeepsItsFrameRateWhenTwoEntriesTradeSizeForFrameRate() {
+    probeResults.setDefaultProbe(probeAt(new Fraction(60, 1)).videoCodec("hevc").build());
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    h264EntryBuilder().maxWidth(1920).maxHeight(1080).maxFrameRate(30).build(),
+                    h264EntryBuilder().maxWidth(1280).maxHeight(720).maxFrameRate(60).build()))
+            .build();
+
+    var session = createSession(seedMediaFile().getId(), declaration);
+
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label, QualityVariant::frameRate)
+        .containsExactlyInAnyOrder(
+            tuple("720p", new Fraction(60, 1)),
+            tuple("480p", new Fraction(60, 1)),
+            tuple("360p", new Fraction(60, 1)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode a fixed quality at the smaller picture that keeps the frame rate when two"
+          + " entries trade size for frame rate")
+  void
+      shouldEncodeAFixedQualityAtTheSmallerPictureThatKeepsTheFrameRateWhenTwoEntriesTradeSizeForFrameRate() {
+    probeResults.setDefaultProbe(
+        probeAt(new Fraction(60, 1)).videoCodec("hevc").width(3840).height(2160).build());
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    h264EntryBuilder().maxWidth(3840).maxHeight(2160).maxFrameRate(30).build(),
+                    h264EntryBuilder().maxWidth(1920).maxHeight(1080).maxFrameRate(60).build()))
+            .build();
+    var command =
+        createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+            .options(StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P).build())
+            .capabilityDeclaration(declaration)
+            .build();
+
+    var session = accepted(service.createSession(command));
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(1920);
+              assertThat(request.height()).isEqualTo(1080);
+              assertThat(request.outputFrameRate()).contains(new Fraction(60, 1));
+            });
+    assertThat(playlist).contains(",RESOLUTION=1920x1080,").contains(",FRAME-RATE=60.000");
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the source's frame rate when the entry that allows it accepts the largest"
+          + " picture after the encoder rounds its width")
+  void
+      shouldKeepTheSourcesFrameRateWhenTheEntryThatAllowsItAcceptsTheLargestPictureAfterRounding() {
+    probeResults.setDefaultProbe(
+        probeAt(new Fraction(30, 1)).videoCodec("hevc").width(1080).height(1920).build());
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    h264EntryBuilder().maxWidth(1000).maxHeight(1920).maxFrameRate(30).build(),
+                    h264EntryBuilder().maxWidth(1002).maxHeight(1778).maxFrameRate(15).build()))
+            .build();
+
+    var attempt = startPlayback(VideoQuality.FULL_HD_1080P, declaration);
+
+    assertThat(attempt)
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready ->
+                assertThat(ready.session().getVariants())
+                    .extracting(
+                        QualityVariant::width, QualityVariant::height, QualityVariant::frameRate)
+                    .containsExactly(tuple(1000, 1778, new Fraction(30, 1))));
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(request -> assertThat(request.outputFrameRate()).contains(new Fraction(30, 1)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode H.264 at the source's frame rate when the client's AV1 entry allows only half"
+          + " of it")
+  void shouldEncodeH264AtTheSourcesFrameRateWhenTheClientsAv1EntryAllowsOnlyHalfOfIt() {
+    probeResults.setDefaultProbe(probeAt(new Fraction(60, 1)).videoCodec("hevc").build());
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    av1EntryBuilder().maxFrameRate(30).build(),
+                    h264EntryBuilder().maxWidth(1920).maxHeight(1080).maxFrameRate(60).build()))
+            .build();
+
+    var session = createSession(seedMediaFile().getId(), declaration);
+
+    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo("h264");
+    assertThat(transcodeExecutor.getStartedRequests())
+        .isNotEmpty()
+        .allSatisfy(request -> assertThat(request.outputFrameRate()).contains(new Fraction(60, 1)));
+  }
+
+  // A player that plays H.264 High up to level 3.1 at 1280×720 and 30 fps.
+  private static ClientCapabilityDeclaration hdAt30Declaration() {
+    return defaultDeclarationBuilder()
+        .video(
+            List.of(
+                h264EntryBuilder()
+                    .maxWidth(1280)
+                    .maxHeight(720)
+                    .maxFrameRate(30)
+                    .codecProfiles(
+                        List.of(
+                            VideoCodecProfileCapability.builder()
+                                .profile(VideoCodecProfile.H264_HIGH)
+                                .maxLevel(31)
+                                .build()))
+                    .build()))
+        .build();
+  }
+
+  // The default 1920×1080 source whose frame-rate rule chose this output frame rate.
+  private static MediaProbe.MediaProbeBuilder probeAt(Fraction rate) {
+    return defaultProbeBuilder()
+        .framerate(OptionalDouble.of(rate.toDouble()))
+        .videoPlaybackFacts(
+            Optional.of(
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                    .streamIndex(0)
+                    .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(rate))
                     .build()));
   }
 
@@ -984,7 +2077,7 @@ class HlsStreamingServiceTest {
             PlaybackFormatAttempt.Ready.class,
             ready ->
                 assertThat(ready.session().getTranscodeDecision().videoCodecFamily())
-                    .isEqualTo("av1"));
+                    .isEqualTo("h264"));
 
     var recovered =
         playback
@@ -1002,7 +2095,7 @@ class HlsStreamingServiceTest {
             PlaybackFormatAttempt.Ready.class,
             ready ->
                 assertThat(ready.session().getTranscodeDecision().videoCodecFamily())
-                    .isEqualTo("h264"));
+                    .isEqualTo("av1"));
   }
 
   private PlaybackSessionService logicalPlayback() {
@@ -1053,6 +2146,13 @@ class HlsStreamingServiceTest {
             createStreamSessionCommandBuilder(mediaFileId, UUID.randomUUID())
                 .capabilityDeclaration(declaration)
                 .build()));
+  }
+
+  private CreateStreamSessionCommand createCommandDeclaring(
+      ClientCapabilityDeclaration declaration) {
+    return createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+        .capabilityDeclaration(declaration)
+        .build();
   }
 
   private Optional<StreamSession> accessSession(StreamSession session) {
@@ -1170,11 +2270,12 @@ class HlsStreamingServiceTest {
 
   @Test
   @DisplayName(
-      "Should encode AV1 with the whole ladder when one AV1 encode slot is free and workers that encode only H.264 have more")
+      "Should encode AV1 with the whole ladder when one hardware AV1 encode slot is free and workers that encode only H.264 have more")
   void
-      shouldEncodeAv1WithTheWholeLadderWhenOneAv1EncodeSlotIsFreeAndWorkersThatEncodeOnlyH264HaveMore() {
+      shouldEncodeAv1WithTheWholeLadderWhenOneHardwareAv1EncodeSlotIsFreeAndWorkersThatEncodeOnlyH264HaveMore() {
     transcodeExecutor.setAvailableSlots(4);
     transcodeExecutor.setEncodeSlots(Map.of("h264", 3, "av1", 1));
+    transcodeExecutor.setHardwareEncodableVideoCodecFamilies(Set.of("av1"));
     probeResults.setDefaultProbe(
         defaultProbeBuilder()
             .framerate(OptionalDouble.of(23.976))
@@ -1217,6 +2318,28 @@ class HlsStreamingServiceTest {
         .isEqualTo("h264");
   }
 
+  // A software AV1 encoder falls behind real time on a large source, while H.264 keeps up.
+  @ParameterizedTest(name = "hardware encoders for {0}")
+  @ArgumentsSource(HardwareEncodedFamiliesAndExpectedEncode.class)
+  @DisplayName(
+      "Should encode AV1 for a client that declares AV1 and H.264 only when a worker with a free"
+          + " slot encodes AV1 in hardware")
+  void
+      shouldEncodeAv1ForAClientThatDeclaresAv1AndH264OnlyWhenAWorkerWithAFreeSlotEncodesAv1InHardware(
+          Set<String> hardwareEncodedFamilies, String expectedCodecFamily) {
+    transcodeExecutor.setHardwareEncodableVideoCodecFamilies(hardwareEncodedFamilies);
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").width(3840).height(2160).build());
+
+    var session = createSession(seedMediaFile().getId(), av1AndH264Declaration());
+
+    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo(expectedCodecFamily);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(request -> request.transcodeDecision().videoCodecFamily())
+        .isEqualTo(expectedCodecFamily);
+  }
+
   @Test
   @DisplayName(
       "Should reject the session for lack of capacity when only workers that cannot encode H.264 have free slots")
@@ -1236,6 +2359,27 @@ class HlsStreamingServiceTest {
             Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
     assertThat(capacityRefusals("no_encoder_with_free_slot")).isOne();
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject the session as having no eligible format when a busy encoder's family fits no"
+          + " entry")
+  void shouldRejectTheSessionAsHavingNoEligibleFormatWhenABusyEncodersFamilyFitsNoEntry() {
+    transcodeExecutor.setAvailableSlots(2);
+    transcodeExecutor.setEncodeSlots(Map.of("h264", 0));
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().compatibleBases(List.of(CompatibleBase.PQ)).build()))
+            .build();
+
+    var outcome = service.createSession(createCommandDeclaring(declaration));
+
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(capacityRefusals("no_encoder_with_free_slot")).isZero();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
 
   @Test
@@ -1925,12 +3069,164 @@ class HlsStreamingServiceTest {
             .lines()
             .toList();
 
-    // 608x1080 at 60 fps needs 155,040 macroblocks per second: H.264 level 3.2, not 1080p60's 4.2.
+    // The 1080p tier's box turns with the picture. The 360p tier's 360x640 at 60 fps needs 55,200
+    // macroblocks per second: H.264 level 3.1.
     assertThat(playlist.get(playlist.indexOf("1080p/stream.m3u8?t=t") - 1))
-        .contains("RESOLUTION=608x1080,")
-        .contains("CODECS=\"avc1.640020,")
+        .contains("RESOLUTION=1080x1920,")
+        .contains("CODECS=\"avc1.64002A,")
         .contains("FRAME-RATE=60.000");
+    assertThat(playlist.get(playlist.indexOf("360p/stream.m3u8?t=t") - 1))
+        .contains("RESOLUTION=360x640,")
+        .contains("CODECS=\"avc1.64001F,");
   }
+
+  @Test
+  @DisplayName(
+      "Should offer the 1080p tier at the source's size when a wide film is shorter than 1080 lines")
+  void shouldOfferThe1080pTierAtTheSourcesSizeWhenAWideFilmIsShorterThan1080Lines() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").width(1920).height(800).build());
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label, QualityVariant::width, QualityVariant::height)
+        .contains(tuple("1080p", 1920, 800));
+  }
+
+  @Test
+  @DisplayName(
+      "Should label a variant by its shorter side when a capability entry shrinks it short of its"
+          + " tier's box")
+  void shouldLabelAVariantByItsShorterSideWhenACapabilityEntryShrinksItShortOfItsTiersBox() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().maxWidth(1600).maxHeight(900).build()))
+            .build();
+
+    var session = accepted(service.createSession(createCommandDeclaring(declaration)));
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label, QualityVariant::width, QualityVariant::height)
+        .containsExactlyInAnyOrder(
+            tuple("900p", 1600, 900),
+            tuple("720p", 1280, 720),
+            tuple("480p", 854, 480),
+            tuple("360p", 640, 360));
+    assertThat(playlist).contains("900p/stream.m3u8?t=t").doesNotContain("1080p/");
+  }
+
+  @Test
+  @DisplayName(
+      "Should label the only variant by its shorter side when the source is smaller than the 360p"
+          + " box")
+  void shouldLabelTheOnlyVariantByItsShorterSideWhenTheSourceIsSmallerThanThe360pBox() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").width(320).height(180).build());
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label, QualityVariant::width, QualityVariant::height)
+        .containsExactly(tuple("180p", 320, 180));
+  }
+
+  // A 1.85:1 source in a 2048×1080 entry: the 1440p tier shrinks to 1998×1080, whose shorter side
+  // names the 1080p tier's label.
+  @Test
+  @DisplayName(
+      "Should drop a variant labelled by its shorter side when another variant's tier has the same"
+          + " label")
+  void shouldDropAVariantLabelledByItsShorterSideWhenAnotherVariantsTierHasTheSameLabel() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").width(3996).height(2160).build());
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().maxWidth(2048).maxHeight(1080).build()))
+            .build();
+
+    var session = accepted(service.createSession(createCommandDeclaring(declaration)));
+
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label, QualityVariant::width, QualityVariant::height)
+        .containsExactlyInAnyOrder(
+            tuple("1080p", 1920, 1038),
+            tuple("720p", 1280, 692),
+            tuple("480p", 854, 462),
+            tuple("360p", 640, 346));
+  }
+
+  @Test
+  @DisplayName(
+      "Should offer the 2160p and 1440p tiers when the source and the capability entry allow 4K")
+  void shouldOfferThe2160pAnd1440pTiersWhenTheSourceAndTheCapabilityEntryAllow4K() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().videoCodec("hevc").width(3840).height(2160).build());
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label, QualityVariant::width, QualityVariant::height)
+        .containsExactlyInAnyOrder(
+            tuple("2160p", 3840, 2160),
+            tuple("1440p", 2560, 1440),
+            tuple("1080p", 1920, 1080),
+            tuple("720p", 1280, 720),
+            tuple("480p", 854, 480),
+            tuple("360p", 640, 360));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("codecFamiliesAndTheirLargestTiersBitrates")
+  @DisplayName(
+      "Should give the 2160p and 1440p tiers a codec family's nominal bitrates when the encode uses"
+          + " that family")
+  void shouldGiveThe2160pAnd1440pTiersACodecFamilysNominalBitratesWhenTheEncodeUsesThatFamily(
+      FamilyBitrates family) {
+    transcodeExecutor.setEncodeSlots(Map.of(family.codecFamily(), 3));
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .videoCodec("hevc")
+            .width(3840)
+            .height(2160)
+            .bitrate(40_000_000L)
+            .build());
+
+    var session = createSession(seedMediaFile().getId(), av1AndH264Declaration());
+
+    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo(family.codecFamily());
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label, QualityVariant::videoBitrate)
+        .containsExactlyInAnyOrder(
+            tuple("2160p", family.bitrate2160p()),
+            tuple("1440p", family.bitrate1440p()),
+            tuple("1080p", 5_000_000L),
+            tuple("720p", 3_000_000L),
+            tuple("480p", 1_500_000L),
+            tuple("360p", 800_000L));
+  }
+
+  // The AV1 rates follow the HEVC ladder of Apple's HLS Authoring Specification, and H.264 needs
+  // more for the same picture (ADR 0050). Smaller tiers keep one rate for both families.
+  static Stream<FamilyBitrates> codecFamiliesAndTheirLargestTiersBitrates() {
+    return Stream.of(
+        FamilyBitrates.builder()
+            .codecFamily("av1")
+            .bitrate2160p(11_600_000L)
+            .bitrate1440p(8_100_000L)
+            .build(),
+        FamilyBitrates.builder()
+            .codecFamily("h264")
+            .bitrate2160p(20_000_000L)
+            .bitrate1440p(12_000_000L)
+            .build());
+  }
+
+  @Builder
+  record FamilyBitrates(String codecFamily, long bitrate2160p, long bitrate1440p) {}
 
   @Test
   @DisplayName(
@@ -2167,8 +3463,83 @@ class HlsStreamingServiceTest {
 
     var session = createSession(file.getId(), UUID.randomUUID(), options);
 
-    assertThat(session.getVariants()).isEmpty();
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::label)
+        .containsExactly(tuple(1280, 720, StreamSession.defaultVariant()));
     assertThat(session.getHandle()).isPresent();
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("fixedQualitiesAndTheirEncodedPictures")
+  @DisplayName(
+      "Should encode a fixed quality within its picture box when the source is larger, never"
+          + " enlarging it")
+  void shouldEncodeAFixedQualityWithinItsPictureBoxWhenTheSourceIsLargerNeverEnlargingIt(
+      FixedQualityPicture fixedQuality) {
+    var source = fixedQuality.source();
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .videoCodec("hevc")
+            .width(source.width())
+            .height(source.height())
+            .build());
+    var options = StreamingOptions.builder().quality(fixedQuality.quality()).build();
+
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request ->
+                assertThat(new PictureSize(request.width(), request.height()))
+                    .isEqualTo(fixedQuality.picture()));
+  }
+
+  static Stream<FixedQualityPicture> fixedQualitiesAndTheirEncodedPictures() {
+    var uhd = new PictureSize(3840, 2160);
+    var fullHd = new PictureSize(1920, 1080);
+    return Stream.of(
+        FixedQualityPicture.builder()
+            .source(uhd)
+            .quality(VideoQuality.FULL_HD_1080P)
+            .picture(fullHd)
+            .build(),
+        FixedQualityPicture.builder().source(uhd).quality(VideoQuality.UHD_4K).picture(uhd).build(),
+        FixedQualityPicture.builder()
+            .source(fullHd)
+            .quality(VideoQuality.UHD_4K)
+            .picture(fullHd)
+            .build(),
+        FixedQualityPicture.builder()
+            .source(uhd)
+            .quality(VideoQuality.LOW_360P)
+            .picture(new PictureSize(640, 360))
+            .build());
+  }
+
+  @Builder
+  record FixedQualityPicture(PictureSize source, VideoQuality quality, PictureSize picture) {}
+
+  @Test
+  @DisplayName(
+      "Should encode a fixed quality within the viewer's maximum height when the source is taller")
+  void shouldEncodeAFixedQualityWithinTheViewersMaximumHeightWhenTheSourceIsTaller() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
+    var options =
+        StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P).maxHeight(300).build();
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.width()).isEqualTo(534);
+              assertThat(request.height()).isEqualTo(300);
+            });
+    assertThat(playlist).contains(",RESOLUTION=534x300,");
   }
 
   @Test
@@ -2377,20 +3748,7 @@ class HlsStreamingServiceTest {
             .build());
     var switching = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
     var switchingId = switching.getSessionId();
-    upload(switchingId, "480p", "480p/segment0.m4s");
-    assertThat(coordinator.deliver(switchingId, "480p", "480p/segment0.m4s"))
-        .isInstanceOf(SegmentDelivery.Ready.class);
-    var looks = transcodeExecutor.livenessChecks(switchingId, "1080p");
-    var switched =
-        CompletableFuture.supplyAsync(
-            () -> coordinator.deliver(switchingId, "1080p", "1080p/segment1.m4s"));
-    transcodeExecutor.awaitLivenessCheckCount(switchingId, "1080p", looks + 1);
-    var switchingMutex = sessionMutex.getMutex(switchingId);
-    await()
-        .pollDelay(Duration.ZERO)
-        .pollInterval(Duration.ofMillis(1))
-        .atMost(Duration.ofSeconds(5))
-        .until(() -> !switchingMutex.isLocked());
+    var switched = switchFrom480pTo1080pKeeping480pAsTheLeftVariant(switchingId);
     var other = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
     assertThat(switching.getVariantHandles()).containsOnlyKeys("480p", "1080p");
 
@@ -2400,6 +3758,102 @@ class HlsStreamingServiceTest {
     assertThat(switching.getVariantHandles()).containsOnlyKeys("1080p");
     assertThat(transcodeExecutor.isRunning(other.getSessionId(), "480p")).isTrue();
     assertThat(capacityRefusals("no_free_configured_transcode_slot")).isZero();
+    upload(switchingId, "1080p", "1080p/segment1.m4s");
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  // ADR 0009 prefers a family that a worker encodes in hardware to H.264.
+  @Test
+  @DisplayName(
+      "Should encode AV1 when stopping another stream session's left variant frees a worker that"
+          + " encodes AV1 in hardware and H.264 in software")
+  void
+      shouldEncodeAv1WhenStoppingAnotherStreamSessionsLeftVariantFreesAWorkerThatEncodesAv1InHardwareAndH264InSoftware()
+          throws Exception {
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("h264", "av1"));
+    transcodeExecutor.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(av1Nvenc(), libx264()));
+    transcodeExecutor.limitJobSlots(ExecutionTargetId.LOCAL, 2);
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .framerate(OptionalDouble.of(23.976))
+            .videoCodec("hevc")
+            .bitrate(8_000_000L)
+            .build());
+    var switching = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    var switchingId = switching.getSessionId();
+    var switched = switchFrom480pTo1080pKeeping480pAsTheLeftVariant(switchingId);
+    assertThat(switching.getVariantHandles()).containsOnlyKeys("480p", "1080p");
+    assertThat(transcodeExecutor.encodableVideoCodecFamilies()).isEmpty();
+
+    var admitted = createSession(seedMediaFile().getId(), av1AndH264Declaration());
+
+    assertThat(admitted.getTranscodeDecision().videoCodecFamily()).isEqualTo("av1");
+    assertThat(switching.getVariantHandles()).containsOnlyKeys("1080p");
+    upload(switchingId, "1080p", "1080p/segment1.m4s");
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode AV1 after stopping a left variant on the only worker that encodes AV1 in"
+          + " hardware when the only H.264 worker is busy")
+  void
+      shouldEncodeAv1AfterStoppingALeftVariantOnTheOnlyWorkerThatEncodesAv1InHardwareWhenTheOnlyH264WorkerIsBusy()
+          throws Exception {
+    useAnAv1WorkerWithTwoSlotsAndAnH264WorkerWithOne(av1Nvenc());
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .framerate(OptionalDouble.of(23.976))
+            .videoCodec("hevc")
+            .bitrate(8_000_000L)
+            .build());
+    var switching = createSession(seedMediaFile().getId(), av1AndH264Declaration());
+    assertThat(switching.getTranscodeDecision().videoCodecFamily()).isEqualTo("av1");
+    var switchingId = switching.getSessionId();
+    var switched = switchFrom480pTo1080pKeeping480pAsTheLeftVariant(switchingId);
+    assertThat(switching.getVariantHandles()).containsOnlyKeys("480p", "1080p");
+    var busy =
+        createSession(
+            seedMediaFile().getId(),
+            UUID.randomUUID(),
+            StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build());
+    assertThat(busy.getTranscodeDecision().videoCodecFamily()).isEqualTo("h264");
+    assertThat(transcodeExecutor.encodableVideoCodecFamilies()).isEmpty();
+
+    var admitted = accepted(service.createSession(createCommandDeclaring(av1AndH264Declaration())));
+
+    assertThat(admitted.getTranscodeDecision().videoCodecFamily()).isEqualTo("av1");
+    assertThat(switching.getVariantHandles()).containsOnlyKeys("1080p");
+    upload(switchingId, "1080p", "1080p/segment1.m4s");
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode AV1 after stopping a left variant on the only AV1 worker when the only H.264"
+          + " worker is busy")
+  void shouldEncodeAv1AfterStoppingALeftVariantOnTheOnlyAv1WorkerWhenTheOnlyH264WorkerIsBusy()
+      throws Exception {
+    useAnAv1WorkerWithTwoSlotsAndAnH264WorkerWithOne(libsvtav1());
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .framerate(OptionalDouble.of(23.976))
+            .videoCodec("hevc")
+            .bitrate(8_000_000L)
+            .build());
+    var switching = createSession(seedMediaFile().getId(), declarationBuilderFor(AV1).build());
+    var switchingId = switching.getSessionId();
+    var switched = switchFrom480pTo1080pKeeping480pAsTheLeftVariant(switchingId);
+    createSession(
+        seedMediaFile().getId(),
+        UUID.randomUUID(),
+        StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build());
+    assertThat(transcodeExecutor.encodableVideoCodecFamilies()).isEmpty();
+
+    var admitted = accepted(service.createSession(createCommandDeclaring(av1AndH264Declaration())));
+
+    assertThat(admitted.getTranscodeDecision().videoCodecFamily()).isEqualTo("av1");
+    assertThat(switching.getVariantHandles()).containsOnlyKeys("1080p");
     upload(switchingId, "1080p", "1080p/segment1.m4s");
     assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
   }
@@ -2415,20 +3869,7 @@ class HlsStreamingServiceTest {
     transcodeExecutor.setEncodeSlots(Map.of("h264", 2));
     var switching = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
     var switchingId = switching.getSessionId();
-    upload(switchingId, "480p", "480p/segment0.m4s");
-    assertThat(coordinator.deliver(switchingId, "480p", "480p/segment0.m4s"))
-        .isInstanceOf(SegmentDelivery.Ready.class);
-    var looks = transcodeExecutor.livenessChecks(switchingId, "1080p");
-    var switched =
-        CompletableFuture.supplyAsync(
-            () -> coordinator.deliver(switchingId, "1080p", "1080p/segment1.m4s"));
-    transcodeExecutor.awaitLivenessCheckCount(switchingId, "1080p", looks + 1);
-    var switchingMutex = sessionMutex.getMutex(switchingId);
-    await()
-        .pollDelay(Duration.ZERO)
-        .pollInterval(Duration.ofMillis(1))
-        .atMost(Duration.ofSeconds(5))
-        .until(() -> !switchingMutex.isLocked());
+    var switched = switchFrom480pTo1080pKeeping480pAsTheLeftVariant(switchingId);
     assertThat(transcodeExecutor.encodableVideoCodecFamilies()).isEmpty();
     probeResults.setDefaultProbe(probe.framerate(OptionalDouble.empty()).build());
 
@@ -2467,6 +3908,40 @@ class HlsStreamingServiceTest {
     assertThat(service.createSession(createStreamSessionCommand(abrFileId, profileId, abrOptions)))
         .isEqualTo(
             Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+  }
+
+  // One worker encodes only AV1 with the given encoder and has two job slots; another encodes only
+  // H.264 in software and has one.
+  private void useAnAv1WorkerWithTwoSlotsAndAnH264WorkerWithOne(WorkerVerifiedEncoder av1Encoder) {
+    var av1Worker = new ExecutionTargetId("av1-worker");
+    var h264Worker = new ExecutionTargetId("h264-worker");
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("h264", "av1"));
+    transcodeExecutor.setExecutionTargets(List.of(av1Worker, h264Worker));
+    transcodeExecutor.setTargetEncoders(av1Worker, List.of(av1Encoder));
+    transcodeExecutor.setTargetEncoders(h264Worker, List.of(libx264()));
+    transcodeExecutor.limitJobSlots(av1Worker, 2);
+    transcodeExecutor.limitJobSlots(h264Worker, 1);
+  }
+
+  // The player plays 480p, then asks for 1080p, whose start the session awaits while it keeps 480p
+  // as its left variant. The returned delivery completes once 1080p stores its segment.
+  private CompletableFuture<SegmentDelivery> switchFrom480pTo1080pKeeping480pAsTheLeftVariant(
+      UUID sessionId) {
+    upload(sessionId, "480p", "480p/segment0.m4s");
+    assertThat(coordinator.deliver(sessionId, "480p", "480p/segment0.m4s"))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+    var looks = transcodeExecutor.livenessChecks(sessionId, "1080p");
+    var switched =
+        CompletableFuture.supplyAsync(
+            () -> coordinator.deliver(sessionId, "1080p", "1080p/segment1.m4s"));
+    transcodeExecutor.awaitLivenessCheckCount(sessionId, "1080p", looks + 1);
+    var sessionMutexLock = sessionMutex.getMutex(sessionId);
+    await()
+        .pollDelay(Duration.ZERO)
+        .pollInterval(Duration.ofMillis(1))
+        .atMost(Duration.ofSeconds(5))
+        .until(() -> !sessionMutexLock.isLocked());
+    return switched;
   }
 
   // Stores the segment, then wakes the requests held on its variant, as a worker's upload does.

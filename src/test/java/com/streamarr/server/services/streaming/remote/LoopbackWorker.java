@@ -17,6 +17,7 @@ import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
+import com.streamarr.transcode.v1.WorkerVerifiedVideoEncoder;
 import io.grpc.ManagedChannel;
 import io.grpc.stub.StreamObserver;
 import java.time.Duration;
@@ -31,13 +32,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
- * A worker that registers over a real worker session with one libx264 encoder and eight job slots,
- * or the job slots that the test chooses. The test reads the commands that the server sends and
- * reports job attempt outcomes.
+ * A worker that registers over a real worker session with eight job slots, or the job slots that
+ * the test chooses, and, unless the test names other encoders, one libx264 encoder. The test reads
+ * the commands that the server sends and reports job attempt outcomes.
  */
 final class LoopbackWorker implements AutoCloseable {
 
   private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(5);
+  private static final int DEFAULT_AVAILABLE_SLOTS = 8;
 
   private final StreamObserver<EstablishWorkerSessionRequest> requests;
   private final BlockingQueue<EstablishWorkerSessionResponse> responses;
@@ -51,31 +53,46 @@ final class LoopbackWorker implements AutoCloseable {
   }
 
   static LoopbackWorker register(ManagedChannel channel) {
-    return register(channel, 8);
+    return register(channel, DEFAULT_AVAILABLE_SLOTS);
   }
 
   static LoopbackWorker register(ManagedChannel channel, int availableSlots) {
+    return register(
+        channel,
+        registration(
+            WORKER_ID,
+            availableSlots,
+            softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264")));
+  }
+
+  static LoopbackWorker register(
+      ManagedChannel channel, UUID workerId, WorkerVerifiedVideoEncoder... encoders) {
+    return register(channel, registration(workerId, DEFAULT_AVAILABLE_SLOTS, encoders));
+  }
+
+  private static LoopbackWorker register(ManagedChannel channel, WorkerRegistration registration) {
     var responses = new LinkedBlockingQueue<EstablishWorkerSessionResponse>();
     var requests =
         TranscodeWorkerServiceGrpc.newStub(channel)
             .establishWorkerSession(new QueueingObserver(responses));
     requests.onNext(
-        EstablishWorkerSessionRequest.newBuilder()
-            .setRegistration(
-                WorkerRegistration.newBuilder()
-                    .setWorker(
-                        WorkerIdentity.newBuilder()
-                            .setWorkerId(toProto(WORKER_ID))
-                            .setBootId(toProto(UUID.randomUUID())))
-                    .setCapabilities(
-                        WorkerCapabilities.newBuilder()
-                            .addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID))
-                            .addVideoEncoders(
-                                softwareEncoder(
-                                    VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264")))
-                    .setAvailableSlots(availableSlots))
-            .build());
+        EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build());
     return new LoopbackWorker(requests, responses);
+  }
+
+  private static WorkerRegistration registration(
+      UUID workerId, int availableSlots, WorkerVerifiedVideoEncoder... encoders) {
+    return WorkerRegistration.newBuilder()
+        .setWorker(
+            WorkerIdentity.newBuilder()
+                .setWorkerId(toProto(workerId))
+                .setBootId(toProto(UUID.randomUUID())))
+        .setCapabilities(
+            WorkerCapabilities.newBuilder()
+                .addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID))
+                .addAllVideoEncoders(List.of(encoders)))
+        .setAvailableSlots(availableSlots)
+        .build();
   }
 
   EstablishWorkerSessionResponse nextResponse() throws InterruptedException {

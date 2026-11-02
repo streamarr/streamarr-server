@@ -191,6 +191,17 @@ public final class StreamSessionFixture {
                     .build()));
   }
 
+  /** A session that copies the probe's video, whose decision carries the probe's playback facts. */
+  public static StreamSession.StreamSessionBuilder copySessionBuilder(MediaProbe probe) {
+    return defaultSessionBuilder()
+        .mediaProbe(probe)
+        .transcodeDecision(
+            remuxDecisionBuilder()
+                .videoCodecFamily(probe.videoCodec())
+                .videoSource(probe.videoPlaybackFacts())
+                .build());
+  }
+
   public static TranscodeDecision fullTranscodeDecision(String videoCodecFamily) {
     return TranscodeDecision.builder()
         .transcodeMode(TranscodeMode.FULL_TRANSCODE)
@@ -201,8 +212,9 @@ public final class StreamSessionFixture {
         .build();
   }
 
+  /** A variant that encodes at the default probe's 24 fps output frame rate. */
   public static QualityVariant.QualityVariantBuilder defaultVariantBuilder() {
-    return QualityVariant.builder().audioBitrate(128_000L);
+    return QualityVariant.builder().frameRate(new Fraction(24, 1));
   }
 
   public static TranscodeHandle mintHandle(long processId, TranscodeStatus status) {

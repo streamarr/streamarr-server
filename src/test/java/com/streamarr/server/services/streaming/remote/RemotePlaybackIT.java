@@ -427,6 +427,8 @@ class RemotePlaybackIT {
                       .source(mediaProbe)
                       .capabilityDeclaration(declarationBuilderFor(ProbedCodecFamily.AV1).build())
                       .encodableVideoCodecFamilies(executor.encodableVideoCodecFamilies())
+                      .hardwareEncodableVideoCodecFamilies(
+                          executor.hardwareEncodableVideoCodecFamilies())
                       .build())
               .orElseThrow();
       var timeline =

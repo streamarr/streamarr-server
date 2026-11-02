@@ -1,5 +1,6 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
@@ -25,7 +26,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class FakeTranscodeExecutor implements TranscodeExecutor {
 
@@ -64,6 +67,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final Map<ExecutionTargetId, Integer> jobSlotsByTarget = new ConcurrentHashMap<>();
   private final Map<String, Integer> encodeSlotsByVideoCodecFamily =
       new ConcurrentHashMap<>(unboundedEncodeSlots(Set.of("h264", "hevc", "av1")));
+  private Set<String> hardwareEncodableVideoCodecFamilies = Set.of();
   private boolean healthy = true;
   private volatile boolean failUntargetedStarts;
 
@@ -493,12 +497,62 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     return Set.copyOf(encodeSlotsByVideoCodecFamily.keySet());
   }
 
+  /**
+   * A family whose encoders some targets advertise is encodable only while one of those targets has
+   * a free job slot, so the encoders of one target share its job slots.
+   */
   @Override
   public Set<String> encodableVideoCodecFamilies() {
     return encodeSlotsByVideoCodecFamily.entrySet().stream()
         .filter(entry -> entry.getValue() > 0)
         .map(Map.Entry::getKey)
+        .filter(family -> !advertisedOnlyByFullTargets(family))
         .collect(Collectors.toUnmodifiableSet());
+  }
+
+  private boolean advertisedOnlyByFullTargets(String family) {
+    var advertising =
+        encodersByTarget.entrySet().stream()
+            .filter(entry -> entry.getValue().containsKey(family))
+            .map(Map.Entry::getKey)
+            .toList();
+    return !advertising.isEmpty()
+        && advertising.stream().allMatch(target -> freeJobSlotsOn(target) <= 0);
+  }
+
+  @Override
+  public Set<String> hardwareEncodableVideoCodecFamilies() {
+    var encodable = encodableVideoCodecFamilies();
+    return Stream.concat(
+            hardwareEncodableVideoCodecFamilies.stream(),
+            advertisedHardwareFamilies(target -> freeJobSlotsOn(target) > 0))
+        .filter(encodable::contains)
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
+  /** Busy targets' hardware encoders count too. */
+  @Override
+  public Set<String> verifiedHardwareVideoCodecFamilies() {
+    var verified = verifiedVideoCodecFamilies();
+    return Stream.concat(
+            hardwareEncodableVideoCodecFamilies.stream(), advertisedHardwareFamilies(_ -> true))
+        .filter(verified::contains)
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
+  // The families of the hardware encoders that the matching targets advertise.
+  private Stream<String> advertisedHardwareFamilies(Predicate<ExecutionTargetId> targets) {
+    return encodersByTarget.entrySet().stream()
+        .filter(entry -> targets.test(entry.getKey()))
+        .flatMap(entry -> entry.getValue().values().stream())
+        .map(WorkerVerifiedEncoder::backend)
+        .filter(backend -> backend.kind() == EncoderBackend.Kind.HARDWARE)
+        .map(EncoderBackend::codecFamily);
+  }
+
+  /** Each listed family that has a free encode slot is encoded in hardware. */
+  public void setHardwareEncodableVideoCodecFamilies(Set<String> families) {
+    hardwareEncodableVideoCodecFamilies = Set.copyOf(families);
   }
 
   /** Every listed family gets unbounded encode slots; any other family has none. */

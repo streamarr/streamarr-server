@@ -47,14 +47,8 @@ class VideoStreamCopyTest {
   @Test
   @DisplayName("Should leave a copy's frame rate empty when the frame-rate rule refused a rate")
   void shouldLeaveACopysFrameRateEmptyWhenTheFrameRateRuleRefusedARate() {
-    var refused =
-        FrameRateRule.builder()
-            .outputFrameRate(Optional.empty())
-            .basis(OutputFrameRateBasis.REFUSED)
-            .inputs(FrameRateRuleInputs.builder().build())
-            .build();
-
-    var copy = VideoStreamCopy.of(sourceWith(refused)).orElseThrow();
+    var copy =
+        VideoStreamCopy.of(sourceWith(VideoPlaybackFactsFixture.refusedRule())).orElseThrow();
 
     assertThat(copy.frameRate()).isEmpty();
   }

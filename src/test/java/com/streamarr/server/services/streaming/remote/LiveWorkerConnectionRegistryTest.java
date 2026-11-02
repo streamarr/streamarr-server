@@ -594,6 +594,155 @@ class LiveWorkerConnectionRegistryTest {
     assertThat(registry.encodableVideoCodecFamilies(SOURCE_NAMESPACE_ID)).containsOnly("h264");
   }
 
+  @Test
+  @DisplayName(
+      "Should report a codec family as encoded in hardware only when a worker with a free slot"
+          + " counts a hardware encoder for it")
+  void
+      shouldReportACodecFamilyAsEncodedInHardwareOnlyWhenAWorkerWithAFreeSlotCountsAHardwareEncoderForIt() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    registry.register(
+        WORKER_ID,
+        registration(
+            WORKER_ID,
+            keyframeVerifiedHardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "av1_nvenc"),
+            hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_HEVC, "hevc_nvenc"),
+            softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264")),
+        new CancellableObserver());
+
+    assertThat(registry.hardwareEncodableVideoCodecFamilies(SOURCE_NAMESPACE_ID))
+        .containsExactly("av1");
+    assertThat(registry.hardwareEncodableVideoCodecFamilies(UUID.randomUUID())).isEmpty();
+
+    assertThat(registry.dispatch(encodeJob("h264"))).isPresent();
+
+    assertThat(registry.hardwareEncodableVideoCodecFamilies(SOURCE_NAMESPACE_ID)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a codec family among the verified hardware families when the worker that counts"
+          + " its hardware encoder has no free slot")
+  void
+      shouldKeepACodecFamilyAmongTheVerifiedHardwareFamiliesWhenTheWorkerThatCountsItsHardwareEncoderHasNoFreeSlot() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    registry.register(
+        WORKER_ID,
+        registration(
+            WORKER_ID,
+            keyframeVerifiedHardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "av1_nvenc"),
+            hardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_HEVC, "hevc_nvenc"),
+            softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264")),
+        new CancellableObserver());
+
+    assertThat(registry.dispatch(encodeJob("h264"))).isPresent();
+
+    assertThat(registry.hardwareEncodableVideoCodecFamilies(SOURCE_NAMESPACE_ID)).isEmpty();
+    assertThat(registry.verifiedHardwareVideoCodecFamilies(SOURCE_NAMESPACE_ID))
+        .containsExactly("av1");
+    assertThat(registry.verifiedHardwareVideoCodecFamilies(UUID.randomUUID())).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should start AV1 variants on the hardware AV1 worker until it has no free slot when a"
+          + " software AV1 worker registered first")
+  void
+      shouldStartAv1VariantsOnTheHardwareAv1WorkerUntilItHasNoFreeSlotWhenASoftwareAv1WorkerRegisteredFirst() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    registerSoftwareThenHardwareAv1Workers(registry);
+
+    var first = registry.dispatch(encodeJob("av1")).orElseThrow();
+    var second = registry.dispatch(encodeJob("av1")).orElseThrow();
+
+    assertThat(first.encoder()).map(encoder -> encoder.backend().encoder()).contains("av1_nvenc");
+    assertThat(second.encoder()).map(encoder -> encoder.backend().encoder()).contains("libsvtav1");
+  }
+
+  @Test
+  @DisplayName(
+      "Should list the hardware AV1 worker first among an AV1 variant's execution targets when a"
+          + " software AV1 worker registered first")
+  void
+      shouldListTheHardwareAv1WorkerFirstAmongAnAv1VariantsExecutionTargetsWhenASoftwareAv1WorkerRegisteredFirst() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var hardwareTarget = registerSoftwareThenHardwareAv1Workers(registry);
+
+    var targets = registry.eligibleWorkers(SOURCE_NAMESPACE_ID, encodeJob("av1").getDecision());
+
+    assertThat(targets).hasSize(2).first().isEqualTo(hardwareTarget);
+  }
+
+  @Test
+  @DisplayName(
+      "Should start a variant on the software worker when the hardware worker ordered next loses its"
+          + " encoder while the dispatch waits on the first hardware worker")
+  void
+      shouldStartVariantOnSoftwareWorkerWhenHardwareWorkerOrderedNextLosesItsEncoderWhileDispatchWaitsOnFirstHardwareWorker()
+          throws Exception {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var nvenc =
+        keyframeVerifiedHardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc");
+    var gated = new GatedDispatchObserver();
+    var gatedSession = registry.register(WORKER_ID, registration(WORKER_ID, nvenc), gated);
+    var withdrawnWorkerId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    var withdrawnRegistration = registration(withdrawnWorkerId, 2).toBuilder();
+    withdrawnRegistration.getCapabilitiesBuilder().addVideoEncoders(nvenc);
+    var withdrawnSession =
+        registry.register(
+            withdrawnWorkerId, withdrawnRegistration.build(), new CancellableObserver());
+    var softwareWorkerId = UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
+    registry.register(
+        softwareWorkerId,
+        registration(softwareWorkerId, libx264Encoder()),
+        new CancellableObserver());
+    var running = encodeJob("h264");
+    assertThat(
+            registry.dispatchTo(
+                new ExecutionTargetId(withdrawnSession.toString()),
+                running,
+                RemoteEncoderBackendMapper.workerVerifiedEncoder(nvenc).orElseThrow()))
+        .isPresent();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var dispatching = executor.submit(() -> registry.dispatch(encodeJob("h264")));
+      assertThat(gated.dispatchReached.await(5, TimeUnit.SECONDS)).isTrue();
+
+      registry.checkReportedEncoderBackend(
+          withdrawnWorkerId, withdrawnSession, libx264Started(running.getJobAttemptId()));
+      registry.disconnect(WORKER_ID, gatedSession);
+      gated.dispatchRelease.countDown();
+
+      assertThat(dispatching.get(5, TimeUnit.SECONDS))
+          .flatMap(VariantDispatch::encoder)
+          .contains(WorkerVerifiedEncoderFixture.libx264());
+    } finally {
+      gated.dispatchRelease.countDown();
+    }
+  }
+
+  private static ExecutionTargetId registerSoftwareThenHardwareAv1Workers(
+      LiveWorkerConnectionRegistry registry) {
+    var hardwareWorkerId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    registry.register(
+        WORKER_ID,
+        registration(
+            WORKER_ID, softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "libsvtav1")),
+        new CancellableObserver());
+    var hardwareSession =
+        registry.register(
+            hardwareWorkerId,
+            registration(
+                    hardwareWorkerId,
+                    keyframeVerifiedHardwareEncoder(
+                        VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "av1_nvenc"))
+                .toBuilder()
+                .setAvailableSlots(1)
+                .build(),
+            new CancellableObserver());
+    return new ExecutionTargetId(hardwareSession.toString());
+  }
+
   @ParameterizedTest(name = "{2} encode with only {1}")
   @CsvSource({
     "VIDEO_CODEC_FAMILY_AV1, av1_nvenc, av1",

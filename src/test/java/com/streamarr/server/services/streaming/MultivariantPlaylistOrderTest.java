@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.streaming.QualityVariant;
+import com.streamarr.server.fixtures.StreamSessionFixture;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -83,10 +84,9 @@ class MultivariantPlaylistOrderTest {
   }
 
   private static QualityVariant variant(String label, long videoBitrate) {
-    return QualityVariant.builder()
+    return StreamSessionFixture.defaultVariantBuilder()
         .label(label)
         .videoBitrate(videoBitrate)
-        .audioBitrate(STEREO_AAC_BITRATE)
         .build();
   }
 }

@@ -27,6 +27,11 @@ public record VideoPlaybackFacts(
     @NonNull FrameRateRule frameRateRule,
     @NonNull Optional<VideoStreamProperties> videoProperties) {
 
+  /** The rate at which an encode of the stream runs (ADR 0037), empty when the rule refuses one. */
+  public Optional<Fraction> outputFrameRate() {
+    return frameRateRule.outputFrameRate();
+  }
+
   /**
    * The size that FFmpeg scales an encode from, and that a player shows. FFmpeg crops the coded
    * picture first and then turns it a quarter turn for a rotation of 90 or -90 degrees. It applies
