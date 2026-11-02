@@ -34,11 +34,16 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.ChosenVideoStream;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.ContainerCropping;
+import com.streamarr.server.domain.streaming.Deinterlace;
+import com.streamarr.server.domain.streaming.DeinterlaceOutput;
+import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.Fraction;
+import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.KeyframeIntervalCounts;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePosition;
@@ -2454,6 +2459,146 @@ class HlsStreamingServiceTest {
         .isEqualTo(OptionalDouble.empty());
   }
 
+  @ParameterizedTest
+  @CsvSource({"AUTO, COPY_OR_ENCODE", "HIGH_720P, COPY_OR_ENCODE", "ORIGINAL, COPY_ONLY"})
+  @DisplayName(
+      "Should encode and deinterlace an interlaced H.264 source when the client plays H.264 in any quality")
+  void shouldEncodeAndDeinterlaceAnInterlacedH264SourceWhenTheClientPlaysH264InAnyQuality(
+      VideoQuality quality, VideoFormatConstraint constraint) {
+    probeResults.setDefaultOutcome(interlacedOutcome(FieldOrder.TT));
+
+    var session = accepted(service.createSession(interlacedSourceCommand(quality, constraint)));
+    var started = transcodeExecutor.getStartedRequests().getFirst();
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
+    assertThat(started.transcodeDecision().deinterlace())
+        .contains(new Deinterlace(FieldOrder.TT, DeinterlaceOutput.ONE_FRAME_PER_FIELD));
+    assertThat(started.transcodeDecision().outputFrameRate()).contains(new Fraction(60_000, 1_001));
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::frameRate)
+        .containsOnly(new Fraction(60_000, 1_001));
+    assertThat(started.framerate()).isEqualTo(OptionalDouble.of(60_000.0 / 1_001));
+  }
+
+  // ADR 0052: an encode that Original reaches plays Auto's ladder, within the viewer's limits. A
+  // maximum of 0 is no maximum.
+  @ParameterizedTest
+  @CsvSource({"0, 0", "2000000, 0", "0, 720"})
+  @DisplayName(
+      "Should encode an interlaced source on Auto's ladder within the viewer's limits when the"
+          + " quality is Original")
+  void shouldEncodeAnInterlacedSourceOnAutosLadderWithinTheViewersLimitsWhenTheQualityIsOriginal(
+      int maxBitrate, int maxHeight) {
+    probeResults.setDefaultOutcome(interlacedOutcome(FieldOrder.BB));
+    var autoOptions =
+        StreamingOptions.builder()
+            .quality(VideoQuality.AUTO)
+            .maxBitrate(maxBitrate)
+            .maxHeight(maxHeight)
+            .build();
+    var originalOptions =
+        StreamingOptions.builder()
+            .quality(VideoQuality.ORIGINAL)
+            .maxBitrate(maxBitrate)
+            .maxHeight(maxHeight)
+            .build();
+
+    var auto =
+        accepted(
+            service.createSession(
+                interlacedSourceCommand(autoOptions, VideoFormatConstraint.COPY_OR_ENCODE)));
+    var original =
+        accepted(
+            service.createSession(
+                interlacedSourceCommand(originalOptions, VideoFormatConstraint.COPY_ONLY)));
+
+    assertThat(auto.getVariants()).hasSizeGreaterThan(1);
+    assertThat(original.getVariants()).isEqualTo(auto.getVariants());
+    assertThat(original.getTranscodeDecision().audioDecision())
+        .isEqualTo(auto.getTranscodeDecision().audioDecision());
+  }
+
+  @ParameterizedTest
+  @CsvSource({"AUTO, COPY_OR_ENCODE", "ORIGINAL, COPY_ONLY"})
+  @DisplayName(
+      "Should report missing capacity instead of no eligible format when Auto or Original must"
+          + " encode an interlaced source and every encoder is busy")
+  void
+      shouldReportMissingCapacityInsteadOfNoEligibleFormatWhenAutoOrOriginalMustEncodeAnInterlacedSourceAndEveryEncoderIsBusy(
+          VideoQuality quality, VideoFormatConstraint constraint) {
+    probeResults.setDefaultOutcome(interlacedOutcome(FieldOrder.TT));
+    transcodeExecutor.setEncodeSlots(Map.of("h264", 0));
+
+    var outcome = service.createSession(interlacedSourceCommand(quality, constraint));
+
+    assertThat(outcome)
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  // At 25 frames per second a 10 fps entry would need a third of the rate, 8.33, which is below
+  // the lowest rate an encode runs at. Deinterlaced one frame per field, the source runs at 50, and
+  // a fifth of that is 10 (ADR 0049).
+  @Test
+  @DisplayName(
+      "Should encode an interlaced source at a divided field rate when the capability entry caps the"
+          + " frame rate below the stored rate")
+  void
+      shouldEncodeAnInterlacedSourceAtADividedFieldRateWhenTheCapabilityEntryCapsTheFrameRateBelowTheStoredRate() {
+    probeResults.setDefaultOutcome(
+        outcomeWithFrameRateRule(
+            VideoPlaybackFactsFixture.interlacedRateRule(new Fraction(25, 1), FieldOrder.TT)));
+    var declaration =
+        defaultDeclarationBuilder().video(List.of(h264EntryBuilder().maxFrameRate(10).build()));
+
+    var session = accepted(service.createSession(createCommandDeclaring(declaration.build())));
+
+    assertThat(session.getVariants())
+        .isNotEmpty()
+        .extracting(variant -> variant.frameRate().toDouble())
+        .containsOnly(10.0);
+  }
+
+  // AV1 is encoded in hardware, which the codec preference puts first on a tie, but its entry caps
+  // the deinterlaced 59.94 at 29.97 while H.264 keeps it (ADR 0049).
+  @Test
+  @DisplayName(
+      "Should encode an interlaced source in the codec whose entry keeps the field rate when another"
+          + " entry caps it")
+  void shouldEncodeAnInterlacedSourceInTheCodecWhoseEntryKeepsTheFieldRateWhenAnotherEntryCapsIt() {
+    probeResults.setDefaultOutcome(interlacedOutcome(FieldOrder.TT));
+    transcodeExecutor.setHardwareEncodableVideoCodecFamilies(Set.of("av1"));
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(av1EntryBuilder().maxFrameRate(30).build(), h264EntryBuilder().build()));
+
+    var session = accepted(service.createSession(createCommandDeclaring(declaration.build())));
+
+    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo("h264");
+    assertThat(session.getVariants())
+        .isNotEmpty()
+        .extracting(QualityVariant::frameRate)
+        .containsOnly(new Fraction(60_000, 1_001));
+  }
+
+  @ParameterizedTest
+  @CsvSource({"ORIGINAL, COPY_ONLY", "AUTO, COPY_OR_ENCODE"})
+  @DisplayName(
+      "Should copy an H.264 source whose stored field order is unspecified when the client plays H.264")
+  void shouldCopyAnH264SourceWhoseStoredFieldOrderIsUnspecifiedWhenTheClientPlaysH264(
+      VideoQuality quality, VideoFormatConstraint constraint) {
+    var rule = VideoPlaybackFactsFixture.declaredRateRule(new Fraction(30_000, 1_001));
+    probeResults.setDefaultOutcome(outcomeWithFrameRateRule(rule));
+
+    var session = accepted(service.createSession(interlacedSourceCommand(quality, constraint)));
+
+    assertThat(rule.inputs().fieldOrder()).isEmpty();
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(transcodeExecutor.getStartedRequests().getFirst().transcodeDecision().deinterlace())
+        .isEmpty();
+  }
+
   @Test
   @DisplayName("Should encode the video when a segment interval of the source holds no keyframe")
   void shouldEncodeTheVideoWhenASegmentIntervalOfTheSourceHoldsNoKeyframe() {
@@ -4039,6 +4184,32 @@ class HlsStreamingServiceTest {
       ClientCapabilityDeclaration declaration) {
     return createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
         .capabilityDeclaration(declaration)
+        .build();
+  }
+
+  // A 29.97 fps H.264 outcome that meets the copy rule apart from its field order.
+  private static ProbeOutcome.Success interlacedOutcome(FieldOrder fieldOrder) {
+    return outcomeWithFrameRateRule(
+        VideoPlaybackFactsFixture.interlacedRateRule(new Fraction(30_000, 1_001), fieldOrder));
+  }
+
+  private static ProbeOutcome.Success outcomeWithFrameRateRule(FrameRateRule rule) {
+    return ProbeFixture.completeProbeBuilder(
+            defaultProbeBuilder().framerate(OptionalDouble.of(29.97)).build())
+        .chosenVideoStream(Optional.of(new ChosenVideoStream(0, rule)))
+        .build();
+  }
+
+  private CreateStreamSessionCommand interlacedSourceCommand(
+      VideoQuality quality, VideoFormatConstraint constraint) {
+    return interlacedSourceCommand(StreamingOptions.builder().quality(quality).build(), constraint);
+  }
+
+  private CreateStreamSessionCommand interlacedSourceCommand(
+      StreamingOptions options, VideoFormatConstraint constraint) {
+    return createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+        .options(options)
+        .videoFormatConstraint(constraint)
         .build();
   }
 

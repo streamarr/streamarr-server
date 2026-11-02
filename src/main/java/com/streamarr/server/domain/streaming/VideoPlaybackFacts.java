@@ -27,9 +27,35 @@ public record VideoPlaybackFacts(
     @NonNull FrameRateRule frameRateRule,
     @NonNull Optional<VideoStreamProperties> videoProperties) {
 
-  /** The rate at which an encode of the stream runs (ADR 0037), empty when the rule refuses one. */
+  /**
+   * The output frame rate that the rule chose for the stream (ADR 0037), empty when the rule
+   * refuses one. A deinterlaced encode can run at twice this rate ({@link
+   * TranscodeDecision#outputFrameRate}).
+   */
   public Optional<Fraction> outputFrameRate() {
     return frameRateRule.outputFrameRate();
+  }
+
+  /** The field order of an interlaced stream; empty for a progressive or unspecified order. */
+  public Optional<FieldOrder> interlacedFieldOrder() {
+    return frameRateRule.inputs().fieldOrder().filter(FieldOrder::isInterlaced);
+  }
+
+  /**
+   * How an encode of the stream deinterlaces it; empty for a progressive or unspecified field
+   * order.
+   */
+  public Optional<Deinterlace> deinterlace() {
+    return interlacedFieldOrder().map(fieldOrder -> Deinterlace.of(fieldOrder, outputFrameRate()));
+  }
+
+  /**
+   * The rate at which an encode of the stream runs: the output frame rate, or the deinterlacer's
+   * rate for an interlaced stream. Empty when the rule refuses an output frame rate.
+   */
+  public Optional<Fraction> encodedFrameRate() {
+    return outputFrameRate()
+        .map(rate -> deinterlace().map(it -> it.outputFrameRate(rate)).orElse(rate));
   }
 
   /**

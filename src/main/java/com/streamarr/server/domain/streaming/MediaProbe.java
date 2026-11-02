@@ -61,6 +61,14 @@ public record MediaProbe(
     return videoPlaybackFacts.map(facts -> facts.displayedSize(coded)).orElse(coded);
   }
 
+  /**
+   * Whether the chosen video stream is interlaced: its stored field order is TT, BB, TB or BT. A
+   * progressive or unspecified order counts as progressive (streamarr/streamarr-server#653).
+   */
+  public boolean isInterlaced() {
+    return videoPlaybackFacts.flatMap(VideoPlaybackFacts::interlacedFieldOrder).isPresent();
+  }
+
   public List<StreamInfo> audioStreams() {
     return streams.stream().filter(s -> "audio".equals(s.codecType())).toList();
   }

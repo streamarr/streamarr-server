@@ -50,9 +50,28 @@ public record TranscodeDecision(
         .build();
   }
 
-  /** The output frame rate of the video source that the decision read, empty without one. */
+  /**
+   * How the encode deinterlaces an interlaced source; empty for a copy and for a source whose
+   * stored field order is progressive or unspecified. An interlaced source is never copied.
+   */
+  public Optional<Deinterlace> deinterlace() {
+    if (transcodeMode == null || transcodeMode.copiesVideo()) {
+      return Optional.empty();
+    }
+
+    return videoSource.flatMap(VideoPlaybackFacts::deinterlace);
+  }
+
+  /**
+   * The frame rate that the decision's encode runs at: the stored output frame rate of the video
+   * source, or the deinterlacer's rate. Empty when the probe stored no rate.
+   */
   public Optional<Fraction> outputFrameRate() {
-    return videoSource.flatMap(VideoPlaybackFacts::outputFrameRate);
+    if (transcodeMode == null || transcodeMode.copiesVideo()) {
+      return videoSource.flatMap(VideoPlaybackFacts::outputFrameRate);
+    }
+
+    return videoSource.flatMap(VideoPlaybackFacts::encodedFrameRate);
   }
 
   // Lombok builder defaults — their generated setters assign them

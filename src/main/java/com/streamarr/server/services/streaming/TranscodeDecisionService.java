@@ -71,7 +71,7 @@ public class TranscodeDecisionService {
     var sessionAudio = decideAudio(source, declaration);
     var audioBesideCopy = audioBesideVideoCopy(request, sessionAudio);
     boolean videoCopyable = audioBesideCopy.isPresent();
-    if (!videoCopyable && request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
+    if (!videoCopyable && !request.videoFormatConstraint().permitsEncode(source)) {
       return Optional.empty();
     }
 
@@ -148,7 +148,9 @@ public class TranscodeDecisionService {
 
   private boolean decideVideoCopy(MediaProbe source, ClientCapabilityDeclaration declaration) {
     var copyFits = VideoStreamCopy.of(source).filter(declaration::acceptsHlsCopy).isPresent();
-    if (!copyFits || !permitsCopyUntilHdrCopies(source)) {
+    // Apple's HLS Authoring Specification item 1.14 requires deinterlaced video, so the worker
+    // deinterlaces an interlaced source while it encodes (streamarr/streamarr-server#653).
+    if (!copyFits || source.isInterlaced() || !permitsCopyUntilHdrCopies(source)) {
       return false;
     }
 
@@ -179,7 +181,8 @@ public class TranscodeDecisionService {
   }
 
   // Every variant of a stream session is at most the source's size, so an entry that fits the
-  // source-sized variant fits every variant (ADR 0049).
+  // source-sized variant fits every variant (ADR 0049). The variant runs at the rate the encode
+  // runs at, which the deinterlacer doubles for an interlaced source (#653).
   private static Optional<EncodedVariantRequest> encodedVariantRequest(
       MediaProbe source, EncodeCodecProfile profile) {
     var picture = source.displayedSize();
@@ -189,7 +192,7 @@ public class TranscodeDecisionService {
 
     return source
         .videoPlaybackFacts()
-        .flatMap(VideoPlaybackFacts::outputFrameRate)
+        .flatMap(VideoPlaybackFacts::encodedFrameRate)
         .map(
             frameRate ->
                 EncodedVariantRequest.builder()
