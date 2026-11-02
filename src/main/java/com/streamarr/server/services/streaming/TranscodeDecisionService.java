@@ -164,12 +164,17 @@ public class TranscodeDecisionService {
     return copyFits && !source.isInterlaced() && permitsCopyUntilHdrCopies(source);
   }
 
-  // The frame rate at which one entry encodes the source-sized variant, or empty when no entry
-  // fits. A source without an output frame rate or a picture that the worker encodes at any size
-  // has no encoded variant, and the stream session refuses its encode for that reason, so only the
-  // codec profile is checked, at a frame rate of 0 for every family.
-  private static OptionalDouble encodedFrameRate(
-      ClientCapabilityDeclaration declaration, MediaProbe source, EncodeCodecProfile profile) {
+  /**
+   * The frame rate at which one entry encodes the source-sized variant in the codec profile, or
+   * empty when no entry fits. An encode takes the codec family with the fastest such rate. A source
+   * without an output frame rate or a picture that the worker encodes at any size has no encoded
+   * variant, and the stream session refuses its encode for that reason, so only the codec profile
+   * is checked, at a frame rate of 0 for every family.
+   */
+  static OptionalDouble encodedFrameRate(
+      @NonNull ClientCapabilityDeclaration declaration,
+      @NonNull MediaProbe source,
+      @NonNull EncodeCodecProfile profile) {
     var variantRequest = encodedVariantRequest(source, profile);
     if (variantRequest.isPresent()) {
       return declaration
