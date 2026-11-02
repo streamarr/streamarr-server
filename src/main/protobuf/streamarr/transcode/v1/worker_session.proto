@@ -210,7 +210,9 @@ enum Presence {
 // advanced HDR information. ADR 0036 derives it from the signaled transfer and
 // from Dolby Vision.
 enum CompatibleBase {
-  // The transfer names none of SDR, PQ or HLG, and Dolby Vision is absent.
+  // The transfer names none of SDR, PQ or HLG, and VideoDynamicRange holds no
+  // Dolby Vision present arm. That includes a stream the probe could not
+  // check for Dolby Vision.
   COMPATIBLE_BASE_UNSPECIFIED = 0;
   // The stream has no standard compatible base. It carries Dolby Vision
   // without an SDR, PQ or HLG transfer, or it uses Dolby Vision profile 5 or
@@ -252,9 +254,9 @@ message DolbyVisionPresent {
   // This field states whether the samples contain RPUs. The worker reports
   // UNSPECIFIED when it read no samples.
   Presence observed_rpu = 2;
-  // This field holds the first RPU header that the worker could parse, from
-  // probe version 5 on (ADR 0036). The worker leaves it out when observed_rpu
-  // is not PRESENT or no header parsed.
+  // This field holds the header of the stream's first RPU, from probe version
+  // 5 on (ADR 0036). The worker leaves it out when observed_rpu is not PRESENT
+  // or that first header does not parse. It never uses a later RPU instead.
   DolbyVisionRpuHeader first_rpu_header = 3;
   // The worker reports this field from probe version 5 on.
   DolbyVisionRpuPlacement rpu_placement = 4;
@@ -480,7 +482,9 @@ enum JobAttemptFailure {
   // same backend fails the same way.
   JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH = 5;
   // A segment would hold more bytes than the segment cap that
-  // SegmentUploadMetadata.content_length_bytes states (ADR 0037, segment list).
+  // SegmentUploadMetadata.content_length_bytes states. The worker also reports
+  // it when one interval's segments outgrow its budget of two segment caps
+  // (ADR 0037, segment list).
   JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED = 6;
   // The attempt read no sample of a chosen stream, and the job does not let
   // the worker fill that stream with a held picture or silence (ADR 0037, early
@@ -616,7 +620,10 @@ message ProbeRequest {
 }
 
 // This message asks the worker to measure one chunk of a file's keyframe
-// intervals (ADR 0054).
+// intervals (ADR 0054). An audio packet without a presentation time uses its
+// decode time, for its interval and for BitrateScanChunkStream's times. The
+// worker fails the chunk with PROBE_FAILURE_INVALID_MEDIA when a measured
+// packet has neither time.
 message BitrateScanChunk {
   // This field names the stream measurement version whose rules apply. It is
   // never zero.
@@ -1222,11 +1229,15 @@ message BitrateScanChunkStream {
   // These fields hold the stream's time base. Both are positive.
   uint32 time_base_numerator = 4;
   uint32 time_base_denominator = 5;
-  // This field holds the earliest presentation time of the stream's packets in
-  // the chunk. The worker leaves it and end_time out when the chunk holds no
-  // packet of the stream.
+  // This field holds the earliest presentation time of the stream's packets.
+  // It counts ticks of the stream's time base on the zero-based timeline of
+  // the chunk's keyframes. The worker sets it and end_time exactly when the
+  // chunk holds a packet of the stream. An audio time lies within the chunk's
+  // keyframe bounds. The first chunk has no lower bound and the last chunk has
+  // no upper bound.
   optional sint64 first_presentation_time = 6;
-  // This field holds the end of the stream's last packet in the chunk.
+  // This field holds the end of the stream's last packet in the chunk, in the
+  // same ticks. It is at least first_presentation_time.
   optional sint64 end_time = 7;
 }
 
