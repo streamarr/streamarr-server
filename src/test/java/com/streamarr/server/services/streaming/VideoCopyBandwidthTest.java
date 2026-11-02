@@ -7,12 +7,12 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.KeyframeIntervalCounts;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MeasuredStream;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamMeasurementSource;
 import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.fixtures.ProbeFixture;
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -37,7 +37,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 class VideoCopyBandwidthTest {
 
   private static final CopyMediaPlaylist NINE_SECONDS =
-      new CopyMediaPlaylist(3, new BigDecimal("9.000000"));
+      CopyMediaPlaylistFixture.evenlyListing(3, "3.000000");
   private static final long VIDEO_BYTES = 1_000_000;
   private static final long VIDEO_PACKETS = 216;
 
@@ -169,15 +169,14 @@ class VideoCopyBandwidthTest {
 
   // Three segments of 3.000000, 3.000000 and 2.999999 s sum to 8.999999 s. The 1,125,000 delivered
   // bytes are 9,000,000 bits.
-  @ParameterizedTest(name = "{0} s")
-  @CsvSource({"9.000000, 1000000", "8.999999, 1000001"})
+  @ParameterizedTest(name = "last segment {0} s")
+  @CsvSource({"3.000000, 1000000", "2.999999, 1000001"})
   @DisplayName("Should divide by the EXTINF durations that the media playlist writes")
-  void shouldDivideByExtinfDurationsThatMediaPlaylistWrites(String seconds, long expected) {
+  void shouldDivideByExtinfDurationsThatMediaPlaylistWrites(String lastSeconds, long expected) {
     var source = measuredSource(List.of(), 1_121_256).build();
+    var playlist = CopyMediaPlaylistFixture.listing(3, "3.000000", "3.000000", lastSeconds);
 
-    assertThat(
-            VideoCopyBandwidth.averageBandwidth(
-                source, AudioDecision.none(), new CopyMediaPlaylist(3, new BigDecimal(seconds))))
+    assertThat(VideoCopyBandwidth.averageBandwidth(source, AudioDecision.none(), playlist))
         .isEqualTo(expected);
   }
 
@@ -194,8 +193,8 @@ class VideoCopyBandwidthTest {
   static Stream<CopyMediaPlaylist> playlistsWithoutASegmentOrADuration() {
     return Stream.of(
         CopyMediaPlaylist.UNKNOWN,
-        new CopyMediaPlaylist(3, BigDecimal.ZERO),
-        new CopyMediaPlaylist(0, new BigDecimal("9.000000")));
+        CopyMediaPlaylistFixture.listing(3, "0", "0", "0"),
+        new CopyMediaPlaylist(List.of(), 3, 3));
   }
 
   // The server knows the framing of only the AAC, AC-3 and E-AC-3 encoders.
@@ -275,7 +274,7 @@ class VideoCopyBandwidthTest {
 
     assertThat(
             VideoCopyBandwidth.averageBandwidth(
-                source, AudioDecision.stereoAac(), new CopyMediaPlaylist(1, BigDecimal.ONE)))
+                source, AudioDecision.stereoAac(), CopyMediaPlaylistFixture.listing(1, "1.000000")))
         .isEqualTo(Long.MAX_VALUE);
   }
 
@@ -288,6 +287,19 @@ class VideoCopyBandwidthTest {
 
     assertThat(VideoCopyBandwidth.isKnown(source, NINE_SECONDS)).isTrue();
     assertThat(VideoCopyBandwidth.isKnown(source, CopyMediaPlaylist.UNKNOWN)).isFalse();
+  }
+
+  // ADR 0054 computes a copy's peak from its measured keyframe intervals, which follow the
+  // source's keyframe positions. Without those positions the copy keeps 1.2 times its average.
+  @Test
+  @DisplayName("Should give no peak when the source's keyframe positions are not known")
+  void shouldGiveNoPeakWhenTheSourcesKeyframePositionsAreNotKnown() {
+    var source = measuredSource(List.of()).keyframes(new KeyframeKnowledge.NotReported()).build();
+
+    assertThat(VideoCopyBandwidth.averageBandwidth(source, AudioDecision.none(), NINE_SECONDS))
+        .isEqualTo(892_217L);
+    assertThat(VideoCopyBandwidth.peakBandwidth(source, AudioDecision.none(), NINE_SECONDS))
+        .isEmpty();
   }
 
   @Test
@@ -311,6 +323,15 @@ class VideoCopyBandwidthTest {
         .withMessageContaining("source");
     assertThatNullPointerException()
         .isThrownBy(() -> VideoCopyBandwidth.isKnown(source, null))
+        .withMessageContaining("playlist");
+    assertThatNullPointerException()
+        .isThrownBy(() -> VideoCopyBandwidth.peakBandwidth(null, audio, playlist))
+        .withMessageContaining("source");
+    assertThatNullPointerException()
+        .isThrownBy(() -> VideoCopyBandwidth.peakBandwidth(source, null, playlist))
+        .withMessageContaining("audio");
+    assertThatNullPointerException()
+        .isThrownBy(() -> VideoCopyBandwidth.peakBandwidth(source, audio, null))
         .withMessageContaining("playlist");
   }
 

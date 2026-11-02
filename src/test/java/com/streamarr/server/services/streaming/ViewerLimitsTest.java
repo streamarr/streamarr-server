@@ -4,6 +4,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBui
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
+import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.AudioSteps;
@@ -15,7 +16,7 @@ import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamMeasurementFixture;
-import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
@@ -45,7 +46,7 @@ class ViewerLimitsTest {
 
   // The 1,200 segments of 6 s that a stream copy of the default 2-hour source lists.
   private static final CopyMediaPlaylist TWO_HOURS =
-      new CopyMediaPlaylist(1_200, new BigDecimal("7200.000000"));
+      CopyMediaPlaylistFixture.evenlyListing(1_200, "6.000000");
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("sourcesAgainstFixedQualityBoxes")
@@ -239,6 +240,55 @@ class ViewerLimitsTest {
                     .measuredDuration(7_200_000)
                     .build()));
     return probe.streams(List.of(video)).streamMeasurements(Optional.of(measurement)).build();
+  }
+
+  // ADR 0054 checks a copy's measured average, not its peak, against the maximum bitrate. Segment
+  // 0 of the 12 s copy holds 3,000,000 video bytes, a peak of 4,003,200 b/s, while the copy
+  // averages 2,203,200 b/s.
+  @Test
+  @DisplayName(
+      "Should keep the audio step beside a copy whose peak exceeds the maximum bitrate when the"
+          + " copy's measured average equals it")
+  void shouldKeepTheAudioStepBesideACopyWhosePeakExceedsTheMaximumBitrateWhenItsAverageEqualsIt() {
+    var limits = ViewerLimits.of(auto().maxBitrate(2_203_200).build());
+
+    var audio = audioStepBesideCopyOfDenseFirstSegment(limits);
+
+    assertThat(audio).contains(AudioDecision.none());
+  }
+
+  @Test
+  @DisplayName(
+      "Should find no audio step beside a copy whose peak exceeds the maximum bitrate when the"
+          + " copy's measured average exceeds it by one bit per second")
+  void shouldFindNoAudioStepBesideACopyWhosePeakExceedsTheMaximumBitrateWhenItsAverageExceedsIt() {
+    var limits = ViewerLimits.of(auto().maxBitrate(2_203_199).build());
+
+    var audio = audioStepBesideCopyOfDenseFirstSegment(limits);
+
+    assertThat(audio).isEmpty();
+  }
+
+  // A 12 s copy on 6 s segments whose first 6 keyframe intervals hold 500,000 video bytes each and
+  // whose last 6 hold 50,000, beside no audio.
+  private static Optional<AudioDecision> audioStepBesideCopyOfDenseFirstSegment(
+      ViewerLimits limits) {
+    var source =
+        StreamMeasurementFixture.CopySource.builder()
+            .duration(Duration.ofSeconds(12))
+            .keyframeMillis(StreamMeasurementFixture.everySecond(12))
+            .videoBytes(
+                StreamMeasurementFixture.concat(
+                    StreamMeasurementFixture.repeat(6, 500_000L),
+                    StreamMeasurementFixture.repeat(6, 50_000L)))
+            .build()
+            .probe();
+    var playlist =
+        CopyMediaPlaylist.of(
+            source,
+            StreamingProperties.builder().targetSegmentDuration(Duration.ofSeconds(6)).build());
+    return limits.audioStepBesideCopyOf(
+        source, new AudioSteps(List.of(AudioDecision.none())), playlist);
   }
 
   // A probe without playback facts names no copied stream, so the container bitrate stands in for

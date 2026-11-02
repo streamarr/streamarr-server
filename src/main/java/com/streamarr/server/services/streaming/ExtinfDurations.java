@@ -24,4 +24,20 @@ final class ExtinfDurations {
                     .setScale(EXTINF_DIGITS, RoundingMode.HALF_UP))
         .toList();
   }
+
+  /**
+   * The EXT-X-TARGETDURATION that a media playlist writes for these EXTINF durations of the
+   * timeline. RFC 8216 §4.3.3.1: every EXTINF, rounded to the nearest integer, must not exceed the
+   * target duration. A stream copy's segment can run longer than the target segment duration.
+   */
+  static int targetDurationSeconds(
+      @NonNull MediaSegmentTimeline timeline, @NonNull List<BigDecimal> extinfDurations) {
+    var targetDuration = timeline.targetSegmentDurationSeconds();
+    for (var extinf : extinfDurations) {
+      targetDuration =
+          Math.max(targetDuration, extinf.setScale(0, RoundingMode.HALF_UP).intValueExact());
+    }
+
+    return targetDuration;
+  }
 }
