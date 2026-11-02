@@ -900,8 +900,9 @@ message ProbeStreamInfo {
   MatrixCoefficients matrix_coefficients = 31;
   ColorRange color_range = 32;
   // This field is true when the worker decoded 1 to 3 first frames of the
-  // chosen video stream. A read of fewer than 3 frames counts as cut short (ADR
-  // 0036).
+  // chosen video stream. A read of fewer than 3 frames counts as cut short. The
+  // worker discards a read when ffprobe fails, writes no JSON or writes more
+  // than 4 MiB. A discarded read gives no evidence (ADR 0036).
   bool first_frames_read = 33;
   // The worker sets this field when a video stream may hold mastering display
   // metadata that mastering_display leaves out. Such a stream is never PQ10.
