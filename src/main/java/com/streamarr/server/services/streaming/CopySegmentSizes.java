@@ -148,12 +148,12 @@ final class CopySegmentSizes {
    */
   private static BigDecimal slotAudioSeconds(CopyMediaPlaylist playlist, int segment) {
     var segments = playlist.segments();
-    var slotStart = segments.get(segment).slotStartSeconds();
+    var slotStart = BigDecimal.valueOf(segments.get(segment).slotStartSeconds());
     if (segment + 1 < segments.size()) {
-      return BigDecimal.valueOf(segments.get(segment + 1).slotStartSeconds() - slotStart);
+      return BigDecimal.valueOf(segments.get(segment + 1).slotStartSeconds()).subtract(slotStart);
     }
 
-    return playlist.durationSeconds().subtract(BigDecimal.valueOf(slotStart));
+    return playlist.durationSeconds().subtract(slotStart);
   }
 
   /**
