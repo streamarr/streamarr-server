@@ -291,11 +291,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
     new TransactionTemplate(transactionManager)
         .executeWithoutResult(_ -> PersistedProbeFixture.storeProbe(entityManager, storedProbe));
 
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.AUTO)
-            .supportedCodecs(List.of("h264"))
-            .build();
+    var options = StreamingOptions.builder().quality(VideoQuality.AUTO).build();
     var session =
         accepted(
             streamingService.createSession(

@@ -27,7 +27,6 @@ import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.mutation.Outcome;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -340,10 +339,7 @@ class TranscodeLimitRaceTest {
   }
 
   private static StreamingOptions autoQuality() {
-    return StreamingOptions.builder()
-        .quality(VideoQuality.AUTO)
-        .supportedCodecs(List.of("h264"))
-        .build();
+    return StreamingOptions.builder().quality(VideoQuality.AUTO).build();
   }
 
   private MediaFile seedMediaFile() {

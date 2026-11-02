@@ -30,6 +30,8 @@ enum PlaybackFormatFailure {
 input CreatePlaybackSessionInput {
     mediaFileId: ID!
     options: StreamingOptionsInput
+    "What the client's current player and display accept."
+    capabilities: ClientCapabilityDeclarationInput!
 }
 
 type CreatePlaybackSessionPayload {
@@ -37,7 +39,7 @@ type CreatePlaybackSessionPayload {
     userErrors: [CreatePlaybackSessionError!]!
 }
 
-union CreatePlaybackSessionError = InvalidIdError | PlaybackSessionClosedError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | MediaFileFrameRateUnknownError | TranscodeCapacityUnavailableError | NoEligibleVideoFormatError
+union CreatePlaybackSessionError = InvalidIdError | PlaybackSessionClosedError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | MediaFileFrameRateUnknownError | TranscodeCapacityUnavailableError | NoEligibleVideoFormatError | CapabilityValuesRequiredError | HlsAacCapabilityRequiredError | CapabilityListTooLongError | CapabilityMaximumInvalidError | CapabilityProfileMismatchError | VideoCodecTierInvalidError
 
 input ReportPlaybackFormatFailureInput {
     playbackSessionId: ID!

@@ -1,5 +1,9 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.declarationBuilderFor;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.StreamingProperties;
@@ -7,9 +11,11 @@ import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
+import com.streamarr.server.domain.streaming.DolbyVisionProfile;
+import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.Presence;
-import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
@@ -31,6 +37,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
@@ -71,7 +78,10 @@ class TranscodeDecisionCopyRuleTest {
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(copyCase.source().probe())
-                    .clientOptions(options(copyCase.clientCodecs()))
+                    .capabilityDeclaration(
+                        declarationBuilderFor(
+                                copyCase.clientCodecs().toArray(ProbedCodecFamily[]::new))
+                            .build())
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -140,9 +150,12 @@ class TranscodeDecisionCopyRuleTest {
         Optional.empty());
   }
 
-  // The codec names that the web client, the Apple TV app and an AV1 client send today.
-  private static List<List<String>> clientCodecLists() {
-    return List.of(List.of("h264"), List.of("h264", "hevc"), List.of("av1", "h264"));
+  // The codec families of a web client, the Apple TV app and an AV1 client.
+  private static List<List<ProbedCodecFamily>> clientCodecLists() {
+    return List.of(
+        List.of(ProbedCodecFamily.H264),
+        List.of(ProbedCodecFamily.H264, ProbedCodecFamily.HEVC),
+        List.of(ProbedCodecFamily.AV1, ProbedCodecFamily.H264));
   }
 
   @Test
@@ -162,7 +175,9 @@ class TranscodeDecisionCopyRuleTest {
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source.probe())
-                    .clientOptions(options(List.of("h264", "hevc")))
+                    .capabilityDeclaration(
+                        declarationBuilderFor(ProbedCodecFamily.H264, ProbedCodecFamily.HEVC)
+                            .build())
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -189,13 +204,75 @@ class TranscodeDecisionCopyRuleTest {
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source.probe())
-                    .clientOptions(options(List.of("h264", "hevc")))
+                    .capabilityDeclaration(
+                        declarationBuilderFor(ProbedCodecFamily.H264, ProbedCodecFamily.HEVC)
+                            .build())
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
     assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("hdrSources")
+  @DisplayName(
+      "Should encode an HDR source when the client declares every HDR format that the source carries")
+  void shouldEncodeAnHdrSourceWhenTheClientDeclaresEveryHdrFormatThatTheSourceCarries(
+      String scenario, Source source) {
+    var hdrEntry =
+        hevcEntryBuilder()
+            .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG))
+            .dolbyVisionProfiles(
+                List.of(
+                    DolbyVisionProfileCapability.builder()
+                        .profile(DolbyVisionProfile.PROFILE_8_1)
+                        .maxLevel(13)
+                        .build(),
+                    DolbyVisionProfileCapability.builder()
+                        .profile(DolbyVisionProfile.PROFILE_8_4)
+                        .maxLevel(13)
+                        .build()))
+            .hdr10Plus(true)
+            .build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source.probe())
+                    .capabilityDeclaration(
+                        defaultDeclarationBuilder()
+                            .video(List.of(hdrEntry, h264EntryBuilder().build()))
+                            .build())
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+  }
+
+  // Each source's formats are ones the HDR entry above declares.
+  static Stream<Arguments> hdrSources() {
+    return Stream.of(
+        Arguments.of("HDR10", hdrSource(CompatibleBase.PQ, new DolbyVision.Absent())),
+        Arguments.of("HLG", hdrSource(CompatibleBase.HLG, new DolbyVision.Absent())),
+        Arguments.of(
+            "Dolby Vision 8.1 on a PQ base",
+            hdrSource(CompatibleBase.PQ, dolbyVisionRecord(OptionalInt.of(1)))),
+        Arguments.of(
+            "Dolby Vision 8.4 on an HLG base",
+            hdrSource(CompatibleBase.HLG, dolbyVisionRecord(OptionalInt.of(4)))));
+  }
+
+  private static Source hdrSource(CompatibleBase base, DolbyVision dolbyVision) {
+    return Source.builder()
+        .sampleEntry(SampleEntry.HVC1)
+        .dynamicRange(new VideoDynamicRange(base, Presence.UNSPECIFIED, dolbyVision))
+        .bitDepth(OptionalInt.of(10))
+        .build();
   }
 
   @Test
@@ -215,7 +292,9 @@ class TranscodeDecisionCopyRuleTest {
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source.probe())
-                    .clientOptions(options(List.of("h264", "hevc")))
+                    .capabilityDeclaration(
+                        declarationBuilderFor(ProbedCodecFamily.H264, ProbedCodecFamily.HEVC)
+                            .build())
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -234,7 +313,7 @@ class TranscodeDecisionCopyRuleTest {
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source.probe())
-                    .clientOptions(options(List.of("h264")))
+                    .capabilityDeclaration(declarationBuilderFor(ProbedCodecFamily.H264).build())
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -255,7 +334,7 @@ class TranscodeDecisionCopyRuleTest {
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source.probe())
-                    .clientOptions(options(List.of("h264")))
+                    .capabilityDeclaration(declarationBuilderFor(ProbedCodecFamily.H264).build())
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -277,7 +356,7 @@ class TranscodeDecisionCopyRuleTest {
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source.probe())
-                    .clientOptions(options(List.of("h264")))
+                    .capabilityDeclaration(declarationBuilderFor(ProbedCodecFamily.H264).build())
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -302,7 +381,7 @@ class TranscodeDecisionCopyRuleTest {
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(probe)
-                    .clientOptions(options(List.of("h264")))
+                    .capabilityDeclaration(declarationBuilderFor(ProbedCodecFamily.H264).build())
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
@@ -321,14 +400,6 @@ class TranscodeDecisionCopyRuleTest {
                 .rpu(true)
                 .build()),
         Presence.UNSPECIFIED);
-  }
-
-  private static StreamingOptions options(List<String> supportedCodecs) {
-    return StreamingOptions.builder()
-        .supportedCodecs(supportedCodecs)
-        .supportedAudioCodecs(StreamingOptions.DEFAULT_SUPPORTED_AUDIO_CODECS)
-        .maxAudioChannels(StreamingOptions.DEFAULT_MAX_AUDIO_CHANNELS)
-        .build();
   }
 
   /**
@@ -422,14 +493,14 @@ class TranscodeDecisionCopyRuleTest {
   }
 
   @Builder
-  record CopyCase(@NonNull Source source, @NonNull List<String> clientCodecs) {
+  record CopyCase(@NonNull Source source, @NonNull List<ProbedCodecFamily> clientCodecs) {
 
     boolean copyPermitted() {
       var base = source.dynamicRange().compatibleBase();
       return (base == CompatibleBase.SDR || base == CompatibleBase.UNSPECIFIED)
           && !source.hasDisagreeingDolbyVisionCompatibility()
           && (!"h264".equals(source.sampleEntry().codec) || source.isEightBitFourTwoZero())
-          && clientCodecs.contains(source.sampleEntry().codec)
+          && clientCodecs.contains(ProbedCodecFamily.fromProbedName(source.sampleEntry().codec))
           && source.sampleEntry().isDescribableInAPlaylist();
     }
 

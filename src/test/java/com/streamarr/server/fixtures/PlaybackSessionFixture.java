@@ -7,14 +7,13 @@ import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
 import com.streamarr.server.services.streaming.PlaybackSessionRequest;
 import com.streamarr.server.services.streaming.PlaybackSessionService;
 import com.streamarr.server.services.streaming.PlaybackSessionSnapshot;
 import com.streamarr.server.services.streaming.StartPlaybackSessionCommand;
+import com.streamarr.server.services.streaming.StartPlaybackSessionRejection;
 import com.streamarr.server.services.streaming.StreamingService;
 import java.time.Duration;
-import java.util.List;
 import java.util.UUID;
 import lombok.experimental.UtilityClass;
 
@@ -35,11 +34,9 @@ public class PlaybackSessionFixture {
     return StartPlaybackSessionCommand.builder()
         .mediaFileId(UUID.randomUUID())
         .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
-        .options(
-            StreamingOptions.builder()
-                .quality(VideoQuality.AUTO)
-                .supportedCodecs(List.of("h264"))
-                .build());
+        .options(StreamingOptions.builder().quality(VideoQuality.AUTO).build())
+        .capabilityDeclaration(
+            ClientCapabilityDeclarationFixture.defaultDeclarationBuilder().build());
   }
 
   public static PlaybackSessionRequest playbackRequest(
@@ -51,7 +48,7 @@ public class PlaybackSessionFixture {
   }
 
   public static PlaybackSessionSnapshot acceptedPlayback(
-      Outcome<PlaybackSessionSnapshot, CreateStreamSessionRejection> outcome) {
+      Outcome<PlaybackSessionSnapshot, StartPlaybackSessionRejection> outcome) {
     return outcome.fold(
         snapshot -> snapshot,
         rejection -> {

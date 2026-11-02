@@ -89,13 +89,23 @@ public class PlaybackSessionService implements AutoCloseable {
   private record FormatAttemptReservation(
       PlaybackSession playback, UUID retiredStreamId, Optional<UUID> streamId) {}
 
-  public Outcome<PlaybackSessionSnapshot, CreateStreamSessionRejection> start(
+  /**
+   * Starts a playback session and its first format attempt. A capability declaration that the API
+   * boundary refuses starts nothing and returns every reason together.
+   */
+  public Outcome<PlaybackSessionSnapshot, StartPlaybackSessionRejection> start(
       @NonNull StartPlaybackSessionCommand command) {
     if (command.identity().profileId() == null) {
       throw new AuthenticationRequiredException();
     }
 
     requireAuthority(command.identity(), command.identity().playbackAuthority());
+    var declarationRejections =
+        CapabilityDeclarationRules.rejectionsOf(command.capabilityDeclaration());
+    if (!declarationRejections.isEmpty()) {
+      return Outcome.rejected(List.<StartPlaybackSessionRejection>copyOf(declarationRejections));
+    }
+
     var childId = UUID.randomUUID();
     var playback = register(command, childId);
     try {
@@ -108,7 +118,7 @@ public class PlaybackSessionService implements AutoCloseable {
         }
         case Outcome.Rejected(var rejections) -> {
           discard(playback);
-          yield Outcome.rejected(rejections);
+          yield Outcome.rejected(List.<StartPlaybackSessionRejection>copyOf(rejections));
         }
       };
     } catch (RuntimeException failure) {
@@ -427,6 +437,7 @@ public class PlaybackSessionService implements AutoCloseable {
                 .mediaFileId(playback.command.mediaFileId())
                 .identity(playback.command.identity())
                 .options(playback.command.options())
+                .capabilityDeclaration(playback.command.capabilityDeclaration())
                 .excludedEncodeCodecFamilies(Set.copyOf(playback.excludedEncodeCodecFamilies))
                 .videoFormatConstraint(
                     playback.command.options().quality() == VideoQuality.ORIGINAL

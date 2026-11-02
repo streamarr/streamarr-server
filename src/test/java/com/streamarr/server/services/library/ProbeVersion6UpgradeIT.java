@@ -171,11 +171,7 @@ class ProbeVersion6UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
   }
 
   private OptionalLong playedVideoBitrate(UUID mediaFileId) {
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.AUTO)
-            .supportedCodecs(List.of("h264"))
-            .build();
+    var options = StreamingOptions.builder().quality(VideoQuality.AUTO).build();
     var session =
         accepted(
             streaming.createSession(

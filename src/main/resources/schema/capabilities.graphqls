@@ -1,0 +1,169 @@
+"""
+The client capability declaration that a client builds from its current player and display each
+time it starts a playback session (ADR 0049). The server chooses each output from these capability
+entries. An output fits only when one capability entry accepts every property of the output; the
+server never combines the properties of two capability entries. Every list of the declaration holds
+at most 32 values, and every maximum must be above zero.
+"""
+input ClientCapabilityDeclarationInput {
+    "The video capability entries. The declaration needs at least one."
+    video: [VideoCapabilityEntryInput!]!
+    "The audio capability entries. The declaration needs at least one, including an AAC entry that applies to HLS."
+    audio: [AudioCapabilityEntryInput!]!
+}
+
+"""
+One group of video values and maximums that the player accepts together for one codec family. The
+player accepts every combination that takes one value from each list and stays within every
+maximum. A client whose limits depend on each other sends one entry for each combination of limits.
+"""
+input VideoCapabilityEntryInput {
+    "The codec family that every codec profile of this entry belongs to."
+    codecFamily: VideoCodecFamily!
+    "The codec profiles that the player decodes, each with its own maximum level and tier. The entry needs at least one."
+    codecProfiles: [VideoCodecProfileCapabilityInput!]!
+    "The highest bit depth that the player decodes."
+    maxBitDepth: Int!
+    "The widest picture, in pixels, that the player decodes."
+    maxWidth: Int!
+    "The tallest picture, in pixels, that the player decodes."
+    maxHeight: Int!
+    "The highest frame rate, in frames per second, that the player decodes."
+    maxFrameRate: Float!
+    "The compatible bases that the player displays. The entry needs at least one unless it lists Dolby Vision profile 5 or 10.0, whose streams have no compatible base."
+    compatibleBases: [DeclaredCompatibleBase!]!
+    "The Dolby Vision profiles whose RPUs the player applies. A player that plays only a stream's base layer lists none."
+    dolbyVisionProfiles: [DolbyVisionProfileCapabilityInput!]!
+    "Whether the player applies HDR10+ information."
+    hdr10Plus: Boolean!
+    "Whether this entry applies to HLS delivery."
+    hls: Boolean!
+}
+
+"A codec profile that the player decodes, with the highest level and tier it accepts for that profile."
+input VideoCodecProfileCapabilityInput {
+    "The codec profile, which must belong to the entry's codec family."
+    profile: VideoCodecProfile!
+    "The highest codec level, written as the major level × 10 plus the minor level for every codec family: level 5.1 is 51."
+    maxLevel: Int!
+    "The highest codec tier. Required for HEVC and AV1 profiles, and absent for H.264 profiles, which have no tier."
+    maxTier: VideoCodecTier
+}
+
+"A Dolby Vision profile whose RPUs the player applies, with the highest Dolby Vision level it accepts for that profile."
+input DolbyVisionProfileCapabilityInput {
+    "The Dolby Vision profile. Profiles 5 and 8.x belong to HEVC entries, and profiles 10.x to AV1 entries."
+    profile: DolbyVisionProfile!
+    "The highest Dolby Vision level, which is separate from the codec level."
+    maxLevel: Int!
+}
+
+"One audio codec that the player decodes, with the most channels it accepts for that codec."
+input AudioCapabilityEntryInput {
+    "The audio codec."
+    codec: AudioCodec!
+    "The most channels that the player accepts for this codec."
+    maxChannels: Int!
+    "Whether this entry applies to HLS delivery."
+    hls: Boolean!
+}
+
+"A video codec family that a client can declare."
+enum VideoCodecFamily {
+    H264
+    HEVC
+    AV1
+}
+
+"A video codec profile. Each value belongs to the codec family that its prefix names."
+enum VideoCodecProfile {
+    H264_CONSTRAINED_BASELINE
+    H264_BASELINE
+    H264_MAIN
+    H264_EXTENDED
+    H264_HIGH
+    H264_HIGH_10
+    H264_HIGH_422
+    H264_HIGH_444_PREDICTIVE
+    HEVC_MAIN
+    HEVC_MAIN_10
+    HEVC_MAIN_STILL_PICTURE
+    HEVC_FORMAT_RANGE_EXTENSIONS
+    AV1_MAIN
+    AV1_HIGH
+    AV1_PROFESSIONAL
+}
+
+"The tier of an HEVC or AV1 stream. The High tier is above the Main tier."
+enum VideoCodecTier {
+    MAIN
+    HIGH
+}
+
+"A standard picture format that a player displays without a stream's advanced HDR information."
+enum DeclaredCompatibleBase {
+    "Standard dynamic range."
+    SDR
+    "SMPTE ST 2084, which covers HDR10 and PQ10."
+    PQ
+    "Hybrid log-gamma, ARIB STD-B67."
+    HLG
+}
+
+"A single-layer Dolby Vision profile. No value names profile 7, which needs dual-layer playback."
+enum DolbyVisionProfile {
+    PROFILE_5
+    PROFILE_8_1
+    PROFILE_8_4
+    PROFILE_10_0
+    PROFILE_10_1
+    PROFILE_10_4
+}
+
+"An audio codec that a client can declare."
+enum AudioCodec {
+    AAC
+    AC3
+    EAC3
+    OPUS
+    FLAC
+    ALAC
+}
+
+"A list of the capability declaration is empty where the declaration needs at least one value. The inputPath names the list."
+type CapabilityValuesRequiredError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"The capability declaration has no AAC audio capability entry that applies to HLS. The server's audio encode is AAC, so every declaration needs one."
+type HlsAacCapabilityRequiredError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"A list of the capability declaration holds more values than the server accepts. The server checks no value of that list."
+type CapabilityListTooLongError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+    "The most values that the list may hold."
+    maximum: Int!
+}
+
+"A maximum of the capability declaration is zero, negative, or not a finite number."
+type CapabilityMaximumInvalidError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"A codec profile or Dolby Vision profile belongs to another codec family than its video capability entry."
+type CapabilityProfileMismatchError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"A codec profile's maximum tier is absent for an HEVC or AV1 profile, or present for an H.264 profile, which has no tier."
+type VideoCodecTierInvalidError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
