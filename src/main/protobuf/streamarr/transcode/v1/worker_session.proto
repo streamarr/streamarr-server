@@ -185,6 +185,39 @@ message AudioDecision {
   optional string codec = 2;
   uint32 channels = 3;
   uint64 bitrate_bits_per_second = 4;
+  // The server may set this field on any job that encodes the chosen audio
+  // stream (AUDIO_MODE_TRANSCODE), whether or not the probe shows that stream
+  // ending early. A source that is shorter than its probe says is then padded
+  // inside the attempt. TranscodeExecution.advertised_end states where the
+  // padding stops.
+  //
+  // When the field is true, the worker appends digital silence to the chosen
+  // audio stream after the stream's last source sample and stops the stream at
+  // advertised_end. Digital silence is samples of value zero in the sample
+  // format, sample rate and channel layout that the encoder receives. The first
+  // silent sample directly follows the last source sample, with no gap and no
+  // overlap. The padding changes and drops no source sample: it adds no
+  // resampling, gain, dither, fade or crossfade. The encoder's input up to the
+  // stream's last source sample is therefore sample-identical to its input in
+  // the same encode without this field, and only digital silence follows it.
+  // A lossless encoder decodes to those same samples. A lossy encoder can code
+  // its last frames before the real end differently from the same encode
+  // without this field, because its lookahead sees the silence instead of the
+  // end of its input.
+  //
+  // When the attempt starts at or after the stream's last source sample, the
+  // stream carries only generated digital silence from the attempt's first
+  // media segment. That silence uses the codec, bitrate, sample rate and
+  // channel layout that an attempt starting before the stream's end would
+  // encode, so the attempt writes an initialization segment byte-identical to
+  // the variant's other initialization segments.
+  //
+  // When the field is false, the worker neither pads nor generates audio, and
+  // the job may omit advertised_end. When the field is true, the worker fails
+  // the attempt with JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION if the job does
+  // not encode the audio or omits advertised_end. A stream copy is never
+  // padded.
+  bool pad_with_silence_to_advertised_end = 6;
 }
 
 message SubtitleDecision {
@@ -532,6 +565,31 @@ message VideoDecision {
   // the initialization segment of an encode declares interlaced video, with or
   // without this field.
   Deinterlace deinterlace = 13;
+  // The server may set this field on any job that encodes video
+  // (VIDEO_MODE_ENCODE), whether or not the probe shows the chosen video stream
+  // ending early. A source that is shorter than its probe says is then padded
+  // inside the attempt. TranscodeExecution.advertised_end states where the
+  // padding stops.
+  //
+  // When the field is true, the worker repeats the last picture that its video
+  // filters produce from the source, after deinterlacing and scaling, at
+  // output_frame_rate, and stops the stream at advertised_end. No repeated
+  // picture passes through a filter again, so the deinterlacer sees the same
+  // frames and the same end of input as in the same encode without this field.
+  // The worker forces a keyframe at every media segment start, as for every
+  // encode, so every media segment after the video's end opens at a keyframe.
+  // The source frames are encoded as in the same encode without this field.
+  //
+  // When the attempt starts after the chosen video stream's last source frame,
+  // the worker still reads the source's last frames, produces the same last
+  // picture as an attempt that started before the end, and repeats it from
+  // the attempt's first media segment.
+  //
+  // When the field is false, the worker repeats no frame, and the job may omit
+  // advertised_end. When the field is true, the worker fails the attempt with
+  // JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION if the job does not encode video
+  // or omits advertised_end. A stream copy is never padded.
+  bool hold_last_frame_to_advertised_end = 14;
 }
 
 // This message tells the worker how to deinterlace the chosen video stream.
@@ -632,6 +690,19 @@ message TranscodeExecution {
   // decimal. Every encode requires positive numerator and denominator terms. A
   // job that copies the video carries none.
   Fraction output_frame_rate = 7;
+  // This field states where the variant's media playlist ends: the end of its
+  // last media segment, which is media_segment_count - 1, on the zero-based
+  // timeline of seek_position. The server sets it on every job that sets
+  // VideoDecision.hold_last_frame_to_advertised_end or
+  // AudioDecision.pad_with_silence_to_advertised_end, and every job attempt
+  // for the variant carries the same value. The worker writes no padded
+  // picture or padded audio frame whose presentation time lies at or after
+  // this position. The last padded picture keeps its full duration at
+  // output_frame_rate, and the last padded audio frame keeps the codec's full
+  // frame length, so a padded stream can end less than one frame after this
+  // position. The worker never shortens a sample to end exactly here, and
+  // padding never shortens or drops a source sample.
+  google.protobuf.Duration advertised_end = 8;
 }
 
 message VariantJob {
@@ -673,6 +744,59 @@ message JobAttemptFailed {
 
 message JobAttemptCompleted {
   Uuid job_attempt_id = 1;
+  // The worker sets this field exactly when the variant's last media segment
+  // that holds a source sample comes before the last advertised media segment,
+  // media_segment_count - 1. "Source ended early" is a report on a completed
+  // attempt, not a failure. A completed attempt without this field means that
+  // the source reached the last advertised media segment.
+  SourceEndedEarly source_ended_early = 2;
+  // The worker reports one entry for each chosen stream whose last source
+  // sample the attempt read: the chosen video stream and the chosen audio
+  // stream. It reports them on every completed attempt, whether or not the
+  // source ended early, so the server learns an end that the probe does not
+  // state, such as an audio stream that ends long before the video. The worker
+  // leaves out a stream whose last sample the attempt did not read, such as an
+  // audio stream that ended before the attempt's start.
+  repeated SourceStreamEnd stream_ends = 3;
+}
+
+// This message reports where the source ended in a job attempt whose source
+// ended before the variant's last advertised media segment.
+//
+// An attempt that sets VideoDecision.hold_last_frame_to_advertised_end
+// delivers every advertised media segment from start_sequence_number on. Its
+// media segments after last_segment_with_source_media hold only the held last
+// picture, silence for an audio stream that it pads, and no sample of an audio
+// stream that it copies. Any other attempt delivers no media segment after
+// last_segment_with_source_media. An attempt that starts after every source
+// sample still completes with this report, and never fails because it
+// produced no media segment.
+message SourceEndedEarly {
+  // The number of the variant's last media segment that holds a sample from
+  // the source rather than padding, counted like start_sequence_number. It is
+  // less than media_segment_count - 1. When the attempt starts after every
+  // source sample, the worker still names that segment, which then lies before
+  // start_sequence_number. A report without this field breaks the contract.
+  optional uint32 last_segment_with_source_media = 1;
+  // The worker lists the ProbeStreamInfo.index of each chosen stream that has
+  // a source sample whose presentation time lies at or after the end of
+  // last_segment_with_source_media's interval, so that no delivered media
+  // segment carries that sample. An attempt that holds the last video frame
+  // delivers every advertised media segment, so it carries every such sample
+  // and lists no stream. A listed stream means that the attempt left media
+  // out, as a stream copy that runs short can.
+  repeated uint32 stream_indexes_with_media_after_last_segment = 2;
+}
+
+// This message reports where one chosen source stream ended.
+message SourceStreamEnd {
+  // The stream's ProbeStreamInfo.index within the container.
+  optional uint32 stream_index = 1;
+  // The end of the stream's last source sample: its presentation time plus its
+  // duration, on the zero-based timeline of
+  // TranscodeExecution.seek_position. The worker observes it in the source and
+  // never takes it from the probe.
+  google.protobuf.Duration end_time = 2;
 }
 
 message JobAttemptStopped {
