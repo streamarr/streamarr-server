@@ -691,10 +691,12 @@ message TranscodeExecution {
   // session's segment length, not EXT-X-TARGETDURATION. Media segment N starts
   // at entry N x target_segment_duration_seconds on the zero-based timeline of
   // seek_position, and its interval runs to the next listed start or, for the
-  // last segment, to the end of the media. Every job attempt of the stream
-  // session carries the same list, and seek_position_seconds is the listed
-  // start of start_sequence_number. An empty list means the plain grid, on
-  // which segment N starts at slot N.
+  // last segment, to the end of the media. When advertised_end is set, the last
+  // segment's audio ends there, and a job whose advertised_end is at or before
+  // the last listed start fails with JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION.
+  // Every job attempt of the stream session carries the same list, and
+  // seek_position_seconds is the listed start of start_sequence_number. An
+  // empty list means the plain grid, on which segment N starts at slot N.
   //
   // A non-empty list holds exactly media_segment_count entries, starts with 0
   // and strictly increases; otherwise the worker fails the attempt with
