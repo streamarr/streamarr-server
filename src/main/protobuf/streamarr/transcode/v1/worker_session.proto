@@ -336,7 +336,9 @@ message VideoDecision {
   // video without the Annex B bitstream filter.
   bool copy_keeps_packet_bytes = 12;
   // The server sets this field only when it encodes an interlaced source. The
-  // worker deinterlaces before any other filter and writes progressive video.
+  // worker deinterlaces every frame with deinterlace.field_order, whatever each
+  // frame's flags say. It deinterlaces before any other filter and writes
+  // progressive video.
   Deinterlace deinterlace = 13;
   // When this field is true, the worker repeats the last filtered picture at
   // output_frame_rate up to TranscodeExecution.advertised_end. The server sets
@@ -620,10 +622,10 @@ message ProbeRequest {
 }
 
 // This message asks the worker to measure one chunk of a file's keyframe
-// intervals (ADR 0054). An audio packet without a presentation time uses its
-// decode time, for its interval and for BitrateScanChunkStream's times. The
-// worker fails the chunk with PROBE_FAILURE_INVALID_MEDIA when a measured
-// packet has neither time.
+// intervals (ADR 0054). Packets fall in intervals as StreamMeasurements says.
+// An audio packet without a presentation time uses its decode time, for its
+// interval and for BitrateScanChunkStream's times. The worker fails the chunk
+// with PROBE_FAILURE_INVALID_MEDIA when a measured packet has neither time.
 message BitrateScanChunk {
   // This field names the stream measurement version whose rules apply. It is
   // never zero.
@@ -642,10 +644,12 @@ message BitrateScanChunk {
   repeated sint64 presentation_time_deltas = 6;
   repeated sint64 decode_time_deltas = 7;
   // These fields hold the next chunk's first keyframe, where this chunk ends.
-  // The last chunk leaves them out.
+  // The last chunk leaves them out, and its last interval runs to the end of
+  // the file.
   optional sint64 end_presentation_time = 8;
   optional sint64 end_decode_time = 9;
   // This field is true for the chunk that holds the file's first keyframe.
+  // Packets before that keyframe fall in the chunk's first interval.
   bool first_chunk = 10;
 }
 
@@ -837,8 +841,9 @@ message ProbeStreamInfo {
   // pixel format.
   ChromaSubsampling chroma_subsampling = 14;
   // The worker reports this field for video streams only. It holds how far the
-  // display matrix rotates the picture counterclockwise, from -180 to 180 whole
-  // degrees. The worker leaves it out when the stream has no display matrix.
+  // display matrix rotates the picture counterclockwise, from -180 to 180
+  // degrees. The worker rounds to the nearest whole degree as FFmpeg does, so
+  // ffprobe's 89 becomes 90. It leaves the field out without a display matrix.
   optional sint32 rotation_degrees = 15;
   // The worker reports this field for video and audio streams only. It holds
   // the RFC 6381 codec string that a copy of the stream carries. The worker
@@ -1140,14 +1145,17 @@ message MeasuredStream {
   uint64 measured_duration = 6;
 }
 
-// This message reports the sizes of a file's video and audio streams. The
-// worker reports it only beside KeyframePositions, and each stream has exactly
-// keyframe_count keyframe intervals (ADR 0054). The worker leaves it out when
-// it cannot measure a stream or the parts would break their limits.
+// This message reports the sizes of a file's video and audio streams beside
+// KeyframePositions (ADR 0054). Each stream has keyframe_count intervals. A
+// chosen video packet falls in the interval of its decode order, and an audio
+// packet in the interval of its presentation time. Packets before the first
+// keyframe fall in the first interval. The last interval runs to the end of
+// the file. The worker leaves the message out when it cannot measure a stream.
 message StreamMeasurements {
   StreamMeasurementSource source = 1;
   // This field lists the chosen video stream and every audio stream, each
-  // once.
+  // once. It may also list another video stream, whose packets fall in the
+  // interval of their decode time.
   repeated MeasuredStream streams = 2;
 }
 
