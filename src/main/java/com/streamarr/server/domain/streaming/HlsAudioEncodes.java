@@ -94,8 +94,9 @@ public final class HlsAudioEncodes {
     return Optional.of(transcode(codec, channels));
   }
 
-  // A track over a maximum of 3 or 4 has no layout of its own at that count, so it encodes in
-  // stereo; over a maximum of 5 it encodes in 5.0, and over 7 in 5.1 (ADR 0050).
+  // A track with more channels than a maximum of 3 or 4 has no layout of its own at that count, so
+  // it encodes in stereo. Over a maximum of 5, it encodes in 5.0. Over a maximum of 7, it encodes
+  // in 5.1 (ADR 0050).
   private static int channelsWithin(int maximum, int normalizedChannels) {
     if (normalizedChannels <= maximum) {
       return normalizedChannels;
