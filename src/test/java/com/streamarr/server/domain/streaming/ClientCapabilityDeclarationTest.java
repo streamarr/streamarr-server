@@ -2,6 +2,7 @@ package com.streamarr.server.domain.streaming;
 
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.aacEntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -135,6 +136,20 @@ class ClientCapabilityDeclarationTest {
         profile.name().startsWith("PROFILE_10") ? ProbedCodecFamily.AV1 : ProbedCodecFamily.HEVC;
 
     assertThat(profile.codecFamily()).isEqualTo(expected);
+  }
+
+  @Test
+  @DisplayName("Should refuse to judge a copy when the caller passes none")
+  void shouldRefuseToJudgeACopyWhenTheCallerPassesNone() {
+    var declaration =
+        ClientCapabilityDeclaration.builder()
+            .video(List.of(hevcEntryBuilder().build()))
+            .audio(List.of(aacEntryBuilder().build()))
+            .build();
+
+    assertThatThrownBy(() -> declaration.acceptsHlsCopy(null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("copy");
   }
 
   static Stream<String> requiredDeclarationLists() {
