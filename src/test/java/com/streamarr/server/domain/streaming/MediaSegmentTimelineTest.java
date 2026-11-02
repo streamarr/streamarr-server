@@ -81,6 +81,19 @@ class MediaSegmentTimelineTest {
     assertThat(timeline.mediaSegmentIndexBefore(2, Duration.ofSeconds(24))).isEqualTo(-2);
   }
 
+  // The last segment of 2 m 5.5 s, segment 20, lasts 5.5 s but opens in a whole 6 s slot.
+  @ParameterizedTest
+  @CsvSource({"0, 1, PT6S", "19, 2, PT12S", "20, 1, PT6S"})
+  @DisplayName(
+      "Should span one whole target segment duration for each segment when measuring their grid"
+          + " slots")
+  void shouldSpanOneWholeTargetSegmentDurationForEachSegmentWhenMeasuringTheirGridSlots(
+      int firstIndex, int segmentCount, Duration expectedSpan) {
+    var timeline = new MediaSegmentTimeline.PlainGrid(Duration.parse("PT2M5.5S"), SIX_SECONDS);
+
+    assertThat(timeline.slotSpan(firstIndex, segmentCount)).isEqualTo(expectedSpan);
+  }
+
   @Test
   @DisplayName("Should reject finding a media segment before another without a distance")
   void shouldRejectFindingAMediaSegmentBeforeAnotherWithoutADistance() {
