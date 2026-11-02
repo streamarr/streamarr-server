@@ -13,6 +13,7 @@ import com.streamarr.server.exceptions.TranscodeLimitReachedException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.mutation.Outcome;
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Instant;
 import java.util.Collection;
@@ -22,6 +23,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 
@@ -30,6 +32,8 @@ import lombok.extern.slf4j.Slf4j;
 public class HlsStreamingService implements StreamingService {
 
   private static final String CAPACITY_REFUSALS_METRIC = "streamarr.streaming.capacity_refusals";
+  private static final String MISSING_ENCODER_SESSIONS_METRIC =
+      "streamarr.streaming.missing_encoder_sessions";
 
   private final MediaFileRepository mediaFileRepository;
   private final TranscodeExecutor transcodeExecutor;
@@ -77,8 +81,8 @@ public class HlsStreamingService implements StreamingService {
 
     // Without a connected worker no encoder is verified. That moment must not read as faulty
     // workers and admit a copy over the viewer's limits once a worker connects.
-    var verifiedFamilies = transcodeExecutor.verifiedVideoCodecFamilies();
-    if (verifiedFamilies.isEmpty()) {
+    var verifiedWorkers = transcodeExecutor.verifiedVideoCodecFamiliesByWorker();
+    if (verifiedWorkers.isEmpty()) {
       return Outcome.rejected(refuseForLackOfCapacity(CapacityRefusal.NO_CONNECTED_WORKER));
     }
 
@@ -94,7 +98,7 @@ public class HlsStreamingService implements StreamingService {
             .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())
             .hardwareEncodableVideoCodecFamilies(
                 transcodeExecutor.hardwareEncodableVideoCodecFamilies())
-            .verifiedVideoCodecFamilies(verifiedFamilies.get())
+            .verifiedVideoCodecFamilies(codecFamiliesOf(verifiedWorkers))
             .viewerLimits(ViewerLimits.of(options))
             .build();
     var candidate = transcodeDecisionService.decide(request);
@@ -221,6 +225,10 @@ public class HlsStreamingService implements StreamingService {
 
   private Optional<TranscodeDecision> stoppableEncodeCandidate(
       TranscodeDecisionRequest request, Set<String> excludedFamilies) {
+    if (!transcodeExecutor.isHealthy()) {
+      return Optional.empty();
+    }
+
     return verifiedEncodeCandidate(
             request.toBuilder().excludedEncodeCodecFamilies(excludedFamilies).build())
         .filter(decision -> encodeRejection(request, decision).isEmpty());
@@ -231,29 +239,66 @@ public class HlsStreamingService implements StreamingService {
       return refuseForLackOfCapacity(CapacityRefusal.NO_CONNECTED_WORKER);
     }
 
+    // Judged from the stream session's read of the connected workers alone, so a worker that
+    // disconnects during the refusal neither hides its busy encoder nor counts as missing one.
     if (verifiedEncodeCandidate(request).isPresent()) {
       return refuseForLackOfCapacity(CapacityRefusal.NO_ENCODER_WITH_FREE_SLOT);
     }
 
+    encodeCandidateMissingAnEncoder(request).ifPresent(this::countMissingEncoderSession);
     return new CreateStreamSessionRejection.NoEligibleVideoFormat();
+  }
+
+  // The encode that connected workers would run if each had an encoder for every codec family
+  // that the server encodes. No worker has an encoder for its codec family, or the session would
+  // have had a verified encode candidate.
+  private Optional<TranscodeDecision> encodeCandidateMissingAnEncoder(
+      TranscodeDecisionRequest request) {
+    return encodeCandidate(request, Set.copyOf(EncodeCodecProfile.codecFamilyNames()))
+        .filter(decision -> encodeRejection(request, decision).isEmpty());
+  }
+
+  private void countMissingEncoderSession(TranscodeDecision decision) {
+    Counter.builder(MISSING_ENCODER_SESSIONS_METRIC)
+        .description(
+            "Stream sessions that need an encode in a codec family for which no connected worker"
+                + " has a worker-verified encoder")
+        .tag("codec_family", decision.videoCodecFamily())
+        .register(meterRegistry)
+        .increment();
   }
 
   // The encode that a connected worker's verified encoder could run once it had a free slot. Busy
   // workers' hardware encoders count too, so the encode is the one that the server would decide
   // once those workers had a free slot.
   private Optional<TranscodeDecision> verifiedEncodeCandidate(TranscodeDecisionRequest request) {
-    if (!transcodeExecutor.isHealthy()
-        || request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
+    return encodeCandidate(
+        request.toBuilder()
+            .hardwareEncodableVideoCodecFamilies(
+                transcodeExecutor.verifiedHardwareVideoCodecFamilies())
+            .build(),
+        request.verifiedVideoCodecFamilies());
+  }
+
+  // The encode that workers could run if they encoded exactly these codec families. It reads no
+  // worker state, so a caller decides from the workers that it has read.
+  private Optional<TranscodeDecision> encodeCandidate(
+      TranscodeDecisionRequest request, Set<String> encodableVideoCodecFamilies) {
+    if (request.videoFormatConstraint() == VideoFormatConstraint.COPY_ONLY) {
       return Optional.empty();
     }
 
     return transcodeDecisionService.decide(
         request.toBuilder()
             .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
-            .encodableVideoCodecFamilies(request.verifiedVideoCodecFamilies())
-            .hardwareEncodableVideoCodecFamilies(
-                transcodeExecutor.verifiedHardwareVideoCodecFamilies())
+            .encodableVideoCodecFamilies(encodableVideoCodecFamilies)
             .build());
+  }
+
+  private static Set<String> codecFamiliesOf(List<WorkerVerifiedCodecFamilies> workers) {
+    return workers.stream()
+        .flatMap(worker -> worker.codecFamilies().stream())
+        .collect(Collectors.toUnmodifiableSet());
   }
 
   private CreateStreamSessionRejection refuseForLackOfCapacity(CapacityRefusal refusal) {

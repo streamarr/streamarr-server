@@ -13,6 +13,7 @@ import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.ProbeCapacity;
 import com.streamarr.server.services.streaming.SegmentPublication;
+import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.transcode.v1.BackgroundProbeCapacityControl;
@@ -161,6 +162,7 @@ final class LiveWorkerConnectionRegistry {
     }
     warnIfNoBackgroundProbeCapacity(workerId, registration.getBackgroundProbeCapacity());
     capacityMeters.connected(workerId, connection);
+    warnIfMissingEncoders(workerId, connection);
     if (replaced == null) {
       log.info(
           "Worker {} connected with {} playback slots, {} playback probes, {} background probes"
@@ -182,6 +184,22 @@ final class LiveWorkerConnectionRegistry {
         workerId,
         abandonedJobs.size());
     return connection.workerSessionId();
+  }
+
+  private static void warnIfMissingEncoders(UUID workerId, WorkerConnection connection) {
+    var missing =
+        new WorkerVerifiedCodecFamilies(workerId, connection.verifiedVideoCodecFamilies())
+            .missingCodecFamilies();
+    if (missing.isEmpty()) {
+      return;
+    }
+
+    log.warn(
+        "Worker {} has no worker-verified encoder for codec families {}, which the server encodes;"
+            + " run the pinned worker image or rebuild its FFmpeg with them, then restart the"
+            + " worker",
+        workerId,
+        missing);
   }
 
   private static void warnIfNoBackgroundProbeCapacity(UUID workerId, int backgroundProbeCapacity) {
@@ -489,16 +507,15 @@ final class LiveWorkerConnectionRegistry {
     return connectionsFor(sourceNamespaceId).findAny().isPresent();
   }
 
-  Optional<Set<String>> verifiedVideoCodecFamilies(UUID sourceNamespaceId) {
-    var connected = connectionsFor(sourceNamespaceId).toList();
-    if (connected.isEmpty()) {
-      return Optional.empty();
-    }
-
-    return Optional.of(
-        connected.stream()
-            .flatMap(connection -> connection.countedEncoders.keySet().stream())
-            .collect(Collectors.toUnmodifiableSet()));
+  List<WorkerVerifiedCodecFamilies> verifiedVideoCodecFamiliesByWorker(UUID sourceNamespaceId) {
+    var sourceNamespace = toProto(sourceNamespaceId);
+    return connections.entrySet().stream()
+        .filter(entry -> entry.getValue().canAccessSourceNamespace(sourceNamespace))
+        .map(
+            entry ->
+                new WorkerVerifiedCodecFamilies(
+                    entry.getKey(), entry.getValue().countedEncoders.keySet()))
+        .toList();
   }
 
   boolean hasProbeWorker(UUID sourceNamespaceId, int probeVersion) {
@@ -663,7 +680,8 @@ final class LiveWorkerConnectionRegistry {
 
   void checkReportedEncoderBackend(UUID workerId, UUID workerSessionId, JobAttemptStarted started) {
     currentConnection(workerId, workerSessionId)
-        .ifPresent(connection -> connection.checkReportedEncoderBackend(started));
+        .filter(connection -> connection.tryWithdrawMismatchedEncoder(started))
+        .ifPresent(connection -> warnIfMissingEncoders(workerId, connection));
   }
 
   private Optional<WorkerConnection> currentConnection(UUID workerId, UUID workerSessionId) {
@@ -1200,6 +1218,11 @@ final class LiveWorkerConnectionRegistry {
       return grantedProbeCapacities.get().backgroundProbeCapacityControl();
     }
 
+    @Override
+    public Set<String> verifiedVideoCodecFamilies() {
+      return Set.copyOf(countedEncoders.keySet());
+    }
+
     private synchronized void changeProbeCapacity(ProbeCapacityChanged changed) {
       grantedProbeCapacities.updateAndGet(capacities -> capacities.changedTo(changed));
     }
@@ -1263,16 +1286,16 @@ final class LiveWorkerConnectionRegistry {
 
     // Dispatch sends an encode only to a worker that advertises the variant's pinned backend, so
     // the encoder that the attempt was dispatched for is the pin.
-    private synchronized void checkReportedEncoderBackend(JobAttemptStarted started) {
+    private synchronized boolean tryWithdrawMismatchedEncoder(JobAttemptStarted started) {
       var jobAttemptId = fromProto(started.getJobAttemptId());
       var job = activeVariants.get(jobAttemptId);
       if (job == null) {
-        return;
+        return false;
       }
 
       var attempt = encodeAttempts.get(jobAttemptId);
       if (attempt == null) {
-        return;
+        return false;
       }
 
       var pinned = attempt.encoder().backend();
@@ -1283,13 +1306,13 @@ final class LiveWorkerConnectionRegistry {
               .flatMap(RemoteEncoderBackendMapper::encoderBackend);
       if (reported.equals(Optional.of(pinned))) {
         attempt.backendConfirmed().complete(true);
-        return;
+        return false;
       }
 
       var stopped = tryStop(jobAttemptId);
       // The worker runs another encoder than it advertised, so no later attempt may rely on the
       // advertisement, including a replacement attempt of this variant.
-      countedEncoders.remove(pinned.codecFamily());
+      var withdrawn = countedEncoders.remove(pinned.codecFamily()) != null;
       encoderBackendMismatches.increment();
       log.warn(
           "Stopped job attempt {} for stream session {} variant {} because the worker reported"
@@ -1300,6 +1323,7 @@ final class LiveWorkerConnectionRegistry {
           reported.map(EncoderBackend::encoder).orElse("none"),
           pinned.encoder(),
           stopped);
+      return withdrawn;
     }
 
     // Unsynchronized: the start report that releases the wait takes this connection's monitor.

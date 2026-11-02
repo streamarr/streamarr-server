@@ -72,6 +72,18 @@ class ActuatorExposureIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should serve the transcoding health group with its status alone when queried")
+  void shouldServeTranscodingHealthGroupWithItsStatusAloneWhenQueried() throws Exception {
+    // No worker connects in this context, so the group reports the executor DOWN.
+    mockMvc
+        .perform(get("/actuator/health/transcoding"))
+        .andExpect(status().isServiceUnavailable())
+        .andExpect(jsonPath("$.status").value("DOWN"))
+        .andExpect(jsonPath("$.components").doesNotExist())
+        .andExpect(jsonPath("$.details").doesNotExist());
+  }
+
+  @Test
   @DisplayName("Should not serve heap dump when actuator queried")
   void shouldNotServeHeapDumpWhenActuatorQueried() throws Exception {
     mockMvc.perform(get("/actuator/heapdump")).andExpect(status().isNotFound());

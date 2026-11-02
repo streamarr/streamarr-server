@@ -1,6 +1,8 @@
 package com.streamarr.server.services.streaming.remote;
 
 import com.google.protobuf.Duration;
+import com.streamarr.server.domain.streaming.EncodeCodecProfile;
+import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.transcode.v1.BackgroundProbeCapacityControl;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import io.micrometer.core.instrument.DistributionSummary;
@@ -13,14 +15,16 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
 /**
  * Reports each connected worker's playback slots and probe capacities, the work running against
- * them, how the worker sets its background probe capacity, and how fast it produces media segments.
- * A worker session's meters replace those of the session it replaces, and leave when that session
+ * them, how the worker sets its background probe capacity, how fast it produces media segments, and
+ * each codec family that the server encodes and the worker has no worker-verified encoder for. A
+ * worker session's meters replace those of the session it replaces, and leave when that session
  * leaves.
  */
 @RequiredArgsConstructor
@@ -35,6 +39,7 @@ final class WorkerCapacityMeters {
   private static final String PLAYBACK_SLOTS_IN_USE_METRIC =
       "streamarr.streaming.playback_slots_in_use";
   private static final String PRODUCTION_SPEED_METRIC = "streamarr.streaming.production_speed";
+  private static final String MISSING_ENCODER_METRIC = "streamarr.streaming.missing_encoder";
 
   /** One worker session's playback slots, probe capacities and the work running against them. */
   interface Session {
@@ -48,6 +53,9 @@ final class WorkerCapacityMeters {
     int runningProbes(ProbeKind kind);
 
     BackgroundProbeCapacityControl backgroundProbeCapacityControl();
+
+    /** The video codec families that the worker encodes with a worker-verified encoder. */
+    Set<String> verifiedVideoCodecFamilies();
   }
 
   private final MeterRegistry meterRegistry;
@@ -93,6 +101,7 @@ final class WorkerCapacityMeters {
             .tag(WORKER_TAG, workerId.toString())
             .tag("control", controlTag(session.backgroundProbeCapacityControl()))
             .register(meterRegistry));
+    meters.addAll(missingEncoderGauges(workerId, session));
     var productionSpeed =
         DistributionSummary.builder(PRODUCTION_SPEED_METRIC)
             .description("Media seconds that the worker produced per second of production time")
@@ -148,6 +157,30 @@ final class WorkerCapacityMeters {
     }
 
     previous.meters().forEach(meterRegistry::remove);
+  }
+
+  private List<Meter> missingEncoderGauges(UUID workerId, Session session) {
+    return EncodeCodecProfile.codecFamilyNames().stream()
+        .<Meter>map(
+            codecFamily ->
+                Gauge.builder(
+                        MISSING_ENCODER_METRIC,
+                        session,
+                        reported -> isMissingEncoder(workerId, reported, codecFamily) ? 1 : 0)
+                    .description(
+                        "1 while the worker has no worker-verified encoder for a codec family that"
+                            + " the server encodes, otherwise 0")
+                    .tag(WORKER_TAG, workerId.toString())
+                    .tag("codec_family", codecFamily)
+                    .strongReference(true)
+                    .register(meterRegistry))
+        .toList();
+  }
+
+  private static boolean isMissingEncoder(UUID workerId, Session session, String codecFamily) {
+    return new WorkerVerifiedCodecFamilies(workerId, session.verifiedVideoCodecFamilies())
+        .missingCodecFamilies()
+        .contains(codecFamily);
   }
 
   private static String controlTag(BackgroundProbeCapacityControl control) {

@@ -6,6 +6,7 @@ import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.ProbeCapacity;
 import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.VariantJob;
 import io.grpc.ServerInterceptors;
@@ -13,6 +14,7 @@ import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -205,9 +207,10 @@ public final class WorkerSessionServer
     return workerConnections.hasConnectedWorker(sourceNamespaceId);
   }
 
-  public synchronized Optional<Set<String>> verifiedVideoCodecFamilies(UUID sourceNamespaceId) {
+  public synchronized List<WorkerVerifiedCodecFamilies> verifiedVideoCodecFamiliesByWorker(
+      UUID sourceNamespaceId) {
     requireStarted();
-    return workerConnections.verifiedVideoCodecFamilies(sourceNamespaceId);
+    return workerConnections.verifiedVideoCodecFamiliesByWorker(sourceNamespaceId);
   }
 
   /** Whether a connected worker can read the source namespace and probe at the version. */

@@ -117,6 +117,8 @@ These metrics report the same facts:
 * `streamarr.streaming.playback_slots` and `streamarr.streaming.playback_slots_in_use` report each worker's playback slots and the job attempts that use them. They carry the `worker` tag.
 * `streamarr.streaming.production_speed` reports the media seconds that a worker produced per second of production time, for each media segment it uploads. It carries the `worker` tag.
 * `streamarr.streaming.capacity_refusals` counts the stream sessions refused for lack of capacity. Its `cause` tag is `no_connected_worker`, `no_free_worker_slot`, `no_free_configured_transcode_slot`, or `no_encoder_with_free_slot`.
+* `streamarr.streaming.missing_encoder` is `1` while a connected worker has no worker-verified encoder for a codec family that the server encodes, and `0` otherwise. It carries the `worker` tag and a `codec_family` tag of `h264` or `av1`. A worker's series leave when it disconnects. See <<_workers_missing_an_encoder>>.
+* `streamarr.streaming.missing_encoder_sessions` counts the stream sessions that need an encode in a codec family for which no connected worker has a worker-verified encoder. Its `codec_family` tag is `h264` or `av1`: the codec family that the server would encode the session in. `createStreamSession` returns `NoEligibleVideoFormatError` for such a session. See <<_workers_missing_an_encoder>>.
 
 The `observability` profile exports these metrics to the OpenTelemetry collector, as the observability section of `docs/dev-setup.adoc` describes.
 Under Docker Compose, Prometheus stores them, as <<_docker_compose>> describes.
@@ -175,6 +177,35 @@ The server still dispatches through the worker session using the advertised capa
 Keep worker availability out of the server's liveness and readiness groups.
 A server with zero workers must remain reachable so workers can connect.
 The Istio policy restricts only the worker port. HTTP and Kubernetes health probes retain their existing mesh policies.
+
+=== Workers missing an encoder
+
+The server encodes video as H.264 and AV1, and every worker image ships libx264 and libsvtav1.
+A connected worker without a worker-verified encoder for one of those codec families is broken.
+The server's `transcoding` health group reports that a worker is broken, but not which one.
+The group, at `/actuator/health/transcoding` on port `8080`, holds only the transcode executor and shows only its status, like every other health group.
+It answers `503` with status `DOWN` while no connected worker can read the source namespace.
+It answers `503` with status `DEGRADED` while a connected worker lacks such an encoder.
+A missing encoder alone leaves the aggregate `/actuator/health` at `UP`, because `DEGRADED` ranks below `UP` there.
+
+Port `8080` serves health without authentication and may face the internet, so health names no worker.
+To find the worker, read the `streamarr.streaming.missing_encoder` gauge or the server's log:
+
+* The gauge is `1` for each connected worker and codec family that the worker lacks, with the worker's UUID in its `worker` tag and the codec family in its `codec_family` tag.
+Like the server's other metrics, the gauge stays off port `8080`: the server refuses every actuator endpoint there except health.
+* When such a worker connects, the server logs a warning that names the worker's UUID and the codec families that it lacks.
+The server logs the warning again when a start report withdraws one of the worker's encoders.
+
+The gauge counts every connected worker. The health group counts only the workers that can read the server's source namespace, which are the workers that the server dispatches to.
+
+Each stream session that the missing encoder refuses increments `streamarr.streaming.missing_encoder_sessions`.
+A busy worker or no connected worker never counts there: the server refuses those sessions for lack of capacity instead.
+
+A worker counts an encoder only when the encoder's test encode at worker startup succeeded.
+A software encoder then always counts. A hardware encoder counts only when it is keyframe-verified.
+To fix the worker, run the worker image pinned in `worker-image.env`, or rebuild the worker's FFmpeg with the missing encoder.
+The worker's `FFmpeg capabilities:` line lists its encoder backends, as <<_confirm_gpu_encoding>> describes.
+The worker runs its test encodes again only when it restarts, so restart it after the fix.
 
 == Filename encoding
 

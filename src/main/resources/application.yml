@@ -97,6 +97,15 @@ management:
               degraded: 503
               down: 503
               out-of-service: 503
+        # Status only, like every group: the API listener serves health and may face the internet,
+        # so worker ids stay in the missing-encoder metric and the server's log.
+        transcoding:
+          include: transcodeExecutor
+          status:
+            http-mapping:
+              degraded: 503
+              down: 503
+              out-of-service: 503
 
 tmdb:
   api:
