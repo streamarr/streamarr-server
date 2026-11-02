@@ -600,7 +600,8 @@ class TranscodeWorkerContractTest {
   void
       shouldCarryTheKeyframeToReadFromApartFromTheFirstSegmentStartWhenHoldingAttemptStartsAfterVideoEnd()
           throws Exception {
-    var lastKeyframeDecodeTime = Duration.newBuilder().setSeconds(60).setNanos(60_000_000);
+    // The video's last keyframe is at 60.06 s, so the attempt reads from the keyframe before it.
+    var keyframeBeforeLastKeyframe = Duration.newBuilder().setSeconds(54).setNanos(54_000_000);
     var job =
         VariantJob.newBuilder()
             .setDecision(
@@ -613,14 +614,14 @@ class TranscodeWorkerContractTest {
                 TranscodeExecution.newBuilder()
                     .setStartSequenceNumber(11)
                     .setSeekPositionSeconds(66)
-                    .setSeekPosition(lastKeyframeDecodeTime)
+                    .setSeekPosition(keyframeBeforeLastKeyframe)
                     .setMediaSegmentCount(14)
                     .setAdvertisedEnd(Duration.newBuilder().setSeconds(84)))
             .build();
 
     var decoded = VariantJob.parseFrom(job.toByteArray()).getExecution();
 
-    assertThat(decoded.getSeekPosition()).isEqualTo(lastKeyframeDecodeTime.build());
+    assertThat(decoded.getSeekPosition()).isEqualTo(keyframeBeforeLastKeyframe.build());
     assertThat(decoded.getSeekPositionSeconds()).isEqualTo(66);
     assertThat(decoded.getStartSequenceNumber()).isEqualTo(11);
   }

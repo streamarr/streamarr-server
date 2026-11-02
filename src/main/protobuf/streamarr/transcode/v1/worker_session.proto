@@ -229,7 +229,11 @@ message AudioDecision {
   //
   // The worker fails the attempt with JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION
   // when a job that copies or encodes audio omits the field, or when a job
-  // whose mode is AUDIO_MODE_NONE sets it.
+  // whose mode is AUDIO_MODE_NONE sets it. The server sets the field before
+  // the pinned worker image refuses a job without it. Streamarr has no
+  // production instances, so this rule makes no provision for a worker that
+  // refuses the omission beside a server that omits the field, as ADR 0037
+  // decides for the segment list.
   optional uint32 stream_index = 7;
 }
 
@@ -699,23 +703,31 @@ message TranscodeExecution {
   // For an attempt that sets VideoDecision.hold_last_frame_to_advertised_end
   // and whose start_sequence_number is above zero, the server sends the decode
   // time of the source keyframe that the attempt reads from, as ADR 0037's
-  // decode-only early-start seek decides. That keyframe is the chosen video
-  // stream's last stored keyframe whose presentation time lies at or before
-  // the start of the attempt's first media segment minus 0.5 s, or the first
-  // stored keyframe when none does. The attempt's first media segment still
-  // starts at seek_position_seconds. The worker reads from the keyframe with
-  // -noaccurate_seek and decodes and filters the pictures before
-  // seek_position_seconds, but encodes none of them, so the encoder receives
-  // the same pictures from that start on as in an attempt that started
-  // earlier. When the attempt starts after the video's last source frame, the
-  // keyframe is the video's last stored keyframe. The worker then reads the
-  // video's last frames from the source, even an MPEG-TS source without an
-  // index or a file shorter than its container index states, and holds the
-  // last picture. The stored keyframe positions hold only keyframes that the
-  // source contains, because ADR 0032 trusts a container index only when the
-  // probe can read the last keyframe that the index lists. When the server
-  // stores no keyframe positions for the source, it omits the field, and the
-  // worker seeks to seek_position_seconds.
+  // decode-only early-start seek decides. Let T be the earlier of the start of
+  // the attempt's first media segment and the presentation time of the chosen
+  // video stream's last stored keyframe. The keyframe is the video's last
+  // stored keyframe whose presentation time lies at or before T minus 0.5 s,
+  // or the first stored keyframe when none does. The attempt's first media
+  // segment still starts at seek_position_seconds. The worker reads from the
+  // keyframe with -noaccurate_seek and decodes and filters the pictures before
+  // seek_position_seconds, but encodes none of them. The filters therefore see
+  // at least 0.5 s of pictures before the attempt's first encoded picture, and
+  // before the video's last stored keyframe when the attempt starts after it,
+  // so a deinterlacer produces the same pictures, the held last picture
+  // included, as in an attempt that started earlier.
+  //
+  // The stored keyframe positions hold only keyframes that the source
+  // contains, because ADR 0032 trusts a container index only when the probe
+  // can read the last keyframe that the index lists. So an attempt that starts
+  // after the video's last source frame reads the video's last frames, even
+  // from an MPEG-TS source without an index or a file shorter than its
+  // container index states. Until ADR 0032's keyframe scan of such a source
+  // finishes, the server stores no keyframe positions for it, and sends
+  // instead a position a fixed read-back before seek_position_seconds, as ADR
+  // 0037 decides. When the worker decodes no picture of the chosen video
+  // stream from that position, because the position lies past the source's
+  // data or past its last keyframe, the attempt has no picture to hold, and
+  // the worker fails it with JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED.
   //
   // This version of the server sets the field for no other attempt.
   google.protobuf.Duration seek_position = 6;
@@ -806,7 +818,10 @@ message JobAttemptCompleted {
 // stream that it copies. Any other attempt delivers no media segment after
 // last_segment_with_source_media. An attempt that starts after every source
 // sample still completes with this report, and never fails because it
-// produced no media segment.
+// produced no media segment. The exception is an attempt whose seek reads no
+// packet of the chosen video stream, or that holds the last frame and decodes
+// no picture, as TranscodeExecution.seek_position describes: the worker fails
+// it with JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED.
 message SourceEndedEarly {
   // The number of the variant's last media segment that holds a sample from
   // the source rather than padding, counted like start_sequence_number. It is
