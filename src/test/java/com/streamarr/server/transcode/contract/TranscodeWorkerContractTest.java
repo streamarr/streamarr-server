@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor.Type;
 import com.google.protobuf.Duration;
+import com.google.protobuf.Timestamp;
 import com.streamarr.transcode.v1.AudioDecision;
 import com.streamarr.transcode.v1.AudioMode;
 import com.streamarr.transcode.v1.BitrateScanChunk;
@@ -30,6 +31,7 @@ import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.SourceEndedEarly;
+import com.streamarr.transcode.v1.SourceSnapshot;
 import com.streamarr.transcode.v1.SourceStreamEnd;
 import com.streamarr.transcode.v1.StartVariantCommand;
 import com.streamarr.transcode.v1.TranscodeDecision;
@@ -628,6 +630,25 @@ class TranscodeWorkerContractTest {
 
   @Test
   @DisplayName(
+      "Should carry the source snapshot that the stream session's probe read when a job is sent")
+  void shouldCarryTheSourceSnapshotThatTheStreamSessionProbeReadWhenJobIsSent() throws Exception {
+    var modifiedAt = Timestamp.newBuilder().setSeconds(1_793_000_000L).setNanos(123_456_789);
+    var job =
+        VariantJob.newBuilder()
+            .setSourceSnapshot(
+                SourceSnapshot.newBuilder().setSizeBytes(8_589_934_592L).setModifiedAt(modifiedAt))
+            .build();
+
+    var decoded = VariantJob.parseFrom(job.toByteArray());
+
+    assertThat(decoded.hasSourceSnapshot()).isTrue();
+    assertThat(decoded.getSourceSnapshot().getSizeBytes()).isEqualTo(8_589_934_592L);
+    assertThat(decoded.getSourceSnapshot().getModifiedAt()).isEqualTo(modifiedAt.build());
+    assertThat(VariantJob.getDefaultInstance().hasSourceSnapshot()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
       "Should name the chosen audio stream by its container index when a job copies or encodes the audio")
   void shouldNameTheChosenAudioStreamByItsContainerIndexWhenJobCopiesOrEncodesTheAudio()
       throws Exception {
@@ -737,6 +758,8 @@ class TranscodeWorkerContractTest {
     var hold = VideoDecision.getDescriptor().findFieldByName("hold_last_frame_to_advertised_end");
     var pad = AudioDecision.getDescriptor().findFieldByName("pad_with_silence_to_advertised_end");
     var audioStreamIndex = AudioDecision.getDescriptor().findFieldByName("stream_index");
+    var sourceSnapshot = VariantJob.getDescriptor().findFieldByName("source_snapshot");
+    var snapshot = SourceSnapshot.getDescriptor();
     var advertisedEnd = TranscodeExecution.getDescriptor().findFieldByName("advertised_end");
     var completed = JobAttemptCompleted.getDescriptor();
     var report = SourceEndedEarly.getDescriptor();
@@ -750,6 +773,12 @@ class TranscodeWorkerContractTest {
     assertThat(audioStreamIndex.getNumber()).isEqualTo(7);
     assertThat(audioStreamIndex.getType()).isEqualTo(Type.UINT32);
     assertThat(audioStreamIndex.hasPresence()).isTrue();
+    assertThat(sourceSnapshot.getNumber()).isEqualTo(8);
+    assertThat(snapshot.findFieldByName("size_bytes").getNumber()).isEqualTo(1);
+    assertThat(snapshot.findFieldByName("size_bytes").getType()).isEqualTo(Type.UINT64);
+    assertThat(snapshot.findFieldByName("modified_at").getNumber()).isEqualTo(2);
+    assertThat(snapshot.findFieldByName("modified_at").getMessageType())
+        .isEqualTo(Timestamp.getDescriptor());
     assertThat(advertisedEnd.getNumber()).isEqualTo(8);
     assertThat(advertisedEnd.getMessageType()).isEqualTo(Duration.getDescriptor());
     assertThat(completed.findFieldByName("source_ended_early").getNumber()).isEqualTo(2);

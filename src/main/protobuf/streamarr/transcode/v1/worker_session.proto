@@ -6,6 +6,7 @@ syntax = "proto3";
 package streamarr.transcode.v1;
 
 import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
 
 option java_multiple_files = true;
 option java_outer_classname = "WorkerSessionProto";
@@ -764,6 +765,20 @@ message VariantJob {
   TranscodeDecision decision = 5;
   VariantSpec variant = 6;
   TranscodeExecution execution = 7;
+  // The server sets this field on every job. It holds the source snapshot of
+  // the probe outcome that the stream session was built from (ADR 0032): the
+  // source file's size and modification time. JobAttemptCompleted.stream_ends
+  // belong to that snapshot.
+  SourceSnapshot source_snapshot = 8;
+}
+
+// This message identifies one version of a source file by its size and
+// modification time, as ADR 0032's source snapshot does. Two snapshots are
+// equal only when both fields are equal, the modification time to the
+// nanosecond.
+message SourceSnapshot {
+  uint64 size_bytes = 1;
+  google.protobuf.Timestamp modified_at = 2;
 }
 
 message JobAttemptStarted {
@@ -805,6 +820,16 @@ message JobAttemptCompleted {
   // state, such as an audio stream that ends long before the video. The worker
   // leaves out a stream whose last sample the attempt did not read, such as an
   // audio stream that ended before the attempt's start.
+  //
+  // The end times belong to the source snapshot that the attempt read. The
+  // worker reads the source's size and modification time when it opens the
+  // source and again before it reports, and it reports end times only when
+  // both readings equal VariantJob.source_snapshot. Otherwise, or when the job
+  // carries no snapshot, it reports no entry, and the attempt still completes.
+  // A mount that reports the modification time at another precision than the
+  // server's therefore leaves every entry out. The server writes a learned end
+  // time only when that snapshot still equals the snapshot of the stored probe
+  // outcome, so a late report from a replaced source writes nothing (ADR 0037).
   repeated SourceStreamEnd stream_ends = 3;
 }
 
