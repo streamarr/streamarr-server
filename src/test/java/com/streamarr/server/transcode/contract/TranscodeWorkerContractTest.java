@@ -24,6 +24,7 @@ import com.streamarr.transcode.v1.Fraction;
 import com.streamarr.transcode.v1.JobAttemptCompleted;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
+import com.streamarr.transcode.v1.JobAttemptProgress;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.Presence;
@@ -54,6 +55,7 @@ import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerVerifiedVideoEncoder;
 import io.grpc.MethodDescriptor.MethodType;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -879,6 +881,134 @@ class TranscodeWorkerContractTest {
     assertThat(failedReport.getMessageType()).isEqualTo(withoutSamples);
     assertThat(JobAttemptFailure.JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES.getNumber())
         .isEqualTo(7);
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry each segment's start slot in order when a stream session merges slots without a source keyframe")
+  void shouldCarryEachSegmentStartSlotInOrderWhenStreamSessionMergesSlotsWithoutSourceKeyframe()
+      throws Exception {
+    var execution =
+        TranscodeExecution.newBuilder()
+            .setTargetSegmentDurationSeconds(3)
+            .setMediaSegmentCount(4)
+            .addAllSegmentStartSlots(List.of(0, 4, 7, 11))
+            .build();
+
+    var decoded = TranscodeExecution.parseFrom(execution.toByteArray());
+
+    assertThat(decoded.getSegmentStartSlotsList()).containsExactly(0, 4, 7, 11);
+    assertThat(decoded.getSegmentStartSlotsCount()).isEqualTo(decoded.getMediaSegmentCount());
+  }
+
+  @Test
+  @DisplayName("Should leave the segment list empty when a job uses the plain grid")
+  void shouldLeaveTheSegmentListEmptyWhenJobUsesThePlainGrid() throws Exception {
+    var plainGrid =
+        TranscodeExecution.newBuilder()
+            .setTargetSegmentDurationSeconds(3)
+            .setMediaSegmentCount(28)
+            .build();
+
+    var decoded = TranscodeExecution.parseFrom(plainGrid.toByteArray());
+
+    assertThat(decoded.getSegmentStartSlotsList()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the packed field number and type that workers build against when publishing the segment list")
+  void shouldKeepThePackedFieldNumberAndTypeThatWorkersBuildAgainstWhenPublishingTheSegmentList() {
+    var startSlots = TranscodeExecution.getDescriptor().findFieldByName("segment_start_slots");
+
+    assertThat(startSlots.getNumber()).isEqualTo(9);
+    assertThat(startSlots.getType()).isEqualTo(Type.UINT32);
+    assertThat(startSlots.isRepeated()).isTrue();
+    assertThat(startSlots.isPacked()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell a segment over the segment cap apart from a generic transcode failure when an attempt fails")
+  void shouldTellASegmentOverTheSegmentCapApartFromAGenericTranscodeFailureWhenAttemptFails()
+      throws Exception {
+    var overCap =
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptFailed(
+                JobAttemptFailed.newBuilder()
+                    .setJobAttemptId(uuid(UUID.randomUUID()))
+                    .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED))
+            .build();
+
+    var parsed = EstablishWorkerSessionRequest.parseFrom(overCap.toByteArray());
+
+    assertThat(parsed.getJobAttemptFailed().getFailure())
+        .isEqualTo(JobAttemptFailure.JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED)
+        .isNotEqualTo(JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
+    assertThat(JobAttemptFailure.JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED.getNumber()).isEqualTo(6);
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry the media time that the output reached when a worker reports an attempt's progress inside an open segment")
+  void
+      shouldCarryTheMediaTimeThatTheOutputReachedWhenWorkerReportsAttemptProgressInsideOpenSegment()
+          throws Exception {
+    var attemptId = uuid(UUID.randomUUID());
+    // A merged segment runs from 12 s to 72 s, and the output has reached 41.041 s inside it.
+    var outputEnd = Duration.newBuilder().setSeconds(41).setNanos(41_000_000).build();
+    var progress =
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptProgress(
+                JobAttemptProgress.newBuilder().setJobAttemptId(attemptId).setOutputEnd(outputEnd))
+            .build();
+
+    var parsed = EstablishWorkerSessionRequest.parseFrom(progress.toByteArray());
+
+    assertThat(parsed.getEventCase())
+        .isEqualTo(EstablishWorkerSessionRequest.EventCase.JOB_ATTEMPT_PROGRESS);
+    assertThat(parsed.getJobAttemptProgress().getJobAttemptId()).isEqualTo(attemptId);
+    assertThat(parsed.getJobAttemptProgress().getOutputEnd()).isEqualTo(outputEnd);
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry the source bytes read and no output time when a held encode reports its keyframe search as progress")
+  void
+      shouldCarryTheSourceBytesReadAndNoOutputTimeWhenHeldEncodeReportsItsKeyframeSearchAsProgress()
+          throws Exception {
+    var searching =
+        JobAttemptProgress.newBuilder()
+            .setJobAttemptId(uuid(UUID.randomUUID()))
+            .setKeyframeSearchBytesRead(268_435_456L)
+            .build();
+
+    var parsed = JobAttemptProgress.parseFrom(searching.toByteArray());
+
+    assertThat(parsed.getKeyframeSearchBytesRead()).isEqualTo(268_435_456L);
+    assertThat(parsed.hasOutputEnd()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the field numbers and types that workers build against when publishing the progress report")
+  void shouldKeepTheFieldNumbersAndTypesThatWorkersBuildAgainstWhenPublishingTheProgressReport() {
+    var event =
+        EstablishWorkerSessionRequest.getDescriptor().findFieldByName("job_attempt_progress");
+    var progress = JobAttemptProgress.getDescriptor();
+
+    assertThat(event.getNumber()).isEqualTo(10);
+    assertThat(event.getContainingOneof().getName()).isEqualTo("event");
+    assertThat(event.getMessageType()).isEqualTo(progress);
+    assertThat(progress.findFieldByName("job_attempt_id").getNumber()).isEqualTo(1);
+    assertThat(progress.findFieldByName("job_attempt_id").getMessageType())
+        .isEqualTo(Uuid.getDescriptor());
+    assertThat(progress.findFieldByName("output_end").getNumber()).isEqualTo(2);
+    assertThat(progress.findFieldByName("output_end").getMessageType())
+        .isEqualTo(Duration.getDescriptor());
+    assertThat(progress.findFieldByName("keyframe_search_bytes_read").getNumber()).isEqualTo(3);
+    assertThat(progress.findFieldByName("keyframe_search_bytes_read").getType())
+        .isEqualTo(Type.UINT64);
   }
 
   @Test

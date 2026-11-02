@@ -639,7 +639,8 @@ message TranscodeExecution {
   double framerate = 3;
   uint32 start_sequence_number = 4;
   // This field counts the media segments advertised in the variant's media
-  // playlist on the zero-based grid of target_segment_duration_seconds. Every
+  // playlist on the zero-based grid of target_segment_duration_seconds, or the
+  // entries of segment_start_slots when that list is not empty. Every
   // job attempt for the variant uses the same count, regardless of transcode
   // mode. start_sequence_number must be less than media_segment_count. A job is
   // invalid if it omits the count or start_sequence_number is not less than the
@@ -685,6 +686,26 @@ message TranscodeExecution {
   // padded stream can end less than one frame past it; the worker never
   // shortens a sample to end here.
   google.protobuf.Duration advertised_end = 8;
+  // The start of every media segment that the variant's media playlist
+  // advertises, in slots of target_segment_duration_seconds, the stream
+  // session's segment length, not EXT-X-TARGETDURATION. Media segment N starts
+  // at entry N x target_segment_duration_seconds on the zero-based timeline of
+  // seek_position, and its interval runs to the next listed start or, for the
+  // last segment, to the end of the media. Every job attempt of the stream
+  // session carries the same list, and seek_position_seconds is the listed
+  // start of start_sequence_number. An empty list means the plain grid, on
+  // which segment N starts at slot N.
+  //
+  // A non-empty list holds exactly media_segment_count entries, starts with 0
+  // and strictly increases; otherwise the worker fails the attempt with
+  // JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION. The worker forces encoded
+  // keyframes at the listed starts and groups fragments and audio samples on
+  // the listed intervals. A merged segment, which spans several slots, never
+  // fails an attempt by itself. A video keyframe that opens a segment more than
+  // one number after the open segment fails the attempt with the named reason
+  // SKIPPED_SEGMENT_NUMBER, reported as JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED
+  // (ADR 0037, segment list).
+  repeated uint32 segment_start_slots = 9;
 }
 
 message VariantJob {
@@ -729,6 +750,13 @@ enum JobAttemptFailure {
   // decision on the same encoder backend produces the same mismatch, so a
   // replacement job attempt fails the same way.
   JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH = 5;
+  // One initialization or media segment holds more bytes than the segment cap
+  // that SegmentUploadMetadata.content_length_bytes states, or one interval's
+  // segments together outgrow the producer's budget of two segment caps, in a
+  // copied or an encoded output alike. The worker reports this value instead of
+  // JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED and delivers no part of a segment that
+  // it could not hold (ADR 0037, segment list).
+  JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED = 6;
   // The attempt read no sample of a chosen stream from where it began reading
   // and can't stand in for it: a copied stream, audio encoded without
   // AudioDecision.pad_with_silence_to_advertised_end, or video encoded without
@@ -809,6 +837,28 @@ message JobAttemptStopped {
   Uuid job_attempt_id = 1;
 }
 
+// How far a running job attempt's output has reached, so that the server sees
+// progress inside a media segment that has not closed. The worker checks each
+// running attempt once a second and sends a report only when output_end lies
+// later, or keyframe_search_bytes_read is larger, than in its previous report
+// for the attempt, whether or not the segment has closed, and sends none after
+// the attempt's JobAttemptCompleted, JobAttemptFailed or JobAttemptStopped.
+// Each report that advances either restarts the server's stall clock (ADR 0037,
+// segment list; ADR 0019); the server ignores any other report and any report
+// for an attempt that is not running.
+message JobAttemptProgress {
+  Uuid job_attempt_id = 1;
+  // The end of the latest video sample that the producer has read from FFmpeg's
+  // output for the attempt, its presentation time plus its duration, on the
+  // zero-based timeline of TranscodeExecution.seek_position. Absent until the
+  // producer has read a video sample.
+  google.protobuf.Duration output_end = 2;
+  // The bytes of source that a held encode's search for the chosen video
+  // stream's last keyframe has read, as TranscodeExecution.seek_position
+  // describes; 0 when the attempt runs no search.
+  uint64 keyframe_search_bytes_read = 3;
+}
+
 // This message reports the worker's new background probe capacity and keyframe
 // packet scan capacity. The worker sends the message whenever either capacity
 // changes. The message always carries both current values, including a
@@ -842,6 +892,7 @@ message EstablishWorkerSessionRequest {
     ProbeKeyframePositionsPart probe_keyframe_positions_part = 7;
     ProbeCapacityChanged probe_capacity_changed = 8;
     ProbeStreamMeasurementPart probe_stream_measurement_part = 9;
+    JobAttemptProgress job_attempt_progress = 10;
   }
 }
 
@@ -2077,6 +2128,11 @@ message SegmentUploadMetadata {
   string variant_label = 6;
   string segment_name = 7;
   SegmentContentType content_type = 8;
+  // The segment's length in bytes. The segment cap, 134,217,728 bytes
+  // (128 MiB), is a constant of this contract: the server refuses an upload
+  // whose length is 0 or above the cap, and the worker delivers no
+  // initialization segment or media segment above it, failing the attempt with
+  // JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED instead.
   uint64 content_length_bytes = 9;
   // This field reports the media segment's media duration. The worker reports
   // this field for every media segment. The field is absent for an
