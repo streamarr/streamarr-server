@@ -604,9 +604,12 @@ message VideoDecision {
   //
   // When the attempt starts after the chosen video stream's last source frame,
   // the worker still reads the source's last frames, from the keyframe that
-  // TranscodeExecution.seek_position names, produces the same last picture as
-  // an attempt that started before the end, and repeats it from the attempt's
-  // first media segment.
+  // TranscodeExecution.seek_position names, or from the last keyframe that it
+  // finds itself when that position decodes no picture, as seek_position
+  // describes. It produces the same last picture as an attempt that started
+  // before the end, and repeats it from the attempt's first media segment. The
+  // attempt stands in for the video stream: it never fails with
+  // JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES for the video.
   //
   // When the field is false, the worker repeats no frame, and the job may omit
   // advertised_end. When the field is true, the worker fails the attempt with
@@ -729,15 +732,19 @@ message TranscodeExecution {
   // container index states. Until ADR 0032's keyframe scan of such a source
   // finishes, the server stores no keyframe positions for it, and sends
   // instead a position a fixed read-back before seek_position_seconds, as ADR
-  // 0037 decides. Such a position can leave the attempt no picture to hold.
-  // When the worker reads no packet of the chosen video stream from that
-  // position, because it lies past the stream's last frame, the worker fails
-  // the attempt with JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES and reports the
-  // video stream and the position in JobAttemptFailed.stream_without_samples.
-  // When the worker reads packets of the stream but decodes no picture,
-  // because no keyframe follows the position, the stream still has samples
-  // after it, and the worker fails the attempt with
-  // JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED.
+  // 0037 decides. A position past the chosen video stream's last keyframe
+  // decodes no picture, whether it lies past the stream's last frame or
+  // between that frame and the last keyframe. The worker then finds the last
+  // keyframe itself, inside the same attempt. It reads the stream's packets,
+  // without decoding them, from points before the position at twice the
+  // distance each time, starting at the distance between the position and
+  // seek_position_seconds, until it finds a keyframe before the position. It
+  // then narrows the interval by halves to the last keyframe before the
+  // position, and reads from that keyframe. Each step reads packets only up to
+  // the first keyframe after its point. The attempt then holds the last
+  // picture and reports the stream's end in JobAttemptCompleted.stream_ends.
+  // Only when the stream has no keyframe before the position does the worker
+  // fail the attempt, with JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED.
   //
   // This version of the server sets the field for no other attempt.
   google.protobuf.Duration seek_position = 6;
@@ -808,22 +815,24 @@ enum JobAttemptFailure {
   // replacement job attempt fails the same way.
   JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH = 5;
   // The attempt read no sample of a chosen source stream from the position
-  // where it began reading, and it can't stand in for that stream. Only an
-  // attempt that encodes the chosen audio stream with
-  // AudioDecision.pad_with_silence_to_advertised_end stands in for a stream:
-  // it encodes generated silence and completes. Every other chosen stream
-  // that delivers no sample fails the attempt with this value: a copied
-  // stream, because generated silence or a held picture can't join a copy, an
-  // audio stream encoded without padding, and the video stream of any encode,
-  // because the worker can't make a picture that it never decoded.
+  // where it began reading, and it can't stand in for that stream. An attempt
+  // that encodes the chosen audio stream with
+  // AudioDecision.pad_with_silence_to_advertised_end stands in for the audio:
+  // it encodes generated silence and completes. An attempt that encodes video
+  // with VideoDecision.hold_last_frame_to_advertised_end stands in for the
+  // video: it finds the video's last keyframe, as
+  // TranscodeExecution.seek_position describes. Every other chosen stream that
+  // delivers no sample fails the attempt with this value: a copied stream,
+  // because generated silence or a held picture can't join a copy, audio
+  // encoded without padding, and video encoded without the held last frame.
   // JobAttemptFailed.stream_without_samples names the stream. The worker
   // reports this value instead of JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED, also
   // when FFmpeg exits with status 0, such as the AC-3 or E-AC-3 copy whose
   // initialization segment comes out empty. The server stores the read
   // position as the stream's learned end bound and recovers as ADR 0037
   // decides: a copied stream moves playback to a stream session that encodes
-  // and pads it, and audio encoded without padding gets a replacement attempt
-  // that pads it.
+  // it and pads or holds it, and an encoded stream gets a replacement attempt
+  // that pads or holds it.
   JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES = 7;
 }
 
@@ -894,8 +903,8 @@ message JobAttemptCompleted {
 // produced no media segment. The exceptions are an attempt that reads no
 // sample of a chosen stream that it can't stand in for, which fails with
 // JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES, and an attempt that holds the
-// last frame but decodes no picture from the video packets that it reads,
-// which fails with JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED, as
+// last frame but finds no video keyframe before its read position, which
+// fails with JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED, as
 // TranscodeExecution.seek_position describes.
 message SourceEndedEarly {
   // The number of the variant's last media segment that holds a sample from
