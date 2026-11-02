@@ -54,6 +54,7 @@ import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerVerifiedVideoEncoder;
 import io.grpc.MethodDescriptor.MethodType;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -879,6 +880,50 @@ class TranscodeWorkerContractTest {
     assertThat(failedReport.getMessageType()).isEqualTo(withoutSamples);
     assertThat(JobAttemptFailure.JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES.getNumber())
         .isEqualTo(7);
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry each segment's start slot in order when a stream session merges slots without a source keyframe")
+  void shouldCarryEachSegmentStartSlotInOrderWhenStreamSessionMergesSlotsWithoutSourceKeyframe()
+      throws Exception {
+    var execution =
+        TranscodeExecution.newBuilder()
+            .setTargetSegmentDurationSeconds(3)
+            .setMediaSegmentCount(4)
+            .addAllSegmentStartSlots(List.of(0, 4, 7, 11))
+            .build();
+
+    var decoded = TranscodeExecution.parseFrom(execution.toByteArray());
+
+    assertThat(decoded.getSegmentStartSlotsList()).containsExactly(0, 4, 7, 11);
+    assertThat(decoded.getSegmentStartSlotsCount()).isEqualTo(decoded.getMediaSegmentCount());
+  }
+
+  @Test
+  @DisplayName("Should leave the segment list empty when a job uses the plain grid")
+  void shouldLeaveTheSegmentListEmptyWhenJobUsesThePlainGrid() throws Exception {
+    var plainGrid =
+        TranscodeExecution.newBuilder()
+            .setTargetSegmentDurationSeconds(3)
+            .setMediaSegmentCount(28)
+            .build();
+
+    var decoded = TranscodeExecution.parseFrom(plainGrid.toByteArray());
+
+    assertThat(decoded.getSegmentStartSlotsList()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the packed field number and type that workers build against when publishing the segment list")
+  void shouldKeepThePackedFieldNumberAndTypeThatWorkersBuildAgainstWhenPublishingTheSegmentList() {
+    var startSlots = TranscodeExecution.getDescriptor().findFieldByName("segment_start_slots");
+
+    assertThat(startSlots.getNumber()).isEqualTo(9);
+    assertThat(startSlots.getType()).isEqualTo(Type.UINT32);
+    assertThat(startSlots.isRepeated()).isTrue();
+    assertThat(startSlots.isPacked()).isTrue();
   }
 
   @Test

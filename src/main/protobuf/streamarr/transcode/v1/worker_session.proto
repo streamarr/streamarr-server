@@ -639,8 +639,9 @@ message TranscodeExecution {
   double framerate = 3;
   uint32 start_sequence_number = 4;
   // This field counts the media segments advertised in the variant's media
-  // playlist on the zero-based grid of target_segment_duration_seconds. Every
-  // job attempt for the variant uses the same count, regardless of transcode
+  // playlist: the entries of segment_start_slots, or, when that list is empty,
+  // the segments on the zero-based grid of target_segment_duration_seconds.
+  // Every job attempt for the variant uses the same count, regardless of transcode
   // mode. start_sequence_number must be less than media_segment_count. A job is
   // invalid if it omits the count or start_sequence_number is not less than the
   // count. ADR 0037 defines how the worker uses the count to bound the list of
@@ -685,6 +686,45 @@ message TranscodeExecution {
   // padded stream can end less than one frame past it; the worker never
   // shortens a sample to end here.
   google.protobuf.Duration advertised_end = 8;
+  // This field lists the start of every media segment that the variant's media
+  // playlist advertises, in slots. A slot lasts target_segment_duration_seconds,
+  // the stream session's segment length, which is not the playlist's
+  // EXT-X-TARGETDURATION. Entry N is the start of media segment N: segment N
+  // starts at entry N x target_segment_duration_seconds on the zero-based
+  // timeline of seek_position, and its interval runs up to, but not including,
+  // the start of segment N + 1. The last segment's interval runs to the end of
+  // the media. An empty list means the plain grid, on which segment N starts at
+  // slot N.
+  //
+  // The server sends the list on every job attempt of a stream session with a
+  // copied variant, encoded variants included, and every job attempt of the
+  // stream session carries the same list. A slot that holds no source keyframe
+  // merges into the segment before it, so one segment can span several slots.
+  // A stream session whose variants all encode uses the plain grid and sends
+  // an empty list. The server sends a merged segment only when its measured
+  // size (ADR 0054) plus its segment framing fits the segment cap that
+  // SegmentUploadMetadata.content_length_bytes states, or when the server has
+  // no measurement.
+  //
+  // A non-empty list holds exactly media_segment_count entries, starts with 0
+  // and strictly increases. The worker fails the attempt with
+  // JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION when a non-empty list breaks any
+  // of these rules. The worker forces each encoded keyframe at a listed start
+  // instead of a grid start, groups fragments and assigns each audio sample to
+  // the segment whose listed interval holds the sample's start. The server
+  // computes seek_position_seconds and seek_position from the list, so an
+  // encode starts at the listed start of start_sequence_number. A merged
+  // segment is expected and is never itself a failure.
+  //
+  // The worker fails the attempt with the named reason SKIPPED_SEGMENT_NUMBER,
+  // reported as JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED, when a video keyframe
+  // opens a segment more than one number after the open segment, because the
+  // interval of a listed segment held no keyframe. The server and the worker
+  // then disagree about the source's keyframes, or an encode's keyframes
+  // drifted from the listed starts. A merged segment that grows past the
+  // segment cap still fails the attempt with the named reason
+  // EXCEEDS_SEGMENT_CAP, and ADR 0052's fallback then encodes the source.
+  repeated uint32 segment_start_slots = 9;
 }
 
 message VariantJob {
@@ -2077,6 +2117,11 @@ message SegmentUploadMetadata {
   string variant_label = 6;
   string segment_name = 7;
   SegmentContentType content_type = 8;
+  // This field states the segment's length in bytes. The segment cap is
+  // 134,217,728 bytes (128 MiB), a constant of this contract: the server
+  // refuses an upload whose length is 0 or above the cap, and the worker
+  // delivers no initialization segment or media segment above it. A server
+  // that raises the cap ships before any worker that produces larger segments.
   uint64 content_length_bytes = 9;
   // This field reports the media segment's media duration. The worker reports
   // this field for every media segment. The field is absent for an
