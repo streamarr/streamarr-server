@@ -109,7 +109,7 @@ class FilepathCodecTest {
 
     var filenameFromUri =
         FilepathCodec.filenameOf(
-            "file:///mpool/media/movies/"
+            "file:///media/movies/"
                 + "Caf%C3%A9%20Meridian%20(2006)%20-%20%5BBLURAY-1080p%5D%5BDTS%205.1%5D.mkv");
 
     assertThat(filenameFromUri)

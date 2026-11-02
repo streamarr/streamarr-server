@@ -35,7 +35,7 @@ services:
       MANAGEMENT_OTLP_METRICS_EXPORT_STEP: 10s
       OTEL_EXPORTER_OTLP_ENDPOINT: http://prometheus:9090/api/v1/otlp
     volumes:
-      - ${STREAMARR_MEDIA_PATH:-/mpool/media/clean/movies}:/media:ro
+      - ${STREAMARR_MEDIA_PATH:-/srv/media}:/media:ro
     depends_on:
       - prometheus
 
@@ -69,7 +69,7 @@ services:
       # Empty adapts the background probe capacity to the host. A positive number fixes it.
       TRANSCODE_WORKER_PROBE_CAPACITY: ${STREAMARR_WORKER_PROBE_CAPACITY:-}
     volumes:
-      - ${STREAMARR_MEDIA_PATH:-/mpool/media/clean/movies}:/media:ro
+      - ${STREAMARR_MEDIA_PATH:-/srv/media}:/media:ro
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:latest
