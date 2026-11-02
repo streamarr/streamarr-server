@@ -32,9 +32,9 @@ runs:
         # 333 MB. Metaspace commits on use, but the calculator takes the extra from -Xmx.
         metaspace_class_adjustment=150
         pack_args=(
-          --builder paketobuildpacks/ubuntu-noble-builder:0.0.206
+          --builder paketobuildpacks/ubuntu-noble-builder:0.0.211
           --buildpack paketo-buildpacks/java
-          --buildpack paketo-buildpacks/procfile@5.15.5
+          --buildpack paketo-buildpacks/procfile@5.15.6
           --env BP_JVM_VERSION=25
           --env BP_INCLUDE_FILES=Procfile
           --env "BP_OCI_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
