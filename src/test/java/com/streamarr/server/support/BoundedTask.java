@@ -1,11 +1,14 @@
 package com.streamarr.server.support;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.locks.LockSupport;
 
 /**
  * Runs a task on its own virtual thread and waits for it with a bound. A task that outlives its
@@ -57,6 +60,21 @@ public final class BoundedTask<T> implements AutoCloseable {
   public boolean isWaiting() {
     var state = thread.getState();
     return state == Thread.State.WAITING || state == Thread.State.TIMED_WAITING;
+  }
+
+  /**
+   * Returns whether the task's thread waits for a {@link CountDownLatch} without a deadline. One
+   * snapshot of the thread's stack answers, so a lock wait or a wait with a deadline never counts,
+   * even when it comes just before or after a latch wait.
+   */
+  public boolean isAwaitingALatchWithoutDeadline() {
+    var frames = List.of(thread.getStackTrace());
+    return frames.stream().anyMatch(frame -> isFrameOf(frame, LockSupport.class, "park"))
+        && frames.stream().anyMatch(frame -> isFrameOf(frame, CountDownLatch.class, "await"));
+  }
+
+  private static boolean isFrameOf(StackTraceElement frame, Class<?> type, String methodName) {
+    return frame.getClassName().equals(type.getName()) && frame.getMethodName().equals(methodName);
   }
 
   /** Interrupts the task's thread, as a stopping server interrupts its workers. */

@@ -36,6 +36,7 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
+import com.streamarr.server.domain.streaming.ShortCopy;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -392,6 +393,31 @@ class StreamingResolverTest {
         .isEqualTo("AUTO");
     assertThat(reported.read(REPORTED_PLAYBACK + ".formatChange", String.class))
         .isEqualTo("COPY_FAILED");
+  }
+
+  // ADR 0052: the client ends playback at the real end of a copy that ran short after every source
+  // stream ended.
+  @ParameterizedTest
+  @CsvSource({"true, 1234.5", "false, "})
+  @DisplayName("Should expose the media end in seconds only when the copy ends normally")
+  void shouldExposeTheMediaEndInSecondsOnlyWhenTheCopyEndsNormally(
+      boolean everySourceStreamEnded, Double expected) {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+    STUB_SERVICE.duringNextCreate(
+        command ->
+            STUB_SERVICE
+                .sessions
+                .get(command.streamSessionId())
+                .tryMarkShortCopy(
+                    new ShortCopy(205, Duration.ofMillis(1_234_500), everySourceStreamEnded)));
+
+    var created = startPlaybackReadingChoices(VideoQuality.ORIGINAL);
+
+    assertThat(
+            created.read(
+                CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.mediaEndSeconds",
+                Double.class))
+        .isEqualTo(expected);
   }
 
   // Every encode is SDR until the server encodes HDR (#397); a copy keeps the source's base.

@@ -14,6 +14,7 @@ import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.ProbeCapacity;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
+import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.transcode.v1.BackgroundProbeCapacityControl;
@@ -674,6 +675,28 @@ final class LiveWorkerConnectionRegistry {
     return end;
   }
 
+  /**
+   * Ends the job attempt that a worker reports completed, after publishing its completion. A held
+   * request that the end wakes therefore finds what the completion showed, such as a copy that ran
+   * short (ADR 0052).
+   */
+  ReportedJobAttemptEnd completeReportedJobAttempt(
+      UUID workerId, UUID workerSessionId, UUID jobAttemptId) {
+    currentConnection(workerId, workerSessionId)
+        .flatMap(connection -> connection.activeJob(jobAttemptId))
+        .ifPresent(this::publishCompletion);
+    return endReportedJobAttempt(workerId, workerSessionId, jobAttemptId);
+  }
+
+  private void publishCompletion(VariantJob job) {
+    eventPublisher.publishEvent(
+        JobAttemptCompletedEvent.builder()
+            .streamSessionId(fromProto(job.getStreamSessionId()))
+            .jobAttemptId(fromProto(job.getJobAttemptId()))
+            .variantLabel(job.getVariant().getVariantLabel())
+            .build());
+  }
+
   private void countIfUnknown(ReportedJobAttemptEnd end) {
     if (end instanceof ReportedJobAttemptEnd.Unknown) {
       unknownJobAttemptReports.increment();
@@ -1165,6 +1188,10 @@ final class LiveWorkerConnectionRegistry {
         case TRANSCODE_MODE_REMUX, TRANSCODE_MODE_AUDIO_TRANSCODE -> true;
         default -> false;
       };
+    }
+
+    private Optional<VariantJob> activeJob(UUID jobAttemptId) {
+      return Optional.ofNullable(activeVariants.get(jobAttemptId));
     }
 
     private synchronized ReportedJobAttemptEnd endReportedJobAttempt(UUID jobAttemptId) {

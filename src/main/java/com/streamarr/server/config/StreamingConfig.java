@@ -14,6 +14,7 @@ import com.streamarr.server.services.streaming.QualityLadderService;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.server.services.streaming.ShortCopyListener;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
@@ -21,6 +22,7 @@ import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegist
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.nio.file.Path;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -83,6 +85,12 @@ public class StreamingConfig {
         .producerLifecycle(producerLifecycleService)
         .heldRequests(heldSegmentRequests)
         .build();
+  }
+
+  @Bean
+  public ShortCopyListener shortCopyListener(
+      ProducerLifecycleService producerLifecycleService, ApplicationEventPublisher eventPublisher) {
+    return new ShortCopyListener(producerLifecycleService, eventPublisher);
   }
 
   @Bean

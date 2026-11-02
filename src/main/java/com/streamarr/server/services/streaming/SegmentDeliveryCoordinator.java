@@ -1,7 +1,6 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.exceptions.TranscodeException;
-import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;
@@ -23,7 +22,8 @@ public class SegmentDeliveryCoordinator {
    * passes never start the variant again, so a held request whose variant another request stopped
    * ends instead of restarting it. A held request also ends instead of relocating or resuming its
    * variant once a newer request has positioned the variant. A delivered media segment of the
-   * newest media-segment request's variant stops the variant that the player left.
+   * newest media-segment request's variant stops the variant that the player left. A request past a
+   * short copy's normal end waits until the stream session ends (ADR 0052).
    */
   public SegmentDelivery deliver(UUID sessionId, String variantLabel, String segmentName) {
     var refusal = refusal(sessionId, segmentName);
@@ -39,10 +39,7 @@ public class SegmentDeliveryCoordinator {
           return completed(request, outcome);
         }
 
-        // A stored segment, an ended job attempt or a destroyed session fires the wake. Only a
-        // stall has no event, so the wait ends at the stall deadline that recovery measures
-        // against.
-        if (!tryAwait(wake, producerLifecycle.timeUntilStall(sessionId, variantLabel))) {
+        if (!tryAwait(wake, request)) {
           return new SegmentDelivery.Cancelled();
         }
       }
@@ -88,10 +85,10 @@ public class SegmentDeliveryCoordinator {
     }
 
     return switch (producerLifecycle.recover(request)) {
-      case EXHAUSTED, VARIANT_NOT_RUNNING, SUPERSEDED ->
+      case EXHAUSTED, VARIANT_NOT_RUNNING, SUPERSEDED, PAST_A_FAILED_COPY ->
           unrecoverableDelivery(request.sessionId(), request.segmentName());
       case SESSION_GONE, SEGMENT_NOT_ADVERTISED -> new SegmentDelivery.SessionEnded();
-      case WAITING -> null;
+      case WAITING, PAST_THE_NORMAL_END -> null;
     };
   }
 
@@ -126,13 +123,27 @@ public class SegmentDeliveryCoordinator {
     }
   }
 
-  private static boolean tryAwait(HeldSegmentRequests.Wake wake, Duration timeout) {
+  private boolean tryAwait(HeldSegmentRequests.Wake wake, SegmentRequest request) {
     try {
-      wake.await(timeout);
+      awaitNextPass(wake, request);
       return true;
     } catch (InterruptedException _) {
       Thread.currentThread().interrupt();
       return false;
     }
+  }
+
+  // A stored segment, an ended job attempt or a destroyed session fires the wake. Only a stall has
+  // no event, so the wait ends at the stall deadline that recovery measures against. No job
+  // attempt makes a segment past a short copy's normal end, so only the stream session's end wakes
+  // that request (ADR 0052).
+  private void awaitNextPass(HeldSegmentRequests.Wake wake, SegmentRequest request)
+      throws InterruptedException {
+    if (producerLifecycle.liesPastTheNormalEnd(request.sessionId(), request.segmentName())) {
+      wake.await();
+      return;
+    }
+
+    wake.await(producerLifecycle.timeUntilStall(request.sessionId(), request.variantLabel()));
   }
 }

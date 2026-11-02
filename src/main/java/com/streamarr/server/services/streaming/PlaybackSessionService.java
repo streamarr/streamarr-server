@@ -8,6 +8,7 @@ import com.streamarr.server.exceptions.PlaybackSessionClosedException;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.streaming.events.CopiedVariantRanShortEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import java.time.Clock;
@@ -261,7 +262,18 @@ public class PlaybackSessionService implements AutoCloseable {
 
   @EventListener
   public void onVideoCopyOutputMismatch(@NonNull VideoCopyOutputMismatchEvent event) {
-    var failedId = event.streamSessionId();
+    recoverFromFailedCopy(event.streamSessionId());
+  }
+
+  /** A copy that ran short while a source stream still has media fails as a copy does. */
+  @EventListener
+  public void onCopiedVariantRanShort(@NonNull CopiedVariantRanShortEvent event) {
+    recoverFromFailedCopy(event.streamSessionId());
+  }
+
+  // Every playback choice falls back from a failed copy to an encode, so the failure that this
+  // names ends playback only when no encode follows.
+  private void recoverFromFailedCopy(UUID failedId) {
     handleJobFailure(
         failedId,
         playback ->
@@ -306,7 +318,7 @@ public class PlaybackSessionService implements AutoCloseable {
 
   private Optional<FormatAttemptReservation> reserveFailure(
       PlaybackSession playback, UUID failedId, PlaybackSessionFailure reason) {
-    if (!isCurrentAttempt(playback, failedId)) {
+    if (!isCurrentAttempt(playback, failedId) || endedNormally(playback)) {
       return Optional.empty();
     }
 
@@ -316,6 +328,7 @@ public class PlaybackSessionService implements AutoCloseable {
   private Optional<FormatAttemptReservation> reserveFormatAttempt(
       PlaybackSession playback, UUID failedId, PlaybackSessionFailure fixedFailure) {
     if (!isCurrentAttempt(playback, failedId)
+        || endedNormally(playback)
         || (fixedFailure instanceof PlaybackSessionFailure.FixedFormatFailed
             && playback.current instanceof PlaybackFormatAttempt.Pending)) {
       return Optional.empty();
@@ -367,6 +380,13 @@ public class PlaybackSessionService implements AutoCloseable {
     return owns(playback)
         && playback.current.streamSessionId().equals(streamId)
         && !(playback.current instanceof PlaybackFormatAttempt.Failed);
+  }
+
+  // A copy that ran short after every source stream ended ends playback normally, which wins over
+  // every failure in its stream session (ADR 0052).
+  private static boolean endedNormally(PlaybackSession playback) {
+    return playback.current instanceof PlaybackFormatAttempt.Ready(var session)
+        && session.getNormalEnd().isPresent();
   }
 
   private FormatAttemptReservation failPlayback(

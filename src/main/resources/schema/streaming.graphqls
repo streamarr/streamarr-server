@@ -7,8 +7,10 @@ type StreamSession {
     """
     Seconds on the media timeline that the segment grid uses, where the media really ends, when a stream
     copy ran short of its playlist's advertised end after every source stream ended (ADR 0052). The client
-    ends playback at this time, as at the end of the media title, and requests no segment past it. A segment
-    request past it receives 503. Null while nothing shows that the media ends before the advertised end.
+    ends playback at this time, as at the end of the media title, and requests no segment past it. The server
+    holds a segment request past it until the client ends playback or the stream session ends, and answers
+    every format failure report for the stream session with this end. Null while nothing shows that the
+    media ends before the advertised end.
     """
     mediaEndSeconds: Float
 }

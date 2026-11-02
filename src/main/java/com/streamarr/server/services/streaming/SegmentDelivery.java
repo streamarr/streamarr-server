@@ -39,7 +39,8 @@ public sealed interface SegmentDelivery {
    * recovery exhausted every eligible execution target, each consulted live at dispatch time (never
    * a snapshot — ADR 0019), or the variant has no job attempt because its on-demand start failed or
    * a request for another video variant stopped it, or a newer request positioned the variant where
-   * its job attempt will not produce the segment.
+   * its job attempt will not produce the segment, or the segment lies past a copy that ran short
+   * while a source stream still has media.
    */
   record Unrecoverable() implements SegmentDelivery {}
 

@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.IntStream;
 import lombok.NonNull;
 
 /**
@@ -36,6 +37,13 @@ public sealed interface MediaSegmentTimeline {
 
   default int mediaSegmentStartSeconds(int index) {
     return index * targetSegmentDurationSeconds();
+  }
+
+  /** Where the media segment ends: the sum of its own and every earlier segment's duration. */
+  default Duration mediaSegmentEnd(int index) {
+    return IntStream.rangeClosed(0, index)
+        .mapToObj(this::mediaSegmentDuration)
+        .reduce(Duration.ZERO, Duration::plus);
   }
 
   /**

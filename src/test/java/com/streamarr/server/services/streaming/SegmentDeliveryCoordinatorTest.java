@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import static com.streamarr.server.fixtures.SegmentRequestFixture.earliestArrivingSegmentRequestBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultLadderSessionBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.sessionWithDurationBuilder;
@@ -18,13 +19,17 @@ import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture.StreamingRig;
 import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
+import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.List;
@@ -154,6 +159,46 @@ class SegmentDeliveryCoordinatorTest {
         .deliveryCoordinator(coordinator)
         .build()
         .destroySession(sessionId);
+  }
+
+  // Completes the copy's job attempt after the default probe's streams, which state no end time,
+  // so the copy ends normally.
+  private void completeShort(StreamSession copy) {
+    completeShortCopy(copy);
+    assertThat(copy.getNormalEnd()).isPresent();
+  }
+
+  // Settles the completion of the copy's job attempt after its stored segments, then ends the job
+  // attempt as the worker's completion report does.
+  private void completeShortCopy(StreamSession copy) {
+    new ShortCopyListener(lifecycle, new CapturingEventPublisher())
+        .onJobAttemptCompleted(
+            JobAttemptCompletedEvent.builder()
+                .streamSessionId(copy.getSessionId())
+                .jobAttemptId(copy.getHandle().orElseThrow().attemptId())
+                .variantLabel(StreamSession.defaultVariant())
+                .build());
+    assertThat(copy.getShortCopy()).isPresent();
+    transcodeExecutor.markDead(copy.getSessionId());
+  }
+
+  // Delivers on its own thread and returns once the request waits without a deadline for a wake,
+  // as only a request past a short copy's normal end does: every other held request waits until
+  // its stall deadline.
+  private BoundedTask<SegmentDelivery> deliveryHeldWithoutDeadline(
+      UUID sessionId, String segmentName) {
+    var delivery =
+        BoundedTask.start(
+            () -> coordinator.deliver(sessionId, StreamSession.defaultVariant(), segmentName));
+    awaitWaitWithoutDeadline(delivery);
+    return delivery;
+  }
+
+  private static void awaitWaitWithoutDeadline(BoundedTask<SegmentDelivery> delivery) {
+    await()
+        .pollInterval(Duration.ofMillis(1))
+        .atMost(Duration.ofSeconds(5))
+        .until(delivery::isAwaitingALatchWithoutDeadline);
   }
 
   private HeldSegmentRequests heldRequests() {
@@ -336,6 +381,84 @@ class SegmentDeliveryCoordinatorTest {
 
     assertThat(outcome.get()).isInstanceOf(SegmentDelivery.Ready.class);
     assertThat(((SegmentDelivery.Ready) outcome.get()).data()).containsExactly(0x47);
+  }
+
+  // ADR 0052: no job attempt can make a segment past a short copy's normal end, and a refusal
+  // would race with the client's own end of playback.
+  @Test
+  @DisplayName(
+      "Should hold a request past the normal end without a job attempt until the stream session ends")
+  void shouldHoldARequestPastTheNormalEndWithoutAJobAttemptUntilTheStreamSessionEnds()
+      throws Exception {
+    var copy = startedSession();
+    var sessionId = copy.getSessionId();
+    upload(sessionId, "segment0.m4s", new byte[] {1});
+    upload(sessionId, "segment1.m4s", new byte[] {2});
+    completeShort(copy);
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    try (var pastTheEnd = deliveryHeldWithoutDeadline(sessionId, "segment2.m4s")) {
+      assertThat(coordinator.deliver(sessionId, StreamSession.defaultVariant(), "segment1.m4s"))
+          .isEqualTo(new SegmentDelivery.Ready(new byte[] {2}));
+      assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
+      destroy(sessionId);
+      assertThat(pastTheEnd.await(Duration.ofSeconds(2)))
+          .isEqualTo(new SegmentDelivery.SessionEnded());
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep holding a request that waited for the copy when the copy's completion shows the normal end")
+  void shouldKeepHoldingARequestThatWaitedForTheCopyWhenTheCopysCompletionShowsTheNormalEnd()
+      throws Exception {
+    var copy = startedSession();
+    var sessionId = copy.getSessionId();
+    upload(sessionId, "segment0.m4s", new byte[] {1});
+    var looks = transcodeExecutor.livenessChecks(sessionId, StreamSession.defaultVariant());
+    try (var waiting =
+        BoundedTask.start(
+            () -> coordinator.deliver(sessionId, StreamSession.defaultVariant(), "segment3.m4s"))) {
+      transcodeExecutor.awaitLivenessCheckCount(
+          sessionId, StreamSession.defaultVariant(), looks + 1);
+      var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+      completeShort(copy);
+
+      awaitWaitWithoutDeadline(waiting);
+      assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
+      destroy(sessionId);
+      assertThat(waiting.await(Duration.ofSeconds(2)))
+          .isEqualTo(new SegmentDelivery.SessionEnded());
+    }
+  }
+
+  // ADR 0052: the playback session falls back to an encode, and a 503 sends the client to it.
+  @Test
+  @DisplayName(
+      "Should answer unrecoverable without a job attempt for a segment past a copy that a source stream outlasts")
+  void shouldAnswerUnrecoverableWithoutAJobAttemptForASegmentPastACopyThatASourceStreamOutlasts() {
+    var probe =
+        defaultProbeBuilder()
+            .streams(
+                List.of(
+                    ProbeFixture.audioStreamBuilder("aac")
+                        .endTime(Optional.of(Duration.ofMinutes(10)))
+                        .build()))
+            .build();
+    var copy = defaultSessionBuilder().mediaProbe(probe).build();
+    runtimeRegistry.save(copy);
+    lifecycle.startFirstListedVariant(copy);
+    upload(copy.getSessionId(), "segment0.m4s", new byte[] {1});
+    completeShortCopy(copy);
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    var delivery =
+        coordinator.deliver(copy.getSessionId(), StreamSession.defaultVariant(), "segment1.m4s");
+
+    assertThat(delivery).isEqualTo(new SegmentDelivery.Unrecoverable());
+    assertThat(copy.getNormalEnd()).isEmpty();
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
   }
 
   @Test
