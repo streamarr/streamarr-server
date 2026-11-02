@@ -1,11 +1,15 @@
 package com.streamarr.server.transcode.contract;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.google.protobuf.Descriptors.Descriptor;
+import com.google.protobuf.Descriptors.EnumValueDescriptor;
+import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor.Type;
 import com.google.protobuf.Duration;
 import com.google.protobuf.Timestamp;
+import com.streamarr.transcode.v1.AudioChannelLayout;
 import com.streamarr.transcode.v1.AudioDecision;
 import com.streamarr.transcode.v1.AudioMode;
 import com.streamarr.transcode.v1.BitrateScanChunk;
@@ -31,6 +35,7 @@ import com.streamarr.transcode.v1.Presence;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbePriority;
 import com.streamarr.transcode.v1.ProbeRequest;
+import com.streamarr.transcode.v1.ProbeStreamInfo;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.SourceEndedEarly;
@@ -54,10 +59,16 @@ import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerVerifiedVideoEncoder;
 import io.grpc.MethodDescriptor.MethodType;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -65,7 +76,6 @@ import org.junit.jupiter.api.Test;
 @Tag("UnitTest")
 @DisplayName("Transcode Worker Contract Tests")
 class TranscodeWorkerContractTest {
-
   @Test
   @DisplayName(
       "Should expose one reverse worker session and one segment upload stream when validating the protocol")
@@ -1073,5 +1083,306 @@ class TranscodeWorkerContractTest {
         .setMostSignificantBits(value.getMostSignificantBits())
         .setLeastSignificantBits(value.getLeastSignificantBits())
         .build();
+  }
+
+  private static final Path WORKER_SESSION_PROTO =
+      Path.of("src/main/protobuf/streamarr/transcode/v1/worker_session.proto");
+  private static final Pattern DOCUMENTED_LAYOUT =
+      Pattern.compile("// (\\S+): ([A-Z+]+)\\.\\R\\s*(AUDIO_CHANNEL_LAYOUT_\\w+) = \\d+;");
+
+  @Test
+  @DisplayName(
+      "Should name the output channel layout and its channel count when a job encodes audio")
+  void shouldNameTheOutputChannelLayoutAndItsChannelCountWhenJobEncodesAudio() throws Exception {
+    var job =
+        VariantJob.newBuilder()
+            .setDecision(
+                TranscodeDecision.newBuilder()
+                    .setAudio(
+                        AudioDecision.newBuilder()
+                            .setMode(AudioMode.AUDIO_MODE_TRANSCODE)
+                            .setCodec("eac3")
+                            .setChannels(4)
+                            .setBitrateBitsPerSecond(256_000)
+                            .setChannelLayout(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_QUAD)))
+            .build();
+
+    var audio = VariantJob.parseFrom(job.toByteArray()).getDecision().getAudio();
+
+    assertThat(audio.getChannelLayout()).isEqualTo(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_QUAD);
+    assertThat(audio.getChannels()).isEqualTo(4);
+  }
+
+  @Test
+  @DisplayName(
+      "Should read an audio encode without a channel layout as unspecified when an older server sends it")
+  void shouldReadAudioEncodeWithoutChannelLayoutAsUnspecifiedWhenOlderServerSendsIt()
+      throws Exception {
+    var olderServerEncode =
+        AudioDecision.newBuilder()
+            .setMode(AudioMode.AUDIO_MODE_TRANSCODE)
+            .setCodec("aac")
+            .setChannels(2)
+            .build();
+
+    var decoded = AudioDecision.parseFrom(olderServerEncode.toByteArray());
+
+    assertThat(decoded.getChannelLayout())
+        .isEqualTo(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_UNSPECIFIED);
+    assertThat(decoded.getChannels()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the field numbers, types and layout values that workers build against when publishing the channel layout contract")
+  void
+      shouldKeepTheFieldNumbersTypesAndLayoutValuesThatWorkersBuildAgainstWhenPublishingChannelLayoutContract() {
+    var probedLayout = ProbeStreamInfo.getDescriptor().findFieldByName("channel_layout");
+    var outputLayout = AudioDecision.getDescriptor().findFieldByName("channel_layout");
+
+    assertThat(probedLayout.getNumber()).isEqualTo(38);
+    assertThat(probedLayout.getType()).isEqualTo(Type.STRING);
+    assertThat(probedLayout.hasPresence()).isTrue();
+    assertThat(outputLayout.getNumber()).isEqualTo(5);
+    assertThat(outputLayout.getEnumType()).isEqualTo(AudioChannelLayout.getDescriptor());
+    assertThat(AudioChannelLayout.getDescriptor().getValues())
+        .extracting(EnumValueDescriptor::getName, EnumValueDescriptor::getNumber)
+        .containsExactly(
+            tuple("AUDIO_CHANNEL_LAYOUT_UNSPECIFIED", 0),
+            tuple("AUDIO_CHANNEL_LAYOUT_MONO", 1),
+            tuple("AUDIO_CHANNEL_LAYOUT_STEREO", 2),
+            tuple("AUDIO_CHANNEL_LAYOUT_TWO_POINT_ONE", 3),
+            tuple("AUDIO_CHANNEL_LAYOUT_THREE_POINT_ZERO", 4),
+            tuple("AUDIO_CHANNEL_LAYOUT_THREE_POINT_ZERO_BACK", 5),
+            tuple("AUDIO_CHANNEL_LAYOUT_FOUR_POINT_ZERO", 6),
+            tuple("AUDIO_CHANNEL_LAYOUT_QUAD", 7),
+            tuple("AUDIO_CHANNEL_LAYOUT_QUAD_SIDE", 8),
+            tuple("AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ONE", 9),
+            tuple("AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ONE_SIDE", 10),
+            tuple("AUDIO_CHANNEL_LAYOUT_SEVEN_POINT_ONE", 11),
+            tuple("AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ZERO", 12),
+            tuple("AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ZERO_SIDE", 13),
+            tuple("AUDIO_CHANNEL_LAYOUT_SIX_POINT_ONE", 14),
+            tuple("AUDIO_CHANNEL_LAYOUT_SIX_POINT_ONE_BACK", 15),
+            tuple("AUDIO_CHANNEL_LAYOUT_SEVEN_POINT_ONE_WIDE", 16));
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the field numbers and types that workers build against when publishing probe version 7's audio facts")
+  void
+      shouldKeepTheFieldNumbersAndTypesThatWorkersBuildAgainstWhenPublishingProbeVersion7AudioFacts() {
+    var stream = ProbeStreamInfo.getDescriptor();
+
+    assertThat(
+            Stream.of(
+                    "bit_depth",
+                    "sample_format",
+                    "is_comment",
+                    "is_visual_impaired",
+                    "is_descriptions",
+                    "is_original",
+                    "is_dub",
+                    "is_clean_effects",
+                    "is_dependent",
+                    "flac_minimum_block_size_samples")
+                .map(stream::findFieldByName))
+        .extracting(
+            FieldDescriptor::getName,
+            FieldDescriptor::getNumber,
+            FieldDescriptor::getType,
+            FieldDescriptor::hasPresence)
+        .containsExactly(
+            tuple("bit_depth", 13, Type.UINT32, true),
+            tuple("sample_format", 39, Type.STRING, true),
+            tuple("is_comment", 40, Type.BOOL, true),
+            tuple("is_visual_impaired", 41, Type.BOOL, true),
+            tuple("is_descriptions", 42, Type.BOOL, true),
+            tuple("is_original", 43, Type.BOOL, true),
+            tuple("is_dub", 44, Type.BOOL, true),
+            tuple("is_clean_effects", 45, Type.BOOL, true),
+            tuple("is_dependent", 46, Type.BOOL, true),
+            tuple("flac_minimum_block_size_samples", 47, Type.UINT32, true));
+  }
+
+  @Test
+  @DisplayName(
+      "Should name a 7- or 8-channel layout with its channel count when a job encodes lossless or Opus audio")
+  void shouldNameSevenOrEightChannelLayoutWithItsChannelCountWhenJobEncodesLosslessOrOpusAudio()
+      throws Exception {
+    var flacSixPointOne =
+        audioEncode()
+            .setCodec("flac")
+            .setChannels(7)
+            .setChannelLayout(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_SIX_POINT_ONE)
+            .build();
+    var alacSixPointOneBack =
+        audioEncode()
+            .setCodec("alac")
+            .setChannels(7)
+            .setChannelLayout(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_SIX_POINT_ONE_BACK)
+            .build();
+    var alacSevenPointOneWide =
+        audioEncode()
+            .setCodec("alac")
+            .setChannels(8)
+            .setChannelLayout(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_SEVEN_POINT_ONE_WIDE)
+            .build();
+
+    var decodedFlac = AudioDecision.parseFrom(flacSixPointOne.toByteArray());
+    var decodedAlac = AudioDecision.parseFrom(alacSixPointOneBack.toByteArray());
+    var decodedAlacWide = AudioDecision.parseFrom(alacSevenPointOneWide.toByteArray());
+
+    assertThat(decodedFlac.getChannelLayout())
+        .isEqualTo(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_SIX_POINT_ONE);
+    assertThat(decodedFlac.getChannels()).isEqualTo(7);
+    assertThat(decodedAlac.getChannelLayout())
+        .isEqualTo(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_SIX_POINT_ONE_BACK);
+    assertThat(decodedAlac.getChannels()).isEqualTo(7);
+    assertThat(decodedAlacWide.getChannelLayout())
+        .isEqualTo(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_SEVEN_POINT_ONE_WIDE);
+    assertThat(decodedAlacWide.getChannels()).isEqualTo(8);
+  }
+
+  @Test
+  @DisplayName(
+      "Should name each encoder's 5.0 layout with five channels when a job encodes audio under a channel maximum of 5")
+  void shouldNameEachEncoders50LayoutWithFiveChannelsWhenJobEncodesAudioUnderChannelMaximumOf5()
+      throws Exception {
+    var aacEncode =
+        audioEncode()
+            .setCodec("aac")
+            .setChannels(5)
+            .setChannelLayout(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ZERO)
+            .build();
+    var ac3Encode =
+        audioEncode()
+            .setCodec("ac3")
+            .setChannels(5)
+            .setChannelLayout(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ZERO_SIDE)
+            .build();
+
+    var decodedAac = AudioDecision.parseFrom(aacEncode.toByteArray());
+    var decodedAc3 = AudioDecision.parseFrom(ac3Encode.toByteArray());
+
+    assertThat(decodedAac.getChannelLayout())
+        .isEqualTo(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ZERO);
+    assertThat(decodedAac.getChannels()).isEqualTo(5);
+    assertThat(decodedAc3.getChannelLayout())
+        .isEqualTo(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ZERO_SIDE);
+    assertThat(decodedAc3.getChannels()).isEqualTo(5);
+  }
+
+  @Test
+  @DisplayName(
+      "Should document each layout's FFmpeg name and channel order when publishing the channel layout contract")
+  void shouldDocumentEachLayoutsFfmpegNameAndChannelOrderWhenPublishingChannelLayoutContract()
+      throws Exception {
+    var proto = Files.readString(WORKER_SESSION_PROTO);
+
+    var documented =
+        DOCUMENTED_LAYOUT
+            .matcher(proto)
+            .results()
+            .collect(
+                Collectors.toMap(
+                    match -> AudioChannelLayout.valueOf(match.group(3)),
+                    match -> match.group(1) + ": " + match.group(2)));
+
+    // ffmpeg -layouts of FFmpeg 8.1.3 in the pinned worker image lists these names and orders.
+    assertThat(documented)
+        .containsExactlyInAnyOrderEntriesOf(
+            Map.ofEntries(
+                Map.entry(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_MONO, "mono: FC"),
+                Map.entry(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_STEREO, "stereo: FL+FR"),
+                Map.entry(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_TWO_POINT_ONE, "2.1: FL+FR+LFE"),
+                Map.entry(
+                    AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_THREE_POINT_ZERO, "3.0: FL+FR+FC"),
+                Map.entry(
+                    AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_THREE_POINT_ZERO_BACK,
+                    "3.0(back): FL+FR+BC"),
+                Map.entry(
+                    AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FOUR_POINT_ZERO, "4.0: FL+FR+FC+BC"),
+                Map.entry(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_QUAD, "quad: FL+FR+BL+BR"),
+                Map.entry(
+                    AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_QUAD_SIDE, "quad(side): FL+FR+SL+SR"),
+                Map.entry(
+                    AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ZERO, "5.0: FL+FR+FC+BL+BR"),
+                Map.entry(
+                    AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ZERO_SIDE,
+                    "5.0(side): FL+FR+FC+SL+SR"),
+                Map.entry(
+                    AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ONE,
+                    "5.1: FL+FR+FC+LFE+BL+BR"),
+                Map.entry(
+                    AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ONE_SIDE,
+                    "5.1(side): FL+FR+FC+LFE+SL+SR"),
+                Map.entry(
+                    AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_SIX_POINT_ONE,
+                    "6.1: FL+FR+FC+LFE+BC+SL+SR"),
+                Map.entry(
+                    AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_SIX_POINT_ONE_BACK,
+                    "6.1(back): FL+FR+FC+LFE+BL+BR+BC"),
+                Map.entry(
+                    AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_SEVEN_POINT_ONE,
+                    "7.1: FL+FR+FC+LFE+BL+BR+SL+SR"),
+                Map.entry(
+                    AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_SEVEN_POINT_ONE_WIDE,
+                    "7.1(wide): FL+FR+FC+LFE+BL+BR+FLC+FRC")));
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry the output sample rate and bit depth when a job resamples hi-res lossless audio to 48 kHz")
+  void shouldCarryOutputSampleRateAndBitDepthWhenJobResamplesHiResLosslessAudioTo48Khz()
+      throws Exception {
+    var flacStep =
+        audioEncode()
+            .setCodec("flac")
+            .setChannels(6)
+            .setChannelLayout(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ONE)
+            .setOutputSampleRateHz(48_000)
+            .setOutputBitDepth(24)
+            .build();
+
+    var decoded = AudioDecision.parseFrom(flacStep.toByteArray());
+
+    assertThat(decoded.getOutputSampleRateHz()).isEqualTo(48_000);
+    assertThat(decoded.getOutputBitDepth()).isEqualTo(24);
+  }
+
+  @Test
+  @DisplayName(
+      "Should leave the output sample rate and bit depth absent when an older server sends an audio encode")
+  void shouldLeaveOutputSampleRateAndBitDepthAbsentWhenOlderServerSendsAudioEncode()
+      throws Exception {
+    var olderServerEncode = audioEncode().setCodec("flac").setChannels(2).build();
+
+    var decoded = AudioDecision.parseFrom(olderServerEncode.toByteArray());
+
+    assertThat(decoded.hasOutputSampleRateHz()).isFalse();
+    assertThat(decoded.hasOutputBitDepth()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the field numbers and types that workers build against when publishing the output sample rate and bit depth")
+  void
+      shouldKeepFieldNumbersAndTypesThatWorkersBuildAgainstWhenPublishingOutputSampleRateAndBitDepth() {
+    var audio = AudioDecision.getDescriptor();
+
+    assertThat(Stream.of("output_sample_rate_hz", "output_bit_depth").map(audio::findFieldByName))
+        .extracting(
+            FieldDescriptor::getName,
+            FieldDescriptor::getNumber,
+            FieldDescriptor::getType,
+            FieldDescriptor::hasPresence)
+        .containsExactly(
+            tuple("output_sample_rate_hz", 8, Type.UINT32, true),
+            tuple("output_bit_depth", 9, Type.UINT32, true));
+  }
+
+  private AudioDecision.Builder audioEncode() {
+    return AudioDecision.newBuilder().setMode(AudioMode.AUDIO_MODE_TRANSCODE);
   }
 }

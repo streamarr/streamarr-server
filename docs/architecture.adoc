@@ -322,6 +322,10 @@ Version 6 adds the bitrate of each video and audio stream of a Matroska file who
 The worker trusts a stream's tags only when the program that wrote them, `_STATISTICS_WRITING_APP`, also last wrote the file, its `WritingApp`, or when mkvpropedit wrote them into a file that mkvmerge wrote, and only when the `NUMBER_OF_BYTES` of every trusted stream add up to no more than the file's size.
 Version 6 also reports, for each H.264 and HEVC video stream, whether a copy keeps every packet's bytes: whether a copy without the Annex B bitstream filter delivers the source's packets unchanged.
 The server sets that fact on each job that copies the stream, and the worker drops the filter only then.
+Version 7 adds the channel layout of each audio stream, as ffprobe names it, such as `quad` or `3.0(back)`, and its sample format and bit depth.
+It also adds seven dispositions of each audio stream, such as commentary and audio description, the minimum block size from each FLAC stream's STREAMINFO block, and the commentary disposition of each subtitle stream.
+The worker contract lets a job that encodes audio name its output channel layout, so the worker encodes with that layout instead of only a channel count; such a job can also name its output sample rate and bit depth, which otherwise follow ADR 0043's rules for the codec and the source.
+The server sets none of them yet.
 Version 2 is unused.
 The server requests version 6.
 After the version rises, the server scans each library that holds a result of an earlier version at startup.

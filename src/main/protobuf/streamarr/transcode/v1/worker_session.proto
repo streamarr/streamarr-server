@@ -60,7 +60,8 @@ message WorkerCapabilities {
   repeated Uuid source_namespace_ids = 1;
   // This field lists the nonzero probe versions that the worker supports (ADR
   // 0032). Each version reports every fact of the earlier versions. No worker
-  // uses version 2.
+  // uses version 2. A worker that lists version 7 encodes in the layout that
+  // AudioDecision.channel_layout names and downmixes as ADR 0050 decides.
   repeated uint32 probe_versions = 2;
   // The worker lists exactly one encoder for each codec family it can encode.
   repeated WorkerVerifiedVideoEncoder video_encoders = 3;
@@ -128,6 +129,12 @@ message AudioDecision {
   optional string codec = 2;
   uint32 channels = 3;
   uint64 bitrate_bits_per_second = 4;
+  // This field names the output channel layout of an audio encode, and channels
+  // must equal its channel count. UNSPECIFIED means the encode uses channels
+  // alone. Only an AUDIO_MODE_TRANSCODE job sets it, and an aac encode names at
+  // most 6 channels. The server names a 3-, 4-, 7- or 8-channel layout only for
+  // a worker that lists probe version 7 (ADR 0050, ADR 0043).
+  AudioChannelLayout channel_layout = 5;
   // When this field is true, the worker adds digital silence after the encoded
   // audio up to TranscodeExecution.advertised_end. The server sets it only on a
   // job that encodes audio and sets advertised_end (ADR 0037, early ends).
@@ -135,6 +142,57 @@ message AudioDecision {
   // This field holds the chosen audio stream's ProbeStreamInfo.index. A COPY or
   // TRANSCODE job must set it. A NONE job must leave it out.
   optional uint32 stream_index = 7;
+  // This field holds the output sample rate in hertz of an encode that names
+  // channel_layout. Absent means ADR 0043's rate for the codec applies. The
+  // worker resamples only when the rate differs from the source's. A value on
+  // any other job, or a 0, fails the attempt with
+  // JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION.
+  optional uint32 output_sample_rate_hz = 8;
+  // This field holds the output bit depth, 16 or 24, of a FLAC or ALAC encode
+  // that names channel_layout. Absent means ADR 0043's depth for the source
+  // applies. The worker dithers whenever precision drops. Any other job or
+  // value fails with JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION.
+  optional uint32 output_bit_depth = 9;
+}
+
+// These values name the channel layouts that the server can name for an audio
+// encode. Each value's comment gives the FFmpeg layout name that the worker
+// passes to -ch_layout and the layout's channels in FFmpeg's order.
+enum AudioChannelLayout {
+  // No layout. The encode uses AudioDecision.channels alone.
+  AUDIO_CHANNEL_LAYOUT_UNSPECIFIED = 0;
+  // mono: FC.
+  AUDIO_CHANNEL_LAYOUT_MONO = 1;
+  // stereo: FL+FR.
+  AUDIO_CHANNEL_LAYOUT_STEREO = 2;
+  // 2.1: FL+FR+LFE.
+  AUDIO_CHANNEL_LAYOUT_TWO_POINT_ONE = 3;
+  // 3.0: FL+FR+FC.
+  AUDIO_CHANNEL_LAYOUT_THREE_POINT_ZERO = 4;
+  // 3.0(back): FL+FR+BC.
+  AUDIO_CHANNEL_LAYOUT_THREE_POINT_ZERO_BACK = 5;
+  // 4.0: FL+FR+FC+BC.
+  AUDIO_CHANNEL_LAYOUT_FOUR_POINT_ZERO = 6;
+  // quad: FL+FR+BL+BR.
+  AUDIO_CHANNEL_LAYOUT_QUAD = 7;
+  // quad(side): FL+FR+SL+SR.
+  AUDIO_CHANNEL_LAYOUT_QUAD_SIDE = 8;
+  // 5.1: FL+FR+FC+LFE+BL+BR.
+  AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ONE = 9;
+  // 5.1(side): FL+FR+FC+LFE+SL+SR.
+  AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ONE_SIDE = 10;
+  // 7.1: FL+FR+FC+LFE+BL+BR+SL+SR.
+  AUDIO_CHANNEL_LAYOUT_SEVEN_POINT_ONE = 11;
+  // 5.0: FL+FR+FC+BL+BR.
+  AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ZERO = 12;
+  // 5.0(side): FL+FR+FC+SL+SR.
+  AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ZERO_SIDE = 13;
+  // 6.1: FL+FR+FC+LFE+BC+SL+SR.
+  AUDIO_CHANNEL_LAYOUT_SIX_POINT_ONE = 14;
+  // 6.1(back): FL+FR+FC+LFE+BL+BR+BC.
+  AUDIO_CHANNEL_LAYOUT_SIX_POINT_ONE_BACK = 15;
+  // 7.1(wide): FL+FR+FC+LFE+BL+BR+FLC+FRC.
+  AUDIO_CHANNEL_LAYOUT_SEVEN_POINT_ONE_WIDE = 16;
 }
 
 message SubtitleDecision {
@@ -834,9 +892,11 @@ message ProbeStreamInfo {
   // The worker reports this field for video streams only. ADR 0036 defines
   // how each probe version reads it.
   VideoDynamicRange dynamic_range = 12;
-  // The worker reports this field for video streams only. It counts the bits
-  // in a luma sample of the pixel format. The worker leaves it out when
-  // ffprobe reports no pixel format.
+  // For a video stream, this field counts the bits in a luma sample of the
+  // pixel format. It is absent without a pixel format. From probe version 7,
+  // an audio stream reports ffprobe's bits_per_raw_sample, or else its
+  // bits_per_sample. The field is absent when both are unknown and on subtitle
+  // streams. The worker never derives it from the codec (ADR 0032).
   optional uint32 bit_depth = 13;
   // The worker reports this field for video streams only and reads it from the
   // pixel format.
@@ -920,6 +980,40 @@ message ProbeStreamInfo {
   // with its bytes unchanged under the same codec string. The server reads an
   // absent value as false.
   optional bool copy_keeps_packet_bytes = 37;
+  // From probe version 7, an audio stream reports ffprobe's channel_layout
+  // unchanged, such as stereo, 5.1(side) or 3 channels (FL+FR+TFL). The field
+  // is absent when ffprobe reports none, and the server then treats the layout
+  // as unknown. The worker never reports the word unknown (ADR 0032).
+  optional string channel_layout = 38;
+  // From probe version 7, an audio stream reports ffprobe's sample_fmt
+  // unchanged, such as s16, s32p or fltp. It names how the decoder stores each
+  // sample, not how many bits carry audio. The field is absent when ffprobe
+  // reports none. The worker never reports the word unknown.
+  optional string sample_format = 39;
+  // From probe version 7, fields 40 to 46 copy seven of ffprobe's final
+  // dispositions. Every audio stream reports all seven, and every subtitle
+  // stream reports is_comment. Each is true when ffprobe prints 1. Each is
+  // absent elsewhere, and the server reads an absent value as false (ADR 0032).
+  //
+  // The stream is a commentary track.
+  optional bool is_comment = 40;
+  // The stream serves viewers who are blind or have low vision.
+  optional bool is_visual_impaired = 41;
+  // The stream describes the picture.
+  optional bool is_descriptions = 42;
+  // The stream is in the content's original language.
+  optional bool is_original = 43;
+  // The stream is dubbed.
+  optional bool is_dub = 44;
+  // The stream holds music and effects without dialogue.
+  optional bool is_clean_effects = 45;
+  // A receiver mixes the stream with the main track and never plays it alone.
+  optional bool is_dependent = 46;
+  // From probe version 7, a FLAC stream reports the minimum block size in
+  // samples from its STREAMINFO block (RFC 9639 section 8.2), as written. The
+  // field is absent unless the stream's extradata is exactly 34 bytes, and on
+  // every other stream (ADR 0032).
+  optional uint32 flac_minimum_block_size_samples = 47;
 }
 
 // These fields count the pixels that the container crop removes from each
