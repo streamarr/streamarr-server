@@ -736,13 +736,17 @@ message TranscodeExecution {
   // decodes no picture, whether it lies past the stream's last frame or
   // between that frame and the last keyframe. The worker then finds the last
   // keyframe itself, inside the same attempt. It reads the stream's packets,
-  // without decoding them, from points before the position at twice the
-  // distance each time, starting at the distance between the position and
-  // seek_position_seconds, until it finds a keyframe before the position. It
-  // then narrows the interval by halves to the last keyframe before the
-  // position, and reads from that keyframe. Each step reads packets only up to
-  // the first keyframe after its point. The attempt then holds the last
-  // picture and reports the stream's end in JobAttemptCompleted.stream_ends.
+  // without decoding them, over intervals that run back from the position,
+  // each twice as long as the one after it. The first interval is as long as
+  // the distance between the position and seek_position_seconds. Each step
+  // reads only its own interval, and the search stops at the first interval
+  // that holds a keyframe: the last keyframe in that interval is the stream's
+  // last keyframe. The search goes on the same way to the last keyframe whose
+  // presentation time lies at least 0.5 s before that one, or the stream's
+  // first keyframe when none does, and the worker reads from there. The
+  // filters therefore see the same history before the held picture as when
+  // the server names the keyframe. The attempt then holds the last picture and
+  // reports the stream's end in JobAttemptCompleted.stream_ends.
   // Only when the stream has no keyframe before the position does the worker
   // fail the attempt, with JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED.
   //
