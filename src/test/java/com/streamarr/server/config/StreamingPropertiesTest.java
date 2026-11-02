@@ -36,21 +36,26 @@ class StreamingPropertiesTest {
     assertThat(properties.maxConcurrentTranscodes()).isEqualTo(8);
   }
 
+  // ADR 0052: direct play, a copy, the copy without Dolby Vision and an encode fit one budget.
   @Test
-  @DisplayName("Should default the total format attempt budget to two when unset")
-  void shouldDefaultTheTotalFormatAttemptBudgetToTwoWhenUnset() {
-    assertThat(StreamingProperties.builder().build().maxFormatAttempts()).isEqualTo(2);
+  @DisplayName("Should permit four format attempts by default")
+  void shouldPermitFourFormatAttemptsByDefault() {
+    CONTEXT_RUNNER.run(
+        context ->
+            assertThat(context.getBean(StreamingProperties.class).maxFormatAttempts())
+                .isEqualTo(4));
   }
 
-  @Test
+  @ParameterizedTest
+  @ValueSource(ints = {2, 4})
   @DisplayName("Should use the configured total format attempt budget when positive")
-  void shouldUseTheConfiguredTotalFormatAttemptBudgetWhenPositive() {
+  void shouldUseTheConfiguredTotalFormatAttemptBudgetWhenPositive(int maximum) {
     CONTEXT_RUNNER
-        .withPropertyValues("streaming.max-format-attempts=4")
+        .withPropertyValues("streaming.max-format-attempts=" + maximum)
         .run(
             context ->
                 assertThat(context.getBean(StreamingProperties.class).maxFormatAttempts())
-                    .isEqualTo(4));
+                    .isEqualTo(maximum));
   }
 
   @ParameterizedTest

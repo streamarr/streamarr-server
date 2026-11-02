@@ -2,6 +2,24 @@ type StreamSession {
     id: ID!
     streamUrl: String!
     transcodeMode: TranscodeMode!
+    "The dynamic range of the stream session's video. Every variant of a stream session shares it."
+    videoRange: VideoRange!
+    """
+    Seconds on the media timeline that the segment grid uses, where the media really ends, when a stream
+    copy ran short of its playlist's advertised end after every source stream ended (ADR 0052). The client
+    ends playback at this time, as at the end of the media title, and requests no segment past it. A segment
+    request past it receives 503. Null while nothing shows that the media ends before the advertised end.
+    """
+    mediaEndSeconds: Float
+}
+
+"The dynamic range of HLS video, as the playlist's VIDEO-RANGE attribute names it."
+enum VideoRange {
+    SDR
+    "SMPTE ST 2084, which covers HDR10, PQ10 and the PQ base of Dolby Vision."
+    PQ
+    "Hybrid log-gamma, ARIB STD-B67."
+    HLG
 }
 
 enum TranscodeMode {

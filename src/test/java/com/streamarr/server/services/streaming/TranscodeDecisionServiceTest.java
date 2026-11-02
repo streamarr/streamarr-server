@@ -74,7 +74,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.ArgumentsSource;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -131,26 +130,19 @@ class TranscodeDecisionServiceTest {
           + " may copy or encode")
   void
       shouldEncodeTheVideoWhenTheSourceExceedsTheViewersLimitsAndTheFormatAttemptMayCopyOrEncode() {
-    var decision = decideOverAFixed720p(VideoFormatConstraint.COPY_OR_ENCODE);
+    var decision = decideOverAFixed720p();
 
     assertThat(decision.map(TranscodeDecision::transcodeMode))
         .contains(TranscodeMode.VIDEO_TRANSCODE);
     assertThat(meterRegistry.find(STREAM_COPY_REFUSALS).counter()).isNull();
   }
 
-  @Test
-  @DisplayName(
-      "Should return no decision when the source exceeds the viewer's limits and the format attempt"
-          + " only copies")
-  void shouldReturnNoDecisionWhenTheSourceExceedsTheViewersLimitsAndTheFormatAttemptOnlyCopies() {
-    var decision = decideOverAFixed720p(VideoFormatConstraint.COPY_ONLY);
-
-    assertThat(decision).isEmpty();
-    assertThat(meterRegistry.find(STREAM_COPY_REFUSALS).counter()).isNull();
+  // A copyable 1920×1080 H.264 source against the fixed 720p's 1280×720 box.
+  private static ViewerLimits limitsIn(VideoQuality quality) {
+    return ViewerLimits.of(StreamingOptions.builder().quality(quality).build());
   }
 
-  // A copyable 1920×1080 H.264 source against the fixed 720p's 1280×720 box.
-  private Optional<TranscodeDecision> decideOverAFixed720p(VideoFormatConstraint constraint) {
+  private Optional<TranscodeDecision> decideOverAFixed720p() {
     var limits =
         ViewerLimits.of(StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build());
 
@@ -159,7 +151,6 @@ class TranscodeDecisionServiceTest {
             .source(probe("h264", "aac"))
             .capabilityDeclaration(declaring(H264))
             .encodableVideoCodecFamilies(Set.of("h264"))
-            .videoFormatConstraint(constraint)
             .viewerLimits(limits)
             .build());
   }
@@ -197,30 +188,8 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName(
-      "Should return no decision when copy-only video has no usable copy segment boundaries")
-  void shouldReturnNoDecisionWhenCopyOnlyVideoHasNoUsableCopySegmentBoundaries() {
-    var source = h264Probe(KEYFRAMES_LEAVING_AN_INTERVAL_EMPTY, "aac");
-
-    var decision =
-        service.decide(
-            TranscodeDecisionRequest.builder()
-                .source(source)
-                .capabilityDeclaration(declaring(H264))
-                .encodableVideoCodecFamilies(Set.of("h264"))
-                .videoFormatConstraint(VideoFormatConstraint.COPY_ONLY)
-                .build());
-
-    assertThat(decision).isEmpty();
-  }
-
-  @ParameterizedTest
-  @EnumSource(
-      value = VideoFormatConstraint.class,
-      names = {"COPY_OR_ENCODE", "COPY_ONLY"})
   @DisplayName("Should copy video and negotiate audio when no video encoder is available")
-  void shouldCopyVideoAndNegotiateAudioWhenNoVideoEncoderIsAvailable(
-      VideoFormatConstraint constraint) {
+  void shouldCopyVideoAndNegotiateAudioWhenNoVideoEncoderIsAvailable() {
     var source = probe("h264", "flac");
 
     var decision =
@@ -231,7 +200,6 @@ class TranscodeDecisionServiceTest {
                     .capabilityDeclaration(declaring(H264))
                     .encodableVideoCodecFamilies(Set.of())
                     .excludedEncodeCodecFamilies(Set.of("h264"))
-                    .videoFormatConstraint(constraint)
                     .build())
             .orElseThrow();
 
@@ -1493,17 +1461,14 @@ class TranscodeDecisionServiceTest {
     assertThat(decision).isEmpty();
   }
 
-  // Auto and a fixed quality may copy or encode. Original only copies.
+  // Original copies by the same rule as Auto and encodes when no entry accepts the copy (ADR 0052).
   @ParameterizedTest(name = "{0}")
   @MethodSource("copiesAgainstTwoEntries")
   @DisplayName(
       "Should copy the video only when one entry accepts every property of the copy, never two"
           + " entries together")
   void shouldCopyTheVideoOnlyWhenOneEntryAcceptsEveryPropertyOfTheCopyNeverTwoEntriesTogether(
-      String scenario,
-      VideoFormatConstraint constraint,
-      MediaProbe source,
-      Optional<TranscodeMode> expected) {
+      String scenario, VideoQuality quality, MediaProbe source, Optional<TranscodeMode> expected) {
     var declaration =
         defaultDeclarationBuilder()
             .video(
@@ -1518,7 +1483,7 @@ class TranscodeDecisionServiceTest {
                 .source(source)
                 .capabilityDeclaration(declaration)
                 .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
-                .videoFormatConstraint(constraint)
+                .viewerLimits(limitsIn(quality))
                 .build());
 
     assertThat(decision.map(TranscodeDecision::transcodeMode)).isEqualTo(expected);
@@ -1535,12 +1500,11 @@ class TranscodeDecisionServiceTest {
     var copy = Optional.of(TranscodeMode.REMUX);
     var encode = Optional.of(TranscodeMode.VIDEO_TRANSCODE);
     return Stream.of(
-        Arguments.of("Auto, 2160p30", VideoFormatConstraint.COPY_OR_ENCODE, uhdAt30, copy),
-        Arguments.of("Auto, 1080p60", VideoFormatConstraint.COPY_OR_ENCODE, hdAt60, copy),
-        Arguments.of("Auto, 2160p60", VideoFormatConstraint.COPY_OR_ENCODE, uhdAt60, encode),
-        Arguments.of("Original, 2160p30", VideoFormatConstraint.COPY_ONLY, uhdAt30, copy),
-        Arguments.of(
-            "Original, 2160p60", VideoFormatConstraint.COPY_ONLY, uhdAt60, Optional.empty()));
+        Arguments.of("Auto, 2160p30", VideoQuality.AUTO, uhdAt30, copy),
+        Arguments.of("Auto, 1080p60", VideoQuality.AUTO, hdAt60, copy),
+        Arguments.of("Auto, 2160p60", VideoQuality.AUTO, uhdAt60, encode),
+        Arguments.of("Original, 2160p30", VideoQuality.ORIGINAL, uhdAt30, copy),
+        Arguments.of("Original, 2160p60", VideoQuality.ORIGINAL, uhdAt60, encode));
   }
 
   // Timestamp rounding lets a measured rate sit slightly above the source's standard rate.
@@ -1550,7 +1514,7 @@ class TranscodeDecisionServiceTest {
       "Should copy video when its measured frame rate is within half a percent above the entry's"
           + " maximum")
   void shouldCopyVideoWhenItsMeasuredFrameRateIsWithinHalfAPercentAboveTheEntrysMaximum(
-      String scenario, FrameRateRule frameRateRule, VideoFormatConstraint constraint) {
+      String scenario, FrameRateRule frameRateRule, VideoQuality quality) {
     var outputFrameRate = frameRateRule.outputFrameRate().orElseThrow().toDouble();
     var source = probeVersion5H264(new PictureSize(1920, 1080), frameRateRule);
     var declaration =
@@ -1570,7 +1534,7 @@ class TranscodeDecisionServiceTest {
                 .source(source)
                 .capabilityDeclaration(declaration)
                 .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
-                .videoFormatConstraint(constraint)
+                .viewerLimits(limitsIn(quality))
                 .build());
 
     assertThat(decision.map(TranscodeDecision::transcodeMode)).contains(TranscodeMode.REMUX);
@@ -1600,14 +1564,9 @@ class TranscodeDecisionServiceTest {
     return rules.flatMap(
         rule ->
             Stream.of(
+                Arguments.of("Auto, " + rule.getKey(), rule.getValue(), VideoQuality.AUTO),
                 Arguments.of(
-                    "Auto, " + rule.getKey(),
-                    rule.getValue(),
-                    VideoFormatConstraint.COPY_OR_ENCODE),
-                Arguments.of(
-                    "Original, " + rule.getKey(),
-                    rule.getValue(),
-                    VideoFormatConstraint.COPY_ONLY)));
+                    "Original, " + rule.getKey(), rule.getValue(), VideoQuality.ORIGINAL)));
   }
 
   // A declared 29.97 or 59.94 lies just below the exact NTSC rate, 30000/1001 or 60000/1001.
@@ -1638,7 +1597,6 @@ class TranscodeDecisionServiceTest {
                 .source(source)
                 .capabilityDeclaration(declaration)
                 .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
-                .videoFormatConstraint(VideoFormatConstraint.COPY_ONLY)
                 .build());
 
     assertThat(decision.map(TranscodeDecision::transcodeMode)).contains(TranscodeMode.REMUX);
@@ -1661,7 +1619,7 @@ class TranscodeDecisionServiceTest {
       shouldNotCopyVideoWhoseFramesRunFasterThanTheEntrysMaximumFrameRateWhenItsOutputFrameRateFitsThatMaximum(
           String scenario,
           FrameRateRule frameRateRule,
-          VideoFormatConstraint constraint,
+          VideoQuality quality,
           Optional<TranscodeMode> expected) {
     var outputFrameRate = frameRateRule.outputFrameRate().orElseThrow().toDouble();
     var source = probeVersion5H264(new PictureSize(1920, 1080), frameRateRule);
@@ -1682,7 +1640,7 @@ class TranscodeDecisionServiceTest {
                 .source(source)
                 .capabilityDeclaration(declaration)
                 .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
-                .videoFormatConstraint(constraint)
+                .viewerLimits(limitsIn(quality))
                 .build());
 
     assertThat(decision.map(TranscodeDecision::transcodeMode)).isEqualTo(expected);
@@ -1714,13 +1672,13 @@ class TranscodeDecisionServiceTest {
                 Arguments.of(
                     "Auto, " + rule.getKey(),
                     rule.getValue(),
-                    VideoFormatConstraint.COPY_OR_ENCODE,
+                    VideoQuality.AUTO,
                     Optional.of(TranscodeMode.VIDEO_TRANSCODE)),
                 Arguments.of(
                     "Original, " + rule.getKey(),
                     rule.getValue(),
-                    VideoFormatConstraint.COPY_ONLY,
-                    Optional.empty())));
+                    VideoQuality.ORIGINAL,
+                    Optional.of(TranscodeMode.VIDEO_TRANSCODE))));
   }
 
   @Test

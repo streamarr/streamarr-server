@@ -148,7 +148,7 @@ public class StreamingResolver {
               "This video file has no usable picture size. Ask your server admin to check the file.");
       case CreateStreamSessionRejection.NoEligibleVideoFormat() ->
           new CreateStreamSessionError.NoEligibleVideoFormatError(
-              "The server can't find a video format this device can play. Set Quality to Auto, or try another device.");
+              "The server can't find a video format this device can play. Try another device.");
       case CreateStreamSessionRejection.NoMediaSegments() ->
           new CreateStreamSessionError.InvalidMediaFileError(
               "This video file has no playable length. Ask your server admin to check the file.");
@@ -260,6 +260,10 @@ public class StreamingResolver {
         .id(snapshot.playbackSessionId().toString())
         .formatAttemptCount(snapshot.formatAttemptCount())
         .maximumFormatAttempts(snapshot.maximumFormatAttempts())
+        .requestedChoice(snapshot.requestedChoice().name())
+        .playbackChoice(snapshot.playbackChoice().name())
+        .formatChange(snapshot.formatChange().map(Enum::name).orElse(null))
+        .offeredChoices(snapshot.offeredChoices().stream().map(Enum::name).toList())
         .currentFormatAttempt(attempt)
         .build();
   }
@@ -394,6 +398,7 @@ public class StreamingResolver {
                         playbackTokenValidity(session))
                     .value())
         .transcodeMode(session.getTranscodeDecision().transcodeMode().name())
+        .videoRange(session.getTranscodeDecision().videoRange().name())
         .build();
   }
 

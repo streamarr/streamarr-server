@@ -1,8 +1,48 @@
+"""
+One viewing of a media title. Its options and capability declaration are fixed when it starts. To change
+the playback choice, including picking Original again after it changed to Auto, the client destroys this
+playback session and creates a new one with the new choice. The new playback session starts from the top,
+with the full format-attempt budget and no format-failure history (ADR 0052).
+"""
 type PlaybackSession {
     id: ID!
     formatAttemptCount: Int!
+    "The playback session's format-attempt budget. The default is 4."
     maximumFormatAttempts: Int!
+    "The playback choice that the client asked for. A missing quality reads as AUTO."
+    requestedChoice: VideoQuality!
+    """
+    The playback choice that plays now. It equals requestedChoice, except that ORIGINAL changes to AUTO
+    once the playback session plays or prepares an encode (ADR 0052). It never changes back within a
+    playback session.
+    """
+    playbackChoice: VideoQuality!
+    """
+    The latest change from the output that requestedChoice asked for to another output, which the client
+    tells the viewer about with a notice, and marks beside requestedChoice in its quality control. Null while
+    the playback session plays the output that requestedChoice asked for. In Auto it stays null: Auto's
+    recoveries are not announced. The fallback from direct play to the HLS copy never sets it.
+    """
+    formatChange: PlaybackFormatChange
+    """
+    The playback choices that this media title offers, in the order that a quality control lists them:
+    ORIGINAL, AUTO, then each fixed quality up to the source's picture size, largest first. A fixed quality
+    larger than the source is left out, because its encode would not enlarge the picture.
+    """
+    offeredChoices: [VideoQuality!]!
     currentFormatAttempt: PlaybackFormatAttempt!
+}
+
+"Why the output differs from the output that the requested playback choice asked for (ADR 0052)."
+enum PlaybackFormatChange {
+    "An HLS copy failed: the player refused it, the worker could not make it, or it ran short while a source stream still had media. An encode plays."
+    COPY_FAILED
+    "Direct play failed and the server rules out the HLS copy. An encode plays."
+    DIRECT_PLAY_FAILED
+    "Original could neither direct-play nor copy the source, so its first format attempt is an encode."
+    STARTED_WITH_ENCODE
+    "A Dolby Vision copy failed, so the same copy without Dolby Vision plays on the source's PQ or HLG base."
+    DOLBY_VISION_STRIPPED
 }
 
 union PlaybackFormatAttempt = PendingPlaybackFormatAttempt | ReadyPlaybackFormatAttempt | FailedPlaybackFormatAttempt
@@ -44,6 +84,7 @@ union CreatePlaybackSessionError = InvalidIdError | PlaybackSessionClosedError |
 input ReportPlaybackFormatFailureInput {
     playbackSessionId: ID!
     streamSessionId: ID!
+    "A player error about the media format itself. Network, server, file and authorization errors are not format failures."
     reason: PlaybackFormatFailure!
 }
 

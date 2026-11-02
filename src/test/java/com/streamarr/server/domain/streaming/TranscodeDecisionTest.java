@@ -11,6 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -219,6 +220,60 @@ class TranscodeDecisionTest {
     return VideoPlaybackFactsFixture.sdrH264FactsBuilder()
         .frameRateRule(VideoPlaybackFactsFixture.interlacedRateRule(NTSC_FRAME_RATE, fieldOrder))
         .build();
+  }
+
+  @ParameterizedTest
+  @MethodSource("compatibleBasesAndTheVideoRangesThatACopyKeeps")
+  @DisplayName(
+      "Should report the source's compatible base as the video range when the decision copies the"
+          + " video")
+  void shouldReportTheSourcesCompatibleBaseAsTheVideoRangeWhenTheDecisionCopiesTheVideo(
+      VideoDynamicRange source, VideoRange expected) {
+    var decision =
+        decisionBuilder(TranscodeMode.REMUX)
+            .videoSource(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder().dynamicRange(source).build()))
+            .build();
+
+    assertThat(decision.videoRange()).isEqualTo(expected);
+  }
+
+  // RFC 8216 section 4.4.6.2 names the transfer function; HLS describes Dolby Vision profile 5,
+  // which has no compatible base, with PQ.
+  static Stream<Arguments> compatibleBasesAndTheVideoRangesThatACopyKeeps() {
+    return Stream.of(
+        Arguments.of(
+            VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.SDR), VideoRange.SDR),
+        Arguments.of(
+            VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.UNSPECIFIED),
+            VideoRange.SDR),
+        Arguments.of(
+            VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ), VideoRange.PQ),
+        Arguments.of(
+            VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.HLG), VideoRange.HLG),
+        Arguments.of(VideoPlaybackFactsFixture.dolbyVisionProfile82(), VideoRange.SDR),
+        Arguments.of(VideoPlaybackFactsFixture.dolbyVisionProfile5(), VideoRange.PQ));
+  }
+
+  // Every encode is 8-bit SDR until the server encodes HDR (#397).
+  @ParameterizedTest
+  @EnumSource(
+      value = CompatibleBase.class,
+      names = {"SDR", "UNSPECIFIED", "PQ", "HLG"})
+  @DisplayName("Should report SDR as the video range whenever the decision encodes the video")
+  void shouldReportSdrAsTheVideoRangeWheneverTheDecisionEncodesTheVideo(CompatibleBase base) {
+    var decision =
+        decisionBuilder(TranscodeMode.VIDEO_TRANSCODE)
+            .encodeCodecProfile(Optional.of(EncodeCodecProfile.H264_HIGH))
+            .videoSource(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(base))
+                        .build()))
+            .build();
+
+    assertThat(decision.videoRange()).isEqualTo(VideoRange.SDR);
   }
 
   private static TranscodeDecision.TranscodeDecisionBuilder decisionBuilder(TranscodeMode mode) {
