@@ -65,7 +65,7 @@ public class InvitationController {
             .status(HttpStatus.CREATED)
             .accessToken(accessToken)
             .rawRefreshToken(accepted.rawRefreshToken())
-            .cookieMode(Boolean.TRUE.equals(request.cookieMode()))
+            .cookieMode(request.cookieMode())
             .build());
   }
 

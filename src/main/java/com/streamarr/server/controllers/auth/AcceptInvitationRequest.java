@@ -11,6 +11,10 @@ public record AcceptInvitationRequest(
     @NotBlank String password,
     Boolean cookieMode) {
 
+  public AcceptInvitationRequest {
+    cookieMode = Boolean.TRUE.equals(cookieMode);
+  }
+
   public static class AcceptInvitationRequestBuilder {
 
     @Override
