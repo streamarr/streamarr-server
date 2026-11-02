@@ -97,9 +97,10 @@ public interface TranscodeExecutor {
 
   /**
    * The codec families of connected, source-accessible worker-verified encoders, including busy
-   * workers.
+   * workers, read from one view of the connected workers. Empty when no connected worker can access
+   * the source, so a disconnected moment never reads as connected workers without encoders.
    */
-  Set<String> verifiedVideoCodecFamilies();
+  Optional<Set<String>> verifiedVideoCodecFamilies();
 
   /**
    * The codec families of connected, source-accessible worker-verified hardware encoders, including

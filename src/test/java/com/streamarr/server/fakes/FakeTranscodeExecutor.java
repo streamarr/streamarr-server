@@ -24,6 +24,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -69,6 +70,8 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       new ConcurrentHashMap<>(unboundedEncodeSlots(Set.of("h264", "hevc", "av1")));
   private Set<String> hardwareEncodableVideoCodecFamilies = Set.of();
   private boolean healthy = true;
+  private final AtomicReference<WorkerChange> workerChangeAroundNextVerifiedFamiliesRead =
+      new AtomicReference<>();
   private volatile boolean failUntargetedStarts;
 
   @Override
@@ -493,9 +496,29 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
-  public Set<String> verifiedVideoCodecFamilies() {
-    return Set.copyOf(encodeSlotsByVideoCodecFamily.keySet());
+  public Optional<Set<String>> verifiedVideoCodecFamilies() {
+    var change = workerChangeAroundNextVerifiedFamiliesRead.getAndSet(null);
+    if (change != null) {
+      change.before().run();
+    }
+
+    var families =
+        healthy
+            ? Optional.of(Set.copyOf(encodeSlotsByVideoCodecFamily.keySet()))
+            : Optional.<Set<String>>empty();
+    if (change != null) {
+      change.after().run();
+    }
+
+    return families;
   }
+
+  /** Changes the connected workers just before and just after the next verified families read. */
+  public void changeWorkersAroundNextVerifiedFamiliesRead(Runnable before, Runnable after) {
+    workerChangeAroundNextVerifiedFamiliesRead.set(new WorkerChange(before, after));
+  }
+
+  private record WorkerChange(Runnable before, Runnable after) {}
 
   /**
    * A family whose encoders some targets advertise is encodable only while one of those targets has
@@ -503,6 +526,10 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
    */
   @Override
   public Set<String> encodableVideoCodecFamilies() {
+    if (!healthy) {
+      return Set.of();
+    }
+
     return encodeSlotsByVideoCodecFamily.entrySet().stream()
         .filter(entry -> entry.getValue() > 0)
         .map(Map.Entry::getKey)
@@ -533,7 +560,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   /** Busy targets' hardware encoders count too. */
   @Override
   public Set<String> verifiedHardwareVideoCodecFamilies() {
-    var verified = verifiedVideoCodecFamilies();
+    var verified = verifiedVideoCodecFamilies().orElseGet(Set::of);
     return Stream.concat(
             hardwareEncodableVideoCodecFamilies.stream(), advertisedHardwareFamilies(_ -> true))
         .filter(verified::contains)

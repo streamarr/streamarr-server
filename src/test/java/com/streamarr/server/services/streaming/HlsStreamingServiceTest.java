@@ -116,6 +116,9 @@ import org.springframework.dao.DataAccessResourceFailureException;
 @DisplayName("HLS Streaming Service Tests")
 class HlsStreamingServiceTest {
 
+  private static final StreamingOptions OVER_THE_MAXIMUM_BITRATE =
+      StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(14_333_000).build();
+
   private FakeMediaFileRepository mediaFileRepository;
   private FakeTranscodeExecutor transcodeExecutor;
   private FakeSegmentStore segmentStore;
@@ -2932,6 +2935,393 @@ class HlsStreamingServiceTest {
             Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
     assertThat(capacityRefusals("no_encoder_with_free_slot")).isOne();
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  // The 49 Mb/s copy exceeds the maximum bitrate beside every audio step, and its 3840x1920
+  // picture exceeds the 720p tier and each maximum. The declaration takes the HEVC copy but no
+  // H.264 or AV1 encode, so the server has nothing to encode to.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("viewerLimitsThatTheWideUhdCopyExceeds")
+  @DisplayName(
+      "Should copy the video over the viewer's limits when the capability declaration accepts no"
+          + " encode of the source")
+  void shouldCopyTheVideoOverTheViewersLimitsWhenTheCapabilityDeclarationAcceptsNoEncodeOfTheSource(
+      StreamingOptions options) {
+    probeResults.setDefaultProbe(wideUhdHevcProbe().build());
+
+    var session = accepted(createSessionDeclaring(declarationBuilderFor(HEVC).build(), options));
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(AudioDecision::mode, AudioDecision::codec, AudioDecision::bitrate)
+        .containsExactly(AudioMode.COPY, "aac", 128_000L);
+    assertThat(session.getVariants()).isEmpty();
+  }
+
+  static Stream<StreamingOptions> viewerLimitsThatTheWideUhdCopyExceeds() {
+    return Stream.of(
+        OVER_THE_MAXIMUM_BITRATE,
+        StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build(),
+        StreamingOptions.builder().quality(VideoQuality.AUTO).maxWidth(1920).build(),
+        StreamingOptions.builder().quality(VideoQuality.AUTO).maxHeight(1080).build());
+  }
+
+  @ParameterizedTest
+  @CsvSource({"H264, h264", "AV1, av1"})
+  @DisplayName(
+      "Should encode the video when the source exceeds the viewer's limits and the capability"
+          + " declaration accepts an encode of it beside the copy")
+  void shouldEncodeTheVideoWhenTheSourceExceedsTheViewersLimitsAndTheDeclarationAcceptsAnEncode(
+      ProbedCodecFamily encodedFamily, String expectedFamily) {
+    probeResults.setDefaultProbe(wideUhdHevcProbe().build());
+
+    var session =
+        accepted(
+            createSessionDeclaring(
+                declarationBuilderFor(HEVC, encodedFamily).build(), OVER_THE_MAXIMUM_BITRATE));
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
+    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo(expectedFamily);
+  }
+
+  // Without a connected worker no verified encoder is registered either.
+  @Test
+  @DisplayName(
+      "Should report transient capacity instead of copying over the viewer's limits when no worker"
+          + " is connected")
+  void shouldReportTransientCapacityInsteadOfCopyingOverTheViewersLimitsWhenNoWorkerIsConnected() {
+    probeResults.setDefaultProbe(wideUhdHevcProbe().build());
+    transcodeExecutor.setHealthy(false);
+    transcodeExecutor.setEncodeSlots(Map.of());
+
+    assertThat(
+            createSessionDeclaring(
+                declarationBuilderFor(HEVC, H264).build(), OVER_THE_MAXIMUM_BITRATE))
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(capacityRefusals("no_connected_worker")).isOne();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  // A worker with an H.264 encoder is connected again right after the server reads the verified
+  // encoders, either after none was connected or after a momentary disconnect. The read describes
+  // a moment without a connected worker, so it never admits a copy over the viewer's limits.
+  @ParameterizedTest(name = "a worker was connected before the read: {0}")
+  @ValueSource(booleans = {false, true})
+  @DisplayName(
+      "Should report transient capacity instead of copying over the viewer's limits when a worker"
+          + " connects right after the server reads the verified encoders")
+  void
+      shouldReportTransientCapacityInsteadOfCopyingOverTheViewersLimitsWhenAWorkerConnectsRightAfterTheVerifiedEncodersAreRead(
+          boolean connectedBeforeTheRead) {
+    probeResults.setDefaultProbe(wideUhdHevcProbe().build());
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("h264"));
+    transcodeExecutor.setHealthy(connectedBeforeTheRead);
+    transcodeExecutor.changeWorkersAroundNextVerifiedFamiliesRead(
+        () -> transcodeExecutor.setHealthy(false), () -> transcodeExecutor.setHealthy(true));
+
+    assertThat(
+            createSessionDeclaring(
+                declarationBuilderFor(HEVC, H264).build(), OVER_THE_MAXIMUM_BITRATE))
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(capacityRefusals("no_connected_worker")).isOne();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  // A worker with an AV1 encoder connects after the server reads the verified encoders but before
+  // it reads the encoders with a free slot. An encoder with a free slot is verified, so the
+  // server encodes in AV1 instead of copying over the viewer's limits.
+  @Test
+  @DisplayName(
+      "Should encode the video instead of copying over the viewer's limits when a worker with an"
+          + " accepted encoder connects right after the server reads the verified encoders")
+  void
+      shouldEncodeTheVideoInsteadOfCopyingOverTheViewersLimitsWhenAWorkerWithAnAcceptedEncoderConnectsRightAfterTheVerifiedEncodersAreRead() {
+    probeResults.setDefaultProbe(wideUhdHevcProbe().build());
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("h264"));
+    transcodeExecutor.changeWorkersAroundNextVerifiedFamiliesRead(
+        () -> {}, () -> transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("h264", "av1")));
+
+    var session =
+        accepted(
+            createSessionDeclaring(
+                declarationBuilderFor(HEVC, AV1).build(), OVER_THE_MAXIMUM_BITRATE));
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
+    assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo("av1");
+  }
+
+  // The only worker with an H.264 encoder leaves right after the server reads the verified
+  // encoders, beside a connected worker without one. The read refused the copy because an H.264
+  // encoder was verified, so the stream session fails for capacity with an answer that the client
+  // can retry, not with a refusal that blames the viewer's device.
+  @Test
+  @DisplayName(
+      "Should report transient capacity instead of refusing the video format when the worker with"
+          + " the accepted encoder leaves right after the server reads the verified encoders")
+  void
+      shouldReportTransientCapacityInsteadOfRefusingTheVideoFormatWhenTheWorkerWithTheAcceptedEncoderLeavesRightAfterTheVerifiedEncodersAreRead() {
+    probeResults.setDefaultProbe(wideUhdHevcProbe().build());
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("h264"));
+    transcodeExecutor.changeWorkersAroundNextVerifiedFamiliesRead(
+        () -> {}, () -> transcodeExecutor.setEncodeSlots(Map.of()));
+
+    assertThat(
+            createSessionDeclaring(
+                declarationBuilderFor(HEVC, H264).build(), OVER_THE_MAXIMUM_BITRATE))
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(capacityRefusals("no_encoder_with_free_slot")).isOne();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  // A busy worker's verified encoder counts, so the session waits for its slot instead of copying.
+  // A free slot on an encoder for a codec that the declaration does not accept changes nothing.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("busyEncodersForACodecThatTheDeclarationAccepts")
+  @DisplayName(
+      "Should report transient capacity instead of copying over the viewer's limits when the"
+          + " encoder that the declaration accepts is busy")
+  void shouldReportTransientCapacityInsteadOfCopyingOverTheViewersLimitsWhenTheEncoderIsBusy(
+      BusyEncoder busy) {
+    probeResults.setDefaultProbe(wideUhdHevcProbe().build());
+    transcodeExecutor.setEncodeSlots(busy.encodeSlots());
+
+    assertThat(
+            createSessionDeclaring(
+                declarationBuilderFor(HEVC, busy.acceptedEncode()).build(),
+                OVER_THE_MAXIMUM_BITRATE))
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(capacityRefusals("no_encoder_with_free_slot")).isOne();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  static Stream<BusyEncoder> busyEncodersForACodecThatTheDeclarationAccepts() {
+    return Stream.of(
+        BusyEncoder.builder().acceptedEncode(H264).encodeSlots(Map.of("h264", 0)).build(),
+        BusyEncoder.builder().acceptedEncode(AV1).encodeSlots(Map.of("h264", 1, "av1", 0)).build());
+  }
+
+  @Builder
+  record BusyEncoder(ProbedCodecFamily acceptedEncode, Map<String, Integer> encodeSlots) {}
+
+  // Every worker image ships an H.264 and an AV1 encoder, so a connected worker without a verified
+  // encoder for the codec that the declaration accepts is faulty, and no free slot would let the
+  // server encode.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("connectedWorkersWithoutAnEncoderForTheAcceptedCodec")
+  @DisplayName(
+      "Should copy the video over the viewer's limits when no connected worker has a verified"
+          + " encoder for a codec that the declaration accepts")
+  void
+      shouldCopyTheVideoOverTheViewersLimitsWhenNoConnectedWorkerHasAVerifiedEncoderForACodecThatTheDeclarationAccepts(
+          UnverifiedEncode unverified) {
+    probeResults.setDefaultProbe(wideUhdHevcProbe().build());
+    transcodeExecutor.setEncodableVideoCodecFamilies(unverified.verifiedFamilies());
+
+    var session =
+        accepted(
+            createSessionDeclaring(
+                declarationBuilderFor(HEVC, unverified.acceptedEncode()).build(),
+                OVER_THE_MAXIMUM_BITRATE));
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(session.getVariants()).isEmpty();
+  }
+
+  static Stream<UnverifiedEncode> connectedWorkersWithoutAnEncoderForTheAcceptedCodec() {
+    return Stream.of(
+        UnverifiedEncode.builder().acceptedEncode(AV1).verifiedFamilies(Set.of("h264")).build(),
+        UnverifiedEncode.builder().acceptedEncode(H264).verifiedFamilies(Set.of("av1")).build(),
+        UnverifiedEncode.builder().acceptedEncode(H264).verifiedFamilies(Set.of()).build());
+  }
+
+  @Builder
+  record UnverifiedEncode(ProbedCodecFamily acceptedEncode, Set<String> verifiedFamilies) {}
+
+  // An encode-only format attempt follows a copy that the client could not play, so it never falls
+  // back to a copy, even over the viewer's limits with nothing to encode to.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("declarationsAndWorkersThatLeaveNothingToEncodeTo")
+  @DisplayName(
+      "Should refuse the video format instead of copying over the viewer's limits when the format"
+          + " attempt requires an encode and the server has nothing to encode to")
+  void
+      shouldRefuseTheVideoFormatInsteadOfCopyingOverTheViewersLimitsWhenTheFormatAttemptRequiresAnEncodeAndTheServerHasNothingToEncodeTo(
+          NothingToEncodeTo nothing) {
+    probeResults.setDefaultProbe(wideUhdHevcProbe().build());
+    transcodeExecutor.setEncodableVideoCodecFamilies(nothing.verifiedFamilies());
+
+    var outcome =
+        service.createSession(
+            createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                .options(OVER_THE_MAXIMUM_BITRATE)
+                .capabilityDeclaration(
+                    declarationBuilderFor(nothing.declaredVideo().toArray(ProbedCodecFamily[]::new))
+                        .build())
+                .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                .build());
+
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  static Stream<NothingToEncodeTo> declarationsAndWorkersThatLeaveNothingToEncodeTo() {
+    return Stream.of(
+        NothingToEncodeTo.builder()
+            .declaredVideo(List.of(HEVC))
+            .verifiedFamilies(Set.of("h264", "hevc", "av1"))
+            .build(),
+        NothingToEncodeTo.builder()
+            .declaredVideo(List.of(HEVC, AV1))
+            .verifiedFamilies(Set.of("h264"))
+            .build());
+  }
+
+  @Builder
+  record NothingToEncodeTo(List<ProbedCodecFamily> declaredVideo, Set<String> verifiedFamilies) {}
+
+  // A 1920x1 picture has no encoded size, so the H.264 entry accepts no encode that a worker runs.
+  @Test
+  @DisplayName(
+      "Should copy the video over the viewer's limits when the worker encodes the source's picture"
+          + " at no size")
+  void shouldCopyTheVideoOverTheViewersLimitsWhenTheWorkerEncodesTheSourcesPictureAtNoSize() {
+    probeResults.setDefaultProbe(wideUhdHevcProbe().width(1920).height(1).build());
+
+    var session =
+        accepted(
+            createSessionDeclaring(
+                declarationBuilderFor(HEVC, H264).build(), OVER_THE_MAXIMUM_BITRATE));
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+  }
+
+  // The Auto picture maximum of 1080 lines refuses the 3840x1920 copy, and the declaration accepts
+  // no encode of it. The 4.5 Mb/s video beside the copied 384 kb/s AAC 5.1 track costs 4,884 kb/s,
+  // which fits a maximum of exactly that much.
+  @Test
+  @DisplayName(
+      "Should keep the copied audio beside a copy over the viewer's picture limits when the copy's"
+          + " cost equals the maximum bitrate")
+  void
+      shouldKeepTheCopiedAudioBesideACopyOverTheViewersPictureLimitsWhenTheCopysCostEqualsTheMaximumBitrate() {
+    var session = createCopyOverThePictureLimitsWithAac51(4_884_000);
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(AudioDecision::mode, AudioDecision::channels, AudioDecision::bitrate)
+        .containsExactly(AudioMode.COPY, 6, 384_000L);
+    assertDeliversTheSessionsAudioWithinTheMaximumBitrate(session, 4_884_000);
+  }
+
+  // Under a maximum below the copy's 4,884 kb/s the audio steps down as beside a copy within the
+  // viewer's limits (ADR 0050): AAC 5.1 at 320 kb/s fits down to 4,820 kb/s, and AAC stereo at
+  // 128 kb/s below that.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("maximumsAndTheFirstAudioStepBesideACopyOverThePictureLimits")
+  @DisplayName(
+      "Should take the first audio step at which a copy over the viewer's picture limits fits the"
+          + " maximum bitrate when the session's audio leaves it over the maximum")
+  void
+      shouldTakeTheFirstAudioStepAtWhichACopyOverTheViewersPictureLimitsFitsWhenTheSessionsAudioLeavesItOverTheMaximum(
+          StepBesideCopyOverTheLimits expected) {
+    var session = createCopyOverThePictureLimitsWithAac51(expected.maxBitrate());
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
+        .containsExactly("aac", expected.channels(), expected.bitrate());
+    assertDeliversTheSessionsAudioWithinTheMaximumBitrate(session, expected.maxBitrate());
+  }
+
+  static Stream<StepBesideCopyOverTheLimits>
+      maximumsAndTheFirstAudioStepBesideACopyOverThePictureLimits() {
+    var aac51 = StepBesideCopyOverTheLimits.builder().channels(6).bitrate(320_000L);
+    var aacStereo = StepBesideCopyOverTheLimits.builder().channels(2).bitrate(128_000L);
+    return Stream.of(
+        aac51.maxBitrate(4_883_999).build(),
+        aac51.maxBitrate(4_820_000).build(),
+        aacStereo.maxBitrate(4_819_999).build());
+  }
+
+  @Builder
+  record StepBesideCopyOverTheLimits(int maxBitrate, int channels, long bitrate) {}
+
+  // At 1 Mb/s even the lowest audio step leaves the 4.5 Mb/s copy over the maximum. A lower step
+  // would not bring it within the maximum, so the copied track stays (ADR 0050).
+  @Test
+  @DisplayName(
+      "Should keep the session's audio beside a copy over the viewer's picture limits when no audio"
+          + " step fits the maximum bitrate")
+  void shouldKeepTheSessionsAudioBesideACopyOverTheViewersPictureLimitsWhenNoAudioStepFits() {
+    var session = createCopyOverThePictureLimitsWithAac51(1_000_000);
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(AudioDecision::mode, AudioDecision::channels, AudioDecision::bitrate)
+        .containsExactly(AudioMode.COPY, 6, 384_000L);
+  }
+
+  // A 3840x1920 HEVC source with 4.5 Mb/s of video beside a 384 kb/s AAC 5.1 track, for a client
+  // that accepts the HEVC copy and AAC up to 5.1 but no encode of the video, under Auto's 1080-line
+  // maximum and the given maximum bitrate.
+  private StreamSession createCopyOverThePictureLimitsWithAac51(int maxBitrate) {
+    var probe = wideUhdHevcProbe().bitrate(5_000_000L);
+    var streams =
+        List.of(
+            ProbeFixture.videoStreamBuilder(probe.build())
+                .bitrate(OptionalLong.of(4_500_000L))
+                .build(),
+            ProbeFixture.audioStreamBuilder("aac")
+                .index(1)
+                .channels(OptionalInt.of(6))
+                .bitrate(OptionalLong.of(384_000L))
+                .build());
+    probeResults.setDefaultOutcome(ProbeFixture.completeProbe(probe.streams(streams).build()));
+    var declaration =
+        declarationBuilderFor(HEVC)
+            .audio(List.of(aacEntryBuilder().maxChannels(6).build()))
+            .build();
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.AUTO)
+            .maxHeight(1080)
+            .maxBitrate(maxBitrate)
+            .build();
+
+    return accepted(createSessionDeclaring(declaration, options));
+  }
+
+  // A 3840x1920 HEVC source at 49 Mb/s whose keyframes open every segment interval, beside a
+  // copyable stereo AAC track.
+  private static MediaProbe.MediaProbeBuilder wideUhdHevcProbe() {
+    return defaultProbeBuilder()
+        .videoCodec("hevc")
+        .width(3840)
+        .height(1920)
+        .bitrate(49_000_000L)
+        .videoPlaybackFacts(
+            Optional.of(
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                    .streamIndex(0)
+                    .codecFamily(Optional.of(ProbedCodecFamily.HEVC))
+                    .codecString(Optional.of("hvc1.1.6.L150.90"))
+                    .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))
+                    .build()));
+  }
+
+  private Outcome<StreamSession, CreateStreamSessionRejection> createSessionDeclaring(
+      ClientCapabilityDeclaration declaration, StreamingOptions options) {
+    return service.createSession(
+        createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+            .options(options)
+            .capabilityDeclaration(declaration)
+            .build());
   }
 
   @Test

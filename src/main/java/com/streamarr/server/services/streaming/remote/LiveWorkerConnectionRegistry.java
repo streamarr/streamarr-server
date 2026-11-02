@@ -489,10 +489,16 @@ final class LiveWorkerConnectionRegistry {
     return connectionsFor(sourceNamespaceId).findAny().isPresent();
   }
 
-  Set<String> verifiedVideoCodecFamilies(UUID sourceNamespaceId) {
-    return connectionsFor(sourceNamespaceId)
-        .flatMap(connection -> connection.countedEncoders.keySet().stream())
-        .collect(Collectors.toUnmodifiableSet());
+  Optional<Set<String>> verifiedVideoCodecFamilies(UUID sourceNamespaceId) {
+    var connected = connectionsFor(sourceNamespaceId).toList();
+    if (connected.isEmpty()) {
+      return Optional.empty();
+    }
+
+    return Optional.of(
+        connected.stream()
+            .flatMap(connection -> connection.countedEncoders.keySet().stream())
+            .collect(Collectors.toUnmodifiableSet()));
   }
 
   boolean hasProbeWorker(UUID sourceNamespaceId, int probeVersion) {
