@@ -5,11 +5,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import java.util.Optional;
+import java.util.stream.Stream;
+import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Transcode Decision Tests")
@@ -94,6 +97,57 @@ class TranscodeDecisionTest {
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("cannot hold an encode codec profile");
   }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("modesAndTheirModeWithOtherAudio")
+  @DisplayName(
+      "Should keep the video path and follow the new audio when the decision takes other audio")
+  void shouldKeepTheVideoPathAndFollowTheNewAudioWhenTheDecisionTakesOtherAudio(
+      AudioChange change) {
+    var decision =
+        decisionBuilder(change.mode())
+            .videoSource(Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()))
+            .build();
+    var audio =
+        AudioDecision.stereoAac().toBuilder()
+            .mode(change.audio())
+            .sourceCodecString(Optional.of("mp4a.40.2"))
+            .build();
+
+    var withAudio = decision.withAudioDecision(audio);
+
+    assertThat(withAudio.audioDecision()).isEqualTo(audio);
+    assertThat(withAudio.transcodeMode()).isEqualTo(change.modeWithAudio());
+    assertThat(withAudio.videoSource()).isEqualTo(decision.videoSource());
+  }
+
+  // Each video path once with audio that starts or stops passing through.
+  static Stream<AudioChange> modesAndTheirModeWithOtherAudio() {
+    return Stream.of(
+        AudioChange.builder()
+            .mode(TranscodeMode.REMUX)
+            .audio(AudioMode.TRANSCODE)
+            .modeWithAudio(TranscodeMode.AUDIO_TRANSCODE)
+            .build(),
+        AudioChange.builder()
+            .mode(TranscodeMode.AUDIO_TRANSCODE)
+            .audio(AudioMode.COPY)
+            .modeWithAudio(TranscodeMode.REMUX)
+            .build(),
+        AudioChange.builder()
+            .mode(TranscodeMode.VIDEO_TRANSCODE)
+            .audio(AudioMode.TRANSCODE)
+            .modeWithAudio(TranscodeMode.FULL_TRANSCODE)
+            .build(),
+        AudioChange.builder()
+            .mode(TranscodeMode.FULL_TRANSCODE)
+            .audio(AudioMode.NONE)
+            .modeWithAudio(TranscodeMode.VIDEO_TRANSCODE)
+            .build());
+  }
+
+  @Builder
+  record AudioChange(TranscodeMode mode, AudioMode audio, TranscodeMode modeWithAudio) {}
 
   private static TranscodeDecision.TranscodeDecisionBuilder decisionBuilder(TranscodeMode mode) {
     return TranscodeDecision.builder()
