@@ -973,6 +973,24 @@ class TranscodeWorkerContractTest {
 
   @Test
   @DisplayName(
+      "Should carry the source bytes read and no output time when a held encode reports its keyframe search as progress")
+  void
+      shouldCarryTheSourceBytesReadAndNoOutputTimeWhenHeldEncodeReportsItsKeyframeSearchAsProgress()
+          throws Exception {
+    var searching =
+        JobAttemptProgress.newBuilder()
+            .setJobAttemptId(uuid(UUID.randomUUID()))
+            .setKeyframeSearchBytesRead(268_435_456L)
+            .build();
+
+    var parsed = JobAttemptProgress.parseFrom(searching.toByteArray());
+
+    assertThat(parsed.getKeyframeSearchBytesRead()).isEqualTo(268_435_456L);
+    assertThat(parsed.hasOutputEnd()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
       "Should keep the field numbers and types that workers build against when publishing the progress report")
   void shouldKeepTheFieldNumbersAndTypesThatWorkersBuildAgainstWhenPublishingTheProgressReport() {
     var event =
@@ -988,6 +1006,9 @@ class TranscodeWorkerContractTest {
     assertThat(progress.findFieldByName("output_end").getNumber()).isEqualTo(2);
     assertThat(progress.findFieldByName("output_end").getMessageType())
         .isEqualTo(Duration.getDescriptor());
+    assertThat(progress.findFieldByName("keyframe_search_bytes_read").getNumber()).isEqualTo(3);
+    assertThat(progress.findFieldByName("keyframe_search_bytes_read").getType())
+        .isEqualTo(Type.UINT64);
   }
 
   @Test
