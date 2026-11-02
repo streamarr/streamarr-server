@@ -211,7 +211,11 @@ message AudioDecision {
   // media segment. That silence uses the codec, bitrate, sample rate and
   // channel layout that an attempt starting before the stream's end would
   // encode, so the attempt writes an initialization segment byte-identical to
-  // the variant's other initialization segments.
+  // the variant's other initialization segments. The attempt stands in for the
+  // stream: when it reads no sample of the stream at all, it still completes,
+  // and it reports the stream in JobAttemptCompleted.streams_without_samples.
+  // An attempt that copies the stream, or encodes it without this field, can't
+  // stand in for it and fails with JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES.
   //
   // When the field is false, the worker neither pads nor generates audio, and
   // the job may omit advertised_end. When the field is true, the worker fails
@@ -725,10 +729,15 @@ message TranscodeExecution {
   // container index states. Until ADR 0032's keyframe scan of such a source
   // finishes, the server stores no keyframe positions for it, and sends
   // instead a position a fixed read-back before seek_position_seconds, as ADR
-  // 0037 decides. When the worker decodes no picture of the chosen video
-  // stream from that position, because the position lies past the source's
-  // data or past its last keyframe, the attempt has no picture to hold, and
-  // the worker fails it with JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED.
+  // 0037 decides. Such a position can leave the attempt no picture to hold.
+  // When the worker reads no packet of the chosen video stream from that
+  // position, because it lies past the stream's last frame, the worker fails
+  // the attempt with JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES and reports the
+  // video stream and the position in JobAttemptFailed.stream_without_samples.
+  // When the worker reads packets of the stream but decodes no picture,
+  // because no keyframe follows the position, the stream still has samples
+  // after it, and the worker fails the attempt with
+  // JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED.
   //
   // This version of the server sets the field for no other attempt.
   google.protobuf.Duration seek_position = 6;
@@ -798,11 +807,37 @@ enum JobAttemptFailure {
   // decision on the same encoder backend produces the same mismatch, so a
   // replacement job attempt fails the same way.
   JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH = 5;
+  // The attempt read no sample of a chosen source stream from the position
+  // where it began reading, and it can't stand in for that stream. Only an
+  // attempt that encodes the chosen audio stream with
+  // AudioDecision.pad_with_silence_to_advertised_end stands in for a stream:
+  // it encodes generated silence and completes. Every other chosen stream
+  // that delivers no sample fails the attempt with this value: a copied
+  // stream, because generated silence or a held picture can't join a copy, an
+  // audio stream encoded without padding, and the video stream of any encode,
+  // because the worker can't make a picture that it never decoded.
+  // JobAttemptFailed.stream_without_samples names the stream. The worker
+  // reports this value instead of JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED, also
+  // when FFmpeg exits with status 0, such as the AC-3 or E-AC-3 copy whose
+  // initialization segment comes out empty. The server stores the read
+  // position as the stream's learned end bound and recovers as ADR 0037
+  // decides: a copied stream moves playback to a stream session that encodes
+  // and pads it, and audio encoded without padding gets a replacement attempt
+  // that pads it.
+  JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES = 7;
 }
 
 message JobAttemptFailed {
   Uuid job_attempt_id = 1;
   JobAttemptFailure failure = 2;
+  // The worker sets this field when failure is
+  // JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES and leaves it out otherwise. It
+  // names the first chosen stream that delivered no sample and that the
+  // attempt can't stand in for. It follows the snapshot rule of
+  // JobAttemptCompleted.stream_ends: when either reading of the source's
+  // snapshot differs from VariantJob.source_snapshot, the worker still fails
+  // the attempt with that value but leaves this field out.
+  SourceStreamWithoutSamples stream_without_samples = 3;
 }
 
 message JobAttemptCompleted {
@@ -819,7 +854,9 @@ message JobAttemptCompleted {
   // source ended early, so the server learns an end that the probe does not
   // state, such as an audio stream that ends long before the video. The worker
   // leaves out a stream whose last sample the attempt did not read, such as an
-  // audio stream that ended before the attempt's start.
+  // audio stream that ended before the attempt's start. When the attempt read
+  // no sample of such a stream at all, it reports the stream in
+  // streams_without_samples instead.
   //
   // The end times belong to the source snapshot that the attempt read. The
   // worker reads the source's size and modification time when it opens the
@@ -831,6 +868,17 @@ message JobAttemptCompleted {
   // time only when that snapshot still equals the snapshot of the stored probe
   // outcome, so a late report from a replaced source writes nothing (ADR 0037).
   repeated SourceStreamEnd stream_ends = 3;
+  // The worker reports one entry for each chosen stream that the attempt stood
+  // in for because it read no sample of the stream from the position where it
+  // began reading: the chosen audio stream, when the job encodes it with
+  // AudioDecision.pad_with_silence_to_advertised_end. A stream that the
+  // attempt can't stand in for fails the attempt instead, with
+  // JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES. The entries follow the snapshot
+  // rule of stream_ends: the worker reports them only when both readings of
+  // the source's snapshot equal VariantJob.source_snapshot. The server stores
+  // each entry's read_from as the stream's learned end bound, under the same
+  // snapshot check as a learned end time (ADR 0037).
+  repeated SourceStreamWithoutSamples streams_without_samples = 4;
 }
 
 // This message reports where the source ended in a job attempt whose source
@@ -843,10 +891,12 @@ message JobAttemptCompleted {
 // stream that it copies. Any other attempt delivers no media segment after
 // last_segment_with_source_media. An attempt that starts after every source
 // sample still completes with this report, and never fails because it
-// produced no media segment. The exception is an attempt whose seek reads no
-// packet of the chosen video stream, or that holds the last frame and decodes
-// no picture, as TranscodeExecution.seek_position describes: the worker fails
-// it with JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED.
+// produced no media segment. The exceptions are an attempt that reads no
+// sample of a chosen stream that it can't stand in for, which fails with
+// JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES, and an attempt that holds the
+// last frame but decodes no picture from the video packets that it reads,
+// which fails with JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED, as
+// TranscodeExecution.seek_position describes.
 message SourceEndedEarly {
   // The number of the variant's last media segment that holds a sample from
   // the source rather than padding, counted like start_sequence_number. It is
@@ -862,6 +912,19 @@ message SourceEndedEarly {
   // and lists no stream. A listed stream means that the attempt left media
   // out, as a stream copy that runs short can.
   repeated uint32 stream_indexes_with_media_after_last_segment = 2;
+}
+
+// This message reports that a job attempt read no sample of one chosen source
+// stream from the position where it began reading the source. The stream
+// therefore has no sample that the attempt could read from read_from on.
+message SourceStreamWithoutSamples {
+  // The stream's ProbeStreamInfo.index within the container.
+  optional uint32 stream_index = 1;
+  // The position from which the attempt read the source, on the zero-based
+  // timeline of TranscodeExecution.seek_position: the job's
+  // TranscodeExecution.seek_position when the job sets it, otherwise
+  // TranscodeExecution.seek_position_seconds.
+  google.protobuf.Duration read_from = 2;
 }
 
 // This message reports where one chosen source stream ended.

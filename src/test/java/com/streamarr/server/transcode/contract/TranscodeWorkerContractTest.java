@@ -22,6 +22,8 @@ import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.FieldOrder;
 import com.streamarr.transcode.v1.Fraction;
 import com.streamarr.transcode.v1.JobAttemptCompleted;
+import com.streamarr.transcode.v1.JobAttemptFailed;
+import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.Presence;
@@ -33,6 +35,7 @@ import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.SourceEndedEarly;
 import com.streamarr.transcode.v1.SourceSnapshot;
 import com.streamarr.transcode.v1.SourceStreamEnd;
+import com.streamarr.transcode.v1.SourceStreamWithoutSamples;
 import com.streamarr.transcode.v1.StartVariantCommand;
 import com.streamarr.transcode.v1.TranscodeDecision;
 import com.streamarr.transcode.v1.TranscodeExecution;
@@ -753,6 +756,65 @@ class TranscodeWorkerContractTest {
 
   @Test
   @DisplayName(
+      "Should report the audio stream and the read position beside the video's end when a padded encode reads no audio sample")
+  void
+      shouldReportTheAudioStreamAndTheReadPositionBesideTheVideoEndWhenPaddedEncodeReadsNoAudioSample()
+          throws Exception {
+    var readFrom = Duration.newBuilder().setSeconds(54).setNanos(54_000_000).build();
+    var audioWithoutSamples =
+        SourceStreamWithoutSamples.newBuilder().setStreamIndex(1).setReadFrom(readFrom).build();
+    var video =
+        SourceStreamEnd.newBuilder()
+            .setStreamIndex(0)
+            .setEndTime(Duration.newBuilder().setSeconds(84))
+            .build();
+    var completed =
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptCompleted(
+                JobAttemptCompleted.newBuilder()
+                    .setJobAttemptId(uuid(UUID.randomUUID()))
+                    .addStreamEnds(video)
+                    .addStreamsWithoutSamples(audioWithoutSamples))
+            .build();
+
+    var parsed =
+        EstablishWorkerSessionRequest.parseFrom(completed.toByteArray()).getJobAttemptCompleted();
+
+    assertThat(parsed.getStreamsWithoutSamplesList()).containsExactly(audioWithoutSamples);
+    assertThat(parsed.getStreamEndsList()).containsExactly(video);
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry the stream and the read position with the failure when an attempt can't stand in for a stream that delivered no sample")
+  void shouldCarryTheStreamAndTheReadPositionWithTheFailureWhenAttemptCannotStandInForStream()
+      throws Exception {
+    var copiedAudio =
+        SourceStreamWithoutSamples.newBuilder()
+            .setStreamIndex(0)
+            .setReadFrom(Duration.newBuilder().setSeconds(30).setNanos(30_000_000))
+            .build();
+    var failed =
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptFailed(
+                JobAttemptFailed.newBuilder()
+                    .setJobAttemptId(uuid(UUID.randomUUID()))
+                    .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES)
+                    .setStreamWithoutSamples(copiedAudio))
+            .build();
+
+    var parsed =
+        EstablishWorkerSessionRequest.parseFrom(failed.toByteArray()).getJobAttemptFailed();
+
+    assertThat(parsed.getFailure())
+        .isEqualTo(JobAttemptFailure.JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES);
+    assertThat(parsed.getStreamWithoutSamples()).isEqualTo(copiedAudio);
+    assertThat(parsed.getStreamWithoutSamples().hasStreamIndex()).isTrue();
+    assertThat(JobAttemptFailed.getDefaultInstance().hasStreamWithoutSamples()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
       "Should keep the field numbers and types that workers build against when publishing the early end contract")
   void shouldKeepTheFieldNumbersAndTypesThatWorkersBuildAgainstWhenPublishingTheEarlyEndContract() {
     var hold = VideoDecision.getDescriptor().findFieldByName("hold_last_frame_to_advertised_end");
@@ -790,6 +852,33 @@ class TranscodeWorkerContractTest {
         .isEqualTo(2);
     assertThat(streamEnd.findFieldByName("stream_index").getNumber()).isEqualTo(1);
     assertThat(streamEnd.findFieldByName("end_time").getNumber()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the field numbers and types that workers build against when publishing the report of a stream that delivered no sample")
+  void
+      shouldKeepTheFieldNumbersAndTypesThatWorkersBuildAgainstWhenPublishingStreamWithoutSamples() {
+    var withoutSamples = SourceStreamWithoutSamples.getDescriptor();
+    var streamIndex = withoutSamples.findFieldByName("stream_index");
+    var readFrom = withoutSamples.findFieldByName("read_from");
+    var completedReport =
+        JobAttemptCompleted.getDescriptor().findFieldByName("streams_without_samples");
+    var failedReport = JobAttemptFailed.getDescriptor().findFieldByName("stream_without_samples");
+
+    assertThat(streamIndex.getNumber()).isEqualTo(1);
+    assertThat(streamIndex.getType()).isEqualTo(Type.UINT32);
+    assertThat(streamIndex.hasPresence()).isTrue();
+    assertThat(readFrom.getNumber()).isEqualTo(2);
+    assertThat(readFrom.getMessageType()).isEqualTo(Duration.getDescriptor());
+    assertThat(completedReport.getNumber()).isEqualTo(4);
+    assertThat(completedReport.isRepeated()).isTrue();
+    assertThat(completedReport.getMessageType()).isEqualTo(withoutSamples);
+    assertThat(failedReport.getNumber()).isEqualTo(3);
+    assertThat(failedReport.isRepeated()).isFalse();
+    assertThat(failedReport.getMessageType()).isEqualTo(withoutSamples);
+    assertThat(JobAttemptFailure.JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES.getNumber())
+        .isEqualTo(7);
   }
 
   @Test
