@@ -129,9 +129,12 @@ public class PlaybackSessionService implements AutoCloseable {
     }
   }
 
-  // Every format attempt plays the same source, so the first one fixes the offered choices.
+  // Every format attempt plays the same source to the same declaration, so the first one fixes the
+  // offered choices.
   private void offerChoicesOf(PlaybackSession playback, StreamSession session) {
-    var offered = QualityTier.offeredChoicesFor(session.getMediaProbe().displayedSize());
+    var offered =
+        QualityTier.offeredChoicesFor(
+            session.getMediaProbe(), playback.command.capabilityDeclaration());
     locked(
         playback,
         () -> {

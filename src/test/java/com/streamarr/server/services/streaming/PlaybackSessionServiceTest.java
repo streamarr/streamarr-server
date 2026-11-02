@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming;
 import static com.streamarr.server.domain.streaming.ProbedCodecFamily.H264;
 import static com.streamarr.server.domain.streaming.ProbedCodecFamily.HEVC;
 import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountScopedBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.av1EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.declarationBuilderFor;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
@@ -17,16 +18,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
+import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
+import com.streamarr.server.domain.streaming.FieldOrder;
+import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ShortCopy;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
+import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
+import com.streamarr.server.domain.streaming.VideoCodecProfile;
+import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
+import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.PlaybackSessionClosedException;
 import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.events.CopiedVariantRanShortEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
@@ -36,6 +45,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -183,6 +193,179 @@ class PlaybackSessionServiceTest {
             Arrays.stream(expected.split(",")).map(VideoQuality::valueOf).toList());
     var recovered = service.reportFormatFailure(report(snapshot, command).build()).orElseThrow();
     assertThat(recovered.offeredChoices()).isEqualTo(snapshot.offeredChoices());
+  }
+
+  // ADR 0050: a tier that a capability entry shrinks into a smaller tier's box gives way, so its
+  // fixed quality would play no larger than the smaller tier.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("declarationsThatReachSomeBoxes")
+  @DisplayName(
+      "Should offer only the fixed qualities whose box a capability entry reaches when playback"
+          + " starts")
+  void shouldOfferOnlyTheFixedQualitiesWhoseBoxACapabilityEntryReachesWhenPlaybackStarts(
+      DeclaredSource declared, List<VideoQuality> expected) {
+    streams.sourceProbe = declared.source();
+    var command = startCommand().capabilityDeclaration(declared.declaration()).build();
+
+    var snapshot = accepted(service.start(command));
+
+    assertThat(snapshot.offeredChoices()).containsExactlyElementsOf(expected);
+  }
+
+  private record DeclaredSource(MediaProbe source, ClientCapabilityDeclaration declaration) {}
+
+  private static Stream<Arguments> declarationsThatReachSomeBoxes() {
+    var uhdHigh = probedSource(3840, 2160, h264Facts(VideoCodecProfile.H264_HIGH, 51).build());
+    var belowUhd =
+        List.of(
+            VideoQuality.ORIGINAL,
+            VideoQuality.AUTO,
+            VideoQuality.FULL_HD_1080P,
+            VideoQuality.HIGH_720P,
+            VideoQuality.MEDIUM_480P,
+            VideoQuality.LOW_360P);
+    var originalAutoAndUhd = List.of(VideoQuality.ORIGINAL, VideoQuality.AUTO, VideoQuality.UHD_4K);
+    return Stream.of(
+        Arguments.of(
+            Named.of(
+                "a UHD source on H.264 up to 1080p at level 4.2",
+                new DeclaredSource(uhdHigh, fullHdH264Declaration().build())),
+            belowUhd),
+        Arguments.of(
+            Named.of(
+                "a 2.4:1 UHD source on H.264 up to 1080p at level 4.2",
+                new DeclaredSource(
+                    probedSource(3840, 1600, h264Facts(VideoCodecProfile.H264_HIGH, 51).build()),
+                    fullHdH264Declaration().build())),
+            belowUhd),
+        Arguments.of(
+            Named.of(
+                "a UHD source on H.264 up to 1080p and AV1 up to UHD",
+                new DeclaredSource(
+                    uhdHigh,
+                    fullHdH264Declaration()
+                        .video(List.of(fullHdH264Entry(), av1EntryBuilder().build()))
+                        .build())),
+            List.of(
+                VideoQuality.ORIGINAL,
+                VideoQuality.AUTO,
+                VideoQuality.UHD_4K,
+                VideoQuality.FULL_HD_1080P,
+                VideoQuality.HIGH_720P,
+                VideoQuality.MEDIUM_480P,
+                VideoQuality.LOW_360P)),
+        Arguments.of(
+            Named.of(
+                "a UHD Main source whose copy an H.264 Main entry accepts but whose High encode"
+                    + " it refuses",
+                new DeclaredSource(
+                    probedSource(3840, 2160, h264Facts(VideoCodecProfile.H264_MAIN, 51).build()),
+                    defaultDeclarationBuilder()
+                        .video(
+                            List.of(
+                                h264EntryBuilder()
+                                    .codecProfiles(
+                                        List.of(
+                                            VideoCodecProfileCapability.builder()
+                                                .profile(VideoCodecProfile.H264_MAIN)
+                                                .maxLevel(52)
+                                                .build()))
+                                    .build()))
+                        .build())),
+            originalAutoAndUhd),
+        // An encode takes the codec family that plays the source at the fastest frame rate.
+        Arguments.of(
+            Named.of(
+                "a UHD source at 60 fps on H.264 up to 1080p60 and AV1 up to UHD at 30 fps",
+                new DeclaredSource(
+                    probedSource(
+                        3840,
+                        2160,
+                        h264Facts(VideoCodecProfile.H264_HIGH, 52)
+                            .frameRateRule(
+                                VideoPlaybackFactsFixture.declaredRateRule(new Fraction(60, 1)))
+                            .build()),
+                    fullHdH264Declaration()
+                        .video(
+                            List.of(fullHdH264Entry(), av1EntryBuilder().maxFrameRate(30).build()))
+                        .build())),
+            belowUhd),
+        // Deinterlacing doubles the frame rate, so level 3.0 shrinks the 480p encode to 504x336.
+        Arguments.of(
+            Named.of(
+                "an interlaced 480i source whose copy H.264 at level 3.0 accepts but whose"
+                    + " deinterlaced encode it shrinks into the 360p box",
+                new DeclaredSource(
+                    probedSource(
+                        720,
+                        480,
+                        h264Facts(VideoCodecProfile.H264_HIGH, 30)
+                            .frameRateRule(
+                                VideoPlaybackFactsFixture.interlacedRateRule(
+                                    new Fraction(30_000, 1_001), FieldOrder.TT))
+                            .build()),
+                    defaultDeclarationBuilder()
+                        .video(
+                            List.of(h264HighEntryBuilder(30).maxWidth(720).maxHeight(480).build()))
+                        .build())),
+            List.of(VideoQuality.ORIGINAL, VideoQuality.AUTO, VideoQuality.LOW_360P)),
+        Arguments.of(
+            Named.of(
+                "a UHD source probed before version 5 without an output frame rate, which only a"
+                    + " copy plays",
+                new DeclaredSource(
+                    probedSource(
+                        3840,
+                        2160,
+                        VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                            .streamIndex(0)
+                            .frameRateRule(VideoPlaybackFactsFixture.refusedRule())
+                            .build()),
+                    defaultDeclarationBuilder().build())),
+            originalAutoAndUhd));
+  }
+
+  private static MediaProbe probedSource(int width, int height, VideoPlaybackFacts facts) {
+    return defaultProbeBuilder()
+        .width(width)
+        .height(height)
+        .videoPlaybackFacts(Optional.of(facts))
+        .build();
+  }
+
+  // An 8-bit SDR H.264 stream at 24 fps whose probe names its codec profile and level.
+  private static VideoPlaybackFacts.VideoPlaybackFactsBuilder h264Facts(
+      VideoCodecProfile profile, int level) {
+    return VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+        .streamIndex(0)
+        .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))
+        .videoProperties(
+            Optional.of(
+                VideoPlaybackFactsFixture.h264HighPropertiesBuilder()
+                    .codecProfile(Optional.of(profile))
+                    .codecLevel(OptionalInt.of(level))
+                    .build()));
+  }
+
+  // What the tvOS simulator declares: H.264 High only, up to 1080p at level 4.2.
+  private static ClientCapabilityDeclaration.ClientCapabilityDeclarationBuilder
+      fullHdH264Declaration() {
+    return defaultDeclarationBuilder().video(List.of(fullHdH264Entry()));
+  }
+
+  private static VideoCapabilityEntry fullHdH264Entry() {
+    return h264HighEntryBuilder(42).maxWidth(1920).maxHeight(1080).build();
+  }
+
+  private static VideoCapabilityEntry.VideoCapabilityEntryBuilder h264HighEntryBuilder(
+      int maxLevel) {
+    return h264EntryBuilder()
+        .codecProfiles(
+            List.of(
+                VideoCodecProfileCapability.builder()
+                    .profile(VideoCodecProfile.H264_HIGH)
+                    .maxLevel(maxLevel)
+                    .build()));
   }
 
   // A fixed quality's own encode is the output that the viewer asked for.
