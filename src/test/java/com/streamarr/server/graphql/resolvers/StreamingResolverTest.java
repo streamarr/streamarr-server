@@ -1289,6 +1289,8 @@ class StreamingResolverTest {
                 .videoCodec("h264")
                 .audioCodec("aac")
                 .bitrate(5_000_000L)
+                .videoPlaybackFacts(
+                    Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()))
                 .build())
         .transcodeDecision(
             TranscodeDecision.builder()
