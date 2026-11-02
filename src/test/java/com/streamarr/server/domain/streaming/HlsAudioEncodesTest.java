@@ -134,6 +134,58 @@ class HlsAudioEncodesTest {
         .isEmpty();
   }
 
+  // A track with more channels than a maximum of 3 or 4 has no layout of its own at that count.
+  @ParameterizedTest
+  @ValueSource(ints = {3, 4})
+  @DisplayName(
+      "Should encode AAC stereo when a channel maximum of 3 or 4 caps every codec below the track's"
+          + " channels")
+  void shouldEncodeAacStereoWhenAChannelMaximumOf3Or4CapsEveryCodecBelowTheTracksChannels(
+      int channelMaximum) {
+    assertThat(HlsAudioEncodes.forTrack(everyCodecWithMaximum(channelMaximum), 6))
+        .isEqualTo(encode("aac").channels(2).bitrate(128_000L).build());
+  }
+
+  static Stream<MultichannelEncode> encodesThatAMaximumOf5Caps() {
+    return Stream.of(
+        MultichannelEncode.builder()
+            .codec("aac")
+            .trackChannels(6)
+            .encode(encode("aac").channels(5).bitrate(384_000L).build())
+            .build(),
+        MultichannelEncode.builder()
+            .codec("ac3")
+            .trackChannels(8)
+            .encode(encode("ac3").channels(5).bitrate(640_000L).build())
+            .build(),
+        MultichannelEncode.builder()
+            .codec("eac3")
+            .trackChannels(6)
+            .encode(encode("eac3").channels(5).bitrate(768_000L).build())
+            .build());
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("encodesThatAMaximumOf5Caps")
+  @DisplayName(
+      "Should encode 5 channels at the codec's 5.1 bitrate when a channel maximum of 5 caps the"
+          + " track")
+  void shouldEncode5ChannelsAtTheCodecs51BitrateWhenAChannelMaximumOf5CapsTheTrack(
+      MultichannelEncode expected) {
+    var encode =
+        HlsAudioEncodes.multichannelEncode(
+            everyCodecWithMaximum(5), expected.codec(), expected.trackChannels());
+
+    assertThat(encode).contains(expected.encode());
+  }
+
+  @Test
+  @DisplayName("Should encode AAC 5.1 when a channel maximum of 7 caps an 8-channel track")
+  void shouldEncodeAac51WhenAChannelMaximumOf7CapsAn8ChannelTrack() {
+    assertThat(HlsAudioEncodes.multichannelEncode(everyCodecWithMaximum(7), "aac", 8))
+        .contains(encode("aac").channels(6).bitrate(384_000L).build());
+  }
+
   @Test
   @DisplayName("Should refuse to choose an encode when the declaration or the codec is missing")
   void shouldRefuseToChooseAnEncodeWhenTheDeclarationOrTheCodecIsMissing() {
@@ -168,12 +220,16 @@ class HlsAudioEncodesTest {
         .build();
   }
 
-  // AAC, AC-3, E-AC-3 and FLAC, each with up to 7.1.
   private static ClientCapabilityDeclaration everyCodecIn71() {
+    return everyCodecWithMaximum(8);
+  }
+
+  // AAC, AC-3, E-AC-3 and FLAC, each with the same channel maximum.
+  private static ClientCapabilityDeclaration everyCodecWithMaximum(int channelMaximum) {
     return defaultDeclarationBuilder()
         .audio(
             Stream.of(AudioCodec.AAC, AudioCodec.AC3, AudioCodec.EAC3, AudioCodec.FLAC)
-                .map(codec -> audioEntryBuilder(codec).maxChannels(8).build())
+                .map(codec -> audioEntryBuilder(codec).maxChannels(channelMaximum).build())
                 .toList())
         .build();
   }

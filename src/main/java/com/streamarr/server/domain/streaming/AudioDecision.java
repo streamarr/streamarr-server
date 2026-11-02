@@ -83,7 +83,7 @@ public record AudioDecision(
   public static long bitrateFor(@NonNull String codec, int channels) {
     return switch (channels) {
       case 1 -> 64_000L;
-      case 6 -> fivePointOneBitrate(codec);
+      case 5, 6 -> fivePointOneBitrate(codec);
       case 8 -> Math.max(512_000L, fivePointOneBitrate(codec));
       default -> 128_000L;
     };
