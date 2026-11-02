@@ -194,7 +194,7 @@ class VideoCopyBandwidthTest {
     return Stream.of(
         CopyMediaPlaylist.UNKNOWN,
         CopyMediaPlaylistFixture.listing(3, "0", "0", "0"),
-        new CopyMediaPlaylist(List.of(), 3, 3));
+        new CopyMediaPlaylist(List.of(), 3));
   }
 
   // The server knows the framing of only the AAC, AC-3 and E-AC-3 encoders.

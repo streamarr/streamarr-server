@@ -143,26 +143,26 @@ final class CopySegmentSizes {
   }
 
   /**
-   * The seconds of audio in a segment's grid slot: the slot's length, or for the last segment the
-   * rest of the playlist from the slot's start.
+   * The seconds of audio in a segment's grid slots: up to the next segment's slot start, or for the
+   * last segment the rest of the playlist from its slot start.
    */
   private static BigDecimal slotAudioSeconds(CopyMediaPlaylist playlist, int segment) {
-    var slotSeconds = BigDecimal.valueOf(playlist.targetSegmentDurationSeconds());
-    if (segment + 1 < playlist.segmentCount()) {
-      return slotSeconds;
+    var segments = playlist.segments();
+    var slotStart = segments.get(segment).slotStartSeconds();
+    if (segment + 1 < segments.size()) {
+      return BigDecimal.valueOf(segments.get(segment + 1).slotStartSeconds() - slotStart);
     }
 
-    return playlist.durationSeconds().subtract(slotSeconds.multiply(BigDecimal.valueOf(segment)));
+    return playlist.durationSeconds().subtract(BigDecimal.valueOf(slotStart));
   }
 
   /**
-   * Where grid slot {@code slot} starts, in ticks of the keyframe positions' time base times their
-   * numerator: the slot's start in seconds times their denominator.
+   * Where the grid slots of segment {@code segment} start, in ticks of the keyframe positions' time
+   * base times their numerator: the slot start in seconds times their denominator.
    */
   private static BigInteger slotEdge(
-      KeyframePositions positions, CopyMediaPlaylist playlist, int slot) {
-    return BigInteger.valueOf(slot)
-        .multiply(BigInteger.valueOf(playlist.targetSegmentDurationSeconds()))
+      KeyframePositions positions, CopyMediaPlaylist playlist, int segment) {
+    return BigInteger.valueOf(playlist.segments().get(segment).slotStartSeconds())
         .multiply(BigInteger.valueOf(positions.timeBaseDenominator()));
   }
 
