@@ -28,6 +28,7 @@ public class WorkerSessionConfiguration {
             .port(properties.port())
             .probeTimeout(properties.probeTimeout())
             .keyframeScanTimeout(properties.keyframeScanTimeout())
+            .bitrateScanChunkTimeout(properties.bitrateScanChunkTimeout())
             .probeCancellationTimeout(properties.probeCancellationTimeout())
             .startReportTimeout(properties.startReportTimeout())
             .keepalive(

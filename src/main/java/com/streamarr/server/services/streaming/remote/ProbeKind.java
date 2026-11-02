@@ -10,9 +10,10 @@ enum ProbeKind {
   BACKGROUND,
   KEYFRAME_PACKET_SCAN;
 
-  // A keyframe packet scan is never a playback probe, whatever its priority, as on the worker.
+  // A keyframe packet scan or a bitrate scan chunk is never a playback probe, whatever its
+  // priority, as on the worker.
   static ProbeKind of(ProbeRequest request) {
-    if (request.getScanKeyframePackets()) {
+    if (request.getScanKeyframePackets() || request.hasBitrateScanChunk()) {
       return KEYFRAME_PACKET_SCAN;
     }
 

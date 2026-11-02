@@ -3,10 +3,14 @@ package com.streamarr.server.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.domain.streaming.BitrateScanChunkRequest;
+import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbePriority;
+import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.services.streaming.BitrateScanner;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.KeyframePacketScanner;
 import com.streamarr.server.services.streaming.SegmentStore;
@@ -14,6 +18,8 @@ import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -42,7 +48,8 @@ class FfprobeConfigurationTest {
           assertThat(context)
               .hasNotFailed()
               .hasSingleBean(FfprobeService.class)
-              .hasSingleBean(KeyframePacketScanner.class);
+              .hasSingleBean(KeyframePacketScanner.class)
+              .hasSingleBean(BitrateScanner.class);
           var service = context.getBean(FfprobeService.class);
           assertThat(service).isInstanceOf(RemoteFfprobeService.class);
           var request =
@@ -59,6 +66,22 @@ class FfprobeConfigurationTest {
           var scanner = context.getBean(KeyframePacketScanner.class);
           assertThatThrownBy(() -> scanner.scanKeyframePackets(request))
               .as("No worker is connected to scan the source")
+              .isInstanceOf(ProbeWorkersBusyException.class);
+          var chunk =
+              BitrateScanChunkRequest.builder()
+                  .sourcePath(Path.of("/media/movie.mkv"))
+                  .attemptId(UUID.randomUUID())
+                  .measurementVersion(StreamMeasurements.CURRENT_VERSION)
+                  .measuredStreamIndexes(List.of(0))
+                  .timeBaseNumerator(1)
+                  .timeBaseDenominator(90_000)
+                  .keyframes(List.of(new KeyframePosition(0, 0)))
+                  .end(Optional.empty())
+                  .firstChunk(true)
+                  .build();
+          var bitrateScanner = context.getBean(BitrateScanner.class);
+          assertThatThrownBy(() -> bitrateScanner.scanChunk(chunk))
+              .as("No worker is connected to measure the chunk")
               .isInstanceOf(ProbeWorkersBusyException.class);
         });
   }

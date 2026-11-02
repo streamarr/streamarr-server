@@ -89,13 +89,13 @@ final class RemoteStreamMeasurementsMapper {
     }
 
     var bytes = KeyframeIntervalCounts.ofUnsigned(toArray(part.getKeyframeIntervalBytesList()));
-    if (sum(bytes) != stream.getMeasuredBytes()) {
+    if (bytes.total() != stream.getMeasuredBytes()) {
       throw violation("Worker probe measured stream's intervals differ from its measured bytes");
     }
 
     var packets =
         KeyframeIntervalCounts.ofUnsigned(toArray(part.getKeyframeIntervalPacketCountsList()));
-    if (sum(packets) != stream.getPacketCount()) {
+    if (packets.total() != stream.getPacketCount()) {
       throw violation("Worker probe measured stream's intervals differ from its packet count");
     }
 
@@ -126,15 +126,6 @@ final class RemoteStreamMeasurementsMapper {
 
   private static int[] toArray(List<Integer> unsignedCounts) {
     return unsignedCounts.stream().mapToInt(Integer::intValue).toArray();
-  }
-
-  private static long sum(KeyframeIntervalCounts counts) {
-    var total = 0L;
-    for (var interval = 0; interval < counts.intervalCount(); interval++) {
-      total += counts.countOf(interval);
-    }
-
-    return total;
   }
 
   private static Set<Integer> audioStreamIndexes(ProbeMediaInfo media) {

@@ -3,6 +3,9 @@ package com.streamarr.server.services.streaming.remote;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 
 import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.domain.streaming.BitrateScanChunkOutcome;
+import com.streamarr.server.domain.streaming.BitrateScanChunkRequest;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
@@ -16,6 +19,7 @@ import java.nio.file.Path;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Function;
 
 public final class RemoteFfprobeService implements FfprobeService {
 
@@ -23,6 +27,7 @@ public final class RemoteFfprobeService implements FfprobeService {
   private final UUID sourceNamespaceId;
   private final RemoteMediaSourceMapper sourceMapper;
   private final RemoteProbeResultMapper resultMapper = new RemoteProbeResultMapper();
+  private final RemoteBitrateScanChunkMapper chunkMapper = new RemoteBitrateScanChunkMapper();
 
   public RemoteFfprobeService(WorkerSessionServer server, UUID sourceNamespaceId, Path sourceRoot) {
     this.server = server;
@@ -32,7 +37,9 @@ public final class RemoteFfprobeService implements FfprobeService {
 
   @Override
   public ProbeOutcome probe(ProbeExecutionRequest request) {
-    return dispatch(probeRequest(request).setPriority(priorityOf(request.priority())).build());
+    return dispatch(
+        probeRequest(request).setPriority(priorityOf(request.priority())).build(),
+        resultMapper::map);
   }
 
   /** Serves {@link com.streamarr.server.services.streaming.ProbeWorkers}. */
@@ -49,7 +56,19 @@ public final class RemoteFfprobeService implements FfprobeService {
         probeRequest(request)
             .setScanKeyframePackets(true)
             .setPriority(priorityOf(ProbePriority.BACKGROUND))
-            .build());
+            .build(),
+        resultMapper::map);
+  }
+
+  /** Serves {@link com.streamarr.server.services.streaming.BitrateScanner}. */
+  public BitrateScanChunkOutcome scanBitrateScanChunk(BitrateScanChunkRequest request) {
+    var chunk = chunkMapper.chunk(request);
+    return dispatch(
+        probeRequest(request.sourcePath(), request.attemptId(), ProbeVersion.CURRENT)
+            .setPriority(priorityOf(ProbePriority.BACKGROUND))
+            .setBitrateScanChunk(chunk)
+            .build(),
+        report -> chunkMapper.map(chunk, report));
   }
 
   // The domain and the worker contract both name a probe's priority ProbePriority.
@@ -62,13 +81,17 @@ public final class RemoteFfprobeService implements FfprobeService {
   }
 
   private ProbeRequest.Builder probeRequest(ProbeExecutionRequest request) {
-    return ProbeRequest.newBuilder()
-        .setProbeAttemptId(toProto(request.attemptId()))
-        .setProbeVersion(request.probeVersion())
-        .setSource(sourceMapper.map(request.sourcePath()));
+    return probeRequest(request.sourcePath(), request.attemptId(), request.probeVersion());
   }
 
-  private ProbeOutcome dispatch(ProbeRequest request) {
+  private ProbeRequest.Builder probeRequest(Path sourcePath, UUID attemptId, int probeVersion) {
+    return ProbeRequest.newBuilder()
+        .setProbeAttemptId(toProto(attemptId))
+        .setProbeVersion(probeVersion)
+        .setSource(sourceMapper.map(sourcePath));
+  }
+
+  private <T> T dispatch(ProbeRequest request, Function<ProbeAttemptReport, T> mapper) {
     var dispatch = server.dispatchProbe(request);
     var pending =
         switch (dispatch) {
@@ -76,7 +99,7 @@ public final class RemoteFfprobeService implements FfprobeService {
           case ProbeDispatch.Refused(var reason) -> throw refusal(reason);
         };
     try {
-      return resultMapper.map(pending.get());
+      return mapper.apply(pending.get());
     } catch (InterruptedException exception) {
       pending.cancel(true);
       Thread.currentThread().interrupt();

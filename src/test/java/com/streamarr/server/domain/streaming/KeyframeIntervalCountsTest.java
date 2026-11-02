@@ -32,6 +32,14 @@ class KeyframeIntervalCountsTest {
   }
 
   @Test
+  @DisplayName("Should total every count as unsigned when a count uses the top bit")
+  void shouldTotalEveryCountAsUnsignedWhenCountUsesTopBit() {
+    var counts = KeyframeIntervalCounts.ofUnsigned(new int[] {-1, -1, 7});
+
+    assertThat(counts.total()).isEqualTo(2 * 0xFFFF_FFFFL + 7);
+  }
+
+  @Test
   @DisplayName("Should equal other counts only when they hold the same counts in the same order")
   void shouldEqualOtherCountsOnlyWhenTheyHoldSameCountsInSameOrder() {
     var counts = KeyframeIntervalCounts.of(0xFFFF_FFFFL, 7);
