@@ -351,6 +351,49 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should return both tokens in the body when login omits cookie mode")
+  void shouldReturnBothTokensInBodyWhenLoginOmitsCookieMode() throws Exception {
+    seedSingleProfileIdentity();
+
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"email": "%s", "password": "%s", "deviceName": "it-device"}
+                    """
+                        .formatted(account.getEmail(), password)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.accessToken").isNotEmpty())
+        .andExpect(jsonPath("$.refreshToken").isNotEmpty())
+        .andExpect(cookie().doesNotExist("streamarr_access"))
+        .andExpect(cookie().doesNotExist("streamarr_refresh"));
+  }
+
+  @Test
+  @DisplayName("Should return both tokens in the body when setup omits cookie mode")
+  void shouldReturnBothTokensInBodyWhenSetupOmitsCookieMode() throws Exception {
+    setupEmail = "setup-" + UUID.randomUUID() + "@example.com";
+
+    mockMvc
+        .perform(
+            post("/api/auth/setup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"email": "%s", "displayName": "Admin", "password": "%s", \
+                    "householdName": "Home", "profileName": "Andrew"}
+                    """
+                        .formatted(setupEmail, SETUP_PASSWORD)))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.accessToken").isNotEmpty())
+        .andExpect(jsonPath("$.refreshToken").isNotEmpty())
+        .andExpect(cookie().doesNotExist("streamarr_access"))
+        .andExpect(cookie().doesNotExist("streamarr_refresh"));
+  }
+
+  @Test
   @DisplayName("Should throttle login when failures exceed limit")
   void shouldThrottleLoginWhenFailuresExceedLimit() throws Exception {
     seedSingleProfileIdentity();
