@@ -269,10 +269,10 @@ class HlsPlaylistStructureTest {
 
     // RFC 8216 §4.3.4.2 makes FRAME-RATE optional, but AVPlayer drops a VIDEO-RANGE=PQ or HLG
     // variant without it and fails the item with NSURLErrorDomain -1002 before it fetches the media
-    // playlist (AetherEngine, CHANGELOG #130). A variant with SUPPLEMENTAL-CODECS announces an
-    // enhancement layer and is held to the same rule. No variant announces PQ, HLG or a
-    // supplemental codec until #396 copies HDR; the HDR copies whose frame rate the rule refused
-    // then fail here until #396 decides what they announce.
+    // playlist. A variant with SUPPLEMENTAL-CODECS announces an enhancement layer and is held to
+    // the same rule. No variant announces PQ, HLG or a supplemental codec until #396 copies HDR;
+    // the HDR copies whose frame rate the rule refused then fail here until #396 decides what they
+    // announce.
     @ParameterizedTest(name = "{0}")
     @MethodSource("sessionsOfEveryVideoShape")
     @DisplayName(
