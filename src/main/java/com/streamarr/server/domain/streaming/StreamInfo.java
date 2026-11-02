@@ -11,7 +11,11 @@ import lombok.NonNull;
 /**
  * One stream of a probed source. The facts from {@code dynamicRange} to {@code hearingImpaired}
  * come from probe version 4 and later. An earlier probe version leaves them empty. {@code
- * videoProperties} comes from probe version 5 and later, for video streams only.
+ * videoProperties} comes from probe version 5 and later, for video streams only. {@code comment},
+ * ffprobe's commentary disposition, comes from probe version 7 and later, for audio and subtitle
+ * streams only. {@code audioProperties} comes from probe version 7 and later, for audio streams
+ * only. An empty {@code comment} counts as false, and so does each disposition of an empty {@code
+ * audioProperties}.
  */
 @Builder
 public record StreamInfo(
@@ -40,7 +44,9 @@ public record StreamInfo(
     @NonNull Optional<String> title,
     @NonNull Optional<String> handlerName,
     @NonNull Optional<Boolean> hearingImpaired,
-    @NonNull Optional<VideoStreamProperties> videoProperties) {
+    @NonNull Optional<VideoStreamProperties> videoProperties,
+    @NonNull Optional<Boolean> comment,
+    @NonNull Optional<AudioStreamProperties> audioProperties) {
 
   // Lombok builder defaults — its generated setters assign them
   @SuppressWarnings({"java:S1068", "java:S9438"})
@@ -67,5 +73,7 @@ public record StreamInfo(
     private Optional<String> handlerName = Optional.empty();
     private Optional<Boolean> hearingImpaired = Optional.empty();
     private Optional<VideoStreamProperties> videoProperties = Optional.empty();
+    private Optional<Boolean> comment = Optional.empty();
+    private Optional<AudioStreamProperties> audioProperties = Optional.empty();
   }
 }

@@ -418,6 +418,57 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
      */
     public final TableField<MediaFileStreamInfoRecord, Boolean> COPY_KEEPS_PACKET_BYTES = createField(DSL.name("copy_keeps_packet_bytes"), SQLDataType.BOOLEAN, this, "");
 
+    /**
+     * The column <code>public.media_file_stream_info.channel_layout</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, String> CHANNEL_LAYOUT = createField(DSL.name("channel_layout"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.sample_format</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, String> SAMPLE_FORMAT = createField(DSL.name("sample_format"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.comment</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Boolean> COMMENT = createField(DSL.name("comment"), SQLDataType.BOOLEAN, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.visual_impaired</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Boolean> VISUAL_IMPAIRED = createField(DSL.name("visual_impaired"), SQLDataType.BOOLEAN, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.descriptions</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Boolean> DESCRIPTIONS = createField(DSL.name("descriptions"), SQLDataType.BOOLEAN, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.original</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Boolean> ORIGINAL = createField(DSL.name("original"), SQLDataType.BOOLEAN, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.dub</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Boolean> DUB = createField(DSL.name("dub"), SQLDataType.BOOLEAN, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.clean_effects</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Boolean> CLEAN_EFFECTS = createField(DSL.name("clean_effects"), SQLDataType.BOOLEAN, this, "");
+
+    /**
+     * The column <code>public.media_file_stream_info.dependent</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Boolean> DEPENDENT = createField(DSL.name("dependent"), SQLDataType.BOOLEAN, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.flac_minimum_block_size_samples</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> FLAC_MINIMUM_BLOCK_SIZE_SAMPLES = createField(DSL.name("flac_minimum_block_size_samples"), SQLDataType.INTEGER, this, "");
+
     private MediaFileStreamInfo(Name alias, Table<MediaFileStreamInfoRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -513,7 +564,11 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
     @Override
     public List<Check<MediaFileStreamInfoRecord>> getChecks() {
         return Arrays.asList(
+            Internal.createCheck(this, DSL.name("audio_comment_requires_audio_stream_properties"), "(((comment IS NULL) OR (codec_type <> 'audio'::text) OR (visual_impaired IS NOT NULL))) NOT VALID", true),
+            Internal.createCheck(this, DSL.name("audio_facts_require_audio_stream_properties"), "(((num_nonnulls(channel_layout, sample_format, flac_minimum_block_size_samples) = 0) OR (visual_impaired IS NOT NULL))) NOT VALID", true),
             Internal.createCheck(this, DSL.name("codec_level_and_tier_require_codec_profile"), "(((codec_profile IS NOT NULL) OR ((codec_level IS NULL) AND (codec_tier IS NULL))))", true),
+            Internal.createCheck(this, DSL.name("comment_requires_audio_or_subtitle_stream"), "(((comment IS NULL) OR ((codec_type = ANY (ARRAY['audio'::text, 'subtitle'::text])) IS TRUE))) NOT VALID", true),
+            Internal.createCheck(this, DSL.name("complete_audio_stream_properties"), "(((num_nonnulls(visual_impaired, descriptions, original, dub, clean_effects, dependent) = 0) OR ((num_nonnulls(visual_impaired, descriptions, original, dub, clean_effects, dependent) = 6) AND (comment IS NOT NULL) AND ((codec_type = 'audio'::text) IS TRUE)))) NOT VALID", true),
             Internal.createCheck(this, DSL.name("complete_container_cropping"), "((((crop_top IS NULL) = (crop_bottom IS NULL)) AND ((crop_top IS NULL) = (crop_left IS NULL)) AND ((crop_top IS NULL) = (crop_right IS NULL))))", true),
             Internal.createCheck(this, DSL.name("complete_content_light_level"), "(((max_content_light_level IS NULL) = (max_frame_average_light_level IS NULL)))", true),
             Internal.createCheck(this, DSL.name("complete_dolby_vision_record"), "((((dolby_vision_base_layer IS NULL) = (dolby_vision_enhancement_layer IS NULL)) AND ((dolby_vision_base_layer IS NULL) = (dolby_vision_rpu IS NULL))))", true),
@@ -526,6 +581,8 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
             Internal.createCheck(this, DSL.name("dolby_vision_claims_require_record"), "(((dolby_vision_base_layer IS NOT NULL) OR ((dolby_vision_profile IS NULL) AND (dolby_vision_level IS NULL) AND (dolby_vision_base_layer_compatibility_id IS NULL))))", true),
             Internal.createCheck(this, DSL.name("dolby_vision_details_require_presence"), "(((dolby_vision_observed_rpu IS NOT NULL) = (NOT (dolby_vision IS DISTINCT FROM 'PRESENT'::text))))", true),
             Internal.createCheck(this, DSL.name("dolby_vision_record_requires_presence"), "(((dolby_vision_base_layer IS NULL) OR (dolby_vision = 'PRESENT'::text)))", true),
+            Internal.createCheck(this, DSL.name("flac_minimum_block_size_fits_streaminfo"), "(((flac_minimum_block_size_samples >= 0) AND (flac_minimum_block_size_samples <= 65535))) NOT VALID", true),
+            Internal.createCheck(this, DSL.name("flac_minimum_block_size_requires_flac"), "(((flac_minimum_block_size_samples IS NULL) OR ((codec = 'flac'::text) IS TRUE))) NOT VALID", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_bit_depth_check"), "((bit_depth > 0))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_chroma_subsampling_check"), "((chroma_subsampling = ANY (ARRAY['CHROMA_420'::text, 'CHROMA_422'::text, 'CHROMA_444'::text, 'MONOCHROME'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_codec_level_check"), "((codec_level > 0))", true),

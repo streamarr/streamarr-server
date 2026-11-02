@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.AudioStreamProperties;
 import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.ChosenVideoStream;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
@@ -271,6 +272,89 @@ public interface ProbePlaybackFactsRepositoryContract {
         Arguments.of("h264", Optional.of(true)));
   }
 
+  @Test
+  @DisplayName("Should read every audio fact back when a version 7 outcome stores it")
+  default void shouldReadEveryAudioFactBackWhenAVersion7OutcomeStoresIt() {
+    var mediaFileId = createMediaFile();
+    var flac =
+        StreamInfo.builder()
+            .index(1)
+            .codecType("audio")
+            .codec(Optional.of("flac"))
+            .channels(OptionalInt.of(4))
+            .bitDepth(OptionalInt.of(24))
+            .comment(Optional.of(false))
+            .audioProperties(
+                Optional.of(
+                    AudioStreamProperties.builder()
+                        .channelLayout(Optional.of("quad"))
+                        .sampleFormat(Optional.of("s32"))
+                        .flacMinimumBlockSizeSamples(OptionalInt.of(144))
+                        .build()))
+            .build();
+    // PCM in Matroska: ffprobe names no layout, and every disposition is false.
+    var pcm =
+        StreamInfo.builder()
+            .index(2)
+            .codecType("audio")
+            .codec(Optional.of("pcm_s16le"))
+            .channels(OptionalInt.of(2))
+            .comment(Optional.of(false))
+            .audioProperties(Optional.of(AudioStreamProperties.builder().build()))
+            .build();
+    var subtitle =
+        StreamInfo.builder().index(3).codecType("subtitle").comment(Optional.of(true)).build();
+    var published =
+        outcomeBuilder()
+            .streams(List.of(video().build(), flac, pcm, subtitle))
+            .chosenVideoStream(Optional.of(new ChosenVideoStream(0, declaredFilmRate())))
+            .build();
+
+    repository().publish(audioFactsPublication(mediaFileId, published));
+
+    assertThat(storedOutcome(mediaFileId).streams()).isEqualTo(published.streams());
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("singleAudioDispositions")
+  @DisplayName("Should read only the disposition that a version 7 outcome sets back")
+  default void shouldReadOnlyTheDispositionThatAVersion7OutcomeSetsBack(
+      String disposition, Optional<Boolean> comment, AudioStreamProperties properties) {
+    var mediaFileId = createMediaFile();
+    var audio =
+        StreamInfo.builder()
+            .index(1)
+            .codecType("audio")
+            .codec(Optional.of("ac3"))
+            .comment(comment)
+            .audioProperties(Optional.of(properties))
+            .build();
+    var published =
+        outcomeBuilder()
+            .streams(List.of(video().build(), audio))
+            .chosenVideoStream(Optional.of(new ChosenVideoStream(0, declaredFilmRate())))
+            .build();
+
+    repository().publish(audioFactsPublication(mediaFileId, published));
+
+    assertThat(storedOutcome(mediaFileId).streams()).isEqualTo(published.streams());
+  }
+
+  static Stream<Arguments> singleAudioDispositions() {
+    var none = Optional.of(false);
+    return Stream.of(
+        Arguments.of("comment", Optional.of(true), AudioStreamProperties.builder().build()),
+        Arguments.of(
+            "visual_impaired", none, AudioStreamProperties.builder().visualImpaired(true).build()),
+        Arguments.of(
+            "descriptions", none, AudioStreamProperties.builder().descriptions(true).build()),
+        Arguments.of("original", none, AudioStreamProperties.builder().original(true).build()),
+        Arguments.of("dub", none, AudioStreamProperties.builder().dub(true).build()),
+        Arguments.of(
+            "clean_effects", none, AudioStreamProperties.builder().cleanEffects(true).build()),
+        Arguments.of("dependent", none, AudioStreamProperties.builder().dependent(true).build()));
+  }
+
   @ParameterizedTest
   @MethodSource("titleOmissionStates")
   @DisplayName("Should retain every optional metadata fact when a probe outcome is published")
@@ -464,6 +548,15 @@ public interface ProbePlaybackFactsRepositoryContract {
         .mediaFileId(mediaFileId)
         .snapshot(PLAYBACK_FACTS_SNAPSHOT)
         .probeVersion(ProbeVersion.FIRST_TO_REPORT_PLAYBACK_FACTS)
+        .outcome(outcome)
+        .build();
+  }
+
+  private static ProbePublication audioFactsPublication(UUID mediaFileId, ProbeOutcome outcome) {
+    return ProbePublication.builder()
+        .mediaFileId(mediaFileId)
+        .snapshot(PLAYBACK_FACTS_SNAPSHOT)
+        .probeVersion(ProbeVersion.FIRST_TO_REPORT_AUDIO_FACTS)
         .outcome(outcome)
         .build();
   }

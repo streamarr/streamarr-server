@@ -1,5 +1,6 @@
 package com.streamarr.server.repositories.media;
 
+import com.streamarr.server.domain.streaming.AudioStreamProperties;
 import com.streamarr.server.domain.streaming.ContentLightLevel;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
@@ -14,7 +15,7 @@ import com.streamarr.server.jooq.generated.tables.records.MediaFileStreamInfoRec
 import java.time.Duration;
 import java.util.OptionalInt;
 
-// Writes the stream facts that probe versions 4 and 5 add into a stream row. An unspecified RPU
+// Writes the stream facts that probe versions 4, 5 and 7 add into a stream row. An unspecified RPU
 // sample layout is stored as NULL.
 final class StreamPlaybackFactsRow {
 
@@ -48,6 +49,21 @@ final class StreamPlaybackFactsRow {
     row.setHandlerName(stream.handlerName().orElse(null));
     row.setHearingImpaired(stream.hearingImpaired().orElse(null));
     stream.videoProperties().ifPresent(properties -> setVideoProperties(row, properties));
+    row.setComment(stream.comment().orElse(null));
+    stream.audioProperties().ifPresent(properties -> setAudioProperties(row, properties));
+  }
+
+  private static void setAudioProperties(
+      MediaFileStreamInfoRecord row, AudioStreamProperties properties) {
+    row.setChannelLayout(properties.channelLayout().orElse(null));
+    row.setSampleFormat(properties.sampleFormat().orElse(null));
+    row.setVisualImpaired(properties.visualImpaired());
+    row.setDescriptions(properties.descriptions());
+    row.setOriginal(properties.original());
+    row.setDub(properties.dub());
+    row.setCleanEffects(properties.cleanEffects());
+    row.setDependent(properties.dependent());
+    row.setFlacMinimumBlockSizeSamples(nullable(properties.flacMinimumBlockSizeSamples()));
   }
 
   private static void setVideoProperties(

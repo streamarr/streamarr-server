@@ -25,4 +25,9 @@ public final class ProbeVersion {
   // in the first frames of the chosen video stream: HDR10+, the Dolby Vision RPUs and their sample
   // layout, and the static HDR metadata that only the bitstream carries.
   public static final int FIRST_TO_REPORT_FRAME_FACTS = 5;
+
+  // Each audio stream's channel layout, sample format, bit depth, six of its dispositions and a
+  // FLAC stream's STREAMINFO minimum block size, and the commentary disposition of each audio and
+  // subtitle stream.
+  public static final int FIRST_TO_REPORT_AUDIO_FACTS = 7;
 }

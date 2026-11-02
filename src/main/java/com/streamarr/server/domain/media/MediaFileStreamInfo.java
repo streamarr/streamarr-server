@@ -1,5 +1,6 @@
 package com.streamarr.server.domain.media;
 
+import com.streamarr.server.domain.streaming.AudioStreamProperties;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ChromaticityCoordinates;
 import com.streamarr.server.domain.streaming.ColorPrimaries;
@@ -158,6 +159,16 @@ public class MediaFileStreamInfo {
   private Boolean firstRpuEnhancementLayerSpatialResamplingFilter;
   private Boolean firstRpuDisableResidual;
   private Integer firstRpuVdrBitDepth;
+  private String channelLayout;
+  private String sampleFormat;
+  private Boolean comment;
+  private Boolean visualImpaired;
+  private Boolean descriptions;
+  private Boolean original;
+  private Boolean dub;
+  private Boolean cleanEffects;
+  private Boolean dependent;
+  private Integer flacMinimumBlockSizeSamples;
 
   @Override
   public boolean equals(Object other) {
@@ -210,7 +221,29 @@ public class MediaFileStreamInfo {
         .handlerName(Optional.ofNullable(handlerName))
         .hearingImpaired(Optional.ofNullable(hearingImpaired))
         .videoProperties(videoProperties())
+        .comment(Optional.ofNullable(comment))
+        .audioProperties(audioProperties())
         .build();
+  }
+
+  // The six dispositions are set together, exactly for an audio stream of probe version 7 or later.
+  private Optional<AudioStreamProperties> audioProperties() {
+    if (visualImpaired == null) {
+      return Optional.empty();
+    }
+
+    return Optional.of(
+        AudioStreamProperties.builder()
+            .channelLayout(Optional.ofNullable(channelLayout))
+            .sampleFormat(Optional.ofNullable(sampleFormat))
+            .visualImpaired(visualImpaired)
+            .descriptions(descriptions)
+            .original(original)
+            .dub(dub)
+            .cleanEffects(cleanEffects)
+            .dependent(dependent)
+            .flacMinimumBlockSizeSamples(optionalInt(flacMinimumBlockSizeSamples))
+            .build());
   }
 
   private Optional<VideoStreamProperties> videoProperties() {
@@ -358,7 +391,21 @@ public class MediaFileStreamInfo {
       handlerName = info.handlerName().orElse(null);
       hearingImpaired = info.hearingImpaired().orElse(null);
       info.videoProperties().ifPresent(this::videoProperties);
+      comment = info.comment().orElse(null);
+      info.audioProperties().ifPresent(this::audioProperties);
       return this;
+    }
+
+    private void audioProperties(AudioStreamProperties properties) {
+      channelLayout = properties.channelLayout().orElse(null);
+      sampleFormat = properties.sampleFormat().orElse(null);
+      visualImpaired = properties.visualImpaired();
+      descriptions = properties.descriptions();
+      original = properties.original();
+      dub = properties.dub();
+      cleanEffects = properties.cleanEffects();
+      dependent = properties.dependent();
+      flacMinimumBlockSizeSamples = nullableInt(properties.flacMinimumBlockSizeSamples());
     }
 
     private void videoProperties(VideoStreamProperties properties) {

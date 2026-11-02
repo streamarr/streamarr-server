@@ -230,6 +230,10 @@ final class RemoteProbeResultMapper {
       RemoteStreamPropertiesMapper.addStreamProperties(builder, stream);
     }
 
+    if (Integer.compareUnsigned(probeVersion, ProbeVersion.FIRST_TO_REPORT_AUDIO_FACTS) >= 0) {
+      RemoteAudioFactsMapper.addAudioFacts(builder, stream);
+    }
+
     return builder.build();
   }
 
