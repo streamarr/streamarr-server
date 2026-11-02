@@ -1006,6 +1006,148 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
         return (Boolean) get(66);
     }
 
+    /**
+     * Setter for <code>public.media_file_stream_info.channel_layout</code>.
+     */
+    public void setChannelLayout(String value) {
+        set(67, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.channel_layout</code>.
+     */
+    public String getChannelLayout() {
+        return (String) get(67);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.sample_format</code>.
+     */
+    public void setSampleFormat(String value) {
+        set(68, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.sample_format</code>.
+     */
+    public String getSampleFormat() {
+        return (String) get(68);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.comment</code>.
+     */
+    public void setComment(Boolean value) {
+        set(69, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.comment</code>.
+     */
+    public Boolean getComment() {
+        return (Boolean) get(69);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.visual_impaired</code>.
+     */
+    public void setVisualImpaired(Boolean value) {
+        set(70, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.visual_impaired</code>.
+     */
+    public Boolean getVisualImpaired() {
+        return (Boolean) get(70);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.descriptions</code>.
+     */
+    public void setDescriptions(Boolean value) {
+        set(71, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.descriptions</code>.
+     */
+    public Boolean getDescriptions() {
+        return (Boolean) get(71);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.original</code>.
+     */
+    public void setOriginal(Boolean value) {
+        set(72, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.original</code>.
+     */
+    public Boolean getOriginal() {
+        return (Boolean) get(72);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.dub</code>.
+     */
+    public void setDub(Boolean value) {
+        set(73, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.dub</code>.
+     */
+    public Boolean getDub() {
+        return (Boolean) get(73);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.clean_effects</code>.
+     */
+    public void setCleanEffects(Boolean value) {
+        set(74, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.clean_effects</code>.
+     */
+    public Boolean getCleanEffects() {
+        return (Boolean) get(74);
+    }
+
+    /**
+     * Setter for <code>public.media_file_stream_info.dependent</code>.
+     */
+    public void setDependent(Boolean value) {
+        set(75, value);
+    }
+
+    /**
+     * Getter for <code>public.media_file_stream_info.dependent</code>.
+     */
+    public Boolean getDependent() {
+        return (Boolean) get(75);
+    }
+
+    /**
+     * Setter for
+     * <code>public.media_file_stream_info.flac_minimum_block_size_samples</code>.
+     */
+    public void setFlacMinimumBlockSizeSamples(Integer value) {
+        set(76, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_stream_info.flac_minimum_block_size_samples</code>.
+     */
+    public Integer getFlacMinimumBlockSizeSamples() {
+        return (Integer) get(76);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -1029,7 +1171,7 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
     /**
      * Create a detached, initialised MediaFileStreamInfoRecord
      */
-    public MediaFileStreamInfoRecord(UUID mediaFileId, Integer streamIndex, String codecType, String codec, Integer width, Integer height, Double framerate, Integer channels, Long bitrate, String language, Boolean isDefault, Boolean isForced, String dynamicRangeCompatibleBase, String hdr10Plus, String dolbyVision, String dolbyVisionObservedRpu, Integer dolbyVisionProfile, Integer dolbyVisionLevel, Integer dolbyVisionBaseLayerCompatibilityId, Boolean dolbyVisionBaseLayer, Boolean dolbyVisionEnhancementLayer, Boolean dolbyVisionRpu, Integer bitDepth, String chromaSubsampling, Integer rotationDegrees, Integer cropTop, Integer cropBottom, Integer cropLeft, Integer cropRight, String codecString, Integer sampleRateHz, String audioProfile, Long endTimeSeconds, Integer endTimeNanos, Integer masteringRedX, Integer masteringRedY, Integer masteringGreenX, Integer masteringGreenY, Integer masteringBlueX, Integer masteringBlueY, Integer masteringWhitePointX, Integer masteringWhitePointY, Long masteringMaxLuminance, Long masteringMinLuminance, Integer maxContentLightLevel, Integer maxFrameAverageLightLevel, String title, String handlerName, Boolean hearingImpaired, String codecProfile, Integer codecLevel, String codecTier, String colorPrimaries, String transferCharacteristics, String matrixCoefficients, String colorRange, Boolean firstFramesRead, Boolean masteringDisplayOmitted, Boolean contentLightLevelOmitted, Boolean firstPacketsCarryPresentationTimes, String dolbyVisionRpuPlacement, Integer firstRpuVdrRpuProfile, Boolean firstRpuBaseLayerFullRange, Boolean firstRpuEnhancementLayerSpatialResamplingFilter, Boolean firstRpuDisableResidual, Integer firstRpuVdrBitDepth, Boolean copyKeepsPacketBytes) {
+    public MediaFileStreamInfoRecord(UUID mediaFileId, Integer streamIndex, String codecType, String codec, Integer width, Integer height, Double framerate, Integer channels, Long bitrate, String language, Boolean isDefault, Boolean isForced, String dynamicRangeCompatibleBase, String hdr10Plus, String dolbyVision, String dolbyVisionObservedRpu, Integer dolbyVisionProfile, Integer dolbyVisionLevel, Integer dolbyVisionBaseLayerCompatibilityId, Boolean dolbyVisionBaseLayer, Boolean dolbyVisionEnhancementLayer, Boolean dolbyVisionRpu, Integer bitDepth, String chromaSubsampling, Integer rotationDegrees, Integer cropTop, Integer cropBottom, Integer cropLeft, Integer cropRight, String codecString, Integer sampleRateHz, String audioProfile, Long endTimeSeconds, Integer endTimeNanos, Integer masteringRedX, Integer masteringRedY, Integer masteringGreenX, Integer masteringGreenY, Integer masteringBlueX, Integer masteringBlueY, Integer masteringWhitePointX, Integer masteringWhitePointY, Long masteringMaxLuminance, Long masteringMinLuminance, Integer maxContentLightLevel, Integer maxFrameAverageLightLevel, String title, String handlerName, Boolean hearingImpaired, String codecProfile, Integer codecLevel, String codecTier, String colorPrimaries, String transferCharacteristics, String matrixCoefficients, String colorRange, Boolean firstFramesRead, Boolean masteringDisplayOmitted, Boolean contentLightLevelOmitted, Boolean firstPacketsCarryPresentationTimes, String dolbyVisionRpuPlacement, Integer firstRpuVdrRpuProfile, Boolean firstRpuBaseLayerFullRange, Boolean firstRpuEnhancementLayerSpatialResamplingFilter, Boolean firstRpuDisableResidual, Integer firstRpuVdrBitDepth, Boolean copyKeepsPacketBytes, String channelLayout, String sampleFormat, Boolean comment, Boolean visualImpaired, Boolean descriptions, Boolean original, Boolean dub, Boolean cleanEffects, Boolean dependent, Integer flacMinimumBlockSizeSamples) {
         super(MediaFileStreamInfo.MEDIA_FILE_STREAM_INFO);
 
         setMediaFileId(mediaFileId);
@@ -1099,6 +1241,16 @@ public class MediaFileStreamInfoRecord extends UpdatableRecordImpl<MediaFileStre
         setFirstRpuDisableResidual(firstRpuDisableResidual);
         setFirstRpuVdrBitDepth(firstRpuVdrBitDepth);
         setCopyKeepsPacketBytes(copyKeepsPacketBytes);
+        setChannelLayout(channelLayout);
+        setSampleFormat(sampleFormat);
+        setComment(comment);
+        setVisualImpaired(visualImpaired);
+        setDescriptions(descriptions);
+        setOriginal(original);
+        setDub(dub);
+        setCleanEffects(cleanEffects);
+        setDependent(dependent);
+        setFlacMinimumBlockSizeSamples(flacMinimumBlockSizeSamples);
         resetTouchedOnNotNull();
     }
 }
