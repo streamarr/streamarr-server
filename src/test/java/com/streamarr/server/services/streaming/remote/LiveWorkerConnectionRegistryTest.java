@@ -15,6 +15,9 @@ import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentPublication;
+import com.streamarr.transcode.v1.AudioChannelLayout;
+import com.streamarr.transcode.v1.AudioDecision;
+import com.streamarr.transcode.v1.AudioMode;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.MediaSourceRef;
@@ -52,6 +55,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 
 @Tag("UnitTest")
 @DisplayName("Live Worker Connection Registry Tests")
@@ -478,6 +482,102 @@ class LiveWorkerConnectionRegistryTest {
             .build();
 
     assertThat(registry.dispatch(copyJob)).isPresent();
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = AudioChannelLayout.class,
+      names = {
+        "AUDIO_CHANNEL_LAYOUT_TWO_POINT_ONE",
+        "AUDIO_CHANNEL_LAYOUT_THREE_POINT_ZERO",
+        "AUDIO_CHANNEL_LAYOUT_THREE_POINT_ZERO_BACK",
+        "AUDIO_CHANNEL_LAYOUT_FOUR_POINT_ZERO",
+        "AUDIO_CHANNEL_LAYOUT_QUAD",
+        "AUDIO_CHANNEL_LAYOUT_QUAD_SIDE",
+        "AUDIO_CHANNEL_LAYOUT_SIX_POINT_ONE",
+        "AUDIO_CHANNEL_LAYOUT_SIX_POINT_ONE_BACK",
+        "AUDIO_CHANNEL_LAYOUT_SEVEN_POINT_ONE",
+        "AUDIO_CHANNEL_LAYOUT_SEVEN_POINT_ONE_WIDE"
+      })
+  @DisplayName(
+      "Should dispatch a job that names a layout of 3, 4, 7 or 8 channels only to a worker that"
+          + " lists probe version 7")
+  void shouldDispatchAJobThatNamesALayoutOf3478ChannelsOnlyToAWorkerThatListsProbeVersion7(
+      AudioChannelLayout layout) {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var version6Responses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    var version7Responses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    var version7WorkerId = UUID.randomUUID();
+    registry.register(
+        WORKER_ID, registrationListingProbeVersion(WORKER_ID, 6), collecting(version6Responses));
+    var job = audioEncodeJob(layout);
+
+    assertThat(registry.dispatch(job)).isEmpty();
+
+    registry.register(
+        version7WorkerId,
+        registrationListingProbeVersion(version7WorkerId, 7),
+        collecting(version7Responses));
+
+    assertThat(registry.dispatch(job)).isPresent();
+    assertThat(version6Responses).noneMatch(EstablishWorkerSessionResponse::hasStartVariant);
+    assertThat(version7Responses)
+        .filteredOn(EstablishWorkerSessionResponse::hasStartVariant)
+        .singleElement()
+        .extracting(response -> response.getStartVariant().getJob())
+        .isEqualTo(job);
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = AudioChannelLayout.class,
+      names = {
+        "AUDIO_CHANNEL_LAYOUT_UNSPECIFIED",
+        "AUDIO_CHANNEL_LAYOUT_MONO",
+        "AUDIO_CHANNEL_LAYOUT_STEREO",
+        "AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ZERO",
+        "AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ZERO_SIDE",
+        "AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ONE",
+        "AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ONE_SIDE"
+      })
+  @DisplayName(
+      "Should dispatch a job that names no layout or one of 1, 2, 5 or 6 channels to a worker"
+          + " without probe version 7")
+  void shouldDispatchAJobThatNamesNoLayoutOrOneOf1256ChannelsToAWorkerWithoutProbeVersion7(
+      AudioChannelLayout layout) {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    registry.register(
+        WORKER_ID, registrationListingProbeVersion(WORKER_ID, 6), new CancellableObserver());
+
+    assertThat(registry.dispatch(audioEncodeJob(layout))).isPresent();
+  }
+
+  @Test
+  @DisplayName(
+      "Should count free slots and offer execution targets only on probe version 7 workers when a"
+          + " job names a quad layout")
+  void shouldCountFreeSlotsAndOfferTargetsOnlyOnProbeVersion7WorkersWhenAJobNamesAQuadLayout() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var version7WorkerId = UUID.randomUUID();
+    registry.register(
+        WORKER_ID, registrationListingProbeVersion(WORKER_ID, 6), new CancellableObserver());
+    var quad = audioEncodeJob(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_QUAD).getDecision();
+    var stereo = audioEncodeJob(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_STEREO).getDecision();
+
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, quad)).isZero();
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, quad)).isEmpty();
+
+    registry.register(
+        version7WorkerId,
+        registrationListingProbeVersion(version7WorkerId, 7),
+        new CancellableObserver());
+
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, quad)).isOne();
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, stereo)).isEqualTo(2);
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, quad))
+        .singleElement()
+        .isIn(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, stereo));
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, stereo)).hasSize(2);
   }
 
   @Test
@@ -1541,6 +1641,31 @@ class LiveWorkerConnectionRegistryTest {
     var registration = registration(workerId, 1).toBuilder();
     registration.getCapabilitiesBuilder().addAllVideoEncoders(List.of(encoders));
     return registration.build();
+  }
+
+  private static WorkerRegistration registrationListingProbeVersion(
+      UUID workerId, int probeVersion) {
+    var registration = registration(workerId, 1).toBuilder();
+    registration.getCapabilitiesBuilder().addProbeVersions(probeVersion);
+    return registration.build();
+  }
+
+  // The video is copied, so the job needs no video encoder.
+  private static VariantJob audioEncodeJob(AudioChannelLayout layout) {
+    return variantJob().toBuilder()
+        .setDecision(
+            TranscodeDecision.newBuilder()
+                .setMode(TranscodeMode.TRANSCODE_MODE_AUDIO_TRANSCODE)
+                .setVideo(
+                    VideoDecision.newBuilder()
+                        .setMode(VideoMode.VIDEO_MODE_COPY)
+                        .setCodecFamily(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264))
+                .setAudio(
+                    AudioDecision.newBuilder()
+                        .setMode(AudioMode.AUDIO_MODE_TRANSCODE)
+                        .setCodec("flac")
+                        .setChannelLayout(layout)))
+        .build();
   }
 
   private static VariantJob encodeJob(String videoCodecFamily) {
