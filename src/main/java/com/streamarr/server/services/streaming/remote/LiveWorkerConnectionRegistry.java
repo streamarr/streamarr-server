@@ -1075,6 +1075,7 @@ final class LiveWorkerConnectionRegistry {
             JOB_ATTEMPT_FAILURE_SOURCE_UNAVAILABLE,
             JOB_ATTEMPT_FAILURE_STARTUP_FAILED,
             JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED,
+            JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED,
             JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES,
             UNRECOGNIZED ->
             Optional.empty();

@@ -928,6 +928,27 @@ class TranscodeWorkerContractTest {
 
   @Test
   @DisplayName(
+      "Should tell a segment over the segment cap apart from a generic transcode failure when an attempt fails")
+  void shouldTellASegmentOverTheSegmentCapApartFromAGenericTranscodeFailureWhenAttemptFails()
+      throws Exception {
+    var overCap =
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptFailed(
+                JobAttemptFailed.newBuilder()
+                    .setJobAttemptId(uuid(UUID.randomUUID()))
+                    .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED))
+            .build();
+
+    var parsed = EstablishWorkerSessionRequest.parseFrom(overCap.toByteArray());
+
+    assertThat(parsed.getJobAttemptFailed().getFailure())
+        .isEqualTo(JobAttemptFailure.JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED)
+        .isNotEqualTo(JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
+    assertThat(JobAttemptFailure.JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED.getNumber()).isEqualTo(6);
+  }
+
+  @Test
+  @DisplayName(
       "Should keep the wire vocabulary narrow and secret free when validating the protocol")
   void shouldKeepTheWireVocabularyNarrowAndSecretFreeWhenValidatingProtocol() {
     var fields = new HashSet<String>();

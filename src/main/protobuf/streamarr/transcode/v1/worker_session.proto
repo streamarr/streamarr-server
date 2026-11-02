@@ -712,9 +712,11 @@ message TranscodeExecution {
   // of these rules. The worker forces each encoded keyframe at a listed start
   // instead of a grid start, groups fragments and assigns each audio sample to
   // the segment whose listed interval holds the sample's start. The server
-  // computes seek_position_seconds and seek_position from the list, so an
-  // encode starts at the listed start of start_sequence_number. A merged
-  // segment is expected and is never itself a failure.
+  // computes seek_position_seconds and seek_position from the list:
+  // seek_position_seconds is the listed start of start_sequence_number, where
+  // the attempt's first media segment starts, and seek_position names a
+  // keyframe chosen against that start. A merged segment is expected and is
+  // never itself a failure.
   //
   // The worker fails the attempt with the named reason SKIPPED_SEGMENT_NUMBER,
   // reported as JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED, when a video keyframe
@@ -722,8 +724,8 @@ message TranscodeExecution {
   // interval of a listed segment held no keyframe. The server and the worker
   // then disagree about the source's keyframes, or an encode's keyframes
   // drifted from the listed starts. A merged segment that grows past the
-  // segment cap still fails the attempt with the named reason
-  // EXCEEDS_SEGMENT_CAP, and ADR 0052's fallback then encodes the source.
+  // segment cap still fails the attempt, with
+  // JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED.
   repeated uint32 segment_start_slots = 9;
 }
 
@@ -769,6 +771,18 @@ enum JobAttemptFailure {
   // decision on the same encoder backend produces the same mismatch, so a
   // replacement job attempt fails the same way.
   JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH = 5;
+  // The attempt's output outgrew the producer's memory: one initialization
+  // segment or media segment holds more bytes than the segment cap that
+  // SegmentUploadMetadata.content_length_bytes states, or the segments of one
+  // interval together outgrow the producer's budget of two segment caps (ADR
+  // 0037). The worker reports this value instead of
+  // JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED, in a copied or an encoded output
+  // alike, and delivers no part of a segment that it could not hold. In a
+  // stream session with merged segments, every replacement job attempt repeats
+  // the failure, so the server spends no replacement attempt on it and starts
+  // ADR 0052's fallback instead: a stream session on the plain grid that
+  // encodes every variant's video.
+  JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED = 6;
   // The attempt read no sample of a chosen stream from where it began reading
   // and can't stand in for it: a copied stream, audio encoded without
   // AudioDecision.pad_with_silence_to_advertised_end, or video encoded without
@@ -2120,7 +2134,8 @@ message SegmentUploadMetadata {
   // This field states the segment's length in bytes. The segment cap is
   // 134,217,728 bytes (128 MiB), a constant of this contract: the server
   // refuses an upload whose length is 0 or above the cap, and the worker
-  // delivers no initialization segment or media segment above it. A server
+  // delivers no initialization segment or media segment above it, failing the
+  // attempt with JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED instead. A server
   // that raises the cap ships before any worker that produces larger segments.
   uint64 content_length_bytes = 9;
   // This field reports the media segment's media duration. The worker reports
