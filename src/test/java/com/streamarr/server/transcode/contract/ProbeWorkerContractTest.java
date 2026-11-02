@@ -37,6 +37,7 @@ import com.streamarr.transcode.v1.StartProbeCommand;
 import com.streamarr.transcode.v1.VideoDynamicRange;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -963,6 +964,188 @@ class ProbeWorkerContractTest {
   }
 
   @Test
+  @DisplayName(
+      "Should carry ffprobe's channel layout text of each audio stream when returning a probe version 7 result")
+  void shouldCarryFfprobeChannelLayoutTextOfEachAudioStreamWhenReturningProbeVersion7Result()
+      throws Exception {
+    var quad =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(1)
+            .setCodecType("audio")
+            .setCodec("flac")
+            .setChannels(4)
+            .setChannelLayout("quad")
+            .build();
+    var nonStandardLayout =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(2)
+            .setCodecType("audio")
+            .setCodec("pcm_s16le")
+            .setChannels(3)
+            .setChannelLayout("3 channels (FL+FR+TFL)")
+            .build();
+    var unspecifiedOrder =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(3)
+            .setCodecType("audio")
+            .setCodec("pcm_s16le")
+            .setChannels(2)
+            .build();
+    var result =
+        probeVersion7Result(
+            ProbeMediaInfo.newBuilder()
+                .addStreams(quad)
+                .addStreams(nonStandardLayout)
+                .addStreams(unspecifiedOrder));
+
+    var decoded = ProbeAttemptResult.parseFrom(result.toByteArray()).getMedia();
+
+    assertThat(decoded.getStreams(0).getChannelLayout()).isEqualTo("quad");
+    assertThat(decoded.getStreams(1).getChannelLayout()).isEqualTo("3 channels (FL+FR+TFL)");
+    assertThat(decoded.getStreams(2).hasChannelLayout()).isFalse();
+    assertThat(decoded.getStreams(2).getChannels()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry each audio stream's sample format and bit depth when returning a probe version 7 result")
+  void shouldCarryEachAudioStreamsSampleFormatAndBitDepthWhenReturningProbeVersion7Result()
+      throws Exception {
+    var flac24 =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(1)
+            .setCodecType("audio")
+            .setCodec("flac")
+            .setSampleFormat("s32")
+            .setBitDepth(24);
+    var floatingPointPcm =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(2)
+            .setCodecType("audio")
+            .setCodec("pcm_f32le")
+            .setSampleFormat("flt")
+            .setBitDepth(32);
+    var ac3 =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(3)
+            .setCodecType("audio")
+            .setCodec("ac3")
+            .setSampleFormat("fltp");
+    var video = ProbeStreamInfo.newBuilder().setIndex(0).setCodecType("video").setBitDepth(10);
+    var result =
+        probeVersion7Result(
+            ProbeMediaInfo.newBuilder()
+                .addStreams(flac24)
+                .addStreams(floatingPointPcm)
+                .addStreams(ac3)
+                .addStreams(video));
+
+    var decoded = ProbeAttemptResult.parseFrom(result.toByteArray()).getMedia();
+
+    assertThat(decoded.getStreams(0).getSampleFormat()).isEqualTo("s32");
+    assertThat(decoded.getStreams(0).getBitDepth()).isEqualTo(24);
+    assertThat(decoded.getStreams(1).getSampleFormat()).isEqualTo("flt");
+    assertThat(decoded.getStreams(1).getBitDepth()).isEqualTo(32);
+    assertThat(decoded.getStreams(2).getSampleFormat()).isEqualTo("fltp");
+    assertThat(decoded.getStreams(2).hasBitDepth()).isFalse();
+    assertThat(decoded.getStreams(3).hasSampleFormat()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry each of the seven audio dispositions separately when returning a probe version 7 result")
+  void shouldCarryEachOfSevenAudioDispositionsSeparatelyWhenReturningProbeVersion7Result()
+      throws Exception {
+    var commentary = audioDispositions(1).setIsComment(true);
+    var describedNarration =
+        audioDispositions(2).setIsVisualImpaired(true).setIsDescriptions(true).setIsDependent(true);
+    var dubbedTrack = audioDispositions(3).setIsDub(true);
+    var originalEffects = audioDispositions(4).setIsOriginal(true).setIsCleanEffects(true);
+    var result =
+        probeVersion7Result(
+            ProbeMediaInfo.newBuilder()
+                .addStreams(commentary)
+                .addStreams(describedNarration)
+                .addStreams(dubbedTrack)
+                .addStreams(originalEffects));
+
+    var decoded = ProbeAttemptResult.parseFrom(result.toByteArray()).getMedia();
+
+    // Order: comment, visual_impaired, descriptions, original, dub, clean_effects, dependent.
+    assertThat(audioDispositionsOf(decoded.getStreams(0)))
+        .containsExactly(true, false, false, false, false, false, false);
+    assertThat(audioDispositionsOf(decoded.getStreams(1)))
+        .containsExactly(false, true, true, false, false, false, true);
+    assertThat(audioDispositionsOf(decoded.getStreams(2)))
+        .containsExactly(false, false, false, false, true, false, false);
+    assertThat(audioDispositionsOf(decoded.getStreams(3)))
+        .containsExactly(false, false, false, true, false, true, false);
+    assertThat(decoded.getStreams(0).hasIsDependent()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry only the commentary flag of each subtitle stream when returning a probe version 7 result")
+  void shouldCarryOnlyCommentaryFlagOfEachSubtitleStreamWhenReturningProbeVersion7Result()
+      throws Exception {
+    var video = ProbeStreamInfo.newBuilder().setIndex(0).setCodecType("video");
+    var commentarySubtitle =
+        ProbeStreamInfo.newBuilder().setIndex(1).setCodecType("subtitle").setIsComment(true);
+    var plainSubtitle =
+        ProbeStreamInfo.newBuilder().setIndex(2).setCodecType("subtitle").setIsComment(false);
+    var result =
+        probeVersion7Result(
+            ProbeMediaInfo.newBuilder()
+                .addStreams(video)
+                .addStreams(commentarySubtitle)
+                .addStreams(plainSubtitle));
+
+    var decoded = ProbeAttemptResult.parseFrom(result.toByteArray()).getMedia();
+
+    assertThat(decoded.getStreams(1).getIsComment()).isTrue();
+    assertThat(decoded.getStreams(1).hasIsVisualImpaired()).isFalse();
+    assertThat(decoded.getStreams(2).hasIsComment()).isTrue();
+    assertThat(decoded.getStreams(2).getIsComment()).isFalse();
+    assertThat(decoded.getStreams(0).hasIsComment()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry the STREAMINFO minimum block size of FLAC streams only when returning a probe version 7 result")
+  void shouldCarryStreaminfoMinimumBlockSizeOfFlacStreamsOnlyWhenReturningProbeVersion7Result()
+      throws Exception {
+    var belowAppleFloor =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(1)
+            .setCodecType("audio")
+            .setCodec("flac")
+            .setFlacMinimumBlockSizeSamples(144);
+    var defaultBlocks =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(2)
+            .setCodecType("audio")
+            .setCodec("flac")
+            .setFlacMinimumBlockSizeSamples(4_608);
+    var withoutStreaminfo =
+        ProbeStreamInfo.newBuilder().setIndex(3).setCodecType("audio").setCodec("flac");
+    var aac = ProbeStreamInfo.newBuilder().setIndex(4).setCodecType("audio").setCodec("aac");
+    var result =
+        probeVersion7Result(
+            ProbeMediaInfo.newBuilder()
+                .addStreams(belowAppleFloor)
+                .addStreams(defaultBlocks)
+                .addStreams(withoutStreaminfo)
+                .addStreams(aac));
+
+    var decoded = ProbeAttemptResult.parseFrom(result.toByteArray()).getMedia();
+
+    assertThat(decoded.getStreams(0).getFlacMinimumBlockSizeSamples()).isEqualTo(144);
+    assertThat(decoded.getStreams(1).getFlacMinimumBlockSizeSamples()).isEqualTo(4_608);
+    assertThat(decoded.getStreams(2).hasFlacMinimumBlockSizeSamples()).isFalse();
+    assertThat(decoded.getStreams(3).hasFlacMinimumBlockSizeSamples()).isFalse();
+  }
+
+  @Test
   @DisplayName("Should preserve a typed media failure when returning an unsuccessful probe")
   void shouldPreserveTypedMediaFailureWhenReturningUnsuccessfulProbe() throws Exception {
     var result =
@@ -985,6 +1168,39 @@ class ProbeWorkerContractTest {
         .setProbeVersion(4)
         .setMedia(media)
         .build();
+  }
+
+  private ProbeAttemptResult probeVersion7Result(ProbeMediaInfo.Builder media) {
+    return ProbeAttemptResult.newBuilder()
+        .setProbeAttemptId(toProto(UUID.randomUUID()))
+        .setProbeVersion(7)
+        .setMedia(media)
+        .build();
+  }
+
+  // A probe version 7 worker reports all seven audio dispositions, each false unless set.
+  private ProbeStreamInfo.Builder audioDispositions(int index) {
+    return ProbeStreamInfo.newBuilder()
+        .setIndex(index)
+        .setCodecType("audio")
+        .setIsComment(false)
+        .setIsVisualImpaired(false)
+        .setIsDescriptions(false)
+        .setIsOriginal(false)
+        .setIsDub(false)
+        .setIsCleanEffects(false)
+        .setIsDependent(false);
+  }
+
+  private List<Boolean> audioDispositionsOf(ProbeStreamInfo stream) {
+    return List.of(
+        stream.getIsComment(),
+        stream.getIsVisualImpaired(),
+        stream.getIsDescriptions(),
+        stream.getIsOriginal(),
+        stream.getIsDub(),
+        stream.getIsCleanEffects(),
+        stream.getIsDependent());
   }
 
   private ChromaticityCoordinates chromaticity(int x, int y) {
