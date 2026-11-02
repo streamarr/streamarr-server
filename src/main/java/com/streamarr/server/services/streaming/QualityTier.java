@@ -7,7 +7,6 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoQuality;
-import com.streamarr.server.domain.streaming.VideoStreamCopy;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -92,13 +91,15 @@ enum QualityTier {
   }
 
   // A copy plays the source's own picture, so it reaches the tier when the source fits the tier's
-  // box. An encode reaches the tier when one capability entry fits the tier's picture, in a codec
+  // box. The keyframe check is left out: it refuses few sources, and the encode that replaces a
+  // refused copy of the source's own tier usually reaches it too. An encode reaches the tier when
+  // one capability entry fits the tier's picture, in a codec
   // family that the server encodes, without shrinking it into a smaller tier's box. The workers
   // connected now do not count, because the offered choices last for the whole playback session.
   private boolean isReachedIn(MediaProbe source, ClientCapabilityDeclaration declaration) {
     var picture = source.displayedSize();
     if (picture.fitsWithinEitherOrientation(box)
-        && VideoStreamCopy.of(source).filter(declaration::acceptsHlsCopy).isPresent()) {
+        && TranscodeDecisionService.isCopyAcceptedBeforeTheKeyframeCheck(source, declaration)) {
       return true;
     }
 
