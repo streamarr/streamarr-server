@@ -28,6 +28,7 @@ import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fakes.FakeFfprobeService;
+import com.streamarr.server.fixtures.BitrateScanRequesters;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
@@ -110,6 +111,7 @@ class SchedulerProbePublicationRaceIT extends AbstractIntegrationTest {
             .fileSystem(FileSystems.getDefault())
             .outcomes(outcomes)
             .packetScans(new CapturingKeyframePacketScanRequests())
+            .bitrateScans(BitrateScanRequesters.none())
             .transactionManager(transactionManager)
             .playbackProbeClaims(
                 new PlaybackProbeClaims(System::nanoTime, new SimpleMeterRegistry()))

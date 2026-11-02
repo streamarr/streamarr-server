@@ -34,6 +34,7 @@ import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
+import com.streamarr.server.fixtures.BitrateScanRequesters;
 import com.streamarr.server.fixtures.StreamMeasurementFixture;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
@@ -353,6 +354,7 @@ class KeyframePacketScanExecutionTest {
         .fileSystem(FileSystems.getDefault())
         .outcomes(outcomes)
         .packetScans(packetScans)
+        .bitrateScans(BitrateScanRequesters.none())
         .transactionManager(new FakeTransactionManager())
         .playbackProbeClaims(new PlaybackProbeClaims(System::nanoTime, new SimpleMeterRegistry()))
         .build();

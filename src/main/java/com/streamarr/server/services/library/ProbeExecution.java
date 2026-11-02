@@ -47,6 +47,7 @@ public class ProbeExecution {
   private final FileSystem fileSystem;
   private final MediaFileContainerInfoRepository outcomes;
   private final KeyframePacketScanRequests packetScans;
+  private final BitrateScanRequester bitrateScans;
   private final PlatformTransactionManager transactionManager;
   private final PlaybackProbeClaims playbackProbeClaims;
 
@@ -128,7 +129,7 @@ public class ProbeExecution {
     return new ProbeExecutionResult.Completed();
   }
 
-  // The scan is scheduled in the publication's transaction, so a stored outcome that needs a scan
+  // The scans are scheduled in the publication's transaction, so a stored outcome that needs a scan
   // always has one.
   private void publish(
       ProbeTaskRequest request, SourceFileSnapshot observed, ProbeOutcome outcome) {
@@ -142,7 +143,11 @@ public class ProbeExecution {
     new TransactionTemplate(transactionManager)
         .executeWithoutResult(
             _ -> {
-              if (outcomes.publish(publication) && outcome.needsKeyframePacketScan()) {
+              if (!outcomes.publish(publication)) {
+                return;
+              }
+
+              if (outcome.needsKeyframePacketScan()) {
                 packetScans.request(
                     KeyframePacketScanTaskRequest.builder()
                         .mediaFileId(request.mediaFileId())
@@ -151,6 +156,8 @@ public class ProbeExecution {
                         .probeVersion(request.probeVersion())
                         .build());
               }
+
+              bitrateScans.requestIfNeeded(request.mediaFileId(), request.filepathUri());
             });
   }
 

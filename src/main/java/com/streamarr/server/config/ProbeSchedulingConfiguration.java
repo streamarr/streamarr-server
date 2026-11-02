@@ -14,20 +14,28 @@ import com.github.kagkarlsson.scheduler.jdbc.JdbcTaskRepository;
 import com.github.kagkarlsson.scheduler.serializer.Serializer;
 import com.github.kagkarlsson.scheduler.task.Task;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
+import com.streamarr.server.repositories.media.BitrateScanRepository;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.audit.SystemWork;
+import com.streamarr.server.services.library.BitrateScanExecution;
+import com.streamarr.server.services.library.BitrateScanTask;
 import com.streamarr.server.services.library.KeyframePacketScanExecution;
 import com.streamarr.server.services.library.MediaProbeTask;
 import com.streamarr.server.services.library.ProbeExecution;
 import com.streamarr.server.services.library.ProbeTaskCompletion;
 import com.streamarr.server.services.probe.PlaybackProbeClaims;
 import com.streamarr.server.services.streaming.ProbeCapacitySource;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.binder.MeterBinder;
 import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import javax.sql.DataSource;
 import lombok.RequiredArgsConstructor;
+import org.jooq.DSLContext;
+import org.jooq.impl.DSL;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.context.annotation.Bean;
@@ -102,7 +110,10 @@ public class ProbeSchedulingConfiguration {
       DataSource dataSource,
       PlatformTransactionManager transactionManager,
       KeyframePacketScanExecution execution,
+      BitrateScanExecution bitrateScanExecution,
       MediaFileContainerInfoRepository outcomes,
+      BitrateScanRepository bitrateScans,
+      MeterRegistry meterRegistry,
       ProbeSchedulingProperties properties,
       Clock clock,
       Environment environment) {
@@ -116,11 +127,31 @@ public class ProbeSchedulingConfiguration {
         .dataSource(dataSource)
         .transactionManager(transactionManager)
         .execution(execution)
+        .bitrateScanExecution(bitrateScanExecution)
         .outcomes(outcomes)
+        .bitrateScans(bitrateScans)
+        .meterRegistry(meterRegistry)
         .properties(properties)
         .clock(clock)
         .autoStartup(schedulerProperties.isEnabled())
         .build();
+  }
+
+  /** Reports how many bitrate scans wait in the keyframe packet scan table (ADR 0054). */
+  @Bean
+  public MeterBinder bitrateScansWaitingMeter(DSLContext dsl) {
+    return registry ->
+        Gauge.builder(
+                "streamarr.probes.bitrate_scans_waiting",
+                dsl,
+                context ->
+                    context.fetchCount(
+                        DSL.table(DSL.name(KeyframePacketScanScheduler.TABLE_NAME)),
+                        DSL.field(DSL.name("task_name"), String.class)
+                            .eq(BitrateScanTask.NAME)
+                            .and(DSL.field(DSL.name("picked"), Boolean.class).isFalse())))
+            .description("Bitrate scans that wait in the scan table for their next chunk")
+            .register(registry);
   }
 
   /**
