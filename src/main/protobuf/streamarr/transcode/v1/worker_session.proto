@@ -338,7 +338,8 @@ message VideoDecision {
   // The server sets this field only when it encodes an interlaced source. The
   // worker deinterlaces every frame with deinterlace.field_order, whatever each
   // frame's flags say. It deinterlaces before any other filter and writes
-  // progressive video.
+  // progressive video. Any encode whose initialization segment declares
+  // interlaced video fails with OUTPUT_MISMATCH, with or without this field.
   Deinterlace deinterlace = 13;
   // When this field is true, the worker repeats the last filtered picture at
   // output_frame_rate up to TranscodeExecution.advertised_end. The server sets
@@ -1181,7 +1182,8 @@ message ProbeMediaInfo {
   // The worker reports this field from probe version 3 on.
   ProbeKeyframes keyframes = 3;
   // This field holds the first video stream that is not an attached picture.
-  // The worker reports it from probe version 4 on.
+  // The worker reports it from probe version 4 on. When every video stream is
+  // an attached picture, the probe fails with PROBE_FAILURE_NO_VIDEO_STREAM.
   optional uint32 chosen_video_stream_index = 4;
   // The worker reports this field from probe version 4 on.
   FrameRateRuleResult frame_rate_rule = 5;
