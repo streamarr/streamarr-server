@@ -1,5 +1,7 @@
 // Streamarr servers use this contract to dispatch probe and transcode jobs.
-// Workers use it to report results and upload media segments.
+// Workers use it to report results and upload media segments. The ADRs in
+// streamarr/streamarr-adr define the behavior. These comments state what each
+// field means, its units and what an absent value means.
 
 syntax = "proto3";
 
@@ -36,124 +38,64 @@ enum EncoderKind {
   ENCODER_KIND_SOFTWARE = 2;
 }
 
-// This message identifies the encoder that a worker runs for a codec family.
-// Every job attempt for a variant must use the encoder backend from the
-// variant's first attempt. That backend determines the variant's initialization
-// segment.
+// This message names the encoder that a worker runs for a codec family. Every
+// attempt of a variant uses the backend that the variant's first attempt used.
 message VideoEncoderBackend {
   VideoCodecFamily codec_family = 1;
-  // This field names the FFmpeg encoder, such as libx264 or h264_nvenc.
+  // This field holds the FFmpeg encoder name, such as libx264 or h264_nvenc.
   string encoder = 2;
   EncoderKind kind = 3;
 }
 
-// This message identifies an encoder that passed the worker's test encode and
-// that the worker advertises. A worker-verified encoder is not necessarily
-// keyframe-verified.
+// This message names an encoder that passed the worker's test encode.
 message WorkerVerifiedVideoEncoder {
   VideoEncoderBackend backend = 1;
   // The worker sets this field to true when ADR 0037 lists the encoder, with
-  // the encoder settings that the worker runs, as keyframe-verified. For
-  // example, ADR 0037 lists the VideoToolbox encoders only with B-frames off.
-  // The worker takes the flag from that list and never derives it from its own
-  // output.
+  // the worker's settings, as keyframe-verified. The worker never derives the
+  // value from its own output.
   bool keyframe_verified = 2;
 }
 
 message WorkerCapabilities {
   repeated Uuid source_namespace_ids = 1;
-  // The worker lists the nonzero probe versions it supports. Each version
-  // defines which probe fields the worker retains and what those fields mean.
-  // Probe versions are independent of the installed FFmpeg and ffprobe
-  // versions. The defined versions are 1, 3, 4, 5 and 6. Version 3 adds keyframe
-  // positions. Version 4 adds each stream's dynamic range, bit depth, chroma
-  // subsampling, rotation, container cropping and codec string. It also adds
-  // each video stream's HDR10 static metadata and each audio and video stream's
-  // end time. For audio streams, version 4 adds the sample rate and profile.
-  // Version 4 also identifies the chosen video stream and reports the output
-  // frame rate and container chapters. Version 5 adds each video stream's codec
-  // profile, level, tier and color signaling. It also reports what the worker
-  // observes in the chosen stream's first frames and packets. Those facts
-  // include HDR10+, Dolby Vision RPUs, the first RPU header, where RPUs appear
-  // in the inspected samples, and static HDR metadata found only in the
-  // bitstream. Version 5 also reports whether those packets carry presentation
-  // times. Version 6 reports the bitrate of a Matroska video or audio stream
-  // from the file's statistics tags when ffprobe reports none, as
-  // ProbeStreamInfo.bitrate_bits_per_second describes. Version 6 also reports
-  // ProbeStreamInfo.copy_keeps_packet_bytes for each H.264 and HEVC video
-  // stream. Each version reports every fact from earlier versions. Version 2
-  // is unused. No server requests version 2 and no worker advertises it.
+  // This field lists the nonzero probe versions that the worker supports (ADR
+  // 0032). Each version reports every fact of the earlier versions. No worker
+  // uses version 2.
   repeated uint32 probe_versions = 2;
-  // The worker sends exactly one entry for each codec family it can encode.
-  // Each entry identifies the encoder backend that the worker uses for that
-  // codec family. The worker uses that backend for every job in that family.
-  // Every listed hardware or software backend passed the worker's test encode.
-  // The server counts a hardware backend only after the backend also passes ADR
-  // 0037's checks.
+  // The worker lists exactly one encoder for each codec family it can encode.
   repeated WorkerVerifiedVideoEncoder video_encoders = 3;
-  // The worker lists the stream measurement versions (ADR 0054) whose bitrate
-  // scan chunks it runs. A worker without bitrate scans lists none. The server
-  // sends a BitrateScanChunk only to a worker that lists the chunk's
-  // measurement_version.
+  // This field lists the stream measurement versions whose bitrate scan chunks
+  // the worker runs (ADR 0054). A worker without bitrate scans lists none.
   repeated uint32 measurement_versions = 4;
 }
 
-// The worker sends this message first on its session and declares its
-// capacities. A capacity is the number of items of one kind that the connection
-// accepts at once. When a capacity is 0, the worker accepts no item of that
-// kind. ADR 0032 decides how a worker sets each capacity.
-//
-// A probe's kind decides which probe capacity the probe uses. A probe that sets
-// ProbeRequest.scan_keyframe_packets is a keyframe packet scan, whatever its
-// priority. Every other probe is a playback probe or a background probe, as
-// ProbeRequest.priority says. Job attempts never use a probe capacity, and
-// probes never use a playback slot.
-//
-// A playback probe can use a free unit of the background probe capacity. A
-// background probe never uses the playback probe capacity. No probe holds a
-// particular unit. The server and the worker each count the playback probes and
-// the background probes that run, and each computes the background units in use
-// with the same formula: the background probes, plus the playback probes beyond
-// the playback probe capacity. The server can send a playback probe while fewer
-// playback probes run than the playback probe capacity, or while a background
-// unit is free. The server can send a background probe only while a background
-// unit is free. The server counts a probe until the probe's result arrives, so
-// the server's counts never fall below the worker's counts. The worker
-// therefore accepts every probe that the server sends against capacities that
-// have not changed.
+// The worker sends this message first on its session. Each capacity counts the
+// items of one kind that the connection runs at once. A capacity of 0 accepts
+// no item of that kind. ADR 0032 decides how a worker sets each capacity.
 message WorkerRegistration {
-  // The worker uses this field to identify itself. Server commands use target
-  // to identify the worker they address.
   WorkerIdentity worker = 1;
   WorkerCapabilities capabilities = 2;
-  // This field specifies how many job attempts the connection can run at once.
-  // The worker fixes that capacity when it registers. The server counts its own
-  // active job attempts against these playback slots.
+  // This field counts the job attempts that the connection runs at once. The
+  // worker never changes it during the session.
   uint32 available_slots = 3;
-  // This field specifies how many background probes the worker can run at once.
-  // A later ProbeCapacityChanged message replaces the value.
+  // This field counts the background probes that the worker runs at once.
+  // ProbeCapacityChanged replaces the value.
   uint32 background_probe_capacity = 4;
-  // This field reports the worker's dedicated playback probe capacity. Playback
-  // probes can also use free background probe capacity. The worker fixes its
-  // dedicated playback probe capacity when it registers.
+  // This field counts the playback probes that the worker reserves capacity
+  // for. The worker never changes it during the session.
   uint32 playback_probe_capacity = 5;
-  // This field specifies how many keyframe packet scans the worker can run at
-  // once. A later ProbeCapacityChanged message replaces the value.
+  // This field counts the keyframe packet scans and bitrate scan chunks that
+  // the worker runs at once. ProbeCapacityChanged replaces the value.
   uint32 keyframe_packet_scan_capacity = 6;
-  // This field specifies whether the worker adapts its background probe
-  // capacity or keeps a fixed one. The worker always sets ADAPTIVE or FIXED.
-  // The server tags its capacity metrics with the value.
+  // The worker always sets ADAPTIVE or FIXED.
   BackgroundProbeCapacityControl background_probe_capacity_control = 7;
 }
 
 enum BackgroundProbeCapacityControl {
-  // A worker never sends this value.
   BACKGROUND_PROBE_CAPACITY_CONTROL_UNSPECIFIED = 0;
-  // The worker raises and lowers the capacity from the production speed of its
-  // job attempts.
+  // The worker adjusts the capacity as its job attempts speed up or slow down.
   BACKGROUND_PROBE_CAPACITY_CONTROL_ADAPTIVE = 1;
-  // A worker setting fixes the capacity, and the worker never changes the
-  // capacity.
+  // A worker setting fixes the capacity.
   BACKGROUND_PROBE_CAPACITY_CONTROL_FIXED = 2;
 }
 
@@ -186,22 +128,12 @@ message AudioDecision {
   optional string codec = 2;
   uint32 channels = 3;
   uint64 bitrate_bits_per_second = 4;
-  // When true, the worker appends digital silence, zero samples in the
-  // encoder's input format, rate and layout, to the chosen audio stream
-  // directly after its last source sample, changes no source sample, and stops
-  // the stream at TranscodeExecution.advertised_end. An attempt that reads no
-  // sample of the stream encodes only that silence, with the same
-  // initialization segment as the variant's other attempts, completes, and
-  // reports the stream in JobAttemptCompleted.streams_without_samples. The
-  // worker fails the attempt with JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION
-  // when the field is true and the job does not encode audio or omits
-  // advertised_end (ADR 0037, early ends).
+  // When this field is true, the worker adds digital silence after the encoded
+  // audio up to TranscodeExecution.advertised_end. The server sets it only on a
+  // job that encodes audio and sets advertised_end (ADR 0037, early ends).
   bool pad_with_silence_to_advertised_end = 6;
-  // The chosen audio stream's ProbeStreamInfo.index, set on every job whose
-  // mode is AUDIO_MODE_COPY or AUDIO_MODE_TRANSCODE. The worker selects exactly
-  // that stream. It fails the attempt with
-  // JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION when such a job omits the field
-  // or an AUDIO_MODE_NONE job sets it.
+  // This field holds the chosen audio stream's ProbeStreamInfo.index. A COPY or
+  // TRANSCODE job must set it. A NONE job must leave it out.
   optional uint32 stream_index = 7;
 }
 
@@ -219,11 +151,8 @@ enum VideoCodecFamily {
   VIDEO_CODEC_FAMILY_AV1 = 3;
 }
 
-// Each codec profile belongs to one codec family. The worker fails the job
-// attempt with JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION when codec_profile
-// belongs to a codec family other than codec_family. An encode forces only
-// H264_HIGH, HEVC_MAIN or AV1_MAIN. The probe reports every value:
-// ProbeStreamInfo.codec_profile says how the worker reads it.
+// Each profile belongs to one codec family. An encode forces only H264_HIGH,
+// HEVC_MAIN or AV1_MAIN. The probe can report every value.
 enum VideoCodecProfile {
   VIDEO_CODEC_PROFILE_UNSPECIFIED = 0;
   VIDEO_CODEC_PROFILE_H264_HIGH = 1;
@@ -247,8 +176,8 @@ enum VideoCodecProfile {
   VIDEO_CODEC_PROFILE_HEVC_MAIN_10 = 11;
   // HEVC general_profile_idc 3.
   VIDEO_CODEC_PROFILE_HEVC_MAIN_STILL_PICTURE = 12;
-  // HEVC general_profile_idc 4: every format range extensions profile, such as
-  // Main 4:2:2 10.
+  // HEVC general_profile_idc 4, which covers every format range extensions
+  // profile.
   VIDEO_CODEC_PROFILE_HEVC_FORMAT_RANGE_EXTENSIONS = 13;
   // AV1 seq_profile 1.
   VIDEO_CODEC_PROFILE_AV1_HIGH = 14;
@@ -256,8 +185,7 @@ enum VideoCodecProfile {
   VIDEO_CODEC_PROFILE_AV1_PROFESSIONAL = 15;
 }
 
-// A copy carries VIDEO_CODEC_TIER_UNSPECIFIED. H.264 has no tier, so an H.264
-// encode also carries VIDEO_CODEC_TIER_UNSPECIFIED.
+// A copy and an H.264 encode carry UNSPECIFIED.
 enum VideoCodecTier {
   VIDEO_CODEC_TIER_UNSPECIFIED = 0;
   VIDEO_CODEC_TIER_MAIN = 1;
@@ -270,325 +198,172 @@ enum VideoMode {
   VIDEO_MODE_ENCODE = 2;
 }
 
-// This value states whether a dynamic-range feature is present, as ADR 0036
-// defines. UNSPECIFIED means the probe could not check. ABSENT means the probe
-// checked and found no feature.
+// This value states whether a dynamic-range feature is present (ADR 0036).
+// UNSPECIFIED means that the probe could not check.
 enum Presence {
   PRESENCE_UNSPECIFIED = 0;
   PRESENCE_ABSENT = 1;
   PRESENCE_PRESENT = 2;
 }
 
-// This value identifies the standard picture format that a player can use
-// without advanced HDR information. The probe derives it from the signaled
-// transfer, which ProbeStreamInfo.transfer_characteristics names, and from
-// whether VideoDynamicRange holds the Dolby Vision present arm:
-// - SDR for BT709, BT470M, BT470BG, SMPTE170M, SMPTE240M, IEC61966_2_4, BT1361,
-//   IEC61966_2_1, BT2020_10 and BT2020_12.
-// - PQ for SMPTE2084, and HLG for ARIB_STD_B67.
-// - Every other transfer names none of these formats: UNSPECIFIED, which also
-//   covers H.273's reserved values, and LINEAR, LOG100, LOG316 and SMPTE428.
-//   The base is then NONE when Dolby Vision is present, and UNSPECIFIED
-//   otherwise.
-//
-// When the worker encodes video, it interprets the signaled transfer. If a
-// Dolby Vision compatibility identifier disagrees with that transfer, the
-// worker uses the transfer. Dolby Vision profiles 5 and 10.0 are the exception
-// from probe version 5 on: they have no compatible base, so the base is NONE
-// whatever the signaled transfer says. The probe knows profile 5 from the
-// configuration record's profile, or, when no configuration record names a
-// profile, from the first RPU header of an HEVC stream, as DolbyVisionRpuHeader
-// describes. The probe knows profile 10.0 from a record with profile 10 and
-// base_layer_compatibility_id 0, or, when no configuration record names a
-// profile, from the first RPU header of an AV1 stream that holds
-// vdr_rpu_profile 0 and bl_video_full_range_flag 1.
+// This value names the standard picture format that a player can show without
+// advanced HDR information. ADR 0036 derives it from the signaled transfer and
+// from Dolby Vision.
 enum CompatibleBase {
-  // The signaled transfer identifies none of SDR, PQ or HLG, and Dolby Vision
-  // is not present.
+  // The transfer names none of SDR, PQ or HLG, and Dolby Vision is absent.
   COMPATIBLE_BASE_UNSPECIFIED = 0;
-  // The stream has no standard compatible base. Either Dolby Vision is present
-  // and the signaled transfer identifies none of SDR, PQ or HLG, or the stream
-  // uses Dolby Vision profile 5 or 10.0.
+  // The stream has no standard compatible base. It carries Dolby Vision
+  // without an SDR, PQ or HLG transfer, or it uses Dolby Vision profile 5 or
+  // 10.0.
   COMPATIBLE_BASE_NONE = 1;
-  // The stream uses a standard-dynamic-range transfer, such as BT.709.
   COMPATIBLE_BASE_SDR = 2;
-  // The stream uses SMPTE ST 2084, which covers HDR10 and PQ10.
+  // The stream uses SMPTE ST 2084, as HDR10 and PQ10 do.
   COMPATIBLE_BASE_PQ = 3;
   // The stream uses ARIB STD-B67.
   COMPATIBLE_BASE_HLG = 4;
 }
 
-// This message preserves the entire Dolby Vision configuration record, dvcC or
-// dvvC. The worker copies every field in the record. These values describe what
-// the record claims. The numeric fields distinguish an absent value from zero
-// because zero is a valid base-layer compatibility identifier.
+// This message copies the Dolby Vision configuration record, dvcC or dvvC, as
+// the record states it. The numeric fields are optional because zero is a
+// valid value.
 message DolbyVisionConfiguration {
-  // This field reports the Dolby Vision profile. The codec profile is a
-  // separate value.
+  // This field holds the Dolby Vision profile, not the codec profile.
   optional uint32 profile = 1;
-  // This field reports the Dolby Vision level. The codec level is a separate
-  // value.
+  // This field holds the Dolby Vision level, not the codec level.
   optional uint32 level = 2;
   optional uint32 base_layer_compatibility_id = 3;
-  // The worker copies bl_present_flag from the record.
+  // This field copies bl_present_flag.
   bool base_layer = 4;
-  // The worker copies el_present_flag from the record.
+  // This field copies el_present_flag.
   bool enhancement_layer = 5;
-  // The worker copies rpu_present_flag from the record.
+  // This field copies rpu_present_flag.
   bool rpu = 6;
 }
 
-// The probe checked for Dolby Vision and found no configuration record, no
-// Dolby Vision sample entry and no RPU in the samples. A probe that reads no
-// samples never reports this arm.
+// The probe found no configuration record, no Dolby Vision sample entry and no
+// RPU in the samples. A probe that reads no samples never reports this arm.
 message DolbyVisionAbsent {}
 
-// The probe found a Dolby Vision configuration record, a Dolby Vision sample
-// entry or an RPU in the samples.
+// The probe found a configuration record, a Dolby Vision sample entry or an
+// RPU.
 message DolbyVisionPresent {
-  // This field preserves the whole configuration record. The field is absent
-  // when the probe found no record.
+  // The probe leaves this field out when it found no record.
   DolbyVisionConfiguration declared = 1;
-  // This field states whether the samples contain Dolby Vision RPUs. The worker
-  // reports UNSPECIFIED when the probe read no samples.
+  // This field states whether the samples contain RPUs. The worker reports
+  // UNSPECIFIED when it read no samples.
   Presence observed_rpu = 2;
-  // The worker reports this field from probe version 5 onward. It reads the
-  // first RPU header from the frames. For H.264 and HEVC, the worker reads
-  // packets if the frames show no RPU. For AV1, the worker reads extradata
-  // first and then packets if the frames show no RPU.
-  // ProbeStreamInfo.dynamic_range defines which units the worker inspects. For
-  // AV1, the worker reads the RPU inside its EMDF container regardless of the
-  // declared Dolby Vision profile. The worker takes no header from an OBU with
-  // an extension byte. The field is absent when observed_rpu is not PRESENT or
-  // the worker could not parse an RPU header.
+  // This field holds the first RPU header that the worker could parse, from
+  // probe version 5 on (ADR 0036). The worker leaves it out when observed_rpu
+  // is not PRESENT or no header parsed.
   DolbyVisionRpuHeader first_rpu_header = 3;
-  // This field describes where RPUs appear in the inspected samples, as
-  // DolbyVisionRpuPlacement specifies. The worker reports the field only for
-  // probe version 5 and later.
+  // The worker reports this field from probe version 5 on.
   DolbyVisionRpuPlacement rpu_placement = 4;
 }
 
-// This value describes where RPUs appear in the inspected H.264 or HEVC
-// samples. A sample is one demuxed packet. The worker counts only the NAL units
-// that ProbeStreamInfo.dynamic_range includes. A slice has type 1 to 5 for
-// H.264 or type 0 to 31 for HEVC. A sample starts with an RPU when the RPU
-// precedes the sample's first slice or the sample contains an RPU and no slice.
-// The first picture packet is the first inspected packet that contains a slice.
-//
-// The worker reports a known placement only when all these conditions hold:
-// - observed_rpu is PRESENT.
-// - The worker has read every requested packet and delimited every NAL unit.
-// - No packet contains more than one RPU.
-// - No packet before the first picture packet contains an RPU.
-//
-// The worker then reports the value whose rule the packets satisfy. It reports
-// UNSPECIFIED if any condition fails or neither rule matches. For AV1, the
-// worker always reports UNSPECIFIED. The value describes only the inspected
-// packets. Later samples can differ.
-//
-// STARTS_SAMPLE covers two layouts. An RPU can precede its own picture or
-// appear in the next picture's sample. The inspected packets cannot distinguish
-// those layouts when the start of a shifted file was cut away. The worker
-// treats both layouts as shifted, as VideoDecision specifies. ADR 0036 defines
-// how the worker parses the samples and distinguishes layouts.
-// ProbeStreamInfo.dynamic_range links to those rules.
+// This value states where RPUs appear in the inspected H.264 or HEVC samples
+// (ADR 0036). The value describes only the packets that the worker inspected.
 enum DolbyVisionRpuPlacement {
-  // The worker reports this value for AV1. For H.264 and HEVC, the evidence
-  // fails the conditions above or matches neither known placement.
+  // The stream is AV1, or the evidence fits neither placement.
   DOLBY_VISION_RPU_PLACEMENT_UNSPECIFIED = 0;
-  // At least one packet holds an RPU, and every RPU follows a slice of its own
-  // packet and is that packet's last NAL unit. An RPU followed by another NAL
-  // unit does not meet this rule.
+  // Every RPU follows a slice of its own packet and ends that packet.
   DOLBY_VISION_RPU_PLACEMENT_AFTER_OWN_PICTURE = 1;
-  // At least one packet holds an RPU, and every such packet starts with it,
-  // whether or not the first picture packet holds one.
+  // Every packet that holds an RPU starts with it. The worker treats this
+  // layout as shifted.
   DOLBY_VISION_RPU_PLACEMENT_STARTS_SAMPLE = 2;
 }
 
 // These RPU header fields identify the Dolby Vision profile when no
-// configuration record names the profile. The rule depends on the codec, as
-// FFmpeg 8.1 guesses the profile:
-// - HEVC: vdr_rpu_profile 0 with bl_video_full_range_flag 1 means profile 5.
-//   vdr_rpu_profile 1 with el_spatial_resampling_filter_flag 1 and
-//   disable_residual_flag 0 means an enhancement layer: profile 7 when
-//   vdr_bit_depth is 12, and profile 4 otherwise. Any other vdr_rpu_profile 1
-//   header means profile 8. Any other header names no profile.
-// - AV1: FFmpeg takes every RPU as profile 10, whatever its header holds. The
-//   worker itself reads vdr_rpu_profile 0 with bl_video_full_range_flag 1 as
-//   profile 10.0, which has no compatible base, as CompatibleBase says.
-// - H.264: every RPU means profile 9, whatever its header holds.
+// configuration record names it (ADR 0036).
 message DolbyVisionRpuHeader {
-  // The worker copies vdr_rpu_profile from the RPU header.
   uint32 vdr_rpu_profile = 1;
-  // The worker copies bl_video_full_range_flag from the RPU header.
+  // This field copies bl_video_full_range_flag.
   bool base_layer_full_range = 2;
-  // The worker copies el_spatial_resampling_filter_flag from the RPU header.
+  // This field copies el_spatial_resampling_filter_flag.
   bool enhancement_layer_spatial_resampling_filter = 3;
-  // The worker copies disable_residual_flag from the RPU header.
+  // This field copies disable_residual_flag.
   bool disable_residual = 4;
-  // The worker reports the RPU header's vdr_bit_depth_minus8 + 8.
+  // This field holds vdr_bit_depth_minus8 + 8.
   uint32 vdr_bit_depth = 5;
 }
 
-// This message describes one video stream's dynamic range under ADR 0036. A
-// source video stream can have UNSPECIFIED values. A planned output never has
-// an UNSPECIFIED value.
+// This message describes one video stream's dynamic range (ADR 0036). A
+// planned output never carries an UNSPECIFIED value.
 message VideoDynamicRange {
   CompatibleBase compatible_base = 1;
   Presence hdr10_plus = 2;
-  // If neither arm is set, Dolby Vision is unspecified because the probe could
-  // not check.
+  // When neither arm is set, the probe could not check for Dolby Vision.
   oneof dolby_vision {
     DolbyVisionAbsent dolby_vision_absent = 3;
     DolbyVisionPresent dolby_vision_present = 4;
   }
 }
 
-// The server computes codec_profile, tier, level and codec_string. The worker
-// never computes these fields. mode specifies whether the worker copies or
-// encodes the video. VIDEO_MODE_COPY requires TRANSCODE_MODE_REMUX or
-// TRANSCODE_MODE_AUDIO_TRANSCODE. VIDEO_MODE_ENCODE requires
-// TRANSCODE_MODE_VIDEO_TRANSCODE or TRANSCODE_MODE_FULL_TRANSCODE. The worker
-// fails the attempt with JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION if the modes
-// disagree or an encode lacks codec_profile or level.
-//
-// When the worker encodes video, it forces codec_profile, tier and level. A job
-// that copies video includes none of those fields. Its codec_string comes from
-// the probed source stream. The worker compares the codec string in each
-// initialization segment it produces with codec_string. If the strings differ,
-// it fails the attempt with JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH.
-//
-// The worker converts the picture according to source_dynamic_range,
-// output_dynamic_range and ADR 0013. It never chooses a different conversion.
-// It fails the attempt with JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION in any of
-// these cases:
-// - An encode lacks source_dynamic_range or output_dynamic_range.
-// - output_dynamic_range has an UNSPECIFIED compatible base or hdr10_plus, or
-//   no Dolby Vision arm.
-// - A job that copies video includes output_dynamic_range.
-//
-// The worker repairs RPUs only when all these conditions hold:
-// - The job encodes video.
-// - source_codec_family is HEVC.
-// - source_dynamic_range has compatible base NONE and Dolby Vision present.
-// - rpu_placement is STARTS_SAMPLE or UNSPECIFIED.
-// - source_packets_carry_presentation_times is true.
-//
-// The worker moves an RPU that starts a sample to the end of the previous
-// picture's sample. If no previous picture exists, the worker drops the RPU. If
-// an RPU follows a slice but precedes another NAL unit, the worker moves the
-// RPU to the end of that sample. The worker counts NAL units as
-// ProbeStreamInfo.dynamic_range specifies. It changes only samples that contain
-// an ignored RPU or receive an RPU. It leaves conforming streams unchanged. It
-// treats STARTS_SAMPLE as shifted, even when an RPU belongs to its own sample.
-//
-// For every other job, the worker reads source samples unchanged. The worker
-// assumes later samples place RPUs as the inspected samples do. It also assumes
-// later packets carry presentation times in the same way as the inspected
-// packets. Without presentation times, the worker keeps every picture even if
-// the decoder cannot reshape the picture with its RPU. ADR 0013 defines how the
-// worker repairs RPUs and explains why FFmpeg requires the repair.
-// https://github.com/streamarr/streamarr-adr/blob/21543b1b897a623872edc80515c2ed018d78c6fb/adr/0013-stream-decision-architecture.adoc#reshape-rpus-starting-samples
+// This message tells the worker what to do with the chosen video stream. The
+// server computes codec_profile, tier, level and codec_string. An encode forces
+// them, and a copy carries only codec_string. ADR 0013 and ADR 0036 decide how
+// the worker converts the picture and repairs Dolby Vision RPUs.
 message VideoDecision {
   VideoMode mode = 6;
   VideoCodecFamily codec_family = 1;
   VideoCodecProfile codec_profile = 2;
   VideoCodecTier tier = 3;
-  // This field encodes the level as major x 10 + minor. For example, 41
-  // represents level 4.1.
+  // This field encodes the level as major x 10 + minor. For example, 41 means
+  // level 4.1.
   optional uint32 level = 4;
-  // This field contains the RFC 6381 codec string advertised by the variant's
-  // playlist, such as avc1.64002A.
+  // This field holds the RFC 6381 codec string that the variant's playlist
+  // advertises. The attempt fails with OUTPUT_MISMATCH when the produced
+  // initialization segment carries a different string.
   string codec_string = 5;
-  // This field describes the chosen video stream's dynamic range as stored by
-  // the probe.
+  // This field holds the chosen stream's dynamic range as the probe stored it.
   VideoDynamicRange source_dynamic_range = 7;
-  // This field describes the planned output's dynamic range. Only a job that
-  // encodes video includes this field. A job that copies video omits it until
-  // streamarr/streamarr-server#396 defines the planned output of a copy.
+  // This field holds the planned output's dynamic range. Only an encode sets
+  // it.
   VideoDynamicRange output_dynamic_range = 8;
-  // This field must contain the chosen video's ProbeStreamInfo.index within the
-  // container. The worker selects exactly that stream and refuses a job that
-  // omits the index.
+  // This field holds the chosen video's ProbeStreamInfo.index. Every job sets
+  // it.
   optional uint32 stream_index = 9;
-  // The server sets source_codec_family on every job, whether the job copies or
-  // encodes video. It maps the chosen stream's stored ProbeStreamInfo.codec
-  // value of h264, hevc or av1 to this field. The server uses UNSPECIFIED for
-  // any other codec. codec_family specifies the output codec family, which can
-  // differ when the job encodes video.
+  // This field holds the chosen stream's codec family on every job. The server
+  // sends UNSPECIFIED for any other codec.
   VideoCodecFamily source_codec_family = 10;
-  // The server sets this field on every job, whether the job copies or encodes
-  // video. The field is true only when the chosen stream's stored
-  // ProbeStreamInfo.first_packets_carry_presentation_times is true. The field
-  // is false when the stored value is false or absent. The worker uses this
-  // field only to decide whether to repair RPUs as described above.
+  // This field copies the stored
+  // ProbeStreamInfo.first_packets_carry_presentation_times. The server sends
+  // false when that value is absent.
   bool source_packets_carry_presentation_times = 11;
-  // The server sets this field to true only on a job that copies video when
-  // the chosen stream's stored ProbeStreamInfo.copy_keeps_packet_bytes is true.
-  // The field is false otherwise, including on every job that encodes video.
-  // When the field is true, the worker copies the video without the Annex B
-  // bitstream filter, so the delivered samples equal the source packets. When
-  // the field is false, the worker applies the filter as before.
+  // The server sets this field to true only on a copy whose stored
+  // ProbeStreamInfo.copy_keeps_packet_bytes is true. The worker then copies the
+  // video without the Annex B bitstream filter.
   bool copy_keeps_packet_bytes = 12;
-  // The server sets this field only on a job that encodes video from an
-  // interlaced source: a chosen stream whose stored field order is TT, BB, TB
-  // or BT. Every other job omits it.
-  //
-  // The worker deinterlaces every frame before any other filter, before the
-  // scaler, so that no filter mixes the two fields of a frame. The worker
-  // takes the field order from deinterlace.field_order, not from each frame's
-  // flags. The produced output is progressive. The worker fails the attempt
-  // with JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION in any of these cases:
-  // - A job that copies video includes this field.
-  // - field_order is any value other than TT, BB, TB or BT, including
-  //   UNSPECIFIED, PROGRESSIVE and a value that this contract does not define.
-  // - output is any value other than ONE_FRAME_PER_FIELD or
-  //   ONE_FRAME_PER_FRAME, including UNSPECIFIED and a value that this contract
-  //   does not define.
-  //
-  // The worker fails the attempt with JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH when
-  // the initialization segment of an encode declares interlaced video, with or
-  // without this field.
+  // The server sets this field only when it encodes an interlaced source. The
+  // worker deinterlaces before any other filter and writes progressive video.
   Deinterlace deinterlace = 13;
-  // When true, the worker repeats the last picture that its video filters
-  // produce from the source, after deinterlacing and scaling, at
-  // output_frame_rate up to TranscodeExecution.advertised_end, and no repeated
-  // picture passes through a filter again. An attempt that starts after the
-  // video's last frame still reads the last frames, as
-  // TranscodeExecution.seek_position describes, and holds the same picture, so
-  // it never fails with JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES for the
-  // video. The worker fails the attempt with
-  // JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION when the field is true and the
-  // job does not encode video or omits advertised_end (ADR 0037, early ends).
+  // When this field is true, the worker repeats the last filtered picture at
+  // output_frame_rate up to TranscodeExecution.advertised_end. The server sets
+  // it only on a job that encodes video and sets advertised_end (ADR 0037,
+  // early ends).
   bool hold_last_frame_to_advertised_end = 14;
 }
 
-// This message tells the worker how to deinterlace the chosen video stream.
 message Deinterlace {
-  // The field order that the probe stored for the chosen video stream. The
-  // field displayed first is the earlier field: the top field for TT and BT,
-  // the bottom field for BB and TB.
+  // This field holds the field order that the probe stored. It must be TT, BB,
+  // TB or BT.
   FieldOrder field_order = 1;
   DeinterlaceOutput output = 2;
 }
 
 // This value states how many frames the deinterlacer writes.
-// TranscodeExecution.output_frame_rate is the rate of the deinterlacer's
-// output in either case.
+// TranscodeExecution.output_frame_rate gives the deinterlacer's output rate.
 enum DeinterlaceOutput {
   DEINTERLACE_OUTPUT_UNSPECIFIED = 0;
-  // The deinterlacer writes one frame for each field. A source with 29.97
-  // frames per second, and so 59.94 fields per second, becomes 59.94 frames
-  // per second.
+  // The deinterlacer writes one frame for each field. A 29.97 fps source
+  // becomes 59.94 fps.
   DEINTERLACE_OUTPUT_ONE_FRAME_PER_FIELD = 1;
-  // The deinterlacer writes one frame for each source frame. A source with
-  // 29.97 frames per second stays at 29.97 frames per second.
+  // The deinterlacer writes one frame for each source frame.
   DEINTERLACE_OUTPUT_ONE_FRAME_PER_FRAME = 2;
 }
 
 message TranscodeDecision {
   TranscodeMode mode = 1;
-  // Current jobs leave this retired field empty and use video.codec_family.
+  // This field is retired. Jobs leave it empty and use video.codec_family.
   string video_codec_family = 2;
   AudioDecision audio = 3;
   SubtitleDecision subtitle = 4;
@@ -598,16 +373,16 @@ message TranscodeDecision {
   VideoDecision video = 7;
 }
 
-// relative_key is an opaque installation-defined key. It is never a host path
-// and must not be percent-decoded or normalized before the selected namespace
-// mapping resolves it.
+// relative_key is an opaque key that the installation defines. It is never a
+// host path. The worker must not percent-decode or normalize it before the
+// namespace mapping resolves it.
 message MediaSourceRef {
   Uuid source_namespace_id = 1;
   string relative_key = 2;
 }
 
-// Each value names one setting on the preset scale used by all software
-// encoders.
+// Each value names one setting on the preset scale that every software encoder
+// shares (ADR 0044).
 enum EncoderPreset {
   ENCODER_PRESET_UNSPECIFIED = 0;
   ENCODER_PRESET_ULTRAFAST = 1;
@@ -626,110 +401,63 @@ message VariantSpec {
   uint32 width = 2;
   uint32 height = 3;
   uint64 bitrate_bits_per_second = 4;
-  // The server always sets a preset from the scale and never sends Automatic.
-  // Every job attempt of a variant carries the same preset.
+  // The server always sends a preset from the scale. Every attempt of a variant
+  // carries the same preset.
   EncoderPreset encoder_preset = 5;
 }
 
 message TranscodeExecution {
   uint32 seek_position_seconds = 1;
   uint32 target_segment_duration_seconds = 2;
-  // This decimal field is deprecated. The worker uses output_frame_rate
-  // whenever it encodes video.
+  // This field is deprecated. Encodes use output_frame_rate.
   double framerate = 3;
   uint32 start_sequence_number = 4;
-  // This field counts the media segments advertised in the variant's media
-  // playlist on the zero-based grid of target_segment_duration_seconds, or the
-  // entries of segment_start_slots when that list is not empty. Every
-  // job attempt for the variant uses the same count, regardless of transcode
-  // mode. start_sequence_number must be less than media_segment_count. A job is
-  // invalid if it omits the count or start_sequence_number is not less than the
-  // count. ADR 0037 defines how the worker uses the count to bound the list of
-  // forced keyframes.
+  // This field counts the media segments that the variant's media playlist
+  // advertises. Every attempt of the variant carries the same count. The count
+  // must be greater than start_sequence_number.
   uint32 media_segment_count = 5;
-  // This field specifies where the attempt starts reading, with sub-second
-  // precision. The position uses ProbeKeyframePositionsPart's zero-based
-  // timeline. When the field is set, the worker seeks to it instead of
-  // seek_position_seconds. The server chooses the position. For an attempt that
-  // copies video, the server sends the decode time of the first source keyframe
-  // of the attempt's first media segment.
-  //
-  // For an attempt that sets VideoDecision.hold_last_frame_to_advertised_end
-  // and whose start_sequence_number is above zero, the server sends the decode
-  // time of the last stored keyframe at or before 0.5 s ahead of the earlier of
-  // the first media segment's start and the video's last stored keyframe, or
-  // the first stored keyframe when none is, or a fixed read-back before
-  // seek_position_seconds while it stores no keyframes (ADR 0037, decode-only
-  // early-start seek). The worker reads from it with -noaccurate_seek, and
-  // decodes and filters but does not encode the pictures before
-  // seek_position_seconds. When the position decodes no picture because it lies
-  // past the video's last keyframe, the worker finds that keyframe itself with
-  // ADR 0037's backward packet search and reads from the last keyframe at least
-  // 0.5 s before it, or the first keyframe (ADR 0037, early ends). When no
-  // keyframe lies before the position, it fails the attempt with
-  // JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED.
-  //
-  // This version of the server sets the field for no other attempt.
+  // This field holds where the attempt starts reading, on the zero-based
+  // timeline of ProbeKeyframePositionsPart. When it is set, the worker uses it
+  // instead of seek_position_seconds. ADR 0037 (early ends) decides when the
+  // server sets it.
   google.protobuf.Duration seek_position = 6;
-  // This field reports the frame rate of the encode's output. It is the output
-  // frame rate that the probe stored for the chosen video stream, or twice that
-  // rate when VideoDecision.deinterlace.output is ONE_FRAME_PER_FIELD. The
-  // worker passes the exact fraction to FFmpeg and never converts it to a
-  // decimal. Every encode requires positive numerator and denominator terms. A
-  // job that copies the video carries none.
+  // This field holds the encode's exact output frame rate. Every encode sets
+  // it. A copy leaves it out.
   Fraction output_frame_rate = 7;
-  // The end of the variant's last advertised media segment,
-  // media_segment_count - 1, on the zero-based timeline of seek_position. The
-  // server sets it on every job that holds the last frame or pads audio, with
-  // the same value on every attempt of the variant. No padded picture or audio
-  // frame starts at or after it. The last one keeps its full duration, so a
-  // padded stream can end less than one frame past it; the worker never
-  // shortens a sample to end here.
+  // This field holds the end of the variant's last advertised media segment,
+  // on seek_position's timeline. The server sets it on every job that holds the
+  // last frame or pads audio. No padded frame starts at or after it (ADR 0037,
+  // early ends).
   google.protobuf.Duration advertised_end = 8;
-  // The start of every media segment that the variant's media playlist
-  // advertises, in slots of target_segment_duration_seconds, the stream
-  // session's segment length, not EXT-X-TARGETDURATION. Media segment N starts
-  // at entry N x target_segment_duration_seconds on the zero-based timeline of
-  // seek_position, and its interval runs to the next listed start or, for the
-  // last segment, to the end of the media. When advertised_end is set, the last
-  // segment's audio ends there, and a job whose advertised_end is at or before
-  // the last listed start fails with JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION.
-  // Every job attempt of the stream session carries the same list, and
-  // seek_position_seconds is the listed start of start_sequence_number. An
-  // empty list means the plain grid, on which segment N starts at slot N.
-  //
-  // A non-empty list holds exactly media_segment_count entries, starts with 0
-  // and strictly increases; otherwise the worker fails the attempt with
-  // JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION. The worker forces encoded
-  // keyframes at the listed starts and groups fragments and audio samples on
-  // the listed intervals. A merged segment, which spans several slots, never
-  // fails an attempt by itself. A video keyframe that opens a segment more than
-  // one number after the open segment fails the attempt with the named reason
-  // SKIPPED_SEGMENT_NUMBER, reported as JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED
+  // This field lists where each advertised media segment starts, in slots of
+  // target_segment_duration_seconds. An empty list means segment N starts at
+  // slot N. A non-empty list holds media_segment_count entries, starts with 0
+  // and strictly increases. When advertised_end is set, the last segment's
+  // audio ends there, and advertised_end must come after the last listed start
   // (ADR 0037, segment list).
   repeated uint32 segment_start_slots = 9;
 }
 
 message VariantJob {
   Uuid stream_session_id = 1;
-  // job_id identifies one logical variant transcode for the stream session.
-  // job_attempt_id is freshly generated for every dispatch attempt and is never
-  // a monotonic generation counter.
+  // This field identifies one logical variant transcode for the stream
+  // session.
   Uuid job_id = 2;
+  // The server generates a new value for every dispatch attempt. The value is
+  // never a counter.
   Uuid job_attempt_id = 3;
   MediaSourceRef source = 4;
   TranscodeDecision decision = 5;
   VariantSpec variant = 6;
   TranscodeExecution execution = 7;
-  // The source snapshot of the probe outcome that the stream session was built
-  // from (ADR 0032), set on every job. JobAttemptCompleted.stream_ends belong
-  // to it.
+  // This field holds the source snapshot of the probe outcome that the stream
+  // session was built from (ADR 0032). Every job sets it.
   SourceSnapshot source_snapshot = 8;
 }
 
-// One version of a source file, as ADR 0032's source snapshot identifies it.
-// Two snapshots are equal only when both fields are equal, the modification
-// time to the nanosecond.
+// This message identifies one version of a source file (ADR 0032). Two
+// snapshots are equal only when both fields are equal, the modification time
+// to the nanosecond.
 message SourceSnapshot {
   uint64 size_bytes = 1;
   google.protobuf.Timestamp modified_at = 2;
@@ -737,8 +465,8 @@ message SourceSnapshot {
 
 message JobAttemptStarted {
   Uuid job_attempt_id = 1;
-  // This field identifies the encoder backend used by the job attempt. The
-  // field is absent when the job attempt copies the video.
+  // This field names the attempt's encoder backend. The worker leaves it out
+  // when the attempt copies the video.
   VideoEncoderBackend encoder_backend = 2;
 }
 
@@ -748,90 +476,68 @@ enum JobAttemptFailure {
   JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION = 2;
   JOB_ATTEMPT_FAILURE_STARTUP_FAILED = 3;
   JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED = 4;
-  // The produced output differs from the job's video decision. The same
-  // decision on the same encoder backend produces the same mismatch, so a
-  // replacement job attempt fails the same way.
+  // The output differs from the job's video decision. Another attempt on the
+  // same backend fails the same way.
   JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH = 5;
-  // One initialization or media segment holds more bytes than the segment cap
-  // that SegmentUploadMetadata.content_length_bytes states, or one interval's
-  // segments together outgrow the producer's budget of two segment caps, in a
-  // copied or an encoded output alike. The worker reports this value instead of
-  // JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED and delivers no part of a segment that
-  // it could not hold (ADR 0037, segment list).
+  // A segment would hold more bytes than the segment cap that
+  // SegmentUploadMetadata.content_length_bytes states (ADR 0037, segment list).
   JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED = 6;
-  // The attempt read no sample of a chosen stream from where it began reading
-  // and can't stand in for it: a copied stream, audio encoded without
-  // AudioDecision.pad_with_silence_to_advertised_end, or video encoded without
-  // VideoDecision.hold_last_frame_to_advertised_end. The worker reports this
-  // value instead of JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED, also when FFmpeg
-  // exits with status 0, and names the stream in
-  // JobAttemptFailed.stream_without_samples (ADR 0037, early ends).
+  // The attempt read no sample of a chosen stream, and the job does not let
+  // the worker fill that stream with a held picture or silence (ADR 0037, early
+  // ends).
   JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES = 7;
 }
 
 message JobAttemptFailed {
   Uuid job_attempt_id = 1;
   JobAttemptFailure failure = 2;
-  // Set only with JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES: the first chosen
-  // stream that delivered no sample and that the attempt can't stand in for.
-  // Left out, with the same failure, when the snapshot rule of
-  // JobAttemptCompleted.stream_ends is not met.
+  // The worker sets this field only with STREAM_WITHOUT_SAMPLES, and only while
+  // the source still matches VariantJob.source_snapshot (ADR 0037, early ends).
   SourceStreamWithoutSamples stream_without_samples = 3;
 }
 
 message JobAttemptCompleted {
   Uuid job_attempt_id = 1;
-  // Set exactly when the variant's last media segment that holds a source
-  // sample comes before the last advertised media segment,
-  // media_segment_count - 1. It is a report, not a failure.
+  // The worker sets this field when the source ran out before the last
+  // advertised media segment. The field reports a fact. It is not a failure.
   SourceEndedEarly source_ended_early = 2;
-  // One entry per chosen stream whose last source sample the attempt read.
-  // Empty when the source's size or modification time, read when the worker
-  // opens the source and again before it reports, differs from
+  // The worker lists each chosen stream whose last sample the attempt read. The
+  // list stays empty when the source no longer matches
   // VariantJob.source_snapshot (ADR 0037, early ends).
   repeated SourceStreamEnd stream_ends = 3;
-  // One entry per chosen stream that the attempt stood in for because it read
-  // no sample of it from where it began reading: the chosen audio stream, when
-  // the job pads it. The snapshot rule of stream_ends applies.
+  // The worker lists each chosen stream that it filled with silence because the
+  // attempt read no sample of it. The snapshot rule of stream_ends applies.
   repeated SourceStreamWithoutSamples streams_without_samples = 4;
 }
 
-// Where the source ended in an attempt whose source ended before the variant's
-// last advertised media segment. An attempt that holds the last frame delivers
-// every advertised media segment from start_sequence_number on, and any other
-// attempt none after last_segment_with_source_media. An attempt that starts
-// after every source sample completes with this report (ADR 0037, early ends).
+// This message reports where the source ended, when it ended before the last
+// advertised media segment (ADR 0037, early ends).
 message SourceEndedEarly {
-  // The number of the variant's last media segment that holds a source sample,
-  // counted like start_sequence_number and below media_segment_count - 1. It
-  // lies before start_sequence_number when the attempt starts after every
-  // source sample. Always set.
+  // This field numbers the last media segment that holds a source sample. The
+  // number is below media_segment_count - 1. The worker always sets it.
   optional uint32 last_segment_with_source_media = 1;
-  // The ProbeStreamInfo.index of each chosen stream with a source sample that
-  // starts at or after the end of last_segment_with_source_media's interval,
-  // which no delivered media segment carries. Empty for an attempt that holds
-  // the last frame.
+  // This field lists the chosen streams that have samples after that segment's
+  // interval. No delivered segment carries those samples. The list stays empty
+  // when the attempt holds the last frame.
   repeated uint32 stream_indexes_with_media_after_last_segment = 2;
 }
 
-// A chosen source stream of which a job attempt read no sample from read_from
-// on.
+// This message names a chosen stream of which the attempt read no sample from
+// read_from on.
 message SourceStreamWithoutSamples {
-  // The stream's ProbeStreamInfo.index within the container.
+  // This field holds the stream's ProbeStreamInfo.index.
   optional uint32 stream_index = 1;
-  // Where the attempt began reading, on the zero-based timeline of
-  // TranscodeExecution.seek_position: seek_position when the job sets it,
-  // otherwise seek_position_seconds.
+  // This field holds where the attempt began reading, on seek_position's
+  // timeline.
   google.protobuf.Duration read_from = 2;
 }
 
-// Where one chosen source stream ended.
+// This message reports where one chosen source stream ended.
 message SourceStreamEnd {
-  // The stream's ProbeStreamInfo.index within the container.
+  // This field holds the stream's ProbeStreamInfo.index.
   optional uint32 stream_index = 1;
-  // The end of the stream's last source sample, its presentation time plus its
-  // duration, on the zero-based timeline of TranscodeExecution.seek_position.
-  // The worker observes it in the source and never takes it from the probe.
+  // This field holds the end of the stream's last sample, on seek_position's
+  // timeline. The worker reads it from the source, not from the probe.
   google.protobuf.Duration end_time = 2;
 }
 
@@ -839,50 +545,32 @@ message JobAttemptStopped {
   Uuid job_attempt_id = 1;
 }
 
-// How far a running job attempt's output has reached, so that the server sees
-// progress inside a media segment that has not closed. The worker checks each
-// running attempt once a second and sends a report only when output_end lies
-// later, or keyframe_search_bytes_read is larger, than in its previous report
-// for the attempt, whether or not the segment has closed, and sends none after
-// the attempt's JobAttemptCompleted, JobAttemptFailed or JobAttemptStopped.
-// Each report that advances either restarts the server's stall clock (ADR 0037,
-// segment list; ADR 0019); the server ignores any other report and any report
-// for an attempt that is not running.
+// This message reports how far a running attempt's output has reached. The
+// worker sends it at most once a second, and only when a value has grown. The
+// worker sends none after the attempt ends (ADR 0037, segment list).
 message JobAttemptProgress {
   Uuid job_attempt_id = 1;
-  // The end of the latest video sample that the producer has read from FFmpeg's
-  // output for the attempt, its presentation time plus its duration, on the
-  // zero-based timeline of TranscodeExecution.seek_position. Absent until the
-  // producer has read a video sample.
+  // This field holds the end of the latest video sample that the worker read
+  // from FFmpeg's output, on seek_position's timeline. The worker leaves it out
+  // until it reads the first video sample.
   google.protobuf.Duration output_end = 2;
-  // The bytes of source that a held encode's search for the chosen video
-  // stream's last keyframe has read, as TranscodeExecution.seek_position
-  // describes; 0 when the attempt runs no search.
+  // When the job holds the last frame, the worker searches the source for the
+  // video's last keyframe. This field counts the source bytes that the search
+  // has read. It stays 0 when the attempt runs no search.
   uint64 keyframe_search_bytes_read = 3;
 }
 
-// This message reports the worker's new background probe capacity and keyframe
-// packet scan capacity. The worker sends the message whenever either capacity
-// changes. The message always carries both current values, including a
-// background probe capacity that stays fixed. The values replace the values
-// from the worker's registration or from its previous ProbeCapacityChanged
-// message. The server uses the latest capacities when it sends new probes. When
-// a capacity drops below the probes that already run, those probes keep
-// running, and the server sends no new probe of that kind until enough of them
-// end. A probe that the server sent before the message arrived can arrive
-// beyond the lower capacity. The worker answers such a probe with
-// PROBE_FAILURE_NO_FREE_CAPACITY.
+// The worker sends this message whenever its background probe capacity or its
+// keyframe packet scan capacity changes. The values replace the earlier ones
+// (ADR 0032).
 message ProbeCapacityChanged {
   uint32 background_probe_capacity = 1;
   uint32 keyframe_packet_scan_capacity = 2;
 }
 
-// The worker sends this message on its session. The server accepts a message
-// whose protobuf encoding takes at most 131,072 bytes (128 KiB). A larger
-// message ends the worker's session, and the server then abandons the worker's
-// job attempts and fails its other probes. So the worker computes the encoded
-// size of each message before it sends the message. When a probe result would
-// not fit, the worker reports PROBE_FAILURE_RESULT_TOO_LARGE instead.
+// The worker sends this message on its session. The server accepts at most
+// 131,072 encoded bytes (128 KiB) in one message. A larger message ends the
+// session.
 message EstablishWorkerSessionRequest {
   oneof event {
     WorkerRegistration registration = 1;
@@ -899,9 +587,8 @@ message EstablishWorkerSessionRequest {
 }
 
 message WorkerSessionAccepted {
-  // The server assigns a new identifier to each live worker connection. The
-  // server uses this identifier to reject segment uploads from earlier
-  // connections.
+  // This field identifies the live connection. The server refuses uploads
+  // from earlier connections.
   Uuid worker_session_id = 1;
 }
 
@@ -911,75 +598,44 @@ message StartVariantCommand {
 }
 
 message ProbeRequest {
-  // The server must supply a non-nil identifier for this attempt. Every retry
-  // uses a fresh identifier.
+  // The server sends a new, non-nil value for every attempt.
   Uuid probe_attempt_id = 1;
-  // This field specifies the requested Streamarr probe result contract version.
-  // Zero is invalid, including when the request omits the field.
+  // This field names the requested probe version. Zero is invalid.
   uint32 probe_version = 2;
   MediaSourceRef source = 3;
-  // When true, the worker finds keyframe positions by scanning every packet of
-  // the chosen video stream instead of reading the container index. Only probe
-  // version 3 and later report keyframe positions and accept this flag. The
-  // worker rejects a version 1 request that sets this flag with
-  // PROBE_FAILURE_UNSUPPORTED_VERSION. A keyframe packet scan uses the keyframe
-  // packet scan capacity and runs at the lowest CPU priority, whatever the
-  // probe's priority.
+  // When this field is true, the worker scans every packet for keyframes
+  // instead of reading the container index. Probe version 3 and later accept
+  // it.
   bool scan_keyframe_packets = 4;
-  // This field specifies whether a playback request waits for the probe. The
-  // server sends every keyframe packet scan and every bitrate scan chunk with
-  // PROBE_PRIORITY_BACKGROUND. The worker treats PROBE_PRIORITY_UNSPECIFIED as
-  // PROBE_PRIORITY_BACKGROUND.
+  // This field states whether a playback request waits for the probe. The
+  // worker treats UNSPECIFIED as BACKGROUND.
   ProbePriority priority = 5;
-  // When set, the request asks for one chunk of a bitrate scan (ADR 0054)
-  // instead of a probe, and the worker answers with a BitrateScanChunkResult.
-  // A chunk uses the keyframe packet scan capacity and runs at the lowest CPU
-  // priority, whatever the probe's priority. The server sets probe_version to
-  // its current probe version, leaves scan_keyframe_packets false, and sends a
-  // chunk only to a worker whose WorkerCapabilities.measurement_versions lists
-  // the chunk's measurement_version.
+  // When this field is set, the request asks for a bitrate scan chunk instead
+  // of a probe. The worker answers with a BitrateScanChunkResult (ADR 0054).
   BitrateScanChunk bitrate_scan_chunk = 6;
 }
 
-// This message asks a worker to measure the packets of one chunk of a file's
-// keyframe intervals (ADR 0054). The server splits the keyframe positions that
-// it stores for the file into consecutive chunks and sends one chunk at a time.
-// The chunk's keyframe intervals follow the rules of StreamMeasurements: the
-// chunk holds one interval for each of its keyframes, and an interval runs from
-// one keyframe to the next, or to end_presentation_time and end_decode_time for
-// the chunk's last keyframe. A packet of the chosen video stream belongs to the
-// interval in which its decode order places it, so each interval holds at least
-// the packet of its keyframe. An audio packet belongs to the interval that holds
-// its presentation time. An audio packet without a presentation time uses its
-// decode time in its place, for its interval and for the stream's times in
-// BitrateScanChunkStream. The worker fails the chunk with
-// PROBE_FAILURE_INVALID_MEDIA when a measured packet has neither time. In the
-// first chunk, a packet that comes before the first keyframe belongs to the
-// first interval. In the last chunk, which has no end times, a packet after the
-// last keyframe belongs to the last interval.
+// This message asks the worker to measure one chunk of a file's keyframe
+// intervals (ADR 0054).
 message BitrateScanChunk {
-  // This field names the stream measurement version whose rules the worker
-  // follows. The value is never zero.
+  // This field names the stream measurement version whose rules apply. It is
+  // never zero.
   uint32 measurement_version = 1;
-  // This field contains the chosen video stream's ProbeStreamInfo.index, which
-  // the keyframes belong to.
+  // This field holds the chosen video stream's ProbeStreamInfo.index.
   uint32 chosen_video_stream_index = 2;
-  // This field lists the streams to measure, each once: the chosen video stream
-  // and every audio stream of the file.
+  // This field lists the chosen video stream and every audio stream, each
+  // once.
   repeated uint32 measured_stream_indexes = 3;
-  // The time base of the keyframe times. Both values are positive.
+  // These fields hold the time base of the keyframe times. Both are positive.
   uint32 time_base_numerator = 4;
   uint32 time_base_denominator = 5;
-  // These lists hold the chunk's keyframes in decode-time order, on the
-  // zero-based timeline of the KeyframePositions that a probe reported for the
-  // file. They are delta-coded as in ProbeKeyframePositionsPart, so entry 0
-  // holds the chunk's first keyframe's absolute time. Both lists hold the same
-  // number of entries, at least 1 and at most 4,096.
+  // These lists hold the chunk's keyframes in decode order. They use the delta
+  // coding of ProbeKeyframePositionsPart. Both lists hold the same number of
+  // entries, from 1 to 4,096.
   repeated sint64 presentation_time_deltas = 6;
   repeated sint64 decode_time_deltas = 7;
-  // These fields hold the absolute times of the next chunk's first keyframe,
-  // where the chunk's last interval ends. Both are absent for the last chunk,
-  // which runs to the end of the file.
+  // These fields hold the next chunk's first keyframe, where this chunk ends.
+  // The last chunk leaves them out.
   optional sint64 end_presentation_time = 8;
   optional sint64 end_decode_time = 9;
   // This field is true for the chunk that holds the file's first keyframe.
@@ -988,12 +644,10 @@ message BitrateScanChunk {
 
 enum ProbePriority {
   PROBE_PRIORITY_UNSPECIFIED = 0;
-  // A playback request waits for the probe. The probe is a playback probe, and
-  // the probe runs at normal CPU priority.
+  // A playback request waits for the probe. The probe runs at normal CPU
+  // priority.
   PROBE_PRIORITY_PLAYBACK = 1;
-  // No playback request waits for the probe, as for a probe that a scan
-  // requested. The probe is a background probe, and the probe runs at the
-  // lowest CPU priority.
+  // No request waits for the probe. The probe runs at the lowest CPU priority.
   PROBE_PRIORITY_BACKGROUND = 2;
 }
 
@@ -1001,66 +655,45 @@ message ProbeContainerInfo {
   optional string format = 1;
   google.protobuf.Duration duration = 2;
   optional int64 bitrate_bits_per_second = 3;
-  // This field contains the chapters reported by ffprobe -show_chapters, in
-  // ffprobe's order. Only probe version 4 and later report chapters. The worker
-  // keeps each chapter as ffprobe reports it. The worker never sorts, merges,
-  // clamps or generates chapters.
-  //
-  // A file controls its chapters and their titles, but the result must fit in
-  // one session message of at most 128 KiB. So the chapters of one result take
-  // at most 32,768 bytes in their protobuf encoding. When the chapters would
-  // take more, the worker reports no chapters and sets chapters_omitted.
+  // This field lists the chapters as ffprobe reports them, from probe version 4
+  // on. The chapters take at most 32,768 encoded bytes. Otherwise the list
+  // stays empty and chapters_omitted is true.
   repeated ProbeChapter chapters = 4;
-  // The worker sets this field to true when the container has chapters, but the
-  // worker omitted them because they exceed the chapter limit. When chapters is
-  // empty and chapters_omitted is false, the container has no chapters.
+  // This field is true when the container has chapters that exceed the limit.
   bool chapters_omitted = 5;
 }
 
-// This message describes one chapter in the container. Both times are on the
-// timeline of ProbeKeyframePositionsPart, like ProbeStreamInfo.end_time: the
-// demuxer time minus the container's start time. The worker computes each time
-// from ffprobe's start or end ticks and the chapter's time base, and then
-// subtracts the container's start time. A chapter that starts before the
-// container's start time therefore has a negative start time.
+// This message describes one chapter, on the timeline of
+// ProbeKeyframePositionsPart.
 message ProbeChapter {
-  // The field is absent when ffprobe reports no start time.
+  // The worker leaves this field out when ffprobe reports no start.
   google.protobuf.Duration start_time = 1;
-  // The field is absent when ffprobe reports no end time. When the container
-  // states no end for a chapter, FFmpeg ends the chapter at the next chapter's
-  // start or at the end of the file, and the worker reports that end.
+  // The worker leaves this field out when ffprobe reports no end.
   google.protobuf.Duration end_time = 2;
-  // This field contains the chapter's title tag, such as a Matroska ChapString.
-  // A title holds at most 512 bytes of UTF-8. The field is absent when the
-  // chapter has no title tag, or when the tag is longer than 512 bytes. The
-  // worker never shortens a title.
+  // This field holds the chapter's title tag, at most 512 bytes of UTF-8. The
+  // worker leaves it out when the tag is missing or longer.
   optional string title = 3;
 }
 
-// This message represents an exact fraction with a positive numerator and
-// denominator. Examples include 24000/1001 frames per second and a time base of
-// 1/90000 seconds.
+// This message holds an exact fraction with a positive numerator and a
+// positive denominator, such as 24000/1001.
 message Fraction {
   uint32 numerator = 1;
   uint32 denominator = 2;
 }
 
-// This value describes how a video stream's pixel format samples chroma.
 enum ChromaSubsampling {
-  // ffprobe reported no pixel format, or a pixel format with another layout,
-  // such as an RGB format.
+  // ffprobe reported no pixel format, or one with another layout, such as RGB.
   CHROMA_SUBSAMPLING_UNSPECIFIED = 0;
   CHROMA_SUBSAMPLING_420 = 1;
   CHROMA_SUBSAMPLING_422 = 2;
   CHROMA_SUBSAMPLING_444 = 3;
-  // The pixel format has no chroma planes, as in gray.
+  // The pixel format has no chroma planes, as gray has none.
   CHROMA_SUBSAMPLING_MONOCHROME = 4;
 }
 
-// This value identifies a video stream's color primaries using the ITU-T H.273
-// code points listed below. Each value names its H.273 code point. UNSPECIFIED
-// covers H.273's unspecified value 2, every value that this enum does not name,
-// and a stream for which ffprobe reports no primaries.
+// These values name ITU-T H.273 colour primaries. UNSPECIFIED covers code point
+// 2, every code point this enum does not name and a stream without primaries.
 enum ColorPrimaries {
   COLOR_PRIMARIES_UNSPECIFIED = 0;
   // Code point 1.
@@ -1087,10 +720,9 @@ enum ColorPrimaries {
   COLOR_PRIMARIES_EBU3213 = 11;
 }
 
-// This value identifies a video stream's transfer characteristics using the
-// ITU-T H.273 code points listed below. UNSPECIFIED covers H.273's unspecified
-// value 2, every value that this enum does not name, and a stream for which
-// ffprobe reports no transfer. CompatibleBase derives from this transfer.
+// These values name ITU-T H.273 transfer characteristics. UNSPECIFIED covers
+// code point 2, every code point this enum does not name and a stream without
+// a transfer.
 enum TransferCharacteristics {
   TRANSFER_CHARACTERISTICS_UNSPECIFIED = 0;
   // Code point 1.
@@ -1127,10 +759,9 @@ enum TransferCharacteristics {
   TRANSFER_CHARACTERISTICS_ARIB_STD_B67 = 16;
 }
 
-// This value identifies a video stream's matrix coefficients using the ITU-T
-// H.273 code points listed below. UNSPECIFIED covers H.273's unspecified value
-// 2, every value that this enum does not name, and a stream for which ffprobe
-// reports no matrix.
+// These values name ITU-T H.273 matrix coefficients. UNSPECIFIED covers code
+// point 2, every code point this enum does not name and a stream without a
+// matrix.
 enum MatrixCoefficients {
   MATRIX_COEFFICIENTS_UNSPECIFIED = 0;
   // Code point 0: the identity matrix, as for RGB and GBR.
@@ -1161,8 +792,7 @@ enum MatrixCoefficients {
   MATRIX_COEFFICIENTS_ICTCP = 13;
 }
 
-// This value describes a video stream's sample range. The worker reports
-// UNSPECIFIED when ffprobe reports no range.
+// The worker reports UNSPECIFIED when ffprobe reports no range.
 enum ColorRange {
   COLOR_RANGE_UNSPECIFIED = 0;
   // The stream uses limited range, which ffprobe calls tv.
@@ -1171,395 +801,115 @@ enum ColorRange {
   COLOR_RANGE_FULL = 2;
 }
 
-// The worker reports the fields from dynamic_range to is_hearing_impaired only
-// for probe version 4 and later. The worker reports the fields from
-// codec_profile to first_packets_carry_presentation_times only for probe
-// version 5 and later.
+// This message describes one stream of a probed file. Fields 12 to 25 need
+// probe version 4. Fields 26 to 36 need version 5. Field 37 needs version 6
+// (ADR 0032, ADR 0036).
 message ProbeStreamInfo {
   uint32 index = 1;
   string codec_type = 2;
   optional string codec = 3;
   optional string language = 4;
   optional uint32 channels = 5;
-  // The stream's bitrate from ffprobe's bit_rate. From probe version 6, when
-  // ffprobe reports none for a Matroska video or audio stream, the worker
-  // reports the stream's BPS statistics tag, or else NUMBER_OF_BYTES * 8 /
-  // DURATION. It uses the tags only when the stream's
-  // _STATISTICS_WRITING_APP equals the file's WritingApp, or mkvpropedit wrote
-  // them into a file that mkvmerge wrote, and only when the NUMBER_OF_BYTES of
-  // every stream whose tags pass that check add up to no more than the file's
-  // size. Otherwise the field is absent.
+  // This field holds ffprobe's bit_rate. From version 6, a Matroska stream
+  // without one reports its trusted statistics tags instead. The worker leaves
+  // the field out when neither source gives a bitrate.
   optional int64 bitrate_bits_per_second = 6;
   optional uint32 width = 7;
   optional uint32 height = 8;
   optional double framerate = 9;
   bool is_default = 10;
   bool is_forced = 11;
-  // The worker reports this field only for video streams. Probe version 4 reads
-  // headers and configuration records. It reads no samples. hdr10_plus and
-  // observed_rpu are UNSPECIFIED. Dolby Vision is never ABSENT. Dolby Vision is
-  // unspecified when the worker finds neither a configuration record nor a
-  // Dolby Vision sample entry.
-  //
-  // Probe version 5 also inspects the chosen stream's first frames when
-  // first_frames_read is true. Frames from any codec can prove that HDR10+ or
-  // an RPU is PRESENT. For H.264, HEVC and AV1, the worker also inspects
-  // extradata and packets and can prove absence. For other codecs, the worker
-  // leaves an unseen feature UNSPECIFIED. It never reports Dolby Vision ABSENT
-  // for those codecs and leaves rpu_placement UNSPECIFIED.
-  //
-  // The worker inspects every packet requested by the retained frame read,
-  // including discarded preroll. It reads those packets separately and requests
-  // the same count. For H.264 and HEVC, the worker inspects packet NAL units
-  // for RPUs. It checks SEI messages for HDR metadata in extradata first and
-  // then in packets. For AV1, it inspects OBUs in extradata first and then in
-  // packets. Only NAL units retained under ADR 0036's splitter rules count as
-  // evidence, define RPU placement or affect RPU repair. An H.264 RPU has type
-  // 28 and prefix 25. An HEVC RPU has type 62 and prefix 25 on layer 0 with
-  // TemporalId 0. Other HEVC type 62 units provide no Dolby Vision evidence.
-  //
-  // The following guarantees apply only to the inspected material.
-  // - For H.264 and HEVC, observed_rpu is PRESENT when frames or packets
-  //   contain an RPU. To report ABSENT, the worker must find no RPU, retain a
-  //   frame read that is not cut short, and delimit every NAL unit in every
-  //   requested packet.
-  // - For H.264 and HEVC, hdr10_plus is PRESENT when frames, extradata or
-  //   packets contain non-nested HDR10+. To report ABSENT, the worker must find
-  //   no frame evidence, inspect all SEI messages and find no nested HDR10+
-  //   message.
-  // - For AV1, hdr10_plus and observed_rpu are PRESENT when frames, extradata
-  //   or packets show the feature without an OBU extension byte. To report
-  //   ABSENT, the worker must find no frame evidence, inspect all OBUs and find
-  //   no OBU with an extension byte that contains the feature.
-  // - The worker reports Dolby Vision ABSENT only when it finds neither a
-  //   configuration record nor a Dolby Vision sample entry and observed_rpu is
-  //   ABSENT. DolbyVisionPresent defines when the worker reports Dolby Vision
-  //   present.
-  //
-  // To inspect all SEI messages or OBUs, the worker must retain a frame read
-  // that is not cut short, read all requested packets and delimit every
-  // applicable NAL unit, SEI message or OBU. The worker cannot complete those
-  // checks if it encounters unread nesting, unreadable extradata or a
-  // replacement record. Nested HDR messages and AV1 metadata OBUs with
-  // extension bytes neither prove a feature nor supply static metadata. They
-  // prevent the worker from ruling out the feature they contain. Without enough
-  // evidence to prove presence or absence, the worker reports UNSPECIFIED. ADR
-  // 0036 defines how the worker interprets extradata, delimits units, handles
-  // nesting and identifies RPUs and HDR metadata. It also defines which units
-  // FFmpeg drops.
-  // https://github.com/streamarr/streamarr-adr/blob/21543b1b897a623872edc80515c2ed018d78c6fb/adr/0036-video-contracts-share-vocabulary-and-dynamic-range-facts.adoc#decision-probe-version-5
-  //
-  // For unchosen streams, or when first_frames_read is false, the worker reads
-  // only headers and configuration records. hdr10_plus, observed_rpu and Dolby
-  // Vision then retain their version 4 meanings. first_rpu_header is absent and
-  // rpu_placement is UNSPECIFIED. The CompatibleBase rules still apply. From
-  // version 5, a record that names profile 5, or profile 10 with compatibility
-  // id 0, gives compatible base NONE regardless of the signaled transfer.
+  // The worker reports this field for video streams only. ADR 0036 defines
+  // how each probe version reads it.
   VideoDynamicRange dynamic_range = 12;
-  // The worker reports this field only for video streams. It reads the number
-  // of bits in a luma sample from the pixel format, such as 8 for yuv420p or 10
-  // for yuv420p10le. The field is absent when ffprobe reports no pixel format.
+  // The worker reports this field for video streams only. It counts the bits
+  // in a luma sample of the pixel format. The worker leaves it out when
+  // ffprobe reports no pixel format.
   optional uint32 bit_depth = 13;
-  // The worker reports this field only for video streams and derives the value
-  // from the pixel format.
+  // The worker reports this field for video streams only and reads it from the
+  // pixel format.
   ChromaSubsampling chroma_subsampling = 14;
-  // The worker reports this field only for video streams. The value specifies
-  // how far the stream's display matrix rotates the picture counterclockwise,
-  // from -180 to 180 degrees. The worker rounds to the nearest whole degree as
-  // FFmpeg does. A phone recording held upright usually reports -90. The field
-  // is absent when the stream has no display matrix.
+  // The worker reports this field for video streams only. It holds how far the
+  // display matrix rotates the picture counterclockwise, from -180 to 180 whole
+  // degrees. The worker leaves it out when the stream has no display matrix.
   optional sint32 rotation_degrees = 15;
-  // The worker reports this field only for video and audio streams. It contains
-  // the exact RFC 6381 codec string that a copy of the stream would carry, such
-  // as avc1.640028 or mp4a.40.2. The worker computes it from the stream's
-  // decoder configuration record, after the tag rule picks the copy's sample
-  // entry. A Dolby Vision copy with an SDR compatible base carries its base
-  // sample entry, so its codec string starts with hvc1 or avc1. The field is
-  // absent when the worker cannot compute a codec string for the stream's
-  // codec.
+  // The worker reports this field for video and audio streams only. It holds
+  // the RFC 6381 codec string that a copy of the stream carries. The worker
+  // leaves it out when it cannot compute one.
   optional string codec_string = 16;
-  // The worker reports this field only for video and audio streams whose
-  // duration is stated in the container header. The value specifies the media
-  // time at which the stream ends. The end time is the stream's start time plus
-  // that duration, measured from the container's start time, on the timeline of
-  // ProbeKeyframePositionsPart. The field is absent when the header states no
-  // duration for the stream. The worker never reports an estimate, such as a
-  // duration derived from the bitrate. streamarr/streamarr-server#511 uses the
-  // end time to find a stream that ends early.
+  // The worker reports this field for video and audio streams only. It holds
+  // where the stream ends, from the container header's duration, on the
+  // timeline of ProbeKeyframePositionsPart. The worker leaves it out when the
+  // header states no duration, and it never estimates one.
   google.protobuf.Duration end_time = 17;
-  // The worker reports this field only for audio streams. The value is the
-  // sample rate in hertz from ffprobe's sample_rate. The field is absent when
-  // ffprobe reports no sample rate or reports 0. The server's MP3 copy rule
-  // needs the sample rate, because the fMP4 muxer refuses MP3 below 16 kHz and
-  // writes a different esds objectTypeIndication at or below 24 kHz.
+  // The worker reports this field for audio streams only. It holds the sample
+  // rate in hertz. The worker leaves it out when ffprobe reports none or 0.
   optional uint32 sample_rate_hz = 18;
-  // The worker reports this field for every audio codec. It copies ffprobe's
-  // profile value without changing the text. FFmpeg 8 reports profile names
-  // such as these:
-  // - For AAC, it reports LC, HE-AAC or xHE-AAC.
-  // - For DTS, it reports DTS, DTS-HD MA or DTS-HD MA + DTS:X.
-  // - For E-AC-3, it reports Dolby Digital Plus + Dolby Atmos.
-  // - For TrueHD, it reports Dolby TrueHD + Dolby Atmos.
-  //
-  // When FFmpeg has no name for the profile, ffprobe prints the profile number.
-  // The worker reports that number as text. The field is absent when ffprobe
-  // reports no profile. The server derives Atmos and the DTS variants from this
-  // text. The worker never derives the codec string from this field.
+  // The worker reports this field for audio streams only. It copies ffprobe's
+  // profile text, such as LC or DTS-HD MA. The worker leaves it out when
+  // ffprobe reports no profile.
   optional string audio_profile = 19;
-  // The worker reports this field only for video streams. The field contains
-  // the crop requested by the container, from ffprobe's Frame Cropping stream
-  // side data. A Matroska PixelCrop element or an MP4 clap box can specify the
-  // crop. The field is absent when the stream has no Frame Cropping side data.
+  // The worker reports this field for video streams only. It holds the crop
+  // that the container requests. The worker leaves it out when there is none.
   ContainerCropping container_cropping = 20;
-  // The worker reports this field only for video streams. Probe version 4 reads
-  // the container's mastering display metadata. From version 5, the worker
-  // checks three sources for the chosen stream, in order. It checks the
-  // container first. If the container supplies no value, it checks the first
-  // frame. If neither supplies a value, it takes the first eligible value from
-  // the bitstream. For H.264 and HEVC, an eligible value comes from non-nested
-  // mastering display SEI. For AV1, it comes from an HDR_MDCV OBU without an
-  // extension byte. The worker searches extradata first and then packets, as
-  // dynamic_range specifies. Without a frame read, the worker uses only
-  // container metadata. For the chosen Matroska stream, it also performs the
-  // checks described by mastering_display_omitted. The worker converts a
-  // candidate's values to MasteringDisplayColorVolume's units. It reports the
-  // candidate only if the candidate is complete and the converted values fit
-  // that message's ranges. If a candidate is incomplete or out of range, the
-  // worker leaves mastering_display absent and sets mastering_display_omitted.
-  // AV1 fractions use denominators of 65536 for chromaticity, 256 for maximum
-  // luminance and 16384 for minimum luminance. AV1 lists the primaries in red,
-  // green, blue order. The worker converts and rounds those fractions as
-  // MasteringDisplayColorVolume specifies.
+  // The worker reports this field for video streams only. It leaves the field
+  // out when no source supplies complete values in range (ADR 0036).
   MasteringDisplayColorVolume mastering_display = 21;
-  // The worker reports this field only for video streams. Probe version 4 reads
-  // the container's content light level. From version 5, the worker checks the
-  // chosen stream's container, then its first frame, then its bitstream. It
-  // chooses the content light level independently of the mastering display
-  // metadata. If the container and first frame supply no value, the worker
-  // takes the first eligible bitstream value. For H.264 and HEVC, it reads
-  // non-nested content light level SEI. For AV1, it reads an HDR_CLL OBU
-  // without an extension byte. The worker searches extradata first and then
-  // packets. Without a frame read, the worker uses only container metadata.
-  // ContentLightLevel defines the additional checks for the chosen Matroska
-  // stream and explains how the worker handles zero values. The worker reports
-  // both candidate fields unchanged if both exist and fit ContentLightLevel's
-  // ranges. If a candidate is incomplete or out of range, it leaves
-  // content_light_level absent and sets content_light_level_omitted.
+  // The worker reports this field for video streams only. It leaves the field
+  // out when no source supplies complete values in range (ADR 0036).
   ContentLightLevel content_light_level = 22;
-  // The worker reports this field only for audio and subtitle streams. The
-  // title identifies the track in a menu. The worker reads two stream tags in
-  // this order. It takes the first tag whose value is not empty and not only
-  // white space. It compares tag keys without regard to case, as FFmpeg's
-  // metadata dictionary does.
-  //
-  // 1. title. ffprobe reports a Matroska TrackName and an MP4 track's ©nam atom
-  //    as title.
-  // 2. name. ffprobe reports an MP4 or MOV track's udta name atom as name.
-  //    FFmpeg's MP4 and MOV muxers write a stream's title metadata into that
-  //    atom, so ffprobe 8 reports such a title as name, never as title.
-  //
-  // The worker reports the value of the chosen tag unchanged. The field is
-  // absent when neither tag gives a title. The field is also absent when the
-  // chosen value is longer than 512 bytes of UTF-8. The worker never shortens a
-  // title and never falls back to the next tag. The field is also absent on
-  // every stream when the worker sets ProbeMediaInfo.stream_titles_omitted. The
-  // worker never takes a title from the handler name. handler_name carries the
-  // handler name separately. This rule belongs to probe version 4, and a change
-  // to it needs a new probe version. Video streams report no title, because no
-  // consumer reads one.
+  // The worker reports this field for audio and subtitle streams only. It holds
+  // the title or name tag, at most 512 bytes of UTF-8. The worker leaves it out
+  // when neither tag gives a title or the value is longer.
   optional string title = 23;
-  // The worker reports this field only for audio and subtitle streams. It
-  // copies the stream's handler_name tag without changing the value. The worker
-  // compares tag keys without regard to case. ffprobe reports the name in an
-  // MP4 or MOV track's hdlr box as handler_name, and a Matroska file that
-  // FFmpeg remuxed from MP4 keeps that name as a HANDLER_NAME tag. The field is
-  // absent when the stream has no handler_name tag. The field is also absent
-  // when the value is longer than 512 bytes of UTF-8, and on every stream when
-  // the worker sets ProbeMediaInfo.stream_titles_omitted. The worker never
-  // shortens a handler name.
-  //
-  // Many muxers write a fixed name for the track's type into every hdlr box.
-  // FFmpeg 8 writes SoundHandler and SubtitleHandler. Other muxers write names
-  // such as USP Sound Handler, Core Media Audio or ISO Media file produced by
-  // Google Inc. Some handler names do name the track, such as English SDH or
-  // Surround. The worker reports every handler name as it is, an empty one
-  // included. The server decides which handler names are generic when it names
-  // a rendition. The list of generic names is open-ended. A rule in the worker
-  // would need a new probe version for each fix, and every file would need a
-  // new probe.
+  // The worker reports this field for audio and subtitle streams only. It
+  // copies the handler_name tag, at most 512 bytes of UTF-8. The worker leaves
+  // it out when the tag is missing or longer.
   optional string handler_name = 24;
-  // The worker reports this field only for audio and subtitle streams. It reads
-  // ffprobe's hearing_impaired disposition, which states whether the container
-  // marks the stream for viewers who are deaf or hard of hearing. Such a
-  // subtitle track usually holds SDH subtitles, which also describe sounds. The
-  // worker reads the disposition from its existing -show_streams run and needs
-  // no new ffprobe argument.
-  //
-  // FFmpeg 8.1 reads the flag from these sources:
-  // - Matroska: the FlagHearingImpaired element. FFmpeg's WebM muxer never
-  //   writes that element.
-  // - MP4: a kind box with the scheme urn:mpeg:dash:role:2011 and the value
-  //   caption. FFmpeg reads that box as both the hearing_impaired and the
-  //   captions disposition, and FFmpeg's MP4 muxer writes it for either
-  //   disposition. FFmpeg's MOV muxer writes no kind box. FFmpeg reads no other
-  //   MP4 box for the flag, such as the media characteristics that Apple tools
-  //   write.
-  // - MPEG-TS: audio type 2 in an ISO 639 language descriptor, or a DVB
-  //   subtitling type from 0x20 to 0x25.
-  //
-  // The worker sets this field to true when the disposition is 1, and false
-  // when it is 0. The field is absent on video streams, and absent when ffprobe
-  // reports no disposition for the stream. False means only that the container
-  // does not mark the stream. It never proves that a track lacks sound
-  // descriptions, because many SDH tracks carry no flag and some containers
-  // cannot carry one. Many releases name a subtitle track SDH in its title
-  // without setting the hearing-impaired disposition, so the server also reads
-  // the title (streamarr/streamarr-server#60).
+  // The worker reports this field for audio and subtitle streams only. It
+  // copies ffprobe's hearing_impaired disposition. False never proves that a
+  // track lacks sound descriptions.
   optional bool is_hearing_impaired = 25;
-  // The worker reports this field only for video streams. It reads the profile
-  // from the decoder configuration record or sequence header. For H.264, it
-  // reads profile_idc and constraint_set1_flag. For HEVC, it reads
-  // general_profile_idc. For AV1, it reads seq_profile. The worker never
-  // derives the value from ffprobe's profile name. It reports UNSPECIFIED for
-  // other codecs, profiles missing from VideoCodecProfile, or streams without a
-  // record or sequence header.
+  // The worker reports this field for video streams only. It reads the profile
+  // from the decoder configuration record or the sequence header. Other codecs
+  // and unlisted profiles report UNSPECIFIED.
   VideoCodecProfile codec_profile = 26;
-  // The worker reports this field only for video streams. The value encodes the
-  // level as major x 10 + minor, such as 41 for level 4.1. For H.264, the
-  // worker uses level_idc. For HEVC, it divides general_level_idc by 3. For
-  // AV1, it reads seq_level_idx[0]. The major number is 2 + seq_level_idx / 4
-  // and the minor number is seq_level_idx % 4. The field is absent when
-  // codec_profile is UNSPECIFIED, for H.264 level 1b, or for AV1 seq_level_idx
-  // 31, which imposes no limit.
+  // The worker reports this field for video streams only, as major x 10 +
+  // minor. It leaves the field out when codec_profile is UNSPECIFIED, for H.264
+  // level 1b and for AV1 seq_level_idx 31.
   optional uint32 codec_level = 27;
-  // The worker reports this field only for video streams. It reads
-  // general_tier_flag for HEVC or seq_tier[0] for AV1. It reports UNSPECIFIED
-  // for H.264, which has no tier, and when codec_profile is UNSPECIFIED.
+  // The worker reports this field for video streams only. H.264 reports
+  // UNSPECIFIED, as does a stream whose codec_profile is UNSPECIFIED.
   VideoCodecTier codec_tier = 28;
-  // The worker reports these color fields only for video streams. It reads
+  // The worker reports these color fields for video streams only. It reads
   // ffprobe's color_primaries, color_transfer, color_space and color_range.
   ColorPrimaries color_primaries = 29;
   TransferCharacteristics transfer_characteristics = 30;
   MatrixCoefficients matrix_coefficients = 31;
   ColorRange color_range = 32;
-  // The worker sets this field to true when it retains 1 to 3 first frames from
-  // the chosen video stream. It reads no other stream's frames. The worker
-  // first requests 3 packets. It then tries 12, 48 and 192 packets. It stops at
-  // the first read that decodes 3 frames. Otherwise, it retains the narrowest
-  // read that decodes the most frames. A read fails if ffprobe reports an
-  // error, supplies no JSON or produces more than 4 MiB of output. If no read
-  // decodes a frame, the worker retains no read and sets first_frames_read to
-  // false. It then inspects no extradata or packets. dynamic_range uses only
-  // headers and configuration records. Static metadata then comes only from the
-  // container and, for the chosen Matroska stream, the additional track checks.
-  // Absent static metadata never proves PQ10 without a frame read.
-  //
-  // The worker treats a retained read of 1 or 2 frames as cut short, even if
-  // the stream has fewer than 3 frames. first_frames_read stays true. The
-  // worker never reports hdr10_plus, observed_rpu or Dolby Vision as ABSENT
-  // after a cut-short read. It still reports features it finds as PRESENT and
-  // includes the first RPU header when it can parse that header. The
-  // CompatibleBase rules still apply. The worker still reads static metadata
-  // from the first frame. For H.264, HEVC and AV1, it sets the omitted flag for
-  // each static metadata value that no source supplies. A read that retains no
-  // frames is not a cut-short read.
-  //
-  // When first_frames_read is true, an absent static value with its omitted
-  // flag clear means that neither the container nor the first frame supplies
-  // the value. For H.264, HEVC and AV1, it also means that none of the
-  // inspected SEI messages or OBUs supplies the value. ADR 0036 defines how the
-  // worker reads frames and inspects the bitstream. dynamic_range links to
-  // those rules.
+  // This field is true when the worker decoded 1 to 3 first frames of the
+  // chosen video stream. A read of fewer than 3 frames counts as cut short (ADR
+  // 0036).
   bool first_frames_read = 33;
-  // The worker sets this flag when a video stream contains, or may contain,
-  // mastering metadata that the worker left absent. The metadata may be
-  // incomplete or out of range. The worker also sets the flag after a frame
-  // read if it cannot rule out a value that no source supplies. This can happen
-  // when it cannot inspect all SEI messages or OBUs, or finds nested mastering
-  // metadata or an AV1 HDR_MDCV OBU with an extension byte. A stream with this
-  // flag set is never PQ10.
-  //
-  // For the chosen video stream of a Matroska file, the worker checks the
-  // track's Colour element if no source supplies the value. It performs this
-  // check for every codec, even without a frame read. It sets the flag if the
-  // track contains MasteringMetadata or the worker cannot read the Colour
-  // element. A track without a Video or Colour element contains neither static
-  // value. ADR 0036 defines these checks. dynamic_range links to those rules.
+  // The worker sets this field when a video stream may hold mastering display
+  // metadata that mastering_display leaves out. Such a stream is never PQ10.
   bool mastering_display_omitted = 34;
-  // The worker sets this flag when a video stream contains, or may contain, a
-  // content light level that the worker left absent. It uses the same rules as
-  // mastering_display_omitted for incomplete values, out-of-range values and
-  // metadata it cannot rule out. For this field, those rules apply to content
-  // light level SEI and AV1 HDR_CLL OBUs. For the chosen Matroska stream, the
-  // worker also sets the flag if no source supplies the value and it cannot
-  // read the track's Colour element. It performs that check for every codec,
-  // even without a frame read. A stream with this flag set is never PQ10.
+  // The worker sets this field when a video stream may hold a content light
+  // level that content_light_level leaves out. Such a stream is never PQ10.
   bool content_light_level_omitted = 35;
-  // The worker reports this field only for video streams. It reports true when
-  // every packet returned by the packet read described in dynamic_range has a
-  // presentation time. It reports false when any returned packet lacks a
-  // presentation time. The field is absent when the worker reads no packets.
-  // This happens in any of these cases:
-  // - The stream is not the chosen video stream.
-  // - The codec is not H.264, HEVC or AV1.
-  // - first_frames_read is false.
-  // - The packet read fails or returns no packets.
-  //
-  // The value describes only the inspected packets. The worker assumes later
-  // packets carry presentation times in the same way.
+  // The worker reports this field for the chosen H.264, HEVC or AV1 stream
+  // only. It states whether every inspected packet has a presentation time. The
+  // worker leaves it out when it read no packets.
   optional bool first_packets_carry_presentation_times = 36;
-  // The worker reports this field only for H.264 and HEVC video streams. It
-  // reports true only when a stream copy without the Annex B bitstream filter
-  // delivers every packet of the stream with its bytes unchanged, under the
-  // same codec_string. That holds only when all these conditions hold:
-  // - The stream's decoder configuration record is a whole avcC or hvcC:
-  //   configurationVersion 1, every NAL unit that it counts ends within it,
-  //   and no NAL unit of an hvcC holds a start code. The record holds an SPS
-  //   and a PPS, and an hvcC also holds a VPS.
-  // - The record gives the samples 4-byte NAL unit lengths:
-  //   lengthSizeMinusOne is 3.
-  // - The record header names the profile, tier and level that the worker
-  //   reads from the record's parameter sets, so codec_string is the same with
-  //   or without the filter.
-  // - Every SEI message in an hvcC is user data unregistered, payload type 5,
-  //   such as x265's information message. An hvcC that holds any other SEI
-  //   message, such as mastering display or content light level, keeps the
-  //   filter: the filter is what repeats that record-only metadata in front of
-  //   every IRAP sample.
-  // - Every NAL unit in the record reaches FFmpeg's decoder: the unit holds
-  //   its whole NAL unit header and its forbidden_zero_bit is 0, an avcC unit
-  //   holds a byte other than 0, and an hvcC unit's nuh_layer_id is not 63
-  //   and its nuh_temporal_id_plus1 is not 0. FFmpeg's decoder never receives
-  //   a unit that fails these checks, so the probe reads the record without
-  //   it, but a copy without the filter delivers it.
-  // - Every NAL unit in an hvcC array has the NAL unit type that the array
-  //   names. Without the filter, FFmpeg's hvcC writer sorts each unit by its
-  //   array's type, so a VPS in an SEI array would leave the copy's record
-  //   without a VPS.
-  // - In an MP4 or MOV file, the stream's sample entry is avc1 or dva1 for
-  //   H.264 and hvc1 or dvh1 for HEVC. Other sample entries, such as avc3,
-  //   hev1, dvav and dvhe, can keep parameter sets only in the samples.
-  // - In an MP4 or MOV file, the stream's track has exactly one sample entry.
-  //   ffprobe describes only the first, and only the filter carries another
-  //   entry's parameter sets into the samples. A track whose sample entries
-  //   the worker cannot count counts as one with several.
-  //
-  // A Matroska track has no sample entry, so only the conditions on its record
-  // apply.
-  //
-  // The worker reports false otherwise. The field is absent when the worker did
-  // not report it. The server treats an absent value as false.
+  // The worker reports this field for H.264 and HEVC video streams only. It is
+  // true when a copy without the Annex B bitstream filter delivers every packet
+  // with its bytes unchanged under the same codec string. The server reads an
+  // absent value as false.
   optional bool copy_keeps_packet_bytes = 37;
 }
 
-// These fields specify how many pixels the container crop removes from each
-// edge of the picture. width and height stay the size before cropping. A crop
-// in the codec's own headers, such as the H.264 frame cropping, is separate:
-// width and height already exclude that crop. A transcode applies the container
-// crop by default, because FFmpeg's -apply_cropping option defaults to all. The
-// quality ladder and the playlist's RESOLUTION use the size after cropping, as
-// they use the size after rotation. The worker reports the values as ffprobe
-// prints them and never checks them against width and height.
+// These fields count the pixels that the container crop removes from each
+// edge. width and height keep the size before cropping.
 message ContainerCropping {
   uint32 top = 1;
   uint32 bottom = 2;
@@ -1567,113 +917,76 @@ message ContainerCropping {
   uint32 right = 4;
 }
 
-// This message reports SMPTE ST 2086 mastering display color volume. Each value
-// uses HEVC SEI units and must fit its SEI field. ContentLightLevel reports the
-// other half of static HDR metadata. Neither message reports color signaling.
-// ProbeStreamInfo.mastering_display defines which sources the worker reads and
-// in what order. mastering_display_omitted records whether the worker left a
-// possible value absent. Without a frame read, including in probe version 4, an
-// absent value means only that the container declares none. That absence never
-// proves PQ10. When first_frames_read is true, a PQ stream is PQ10 only if both
-// static values are absent and both omitted flags are clear.
-//
-// The worker converts fractional chromaticity values by multiplying by 50000
-// and fractional luminance values by multiplying by 10000. It rounds to the
-// nearest unit and rounds halves up. It reports the message only when the
-// primaries and luminance are complete and every value is in range. Otherwise,
-// the message is absent. ProbeStreamInfo.mastering_display specifies AV1's
-// input fractions. ADR 0036 defines how the worker finds and parses the
-// metadata. ProbeStreamInfo.dynamic_range links to those rules.
+// This message holds SMPTE ST 2086 mastering display color volume in HEVC SEI
+// units (ADR 0036).
 message MasteringDisplayColorVolume {
-  // These fields report the three display primaries. The SEI message lists them
-  // in the order green, blue, red.
   ChromaticityCoordinates red = 1;
   ChromaticityCoordinates green = 2;
   ChromaticityCoordinates blue = 3;
   ChromaticityCoordinates white_point = 4;
-  // This field reports the maximum display mastering luminance in units of
-  // 0.0001 cd/m^2. The value ranges from 0 to 4294967295. For example, 10000000
-  // means 1000 cd/m^2.
+  // This field uses units of 0.0001 cd/m^2. For example, 10000000 means 1000
+  // cd/m^2.
   uint32 max_luminance = 5;
-  // This field reports the minimum display mastering luminance in units of
-  // 0.0001 cd/m^2. The value ranges from 0 to 4294967295. For example, 50 means
-  // 0.005 cd/m^2.
+  // This field uses units of 0.0001 cd/m^2. For example, 50 means 0.005
+  // cd/m^2.
   uint32 min_luminance = 6;
 }
 
-// This message reports a CIE 1931 chromaticity in units of 0.00002. The SEI
-// fields display_primaries_x, display_primaries_y, white_point_x and
-// white_point_y use the same units. Each value lies from 0 to 50000. For
-// example, x 15635 and y 16450 is the D65 white point, 0.3127 and 0.329.
+// This message holds a CIE 1931 chromaticity in units of 0.00002. Each value
+// lies from 0 to 50000. For example, x 15635 and y 16450 is the D65 white
+// point.
 message ChromaticityCoordinates {
   uint32 x = 1;
   uint32 y = 2;
 }
 
-// This message reports CTA-861.3 content light level in cd/m^2. Each value must
-// fit its SEI field, from 0 to 65535. The worker reports the message only when
-// both values fit. ProbeStreamInfo.content_light_level defines which sources
-// the worker reads and when it sets the omitted flag.
-// MasteringDisplayColorVolume defines when absent static metadata proves PQ10.
-// A declared zero means the mastering process did not compute the value. The
-// worker still reports that value as present. From probe version 5, the worker
-// reads MaxCLL and MaxFALL from the chosen Matroska track's Colour element if
-// ffprobe supplies no light level. If either element exists, the worker reports
-// the message and uses zero for the missing element. If the worker cannot read
-// the Colour element, it sets content_light_level_omitted.
+// This message holds a CTA-861.3 content light level in cd/m^2. Each value
+// lies from 0 to 65535. A zero means that mastering did not compute the value
+// (ADR 0036).
 message ContentLightLevel {
-  // This field reports MaxCLL, the maximum content light level.
+  // This field holds MaxCLL.
   uint32 max_content_light_level = 1;
-  // This field reports MaxFALL, the maximum frame-average light level.
+  // This field holds MaxFALL.
   uint32 max_frame_average_light_level = 2;
 }
 
-// This value describes the order of an interlaced frame's fields, as ffprobe
-// reports in field_order.
+// This value states the order of an interlaced frame's fields, as ffprobe's
+// field_order reports it.
 enum FieldOrder {
-  // ffprobe reported unknown or no field order.
+  // ffprobe reported an unknown field order or none.
   FIELD_ORDER_UNSPECIFIED = 0;
   FIELD_ORDER_PROGRESSIVE = 1;
-  // The top field is encoded first and displayed first. ffprobe reports tt.
+  // The top field is coded first and displayed first.
   FIELD_ORDER_TT = 2;
-  // The bottom field is encoded first and displayed first. ffprobe reports bb.
+  // The bottom field is coded first and displayed first.
   FIELD_ORDER_BB = 3;
-  // The top field is encoded first. The bottom field is displayed first.
-  // ffprobe reports tb.
+  // The top field is coded first. The bottom field is displayed first.
   FIELD_ORDER_TB = 4;
-  // The bottom field is encoded first. The top field is displayed first.
-  // ffprobe reports bt.
+  // The bottom field is coded first. The top field is displayed first.
   FIELD_ORDER_BT = 5;
 }
 
-// This value records how the worker chose the output frame rate under ADR 0037.
+// This value states how the worker chose the output frame rate (ADR 0037).
 enum OutputFrameRateBasis {
   OUTPUT_FRAME_RATE_BASIS_UNSPECIFIED = 0;
-  // The declared rates agree on a listed rate, and Matroska's statistics, when
-  // present, agree too. streamarr/streamarr-transcode-worker#24 calls this
-  // basis "probe".
+  // The declared rates agree on a listed rate. Matroska statistics, when
+  // present, agree too.
   OUTPUT_FRAME_RATE_BASIS_DECLARED_RATES = 1;
-  // The worker scanned the packets. Matroska's statistics show that the whole
-  // video stream runs faster than its first 30 seconds. The worker therefore
-  // kept the declared rate. streamarr/streamarr-transcode-worker#24 calls this
-  // basis "probe (tags)".
+  // The worker scanned the packets. Matroska statistics show that the whole
+  // stream runs faster than its first 30 seconds, so the worker kept the
+  // declared rate.
   OUTPUT_FRAME_RATE_BASIS_MATROSKA_STATISTICS = 2;
-  // The worker selected a listed output frame rate from the measured motion
-  // rate using ADR 0037's matching rules.
-  // streamarr/streamarr-transcode-worker#24 calls this basis "scan".
+  // The worker matched a listed rate to the motion rate that it scanned.
   OUTPUT_FRAME_RATE_BASIS_PACKET_SCAN = 3;
-  // The scan found fewer than 2 frames. The worker selected a listed output
-  // frame rate from the average rate using ADR 0037's matching rules. If the
-  // average rate was not usable, the worker used the base rate instead.
-  // streamarr/streamarr-transcode-worker#24 calls this basis "fallback".
+  // The scan found fewer than 2 frames. The worker matched a listed rate to a
+  // declared rate.
   OUTPUT_FRAME_RATE_BASIS_DECLARED_RATE_FALLBACK = 4;
-  // The scan found fewer than 2 frames and neither declared rate is usable. The
-  // rule chose no rate.
+  // The rule could not choose a rate.
   OUTPUT_FRAME_RATE_BASIS_REFUSED = 5;
 }
 
-// These fields report Matroska's NUMBER_OF_FRAMES and DURATION statistics tags
-// for one stream. The worker accepts those tags with any language suffix.
+// These fields copy Matroska's NUMBER_OF_FRAMES and DURATION statistics tags,
+// with any language suffix.
 message MatroskaStatistics {
   optional uint64 number_of_frames = 1;
   google.protobuf.Duration duration = 2;
@@ -1682,41 +995,39 @@ message MatroskaStatistics {
 // These fields report what the packet scan measured over the chosen stream's
 // first 30 seconds.
 message FrameRatePacketScan {
-  // This field reports the motion rate in frames per second. The motion rate
-  // describes how fast the video's motion actually runs. The field is absent
-  // when the scan found fewer than 2 frames.
+  // This field holds how many frames per second the motion actually runs. The
+  // worker leaves it out when the scan found fewer than 2 frames.
   optional double motion_rate = 1;
-  // This field counts the frames found by the packet scan. The worker first
-  // removes discarded and empty packets and merges field pairs.
+  // This field counts the frames that the scan found. The worker first removes
+  // discarded and empty packets and merges field pairs.
   uint32 scanned_frame_count = 2;
-  // This field reports how much media time the scan covered.
   google.protobuf.Duration scanned_duration = 3;
 }
 
-// These fields supply the inputs used to choose the output frame rate for the
-// chosen video stream.
+// These fields hold the inputs that the output frame rate rule used.
 message FrameRateRuleInputs {
-  // The worker reports ffprobe's r_frame_rate. The field is absent when ffprobe
-  // reports no value or 0/0.
+  // This field copies ffprobe's r_frame_rate. The worker leaves it out when
+  // ffprobe reports none or 0/0.
   Fraction base_rate = 1;
-  // The worker reports ffprobe's avg_frame_rate. The field is absent when
-  // ffprobe reports no value or 0/0.
+  // This field copies ffprobe's avg_frame_rate. The worker leaves it out when
+  // ffprobe reports none or 0/0.
   Fraction average_rate = 2;
   FieldOrder field_order = 3;
-  // This field reports the stream's time base in seconds.
+  // This field holds the stream's time base in seconds.
   Fraction time_base = 4;
-  // The field is absent when the stream contains neither statistics tag.
+  // The worker leaves this field out when the stream has neither statistics
+  // tag.
   MatroskaStatistics matroska_statistics = 5;
-  // The field is absent when the worker chose an output frame rate from the
-  // declared rates without scanning packets.
+  // The worker leaves this field out when the declared rates decided the rate
+  // without a scan.
   FrameRatePacketScan packet_scan = 6;
 }
 
-// This message reports the output frame rate chosen for the video stream, the
-// basis for that choice and the inputs used. The probe still succeeds when the
-// rule refuses to choose a rate.
+// This message reports the output frame rate that the worker chose, the basis
+// for the choice and the inputs. The probe still succeeds when the rule
+// refuses to choose.
 message FrameRateRuleResult {
-  // The field is absent only when basis is OUTPUT_FRAME_RATE_BASIS_REFUSED.
+  // The worker leaves this field out only when basis is REFUSED.
   Fraction output_frame_rate = 1;
   OutputFrameRateBasis basis = 2;
   FrameRateRuleInputs inputs = 3;
@@ -1724,55 +1035,32 @@ message FrameRateRuleResult {
 
 enum KeyframePositionSource {
   KEYFRAME_POSITION_SOURCE_UNSPECIFIED = 0;
-  // The worker read the positions from the container index: the MP4 or MOV
-  // sync-sample table, or the Matroska Cues element.
+  // The worker read the MP4 or MOV sync-sample table, or the Matroska Cues.
   KEYFRAME_POSITION_SOURCE_CONTAINER_INDEX = 1;
   // The worker scanned every packet of the chosen video stream.
   KEYFRAME_POSITION_SOURCE_PACKET_SCAN = 2;
 }
 
 // This message describes the chosen video stream's keyframe positions. The
-// positions themselves travel in the attempt's ProbeKeyframePositionsPart
-// messages, which arrive before this result.
+// positions travel in the attempt's ProbeKeyframePositionsPart messages, which
+// arrive before this result.
 message KeyframePositions {
-  // This field contains the chosen video stream's ProbeStreamInfo.index within
-  // the container.
+  // This field holds the chosen video stream's ProbeStreamInfo.index.
   uint32 stream_index = 1;
   uint32 time_base_numerator = 2;
   uint32 time_base_denominator = 3;
   KeyframePositionSource source = 4;
-  // This field counts the entries in each list across all parts of the attempt.
-  // The count is at least one. A stream without keyframes reports
-  // KEYFRAMES_UNAVAILABLE_REASON_NO_KEYFRAMES instead. When the count differs
-  // from the entries the server received, the server fails the probe attempt as
-  // a contract violation and retries the probe.
+  // This field counts the entries in each list across all parts. It is at
+  // least 1. The server fails the probe attempt when the parts hold a
+  // different number.
   uint32 keyframe_count = 5;
 }
 
-// This message contains consecutive keyframe positions from one probe attempt.
-// A long source has too many keyframes for one session message, so the worker
-// splits the positions into parts. Each list in a part holds at most 4,096
-// entries. Even when every entry takes the widest sint64 encoding of 10 bytes,
-// a part then stays below 128 KiB, the largest session message the server
-// accepts. The parts of one attempt hold at most 1,048,576 entries in each
-// list, which covers 12 hours of 24 fps video in which every frame is a
-// keyframe. The worker may split the entries into parts of any size up to the
-// part limit. The server fails the probe attempt when a part or the attempt
-// breaks these limits, or when the two lists of a part differ in length.
-//
-// The worker sends every part of the attempt in decode-time order, before the
-// attempt's ProbeAttemptResult. The worker sends parts only when the result
-// reports KeyframePositions. The server discards the parts of an attempt whose
-// result reports anything else.
-//
-// Entry i of both lists in a part describes the same keyframe, so both lists
-// have the same length. Entries are ordered by decode time, within a part and
-// across the parts. Times count ticks of time_base_numerator /
-// time_base_denominator seconds on the zero-based timeline that the producer
-// groups samples on: the demuxer time minus the container start time, as
-// FFmpeg's -copyts -start_at_zero produces. The first entry of the attempt's
-// first part is an absolute time. Every later entry, including the first entry
-// of a later part, is the difference from the entry before it.
+// This message carries consecutive keyframe positions of one probe attempt in
+// decode order, before the result. Each list holds at most 4,096 entries in a
+// part and 1,048,576 in an attempt. Both lists have the same length. Times
+// count time-base ticks from the container start. The attempt's first entry
+// is absolute. Each later entry is the difference from the entry before it.
 message ProbeKeyframePositionsPart {
   Uuid probe_attempt_id = 1;
   repeated sint64 presentation_time_deltas = 2;
@@ -1783,14 +1071,11 @@ message ProbeKeyframePositionsPart {
 // keyframe positions.
 enum KeyframePacketScanReason {
   KEYFRAME_PACKET_SCAN_REASON_UNSPECIFIED = 0;
-  // The container has no index. MPEG-TS, AVI and fragmented MP4 sources are
-  // examples.
+  // The container has no index, as in MPEG-TS, AVI and fragmented MP4.
   KEYFRAME_PACKET_SCAN_REASON_NO_CONTAINER_INDEX = 1;
-  // The container index is sparse or incomplete, such as Matroska Cues that
-  // skip keyframes.
+  // The index skips keyframes, as sparse Matroska Cues do.
   KEYFRAME_PACKET_SCAN_REASON_INCOMPLETE_CONTAINER_INDEX = 2;
-  // The worker cannot read the last keyframe that the container index lists, as
-  // in a truncated file.
+  // The worker cannot read the last indexed keyframe, as in a truncated file.
   KEYFRAME_PACKET_SCAN_REASON_UNREADABLE_LAST_INDEXED_KEYFRAME = 3;
 }
 
@@ -1798,7 +1083,7 @@ enum KeyframesUnavailableReason {
   KEYFRAMES_UNAVAILABLE_REASON_UNSPECIFIED = 0;
   // A keyframe has no presentation time or no decode time.
   KEYFRAMES_UNAVAILABLE_REASON_KEYFRAME_WITHOUT_TIMESTAMP = 1;
-  // A packet scan found no keyframe in the chosen video stream.
+  // A packet scan found no keyframe.
   KEYFRAMES_UNAVAILABLE_REASON_NO_KEYFRAMES = 2;
 }
 
@@ -1817,112 +1102,59 @@ message ProbeKeyframes {
   }
 }
 
-// This value names the step that measured a file's streams under ADR 0054.
+// This value names the step that measured a file's streams (ADR 0054).
 enum StreamMeasurementSource {
   STREAM_MEASUREMENT_SOURCE_UNSPECIFIED = 0;
-  // The probe read every sample's size and times from the sample tables of an
-  // MP4 or MOV file that is not fragmented, and read no media data.
+  // The probe read the sample tables of an MP4 or MOV file that is not
+  // fragmented.
   STREAM_MEASUREMENT_SOURCE_SAMPLE_TABLE = 1;
-  // A keyframe packet scan listed every packet of the file.
+  // A keyframe packet scan listed every packet.
   STREAM_MEASUREMENT_SOURCE_KEYFRAME_PACKET_SCAN = 2;
-  // A bitrate scan listed every packet of the file's video and audio streams.
+  // A bitrate scan listed every packet.
   STREAM_MEASUREMENT_SOURCE_BITRATE_SCAN = 3;
 }
 
-// This message reports the exact measurement of one video or audio stream
-// under ADR 0054. A packet's size counts the packet's payload only, without
-// the source container's framing. The stream's bytes and packets in each
-// keyframe interval travel in the attempt's ProbeStreamMeasurementPart
-// messages, which arrive before the result.
-//
-// A measured packet's bytes are the bytes of the sample that a stream copy
-// delivers for it. The worker reports no StreamMeasurements at all when a copy
-// of any measured stream would change a packet's size, for example when the
-// copy runs an Annex B bitstream filter. The server adds the delivered media
-// segment's framing to the measured bytes itself. Each media segment of
-// SEGMENT_CONTENT_TYPE_VIDEO_MP4 that a worker delivers holds exactly one moof
-// box followed by one mdat box with an 8-byte header, and nothing else. The
-// moof holds one mfhd box and then one traf box for each track that has
-// samples in the segment: video first, then at most one audio track. Each traf
-// holds one tfhd box without optional fields, one version 1 tfdt box and one
-// version 1 trun box with a data offset and, for each sample, a duration, a
-// size, flags and a composition time offset. So a segment's framing is 32
-// bytes, plus 64 bytes for each track with samples in it, plus 16 bytes for
-// each sample. A worker test pins this layout.
+// This message reports one video or audio stream's exact size (ADR 0054). The
+// sizes count the payload bytes that a stream copy delivers, without container
+// framing. The values for each keyframe interval travel in
+// ProbeStreamMeasurementPart messages before the result.
 message MeasuredStream {
-  // This field contains the stream's ProbeStreamInfo.index within the
-  // container. The stream is a video or audio stream of the same result.
+  // This field holds a video or audio stream's ProbeStreamInfo.index.
   uint32 stream_index = 1;
-  // This field reports the sum of the sizes of the stream's packets. It equals
-  // the sum of the stream's bytes in every keyframe interval, and it is at most
-  // 2^63 - 1.
+  // This field adds up the stream's packet bytes. It is at most 2^63 - 1.
   uint64 measured_bytes = 2;
-  // This field counts the stream's packets. It equals the sum of the stream's
-  // packets in every keyframe interval, and it is at most 2^63 - 1.
+  // This field counts the stream's packets. It is at most 2^63 - 1.
   uint64 packet_count = 3;
-  // The stream's own time base, in which measured_duration counts ticks. Both
-  // values are positive.
+  // These fields hold the stream's time base. Both are positive.
   uint32 time_base_numerator = 4;
   uint32 time_base_denominator = 5;
-  // This field counts the ticks from the stream's first presentation time to
-  // the end of the stream's last packet. It is at most 2^63 - 1.
+  // This field counts the ticks from the first presentation time to the end of
+  // the last packet. It is at most 2^63 - 1.
   uint64 measured_duration = 6;
 }
 
-// This message reports the measurement of a file's video and audio streams.
-// The worker reports it only beside KeyframePositions, because the keyframe
-// intervals follow those positions.
-//
-// A keyframe interval runs from one keyframe of KeyframePositions to the next.
-// The last interval runs from the last keyframe to the end of the file. A
-// packet of the chosen video stream belongs to the interval in which its
-// decode order places it. A packet of another video stream belongs to the
-// interval that holds its decode time, and an audio packet belongs to the
-// interval that holds its presentation time. A packet that comes before the
-// first keyframe belongs to the first interval. So each measured stream has
-// exactly KeyframePositions.keyframe_count intervals.
-//
-// The worker reports no measurement when it cannot list every packet of every
-// stream it measures, when one stream's bytes or packets in one interval
-// exceed 4,294,967,295, or when the parts would break
-// ProbeStreamMeasurementPart's limits: keyframe_count times the number of
-// measured streams exceeds 8,388,608, or more than 1,024 streams are measured. When the server receives
-// a measurement that breaks these rules, it fails the probe attempt as a
-// contract violation and retries the probe.
-//
-// The server stores a measurement from a probe that reads the container
-// index. Until streamarr/streamarr-server#690, it validates and then drops a
-// measurement that a keyframe packet scan reports.
+// This message reports the sizes of a file's video and audio streams. The
+// worker reports it only beside KeyframePositions, and each stream has exactly
+// keyframe_count keyframe intervals (ADR 0054). The worker leaves it out when
+// it cannot measure a stream or the parts would break their limits.
 message StreamMeasurements {
   StreamMeasurementSource source = 1;
-  // Each stream appears at most once. The list holds the chosen video stream
-  // and every audio stream. It may leave out another video stream, such as an
-  // attached picture.
+  // This field lists the chosen video stream and every audio stream, each
+  // once.
   repeated MeasuredStream streams = 2;
 }
 
-// This message contains one measured stream's bytes and packets in
-// consecutive keyframe intervals from one probe attempt. A long source has too
-// many intervals for one session message, so the worker splits each stream's
-// intervals into parts. A part holds at least 1 and at most 4,096 entries, so
-// it stays below 128 KiB. An entry is one interval: one value in
-// keyframe_interval_bytes and the value at the same position in
-// keyframe_interval_packet_counts. The parts of one attempt hold at most
-// 8,388,608 entries in all and name at most 1,024 streams. The worker sends
-// each stream's parts in interval order, before the attempt's
-// ProbeAttemptResult. The parts of different streams may interleave. The
-// worker sends parts only when the result reports StreamMeasurements or
-// BitrateScanChunkResult.measured. The server discards the parts of an attempt
-// whose result reports neither.
+// This message carries one stream's bytes and packets in consecutive keyframe
+// intervals, in interval order, before the result. A part holds 1 to 4,096
+// entries. An attempt holds at most 8,388,608 entries across at most 1,024
+// streams.
 message ProbeStreamMeasurementPart {
   Uuid probe_attempt_id = 1;
-  // This field names the MeasuredStream.stream_index of the stream whose
-  // intervals the part holds.
+  // This field holds the stream's MeasuredStream.stream_index.
   uint32 stream_index = 2;
   // Entry i holds the stream's bytes in the next keyframe interval.
   repeated uint32 keyframe_interval_bytes = 3;
-  // Entry i counts the stream's packets in the same keyframe interval as entry
-  // i of keyframe_interval_bytes, by the same interval rules. The list has as
+  // Entry i counts the stream's packets in the same interval. The list has as
   // many entries as keyframe_interval_bytes.
   repeated uint32 keyframe_interval_packet_counts = 4;
 }
@@ -1930,112 +1162,78 @@ message ProbeStreamMeasurementPart {
 message ProbeMediaInfo {
   ProbeContainerInfo container = 1;
   repeated ProbeStreamInfo streams = 2;
-  // The worker reports this field only for probe version 3 and later.
+  // The worker reports this field from probe version 3 on.
   ProbeKeyframes keyframes = 3;
-  // This field contains the ProbeStreamInfo.index of the first video stream
-  // that is not an attached picture, such as embedded cover art. The worker
-  // reports this field only for probe version 4 and later. Under those
-  // versions, a file whose video streams are all attached pictures reports
-  // PROBE_FAILURE_NO_VIDEO_STREAM.
+  // This field holds the first video stream that is not an attached picture.
+  // The worker reports it from probe version 4 on.
   optional uint32 chosen_video_stream_index = 4;
-  // The worker reports this field only for probe version 4 and later.
+  // The worker reports this field from probe version 4 on.
   FrameRateRuleResult frame_rate_rule = 5;
-  // The worker sets this field to true when the worker omitted every stream
-  // title and every handler name, because the titles and handler names together
-  // exceed the limit. The flag covers ProbeStreamInfo.title and
-  // ProbeStreamInfo.handler_name, although its name mentions only titles. The
-  // titles and handler names of one result take at most 16,384 bytes: the sum
-  // of the bytes that each title and each handler name add to its stream's
-  // protobuf encoding. A value longer than 512 bytes counts for nothing,
-  // because the worker leaves it out first. When the values would take more,
-  // the worker reports no title and no handler name on any stream and sets
-  // stream_titles_omitted. When no stream has a title or a handler name and
-  // stream_titles_omitted is false, the streams have neither.
-  //
-  // A file controls its titles and handler names, but the result must fit in
-  // one session message of at most 128 KiB. A larger probe result fails as
-  // PROBE_FAILURE_RESULT_TOO_LARGE. So the 512-byte limit and this limit keep
-  // the values from filling the result. Only probe version 4 and later set this
-  // field.
+  // This field is true when the worker left out every title and handler name
+  // because together they exceed 16,384 encoded bytes. Probe version 4 and
+  // later set it.
   bool stream_titles_omitted = 6;
-  // This field is absent when the worker took no measurement of the file's
-  // streams (ADR 0054). Any probe version may report it.
+  // The worker leaves this field out when it measured no stream (ADR 0054).
   StreamMeasurements stream_measurements = 7;
 }
 
 message ProbeAttemptResult {
   Uuid probe_attempt_id = 1;
-  // The worker reports the nonzero Streamarr probe result contract version. The
-  // version must match the request.
+  // This field names the probe version. It must match the request.
   uint32 probe_version = 2;
   oneof outcome {
-    // The probe succeeds only if the file contains a video stream. For
-    // audio-only media, the worker reports PROBE_FAILURE_NO_VIDEO_STREAM.
+    // A probe succeeds only when the file has a video stream.
     ProbeMediaInfo media = 3;
-    // A worker reports a failure for a bitrate scan chunk as it does for a
-    // probe. PROBE_FAILURE_INVALID_MEDIA reports a chunk whose packets the
-    // worker cannot read to the chunk's end.
     ProbeFailure failure = 4;
     // The worker answers a request that carries a BitrateScanChunk with this
-    // result or a failure, and never with media.
+    // result or a failure.
     BitrateScanChunkResult bitrate_scan_chunk = 5;
   }
 }
 
-// This message reports what a worker found in one bitrate scan chunk.
+// This message reports what the worker found in one bitrate scan chunk.
 message BitrateScanChunkResult {
   oneof result {
-    // The worker measured every requested stream. Each stream's bytes and
-    // packets in each of the chunk's keyframe intervals travel in the attempt's
-    // ProbeStreamMeasurementPart messages, which arrive before the result. Each
-    // measured stream has exactly as many entries as the chunk has keyframes.
+    // The worker measured every requested stream. Each stream has one
+    // ProbeStreamMeasurementPart entry for each keyframe in the chunk.
     BitrateScanChunkStreams measured = 1;
-    // A stream copy would change the size or the number of a measured stream's
-    // packets (ADR 0054), so the file's streams cannot be measured. The worker
-    // sends no ProbeStreamMeasurementPart for the attempt.
+    // A stream copy would change a measured stream's packets (ADR 0054). The
+    // worker sends no ProbeStreamMeasurementPart for the attempt.
     BitrateScanCopyChangesPackets copy_changes_packets = 2;
   }
 }
 
-// This message lists the measurement of every stream that the chunk names in
-// BitrateScanChunk.measured_stream_indexes, each once.
+// This message lists one entry for each stream in
+// BitrateScanChunk.measured_stream_indexes.
 message BitrateScanChunkStreams {
   repeated BitrateScanChunkStream streams = 1;
 }
 
 // This message reports one stream's packets in one bitrate scan chunk.
 message BitrateScanChunkStream {
-  // This field contains the stream's ProbeStreamInfo.index.
+  // This field holds the stream's ProbeStreamInfo.index.
   uint32 stream_index = 1;
-  // This field reports the sum of the sizes of the stream's packets in the
-  // chunk. It equals the sum of the stream's bytes in the chunk's keyframe
-  // intervals, and it is at most 2^63 - 1.
+  // This field adds up the stream's packet bytes in the chunk. It is at most
+  // 2^63 - 1.
   uint64 measured_bytes = 2;
-  // This field counts the stream's packets in the chunk. It equals the sum of
-  // the stream's packets in the chunk's keyframe intervals, and it is at most
+  // This field counts the stream's packets in the chunk. It is at most
   // 2^63 - 1.
   uint64 packet_count = 3;
-  // The stream's own time base, in which the stream's times count ticks. Both
-  // values are positive.
+  // These fields hold the stream's time base. Both are positive.
   uint32 time_base_numerator = 4;
   uint32 time_base_denominator = 5;
   // This field holds the earliest presentation time of the stream's packets in
-  // the chunk, on the same timeline as the chunk's keyframes. Both times are
-  // absent when the chunk holds no packet of the stream, and both are present
-  // otherwise. For an audio stream, the time lies inside the chunk: at or after
-  // the chunk's first keyframe's presentation time unless the chunk is the
-  // first, and before end_presentation_time unless the chunk is the last.
+  // the chunk. The worker leaves it and end_time out when the chunk holds no
+  // packet of the stream.
   optional sint64 first_presentation_time = 6;
-  // This field holds the end of the stream's last packet in the chunk: its
-  // presentation time plus its duration. It is at least
-  // first_presentation_time.
+  // This field holds the end of the stream's last packet in the chunk.
   optional sint64 end_time = 7;
 }
 
 // This message names the first measured stream whose packets a stream copy
 // would change.
 message BitrateScanCopyChangesPackets {
-  // This field contains one of BitrateScanChunk.measured_stream_indexes.
+  // This field holds one of BitrateScanChunk.measured_stream_indexes.
   uint32 stream_index = 1;
 }
 
@@ -2047,19 +1245,11 @@ enum ProbeFailure {
   PROBE_FAILURE_EXECUTION_FAILED = 4;
   PROBE_FAILURE_UNSUPPORTED_VERSION = 5;
   PROBE_FAILURE_CANCELLED = 6;
-  // The result would not fit in one session message: the
-  // EstablishWorkerSessionRequest that carries it would take more than 131,072
-  // bytes. The worker checks every result, whatever its stream count or text
-  // lengths, and sends this failure in place of the result. The keyframe
-  // positions travel in their own parts and do not count toward the result's
-  // size. The server stores this failure as the file's probe outcome. It does
-  // not retry the probe until the file or the probe version changes. Any probe
-  // version may report this failure.
+  // The result would exceed the session message limit. The server stores this
+  // outcome until the file or the probe version changes.
   PROBE_FAILURE_RESULT_TOO_LARGE = 7;
-  // The probe or bitrate scan chunk arrived while every unit of its capacity
-  // was in use, so ffprobe never started. The worker lowered that capacity before the server
-  // learned of the change. The server keeps the probe queued without a failure,
-  // and any worker with a free unit can take the probe.
+  // Every unit of the capacity was busy, so ffprobe never started. The server
+  // keeps the probe queued.
   PROBE_FAILURE_NO_FREE_CAPACITY = 8;
 }
 
@@ -2068,33 +1258,23 @@ message StartProbeCommand {
   ProbeRequest request = 2;
 }
 
+// After the probe ends, the worker still returns a terminal ProbeAttemptResult
+// for the attempt.
 message CancelProbeCommand {
-  // After the probe ends, the worker must return a terminal ProbeAttemptResult
-  // with the original attempt ID and version. The probe continues to use
-  // capacity until its result arrives or the worker session ends.
   WorkerIdentity target = 1;
   Uuid probe_attempt_id = 2;
-  // This value explains why the server ended the probe. The server sets every
-  // reason except PROBE_CANCEL_REASON_UNSPECIFIED.
+  // A current server never sends UNSPECIFIED.
   ProbeCancelReason reason = 3;
 }
 
-// This value explains why the server ended a probe. The server alone enforces
-// the probe timeout, so this reason is the only way that a worker learns that a
-// probe reached the timeout.
+// This value explains why the server ended a probe. Only the server enforces
+// probe timeouts.
 enum ProbeCancelReason {
-  // A server older than this field sends no reason. The worker reads this value
-  // as PROBE_CANCEL_REASON_OTHER.
+  // The worker reads this value as OTHER.
   PROBE_CANCEL_REASON_UNSPECIFIED = 0;
-  // The probe reached its timeout on the server. For a keyframe packet scan,
-  // the timeout is the keyframe packet scan timeout, and for a bitrate scan
-  // chunk, the bitrate scan chunk timeout. The worker applies no brake for
-  // either.
+  // The probe, scan or chunk reached its timeout on the server.
   PROBE_CANCEL_REASON_TIMEOUT = 1;
-  // The server is shutting down.
   PROBE_CANCEL_REASON_SERVER_SHUTDOWN = 2;
-  // Any other reason, such as the server's probe thread no longer waiting for
-  // the result.
   PROBE_CANCEL_REASON_OTHER = 3;
 }
 
@@ -2121,8 +1301,6 @@ enum SegmentContentType {
 
 message SegmentUploadMetadata {
   Uuid worker_session_id = 1;
-  // The worker uses this field to identify itself. The live registry matches
-  // the identity to the authenticated connection.
   WorkerIdentity worker = 2;
   Uuid stream_session_id = 3;
   Uuid job_id = 4;
@@ -2130,30 +1308,20 @@ message SegmentUploadMetadata {
   string variant_label = 6;
   string segment_name = 7;
   SegmentContentType content_type = 8;
-  // The segment's length in bytes. The segment cap, 134,217,728 bytes
-  // (128 MiB), is a constant of this contract: the server refuses an upload
-  // whose length is 0 or above the cap, and the worker delivers no
-  // initialization segment or media segment above it, failing the attempt with
-  // JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED instead.
+  // This field holds the segment's length in bytes. The length lies from 1 to
+  // the segment cap of 134,217,728 bytes (128 MiB).
   uint64 content_length_bytes = 9;
-  // This field reports the media segment's media duration. The worker reports
-  // this field for every media segment. The field is absent for an
-  // initialization segment.
+  // This field holds the media segment's duration. An initialization segment
+  // leaves it out.
   google.protobuf.Duration media_duration = 10;
-  // This field reports how much wall-clock time the worker took to produce the
-  // media segment. The time runs from the end of the attempt's previous media
-  // segment until the producer finished this segment. For the attempt's first
-  // media segment, the time runs from the moment the worker started FFmpeg. The
-  // time leaves out every wait in which the worker held FFmpeg back until an
-  // earlier segment's upload was accepted. The worker reports this field for
-  // every media segment. The field is absent for an initialization segment. The
-  // worker and the server derive the attempt's production speed from
-  // media_duration and production_time, as ADR 0032 and ADR 0044 decide.
+  // This field holds the wall-clock time that the worker took to produce the
+  // media segment, without the time it waited for earlier uploads. An
+  // initialization segment leaves it out (ADR 0032, ADR 0044).
   google.protobuf.Duration production_time = 11;
 }
 
-// The first request in an upload contains metadata. Each later request contains
-// a bounded, non-empty data chunk.
+// The first request carries the metadata. Each later request carries a
+// non-empty chunk of data.
 message UploadSegmentRequest {
   oneof frame {
     SegmentUploadMetadata metadata = 1;
