@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -31,18 +32,21 @@ class WorkerContractCommentTest {
   private static List<String> commentBlocksLongerThanTheLimit(List<String> lines) {
     var oversized = new ArrayList<String>();
     var blockLength = 0;
-    for (var lineNumber = 1; lineNumber <= lines.size(); lineNumber++) {
-      if (lines.get(lineNumber - 1).strip().startsWith("//")) {
+    // The empty line after the last line closes a comment block that ends the file.
+    var linesWithEnd = Stream.concat(lines.stream(), Stream.of("")).toList();
+    for (var index = 0; index < linesWithEnd.size(); index++) {
+      if (linesWithEnd.get(index).strip().startsWith("//")) {
         blockLength++;
         continue;
       }
 
       if (blockLength > MAX_COMMENT_LINES) {
-        oversized.add("line " + (lineNumber - blockLength) + ": " + blockLength + " lines");
+        oversized.add("line " + (index - blockLength + 1) + ": " + blockLength + " lines");
       }
 
       blockLength = 0;
     }
+
     return oversized;
   }
 }
