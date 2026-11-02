@@ -143,16 +143,25 @@ public class TranscodeDecisionService {
   }
 
   private boolean decideVideoCopy(MediaProbe source, ClientCapabilityDeclaration declaration) {
-    var copyFits = VideoStreamCopy.of(source).filter(declaration::acceptsHlsCopy).isPresent();
-    // Apple's HLS Authoring Specification item 1.14 requires deinterlaced video, so the worker
-    // deinterlaces an interlaced source while it encodes (streamarr/streamarr-server#653).
-    if (!copyFits || source.isInterlaced() || !permitsCopyUntilHdrCopies(source)) {
+    if (!isCopyAcceptedBeforeTheKeyframeCheck(source, declaration)) {
       return false;
     }
 
     var refusal = streamCopyRefusal(source);
     refusal.ifPresent(this::countStreamCopyRefusal);
     return refusal.isEmpty();
+  }
+
+  /**
+   * Whether a video capability entry for HLS accepts a copy of the source and the copy rules allow
+   * it, before the keyframe check that refuses a copy whose keyframes leave an interval empty.
+   */
+  static boolean isCopyAcceptedBeforeTheKeyframeCheck(
+      @NonNull MediaProbe source, @NonNull ClientCapabilityDeclaration declaration) {
+    var copyFits = VideoStreamCopy.of(source).filter(declaration::acceptsHlsCopy).isPresent();
+    // Apple's HLS Authoring Specification item 1.14 requires deinterlaced video, so the worker
+    // deinterlaces an interlaced source while it encodes (streamarr/streamarr-server#653).
+    return copyFits && !source.isInterlaced() && permitsCopyUntilHdrCopies(source);
   }
 
   // The frame rate at which one entry encodes the source-sized variant, or empty when no entry
