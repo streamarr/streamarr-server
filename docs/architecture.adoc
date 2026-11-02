@@ -397,7 +397,7 @@ See https://github.com/streamarr/streamarr-adr/tree/main/adr[Architecture Decisi
 | O(1) performance regardless of page depth
 
 | ProcessBuilder + FFmpeg over JNI, in the worker
-| Full control over process lifecycle, proven pattern (Jellyfin/Plex/Emby); the server itself starts no processes (https://github.com/streamarr/streamarr-adr/blob/main/adr/0033-transcode-worker-is-a-separate-service.adoc[ADR 0033])
+| Full control over process lifecycle; the server itself starts no processes (https://github.com/streamarr/streamarr-adr/blob/main/adr/0033-transcode-worker-is-a-separate-service.adoc[ADR 0033])
 
 | TDD and behavior testing
 | Tests at service boundary are protocol-agnostic and survive refactoring
