@@ -11,13 +11,17 @@ import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
+import com.streamarr.server.domain.streaming.KeyframeIntervalCounts;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
+import com.streamarr.server.domain.streaming.MeasuredStream;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.QualityVariant;
+import com.streamarr.server.domain.streaming.StreamMeasurementSource;
+import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -27,6 +31,7 @@ import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fixtures.ProbeFixture;
+import com.streamarr.server.fixtures.StreamMeasurementFixture;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
@@ -1321,6 +1326,9 @@ class HlsPlaylistServiceTest {
   @DisplayName("Bandwidth of a video copy")
   class CopyBandwidthTests {
 
+    // The default probe's video is stream 0, so its first audio stream is stream 1.
+    private static final int MEASURED_AUDIO = 1;
+
     private static final AudioDecision AC3_SURROUND_COPY =
         AudioDecision.builder()
             .mode(AudioMode.COPY)
@@ -1484,6 +1492,128 @@ class HlsPlaylistServiceTest {
           service.generateMultivariantPlaylist(copySession(probe, decision), "test-token");
 
       assertThat(playlist).contains("BANDWIDTH=5553600,AVERAGE-BANDWIDTH=4628000,");
+    }
+
+    // ADR 0054: over the 2-hour default media playlist, 4,050,000,000 measured video bytes average
+    // 4.5 Mb/s and 576,000,000 AC-3 bytes 640 kb/s, below the probed 6 Mb/s video and the 8 Mb/s
+    // container. The 1,200 segments add 192,032 bytes of framing, 214 b/s: 32 bytes each, 64 bytes
+    // for each track in each, and 16 bytes for each track's one packet.
+    @Test
+    @DisplayName(
+        "Should advertise the copied video's measured average plus the copied audio's average"
+            + " when the server holds a measurement of the source's streams")
+    void shouldAdvertiseMeasuredVideoAveragePlusCopiedAudioAverageWhenServerHoldsMeasurement() {
+      var playlist =
+          multivariantOfMeasuredAc3Copy(
+              StreamMeasurementFixture.measuredStreamBuilder(MEASURED_AUDIO, 576_000_000L)
+                  .measuredDuration(7_200_000)
+                  .build());
+
+      assertThat(playlist).contains("BANDWIDTH=6168256,AVERAGE-BANDWIDTH=5140214,");
+    }
+
+    // ADR 0054: 288,000,000 AC-3 bytes that end after 1 hour average 320 kb/s over the 2-hour
+    // playlist, half the track's own 640 kb/s. The track's 64 bytes still count in all 1,200
+    // segments.
+    @Test
+    @DisplayName(
+        "Should advertise a copied audio track that ends early at its average over the media"
+            + " playlist when the server holds a measurement of the source's streams")
+    void shouldAdvertiseCopiedAudioTrackThatEndsEarlyAtItsAverageOverMediaPlaylist() {
+      var playlist =
+          multivariantOfMeasuredAc3Copy(
+              StreamMeasurementFixture.measuredStreamBuilder(MEASURED_AUDIO, 288_000_000L)
+                  .measuredDuration(3_600_000)
+                  .build());
+
+      assertThat(playlist).contains("BANDWIDTH=5784256,AVERAGE-BANDWIDTH=4820214,");
+    }
+
+    // A stream copy segment opens at each keyframe of a 1/10,000,000 time base, at 6.0000004 s and
+    // 12.0000008 s, so the media playlist writes EXTINF durations of 6.000000, 6.000000 and
+    // 5.999999 s, 17.999999 s in all. 2,246,256 video bytes in 216 packets and 3,744 bytes of
+    // framing are 18,000,000 bits, which average 1,000,000.06 b/s over those durations.
+    @Test
+    @DisplayName(
+        "Should advertise a measured copy's average over the EXTINF durations that its media"
+            + " playlist writes")
+    void shouldAdvertiseMeasuredCopysAverageOverExtinfDurationsThatItsMediaPlaylistWrites() {
+      var positions =
+          KeyframePositions.builder()
+              .streamIndex(0)
+              .timeBaseNumerator(1)
+              .timeBaseDenominator(10_000_000)
+              .source(KeyframePositionSource.CONTAINER_INDEX)
+              .keyframes(
+                  List.of(
+                      new KeyframePosition(0, 0),
+                      new KeyframePosition(60_000_004L, 60_000_004L),
+                      new KeyframePosition(120_000_008L, 120_000_008L)))
+              .build();
+      var probe =
+          StreamSessionFixture.defaultProbeBuilder()
+              .duration(Duration.ofSeconds(18))
+              .keyframes(new KeyframeKnowledge.Known(positions));
+      var video = ProbeFixture.videoStreamBuilder(probe.build()).build();
+      var measurement =
+          new StreamMeasurements(
+              StreamMeasurementSource.SAMPLE_TABLE,
+              List.of(
+                  StreamMeasurementFixture.measuredStreamBuilder(video.index(), 2_246_256L)
+                      .packetCount(216)
+                      .keyframeIntervalPacketCounts(KeyframeIntervalCounts.of(216))
+                      .measuredDuration(18_000)
+                      .build()));
+      var mediaProbe =
+          probe.streams(List.of(video)).streamMeasurements(Optional.of(measurement)).build();
+      var session =
+          StreamSessionFixture.defaultSessionBuilder()
+              .mediaProbe(mediaProbe)
+              .transcodeDecision(
+                  StreamSessionFixture.remuxDecisionBuilder()
+                      .videoSource(mediaProbe.videoPlaybackFacts())
+                      .audioDecision(AudioDecision.none())
+                      .build())
+              .build();
+
+      var multivariant = service.generateMultivariantPlaylist(session, "test-token");
+      var media =
+          service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
+
+      assertThat(media).contains("#EXTINF:6.000000,\n").contains("#EXTINF:5.999999,\n");
+      assertThat(multivariant).contains("AVERAGE-BANDWIDTH=1000001,");
+    }
+
+    // A source of 6 Mb/s probed video in an 8 Mb/s container beside an AC-3 track, whose video
+    // the server measured at 4,050,000,000 bytes over 2 hours beside the given audio measurement,
+    // in a session that copies the AC-3 track.
+    private String multivariantOfMeasuredAc3Copy(MeasuredStream audio) {
+      var probe =
+          StreamSessionFixture.defaultProbeBuilder()
+              .bitrate(8_000_000L)
+              .audioCodec("ac3")
+              .audioBitrate(OptionalLong.of(640_000L));
+      var video =
+          ProbeFixture.videoStreamBuilder(probe.build())
+              .bitrate(OptionalLong.of(6_000_000L))
+              .build();
+      var audioStream = ProbeFixture.audioStreamBuilder("ac3").index(audio.streamIndex()).build();
+      var measurement =
+          new StreamMeasurements(
+              StreamMeasurementSource.SAMPLE_TABLE,
+              List.of(
+                  StreamMeasurementFixture.measuredStreamBuilder(video.index(), 4_050_000_000L)
+                      .measuredDuration(7_200_000)
+                      .build(),
+                  audio));
+      var source =
+          probe
+              .streams(List.of(video, audioStream))
+              .streamMeasurements(Optional.of(measurement))
+              .build();
+
+      return service.generateMultivariantPlaylist(
+          copySession(source, remuxDecisionCopying(AC3_SURROUND_COPY)), "test-token");
     }
 
     private static MediaProbe.MediaProbeBuilder ac3SurroundProbeBuilder() {

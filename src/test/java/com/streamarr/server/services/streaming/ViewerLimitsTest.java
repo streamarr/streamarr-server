@@ -7,10 +7,15 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.AudioSteps;
+import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PictureSize;
+import com.streamarr.server.domain.streaming.StreamMeasurementSource;
+import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fixtures.ProbeFixture;
+import com.streamarr.server.fixtures.StreamMeasurementFixture;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
@@ -34,6 +39,13 @@ class ViewerLimitsTest {
                   .mode(AudioMode.COPY)
                   .sourceCodecString(Optional.of("mp4a.40.2"))
                   .build()));
+
+  private static final AudioSteps STEREO_AAC_ONLY =
+      new AudioSteps(List.of(AudioDecision.stereoAac()));
+
+  // The 1,200 segments of 6 s that a stream copy of the default 2-hour source lists.
+  private static final CopyMediaPlaylist TWO_HOURS =
+      new CopyMediaPlaylist(1_200, new BigDecimal("7200.000000"));
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("sourcesAgainstFixedQualityBoxes")
@@ -103,7 +115,9 @@ class ViewerLimitsTest {
 
     var audio =
         limits.audioStepBesideCopyOf(
-            defaultProbeBuilder().bitrate(4_000_000L).build(), COPIED_AAC_ONLY);
+            defaultProbeBuilder().bitrate(4_000_000L).build(),
+            COPIED_AAC_ONLY,
+            CopyMediaPlaylist.UNKNOWN);
 
     assertThat(audio).contains(COPIED_AAC_ONLY.sessionAudio());
   }
@@ -116,7 +130,9 @@ class ViewerLimitsTest {
 
     var audio =
         limits.audioStepBesideCopyOf(
-            defaultProbeBuilder().bitrate(4_000_001L).build(), COPIED_AAC_ONLY);
+            defaultProbeBuilder().bitrate(4_000_001L).build(),
+            COPIED_AAC_ONLY,
+            CopyMediaPlaylist.UNKNOWN);
 
     assertThat(audio).isEmpty();
   }
@@ -131,7 +147,9 @@ class ViewerLimitsTest {
     var audio =
         ViewerLimits.of(options)
             .audioStepBesideCopyOf(
-                defaultProbeBuilder().bitrate(40_000_000L).build(), COPIED_AAC_ONLY);
+                defaultProbeBuilder().bitrate(40_000_000L).build(),
+                COPIED_AAC_ONLY,
+                CopyMediaPlaylist.UNKNOWN);
 
     assertThat(audio).contains(COPIED_AAC_ONLY.sessionAudio());
   }
@@ -164,7 +182,7 @@ class ViewerLimitsTest {
     var steps =
         new AudioSteps(List.of(eac3.bitrate(768_000L).build(), eac3.bitrate(448_000L).build()));
 
-    var audio = limits.audioStepBesideCopyOf(source, steps);
+    var audio = limits.audioStepBesideCopyOf(source, steps, CopyMediaPlaylist.UNKNOWN);
 
     assertThat(audio.map(AudioDecision::bitrate)).contains(expected.bitrate());
   }
@@ -177,6 +195,51 @@ class ViewerLimitsTest {
 
   @Builder
   record FirstStepBesideCopy(int maxBitrate, long bitrate) {}
+
+  // ADR 0054: over the 1,200 segments of the 2-hour default media playlist, 4,050,000,000 measured
+  // video bytes, 115,216 bytes of video framing and the encoded AAC's 10,876,816 bytes of framing
+  // for 675,001 frames at the encoder's highest rate of 96 kHz average 4,512,214 b/s, which the
+  // viewer's maximum bitrate checks instead of the probed 6 Mb/s video and the 8 Mb/s container.
+  // The session's AAC adds its 128 kb/s.
+  @Test
+  @DisplayName(
+      "Should keep the session's audio beside a copy when the copy's measured average equals the"
+          + " maximum bitrate")
+  void shouldKeepTheSessionsAudioBesideACopyWhenTheCopysMeasuredAverageEqualsTheMaximumBitrate() {
+    var limits = ViewerLimits.of(auto().maxBitrate(4_640_214).build());
+
+    var audio = limits.audioStepBesideCopyOf(measuredSource(), STEREO_AAC_ONLY, TWO_HOURS);
+
+    assertThat(audio).contains(AudioDecision.stereoAac());
+  }
+
+  @Test
+  @DisplayName(
+      "Should find no audio step when a copy's measured average exceeds the maximum bitrate by one"
+          + " bit per second")
+  void shouldFindNoAudioStepWhenACopysMeasuredAverageExceedsTheMaximumBitrateByOneBitPerSecond() {
+    var limits = ViewerLimits.of(auto().maxBitrate(4_640_213).build());
+
+    var audio = limits.audioStepBesideCopyOf(measuredSource(), STEREO_AAC_ONLY, TWO_HOURS);
+
+    assertThat(audio).isEmpty();
+  }
+
+  // A source of 6 Mb/s probed video in an 8 Mb/s container, whose video the server measured at
+  // 4,050,000,000 bytes over 2 hours.
+  private static MediaProbe measuredSource() {
+    var probe = defaultProbeBuilder().bitrate(8_000_000L);
+    var video =
+        ProbeFixture.videoStreamBuilder(probe.build()).bitrate(OptionalLong.of(6_000_000L)).build();
+    var measurement =
+        new StreamMeasurements(
+            StreamMeasurementSource.SAMPLE_TABLE,
+            List.of(
+                StreamMeasurementFixture.measuredStreamBuilder(video.index(), 4_050_000_000L)
+                    .measuredDuration(7_200_000)
+                    .build()));
+    return probe.streams(List.of(video)).streamMeasurements(Optional.of(measurement)).build();
+  }
 
   // A probe without playback facts names no copied stream, so the container bitrate stands in for
   // the video.
@@ -193,25 +256,33 @@ class ViewerLimitsTest {
     var source =
         defaultProbeBuilder().bitrate(4_000_000L).videoPlaybackFacts(Optional.empty()).build();
 
-    assertThat(limits.audioStepBesideCopyOf(source, COPIED_AAC_ONLY).isPresent())
+    assertThat(
+            limits
+                .audioStepBesideCopyOf(source, COPIED_AAC_ONLY, CopyMediaPlaylist.UNKNOWN)
+                .isPresent())
         .isEqualTo(allowed);
   }
 
   @Test
-  @DisplayName("Should refuse to check a copy when the source or the audio steps are missing")
-  void shouldRefuseToCheckACopyWhenTheSourceOrTheAudioStepsAreMissing() {
+  @DisplayName(
+      "Should refuse to check a copy when the source, the audio steps or the playlist is missing")
+  void shouldRefuseToCheckACopyWhenTheSourceTheAudioStepsOrThePlaylistIsMissing() {
     var limits = ViewerLimits.none();
     var source = defaultProbeBuilder().build();
+    var playlist = CopyMediaPlaylist.UNKNOWN;
 
     assertThatNullPointerException()
         .isThrownBy(() -> limits.allowsCopyPictureOf(null))
         .withMessageContaining("source");
     assertThatNullPointerException()
-        .isThrownBy(() -> limits.audioStepBesideCopyOf(null, COPIED_AAC_ONLY))
+        .isThrownBy(() -> limits.audioStepBesideCopyOf(null, COPIED_AAC_ONLY, playlist))
         .withMessageContaining("source");
     assertThatNullPointerException()
-        .isThrownBy(() -> limits.audioStepBesideCopyOf(source, null))
+        .isThrownBy(() -> limits.audioStepBesideCopyOf(source, null, playlist))
         .withMessageContaining("steps");
+    assertThatNullPointerException()
+        .isThrownBy(() -> limits.audioStepBesideCopyOf(source, COPIED_AAC_ONLY, null))
+        .withMessageContaining("playlist");
   }
 
   @Test
@@ -238,7 +309,7 @@ class ViewerLimitsTest {
     var source = defaultProbeBuilder().width(3840).height(2160).bitrate(40_000_000L).build();
 
     assertThat(limits.allowsCopyPictureOf(source)).isTrue();
-    assertThat(limits.audioStepBesideCopyOf(source, COPIED_AAC_ONLY))
+    assertThat(limits.audioStepBesideCopyOf(source, COPIED_AAC_ONLY, CopyMediaPlaylist.UNKNOWN))
         .contains(COPIED_AAC_ONLY.sessionAudio());
   }
 

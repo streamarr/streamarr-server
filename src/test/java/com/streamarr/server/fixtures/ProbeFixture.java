@@ -69,6 +69,11 @@ public class ProbeFixture {
    * probe that names its chosen video stream reads back as a probe version 4 outcome.
    */
   public static ProbeOutcome.Success completeProbe(MediaProbe probe) {
+    return completeProbeBuilder(probe).build();
+  }
+
+  /** The builder of {@link #completeProbe}, for a caller that sets another fact of the outcome. */
+  public static ProbeOutcome.Success.SuccessBuilder completeProbeBuilder(MediaProbe probe) {
     return ProbeOutcome.Success.builder()
         .container(
             ProbeContainer.builder()
@@ -78,8 +83,7 @@ public class ProbeFixture {
                 .build())
         .streams(streams(probe))
         .keyframes(probe.keyframes())
-        .chosenVideoStream(chosenVideoStream(probe))
-        .build();
+        .chosenVideoStream(chosenVideoStream(probe));
   }
 
   // The stored rule chooses the probe's frame rate from the declared rates, or refuses when the

@@ -3,7 +3,6 @@ package com.streamarr.server.services.streaming;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.CompatibleBase;
-import com.streamarr.server.domain.streaming.DecimalSeconds;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.EncodedVideoOutput;
 import com.streamarr.server.domain.streaming.MediaProbe;
@@ -16,10 +15,8 @@ import com.streamarr.server.domain.streaming.VideoStreamCopy;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.Duration;
 import java.util.List;
 import java.util.OptionalDouble;
-import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -28,7 +25,6 @@ import org.springframework.stereotype.Service;
 public class HlsPlaylistService {
 
   private static final String AUDIO_GROUP_ID = "audio";
-  private static final int EXTINF_DIGITS = 6;
   private static final int FRAME_RATE_DIGITS = 3;
 
   private static final String INDEPENDENT_SEGMENTS_TAG = "#EXT-X-INDEPENDENT-SEGMENTS\n";
@@ -60,7 +56,8 @@ public class HlsPlaylistService {
       var codecs = codecs(session, copiedVideoCodecString(session));
       appendStreamInf(
           sb,
-          VideoCopyBandwidth.averageBandwidth(session.getMediaProbe(), audio),
+          VideoCopyBandwidth.averageBandwidth(
+              probe, audio, CopyMediaPlaylist.of(probe, properties)),
           size.width(),
           size.height(),
           codecs,
@@ -231,11 +228,7 @@ public class HlsPlaylistService {
    */
   public String generateMediaPlaylist(StreamSession session, String variantLabel, String token) {
     var timeline = MediaSegmentTimelines.of(session, properties);
-    var segmentCount = timeline.mediaSegmentCount();
-    var extinfDurations =
-        IntStream.range(0, segmentCount)
-            .mapToObj(index -> extinfSeconds(timeline.mediaSegmentDuration(index)))
-            .toList();
+    var extinfDurations = ExtinfDurations.of(timeline);
 
     var sb = new StringBuilder();
     sb.append("#EXTM3U\n");
@@ -256,7 +249,7 @@ public class HlsPlaylistService {
         .append(token)
         .append("\"\n");
 
-    for (int i = 0; i < segmentCount; i++) {
+    for (int i = 0; i < extinfDurations.size(); i++) {
       sb.append("#EXTINF:").append(extinfDurations.get(i).toPlainString()).append(",\n");
       sb.append(SegmentNames.mediaSegmentName(i)).append("?t=").append(token).append("\n");
     }
@@ -264,10 +257,6 @@ public class HlsPlaylistService {
     sb.append("#EXT-X-ENDLIST\n");
 
     return sb.toString();
-  }
-
-  private static BigDecimal extinfSeconds(Duration duration) {
-    return DecimalSeconds.of(duration).setScale(EXTINF_DIGITS, RoundingMode.HALF_UP);
   }
 
   // RFC 8216 §4.3.3.1: every EXTINF, rounded to the nearest integer, must not exceed the target
