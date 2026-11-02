@@ -596,6 +596,37 @@ class TranscodeWorkerContractTest {
 
   @Test
   @DisplayName(
+      "Should carry the keyframe to read from apart from the first segment's start when an attempt that holds the last frame starts after the video's end")
+  void
+      shouldCarryTheKeyframeToReadFromApartFromTheFirstSegmentStartWhenHoldingAttemptStartsAfterVideoEnd()
+          throws Exception {
+    var lastKeyframeDecodeTime = Duration.newBuilder().setSeconds(60).setNanos(60_000_000);
+    var job =
+        VariantJob.newBuilder()
+            .setDecision(
+                TranscodeDecision.newBuilder()
+                    .setVideo(
+                        VideoDecision.newBuilder()
+                            .setMode(VideoMode.VIDEO_MODE_ENCODE)
+                            .setHoldLastFrameToAdvertisedEnd(true)))
+            .setExecution(
+                TranscodeExecution.newBuilder()
+                    .setStartSequenceNumber(11)
+                    .setSeekPositionSeconds(66)
+                    .setSeekPosition(lastKeyframeDecodeTime)
+                    .setMediaSegmentCount(14)
+                    .setAdvertisedEnd(Duration.newBuilder().setSeconds(84)))
+            .build();
+
+    var decoded = VariantJob.parseFrom(job.toByteArray()).getExecution();
+
+    assertThat(decoded.getSeekPosition()).isEqualTo(lastKeyframeDecodeTime.build());
+    assertThat(decoded.getSeekPositionSeconds()).isEqualTo(66);
+    assertThat(decoded.getStartSequenceNumber()).isEqualTo(11);
+  }
+
+  @Test
+  @DisplayName(
       "Should name the chosen audio stream by its container index when a job copies or encodes the audio")
   void shouldNameTheChosenAudioStreamByItsContainerIndexWhenJobCopiesOrEncodesTheAudio()
       throws Exception {

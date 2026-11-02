@@ -594,9 +594,10 @@ message VideoDecision {
   // The source frames are encoded as in the same encode without this field.
   //
   // When the attempt starts after the chosen video stream's last source frame,
-  // the worker still reads the source's last frames, produces the same last
-  // picture as an attempt that started before the end, and repeats it from
-  // the attempt's first media segment.
+  // the worker still reads the source's last frames, from the keyframe that
+  // TranscodeExecution.seek_position names, produces the same last picture as
+  // an attempt that started before the end, and repeats it from the attempt's
+  // first media segment.
   //
   // When the field is false, the worker repeats no frame, and the job may omit
   // advertised_end. When the field is true, the worker fails the attempt with
@@ -693,8 +694,30 @@ message TranscodeExecution {
   // timeline. When the field is set, the worker seeks to it instead of
   // seek_position_seconds. The server chooses the position. For an attempt that
   // copies video, the server sends the decode time of the first source keyframe
-  // of the attempt's first media segment. This version of the server sets the
-  // field for no other attempt.
+  // of the attempt's first media segment.
+  //
+  // For an attempt that sets VideoDecision.hold_last_frame_to_advertised_end
+  // and whose start_sequence_number is above zero, the server sends the decode
+  // time of the source keyframe that the attempt reads from, as ADR 0037's
+  // decode-only early-start seek decides. That keyframe is the chosen video
+  // stream's last stored keyframe whose presentation time lies at or before
+  // the start of the attempt's first media segment minus 0.5 s, or the first
+  // stored keyframe when none does. The attempt's first media segment still
+  // starts at seek_position_seconds. The worker reads from the keyframe with
+  // -noaccurate_seek and decodes and filters the pictures before
+  // seek_position_seconds, but encodes none of them, so the encoder receives
+  // the same pictures from that start on as in an attempt that started
+  // earlier. When the attempt starts after the video's last source frame, the
+  // keyframe is the video's last stored keyframe. The worker then reads the
+  // video's last frames from the source, even an MPEG-TS source without an
+  // index or a file shorter than its container index states, and holds the
+  // last picture. The stored keyframe positions hold only keyframes that the
+  // source contains, because ADR 0032 trusts a container index only when the
+  // probe can read the last keyframe that the index lists. When the server
+  // stores no keyframe positions for the source, it omits the field, and the
+  // worker seeks to seek_position_seconds.
+  //
+  // This version of the server sets the field for no other attempt.
   google.protobuf.Duration seek_position = 6;
   // This field reports the frame rate of the encode's output. It is the output
   // frame rate that the probe stored for the chosen video stream, or twice that
