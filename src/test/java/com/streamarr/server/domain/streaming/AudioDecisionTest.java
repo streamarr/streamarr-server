@@ -34,11 +34,13 @@ class AudioDecisionTest {
   }
 
   // AC-3 takes the 640 kb/s that FFmpeg's encoder stops at, and E-AC-3 the 768 kb/s that streamed
-  // 5.1 E-AC-3 commonly uses; a 7.1 track never announces less than its codec's 5.1 bitrate.
+  // 5.1 E-AC-3 commonly uses. A 5.0 encode announces its codec's 5.1 bitrate, and a 7.1 track
+  // never announces less.
   static Stream<BitrateCase> announcedBitrates() {
     return Stream.of(
         BitrateCase.builder().codec("aac").channels(1).expected(64_000L).build(),
         BitrateCase.builder().codec("aac").channels(2).expected(128_000L).build(),
+        BitrateCase.builder().codec("aac").channels(5).expected(384_000L).build(),
         BitrateCase.builder().codec("aac").channels(6).expected(384_000L).build(),
         BitrateCase.builder().codec("aac").channels(8).expected(512_000L).build(),
         BitrateCase.builder().codec("ac3").channels(6).expected(640_000L).build(),

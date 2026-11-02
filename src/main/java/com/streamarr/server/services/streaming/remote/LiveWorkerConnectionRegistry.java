@@ -4,6 +4,7 @@ import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 
 import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
@@ -1071,7 +1072,14 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private boolean canEncode(TranscodeDecision decision) {
-      return !encodesVideo(decision) || encoderFor(decision).isPresent();
+      return (!encodesVideo(decision) || encoderFor(decision).isPresent())
+          && canEncodeAudioLayout(decision);
+    }
+
+    private boolean canEncodeAudioLayout(TranscodeDecision decision) {
+      return !RemoteAudioChannelLayouts.needsLayoutEncodingWorker(
+              decision.getAudio().getChannelLayout())
+          || probeVersions.contains(ProbeVersion.FIRST_TO_ENCODE_NAMED_LAYOUTS);
     }
 
     private Optional<WorkerVerifiedEncoder> encoderFor(VariantJob job) {

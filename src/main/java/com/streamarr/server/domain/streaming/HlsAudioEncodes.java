@@ -18,6 +18,8 @@ public final class HlsAudioEncodes {
   // FFmpeg's AC-3 and E-AC-3 encoders stop at 5.1.
   private static final int AC3_AND_EAC3_ENCODER_MAX_CHANNELS = 6;
   private static final int STEREO = 2;
+  private static final int FIVE_POINT_ZERO = 5;
+  private static final int FIVE_POINT_ONE = 6;
 
   private HlsAudioEncodes() {}
 
@@ -83,15 +85,32 @@ public final class HlsAudioEncodes {
 
   private static Optional<AudioDecision> multichannelEncode(
       Map<String, Integer> channelMaximums, String codec, int normalizedChannels) {
-    int channels =
-        Math.min(
-            normalizedChannels,
-            Math.min(channelMaximums.getOrDefault(codec, 0), encoderChannelLimit(codec)));
+    int maximum = Math.min(channelMaximums.getOrDefault(codec, 0), encoderChannelLimit(codec));
+    int channels = channelsWithin(maximum, normalizedChannels);
     if (channels <= STEREO) {
       return Optional.empty();
     }
 
     return Optional.of(transcode(codec, channels));
+  }
+
+  // A track with more channels than a maximum of 3 or 4 has no layout of its own at that count, so
+  // it encodes in stereo. Over a maximum of 5, it encodes in 5.0. Over a maximum of 7, it encodes
+  // in 5.1 (ADR 0050).
+  private static int channelsWithin(int maximum, int normalizedChannels) {
+    if (normalizedChannels <= maximum) {
+      return normalizedChannels;
+    }
+
+    if (maximum >= FIVE_POINT_ONE) {
+      return FIVE_POINT_ONE;
+    }
+
+    if (maximum == FIVE_POINT_ZERO) {
+      return FIVE_POINT_ZERO;
+    }
+
+    return Math.min(maximum, STEREO);
   }
 
   private static int encoderChannelLimit(String codec) {
