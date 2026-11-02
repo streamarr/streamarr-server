@@ -716,7 +716,9 @@ message TranscodeExecution {
   // seek_position_seconds is the listed start of start_sequence_number, where
   // the attempt's first media segment starts, and seek_position names a
   // keyframe chosen against that start. A merged segment is expected and is
-  // never itself a failure.
+  // never itself a failure. While a long merged segment is open, the worker's
+  // JobAttemptProgress reports show the server that the attempt's output
+  // still advances.
   //
   // The worker fails the attempt with the named reason SKIPPED_SEGMENT_NUMBER,
   // reported as JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED, when a video keyframe
@@ -863,6 +865,33 @@ message JobAttemptStopped {
   Uuid job_attempt_id = 1;
 }
 
+// This message reports how far a running job attempt's output has reached, so
+// that the server sees progress inside a media segment that has not closed,
+// such as a long merged segment (TranscodeExecution.segment_start_slots).
+//
+// The worker checks each running attempt once a second and sends a report
+// when output_end lies later than in its previous report for the attempt. It
+// sends no report for an attempt whose output has not advanced, and none after
+// the attempt's JobAttemptCompleted, JobAttemptFailed or JobAttemptStopped.
+// The worker reports the same way whether or not the segment that holds the
+// sample has closed.
+//
+// Each report whose output_end lies later than every earlier report for the
+// attempt restarts the server's stall clock for the attempt, as a published
+// media segment does (ADR 0019). An encode that runs below real time therefore
+// keeps its attempt while its output advances, however long the open segment
+// lasts, and an attempt whose output stops advancing is replaced after the
+// stall threshold. The server ignores a report for an attempt that is not
+// running and a report that does not advance the output. A server that reads
+// this report ships before any worker that sends it.
+message JobAttemptProgress {
+  Uuid job_attempt_id = 1;
+  // The end of the latest video sample that the producer has read from
+  // FFmpeg's output for the attempt: its presentation time plus its duration,
+  // on the zero-based timeline of TranscodeExecution.seek_position.
+  google.protobuf.Duration output_end = 2;
+}
+
 // This message reports the worker's new background probe capacity and keyframe
 // packet scan capacity. The worker sends the message whenever either capacity
 // changes. The message always carries both current values, including a
@@ -896,6 +925,7 @@ message EstablishWorkerSessionRequest {
     ProbeKeyframePositionsPart probe_keyframe_positions_part = 7;
     ProbeCapacityChanged probe_capacity_changed = 8;
     ProbeStreamMeasurementPart probe_stream_measurement_part = 9;
+    JobAttemptProgress job_attempt_progress = 10;
   }
 }
 

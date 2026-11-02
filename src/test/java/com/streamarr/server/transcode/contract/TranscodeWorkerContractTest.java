@@ -24,6 +24,7 @@ import com.streamarr.transcode.v1.Fraction;
 import com.streamarr.transcode.v1.JobAttemptCompleted;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
+import com.streamarr.transcode.v1.JobAttemptProgress;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.Presence;
@@ -945,6 +946,48 @@ class TranscodeWorkerContractTest {
         .isEqualTo(JobAttemptFailure.JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED)
         .isNotEqualTo(JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
     assertThat(JobAttemptFailure.JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED.getNumber()).isEqualTo(6);
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry the media time that the output reached when a worker reports an attempt's progress inside an open segment")
+  void
+      shouldCarryTheMediaTimeThatTheOutputReachedWhenWorkerReportsAttemptProgressInsideOpenSegment()
+          throws Exception {
+    var attemptId = uuid(UUID.randomUUID());
+    // A merged segment runs from 12 s to 72 s, and the output has reached 41.041 s inside it.
+    var outputEnd = Duration.newBuilder().setSeconds(41).setNanos(41_000_000).build();
+    var progress =
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptProgress(
+                JobAttemptProgress.newBuilder().setJobAttemptId(attemptId).setOutputEnd(outputEnd))
+            .build();
+
+    var parsed = EstablishWorkerSessionRequest.parseFrom(progress.toByteArray());
+
+    assertThat(parsed.getEventCase())
+        .isEqualTo(EstablishWorkerSessionRequest.EventCase.JOB_ATTEMPT_PROGRESS);
+    assertThat(parsed.getJobAttemptProgress().getJobAttemptId()).isEqualTo(attemptId);
+    assertThat(parsed.getJobAttemptProgress().getOutputEnd()).isEqualTo(outputEnd);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the field numbers and types that workers build against when publishing the progress report")
+  void shouldKeepTheFieldNumbersAndTypesThatWorkersBuildAgainstWhenPublishingTheProgressReport() {
+    var event =
+        EstablishWorkerSessionRequest.getDescriptor().findFieldByName("job_attempt_progress");
+    var progress = JobAttemptProgress.getDescriptor();
+
+    assertThat(event.getNumber()).isEqualTo(10);
+    assertThat(event.getContainingOneof().getName()).isEqualTo("event");
+    assertThat(event.getMessageType()).isEqualTo(progress);
+    assertThat(progress.findFieldByName("job_attempt_id").getNumber()).isEqualTo(1);
+    assertThat(progress.findFieldByName("job_attempt_id").getMessageType())
+        .isEqualTo(Uuid.getDescriptor());
+    assertThat(progress.findFieldByName("output_end").getNumber()).isEqualTo(2);
+    assertThat(progress.findFieldByName("output_end").getMessageType())
+        .isEqualTo(Duration.getDescriptor());
   }
 
   @Test
