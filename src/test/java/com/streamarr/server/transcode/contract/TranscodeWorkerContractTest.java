@@ -596,6 +596,25 @@ class TranscodeWorkerContractTest {
 
   @Test
   @DisplayName(
+      "Should name the chosen audio stream by its container index when a job copies or encodes the audio")
+  void shouldNameTheChosenAudioStreamByItsContainerIndexWhenJobCopiesOrEncodesTheAudio()
+      throws Exception {
+    var copy = AudioDecision.newBuilder().setMode(AudioMode.AUDIO_MODE_COPY).setStreamIndex(2);
+    var encode =
+        AudioDecision.newBuilder().setMode(AudioMode.AUDIO_MODE_TRANSCODE).setStreamIndex(0);
+
+    var decodedCopy = AudioDecision.parseFrom(copy.build().toByteArray());
+    var decodedEncode = AudioDecision.parseFrom(encode.build().toByteArray());
+
+    assertThat(decodedCopy.getStreamIndex()).isEqualTo(2);
+    assertThat(decodedEncode.hasStreamIndex()).isTrue();
+    assertThat(decodedEncode.getStreamIndex()).isZero();
+    assertThat(AudioDecision.newBuilder().setMode(AudioMode.AUDIO_MODE_NONE).hasStreamIndex())
+        .isFalse();
+  }
+
+  @Test
+  @DisplayName(
       "Should report each chosen stream's end when an attempt completes through the last advertised segment")
   void shouldReportEachChosenStreamEndWhenAttemptCompletesThroughTheLastAdvertisedSegment()
       throws Exception {
@@ -685,6 +704,7 @@ class TranscodeWorkerContractTest {
   void shouldKeepTheFieldNumbersAndTypesThatWorkersBuildAgainstWhenPublishingTheEarlyEndContract() {
     var hold = VideoDecision.getDescriptor().findFieldByName("hold_last_frame_to_advertised_end");
     var pad = AudioDecision.getDescriptor().findFieldByName("pad_with_silence_to_advertised_end");
+    var audioStreamIndex = AudioDecision.getDescriptor().findFieldByName("stream_index");
     var advertisedEnd = TranscodeExecution.getDescriptor().findFieldByName("advertised_end");
     var completed = JobAttemptCompleted.getDescriptor();
     var report = SourceEndedEarly.getDescriptor();
@@ -695,6 +715,9 @@ class TranscodeWorkerContractTest {
     assertThat(hold.getType()).isEqualTo(Type.BOOL);
     assertThat(pad.getNumber()).isEqualTo(6);
     assertThat(pad.getType()).isEqualTo(Type.BOOL);
+    assertThat(audioStreamIndex.getNumber()).isEqualTo(7);
+    assertThat(audioStreamIndex.getType()).isEqualTo(Type.UINT32);
+    assertThat(audioStreamIndex.hasPresence()).isTrue();
     assertThat(advertisedEnd.getNumber()).isEqualTo(8);
     assertThat(advertisedEnd.getMessageType()).isEqualTo(Duration.getDescriptor());
     assertThat(completed.findFieldByName("source_ended_early").getNumber()).isEqualTo(2);

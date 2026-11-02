@@ -218,6 +218,19 @@ message AudioDecision {
   // not encode the audio or omits advertised_end. A stream copy is never
   // padded.
   bool pad_with_silence_to_advertised_end = 6;
+  // The server sets this field on every job whose mode is AUDIO_MODE_COPY or
+  // AUDIO_MODE_TRANSCODE. It contains the chosen audio stream's
+  // ProbeStreamInfo.index within the container, the index that
+  // SourceStreamEnd.stream_index and
+  // SourceEndedEarly.stream_indexes_with_media_after_last_segment report for
+  // that stream. The worker selects exactly that stream, never the container's
+  // first audio stream in its place. The server chooses the first stream
+  // whose ProbeStreamInfo.codec_type is audio, in the probe's stream order.
+  //
+  // The worker fails the attempt with JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION
+  // when a job that copies or encodes audio omits the field, or when a job
+  // whose mode is AUDIO_MODE_NONE sets it.
+  optional uint32 stream_index = 7;
 }
 
 message SubtitleDecision {
