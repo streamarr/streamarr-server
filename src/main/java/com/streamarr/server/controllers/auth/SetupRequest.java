@@ -1,5 +1,6 @@
 package com.streamarr.server.controllers.auth;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 
 public record SetupRequest(
@@ -8,7 +9,11 @@ public record SetupRequest(
     @NotBlank String password,
     @NotBlank String householdName,
     @NotBlank String profileName,
-    boolean cookieMode) {
+    @Schema(defaultValue = "false") Boolean cookieMode) {
+
+  public SetupRequest {
+    cookieMode = Boolean.TRUE.equals(cookieMode);
+  }
 
   @Override
   public String toString() {

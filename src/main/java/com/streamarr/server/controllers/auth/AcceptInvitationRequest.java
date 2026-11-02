@@ -1,5 +1,6 @@
 package com.streamarr.server.controllers.auth;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Builder;
 
@@ -9,7 +10,11 @@ public record AcceptInvitationRequest(
     @NotBlank String code,
     @NotBlank String displayName,
     @NotBlank String password,
-    Boolean cookieMode) {
+    @Schema(defaultValue = "false") Boolean cookieMode) {
+
+  public AcceptInvitationRequest {
+    cookieMode = Boolean.TRUE.equals(cookieMode);
+  }
 
   public static class AcceptInvitationRequestBuilder {
 

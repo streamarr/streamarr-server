@@ -8,6 +8,7 @@
             "type": "string"
           },
           "cookieMode": {
+            "default": false,
             "type": "boolean"
           },
           "displayName": {
@@ -261,6 +262,7 @@
       "LoginRequest": {
         "properties": {
           "cookieMode": {
+            "default": false,
             "type": "boolean"
           },
           "deviceName": {
@@ -348,6 +350,7 @@
       "SetupRequest": {
         "properties": {
           "cookieMode": {
+            "default": false,
             "type": "boolean"
           },
           "displayName": {
