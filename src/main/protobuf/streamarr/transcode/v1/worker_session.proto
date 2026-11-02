@@ -1229,9 +1229,9 @@ message ProbeStreamInfo {
   // reports no disposition for the stream. False means only that the container
   // does not mark the stream. It never proves that a track lacks sound
   // descriptions, because many SDH tracks carry no flag and some containers
-  // cannot carry one. In a 300-file library sample, the flag marked only 25 of
-  // the 78 text subtitle tracks whose flag or title said SDH. So the server
-  // also reads the title (streamarr/streamarr-server#60).
+  // cannot carry one. Many releases name a subtitle track SDH in its title
+  // without setting the hearing-impaired disposition, so the server also reads
+  // the title (streamarr/streamarr-server#60).
   optional bool is_hearing_impaired = 25;
   // The worker reports this field only for video streams. It reads the profile
   // from the decoder configuration record or sequence header. For H.264, it

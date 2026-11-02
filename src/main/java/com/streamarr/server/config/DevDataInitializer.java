@@ -74,7 +74,7 @@ public class DevDataInitializer {
                 .name("Movies")
                 .backend(LibraryBackend.LOCAL)
                 .status(LibraryStatus.HEALTHY)
-                .filepathUri(FilepathCodec.encode(Path.of("/mpool/media/clean/movies")))
+                .filepathUri(FilepathCodec.encode(Path.of("/media/movies")))
                 .externalAgentStrategy(ExternalAgentStrategy.TMDB)
                 .type(MediaType.MOVIE)
                 .build());
@@ -86,9 +86,6 @@ public class DevDataInitializer {
         personRepository.save(Person.builder().sourceId("6193").name("Leonardo DiCaprio").build());
 
     var hardy = personRepository.save(Person.builder().sourceId("2524").name("Tom Hardy").build());
-
-    var bale =
-        personRepository.save(Person.builder().sourceId("3894").name("Christian Bale").build());
 
     var warnerBros =
         companyRepository.save(
@@ -131,37 +128,34 @@ public class DevDataInitializer {
                 .cast(List.of(dicaprio, hardy))
                 .build());
 
-    var darkKnight =
+    var sintel =
         movieRepository.save(
             Movie.builder()
-                .title("The Dark Knight")
-                .summary(
-                    "When the menace known as the Joker wreaks havoc and chaos on the people of Gotham, Batman must accept one of the greatest psychological and physical tests of his ability to fight injustice.")
-                .tagline("Why so serious?")
-                .releaseDate(LocalDate.of(2008, 7, 18))
-                .contentRating(new ContentRating("MPAA", "PG-13", "US"))
+                .title("Sintel")
+                .summary("A young woman searches for the baby dragon she rescued and then lost.")
+                .releaseDate(LocalDate.of(2010, 9, 30))
                 .library(library)
-                .studios(Set.of(warnerBros, legendaryPictures))
-                .directors(List.of(nolan))
-                .genres(Set.of(action, thriller))
                 .externalIds(
                     Set.of(
                         ExternalIdentifier.builder()
                             .externalSourceType(ExternalSourceType.TMDB)
-                            .externalId("155")
+                            .externalId("45745")
+                            .build(),
+                        ExternalIdentifier.builder()
+                            .externalSourceType(ExternalSourceType.IMDB)
+                            .externalId("tt1727587")
                             .build()))
-                .cast(List.of(bale, hardy))
                 .build());
 
     ratingRepository.saveAll(
         List.of(
             Rating.builder().movie(inception).source("TMDB").value("8.4").build(),
-            Rating.builder().movie(darkKnight).source("TMDB").value("8.5").build()));
+            Rating.builder().movie(sintel).source("TMDB").value("7.5").build()));
 
     reviewRepository.saveAll(
         List.of(
             Review.builder().movie(inception).author("Dev Reviewer").build(),
-            Review.builder().movie(darkKnight).author("Dev Reviewer").build()));
+            Review.builder().movie(sintel).author("Dev Reviewer").build()));
 
     var testVideoPath =
         FilepathCodec.encode(
@@ -183,16 +177,16 @@ public class DevDataInitializer {
                 .size(908_000L)
                 .build(),
             MediaFile.builder()
-                .mediaId(darkKnight.getId())
+                .mediaId(sintel.getId())
                 .libraryId(library.getId())
                 .status(MediaFileStatus.MATCHED)
-                .filename("The Dark Knight (2008).mkv")
+                .filename("Sintel (2010).mkv")
                 .filepathUri(
-                    "file:///mpool/media/clean/movies/The%20Dark%20Knight%20(2008)/The%20Dark%20Knight%20(2008).mkv")
-                .size(5_200_000_000L)
+                    FilepathCodec.encode(Path.of("/media/movies/Sintel (2010)/Sintel (2010).mkv")))
+                .size(1_000_000_000L)
                 .build()));
 
     log.info(
-        "Development data seeded: 1 library, 2 movies, 4 people, 2 companies, 3 genres, 2 ratings, 2 reviews, 2 media files.");
+        "Development data seeded: 1 library, 2 movies, 3 people, 2 companies, 3 genres, 2 ratings, 2 reviews, 2 media files.");
   }
 }

@@ -183,7 +183,7 @@ class LibraryResolverTest {
       var moviesLibrary =
           Library.builder()
               .name("Movies")
-              .filepathUri("file:///mpool/media/movies")
+              .filepathUri("file:///media/movies")
               .status(LibraryStatus.HEALTHY)
               .backend(LibraryBackend.LOCAL)
               .type(MediaType.MOVIE)
@@ -193,7 +193,7 @@ class LibraryResolverTest {
       var showsLibrary =
           Library.builder()
               .name("TV Shows")
-              .filepathUri("file:///mpool/media/shows")
+              .filepathUri("file:///media/shows")
               .status(LibraryStatus.HEALTHY)
               .backend(LibraryBackend.LOCAL)
               .type(MediaType.SERIES)
@@ -593,7 +593,7 @@ class LibraryResolverTest {
       var library =
           Library.builder()
               .name("Movies")
-              .filepathUri("file:///mpool/media/movies")
+              .filepathUri("file:///media/movies")
               .status(LibraryStatus.HEALTHY)
               .backend(LibraryBackend.LOCAL)
               .type(MediaType.MOVIE)
@@ -616,14 +616,14 @@ class LibraryResolverTest {
                   "name",
                   "Movies",
                   "administration",
-                  Map.of("filepathUri", "file:///mpool/media/movies")))
+                  Map.of("filepathUri", "file:///media/movies")))
           .containsEntry("userErrors", List.of());
       assertThat(FAKE_LIBRARY_MANAGEMENT_SERVICE.addedIdentity()).isEqualTo(expectedIdentity);
       assertThat(FAKE_LIBRARY_MANAGEMENT_SERVICE.addedLibrary())
           .satisfies(
               input -> {
                 assertThat(input.getName()).isEqualTo("Movies");
-                assertThat(input.getFilepathUri()).isEqualTo("/mpool/media/movies");
+                assertThat(input.getFilepathUri()).isEqualTo("/media/movies");
                 assertThat(input.getType()).isEqualTo(MediaType.MOVIE);
                 assertThat(input.getBackend()).isEqualTo(LibraryBackend.LOCAL);
                 assertThat(input.getExternalAgentStrategy()).isEqualTo(ExternalAgentStrategy.TMDB);
@@ -765,7 +765,7 @@ class LibraryResolverTest {
       mutation {
         addLibrary(input: {
           name: "Movies"
-          filepath: "/mpool/media/movies"
+          filepath: "/media/movies"
           type: MOVIE
           backend: LOCAL
           externalAgentStrategy: TMDB
@@ -1051,7 +1051,7 @@ class LibraryResolverTest {
       var library =
           Library.builder()
               .name("TV Shows")
-              .filepathUri("file:///mpool/media/shows")
+              .filepathUri("file:///media/shows")
               .status(LibraryStatus.HEALTHY)
               .backend(LibraryBackend.LOCAL)
               .type(MediaType.SERIES)
@@ -1087,7 +1087,7 @@ class LibraryResolverTest {
       var library =
           Library.builder()
               .name("Other Media")
-              .filepathUri("file:///mpool/media/other")
+              .filepathUri("file:///media/other")
               .status(LibraryStatus.HEALTHY)
               .backend(LibraryBackend.LOCAL)
               .type(MediaType.OTHER)
@@ -1603,7 +1603,7 @@ class LibraryResolverTest {
     var library =
         Library.builder()
             .name("Movies")
-            .filepathUri("file:///mpool/media/movies")
+            .filepathUri("file:///media/movies")
             .status(LibraryStatus.HEALTHY)
             .backend(LibraryBackend.LOCAL)
             .type(MediaType.MOVIE)
