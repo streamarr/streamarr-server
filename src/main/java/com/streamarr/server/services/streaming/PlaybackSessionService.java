@@ -88,7 +88,17 @@ public class PlaybackSessionService implements AutoCloseable {
 
   @Builder
   private record FormatAttemptReservation(
-      PlaybackSession playback, UUID retiredStreamId, Optional<UUID> streamId) {}
+      PlaybackSession playback, UUID retiredStreamId, Optional<ReservedFormatAttempt> next) {}
+
+  /**
+   * The format attempt that a reservation starts: its stream session, the video operations it may
+   * use, and the playing choice that it plays when it encodes the video.
+   */
+  @Builder
+  private record ReservedFormatAttempt(
+      UUID streamId,
+      VideoFormatConstraint videoFormatConstraint,
+      PlayingChoice choiceWhenEncoding) {}
 
   /**
    * Starts a playback session and its first format attempt. A capability declaration that the API
@@ -114,7 +124,7 @@ public class PlaybackSessionService implements AutoCloseable {
       return switch (outcome) {
         case Outcome.Accepted(var session) -> {
           offerChoicesOf(playback, session);
-          settle(playback, session);
+          settle(playback, session, firstEncodeChoice(playback.requestedChoice));
           yield Outcome.accepted(
               snapshot(playback).orElseThrow(PlaybackSessionClosedException::new));
         }
@@ -339,7 +349,9 @@ public class PlaybackSessionService implements AutoCloseable {
 
     var failed = failedAttempt(playback, fixedFailure);
     // A failed encode keeps its codec family out of every later format attempt.
-    failed.encodeCodecFamily().ifPresent(playback.excludedEncodeCodecFamilies::add);
+    if (failed.output() instanceof FailedFormatAttempt.Encode(var codecFamily)) {
+      playback.excludedEncodeCodecFamilies.add(codecFamily);
+    }
 
     return switch (recoveryPolicy.after(playback.choice, failed, playback.formatAttemptCount)) {
       case NextFormatAttempt.Fail(var reason) ->
@@ -355,11 +367,11 @@ public class PlaybackSessionService implements AutoCloseable {
       PlaybackSession playback, PlaybackSessionFailure reason) {
     if (!(playback.current instanceof PlaybackFormatAttempt.Ready(var session))
         || session.getTranscodeDecision().transcodeMode().copiesVideo()) {
-      return new FailedFormatAttempt(reason, Optional.empty());
+      return new FailedFormatAttempt(reason, new FailedFormatAttempt.Copy());
     }
 
     return new FailedFormatAttempt(
-        reason, Optional.of(session.getTranscodeDecision().videoCodecFamily()));
+        reason, new FailedFormatAttempt.Encode(session.getTranscodeDecision().videoCodecFamily()));
   }
 
   private FormatAttemptReservation reserveEncode(
@@ -375,7 +387,13 @@ public class PlaybackSessionService implements AutoCloseable {
     return FormatAttemptReservation.builder()
         .playback(playback)
         .retiredStreamId(failedId)
-        .streamId(Optional.of(childId))
+        .next(
+            Optional.of(
+                ReservedFormatAttempt.builder()
+                    .streamId(childId)
+                    .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                    .choiceWhenEncoding(choice)
+                    .build()))
         .build();
   }
 
@@ -400,7 +418,7 @@ public class PlaybackSessionService implements AutoCloseable {
     return FormatAttemptReservation.builder()
         .playback(playback)
         .retiredStreamId(failedId)
-        .streamId(Optional.empty())
+        .next(Optional.empty())
         .build();
   }
 
@@ -419,18 +437,22 @@ public class PlaybackSessionService implements AutoCloseable {
       }
 
       streamingService.destroySession(work.retiredStreamId());
-      if (work.streamId().isEmpty() || !isPending(work.playback(), work.streamId().orElseThrow())) {
+      var pendingAttempt =
+          work.next().filter(attempt -> isPending(work.playback(), attempt.streamId()));
+      if (pendingAttempt.isEmpty()) {
         return;
       }
 
-      var streamId = work.streamId().orElseThrow();
+      var next = pendingAttempt.orElseThrow();
+      var streamId = next.streamId();
       var outcome =
           streamingService.createSession(
               childCommand(work.playback(), streamId)
-                  .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                  .videoFormatConstraint(next.videoFormatConstraint())
                   .build());
       switch (outcome) {
-        case Outcome.Accepted(var session) -> settle(work.playback(), session);
+        case Outcome.Accepted(var session) ->
+            settle(work.playback(), session, next.choiceWhenEncoding());
         case Outcome.Rejected(var rejections) -> {
           failCurrent(
               work.playback(),
@@ -446,11 +468,11 @@ public class PlaybackSessionService implements AutoCloseable {
 
   private void failFormatAttempt(
       FormatAttemptReservation work, RuntimeException failure, boolean retireOld) {
-    work.streamId()
-        .ifPresent(
-            id -> failCurrent(work.playback(), id, new PlaybackSessionFailure.StartupFailed()));
+    var nextId = work.next().map(ReservedFormatAttempt::streamId);
+    nextId.ifPresent(
+        id -> failCurrent(work.playback(), id, new PlaybackSessionFailure.StartupFailed()));
     var children = new HashSet<UUID>();
-    work.streamId().ifPresent(children::add);
+    nextId.ifPresent(children::add);
     if (retireOld) {
       children.add(work.retiredStreamId());
     }
@@ -583,7 +605,8 @@ public class PlaybackSessionService implements AutoCloseable {
     }
   }
 
-  private void settle(PlaybackSession playback, StreamSession session) {
+  private void settle(
+      PlaybackSession playback, StreamSession session, PlayingChoice choiceWhenEncoding) {
     boolean accepted =
         locked(
             playback,
@@ -592,7 +615,7 @@ public class PlaybackSessionService implements AutoCloseable {
                 return false;
               }
 
-              adopt(playback, session);
+              adopt(playback, session, choiceWhenEncoding);
               return true;
             });
     if (!accepted) {
@@ -600,15 +623,22 @@ public class PlaybackSessionService implements AutoCloseable {
     }
   }
 
-  // Original that reaches an encode plays it in Auto (ADR 0052).
-  private static void adopt(PlaybackSession playback, StreamSession session) {
+  private static void adopt(
+      PlaybackSession playback, StreamSession session, PlayingChoice choiceWhenEncoding) {
     playback.current = new PlaybackFormatAttempt.Ready(session);
-    if (playback.choice.playbackChoice() == VideoQuality.ORIGINAL
-        && !session.getTranscodeDecision().transcodeMode().copiesVideo()) {
-      playback.choice =
-          new PlayingChoice(
-              VideoQuality.AUTO, Optional.of(PlaybackFormatChange.STARTED_WITH_ENCODE));
+    if (!session.getTranscodeDecision().transcodeMode().copiesVideo()) {
+      playback.choice = choiceWhenEncoding;
     }
+  }
+
+  // Original that reaches an encode plays it in Auto (ADR 0052).
+  private static PlayingChoice firstEncodeChoice(VideoQuality requested) {
+    if (requested != VideoQuality.ORIGINAL) {
+      return PlayingChoice.requested(requested);
+    }
+
+    return new PlayingChoice(
+        VideoQuality.AUTO, Optional.of(PlaybackFormatChange.STARTED_WITH_ENCODE));
   }
 
   private boolean isPending(PlaybackSession playback, UUID childId) {

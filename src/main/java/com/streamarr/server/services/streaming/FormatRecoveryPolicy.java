@@ -33,7 +33,7 @@ record FormatRecoveryPolicy(int maximumFormatAttempts) {
 
   private NextFormatAttempt afterAFixedQualitysFailure(
       PlayingChoice choice, FailedFormatAttempt failed, int formatAttemptCount) {
-    if (!failed.copiedVideo()) {
+    if (failed.output() instanceof FailedFormatAttempt.Encode) {
       return new NextFormatAttempt.Fail(failed.reason());
     }
 

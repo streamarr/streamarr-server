@@ -3,7 +3,6 @@ package com.streamarr.server.services.streaming;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import com.streamarr.server.domain.streaming.VideoQuality;
-import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -17,7 +16,8 @@ class FormatRecoveryPolicyTest {
   @DisplayName("Should reject a missing playing choice when deciding the next format attempt")
   void shouldRejectAMissingPlayingChoiceWhenDecidingTheNextFormatAttempt() {
     var failed =
-        new FailedFormatAttempt(new PlaybackSessionFailure.OutputMismatch(), Optional.empty());
+        new FailedFormatAttempt(
+            new PlaybackSessionFailure.OutputMismatch(), new FailedFormatAttempt.Copy());
 
     assertThatNullPointerException().isThrownBy(() -> policy.after(null, failed, 1));
   }
