@@ -360,7 +360,8 @@ class TranscodeDecisionTest {
                 VideoPlaybackFactsFixture.SDR),
             new VideoDynamicRange(CompatibleBase.SDR, Presence.ABSENT, new DolbyVision.Absent())),
         Arguments.of(
-            Named.of("Dolby Vision profile 8.2 without HDR10+ checked", profile82),
+            Named.of(
+                "Dolby Vision profile 8.2 whose HDR10+ and RPUs the probe did not read", profile82),
             new VideoDynamicRange(CompatibleBase.SDR, Presence.ABSENT, profile82.dolbyVision())));
   }
 

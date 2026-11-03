@@ -8,7 +8,10 @@ import lombok.NonNull;
 
 /**
  * The video that a transcode decision plans to deliver: a stream copy or an encode (ADR 0013). Its
- * dynamic range never holds an UNSPECIFIED value (ADR 0036).
+ * dynamic range never holds an UNSPECIFIED compatible base, HDR10+ presence or Dolby Vision
+ * presence (ADR 0036). A copy that keeps Dolby Vision keeps the source's Dolby Vision facts as the
+ * probe stored them, including RPU observations that the probe could not make, because the copy
+ * passes those RPUs through unchanged.
  */
 public sealed interface PlannedVideoOutput {
 
