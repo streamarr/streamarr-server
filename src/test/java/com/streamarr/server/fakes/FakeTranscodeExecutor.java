@@ -460,6 +460,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       TranscodeDecision decision, WorkerVerifiedEncoder pinnedEncoder) {
     return executionTargets.stream()
         .filter(target -> advertises(target, pinnedEncoder))
+        .filter(target -> canRun(target, decision))
         .collect(Collectors.toCollection(LinkedHashSet::new));
   }
 
