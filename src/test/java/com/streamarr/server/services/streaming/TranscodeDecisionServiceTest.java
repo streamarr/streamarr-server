@@ -1339,7 +1339,7 @@ class TranscodeDecisionServiceTest {
   // An AAC encode has at most six channels, and a 6.1 track loses its back centre into the
   // surrounds in AAC, AC-3 and E-AC-3. The server's own encode of 3 or 4 channels stays stereo.
   @ParameterizedTest(name = "{0}")
-  @MethodSource("tracksAndTheirEncodes")
+  @MethodSource({"tracksAndTheirEncodes", "sevenPointZeroEncodes"})
   @DisplayName("Should name the encoder's own output layout when the server encodes the track")
   void shouldNameTheEncodersOwnOutputLayoutWhenTheServerEncodesTheTrack(TrackEncode trackEncode) {
     var source =
@@ -1451,38 +1451,22 @@ class TranscodeDecisionServiceTest {
 
   // ADR 0050 as streamarr/streamarr-adr#85 states it: in AAC, AC-3 and E-AC-3 a 7.0 track encodes
   // in 5.1 like any other track of 7 or more channels.
-  @ParameterizedTest(name = "{0}")
-  @MethodSource("sevenPointZeroEncodes")
-  @DisplayName("Should encode a 7.0 track in 5.1 when the server encodes AAC, AC-3 or E-AC-3")
-  void shouldEncodeA70TrackIn51WhenTheServerEncodesAacAc3OrEac3(TrackEncode trackEncode) {
-    var source =
-        probeBuilder("h264", "dts")
-            .audioChannels(OptionalInt.of(trackEncode.trackChannels()))
-            .audioChannelLayout(trackEncode.trackLayout())
-            .audioBitrate(OptionalLong.of(1_500_000L))
-            .build();
-
-    var decision = decideAudio(source, trackEncode.declaration());
-
-    assertThat(decision).isEqualTo(trackEncode.encode());
-  }
-
   static Stream<TrackEncode> sevenPointZeroEncodes() {
     var sevenPointZero = TrackEncode.builder().trackChannels(7).trackLayout(Optional.of("7.0"));
     return Stream.of(
         sevenPointZero
-            .scenario("AAC 5.1")
+            .scenario("7.0 to AAC 5.1")
             .declaration(declaringAudio(audio(AAC, 8)))
             .encode(encodeIn(ChannelLayout.FIVE_POINT_ONE).codec("aac").bitrate(384_000L).build())
             .build(),
         sevenPointZero
-            .scenario("AC-3 5.1(side)")
+            .scenario("7.0 to AC-3 5.1(side)")
             .declaration(declaringAudio(audio(AAC, 2), audio(AC3, 8)))
             .encode(
                 encodeIn(ChannelLayout.FIVE_POINT_ONE_SIDE).codec("ac3").bitrate(640_000L).build())
             .build(),
         sevenPointZero
-            .scenario("E-AC-3 5.1(side)")
+            .scenario("7.0 to E-AC-3 5.1(side)")
             .declaration(declaringAudio(audio(AAC, 2), audio(EAC3, 8)))
             .encode(
                 encodeIn(ChannelLayout.FIVE_POINT_ONE_SIDE).codec("eac3").bitrate(768_000L).build())
