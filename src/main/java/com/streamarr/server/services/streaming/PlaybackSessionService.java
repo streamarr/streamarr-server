@@ -98,10 +98,10 @@ public class PlaybackSessionService implements AutoCloseable {
    */
   @Builder
   private record ReservedFormatAttempt(
-      UUID streamId,
-      VideoFormatConstraint videoFormatConstraint,
-      PlayingChoice choice,
-      PlayingChoice choiceWhenEncoding) {}
+      @NonNull UUID streamId,
+      @NonNull VideoFormatConstraint videoFormatConstraint,
+      @NonNull PlayingChoice choice,
+      @NonNull PlayingChoice choiceWhenEncoding) {}
 
   /**
    * Starts a playback session and its first format attempt. A capability declaration that the API
