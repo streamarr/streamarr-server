@@ -7,6 +7,7 @@ import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.PlannedVideoOutput;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.SubtitleMode;
@@ -14,22 +15,17 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
-import com.streamarr.server.domain.streaming.VideoEncodeDecision;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
-import com.streamarr.transcode.v1.CompatibleBase;
 import com.streamarr.transcode.v1.ContainerFormat;
 import com.streamarr.transcode.v1.Deinterlace;
 import com.streamarr.transcode.v1.DeinterlaceOutput;
-import com.streamarr.transcode.v1.DolbyVisionAbsent;
 import com.streamarr.transcode.v1.FieldOrder;
-import com.streamarr.transcode.v1.Presence;
 import com.streamarr.transcode.v1.TranscodeExecution;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
 import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.VideoCodecProfile;
-import com.streamarr.transcode.v1.VideoDynamicRange;
 import com.streamarr.transcode.v1.VideoMode;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -38,14 +34,6 @@ import java.util.UUID;
 
 // Domain and protobuf contracts intentionally share simple names.
 final class RemoteVariantJobMapper {
-
-  // Every encode's planned output is SDR without HDR10+ or Dolby Vision (ADR 0013).
-  private static final VideoDynamicRange SDR_OUTPUT_DYNAMIC_RANGE =
-      VideoDynamicRange.newBuilder()
-          .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
-          .setHdr10Plus(Presence.PRESENCE_ABSENT)
-          .setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance())
-          .build();
 
   private final RemoteMediaSourceMapper sourceMapper;
 
@@ -72,25 +60,21 @@ final class RemoteVariantJobMapper {
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.transcode.v1.TranscodeDecision decision(TranscodeRequest request) {
-    var decision = decision(request.transcodeDecision()).toBuilder();
-    var source = request.transcodeDecision().videoSource();
-    var encode = request.videoEncodeDecision();
-    if (encode.isPresent()) {
-      var video = encode(encode.get(), source).toBuilder();
-      request
-          .transcodeDecision()
-          .deinterlace()
-          .map(RemoteVariantJobMapper::deinterlace)
-          .ifPresent(video::setDeinterlace);
-      return decision.setVideo(video).build();
-    }
-
-    return decision.setVideo(copy(request.transcodeDecision(), source.orElseThrow())).build();
+    var transcodeDecision = request.transcodeDecision();
+    var video =
+        switch (transcodeDecision.plannedVideoOutput()) {
+          case PlannedVideoOutput.Encode planned -> encode(request, planned);
+          case PlannedVideoOutput.StreamCopy _ ->
+              copy(transcodeDecision, transcodeDecision.videoSource().orElseThrow());
+        };
+    return decision(transcodeDecision).toBuilder().setVideo(video).build();
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.transcode.v1.VideoDecision encode(
-      VideoEncodeDecision encode, Optional<VideoPlaybackFacts> source) {
+      TranscodeRequest request, PlannedVideoOutput.Encode planned) {
+    var encode = request.videoEncodeDecision().orElseThrow();
+    var source = request.transcodeDecision().videoSource();
     var video =
         com.streamarr.transcode.v1.VideoDecision.newBuilder()
             .setMode(VideoMode.VIDEO_MODE_ENCODE)
@@ -104,7 +88,7 @@ final class RemoteVariantJobMapper {
                         .map(VideoPlaybackFacts::dynamicRange)
                         .orElse(
                             com.streamarr.server.domain.streaming.VideoDynamicRange.UNSPECIFIED)))
-            .setOutputDynamicRange(SDR_OUTPUT_DYNAMIC_RANGE);
+            .setOutputDynamicRange(RemoteDynamicRangeMapper.toProto(planned.dynamicRange()));
     source.ifPresent(
         facts ->
             video
@@ -113,6 +97,11 @@ final class RemoteVariantJobMapper {
                 .setSourcePacketsCarryPresentationTimes(
                     sourcePacketsCarryPresentationTimes(facts)));
     encode.tier().map(RemoteVariantJobMapper::tier).ifPresent(video::setTier);
+    request
+        .transcodeDecision()
+        .deinterlace()
+        .map(RemoteVariantJobMapper::deinterlace)
+        .ifPresent(video::setDeinterlace);
     return video.build();
   }
 
@@ -146,8 +135,8 @@ final class RemoteVariantJobMapper {
     };
   }
 
-  // A copy forces no codec profile, tier or level, and carries no planned output range until
-  // streamarr/streamarr-server#396 settles one (ADR 0013).
+  // A copy forces no codec profile, tier or level. The job carries a copy's planned output range
+  // only once the worker contract accepts one (streamarr/streamarr-server#396, ADR 0013).
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.transcode.v1.VideoDecision copy(
       TranscodeDecision decision, VideoPlaybackFacts source) {

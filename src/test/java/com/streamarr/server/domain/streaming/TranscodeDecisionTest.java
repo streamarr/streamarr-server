@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
+import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.stream.Stream;
 import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
@@ -274,6 +276,80 @@ class TranscodeDecisionTest {
             .build();
 
     assertThat(decision.videoRange()).isEqualTo(VideoRange.SDR);
+  }
+
+  @Test
+  @DisplayName(
+      "Should plan a copy with the source's range, codec profile and level and no bitstream"
+          + " rewrites when the decision copies the video")
+  void shouldPlanACopyWithTheSourcesRangeCodecProfileAndLevelWhenTheDecisionCopiesTheVideo() {
+    var decision =
+        decisionBuilder(TranscodeMode.REMUX)
+            .videoSource(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .dynamicRange(VideoPlaybackFactsFixture.SDR_WITHOUT_DOLBY_VISION)
+                        .videoProperties(
+                            Optional.of(
+                                VideoPlaybackFactsFixture.h264HighPropertiesBuilder().build()))
+                        .build()))
+            .build();
+
+    assertThat(decision.plannedVideoOutput())
+        .isEqualTo(
+            PlannedVideoOutput.StreamCopy.builder()
+                .dynamicRange(VideoPlaybackFactsFixture.SDR_WITHOUT_DOLBY_VISION)
+                .codecProfile(Optional.of(VideoCodecProfile.H264_HIGH))
+                .codecLevel(OptionalInt.of(40))
+                .bitstreamRewrites(List.of())
+                .build());
+  }
+
+  @Test
+  @DisplayName(
+      "Should plan a copy without a codec profile or level when the probe version 4 outcome"
+          + " stores none")
+  void shouldPlanACopyWithoutACodecProfileOrLevelWhenTheProbeVersion4OutcomeStoresNone() {
+    var decision =
+        decisionBuilder(TranscodeMode.REMUX)
+            .videoSource(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .dynamicRange(VideoPlaybackFactsFixture.SDR_WITHOUT_DOLBY_VISION)
+                        .videoProperties(Optional.empty())
+                        .build()))
+            .build();
+
+    assertThat(decision.plannedVideoOutput())
+        .isInstanceOfSatisfying(
+            PlannedVideoOutput.StreamCopy.class,
+            copy -> {
+              assertThat(copy.codecProfile()).isEmpty();
+              assertThat(copy.codecLevel()).isEmpty();
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should plan an SDR encode in the decision's encode codec profile when the decision encodes"
+          + " an HDR source")
+  void shouldPlanAnSdrEncodeInTheDecisionsEncodeCodecProfileWhenTheDecisionEncodesAnHdrSource() {
+    var decision =
+        decisionBuilder(TranscodeMode.VIDEO_TRANSCODE)
+            .encodeCodecProfile(Optional.of(EncodeCodecProfile.H264_HIGH))
+            .videoSource(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .dynamicRange(
+                            VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ))
+                        .build()))
+            .build();
+
+    assertThat(decision.plannedVideoOutput())
+        .isEqualTo(
+            new PlannedVideoOutput.Encode(
+                Optional.of(EncodeCodecProfile.H264_HIGH),
+                VideoPlaybackFactsFixture.SDR_WITHOUT_DOLBY_VISION));
   }
 
   private static TranscodeDecision.TranscodeDecisionBuilder decisionBuilder(TranscodeMode mode) {
