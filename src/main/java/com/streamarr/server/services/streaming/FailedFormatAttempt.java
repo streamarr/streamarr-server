@@ -8,6 +8,9 @@ record FailedFormatAttempt(@NonNull PlaybackSessionFailure reason, @NonNull Outp
   /** The output that the failed format attempt played. */
   sealed interface Output {}
 
+  /** The format attempt sent the source file itself (ADR 0045). */
+  record DirectPlay() implements Output {}
+
   /** The format attempt copied the video. */
   record Copy() implements Output {}
 

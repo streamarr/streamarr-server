@@ -7,6 +7,13 @@ sealed interface NextFormatAttempt {
   /** Another format attempt encodes the video and plays this choice. */
   record Encode(@NonNull PlayingChoice choice) implements NextFormatAttempt {}
 
+  /**
+   * Another format attempt copies the video when one capability entry accepts the copy and plays
+   * {@code whenCopying}. Otherwise it encodes the video and plays {@code whenEncoding}.
+   */
+  record CopyOrEncode(@NonNull PlayingChoice whenCopying, @NonNull PlayingChoice whenEncoding)
+      implements NextFormatAttempt {}
+
   /** The playback session ends with this failure. */
   record Fail(@NonNull PlaybackSessionFailure reason) implements NextFormatAttempt {}
 }

@@ -7,6 +7,8 @@ package com.streamarr.server.services.streaming;
 public enum PlaybackFormatChange {
   /** An HLS copy failed, so an encode plays. */
   COPY_FAILED,
+  /** Direct play failed and the server rules out the HLS copy, so an encode plays. */
+  DIRECT_PLAY_FAILED,
   /** Original could not copy the source, so its first format attempt is an encode. */
   STARTED_WITH_ENCODE
 }

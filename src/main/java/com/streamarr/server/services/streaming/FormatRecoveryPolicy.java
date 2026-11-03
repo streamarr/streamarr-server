@@ -6,14 +6,17 @@ import lombok.NonNull;
 
 /**
  * Decides what follows a format failure of a playback session's current format attempt (ADR 0052).
- * Auto encodes again while its budget lasts. Original plays only copies, because an encode that it
- * reaches plays in Auto, so its failure is a failed copy: it falls back to an encode in Auto. A
- * fixed quality's failed copy falls back to an encode at the same fixed quality, and the failure of
- * the fixed quality's own encode ends playback.
+ * Auto encodes again while its budget lasts. Original falls back from a failed direct play to HLS
+ * at original quality, which copies when it can (ADR 0045). Otherwise Original's failure is a
+ * failed copy, because an encode that Original reaches plays in Auto, so it falls back to an encode
+ * in Auto. A fixed quality's failed copy falls back to an encode at the same fixed quality, and the
+ * failure of the fixed quality's own encode ends playback.
  */
 record FormatRecoveryPolicy(int maximumFormatAttempts) {
   private static final PlayingChoice AUTO_AFTER_A_FAILED_COPY =
       new PlayingChoice(VideoQuality.AUTO, Optional.of(PlaybackFormatChange.COPY_FAILED));
+  private static final PlayingChoice AUTO_AFTER_A_FAILED_DIRECT_PLAY =
+      new PlayingChoice(VideoQuality.AUTO, Optional.of(PlaybackFormatChange.DIRECT_PLAY_FAILED));
 
   FormatRecoveryPolicy {
     if (maximumFormatAttempts <= 0) {
@@ -25,10 +28,21 @@ record FormatRecoveryPolicy(int maximumFormatAttempts) {
       @NonNull PlayingChoice choice, @NonNull FailedFormatAttempt failed, int formatAttemptCount) {
     return switch (choice.playbackChoice()) {
       case AUTO -> encodeWithinBudget(choice, formatAttemptCount);
-      case ORIGINAL -> encodeWithinBudget(AUTO_AFTER_A_FAILED_COPY, formatAttemptCount);
+      case ORIGINAL -> afterOriginalsFailure(choice, failed, formatAttemptCount);
       case LOW_360P, MEDIUM_480P, HIGH_720P, FULL_HD_1080P, UHD_4K ->
           afterAFixedQualitysFailure(choice, failed, formatAttemptCount);
     };
+  }
+
+  private NextFormatAttempt afterOriginalsFailure(
+      PlayingChoice choice, FailedFormatAttempt failed, int formatAttemptCount) {
+    if (failed.output() instanceof FailedFormatAttempt.DirectPlay) {
+      return withinBudget(
+          new NextFormatAttempt.CopyOrEncode(choice, AUTO_AFTER_A_FAILED_DIRECT_PLAY),
+          formatAttemptCount);
+    }
+
+    return encodeWithinBudget(AUTO_AFTER_A_FAILED_COPY, formatAttemptCount);
   }
 
   private NextFormatAttempt afterAFixedQualitysFailure(
@@ -43,10 +57,14 @@ record FormatRecoveryPolicy(int maximumFormatAttempts) {
   }
 
   private NextFormatAttempt encodeWithinBudget(PlayingChoice next, int formatAttemptCount) {
+    return withinBudget(new NextFormatAttempt.Encode(next), formatAttemptCount);
+  }
+
+  private NextFormatAttempt withinBudget(NextFormatAttempt next, int formatAttemptCount) {
     if (formatAttemptCount >= maximumFormatAttempts) {
       return new NextFormatAttempt.Fail(new PlaybackSessionFailure.AttemptsExhausted());
     }
 
-    return new NextFormatAttempt.Encode(next);
+    return next;
   }
 }

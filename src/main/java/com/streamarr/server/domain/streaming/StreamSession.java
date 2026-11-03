@@ -30,6 +30,7 @@ public class StreamSession {
   private final TranscodeDecision transcodeDecision;
   private final StreamingOptions options;
   private final Instant createdAt;
+  @Builder.Default private final StreamDelivery delivery = StreamDelivery.HLS;
 
   @Getter(lombok.AccessLevel.NONE)
   @Builder.Default

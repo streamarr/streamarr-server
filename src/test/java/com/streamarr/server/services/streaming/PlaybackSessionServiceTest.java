@@ -23,6 +23,7 @@ import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ShortCopy;
+import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
@@ -788,6 +789,208 @@ class PlaybackSessionServiceTest {
                 assertThat(attempt.reason())
                     .isEqualTo(new PlaybackSessionFailure.CreationRejected(streams.rejection)));
     assertThat(streams.getAllSessions()).isEmpty();
+  }
+
+  // ADR 0045: a format error during direct play falls back to HLS at original quality, and an HLS
+  // copy keeps Original without a notice.
+  @ParameterizedTest
+  @EnumSource(PlaybackFormatFailure.class)
+  @DisplayName("Should play an HLS copy in Original without a format change when direct play fails")
+  void shouldPlayAnHlsCopyInOriginalWithoutAFormatChangeWhenDirectPlayFails(
+      PlaybackFormatFailure reason) {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlay(service, command);
+
+    var recovered =
+        service
+            .reportFormatFailure(report(directPlay, command).reason(reason).build())
+            .orElseThrow();
+
+    assertThat(recovered.requestedChoice()).isEqualTo(VideoQuality.ORIGINAL);
+    assertThat(recovered.playbackChoice()).isEqualTo(VideoQuality.ORIGINAL);
+    assertThat(recovered.formatChange()).isEmpty();
+    assertThat(recovered.formatAttemptCount()).isEqualTo(2);
+    assertThat(recovered.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready -> {
+              assertThat(ready.session().getDelivery()).isEqualTo(StreamDelivery.HLS);
+              assertThat(ready.session().getTranscodeDecision().transcodeMode().copiesVideo())
+                  .isTrue();
+              assertThat(streams.getAllSessions()).containsExactly(ready.session());
+            });
+    assertThat(streams.createdCommands.getLast())
+        .satisfies(
+            fallback -> {
+              assertThat(fallback.videoFormatConstraint())
+                  .isEqualTo(VideoFormatConstraint.COPY_OR_ENCODE);
+              assertThat(fallback.options().quality()).isEqualTo(VideoQuality.ORIGINAL);
+            });
+  }
+
+  // ADR 0045: when the server rules out the HLS copy, the HLS format attempt is an encode, and it
+  // plays in Auto with a notice (ADR 0052).
+  @Test
+  @DisplayName(
+      "Should play an encode in Auto with the direct play change when direct play fails and no"
+          + " copy is eligible")
+  void shouldPlayAnEncodeInAutoWithTheDirectPlayChangeWhenDirectPlayFailsAndNoCopyIsEligible() {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlay(service, command);
+    streams.copiesTheSource = false;
+
+    var recovered = service.reportFormatFailure(report(directPlay, command).build()).orElseThrow();
+
+    assertThat(recovered.requestedChoice()).isEqualTo(VideoQuality.ORIGINAL);
+    assertThat(recovered.playbackChoice()).isEqualTo(VideoQuality.AUTO);
+    assertThat(recovered.formatChange()).contains(PlaybackFormatChange.DIRECT_PLAY_FAILED);
+    assertThat(recovered.formatAttemptCount()).isEqualTo(2);
+    assertThat(recovered.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready ->
+                assertThat(ready.session().getTranscodeDecision().transcodeMode().copiesVideo())
+                    .isFalse());
+  }
+
+  // The client learns whether Original stays selected only when the HLS format attempt is ready.
+  @Test
+  @DisplayName(
+      "Should keep Original while the HLS format attempt after a failed direct play is pending")
+  void shouldKeepOriginalWhileTheHlsFormatAttemptAfterAFailedDirectPlayIsPending() {
+    var work = new ConcurrentLinkedQueue<Runnable>();
+    var playback = serviceRunning(work::add).maximumFormatAttempts(2).build();
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlay(playback, command);
+    streams.copiesTheSource = false;
+
+    var pending = playback.reportFormatFailure(report(directPlay, command).build()).orElseThrow();
+
+    assertThat(pending.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Pending.class);
+    assertThat(pending.formatAttemptCount()).isEqualTo(2);
+    assertThat(pending.playbackChoice()).isEqualTo(VideoQuality.ORIGINAL);
+    assertThat(pending.formatChange()).isEmpty();
+    drain(work);
+    var ready = playback.access(request(directPlay, command)).orElseThrow();
+    assertThat(ready.playbackChoice()).isEqualTo(VideoQuality.AUTO);
+    assertThat(ready.formatChange()).contains(PlaybackFormatChange.DIRECT_PLAY_FAILED);
+  }
+
+  @Test
+  @DisplayName("Should start one HLS format attempt when direct play's failure is reported twice")
+  void shouldStartOneHlsFormatAttemptWhenDirectPlaysFailureIsReportedTwice() {
+    var work = new ConcurrentLinkedQueue<Runnable>();
+    var playback = serviceRunning(work::add).maximumFormatAttempts(4).build();
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlay(playback, command);
+    var first = playback.reportFormatFailure(report(directPlay, command).build()).orElseThrow();
+
+    var second = playback.reportFormatFailure(report(directPlay, command).build());
+
+    assertThat(second).contains(first);
+    drain(work);
+    var ready = playback.access(request(directPlay, command)).orElseThrow();
+    assertThat(ready.formatAttemptCount()).isEqualTo(2);
+    assertThat(ready.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+    assertThat(streams.createdCommands).hasSize(2);
+    assertThat(streams.getActiveSessionCount()).isEqualTo(1);
+  }
+
+  // ADR 0052: the default budget of four lets Original reach the encode after direct play and the
+  // HLS copy both fail.
+  @Test
+  @DisplayName("Should reach an encode in Auto when direct play and then the HLS copy fail")
+  void shouldReachAnEncodeInAutoWhenDirectPlayAndThenTheHlsCopyFail() {
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(4).build();
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlay(playback, command);
+    var copy = playback.reportFormatFailure(report(directPlay, command).build()).orElseThrow();
+
+    var encode = playback.reportFormatFailure(report(copy, command).build()).orElseThrow();
+
+    assertThat(copy.playbackChoice()).isEqualTo(VideoQuality.ORIGINAL);
+    assertThat(encode.formatAttemptCount()).isEqualTo(3);
+    assertThat(encode.playbackChoice()).isEqualTo(VideoQuality.AUTO);
+    assertThat(encode.formatChange()).contains(PlaybackFormatChange.COPY_FAILED);
+    assertThat(streams.createdCommands.getLast().videoFormatConstraint())
+        .isEqualTo(VideoFormatConstraint.ENCODE_ONLY);
+    assertThat(encode.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+  }
+
+  // A configured budget with no room for the next output ends playback (ADR 0052).
+  @Test
+  @DisplayName(
+      "Should end with attempts exhausted when the HLS copy after direct play fails with no"
+          + " attempt left")
+  void shouldEndWithAttemptsExhaustedWhenTheHlsCopyAfterDirectPlayFailsWithNoAttemptLeft() {
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(2).build();
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlay(playback, command);
+    var copy = playback.reportFormatFailure(report(directPlay, command).build()).orElseThrow();
+
+    var failed = playback.reportFormatFailure(report(copy, command).build()).orElseThrow();
+
+    assertThat(failed.formatAttemptCount()).isEqualTo(2);
+    assertThat(failed.playbackChoice()).isEqualTo(VideoQuality.ORIGINAL);
+    assertThat(failed.formatChange()).isEmpty();
+    assertThat(failed.currentFormatAttempt())
+        .isEqualTo(
+            new PlaybackFormatAttempt.Failed(
+                copy.currentFormatAttempt().streamSessionId(),
+                new PlaybackSessionFailure.AttemptsExhausted()));
+    assertThat(streams.getAllSessions()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should end with attempts exhausted when direct play fails with no attempt left")
+  void shouldEndWithAttemptsExhaustedWhenDirectPlayFailsWithNoAttemptLeft() {
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(1).build();
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlay(playback, command);
+
+    var failed = playback.reportFormatFailure(report(directPlay, command).build()).orElseThrow();
+
+    assertThat(failed.formatAttemptCount()).isEqualTo(1);
+    assertThat(failed.playbackChoice()).isEqualTo(VideoQuality.ORIGINAL);
+    assertThat(failed.currentFormatAttempt())
+        .isEqualTo(
+            new PlaybackFormatAttempt.Failed(
+                directPlay.currentFormatAttempt().streamSessionId(),
+                new PlaybackSessionFailure.AttemptsExhausted()));
+    assertThat(streams.createdCommands).hasSize(1);
+    assertThat(streams.getAllSessions()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should recover as Auto does when the encode after a failed direct play fails")
+  void shouldRecoverAsAutoDoesWhenTheEncodeAfterAFailedDirectPlayFails() {
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(3).build();
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlay(playback, command);
+    streams.copiesTheSource = false;
+    var encode = playback.reportFormatFailure(report(directPlay, command).build()).orElseThrow();
+
+    var recovered = playback.reportFormatFailure(report(encode, command).build()).orElseThrow();
+
+    assertThat(recovered.formatAttemptCount()).isEqualTo(3);
+    assertThat(recovered.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+    assertThat(recovered.playbackChoice()).isEqualTo(VideoQuality.AUTO);
+    assertThat(recovered.formatChange()).contains(PlaybackFormatChange.DIRECT_PLAY_FAILED);
+    assertThat(streams.createdCommands.getLast().excludedEncodeCodecFamilies())
+        .containsExactly("h264");
+  }
+
+  private PlaybackSessionSnapshot startDirectPlay(
+      PlaybackSessionService playback, StartPlaybackSessionCommand command) {
+    streams.directPlaysNextCreation = true;
+    var snapshot = accepted(playback.start(command));
+    assertThat(snapshot.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready ->
+                assertThat(ready.session().getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY));
+    assertThat(snapshot.playbackChoice()).isEqualTo(VideoQuality.ORIGINAL);
+    return snapshot;
   }
 
   // ADR 0052: a copy that ran short after every source stream ended ends playback normally, and
@@ -1687,6 +1890,9 @@ class PlaybackSessionServiceTest {
     private RuntimeException destroyFailure;
     // Whether a capability entry accepts a copy of the source, as the transcode decision finds.
     private boolean copiesTheSource = true;
+    // Whether the next stream session direct-plays, as the transcode decision finds for a file that
+    // the declaration covers.
+    private boolean directPlaysNextCreation;
     private MediaProbe sourceProbe = defaultProbeBuilder().build();
 
     @Override
@@ -1703,8 +1909,12 @@ class PlaybackSessionServiceTest {
         return Outcome.rejected(rejection);
       }
 
+      var directPlays = directPlaysNextCreation;
+      directPlaysNextCreation = false;
       var encodes =
-          command.videoFormatConstraint() == VideoFormatConstraint.ENCODE_ONLY || !copiesTheSource;
+          !directPlays
+              && (command.videoFormatConstraint() == VideoFormatConstraint.ENCODE_ONLY
+                  || !copiesTheSource);
 
       var session =
           defaultSessionBuilder()
@@ -1714,6 +1924,7 @@ class PlaybackSessionServiceTest {
               .options(command.options())
               .mediaProbe(sourceProbe)
               .transcodeDecision(encodes ? fullTranscodeDecision("h264") : remuxDecision())
+              .delivery(directPlays ? StreamDelivery.DIRECT_PLAY : StreamDelivery.HLS)
               .build();
       sessions.put(session.getSessionId(), session);
       if (duringNextCreation != null) {
