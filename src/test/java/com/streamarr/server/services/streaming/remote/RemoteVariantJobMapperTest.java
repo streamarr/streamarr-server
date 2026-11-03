@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.ChannelLayout;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
@@ -23,6 +24,7 @@ import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.exceptions.UnsupportedVideoEncodeException;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
+import com.streamarr.transcode.v1.AudioChannelLayout;
 import com.streamarr.transcode.v1.BitstreamRewrite;
 import com.streamarr.transcode.v1.ChromaticityCoordinates;
 import com.streamarr.transcode.v1.CompatibleBase;
@@ -132,6 +134,61 @@ class RemoteVariantJobMapperTest {
     var job = mapper.map(request);
 
     assertThat(job.getVariant().getEncoderPreset()).isEqualTo(expected);
+  }
+
+  // ADR 0050: the job names the output layout of every audio encode, and the worker encodes with
+  // FFmpeg's -ch_layout.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("outputLayoutsAndTheirContractValues")
+  @DisplayName("Should name the encode's output layout when the job encodes the audio")
+  void shouldNameTheEncodesOutputLayoutWhenTheJobEncodesTheAudio(OutputLayout outputLayout) {
+    var layout = outputLayout.layout();
+    var audio =
+        AudioDecision.builder()
+            .mode(AudioMode.TRANSCODE)
+            .codec("eac3")
+            .channels(layout.getChannels())
+            .bitrate(768_000L)
+            .channelLayout(Optional.of(layout))
+            .build();
+    var encode = encodeAttempt("h264").build();
+    var request =
+        encodeAttempt("h264")
+            .transcodeDecision(encode.transcodeDecision().withAudioDecision(audio))
+            .build();
+
+    var job = mapper.map(request);
+
+    assertThat(job.getDecision().getAudio().getChannelLayout())
+        .isEqualTo(outputLayout.contractLayout());
+  }
+
+  static Stream<OutputLayout> outputLayoutsAndTheirContractValues() {
+    return Stream.of(
+        new OutputLayout(ChannelLayout.MONO, AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_MONO),
+        new OutputLayout(ChannelLayout.STEREO, AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_STEREO),
+        new OutputLayout(
+            ChannelLayout.FIVE_POINT_ZERO, AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ZERO),
+        new OutputLayout(
+            ChannelLayout.FIVE_POINT_ZERO_SIDE,
+            AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ZERO_SIDE),
+        new OutputLayout(
+            ChannelLayout.FIVE_POINT_ONE, AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ONE),
+        new OutputLayout(
+            ChannelLayout.FIVE_POINT_ONE_SIDE,
+            AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ONE_SIDE));
+  }
+
+  record OutputLayout(ChannelLayout layout, AudioChannelLayout contractLayout) {}
+
+  // A copy keeps the source's own layout, so the job names none.
+  @Test
+  @DisplayName("Should name no output layout when the job copies the audio")
+  void shouldNameNoOutputLayoutWhenTheJobCopiesTheAudio() {
+    var job = mapper.map(copyAttempt().build());
+
+    assertThat(job.getDecision().getAudio().getChannelLayout())
+        .isEqualTo(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_UNSPECIFIED);
   }
 
   @Test

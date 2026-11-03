@@ -37,7 +37,8 @@ class AudioStepsTest {
   static Stream<StepsCase> surroundEncodes() {
     return Stream.of(
         StepsCase.builder()
-            .sessionAudio(encode("eac3").channels(6).bitrate(768_000L).build())
+            .sessionAudio(
+                encode("eac3", ChannelLayout.FIVE_POINT_ONE_SIDE).bitrate(768_000L).build())
             .entries(entries(AudioCodec.EAC3, 6))
             .steps(
                 List.of(
@@ -48,23 +49,27 @@ class AudioStepsTest {
                     STEREO_STEPS))
             .build(),
         StepsCase.builder()
-            .sessionAudio(encode("ac3").channels(6).bitrate(640_000L).build())
+            .sessionAudio(
+                encode("ac3", ChannelLayout.FIVE_POINT_ONE_SIDE).bitrate(640_000L).build())
             .entries(entries(AudioCodec.AC3, 6))
             .steps(List.of("ac3 6 640000", "ac3 6 448000", "ac3 6 384000", STEREO_STEPS))
             .build(),
         StepsCase.builder()
-            .sessionAudio(encode("aac").channels(6).bitrate(384_000L).build())
+            .sessionAudio(encode("aac", ChannelLayout.FIVE_POINT_ONE).bitrate(384_000L).build())
             .entries(entries(AudioCodec.AAC, 6))
             .steps(List.of("aac 6 384000", "aac 6 320000", STEREO_STEPS))
             .build());
   }
 
-  // AAC 5.1 at 320 kb/s needs no entry beyond the one that accepts AAC 7.1.
+  // An AAC encode has at most six channels, so a copied AAC 7.1 track steps through AAC 5.1, which
+  // needs no entry beyond the one that accepts AAC 7.1 (ADR 0050).
   @ParameterizedTest(name = "{0}")
   @MethodSource("aacAbove51")
   @DisplayName(
-      "Should step AAC above 5.1 through AAC 5.1 before stereo when the track has more than 5.1")
-  void shouldStepAacAbove51ThroughAac51BeforeStereoWhenTheTrackHasMoreThan51(StepsCase stepsCase) {
+      "Should step a copied AAC track above 5.1 straight to AAC 5.1 before stereo when the track"
+          + " has more than 5.1")
+  void shouldStepACopiedAacTrackAbove51StraightToAac51BeforeStereoWhenTheTrackHasMoreThan51(
+      StepsCase stepsCase) {
     assertSteps(stepsCase);
   }
 
@@ -72,12 +77,8 @@ class AudioStepsTest {
     var aac71 = StepsCase.builder().entries(entries(AudioCodec.AAC, 8));
     return Stream.of(
         aac71
-            .sessionAudio(encode("aac").channels(8).bitrate(512_000L).build())
-            .steps(List.of("aac 8 512000", "aac 8 448000", "aac 6 320000", STEREO_STEPS))
-            .build(),
-        aac71
             .sessionAudio(copy("aac").channels(8).bitrate(640_000L).build())
-            .steps(List.of("aac 8 640000", "aac 8 448000", "aac 6 320000", STEREO_STEPS))
+            .steps(List.of("aac 8 640000", "aac 6 320000", STEREO_STEPS))
             .build(),
         aac71
             .sessionAudio(copy("aac").channels(8).bitrate(400_000L).build())
@@ -129,7 +130,7 @@ class AudioStepsTest {
                     audioEntryBuilder(AudioCodec.EAC3).maxChannels(6).build()))
             .steps(
                 List.of(
-                    "aac 8 512000", "aac 8 448000", "eac3 6 384000", "aac 6 320000", STEREO_STEPS))
+                    "aac 8 512000", "eac3 6 448000", "eac3 6 384000", "aac 6 320000", STEREO_STEPS))
             .build(),
         StepsCase.builder()
             .sessionAudio(copy("eac3").channels(8).bitrate(1_024_000L).build())
@@ -211,7 +212,7 @@ class AudioStepsTest {
             .steps(List.of("aac 2 256000", STEREO_STEPS))
             .build(),
         StepsCase.builder()
-            .sessionAudio(encode("aac").channels(2).bitrate(128_000L).build())
+            .sessionAudio(encode("aac", ChannelLayout.STEREO).bitrate(128_000L).build())
             .entries(List.of(aacEntryBuilder().build()))
             .steps(List.of(STEREO_STEPS))
             .build());
@@ -227,7 +228,7 @@ class AudioStepsTest {
   static Stream<StepsCase> monoTracks() {
     return Stream.of(
         StepsCase.builder()
-            .sessionAudio(encode("aac").channels(1).bitrate(64_000L).build())
+            .sessionAudio(encode("aac", ChannelLayout.MONO).bitrate(64_000L).build())
             .entries(List.of(aacEntryBuilder().build()))
             .steps(List.of("aac 1 64000"))
             .build(),
@@ -276,8 +277,8 @@ class AudioStepsTest {
     assertThat(steps.sessionAudio().mode()).isEqualTo(AudioMode.COPY);
   }
 
-  // A player that declares AAC with at most 4 channels gets a 4-channel AAC encode at 128 kb/s. Its
-  // multichannel step, 64 kb/s for each of its 4 channels, is not below it.
+  // ADR 0050 prices multichannel AAC at 64 kb/s for each full-band channel: 320 kb/s for 5.0 as
+  // for 5.1.
   @Test
   @DisplayName(
       "Should count every channel as full-band when a multichannel encode has no low-frequency"
@@ -285,14 +286,65 @@ class AudioStepsTest {
   void shouldCountEveryChannelAsFullBandWhenAMultichannelEncodeHasNoLowFrequencyChannel() {
     var declaration =
         defaultDeclarationBuilder()
-            .audio(List.of(aacEntryBuilder().maxChannels(4).build()))
+            .audio(List.of(aacEntryBuilder().maxChannels(5).build()))
             .build();
 
     var steps =
         AudioSteps.below(
-            encode("aac").channels(4).bitrate(128_000L).build(), trackOf(4), declaration);
+            encode("aac", ChannelLayout.FIVE_POINT_ZERO).bitrate(384_000L).build(),
+            trackOf(6),
+            declaration);
 
-    assertThat(describe(steps)).isEqualTo("aac 4 128000, aac 2 96000, aac 2 64000");
+    assertThat(describe(steps)).isEqualTo("aac 5 384000, aac 5 320000, " + STEREO_STEPS);
+  }
+
+  // A copied AAC 7.1 track beside an E-AC-3 entry: E-AC-3 and AC-3 write the side surround pair,
+  // AAC writes 5.1 (ADR 0050).
+  @Test
+  @DisplayName("Should name the encoder's own layout on every step below the session's audio")
+  void shouldNameTheEncodersOwnLayoutOnEveryStepBelowTheSessionsAudio() {
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(
+                List.of(
+                    aacEntryBuilder().maxChannels(8).build(),
+                    audioEntryBuilder(AudioCodec.EAC3).maxChannels(6).build()))
+            .build();
+
+    var steps =
+        AudioSteps.below(
+            copy("aac").channels(8).bitrate(512_000L).build(),
+            new AudioTrackChannels(8, Optional.of("7.1")),
+            declaration);
+
+    assertThat(steps.highestFirst())
+        .extracting(AudioDecision::channelLayout)
+        .containsExactly(
+            Optional.empty(),
+            Optional.of(ChannelLayout.FIVE_POINT_ONE_SIDE),
+            Optional.of(ChannelLayout.FIVE_POINT_ONE_SIDE),
+            Optional.of(ChannelLayout.FIVE_POINT_ONE),
+            Optional.of(ChannelLayout.STEREO),
+            Optional.of(ChannelLayout.STEREO),
+            Optional.of(ChannelLayout.STEREO));
+  }
+
+  // ADR 0050 as streamarr/streamarr-adr#85 states it: a 7.0 track encodes in AAC 5.1.
+  @Test
+  @DisplayName("Should step a copied 7.0 AAC track through AAC 5.1 when AAC accepts 8 channels")
+  void shouldStepACopied70AacTrackThroughAac51WhenAacAccepts8Channels() {
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(List.of(aacEntryBuilder().maxChannels(8).build()))
+            .build();
+
+    var steps =
+        AudioSteps.below(
+            copy("aac").channels(7).bitrate(448_000L).build(),
+            new AudioTrackChannels(7, Optional.of("7.0")),
+            declaration);
+
+    assertThat(describe(steps)).isEqualTo("aac 7 448000, aac 6 320000, " + STEREO_STEPS);
   }
 
   @Test
@@ -348,8 +400,12 @@ class AudioStepsTest {
         audioEntryBuilder(AudioCodec.EAC3).maxChannels(6).build());
   }
 
-  private static AudioDecision.AudioDecisionBuilder encode(String codec) {
-    return AudioDecision.builder().mode(AudioMode.TRANSCODE).codec(codec);
+  private static AudioDecision.AudioDecisionBuilder encode(String codec, ChannelLayout layout) {
+    return AudioDecision.builder()
+        .mode(AudioMode.TRANSCODE)
+        .codec(codec)
+        .channels(layout.getChannels())
+        .channelLayout(Optional.of(layout));
   }
 
   private static AudioDecision.AudioDecisionBuilder copy(String codec) {

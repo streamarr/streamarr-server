@@ -795,6 +795,34 @@ class LiveWorkerConnectionRegistryTest {
         .containsExactly(new ExecutionTargetId(listingSessionId.toString()));
   }
 
+  // A later job attempt of a pinned variant carries the session's audio, so the pinned queries
+  // agree with dispatch about which workers encode its layout.
+  @Test
+  @DisplayName(
+      "Should count a pinned encode's free slots and targets only on probe version 7 workers when"
+          + " its job names a quad layout")
+  void
+      shouldCountAPinnedEncodesFreeSlotsAndTargetsOnlyOnProbeVersion7WorkersWhenItsJobNamesAQuadLayout() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var version7WorkerId = UUID.randomUUID();
+    registry.register(
+        WORKER_ID, libx264RegistrationListingProbeVersion(WORKER_ID, 6), new CancellableObserver());
+    var version7WorkerSessionId =
+        registry.register(
+            version7WorkerId,
+            libx264RegistrationListingProbeVersion(version7WorkerId, 7),
+            new CancellableObserver());
+    var pinned = WorkerVerifiedEncoderFixture.libx264();
+    var quad = h264EncodeNaming(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_QUAD);
+    var stereo = h264EncodeNaming(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_STEREO);
+
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, quad, pinned)).isOne();
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, quad, pinned))
+        .containsExactly(new ExecutionTargetId(version7WorkerSessionId.toString()));
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, stereo, pinned)).isEqualTo(2);
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, stereo, pinned)).hasSize(2);
+  }
+
   @Test
   @DisplayName(
       "Should count only software and keyframe-verified encoders when reporting the codec families that workers encode")
@@ -1934,6 +1962,23 @@ class LiveWorkerConnectionRegistryTest {
         .setLevel(6)
         .setBaseLayerCompatibilityId(1)
         .setSampleEntry(sampleEntry)
+        .build();
+  }
+
+  private static WorkerRegistration libx264RegistrationListingProbeVersion(
+      UUID workerId, int probeVersion) {
+    var registration = registration(workerId, libx264Encoder()).toBuilder();
+    registration.getCapabilitiesBuilder().addProbeVersions(probeVersion);
+    return registration.build();
+  }
+
+  private static TranscodeDecision h264EncodeNaming(AudioChannelLayout layout) {
+    return encodeJob("h264").getDecision().toBuilder()
+        .setAudio(
+            AudioDecision.newBuilder()
+                .setMode(AudioMode.AUDIO_MODE_TRANSCODE)
+                .setCodec("aac")
+                .setChannelLayout(layout))
         .build();
   }
 

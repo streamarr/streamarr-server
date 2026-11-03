@@ -19,7 +19,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioCapabilityEntry;
 import com.streamarr.server.domain.streaming.AudioCodec;
+import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.ChannelLayout;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
@@ -1314,6 +1316,193 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.audioDecision().channels()).isEqualTo(6);
   }
 
+  // ADR 0050's table: AAC writes 5.0 and 5.1, AC-3 and E-AC-3 write 5.0(side) and 5.1(side).
+  // An AAC encode has at most six channels, and a 6.1 track loses its back centre into the
+  // surrounds in AAC, AC-3 and E-AC-3. The server's own encode of 3 or 4 channels stays stereo.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("tracksAndTheirEncodes")
+  @DisplayName("Should name the encoder's own output layout when the server encodes the track")
+  void shouldNameTheEncodersOwnOutputLayoutWhenTheServerEncodesTheTrack(TrackEncode trackEncode) {
+    var source =
+        probeBuilder("h264", "dts")
+            .audioChannels(OptionalInt.of(trackEncode.trackChannels()))
+            .audioChannelLayout(trackEncode.trackLayout())
+            .audioBitrate(OptionalLong.of(1_500_000L))
+            .build();
+
+    var decision = decideAudio(source, trackEncode.declaration());
+
+    assertThat(decision).isEqualTo(trackEncode.encode());
+  }
+
+  static Stream<TrackEncode> tracksAndTheirEncodes() {
+    return Stream.of(
+        TrackEncode.builder()
+            .scenario("mono to AAC mono")
+            .trackChannels(1)
+            .trackLayout(Optional.of("mono"))
+            .declaration(declaringAudio(audio(AAC, 2)))
+            .encode(encodeIn(ChannelLayout.MONO).codec("aac").bitrate(64_000L).build())
+            .build(),
+        TrackEncode.builder()
+            .scenario("stereo to AAC stereo")
+            .trackChannels(2)
+            .trackLayout(Optional.of("stereo"))
+            .declaration(declaringAudio(audio(AAC, 2)))
+            .encode(encodeIn(ChannelLayout.STEREO).codec("aac").bitrate(128_000L).build())
+            .build(),
+        TrackEncode.builder()
+            .scenario("quad to AAC stereo although AAC accepts 8 channels")
+            .trackChannels(4)
+            .trackLayout(Optional.of("quad"))
+            .declaration(declaringAudio(audio(AAC, 8), audio(EAC3, 8)))
+            .encode(encodeIn(ChannelLayout.STEREO).codec("aac").bitrate(128_000L).build())
+            .build(),
+        TrackEncode.builder()
+            .scenario("3 channels of an unknown layout to AAC stereo")
+            .trackChannels(3)
+            .trackLayout(Optional.empty())
+            .declaration(declaringAudio(audio(AAC, 8), audio(EAC3, 8)))
+            .encode(encodeIn(ChannelLayout.STEREO).codec("aac").bitrate(128_000L).build())
+            .build(),
+        TrackEncode.builder()
+            .scenario("5.0 to AAC 5.0")
+            .trackChannels(5)
+            .trackLayout(Optional.of("5.0"))
+            .declaration(declaringAudio(audio(AAC, 6)))
+            .encode(encodeIn(ChannelLayout.FIVE_POINT_ZERO).codec("aac").bitrate(384_000L).build())
+            .build(),
+        TrackEncode.builder()
+            .scenario("4.1 to E-AC-3 5.0(side)")
+            .trackChannels(5)
+            .trackLayout(Optional.of("4.1"))
+            .declaration(declaringAudio(audio(AAC, 2), audio(EAC3, 6)))
+            .encode(
+                encodeIn(ChannelLayout.FIVE_POINT_ZERO_SIDE)
+                    .codec("eac3")
+                    .bitrate(768_000L)
+                    .build())
+            .build(),
+        TrackEncode.builder()
+            .scenario("5.1(side) to AAC 5.1")
+            .trackChannels(6)
+            .trackLayout(Optional.of("5.1(side)"))
+            .declaration(declaringAudio(audio(AAC, 6)))
+            .encode(encodeIn(ChannelLayout.FIVE_POINT_ONE).codec("aac").bitrate(384_000L).build())
+            .build(),
+        TrackEncode.builder()
+            .scenario("5.1 to AC-3 5.1(side)")
+            .trackChannels(6)
+            .trackLayout(Optional.of("5.1"))
+            .declaration(declaringAudio(audio(AAC, 2), audio(AC3, 6)))
+            .encode(
+                encodeIn(ChannelLayout.FIVE_POINT_ONE_SIDE).codec("ac3").bitrate(640_000L).build())
+            .build(),
+        TrackEncode.builder()
+            .scenario("7.1 to AAC 5.1 although AAC accepts 8 channels")
+            .trackChannels(8)
+            .trackLayout(Optional.of("7.1"))
+            .declaration(declaringAudio(audio(AAC, 8)))
+            .encode(encodeIn(ChannelLayout.FIVE_POINT_ONE).codec("aac").bitrate(384_000L).build())
+            .build(),
+        TrackEncode.builder()
+            .scenario("6.1 to AAC 5.1 although AAC accepts 8 channels")
+            .trackChannels(7)
+            .trackLayout(Optional.of("6.1"))
+            .declaration(declaringAudio(audio(AAC, 8)))
+            .encode(encodeIn(ChannelLayout.FIVE_POINT_ONE).codec("aac").bitrate(384_000L).build())
+            .build(),
+        TrackEncode.builder()
+            .scenario("6.1 to AC-3 5.1(side)")
+            .trackChannels(7)
+            .trackLayout(Optional.of("6.1"))
+            .declaration(declaringAudio(audio(AAC, 2), audio(AC3, 8)))
+            .encode(
+                encodeIn(ChannelLayout.FIVE_POINT_ONE_SIDE).codec("ac3").bitrate(640_000L).build())
+            .build(),
+        TrackEncode.builder()
+            .scenario("7.1 to E-AC-3 5.1(side)")
+            .trackChannels(8)
+            .trackLayout(Optional.of("7.1"))
+            .declaration(declaringAudio(audio(AAC, 8), audio(EAC3, 8)))
+            .encode(
+                encodeIn(ChannelLayout.FIVE_POINT_ONE_SIDE).codec("eac3").bitrate(768_000L).build())
+            .build());
+  }
+
+  // ADR 0050 as streamarr/streamarr-adr#85 states it: in AAC, AC-3 and E-AC-3 a 7.0 track encodes
+  // in 5.1 like any other track of 7 or more channels.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("sevenPointZeroEncodes")
+  @DisplayName("Should encode a 7.0 track in 5.1 when the server encodes AAC, AC-3 or E-AC-3")
+  void shouldEncodeA70TrackIn51WhenTheServerEncodesAacAc3OrEac3(TrackEncode trackEncode) {
+    var source =
+        probeBuilder("h264", "dts")
+            .audioChannels(OptionalInt.of(trackEncode.trackChannels()))
+            .audioChannelLayout(trackEncode.trackLayout())
+            .audioBitrate(OptionalLong.of(1_500_000L))
+            .build();
+
+    var decision = decideAudio(source, trackEncode.declaration());
+
+    assertThat(decision).isEqualTo(trackEncode.encode());
+  }
+
+  static Stream<TrackEncode> sevenPointZeroEncodes() {
+    var sevenPointZero = TrackEncode.builder().trackChannels(7).trackLayout(Optional.of("7.0"));
+    return Stream.of(
+        sevenPointZero
+            .scenario("AAC 5.1")
+            .declaration(declaringAudio(audio(AAC, 8)))
+            .encode(encodeIn(ChannelLayout.FIVE_POINT_ONE).codec("aac").bitrate(384_000L).build())
+            .build(),
+        sevenPointZero
+            .scenario("AC-3 5.1(side)")
+            .declaration(declaringAudio(audio(AAC, 2), audio(AC3, 8)))
+            .encode(
+                encodeIn(ChannelLayout.FIVE_POINT_ONE_SIDE).codec("ac3").bitrate(640_000L).build())
+            .build(),
+        sevenPointZero
+            .scenario("E-AC-3 5.1(side)")
+            .declaration(declaringAudio(audio(AAC, 2), audio(EAC3, 8)))
+            .encode(
+                encodeIn(ChannelLayout.FIVE_POINT_ONE_SIDE).codec("eac3").bitrate(768_000L).build())
+            .build());
+  }
+
+  @Builder
+  record TrackEncode(
+      String scenario,
+      int trackChannels,
+      Optional<String> trackLayout,
+      ClientCapabilityDeclaration declaration,
+      AudioDecision encode) {
+
+    @Override
+    public String toString() {
+      return scenario;
+    }
+  }
+
+  private AudioDecision decideAudio(MediaProbe source, ClientCapabilityDeclaration declaration) {
+    return service
+        .decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .capabilityDeclaration(declaration)
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .build())
+        .orElseThrow()
+        .audioDecision();
+  }
+
+  private static AudioDecision.AudioDecisionBuilder encodeIn(ChannelLayout layout) {
+    return AudioDecision.builder()
+        .mode(AudioMode.TRANSCODE)
+        .channels(layout.getChannels())
+        .channelLayout(Optional.of(layout));
+  }
+
   @ParameterizedTest(name = "{0} source channels")
   @ValueSource(ints = {3, 4})
   @DisplayName("Should encode stereo AAC when the source has more channels than the client plays")
@@ -1340,8 +1529,10 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.audioDecision().channels()).isEqualTo(2);
   }
 
+  // ADR 0050: a copied AAC 7.1 track stays a copy, although an AAC encode has at most six
+  // channels.
   @ParameterizedTest(name = "{0} source channels")
-  @ValueSource(ints = {3, 4, 5, 7})
+  @ValueSource(ints = {3, 4, 5, 7, 8})
   @DisplayName("Should announce the source's channel count when the client plays every channel")
   void shouldAnnounceTheSourcesChannelCountWhenTheClientPlaysEveryChannel(int sourceChannels) {
     var source =

@@ -5,6 +5,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.ChannelLayout;
 import com.streamarr.server.domain.streaming.ChromaticityCoordinates;
 import com.streamarr.server.domain.streaming.ContentLightLevel;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
@@ -20,6 +21,7 @@ import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
+import com.streamarr.transcode.v1.AudioChannelLayout;
 import com.streamarr.transcode.v1.ContainerFormat;
 import com.streamarr.transcode.v1.Deinterlace;
 import com.streamarr.transcode.v1.DeinterlaceOutput;
@@ -245,7 +247,23 @@ final class RemoteVariantJobMapper {
     if (decision.codec() != null) {
       audio.setCodec(decision.codec());
     }
+
+    decision
+        .channelLayout()
+        .map(RemoteVariantJobMapper::channelLayout)
+        .ifPresent(audio::setChannelLayout);
     return audio.build();
+  }
+
+  private static AudioChannelLayout channelLayout(ChannelLayout layout) {
+    return switch (layout) {
+      case MONO -> AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_MONO;
+      case STEREO -> AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_STEREO;
+      case FIVE_POINT_ZERO -> AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ZERO;
+      case FIVE_POINT_ZERO_SIDE -> AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ZERO_SIDE;
+      case FIVE_POINT_ONE -> AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ONE;
+      case FIVE_POINT_ONE_SIDE -> AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ONE_SIDE;
+    };
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")

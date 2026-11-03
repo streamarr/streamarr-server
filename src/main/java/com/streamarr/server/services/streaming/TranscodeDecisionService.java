@@ -456,7 +456,7 @@ public class TranscodeDecisionService {
     }
 
     // A copy carries every source channel, so the copy rule and the announced count use the
-    // source's count. Only an encode lays the channels out in a normalized layout.
+    // source's count. Only an encode names an output layout.
     var track = AudioTrackChannels.of(source);
     int sourceChannels = track.count();
     var sourceCodecString =
@@ -475,9 +475,7 @@ public class TranscodeDecisionService {
           .bitrate(
               source
                   .audioBitrate()
-                  .orElse(
-                      AudioDecision.bitrateFor(
-                          source.audioCodec(), AudioDecision.normalizeChannels(sourceChannels))))
+                  .orElse(AudioDecision.bitrateFor(source.audioCodec(), sourceChannels)))
           .sourceCodecString(sourceCodecString)
           .build();
     }

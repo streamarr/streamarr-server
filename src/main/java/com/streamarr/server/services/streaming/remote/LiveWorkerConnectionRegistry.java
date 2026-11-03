@@ -439,7 +439,8 @@ final class LiveWorkerConnectionRegistry {
       UUID sourceNamespaceId, TranscodeDecision decision, WorkerVerifiedEncoder pinnedEncoder) {
     return executionTargets(
         connectionsFor(sourceNamespaceId)
-            .filter(connection -> connection.advertises(pinnedEncoder)));
+            .filter(connection -> connection.advertises(pinnedEncoder))
+            .filter(connection -> connection.canEncodeAudioLayout(decision)));
   }
 
   private Stream<WorkerConnection> connectionsFor(UUID sourceNamespaceId) {
@@ -589,6 +590,7 @@ final class LiveWorkerConnectionRegistry {
       UUID sourceNamespaceId, TranscodeDecision decision, WorkerVerifiedEncoder pinnedEncoder) {
     return connectionsFor(sourceNamespaceId)
         .filter(connection -> connection.advertises(pinnedEncoder))
+        .filter(connection -> connection.canEncodeAudioLayout(decision))
         .mapToInt(WorkerConnection::availableSlots)
         .sum();
   }

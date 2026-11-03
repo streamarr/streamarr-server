@@ -13,6 +13,7 @@ import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.AudioSteps;
 import com.streamarr.server.domain.streaming.AudioTrackChannels;
+import com.streamarr.server.domain.streaming.ChannelLayout;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
@@ -54,6 +55,7 @@ class QualityLadderServiceTest {
           .mode(AudioMode.TRANSCODE)
           .codec("eac3")
           .channels(6)
+          .channelLayout(Optional.of(ChannelLayout.FIVE_POINT_ONE_SIDE))
           .bitrate(768_000L)
           .build();
 

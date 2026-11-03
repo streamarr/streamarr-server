@@ -11,19 +11,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Audio Decision Tests")
 class AudioDecisionTest {
-
-  @ParameterizedTest(name = "sourceChannels={0} → normalized={1}")
-  @DisplayName("Should normalize channel count when source channels vary")
-  @CsvSource({"0, 2", "1, 1", "2, 2", "3, 2", "4, 2", "5, 6", "6, 6", "7, 8", "8, 8"})
-  void shouldNormalizeChannelCountWhenSourceChannelsVary(int sourceChannels, int expected) {
-    assertThat(AudioDecision.normalizeChannels(sourceChannels)).isEqualTo(expected);
-  }
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("announcedBitrates")
@@ -42,6 +34,7 @@ class AudioDecisionTest {
         BitrateCase.builder().codec("aac").channels(2).expected(128_000L).build(),
         BitrateCase.builder().codec("aac").channels(5).expected(384_000L).build(),
         BitrateCase.builder().codec("aac").channels(6).expected(384_000L).build(),
+        BitrateCase.builder().codec("aac").channels(7).expected(512_000L).build(),
         BitrateCase.builder().codec("aac").channels(8).expected(512_000L).build(),
         BitrateCase.builder().codec("ac3").channels(6).expected(640_000L).build(),
         BitrateCase.builder().codec("eac3").channels(6).expected(768_000L).build(),
@@ -67,7 +60,58 @@ class AudioDecisionTest {
     assertThat(decision.mode()).isEqualTo(AudioMode.TRANSCODE);
     assertThat(decision.codec()).isEqualTo("aac");
     assertThat(decision.channels()).isEqualTo(2);
+    assertThat(decision.channelLayout()).contains(ChannelLayout.STEREO);
     assertThat(decision.bitrate()).isEqualTo(128_000L);
+  }
+
+  // ADR 0050: every audio encode names its output channel layout.
+  @Test
+  @DisplayName("Should refuse an encode when it names no output layout")
+  void shouldRefuseAnEncodeWhenItNamesNoOutputLayout() {
+    var decision =
+        AudioDecision.builder()
+            .mode(AudioMode.TRANSCODE)
+            .codec("aac")
+            .channels(2)
+            .bitrate(128_000L);
+
+    assertThatThrownBy(decision::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("layout");
+  }
+
+  @Test
+  @DisplayName("Should refuse an encode when its layout holds another channel count")
+  void shouldRefuseAnEncodeWhenItsLayoutHoldsAnotherChannelCount() {
+    var decision =
+        AudioDecision.builder()
+            .mode(AudioMode.TRANSCODE)
+            .codec("aac")
+            .channels(6)
+            .bitrate(384_000L)
+            .channelLayout(Optional.of(ChannelLayout.FIVE_POINT_ZERO));
+
+    assertThatThrownBy(decision::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("layout");
+  }
+
+  // A copy keeps the source's own layout, which the copy job does not name.
+  @Test
+  @DisplayName("Should refuse an output layout when the decision copies the audio")
+  void shouldRefuseAnOutputLayoutWhenTheDecisionCopiesTheAudio() {
+    var decision =
+        AudioDecision.builder()
+            .mode(AudioMode.COPY)
+            .codec("aac")
+            .channels(2)
+            .bitrate(128_000L)
+            .sourceCodecString(Optional.of("mp4a.40.2"))
+            .channelLayout(Optional.of(ChannelLayout.STEREO));
+
+    assertThatThrownBy(decision::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("layout");
   }
 
   @Test
@@ -129,6 +173,7 @@ class AudioDecisionTest {
             .codec("dts")
             .channels(6)
             .bitrate(768_000L)
+            .channelLayout(Optional.of(ChannelLayout.FIVE_POINT_ONE))
             .build();
 
     assertThatThrownBy(decision::hlsCodecString)

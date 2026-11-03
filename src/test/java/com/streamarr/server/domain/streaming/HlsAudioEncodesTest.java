@@ -61,13 +61,13 @@ class HlsAudioEncodesTest {
   void shouldEncodeEac3WithAtMost51WhenThePlayerDeclares71Eac3AndTheTrackHasMoreThanTwoChannels(
       int trackChannels) {
     assertThat(HlsAudioEncodes.forTrack(stereoAacAnd71Eac3(), trackOf(trackChannels)))
-        .isEqualTo(encode("eac3").channels(6).bitrate(768_000L).build());
+        .isEqualTo(encode("eac3", ChannelLayout.FIVE_POINT_ONE_SIDE).bitrate(768_000L).build());
   }
 
   static Stream<AudioDecision> aacEncodesOfStereoAndMonoTracks() {
     return Stream.of(
-        encode("aac").channels(2).bitrate(128_000L).build(),
-        encode("aac").channels(1).bitrate(64_000L).build());
+        encode("aac", ChannelLayout.STEREO).bitrate(128_000L).build(),
+        encode("aac", ChannelLayout.MONO).bitrate(64_000L).build());
   }
 
   @ParameterizedTest(name = "{0}")
@@ -80,32 +80,33 @@ class HlsAudioEncodesTest {
         .isEqualTo(expected);
   }
 
-  // FFmpeg's AC-3 and E-AC-3 encoders stop at 5.1; its AAC encoder keeps 7.1.
+  // FFmpeg's AC-3 and E-AC-3 encoders stop at 5.1, and an AAC encode has at most six channels
+  // (ADR 0050), so each writes a 7.1 track in its own 5.1 layout.
   static Stream<MultichannelEncode> codecsTheServerEncodesInSurround() {
     return Stream.of(
         MultichannelEncode.builder()
             .codec("aac")
             .trackChannels(8)
-            .encode(encode("aac").channels(8).bitrate(512_000L).build())
+            .encode(encode("aac", ChannelLayout.FIVE_POINT_ONE).bitrate(384_000L).build())
             .build(),
         MultichannelEncode.builder()
             .codec("ac3")
             .trackChannels(8)
-            .encode(encode("ac3").channels(6).bitrate(640_000L).build())
+            .encode(encode("ac3", ChannelLayout.FIVE_POINT_ONE_SIDE).bitrate(640_000L).build())
             .build(),
         MultichannelEncode.builder()
             .codec("eac3")
             .trackChannels(6)
-            .encode(encode("eac3").channels(6).bitrate(768_000L).build())
+            .encode(encode("eac3", ChannelLayout.FIVE_POINT_ONE_SIDE).bitrate(768_000L).build())
             .build());
   }
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("codecsTheServerEncodesInSurround")
   @DisplayName(
-      "Should encode the codec with the track's channels, up to 5.1 for AC-3 and E-AC-3, when the"
+      "Should encode the codec with the track's channels up to the codec's 5.1 layout when the"
           + " server encodes the codec")
-  void shouldEncodeTheCodecWithTheTracksChannelsUpTo51ForAc3AndEac3WhenTheServerEncodesTheCodec(
+  void shouldEncodeTheCodecWithTheTracksChannelsUpToTheCodecs51LayoutWhenTheServerEncodesTheCodec(
       MultichannelEncode expected) {
     var encode =
         HlsAudioEncodes.multichannelEncode(
@@ -144,7 +145,7 @@ class HlsAudioEncodesTest {
   void shouldEncodeAacStereoWhenAChannelMaximumOf3Or4CapsEveryCodecBelowTheTracksChannels(
       int channelMaximum) {
     assertThat(HlsAudioEncodes.forTrack(everyCodecWithMaximum(channelMaximum), trackOf(6)))
-        .isEqualTo(encode("aac").channels(2).bitrate(128_000L).build());
+        .isEqualTo(encode("aac", ChannelLayout.STEREO).bitrate(128_000L).build());
   }
 
   static Stream<MultichannelEncode> encodesThatAMaximumOf5Caps() {
@@ -152,17 +153,17 @@ class HlsAudioEncodesTest {
         MultichannelEncode.builder()
             .codec("aac")
             .trackChannels(6)
-            .encode(encode("aac").channels(5).bitrate(384_000L).build())
+            .encode(encode("aac", ChannelLayout.FIVE_POINT_ZERO).bitrate(384_000L).build())
             .build(),
         MultichannelEncode.builder()
             .codec("ac3")
             .trackChannels(8)
-            .encode(encode("ac3").channels(5).bitrate(640_000L).build())
+            .encode(encode("ac3", ChannelLayout.FIVE_POINT_ZERO_SIDE).bitrate(640_000L).build())
             .build(),
         MultichannelEncode.builder()
             .codec("eac3")
             .trackChannels(6)
-            .encode(encode("eac3").channels(5).bitrate(768_000L).build())
+            .encode(encode("eac3", ChannelLayout.FIVE_POINT_ZERO_SIDE).bitrate(768_000L).build())
             .build());
   }
 
@@ -184,7 +185,7 @@ class HlsAudioEncodesTest {
   @DisplayName("Should encode AAC 5.1 when a channel maximum of 7 caps an 8-channel track")
   void shouldEncodeAac51WhenAChannelMaximumOf7CapsAn8ChannelTrack() {
     assertThat(HlsAudioEncodes.multichannelEncode(everyCodecWithMaximum(7), "aac", trackOf(8)))
-        .contains(encode("aac").channels(6).bitrate(384_000L).build());
+        .contains(encode("aac", ChannelLayout.FIVE_POINT_ONE).bitrate(384_000L).build());
   }
 
   @Test
@@ -251,8 +252,12 @@ class HlsAudioEncodesTest {
         .build();
   }
 
-  private static AudioDecision.AudioDecisionBuilder encode(String codec) {
-    return AudioDecision.builder().mode(AudioMode.TRANSCODE).codec(codec);
+  private static AudioDecision.AudioDecisionBuilder encode(String codec, ChannelLayout layout) {
+    return AudioDecision.builder()
+        .mode(AudioMode.TRANSCODE)
+        .codec(codec)
+        .channels(layout.getChannels())
+        .channelLayout(Optional.of(layout));
   }
 
   @Builder
