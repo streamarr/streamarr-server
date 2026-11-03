@@ -5,6 +5,7 @@ import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.AudioSteps;
+import com.streamarr.server.domain.streaming.AudioTrackChannels;
 import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.DolbyVisionOutput;
@@ -53,7 +54,6 @@ public class TranscodeDecisionService {
   // compress better than H.264, best first (ADR 0009).
   private static final List<EncodeCodecProfile> COMPRESSING_BETTER_THAN_H264 =
       List.of(EncodeCodecProfile.AV1_MAIN);
-  private static final int STEREO = 2;
   private static final List<BitstreamRewrite> STRIP_HDR10_PLUS =
       List.of(BitstreamRewrite.STRIP_HDR10_PLUS);
   private static final List<BitstreamRewrite> NORMALIZE_DOLBY_VISION_RECORD =
@@ -181,7 +181,7 @@ public class TranscodeDecisionService {
     var source = request.source();
     var declaration = request.capabilityDeclaration();
     var limits = request.viewerLimits();
-    var steps = AudioSteps.below(sessionAudio, declaration);
+    var steps = AudioSteps.below(sessionAudio, AudioTrackChannels.of(source), declaration);
     var stepWithinMaximum =
         limits.audioStepBesideCopyOf(source, steps, CopyMediaPlaylist.of(source, properties));
     var withinLimits = limits.allowsCopyPictureOf(source) && stepWithinMaximum.isPresent();
@@ -457,7 +457,8 @@ public class TranscodeDecisionService {
 
     // A copy carries every source channel, so the copy rule and the announced count use the
     // source's count. Only an encode lays the channels out in a normalized layout.
-    int sourceChannels = sourceChannelCount(source);
+    var track = AudioTrackChannels.of(source);
+    int sourceChannels = track.count();
     var sourceCodecString =
         source.audioStreams().stream()
             .findFirst()
@@ -481,17 +482,7 @@ public class TranscodeDecisionService {
           .build();
     }
 
-    return HlsAudioEncodes.forTrack(declaration, AudioDecision.normalizeChannels(sourceChannels));
-  }
-
-  // A probe can report zero channels, which says no more than an absent count.
-  private static int sourceChannelCount(MediaProbe source) {
-    int channels = source.audioChannels().orElse(STEREO);
-    if (channels <= 0) {
-      return STEREO;
-    }
-
-    return channels;
+    return HlsAudioEncodes.forTrack(declaration, track);
   }
 
   private static boolean isCopyableAudioCodecString(String codec, String codecString) {

@@ -1419,7 +1419,9 @@ class LiveWorkerConnectionRegistryTest {
     var pinned = WorkerVerifiedEncoderFixture.libx264();
     var job = encodeJob("h264");
 
-    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, pinned)).isEmpty();
+    assertThat(
+            registry.eligibleWorkers(SOURCE_NAMESPACE_ID, encodeJob("h264").getDecision(), pinned))
+        .isEmpty();
     assertThat(registry.dispatch(job, pinned)).isEmpty();
 
     var verifiedWorkerSessionId =
@@ -1428,7 +1430,8 @@ class LiveWorkerConnectionRegistryTest {
             registration(verifiedWorkerId, libx264Encoder()),
             new CancellableObserver());
 
-    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, pinned))
+    assertThat(
+            registry.eligibleWorkers(SOURCE_NAMESPACE_ID, encodeJob("h264").getDecision(), pinned))
         .containsExactly(new ExecutionTargetId(verifiedWorkerSessionId.toString()));
     assertThat(registry.dispatch(job, pinned))
         .map(VariantDispatch::encoder)
@@ -1446,7 +1449,9 @@ class LiveWorkerConnectionRegistryTest {
 
     var pinned = WorkerVerifiedEncoderFixture.libx264NotKeyframeVerified();
 
-    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, pinned)).isEmpty();
+    assertThat(
+            registry.eligibleWorkers(SOURCE_NAMESPACE_ID, encodeJob("h264").getDecision(), pinned))
+        .isEmpty();
     assertThat(registry.dispatch(encodeJob("h264"), pinned)).isEmpty();
   }
 
@@ -1505,10 +1510,17 @@ class LiveWorkerConnectionRegistryTest {
             new CancellableObserver());
 
     var targets =
-        registry.eligibleWorkers(SOURCE_NAMESPACE_ID, WorkerVerifiedEncoderFixture.libx264());
+        registry.eligibleWorkers(
+            SOURCE_NAMESPACE_ID,
+            encodeJob("h264").getDecision(),
+            WorkerVerifiedEncoderFixture.libx264());
 
     assertThat(targets).containsExactly(new ExecutionTargetId(libx264WorkerSessionId.toString()));
-    assertThat(registry.eligibleWorkers(UUID.randomUUID(), WorkerVerifiedEncoderFixture.libx264()))
+    assertThat(
+            registry.eligibleWorkers(
+                UUID.randomUUID(),
+                encodeJob("h264").getDecision(),
+                WorkerVerifiedEncoderFixture.libx264()))
         .isEmpty();
   }
 
@@ -1530,15 +1542,19 @@ class LiveWorkerConnectionRegistryTest {
         registration(libx264WorkerId, libx264Encoder()),
         new CancellableObserver());
     var pinned = WorkerVerifiedEncoderFixture.libx264();
-    var freeSlots = registry.availableSlots(SOURCE_NAMESPACE_ID, pinned);
+    var freeSlots =
+        registry.availableSlots(SOURCE_NAMESPACE_ID, encodeJob("h264").getDecision(), pinned);
 
     registry.dispatch(encodeJob("h264"), pinned);
 
     assertThat(freeSlots).isOne();
-    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, pinned)).isZero();
+    assertThat(
+            registry.availableSlots(SOURCE_NAMESPACE_ID, encodeJob("h264").getDecision(), pinned))
+        .isZero();
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, encodeJob("h264").getDecision()))
         .isOne();
-    assertThat(registry.availableSlots(UUID.randomUUID(), pinned)).isZero();
+    assertThat(registry.availableSlots(UUID.randomUUID(), encodeJob("h264").getDecision(), pinned))
+        .isZero();
   }
 
   @Test
@@ -1555,7 +1571,10 @@ class LiveWorkerConnectionRegistryTest {
     assertThat(
             encode
                 .registry()
-                .eligibleWorkers(SOURCE_NAMESPACE_ID, WorkerVerifiedEncoderFixture.libx264()))
+                .eligibleWorkers(
+                    SOURCE_NAMESPACE_ID,
+                    encodeJob("h264").getDecision(),
+                    WorkerVerifiedEncoderFixture.libx264()))
         .isEmpty();
     assertThat(encode.registry().encodableVideoCodecFamilies(SOURCE_NAMESPACE_ID))
         .doesNotContain("h264");

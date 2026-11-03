@@ -246,6 +246,7 @@ class AudioStepsTest {
     var steps =
         AudioSteps.below(
             copy("flac").channels(6).bitrate(2_500_000L).build(),
+            trackOf(6),
             defaultDeclarationBuilder()
                 .audio(
                     List.of(
@@ -261,7 +262,9 @@ class AudioStepsTest {
   void shouldEncodeEveryStepBelowTheSessionsAudioWhenTheSessionCopiesIt() {
     var declaration = defaultDeclarationBuilder().audio(entries(AudioCodec.AC3, 6)).build();
 
-    var steps = AudioSteps.below(copy("ac3").channels(6).bitrate(640_000L).build(), declaration);
+    var steps =
+        AudioSteps.below(
+            copy("ac3").channels(6).bitrate(640_000L).build(), trackOf(6), declaration);
 
     assertThat(steps.highestFirst().subList(1, steps.highestFirst().size()))
         .isNotEmpty()
@@ -285,29 +288,37 @@ class AudioStepsTest {
             .audio(List.of(aacEntryBuilder().maxChannels(4).build()))
             .build();
 
-    var steps = AudioSteps.below(encode("aac").channels(4).bitrate(128_000L).build(), declaration);
+    var steps =
+        AudioSteps.below(
+            encode("aac").channels(4).bitrate(128_000L).build(), trackOf(4), declaration);
 
     assertThat(describe(steps)).isEqualTo("aac 4 128000, aac 2 96000, aac 2 64000");
   }
 
   @Test
-  @DisplayName("Should refuse audio steps when the session's audio or the declaration is missing")
-  void shouldRefuseAudioStepsWhenTheSessionsAudioOrTheDeclarationIsMissing() {
+  @DisplayName(
+      "Should refuse audio steps when the session's audio, the track or the declaration is missing")
+  void shouldRefuseAudioStepsWhenTheSessionsAudioTheTrackOrTheDeclarationIsMissing() {
     var declaration = defaultDeclarationBuilder().build();
     var sessionAudio = AudioDecision.stereoAac();
+    var track = trackOf(2);
 
     assertThatNullPointerException()
-        .isThrownBy(() -> AudioSteps.below(null, declaration))
+        .isThrownBy(() -> AudioSteps.below(null, track, declaration))
         .withMessageContaining("sessionAudio");
     assertThatNullPointerException()
-        .isThrownBy(() -> AudioSteps.below(sessionAudio, null))
+        .isThrownBy(() -> AudioSteps.below(sessionAudio, null, declaration))
+        .withMessageContaining("track");
+    assertThatNullPointerException()
+        .isThrownBy(() -> AudioSteps.below(sessionAudio, track, null))
         .withMessageContaining("declaration");
   }
 
   @Test
   @DisplayName("Should keep only the session's audio when the session has no audio")
   void shouldKeepOnlyTheSessionsAudioWhenTheSessionHasNoAudio() {
-    var steps = AudioSteps.below(AudioDecision.none(), defaultDeclarationBuilder().build());
+    var steps =
+        AudioSteps.below(AudioDecision.none(), trackOf(2), defaultDeclarationBuilder().build());
 
     assertThat(steps.highestFirst()).containsExactly(AudioDecision.none());
     assertThat(steps.sessionAudio()).isEqualTo(AudioDecision.none());
@@ -348,10 +359,16 @@ class AudioStepsTest {
         .sourceCodecString(Optional.of("copied"));
   }
 
+  // A track whose layout the probe did not store.
+  private static AudioTrackChannels trackOf(int channels) {
+    return new AudioTrackChannels(channels, Optional.empty());
+  }
+
   private static void assertSteps(StepsCase stepsCase) {
     var declaration = defaultDeclarationBuilder().audio(stepsCase.entries()).build();
 
-    var steps = AudioSteps.below(stepsCase.sessionAudio(), declaration);
+    var sessionAudio = stepsCase.sessionAudio();
+    var steps = AudioSteps.below(sessionAudio, trackOf(sessionAudio.channels()), declaration);
 
     assertThat(describe(steps)).isEqualTo(String.join(", ", stepsCase.steps()));
   }

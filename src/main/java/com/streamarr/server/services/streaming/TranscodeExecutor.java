@@ -63,11 +63,11 @@ public interface TranscodeExecutor {
   int availableSlots(TranscodeDecision decision);
 
   /**
-   * Free slots on the workers that can run a later job attempt of a variant pinned to this
-   * worker-verified encoder: only workers that advertise the same encoder backend with the same
-   * keyframe-verified flag for its codec family.
+   * Free slots on the workers that can run a later job attempt of a variant with this decision
+   * pinned to this worker-verified encoder: only workers that advertise the same encoder backend
+   * with the same keyframe-verified flag for its codec family.
    */
-  int availableSlots(WorkerVerifiedEncoder pinnedEncoder);
+  int availableSlots(TranscodeDecision decision, WorkerVerifiedEncoder pinnedEncoder);
 
   /**
    * Identities eligible to run a producer with this decision right now: any worker for a copy, and
@@ -77,11 +77,12 @@ public interface TranscodeExecutor {
   Set<ExecutionTargetId> executionTargets(TranscodeDecision decision);
 
   /**
-   * Identities eligible to run a later job attempt of a variant pinned to this worker-verified
-   * encoder: only workers that advertise the same encoder backend with the same keyframe-verified
-   * flag for its codec family. Iteration order drives failover order.
+   * Identities eligible to run a later job attempt of a variant with this decision pinned to this
+   * worker-verified encoder: only workers that advertise the same encoder backend with the same
+   * keyframe-verified flag for its codec family. Iteration order drives failover order.
    */
-  Set<ExecutionTargetId> executionTargets(WorkerVerifiedEncoder pinnedEncoder);
+  Set<ExecutionTargetId> executionTargets(
+      TranscodeDecision decision, WorkerVerifiedEncoder pinnedEncoder);
 
   /**
    * The video codec families, such as {@code h264} or {@code av1}, that a connected worker with a

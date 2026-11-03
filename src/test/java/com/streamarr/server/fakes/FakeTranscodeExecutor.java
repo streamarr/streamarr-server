@@ -118,7 +118,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private Set<ExecutionTargetId> candidateTargets(TranscodeRequest request) {
     return request
         .pinnedEncoder()
-        .map(this::executionTargets)
+        .map(pinned -> executionTargets(request.transcodeDecision(), pinned))
         .orElseGet(() -> executionTargets(request.transcodeDecision()));
   }
 
@@ -379,8 +379,9 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
-  public int availableSlots(WorkerVerifiedEncoder pinnedEncoder) {
-    var slots = Math.min(availableSlots(), freeJobSlotsOn(executionTargets(pinnedEncoder)));
+  public int availableSlots(TranscodeDecision decision, WorkerVerifiedEncoder pinnedEncoder) {
+    var slots =
+        Math.min(availableSlots(), freeJobSlotsOn(executionTargets(decision, pinnedEncoder)));
     return Math.min(slots, encodeSlots(pinnedEncoder.backend().codecFamily()));
   }
 
@@ -455,7 +456,8 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
-  public Set<ExecutionTargetId> executionTargets(WorkerVerifiedEncoder pinnedEncoder) {
+  public Set<ExecutionTargetId> executionTargets(
+      TranscodeDecision decision, WorkerVerifiedEncoder pinnedEncoder) {
     return executionTargets.stream()
         .filter(target -> advertises(target, pinnedEncoder))
         .collect(Collectors.toCollection(LinkedHashSet::new));

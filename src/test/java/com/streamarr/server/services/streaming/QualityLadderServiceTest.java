@@ -12,6 +12,7 @@ import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.AudioSteps;
+import com.streamarr.server.domain.streaming.AudioTrackChannels;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
@@ -46,6 +47,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("Quality Ladder Service Tests")
 class QualityLadderServiceTest {
 
+  private static final AudioTrackChannels FIVE_POINT_ONE_TRACK =
+      new AudioTrackChannels(6, Optional.of("5.1(side)"));
   private static final AudioDecision SURROUND_EAC3 =
       AudioDecision.builder()
           .mode(AudioMode.TRANSCODE)
@@ -1121,7 +1124,7 @@ class QualityLadderServiceTest {
             .build();
     return ladderRequest(probe, options)
         .capabilityDeclaration(declaration)
-        .audioSteps(AudioSteps.below(SURROUND_EAC3, declaration))
+        .audioSteps(AudioSteps.below(SURROUND_EAC3, FIVE_POINT_ONE_TRACK, declaration))
         .build();
   }
 

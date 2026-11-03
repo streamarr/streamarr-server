@@ -1,5 +1,6 @@
 package com.streamarr.server.fixtures;
 
+import com.streamarr.server.domain.streaming.AudioStreamProperties;
 import com.streamarr.server.domain.streaming.ChosenVideoStream;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
@@ -165,6 +166,14 @@ public class ProbeFixture {
             .index(video.index() + 1)
             .channels(probe.audioChannels())
             .bitrate(probe.audioBitrate())
+            .audioProperties(
+                probe
+                    .audioChannelLayout()
+                    .map(
+                        layout ->
+                            AudioStreamProperties.builder()
+                                .channelLayout(Optional.of(layout))
+                                .build()))
             .build());
     return streams;
   }

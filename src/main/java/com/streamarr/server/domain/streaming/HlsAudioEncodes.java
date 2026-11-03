@@ -39,38 +39,39 @@ public final class HlsAudioEncodes {
   }
 
   /**
-   * The encode for a track with this normalized channel count: the first codec of E-AC-3, AC-3 and
-   * AAC that keeps more than two channels, or else AAC with at most two. The API boundary requires
-   * an AAC entry for HLS, so ADR 0043's AAC encode always fits.
+   * The encode for the track: the first codec of E-AC-3, AC-3 and AAC that keeps more than two
+   * channels, or else AAC with at most two. The API boundary requires an AAC entry for HLS, so ADR
+   * 0043's AAC encode always fits.
    */
   public static AudioDecision forTrack(
-      @NonNull ClientCapabilityDeclaration declaration, int normalizedChannels) {
+      @NonNull ClientCapabilityDeclaration declaration, @NonNull AudioTrackChannels track) {
     var channelMaximums = channelMaximums(declaration);
     return MULTICHANNEL_ENCODE_PREFERENCE.stream()
-        .flatMap(codec -> multichannelEncode(channelMaximums, codec, normalizedChannels).stream())
+        .flatMap(codec -> multichannelEncode(channelMaximums, codec, track).stream())
         .findFirst()
-        .orElseGet(() -> aacForTrack(declaration, normalizedChannels));
+        .orElseGet(() -> aacForTrack(declaration, track));
   }
 
   /**
-   * The encode in the codec, by its probed name, for a track with this normalized channel count, or
-   * empty when the server does not encode the codec or the encode would keep at most two channels.
+   * The encode of the track in the codec, by its probed name, or empty when the server does not
+   * encode the codec or the encode would keep at most two channels.
    */
   public static Optional<AudioDecision> multichannelEncode(
       @NonNull ClientCapabilityDeclaration declaration,
       @NonNull String codec,
-      int normalizedChannels) {
+      @NonNull AudioTrackChannels track) {
     if (!MULTICHANNEL_ENCODE_PREFERENCE.contains(codec)) {
       return Optional.empty();
     }
 
-    return multichannelEncode(channelMaximums(declaration), codec, normalizedChannels);
+    return multichannelEncode(channelMaximums(declaration), codec, track);
   }
 
-  /** The AAC encode for a track with this normalized channel count, with at most two channels. */
+  /** The AAC encode of the track, with at most two channels. */
   public static AudioDecision aacForTrack(
-      @NonNull ClientCapabilityDeclaration declaration, int normalizedChannels) {
+      @NonNull ClientCapabilityDeclaration declaration, @NonNull AudioTrackChannels track) {
     int aacMaximum = channelMaximum(declaration, "aac").orElse(STEREO);
+    var normalizedChannels = AudioDecision.normalizeChannels(track.count());
     return transcode("aac", Math.min(Math.min(normalizedChannels, STEREO), aacMaximum));
   }
 
@@ -84,9 +85,9 @@ public final class HlsAudioEncodes {
   }
 
   private static Optional<AudioDecision> multichannelEncode(
-      Map<String, Integer> channelMaximums, String codec, int normalizedChannels) {
+      Map<String, Integer> channelMaximums, String codec, AudioTrackChannels track) {
     int maximum = Math.min(channelMaximums.getOrDefault(codec, 0), encoderChannelLimit(codec));
-    int channels = channelsWithin(maximum, normalizedChannels);
+    int channels = channelsWithin(maximum, AudioDecision.normalizeChannels(track.count()));
     if (channels <= STEREO) {
       return Optional.empty();
     }

@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Stream;
 import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
@@ -59,7 +60,7 @@ class HlsAudioEncodesTest {
           + " more than two channels")
   void shouldEncodeEac3WithAtMost51WhenThePlayerDeclares71Eac3AndTheTrackHasMoreThanTwoChannels(
       int trackChannels) {
-    assertThat(HlsAudioEncodes.forTrack(stereoAacAnd71Eac3(), trackChannels))
+    assertThat(HlsAudioEncodes.forTrack(stereoAacAnd71Eac3(), trackOf(trackChannels)))
         .isEqualTo(encode("eac3").channels(6).bitrate(768_000L).build());
   }
 
@@ -75,7 +76,7 @@ class HlsAudioEncodesTest {
       "Should encode AAC with the track's channels when the track has at most two channels")
   void shouldEncodeAacWithTheTracksChannelsWhenTheTrackHasAtMostTwoChannels(
       AudioDecision expected) {
-    assertThat(HlsAudioEncodes.forTrack(stereoAacAnd71Eac3(), expected.channels()))
+    assertThat(HlsAudioEncodes.forTrack(stereoAacAnd71Eac3(), trackOf(expected.channels())))
         .isEqualTo(expected);
   }
 
@@ -108,7 +109,7 @@ class HlsAudioEncodesTest {
       MultichannelEncode expected) {
     var encode =
         HlsAudioEncodes.multichannelEncode(
-            everyCodecIn71(), expected.codec(), expected.trackChannels());
+            everyCodecIn71(), expected.codec(), trackOf(expected.trackChannels()));
 
     assertThat(encode).contains(expected.encode());
   }
@@ -130,7 +131,7 @@ class HlsAudioEncodesTest {
           MultichannelEncode request) {
     assertThat(
             HlsAudioEncodes.multichannelEncode(
-                everyCodecIn71(), request.codec(), request.trackChannels()))
+                everyCodecIn71(), request.codec(), trackOf(request.trackChannels())))
         .isEmpty();
   }
 
@@ -142,7 +143,7 @@ class HlsAudioEncodesTest {
           + " channels")
   void shouldEncodeAacStereoWhenAChannelMaximumOf3Or4CapsEveryCodecBelowTheTracksChannels(
       int channelMaximum) {
-    assertThat(HlsAudioEncodes.forTrack(everyCodecWithMaximum(channelMaximum), 6))
+    assertThat(HlsAudioEncodes.forTrack(everyCodecWithMaximum(channelMaximum), trackOf(6)))
         .isEqualTo(encode("aac").channels(2).bitrate(128_000L).build());
   }
 
@@ -174,7 +175,7 @@ class HlsAudioEncodesTest {
       MultichannelEncode expected) {
     var encode =
         HlsAudioEncodes.multichannelEncode(
-            everyCodecWithMaximum(5), expected.codec(), expected.trackChannels());
+            everyCodecWithMaximum(5), expected.codec(), trackOf(expected.trackChannels()));
 
     assertThat(encode).contains(expected.encode());
   }
@@ -182,14 +183,16 @@ class HlsAudioEncodesTest {
   @Test
   @DisplayName("Should encode AAC 5.1 when a channel maximum of 7 caps an 8-channel track")
   void shouldEncodeAac51WhenAChannelMaximumOf7CapsAn8ChannelTrack() {
-    assertThat(HlsAudioEncodes.multichannelEncode(everyCodecWithMaximum(7), "aac", 8))
+    assertThat(HlsAudioEncodes.multichannelEncode(everyCodecWithMaximum(7), "aac", trackOf(8)))
         .contains(encode("aac").channels(6).bitrate(384_000L).build());
   }
 
   @Test
-  @DisplayName("Should refuse to choose an encode when the declaration or the codec is missing")
-  void shouldRefuseToChooseAnEncodeWhenTheDeclarationOrTheCodecIsMissing() {
+  @DisplayName(
+      "Should refuse to choose an encode when the declaration, the codec or the track is missing")
+  void shouldRefuseToChooseAnEncodeWhenTheDeclarationTheCodecOrTheTrackIsMissing() {
     var declaration = defaultDeclarationBuilder().build();
+    var track = trackOf(2);
 
     assertThatNullPointerException()
         .isThrownBy(() -> HlsAudioEncodes.channelMaximum(null, "aac"))
@@ -198,17 +201,31 @@ class HlsAudioEncodesTest {
         .isThrownBy(() -> HlsAudioEncodes.channelMaximum(declaration, null))
         .withMessageContaining("codec");
     assertThatNullPointerException()
-        .isThrownBy(() -> HlsAudioEncodes.forTrack(null, 2))
+        .isThrownBy(() -> HlsAudioEncodes.forTrack(null, track))
         .withMessageContaining("declaration");
     assertThatNullPointerException()
-        .isThrownBy(() -> HlsAudioEncodes.aacForTrack(null, 2))
+        .isThrownBy(() -> HlsAudioEncodes.forTrack(declaration, null))
+        .withMessageContaining("track");
+    assertThatNullPointerException()
+        .isThrownBy(() -> HlsAudioEncodes.aacForTrack(null, track))
         .withMessageContaining("declaration");
     assertThatNullPointerException()
-        .isThrownBy(() -> HlsAudioEncodes.multichannelEncode(null, "ac3", 6))
+        .isThrownBy(() -> HlsAudioEncodes.aacForTrack(declaration, null))
+        .withMessageContaining("track");
+    assertThatNullPointerException()
+        .isThrownBy(() -> HlsAudioEncodes.multichannelEncode(null, "ac3", track))
         .withMessageContaining("declaration");
     assertThatNullPointerException()
-        .isThrownBy(() -> HlsAudioEncodes.multichannelEncode(declaration, null, 6))
+        .isThrownBy(() -> HlsAudioEncodes.multichannelEncode(declaration, null, track))
         .withMessageContaining("codec");
+    assertThatNullPointerException()
+        .isThrownBy(() -> HlsAudioEncodes.multichannelEncode(declaration, "ac3", null))
+        .withMessageContaining("track");
+  }
+
+  // A track whose layout the probe did not store.
+  private static AudioTrackChannels trackOf(int channels) {
+    return new AudioTrackChannels(channels, Optional.empty());
   }
 
   private static ClientCapabilityDeclaration stereoAacAnd71Eac3() {

@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.streaming.AudioSteps;
+import com.streamarr.server.domain.streaming.AudioTrackChannels;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.QualityVariant;
@@ -483,7 +484,11 @@ public class HlsStreamingService implements StreamingService {
             // The stream session refuses an encode without an output frame rate before it sizes a
             // variant.
             .frameRate(decision.outputFrameRate().orElseThrow())
-            .audioSteps(AudioSteps.below(decision.audioDecision(), declaration))
+            .audioSteps(
+                AudioSteps.below(
+                    decision.audioDecision(),
+                    AudioTrackChannels.of(decisionRequest.source()),
+                    declaration))
             .build();
     var ladder = qualityLadderService.generateVariants(request);
     return new QualityLadder(

@@ -426,7 +426,7 @@ public class ProducerLifecycleService {
   private Set<ExecutionTargetId> eligibleTargets(StreamSession session, String variantLabel) {
     return session
         .getPinnedEncoder(variantLabel)
-        .map(transcodeExecutor::executionTargets)
+        .map(pinned -> transcodeExecutor.executionTargets(session.getTranscodeDecision(), pinned))
         .orElseGet(() -> transcodeExecutor.executionTargets(session.getTranscodeDecision()));
   }
 
@@ -1153,7 +1153,7 @@ public class ProducerLifecycleService {
     var freeSlots =
         session
             .getPinnedEncoder(variantLabel)
-            .map(transcodeExecutor::availableSlots)
+            .map(pinned -> transcodeExecutor.availableSlots(session.getTranscodeDecision(), pinned))
             .orElseGet(() -> transcodeExecutor.availableSlots(session.getTranscodeDecision()));
     return freeSlots > 0;
   }
