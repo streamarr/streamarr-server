@@ -19,6 +19,8 @@ public record AudioDecision(
     @NonNull Optional<String> sourceCodecString,
     @NonNull Optional<ChannelLayout> channelLayout) {
 
+  private static final int SEVEN_CHANNELS = 7;
+
   // Every HLS variant is multiplexed fragmented MP4, which carries exactly these audio codecs.
   // Encodes use these codec strings; copies carry the source's probed codec string instead.
   // MP3 is transcoded rather than copied: the muxer refuses it below 16 kHz and writes a different
@@ -91,17 +93,20 @@ public record AudioDecision(
   }
 
   public static long bitrateFor(@NonNull String codec, int channels) {
+    if (channels >= SEVEN_CHANNELS) {
+      return Math.max(512_000L, fivePointOneBitrate(codec));
+    }
+
     return switch (channels) {
       case 1 -> 64_000L;
       case 5, 6 -> fivePointOneBitrate(codec);
-      case 7, 8 -> Math.max(512_000L, fivePointOneBitrate(codec));
       default -> 128_000L;
     };
   }
 
   // AC-3 takes 640 kb/s, the most that FFmpeg's AC-3 encoder produces however much more it is asked
   // for. E-AC-3 takes 768 kb/s, the highest 5.1 bitrate that streamed E-AC-3 commonly uses. Every
-  // other codec keeps 384 kb/s. A track of 7 or 8 channels never announces less than its codec's
+  // other codec keeps 384 kb/s. A track of 7 or more channels never announces less than its codec's
   // 5.1 bitrate.
   private static long fivePointOneBitrate(String codec) {
     return switch (codec) {

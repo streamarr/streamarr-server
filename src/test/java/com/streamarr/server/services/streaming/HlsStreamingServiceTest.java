@@ -37,6 +37,7 @@ import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.BitstreamRewrite;
+import com.streamarr.server.domain.streaming.ChannelLayout;
 import com.streamarr.server.domain.streaming.ChosenVideoStream;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
@@ -1083,6 +1084,49 @@ class HlsStreamingServiceTest {
             variant ->
                 assertThat(peakBandwidths.get(variant.label()))
                     .isGreaterThanOrEqualTo(variant.videoBitrate() + audioBitrate));
+  }
+
+  // ADR 0050: an AAC encode has at most six channels, so a 7.1 track encodes AAC 5.1 at AAC's 5.1
+  // bitrate even when the client's AAC entry accepts 8 channels, and the job names that layout.
+  @Test
+  @DisplayName(
+      "Should encode AAC 5.1 and name its layout in the job when the client's AAC entry accepts 8"
+          + " channels")
+  void shouldEncodeAac51AndNameItsLayoutInTheJobWhenTheClientsAacEntryAccepts8Channels() {
+    probeResults.setDefaultOutcome(
+        ProbeFixture.completeProbe(
+            defaultProbeBuilder()
+                .videoCodec("hevc")
+                .audioCodec("dts")
+                .audioChannels(OptionalInt.of(8))
+                .audioChannelLayout(Optional.of("7.1"))
+                .build()));
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(List.of(aacEntryBuilder().maxChannels(8).build()))
+            .build();
+
+    var session =
+        accepted(
+            service.createSession(
+                createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                    .capabilityDeclaration(declaration)
+                    .build()));
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(request -> request.transcodeDecision().audioDecision())
+        .isEqualTo(
+            AudioDecision.builder()
+                .mode(AudioMode.TRANSCODE)
+                .codec("aac")
+                .channels(6)
+                .channelLayout(Optional.of(ChannelLayout.FIVE_POINT_ONE))
+                .bitrate(384_000L)
+                .build());
+    assertThat(playlist).contains("CHANNELS=\"6\"");
   }
 
   // ADR 0050: a 7.1 DTS source encodes E-AC-3 5.1 at 768 kb/s, which leaves less than the 360p

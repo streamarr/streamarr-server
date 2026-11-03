@@ -1290,6 +1290,25 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.audioDecision().bitrate()).isEqualTo(768_000L);
   }
 
+  // A copy of more than 8 channels keeps at least the 512 kb/s that a 7.1 copy announces.
+  @Test
+  @DisplayName(
+      "Should announce at least 512 kb/s when a copied track of more than 8 channels has no probed"
+          + " bitrate")
+  void shouldAnnounceAtLeast512KbpsWhenACopiedTrackOfMoreThan8ChannelsHasNoProbedBitrate() {
+    var source =
+        probeBuilder("h264", "aac")
+            .audioChannels(OptionalInt.of(10))
+            .audioBitrate(OptionalLong.empty())
+            .build();
+
+    var decision = decideAudio(source, declaringAudio(audio(AAC, 16)));
+
+    assertThat(decision.mode()).isEqualTo(AudioMode.COPY);
+    assertThat(decision.channels()).isEqualTo(10);
+    assertThat(decision.bitrate()).isEqualTo(512_000L);
+  }
+
   @Test
   @DisplayName("Should transcode to multichannel AAC when only AAC is supported")
   void shouldTranscodeToMultichannelAacWhenOnlyAacIsSupported() {

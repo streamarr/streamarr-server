@@ -36,6 +36,7 @@ class AudioDecisionTest {
         BitrateCase.builder().codec("aac").channels(6).expected(384_000L).build(),
         BitrateCase.builder().codec("aac").channels(7).expected(512_000L).build(),
         BitrateCase.builder().codec("aac").channels(8).expected(512_000L).build(),
+        BitrateCase.builder().codec("aac").channels(10).expected(512_000L).build(),
         BitrateCase.builder().codec("ac3").channels(6).expected(640_000L).build(),
         BitrateCase.builder().codec("eac3").channels(6).expected(768_000L).build(),
         BitrateCase.builder().codec("eac3").channels(8).expected(768_000L).build());
