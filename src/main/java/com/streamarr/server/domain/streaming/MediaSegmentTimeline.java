@@ -98,6 +98,65 @@ public sealed interface MediaSegmentTimeline {
   }
 
   /**
+   * An encode's segments on the plain grid when the source's keyframes are known. A job attempt
+   * after segment 0 reads from the last keyframe that presents at least half a second before its
+   * first segment starts, and the worker decodes up to that start without encoding
+   * (streamarr/streamarr-server#502).
+   */
+  record KeyframeSeekingGrid(
+      @NonNull PlainGrid grid,
+      @NonNull KeyframePositions positions,
+      @NonNull DemuxerSeekTime seekTime)
+      implements MediaSegmentTimeline {
+
+    private static final Duration SEEK_MARGIN = Duration.ofMillis(500);
+
+    @Override
+    public Duration targetSegmentDuration() {
+      return grid.targetSegmentDuration();
+    }
+
+    @Override
+    public int mediaSegmentCount() {
+      return grid.mediaSegmentCount();
+    }
+
+    @Override
+    public Duration mediaSegmentDuration(int index) {
+      return grid.mediaSegmentDuration(index);
+    }
+
+    /**
+     * The chosen keyframe's time that the container's demuxer seeks by. An attempt reads from the
+     * source's start when no keyframe presents early enough or the keyframe decodes before zero.
+     */
+    @Override
+    public Optional<Duration> keyframeSeekPosition(int index) {
+      if (index == 0) {
+        return Optional.empty();
+      }
+
+      var latestPresentation =
+          Duration.ofSeconds(mediaSegmentStartSeconds(index)).minus(SEEK_MARGIN);
+      // Rounding up keeps a seek from reaching back to the keyframe before.
+      var position =
+          positions.keyframes().stream()
+              .filter(keyframe -> presentsAtOrBefore(keyframe, latestPresentation))
+              .reduce((earlier, later) -> later)
+              .map(keyframe -> positions.timeOf(seekTime.ticksOf(keyframe), RoundingMode.CEILING))
+              .filter(time -> !time.isNegative())
+              .orElse(Duration.ZERO);
+      return Optional.of(position);
+    }
+
+    // Rounding up keeps out a keyframe that presents a fraction of a nanosecond after the time.
+    private boolean presentsAtOrBefore(KeyframePosition keyframe, Duration time) {
+      return positions.timeOf(keyframe.presentationTime(), RoundingMode.CEILING).compareTo(time)
+          <= 0;
+    }
+  }
+
+  /**
    * A stream copy's segments, which open at source keyframes under ADR 0037's boundary rule.
    * Segment {@code N} opens at the presentation time of its keyframe and runs until the next
    * segment opens. Segment 0 opens at zero instead, because it also holds the media that presents

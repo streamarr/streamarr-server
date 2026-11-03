@@ -31,9 +31,12 @@ public record TranscodeRequest(
   /**
    * A stream copy attempt after segment 0 carries {@code keyframeSeekPosition}, the decode time of
    * the source keyframe that opens its first segment, and the worker seeks there instead of to
-   * {@code seekPosition} seconds. Every other attempt carries none. {@code outputFrameRate} is the
-   * exact rate at which an encode runs, the source's output frame rate unless the variant names
-   * another; a stream copy keeps the source's timing and carries none.
+   * {@code seekPosition} seconds. An encoded attempt after segment 0 carries one when the source's
+   * keyframes are known: the time, by which the container's demuxer seeks, of the last keyframe
+   * that presents at least half a second before its first segment. Every other attempt carries
+   * none. {@code outputFrameRate} is the exact rate at which an encode runs, the source's output
+   * frame rate unless the variant names another; a stream copy keeps the source's timing and
+   * carries none.
    */
   public TranscodeRequest {
     if (variantLabel == null) {

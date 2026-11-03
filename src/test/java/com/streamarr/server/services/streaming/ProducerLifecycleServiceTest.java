@@ -23,6 +23,7 @@ import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
@@ -79,6 +80,9 @@ class ProducerLifecycleServiceTest {
   private static final ExecutionTargetId NVENC_WORKER = new ExecutionTargetId("nvenc-worker");
   private static final ExecutionTargetId UNVERIFIED_LIBX264_WORKER =
       new ExecutionTargetId("unverified-libx264-worker");
+  private static final String MP4 = "mov,mp4,m4a,3gp,3g2,mj2";
+  private static final String MATROSKA = "matroska,webm";
+  private static final String MPEG_TS = "mpegts";
 
   private FakeTranscodeExecutor transcodeExecutor;
   private FakeSegmentStore segmentStore;
@@ -1953,16 +1957,189 @@ class ProducerLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should send no keyframe seek position when a relocated attempt encodes the video")
-  void shouldSendNoKeyframeSeekPositionWhenARelocatedAttemptEncodesTheVideo() {
-    var session = startedTranscodeSession("h264");
-    var startedBefore = transcodeExecutor.getStartedRequests().size();
+  @DisplayName(
+      "Should send no keyframe seek position when a relocated attempt encodes a source whose keyframes are not known")
+  void
+      shouldSendNoKeyframeSeekPositionWhenARelocatedAttemptEncodesASourceWhoseKeyframesAreNotKnown() {
+    var session =
+        startedEncodedSession(
+            defaultProbeBuilder()
+                .containerFormat(Optional.of(MPEG_TS))
+                .keyframes(
+                    new KeyframeKnowledge.PacketScanRequired(
+                        KeyframePacketScanReason.NO_CONTAINER_INDEX)));
 
-    lifecycle.ensurePositioned(session.getSessionId(), "1080p", "1080p/segment100.m4s");
+    var request = relocatedRequest(session, 100);
 
-    assertThat(startedSince(startedBefore))
-        .isNotEmpty()
+    assertThat(request.keyframeSeekPosition()).isEmpty();
+  }
+
+  // Keyframes every 6 s present on the grid and decode 84 ms earlier, as B-frames make them do. The
+  // first keyframe decodes at -84 ms.
+  private static List<KeyframePosition> keyframesDecoding84MillisBeforeTheyPresent() {
+    return LongStream.iterate(0, time -> time <= 7_200_000, time -> time + 6_000)
+        .mapToObj(time -> new KeyframePosition(time, time - 84))
+        .toList();
+  }
+
+  private static List<KeyframePosition> keyframesPresentingAt(long... millis) {
+    return LongStream.of(millis).mapToObj(time -> new KeyframePosition(time, time)).toList();
+  }
+
+  private StreamSession startedEncodedSession(
+      String containerFormat, List<KeyframePosition> keyframes) {
+    return startedEncodedSession(
+        defaultProbeBuilder()
+            .containerFormat(Optional.of(containerFormat))
+            .keyframes(knownKeyframes(keyframes)));
+  }
+
+  private StreamSession startedEncodedSession(MediaProbe.MediaProbeBuilder probe) {
+    var session =
+        defaultSessionBuilder()
+            .transcodeDecision(fullTranscodeDecision("h264"))
+            .mediaProbe(probe.build())
+            .build();
+    runtimeRegistry.save(session);
+    lifecycle.startFirstListedVariant(session);
+    return session;
+  }
+
+  private TranscodeRequest relocatedRequest(StreamSession session, int segmentIndex) {
+    lifecycle.ensurePositioned(
+        session.getSessionId(), StreamSession.defaultVariant(), "segment" + segmentIndex + ".m4s");
+    var request = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(request.startSequenceNumber()).isEqualTo(segmentIndex);
+    return request;
+  }
+
+  private TranscodeRequest replacementRequest(StreamSession session, int segmentIndex) {
+    transcodeExecutor.markDead(session.getSessionId());
+    lifecycle.recover(
+        earliestArrivingSegmentRequestBuilder()
+            .sessionId(session.getSessionId())
+            .segmentName("segment" + segmentIndex + ".m4s")
+            .build());
+    var request = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(request.startSequenceNumber()).isEqualTo(segmentIndex);
+    return request;
+  }
+
+  // Segment 100 starts at 600 s. The keyframe that presents at 600 s lies inside the half second
+  // before that start, so the attempt reads from the keyframe that presents at 594 s.
+  @ParameterizedTest
+  @CsvSource({"'" + MP4 + "', 594000", "'" + MATROSKA + "', 593916", "'" + MPEG_TS + "', 593916"})
+  @DisplayName(
+      "Should seek a relocated encoded attempt by the time that its container's demuxer seeks by")
+  void shouldSeekARelocatedEncodedAttemptByTheTimeThatItsContainersDemuxerSeeksBy(
+      String containerFormat, long expectedMillis) {
+    var session =
+        startedEncodedSession(containerFormat, keyframesDecoding84MillisBeforeTheyPresent());
+
+    var request = relocatedRequest(session, 100);
+
+    assertThat(request.keyframeSeekPosition()).hasValue(Duration.ofMillis(expectedMillis));
+  }
+
+  // Segment 2 starts at 12 s, so the replacement reads from the keyframe that presents at 6 s.
+  @Test
+  @DisplayName("Should seek a replacement encoded attempt to its keyframe's decode time")
+  void shouldSeekAReplacementEncodedAttemptToItsKeyframesDecodeTime() {
+    var session = startedEncodedSession(MATROSKA, keyframesDecoding84MillisBeforeTheyPresent());
+
+    var request = replacementRequest(session, 2);
+
+    assertThat(request.keyframeSeekPosition()).hasValue(Duration.ofMillis(5_916));
+  }
+
+  @Test
+  @DisplayName(
+      "Should seek an encoded attempt to a keyframe that presents exactly half a second before its segment")
+  void shouldSeekAnEncodedAttemptToAKeyframeThatPresentsExactlyHalfASecondBeforeItsSegment() {
+    var session =
+        startedEncodedSession(MATROSKA, keyframesPresentingAt(0, 599_000, 599_500, 599_501));
+
+    var request = relocatedRequest(session, 100);
+
+    assertThat(request.keyframeSeekPosition()).hasValue(Duration.ofMillis(599_500));
+  }
+
+  // On a 1/24000 time base, 14,256,001 ticks are 594.0000416666... s. A position rounded down
+  // would lie before the keyframe, and the demuxer would land on the keyframe before it.
+  @Test
+  @DisplayName(
+      "Should round an encoded attempt's keyframe position up when the time base divides no nanosecond")
+  void shouldRoundAnEncodedAttemptsKeyframePositionUpWhenTheTimeBaseDividesNoNanosecond() {
+    var keyframes =
+        LongStream.of(0, 14_256_001, 14_400_001)
+            .mapToObj(ticks -> new KeyframePosition(ticks, ticks))
+            .toList();
+    var session =
+        startedEncodedSession(
+            defaultProbeBuilder()
+                .containerFormat(Optional.of(MP4))
+                .keyframes(
+                    new KeyframeKnowledge.Known(
+                        KeyframePositions.builder()
+                            .streamIndex(0)
+                            .timeBaseNumerator(1)
+                            .timeBaseDenominator(24_000)
+                            .source(KeyframePositionSource.CONTAINER_INDEX)
+                            .keyframes(keyframes)
+                            .build())));
+
+    var request = relocatedRequest(session, 100);
+
+    assertThat(request.keyframeSeekPosition()).hasValue(Duration.ofNanos(594_000_041_667L));
+  }
+
+  @Test
+  @DisplayName("Should start an encoded attempt at segment 0 without a keyframe seek")
+  void shouldStartAnEncodedAttemptAtSegment0WithoutAKeyframeSeek() {
+    startedEncodedSession(MATROSKA, keyframesDecoding84MillisBeforeTheyPresent());
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
         .extracting(TranscodeRequest::keyframeSeekPosition)
-        .containsOnly(Optional.empty());
+        .isEqualTo(Optional.empty());
+  }
+
+  // Segment 1 starts at 6 s. The keyframe that presents at 0 s decodes at -84 ms.
+  @Test
+  @DisplayName(
+      "Should read an encoded attempt from the source's start when its keyframe decodes before zero")
+  void shouldReadAnEncodedAttemptFromTheSourcesStartWhenItsKeyframeDecodesBeforeZero() {
+    var session = startedEncodedSession(MATROSKA, keyframesDecoding84MillisBeforeTheyPresent());
+
+    var request = replacementRequest(session, 1);
+
+    assertThat(request.keyframeSeekPosition()).hasValue(Duration.ZERO);
+  }
+
+  // The video starts at 6 s, so no keyframe presents in the half second before segment 1 starts.
+  @Test
+  @DisplayName(
+      "Should read an encoded attempt from the source's start when no keyframe presents before its segment")
+  void shouldReadAnEncodedAttemptFromTheSourcesStartWhenNoKeyframePresentsBeforeItsSegment() {
+    var session = startedEncodedSession(MPEG_TS, keyframesPresentingAt(6_000, 12_000, 18_000));
+
+    var request = replacementRequest(session, 1);
+
+    assertThat(request.keyframeSeekPosition()).hasValue(Duration.ZERO);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep seeking a relocated copy attempt in an MP4 source to its segment's keyframe decode time")
+  void shouldKeepSeekingARelocatedCopyAttemptInAnMp4SourceToItsSegmentsKeyframeDecodeTime() {
+    var session =
+        startedCopySession(
+            defaultProbeBuilder()
+                .containerFormat(Optional.of(MP4))
+                .keyframes(knownKeyframes(keyframesDecoding84MillisBeforeTheyPresent())));
+
+    var request = relocatedRequest(session, 100);
+
+    assertThat(request.keyframeSeekPosition()).hasValue(Duration.ofMillis(599_916));
   }
 }
