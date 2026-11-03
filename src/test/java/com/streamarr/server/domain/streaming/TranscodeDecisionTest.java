@@ -10,6 +10,7 @@ import java.util.OptionalInt;
 import java.util.stream.Stream;
 import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -327,6 +328,40 @@ class TranscodeDecisionTest {
               assertThat(copy.codecProfile()).isEmpty();
               assertThat(copy.codecLevel()).isEmpty();
             });
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("sourceRangesAndTheRangesThatTheirCopyPlans")
+  @DisplayName(
+      "Should plan each value that the probe could not check as SDR or absent when the decision"
+          + " copies the video")
+  void shouldPlanEachValueThatTheProbeCouldNotCheckAsSdrOrAbsentWhenTheDecisionCopiesTheVideo(
+      VideoDynamicRange source, VideoDynamicRange planned) {
+    var decision =
+        decisionBuilder(TranscodeMode.REMUX)
+            .videoSource(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder().dynamicRange(source).build()))
+            .build();
+
+    assertThat(decision.plannedVideoOutput().dynamicRange()).isEqualTo(planned);
+  }
+
+  // ADR 0013 plans SDR for a copy of a source whose compatible base is UNSPECIFIED.
+  static Stream<Arguments> sourceRangesAndTheRangesThatTheirCopyPlans() {
+    var profile82 = VideoPlaybackFactsFixture.dolbyVisionProfile82();
+    return Stream.of(
+        Arguments.of(
+            Named.of("nothing checked", VideoDynamicRange.UNSPECIFIED),
+            new VideoDynamicRange(CompatibleBase.SDR, Presence.ABSENT, new DolbyVision.Absent())),
+        Arguments.of(
+            Named.of(
+                "an SDR base without HDR10+ or Dolby Vision checked",
+                VideoPlaybackFactsFixture.SDR),
+            new VideoDynamicRange(CompatibleBase.SDR, Presence.ABSENT, new DolbyVision.Absent())),
+        Arguments.of(
+            Named.of("Dolby Vision profile 8.2 without HDR10+ checked", profile82),
+            new VideoDynamicRange(CompatibleBase.SDR, Presence.ABSENT, profile82.dolbyVision())));
   }
 
   @Test
