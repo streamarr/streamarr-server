@@ -6,6 +6,7 @@ import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.AudioSteps;
 import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
+import com.streamarr.server.domain.streaming.DolbyVisionOutput;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.EncodedPictureSizes;
 import com.streamarr.server.domain.streaming.EncodedVariantRequest;
@@ -54,6 +55,10 @@ public class TranscodeDecisionService {
       Set.of("mp4a.40.2", "mp4a.40.5", "mp4a.40.29");
   private static final List<BitstreamRewrite> STRIP_HDR10_PLUS =
       List.of(BitstreamRewrite.STRIP_HDR10_PLUS);
+  private static final List<BitstreamRewrite> NORMALIZE_DOLBY_VISION_RECORD =
+      List.of(BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD);
+  private static final List<BitstreamRewrite> STRIP_HDR10_PLUS_AND_NORMALIZE_DOLBY_VISION_RECORD =
+      List.of(BitstreamRewrite.STRIP_HDR10_PLUS, BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD);
   private static final String STREAM_COPY_REFUSALS_METRIC =
       "streamarr.streaming.stream_copy_refusals";
 
@@ -88,11 +93,7 @@ public class TranscodeDecisionService {
     var subtitleDecision = SubtitleDecision.exclude();
 
     var mode = resolveTranscodeMode(videoCopyable, audioDecision, subtitleDecision);
-    var bitstreamRewrites =
-        videoCopy
-            .filter(_ -> mode.copiesVideo())
-            .map(VideoCopy::bitstreamRewrites)
-            .orElseGet(List::of);
+    var copyPlan = videoCopy.filter(_ -> mode.copiesVideo()).map(VideoCopy::plan);
 
     return Optional.of(
         TranscodeDecision.builder()
@@ -105,12 +106,18 @@ public class TranscodeDecisionService {
             .audioDecision(audioDecision)
             .subtitleDecision(subtitleDecision)
             .videoSource(source.videoPlaybackFacts())
-            .videoBitstreamRewrites(bitstreamRewrites)
+            .videoBitstreamRewrites(copyPlan.map(CopyPlan::bitstreamRewrites).orElseGet(List::of))
+            .videoDolbyVisionOutput(copyPlan.flatMap(CopyPlan::dolbyVisionOutput))
             .build());
   }
 
-  // The audio beside a video copy, and the bitstream rewrites of the copy.
-  private record VideoCopy(AudioDecision audio, List<BitstreamRewrite> bitstreamRewrites) {}
+  // The audio beside a video copy, and the plan of the copy.
+  private record VideoCopy(AudioDecision audio, CopyPlan plan) {}
+
+  // The bitstream rewrites of a copy, and its Dolby Vision when the playlist describes the copy as
+  // Dolby Vision.
+  private record CopyPlan(
+      List<BitstreamRewrite> bitstreamRewrites, Optional<DolbyVisionOutput> dolbyVisionOutput) {}
 
   // A copy needs a source within the viewer's limits beside the first audio step at which the
   // copy's cost fits the maximum bitrate, so the audio steps down before the video is encoded (ADR
@@ -136,14 +143,12 @@ public class TranscodeDecisionService {
       return Optional.empty();
     }
 
-    var bitstreamRewrites = acceptedVideoCopyRewrites(source, declaration);
-    if (bitstreamRewrites.isEmpty()
-        || !hasWorkerThatDeliversTheCopy(request, bitstreamRewrites.get())) {
+    var plan = acceptedVideoCopyPlan(source, declaration);
+    if (plan.isEmpty() || !hasWorkerThatDeliversTheCopy(request, plan.get().bitstreamRewrites())) {
       return Optional.empty();
     }
 
-    return Optional.of(
-        new VideoCopy(stepWithinMaximum.orElse(sessionAudio), bitstreamRewrites.get()));
+    return Optional.of(new VideoCopy(stepWithinMaximum.orElse(sessionAudio), plan.get()));
   }
 
   // A worker that does not deliver a copy's planned output would fail the copy, so the client gets
@@ -174,10 +179,10 @@ public class TranscodeDecisionService {
         .anyMatch(variantRequest -> declaration.fitHlsEncode(variantRequest).isPresent());
   }
 
-  private Optional<List<BitstreamRewrite>> acceptedVideoCopyRewrites(
+  private Optional<CopyPlan> acceptedVideoCopyPlan(
       MediaProbe source, ClientCapabilityDeclaration declaration) {
-    var bitstreamRewrites = copyRewritesBeforeTheKeyframeCheck(source, declaration);
-    if (bitstreamRewrites.isEmpty()) {
+    var plan = copyPlanBeforeTheKeyframeCheck(source, declaration);
+    if (plan.isEmpty()) {
       return Optional.empty();
     }
 
@@ -187,7 +192,7 @@ public class TranscodeDecisionService {
       return Optional.empty();
     }
 
-    return bitstreamRewrites;
+    return plan;
   }
 
   /**
@@ -196,33 +201,51 @@ public class TranscodeDecisionService {
    */
   static boolean isCopyAcceptedBeforeTheKeyframeCheck(
       MediaProbe source, ClientCapabilityDeclaration declaration) {
-    return copyRewritesBeforeTheKeyframeCheck(source, declaration).isPresent();
+    return copyPlanBeforeTheKeyframeCheck(source, declaration).isPresent();
   }
 
-  // The bitstream rewrites of the copy that a video capability entry for HLS accepts, or empty
-  // when the copy rules or every entry refuse it. A client that declares the base range but not
-  // HDR10+ gets the copy with HDR10+ stripped (ADR 0036). Apple's HLS Authoring Specification item
-  // 1.14 requires deinterlaced video, so the worker deinterlaces an interlaced source while it
-  // encodes (streamarr/streamarr-server#653).
-  private static Optional<List<BitstreamRewrite>> copyRewritesBeforeTheKeyframeCheck(
+  // The first copy plan that a video capability entry for HLS accepts, or empty when the copy rules
+  // or every entry refuse each plan. Apple's HLS Authoring Specification item 1.14 requires
+  // deinterlaced video, so the worker deinterlaces an interlaced source while it encodes
+  // (streamarr/streamarr-server#653).
+  private static Optional<CopyPlan> copyPlanBeforeTheKeyframeCheck(
       MediaProbe source, ClientCapabilityDeclaration declaration) {
     var copy = VideoStreamCopy.of(source);
     if (copy.isEmpty() || source.isInterlaced() || !permitsCopyUntilHdrCopies(source)) {
       return Optional.empty();
     }
 
-    if (declaration.acceptsHlsCopy(copy.get())) {
-      return Optional.of(List.of());
+    return copyPlans(copy.get()).stream()
+        .filter(
+            plan -> declaration.acceptsHlsCopy(copy.get().afterRewrites(plan.bitstreamRewrites())))
+        .findFirst();
+  }
+
+  // The copies that the server can plan, the best picture first: the server picks one output for
+  // each client and format attempt (ADR 0013). A copy that keeps Dolby Vision on a PQ or HLG base
+  // writes the record that the playlist describes, and strips HDR10+ by default (ADR 0036). A
+  // client that declares the base range but not HDR10+ gets the copy with HDR10+ stripped.
+  private static List<CopyPlan> copyPlans(VideoStreamCopy copy) {
+    var hasHdr10Plus = copy.dynamicRange().hdr10Plus() == Presence.PRESENT;
+    var dolbyVisionOutput = copy.dolbyVisionOutput();
+    if (dolbyVisionOutput.isPresent()) {
+      return List.of(new CopyPlan(keepingDolbyVisionRewrites(hasHdr10Plus), dolbyVisionOutput));
     }
 
-    var hdr10PlusStripped =
-        copy.filter(keeping -> keeping.dynamicRange().hdr10Plus() == Presence.PRESENT)
-            .map(keeping -> keeping.afterRewrites(STRIP_HDR10_PLUS));
-    if (hdr10PlusStripped.filter(declaration::acceptsHlsCopy).isPresent()) {
-      return Optional.of(STRIP_HDR10_PLUS);
+    var passThrough = new CopyPlan(List.of(), Optional.empty());
+    if (!hasHdr10Plus) {
+      return List.of(passThrough);
     }
 
-    return Optional.empty();
+    return List.of(passThrough, new CopyPlan(STRIP_HDR10_PLUS, Optional.empty()));
+  }
+
+  private static List<BitstreamRewrite> keepingDolbyVisionRewrites(boolean hasHdr10Plus) {
+    if (hasHdr10Plus) {
+      return STRIP_HDR10_PLUS_AND_NORMALIZE_DOLBY_VISION_RECORD;
+    }
+
+    return NORMALIZE_DOLBY_VISION_RECORD;
   }
 
   /**

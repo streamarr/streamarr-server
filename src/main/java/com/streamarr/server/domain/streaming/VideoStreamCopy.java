@@ -56,6 +56,20 @@ public record VideoStreamCopy(
                     .build());
   }
 
+  /**
+   * The Dolby Vision that the playlist describes when this copy keeps it: a profile with a PQ or
+   * HLG base that a capability entry can name, at the level that the record names or the level
+   * table gives (ADR 0013). Empty for a copy without such Dolby Vision.
+   */
+  public Optional<DolbyVisionOutput> dolbyVisionOutput() {
+    if (CopiedDolbyVision.of(this)
+        instanceof CopiedDolbyVision.Declarable(var profile, var level)) {
+      return Optional.of(new DolbyVisionOutput(profile, level));
+    }
+
+    return Optional.empty();
+  }
+
   /** The copy that the worker delivers after the bitstream rewrites (ADR 0036). */
   public VideoStreamCopy afterRewrites(@NonNull Collection<BitstreamRewrite> rewrites) {
     return toBuilder().dynamicRange(dynamicRange.afterRewrites(rewrites)).build();
