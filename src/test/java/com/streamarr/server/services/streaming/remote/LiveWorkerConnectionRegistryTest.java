@@ -745,20 +745,18 @@ class LiveWorkerConnectionRegistryTest {
         .isPresent();
   }
 
+  // An encode always carries its planned range, and the planned output feature covers only copies.
   @Test
   @DisplayName(
-      "Should dispatch an encode with its planned range and a copy without one to a worker that"
-          + " lists no rewrite and no copy feature")
-  void shouldDispatchAnEncodeWithItsPlannedRangeAndAPlainCopyToAWorkerThatListsNoCopyFeature() {
+      "Should dispatch an encode with its planned range to a worker that lists no copy feature")
+  void shouldDispatchAnEncodeWithItsPlannedRangeToAWorkerThatListsNoCopyFeature() {
     var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
-    var registration = registration(WORKER_ID, 2).toBuilder();
-    registration.getCapabilitiesBuilder().addVideoEncoders(libx264Encoder());
-    registry.register(WORKER_ID, registration.build(), new CancellableObserver());
+    registry.register(
+        WORKER_ID, registration(WORKER_ID, libx264Encoder()), new CancellableObserver());
     var encode = encodeJob("h264").toBuilder();
     encode.getDecisionBuilder().getVideoBuilder().setOutputDynamicRange(sdrRange());
 
     assertThat(registry.dispatch(encode.build())).isPresent();
-    assertThat(registry.dispatch(copyJob(copyVideo()))).isPresent();
   }
 
   @Test
