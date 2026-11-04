@@ -294,7 +294,9 @@ enum Action {
   VIEW_ENCODER_PRESET(
       "viewEncoderPreset", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
   CHANGE_ENCODER_PRESET(
-      "changeEncoderPreset", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
+      "changeEncoderPreset", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  VIEW_ACTIVE_STREAMS(
+      "viewActiveStreams", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
 
   private static final String ACTION_TYPE = "Streamarr::Action";
 

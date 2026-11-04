@@ -1343,6 +1343,37 @@ class CedarIdentityPoliciesTest {
   }
 
   @Nested
+  @DisplayName("Active streams")
+  class ActiveStreams {
+
+    private final Intent.UnitIntent viewActiveStreams = new Intent.ViewActiveStreams();
+
+    @Test
+    @DisplayName("Should allow viewing the active streams when the caller is ServerAdmin")
+    void shouldAllowViewingTheActiveStreamsWhenTheCallerIsServerAdmin() {
+      account.setServerAdmin(true);
+      accounts.save(account);
+
+      assertThat(decide(atHome(), viewActiveStreams)).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should deny the active streams when the caller is not ServerAdmin")
+    void shouldDenyTheActiveStreamsWhenTheCallerIsNotServerAdmin() {
+      assertThat(decide(atHome(), viewActiveStreams)).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should deny the active streams when the ServerAdmin session is device-bound")
+    void shouldDenyTheActiveStreamsWhenTheServerAdminSessionIsDeviceBound() {
+      account.setServerAdmin(true);
+      accounts.save(account);
+
+      assertThat(decide(onDevice(atHome()), viewActiveStreams)).isEqualTo(DENIED);
+    }
+  }
+
+  @Nested
   @DisplayName("Transfers and deletion")
   class TransfersAndDeletion {
 

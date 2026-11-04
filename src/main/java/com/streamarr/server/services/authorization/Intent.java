@@ -217,4 +217,7 @@ public sealed interface Intent {
 
   /** Change the server's encoder preset setting (ADR 0044); a whole-surface gate. */
   record ChangeEncoderPreset() implements UnitIntent {}
+
+  /** See every active stream on the server and why it plays as it does; a whole-surface gate. */
+  record ViewActiveStreams() implements UnitIntent {}
 }

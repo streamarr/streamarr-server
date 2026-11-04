@@ -4337,6 +4337,7 @@ class HlsStreamingServiceTest {
 
   private PlaybackSessionService logicalPlayback() {
     return PlaybackSessionService.builder()
+        .eventPublisher(_ -> {})
         .streamingService(service)
         .authorityGate(authorityGate)
         .executor(Runnable::run)

@@ -174,6 +174,8 @@ final class IntentPlanner {
           unitPlan(AuthorizationCheck.onServer(Action.VIEW_ENCODER_PRESET));
       case Intent.ChangeEncoderPreset _ ->
           unitPlan(AuthorizationCheck.onServer(Action.CHANGE_ENCODER_PRESET));
+      case Intent.ViewActiveStreams _ ->
+          unitPlan(AuthorizationCheck.onServer(Action.VIEW_ACTIVE_STREAMS));
     };
   }
 

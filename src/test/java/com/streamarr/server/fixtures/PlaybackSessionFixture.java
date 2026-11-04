@@ -22,6 +22,7 @@ public class PlaybackSessionFixture {
   public static PlaybackSessionService.PlaybackSessionServiceBuilder playbackServiceBuilder(
       StreamingService streams) {
     return PlaybackSessionService.builder()
+        .eventPublisher(_ -> {})
         .streamingService(streams)
         .authorityGate(new FakePlaybackAuthorityGate())
         .executor(Runnable::run)

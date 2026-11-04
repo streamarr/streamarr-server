@@ -1389,6 +1389,7 @@ class StreamingResolverTest {
     @Bean
     PlaybackSessionService playbackSessionService() {
       return PlaybackSessionService.builder()
+          .eventPublisher(_ -> {})
           .streamingService(STUB_SERVICE)
           .authorityGate(new FakePlaybackAuthorityGate())
           .executor(REPLACEMENT_TASKS::add)
