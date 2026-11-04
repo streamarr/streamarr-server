@@ -272,7 +272,11 @@ class RemoteFormatFailureIT {
   @ParameterizedTest
   @EnumSource(
       value = JobAttemptFailure.class,
-      names = {"JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED", "JOB_ATTEMPT_FAILURE_SOURCE_UNAVAILABLE"})
+      names = {
+        "JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED",
+        "JOB_ATTEMPT_FAILURE_SOURCE_UNAVAILABLE",
+        "JOB_ATTEMPT_FAILURE_COPY_CAP_REACHED"
+      })
   @DisplayName("Should retain ordinary recovery when the worker reports an ordinary job failure")
   void shouldRetainOrdinaryRecoveryWhenWorkerReportsOrdinaryJobFailure(JobAttemptFailure failure)
       throws Exception {
