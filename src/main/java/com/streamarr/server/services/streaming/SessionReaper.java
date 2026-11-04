@@ -45,8 +45,7 @@ public class SessionReaper {
   private void processSession(StreamSession session, Instant now, Duration retention) {
     if (isExpired(session, now, retention)) {
       log.info("Reaping expired session {}", session.getSessionId());
-      closePlaybackSession(session.getSessionId());
-      streamingService.destroySession(session.getSessionId());
+      destroy(session.getSessionId());
       return;
     }
 
@@ -62,6 +61,11 @@ public class SessionReaper {
     } catch (RuntimeException failure) {
       log.warn("Failed to reap expired logical playback sessions", failure);
     }
+  }
+
+  private void destroy(UUID streamSessionId) {
+    closePlaybackSession(streamSessionId);
+    streamingService.destroySession(streamSessionId);
   }
 
   private void closePlaybackSession(UUID streamSessionId) {
