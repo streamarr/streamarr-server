@@ -16,6 +16,8 @@ type Me {
     "The Profile picker of the context Household."
     selectableProfiles(first: Int, after: String, last: Int, before: String): SelectableProfileConnection!
     selectedProfile: SelectableProfile
+    "The selected Profile's own language preferences; null without a selected Profile."
+    languagePreferences: ProfileLanguagePreferences
     "True for a session bound to a registered Device; it cannot switch Household or administer."
     deviceBound: Boolean!
 }
