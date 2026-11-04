@@ -18,6 +18,7 @@ import com.streamarr.server.fakes.FakeCreatingStreamingService;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
+import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.PlaybackSessionFixture;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
@@ -30,6 +31,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayDeque;
 import java.util.OptionalDouble;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -42,6 +44,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 @DisplayName("Session Reaper Tests")
 class SessionReaperTest {
 
+  // Starts at the wall clock, which new stream sessions stamp as their last access.
+  private final MutableClock clock = new MutableClock(new AtomicReference<>(Instant.now()));
   private FakeTranscodeExecutor executor;
   private FakeCreatingStreamingService streamingService;
   private PlaybackSessionService playback;
@@ -79,7 +83,7 @@ class SessionReaperTest {
   @DisplayName("Should finish reaping child sessions when closing logical playback throws")
   void shouldFinishReapingChildSessionsWhenClosingLogicalPlaybackThrows(
       boolean logicalActivityExpired) {
-    var now = Instant.now();
+    var now = clock.instant();
     var logicalActivity = logicalActivityExpired ? now.minus(Duration.ofHours(25)) : now;
     playback =
         playbackServiceBuilder(streamingService)
@@ -113,7 +117,7 @@ class SessionReaperTest {
     playback =
         playbackServiceBuilder(streamingService)
             .executor(work::add)
-            .clock(Clock.fixed(Instant.now().minus(Duration.ofHours(25)), ZoneOffset.UTC))
+            .clock(Clock.fixed(clock.instant().minus(Duration.ofHours(25)), ZoneOffset.UTC))
             .build();
     var command =
         startPlaybackBuilder().options(StreamingOptions.builder().quality(quality).build()).build();
@@ -153,7 +157,7 @@ class SessionReaperTest {
         .getAllSessions()
         .iterator()
         .next()
-        .setLastAccessedAt(Instant.now().minus(Duration.ofHours(25)));
+        .setLastAccessedAt(clock.instant().minus(Duration.ofHours(25)));
     streamingService.afterNextSnapshot(
         () ->
             playback.onVideoCopyOutputMismatch(
@@ -183,7 +187,7 @@ class SessionReaperTest {
         .getAllSessions()
         .iterator()
         .next()
-        .setLastAccessedAt(Instant.now().minus(Duration.ofHours(25)));
+        .setLastAccessedAt(clock.instant().minus(Duration.ofHours(25)));
     streamingService.beforeNextDestroy(
         () ->
             playback.onVideoCopyOutputMismatch(
@@ -199,7 +203,7 @@ class SessionReaperTest {
   @Test
   @DisplayName("Should mark handle as suspended when session is idle past timeout")
   void shouldMarkHandleAsSuspendedWhenIdlePastTimeout() {
-    var session = buildSession(Instant.now().minusSeconds(120));
+    var session = buildSession(clock.instant().minusSeconds(120));
     streamingService.addSession(session);
 
     reaper.reapSessions();
@@ -210,7 +214,7 @@ class SessionReaperTest {
   @Test
   @DisplayName("Should preserve session when suspending idle session")
   void shouldPreserveSessionWhenSuspendingIdleSession() {
-    var session = buildSession(Instant.now().minusSeconds(120));
+    var session = buildSession(clock.instant().minusSeconds(120));
     streamingService.addSession(session);
 
     reaper.reapSessions();
@@ -221,7 +225,7 @@ class SessionReaperTest {
   @Test
   @DisplayName("Should destroy session when idle past retention timeout")
   void shouldDestroySessionWhenIdlePastRetentionTimeout() {
-    var session = buildSession(Instant.now().minusSeconds(90_000));
+    var session = buildSession(clock.instant().minusSeconds(90_000));
     streamingService.addSession(session);
 
     reaper.reapSessions();
@@ -247,7 +251,7 @@ class SessionReaperTest {
   @Test
   @DisplayName("Should not suspend session when already suspended")
   void shouldNotSuspendSessionWhenAlreadySuspended() {
-    var session = buildSession(Instant.now().minusSeconds(120));
+    var session = buildSession(clock.instant().minusSeconds(120));
     session.setHandle(StreamSessionFixture.mintHandle(1L, TranscodeStatus.SUSPENDED));
     streamingService.addSession(session);
 
@@ -260,7 +264,7 @@ class SessionReaperTest {
   @Test
   @DisplayName("Should not suspend session when handles are failed")
   void shouldNotSuspendSessionWhenHandlesAreFailed() {
-    var session = buildSession(Instant.now().minusSeconds(120));
+    var session = buildSession(clock.instant().minusSeconds(120));
     session.setHandle(StreamSessionFixture.mintHandle(1L, TranscodeStatus.FAILED));
     streamingService.addSession(session);
 
@@ -273,7 +277,7 @@ class SessionReaperTest {
   @Test
   @DisplayName("Should stop executor when suspending idle session")
   void shouldStopExecutorWhenSuspendingIdleSession() {
-    var session = buildSession(Instant.now().minusSeconds(120));
+    var session = buildSession(clock.instant().minusSeconds(120));
     streamingService.addSession(session);
 
     reaper.reapSessions();
@@ -284,7 +288,7 @@ class SessionReaperTest {
   @Test
   @DisplayName("Should preserve session when recently accessed")
   void shouldPreserveSessionWhenRecentlyAccessed() {
-    var session = buildSession(Instant.now().minusSeconds(10));
+    var session = buildSession(clock.instant().minusSeconds(10));
     streamingService.addSession(session);
 
     reaper.reapSessions();
@@ -295,7 +299,7 @@ class SessionReaperTest {
   @Test
   @DisplayName("Should leave dead producer handles untouched when session is recently accessed")
   void shouldLeaveDeadProducerHandlesUntouchedWhenSessionIsRecentlyAccessed() {
-    var session = buildSession(Instant.now().minusSeconds(10));
+    var session = buildSession(clock.instant().minusSeconds(10));
     session.setHandle(StreamSessionFixture.mintHandle(1234L, TranscodeStatus.ACTIVE));
     streamingService.addSession(session);
     executor.markDead(session.getSessionId());
@@ -310,7 +314,7 @@ class SessionReaperTest {
   @Test
   @DisplayName("Should not change handles when all variants are running")
   void shouldNotChangeHandlesWhenAllVariantsRunning() {
-    var session = buildAbrSession(Instant.now().minusSeconds(10));
+    var session = buildAbrSession(clock.instant().minusSeconds(10));
     streamingService.addSession(session);
 
     reaper.reapSessions();
@@ -324,7 +328,7 @@ class SessionReaperTest {
   @Test
   @DisplayName("Should skip already failed handles when suspending idle session")
   void shouldSkipAlreadyFailedHandlesWhenSuspendingIdleSession() {
-    var session = buildSession(Instant.now().minusSeconds(120));
+    var session = buildSession(clock.instant().minusSeconds(120));
     session.setVariantHandle(
         "1080p", StreamSessionFixture.mintHandle(100L, TranscodeStatus.ACTIVE));
     session.setVariantHandle("720p", StreamSessionFixture.mintHandle(101L, TranscodeStatus.FAILED));
@@ -357,8 +361,8 @@ class SessionReaperTest {
   @Test
   @DisplayName("Should keep reaping remaining sessions when one session fails to suspend")
   void shouldKeepReapingRemainingSessionsWhenOneSessionFailsToSuspend() {
-    var failing = buildSession(Instant.now().minusSeconds(120));
-    var expired = buildSession(Instant.now().minusSeconds(90_000));
+    var failing = buildSession(clock.instant().minusSeconds(120));
+    var expired = buildSession(clock.instant().minusSeconds(90_000));
     streamingService.addSession(failing);
     streamingService.addSession(expired);
     executor.failOnStop(failing.getSessionId());
@@ -373,7 +377,8 @@ class SessionReaperTest {
         .streamingService(streamingService)
         .properties(properties)
         .producerLifecycle(producerLifecycle)
-        .playbackSessionService(playback);
+        .playbackSessionService(playback)
+        .clock(clock);
   }
 
   private StreamSession buildSession(Instant lastAccessedAt) {

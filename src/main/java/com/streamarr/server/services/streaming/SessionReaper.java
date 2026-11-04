@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.Builder;
@@ -20,10 +21,11 @@ public class SessionReaper {
   private final StreamingProperties properties;
   private final ProducerLifecycleService producerLifecycle;
   private final PlaybackSessionService playbackSessionService;
+  private final Clock clock;
 
   @Scheduled(fixedDelayString = "${streaming.reaper-interval-ms:15000}")
   public void reapSessions() {
-    var now = Instant.now();
+    var now = clock.instant();
     reapExpiredPlayback(now);
     for (var session : streamingService.getAllSessions()) {
       try {
