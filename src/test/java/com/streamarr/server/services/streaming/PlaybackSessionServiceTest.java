@@ -1543,6 +1543,98 @@ class PlaybackSessionServiceTest {
     assertThat(streams.sessions).containsKey(directPlay.currentFormatAttempt().streamSessionId());
   }
 
+  // Direct play still plays while the switch's stream session starts, so a worker failure of that
+  // stream session fails only the switch.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("workerFailuresOfTheSwitchesStreamSession")
+  @DisplayName(
+      "Should keep direct play when the worker fails the stream session of an audio switch before"
+          + " it completes")
+  void shouldKeepDirectPlayWhenTheWorkerFailsTheStreamSessionOfAnAudioSwitchBeforeItCompletes(
+      String scenario, BiConsumer<PlaybackSessionService, UUID> workerFailure) {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlayOfTwoAudioTracks(service, command);
+    streams.duringNextCreation = next -> workerFailure.accept(service, next.streamSessionId());
+
+    var outcome = service.switchAudioTrack(audioSwitch(directPlay, command, 1));
+
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new AudioTrackSwitchRejection.StreamSessionFailed()));
+    assertThat(service.access(request(directPlay, command))).contains(directPlay);
+    assertThat(streams.sessions.keySet())
+        .containsExactly(directPlay.currentFormatAttempt().streamSessionId());
+  }
+
+  private static Stream<Arguments> workerFailuresOfTheSwitchesStreamSession() {
+    return Stream.of(
+        Arguments.of(
+            "a terminal failure",
+            (BiConsumer<PlaybackSessionService, UUID>)
+                (playback, streamId) ->
+                    playback.onTerminalTranscodeFailure(
+                        terminalFailure(streamId, TranscodeFailure.INVALID_SPECIFICATION))),
+        Arguments.of(
+            "a copy output mismatch",
+            (BiConsumer<PlaybackSessionService, UUID>)
+                (playback, streamId) ->
+                    playback.onVideoCopyOutputMismatch(
+                        new VideoCopyOutputMismatchEvent(streamId, UUID.randomUUID(), "default"))));
+  }
+
+  // Direct play stays the current format attempt during a switch, so its failure recovers as any
+  // direct-play failure does, and the recovery plays the chosen track.
+  @Test
+  @DisplayName(
+      "Should recover with the chosen audio track when direct play fails during an audio switch")
+  void shouldRecoverWithTheChosenAudioTrackWhenDirectPlayFailsDuringAnAudioSwitch() {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlayOfTwoAudioTracks(service, command);
+    streams.duringNextCreation =
+        _ -> service.reportFormatFailure(report(directPlay, command).build());
+
+    var switched = accepted(service.switchAudioTrack(audioSwitch(directPlay, command, 1)));
+
+    assertThat(switched.formatAttemptCount()).isEqualTo(2);
+    assertThat(switched.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready -> assertThat(streams.getAllSessions()).containsExactly(ready.session()));
+    assertThat(streams.createdCommands.getLast().audioTrackPosition()).hasValue(1);
+  }
+
+  // The reaper ends a playback session whose direct play went quiet, even during a switch.
+  @Test
+  @DisplayName(
+      "Should report a closed playback session when the reaper ends direct play during an audio"
+          + " switch")
+  void shouldReportAClosedPlaybackSessionWhenTheReaperEndsDirectPlayDuringAnAudioSwitch() {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlayOfTwoAudioTracks(service, command);
+    streams.duringNextCreation =
+        _ -> service.closeOwningStream(directPlay.currentFormatAttempt().streamSessionId());
+
+    var outcome = service.switchAudioTrack(audioSwitch(directPlay, command, 1));
+
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new AudioTrackSwitchRejection.PlaybackSessionClosed()));
+    assertThat(streams.sessions).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should start nothing when the viewer switches again while an audio switch starts")
+  void shouldStartNothingWhenTheViewerSwitchesAgainWhileAnAudioSwitchStarts() {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlayOfTwoAudioTracks(service, command);
+    var second = new AtomicReference<PlaybackSessionSnapshot>();
+    streams.duringNextCreation =
+        _ -> second.set(accepted(service.switchAudioTrack(audioSwitch(directPlay, command, 1))));
+
+    accepted(service.switchAudioTrack(audioSwitch(directPlay, command, 1)));
+
+    assertThat(second.get()).isEqualTo(directPlay);
+    assertThat(streams.createdCommands).hasSize(2);
+  }
+
   @Test
   @DisplayName("Should keep direct play when the viewer switches to the audio track that it plays")
   void shouldKeepDirectPlayWhenTheViewerSwitchesToTheAudioTrackThatItPlays() {
@@ -1571,8 +1663,8 @@ class PlaybackSessionServiceTest {
     assertThat(streams.createdCommands).hasSize(2);
   }
 
-  // The switch and a direct-play failure each move the same direct-play format attempt, so only
-  // the first under the playback session's lock starts the HLS format attempt.
+  // The switch and a direct-play failure each move the same direct-play format attempt, so one HLS
+  // format attempt plays and every other stream session ends, whichever comes first.
   @Test
   @DisplayName(
       "Should start one HLS format attempt when an audio switch and a direct-play failure race")
@@ -1607,8 +1699,10 @@ class PlaybackSessionServiceTest {
     drain(work);
     var hls = playback.access(request(directPlay, command)).orElseThrow();
     assertThat(hls.formatAttemptCount()).isEqualTo(2);
-    assertThat(hls.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
-    assertThat(streams.createdCommands).hasSize(2);
+    assertThat(hls.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            attempt -> assertThat(streams.getAllSessions()).containsExactly(attempt.session()));
   }
 
   @Test

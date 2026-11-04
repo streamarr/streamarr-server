@@ -274,6 +274,9 @@ public class StreamingResolver {
           new PlaybackSessionError.PlaybackFormatAttemptsExhaustedError(
               "The audio track can't change now. Keep the current audio track, or start the video"
                   + " again.");
+      case AudioTrackSwitchRejection.StreamSessionFailed() ->
+          new PlaybackSessionError.PlaybackStartupFailedError(
+              "The audio track can't change now. Keep the current audio track, or try again later.");
       case AudioTrackSwitchRejection.StreamSessionRefused(var refusal) ->
           createSessionError(refusal);
     };

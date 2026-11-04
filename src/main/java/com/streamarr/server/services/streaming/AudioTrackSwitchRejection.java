@@ -12,6 +12,9 @@ public sealed interface AudioTrackSwitchRejection {
   /** The playback session has no format attempt left, so direct play goes on. */
   record FormatAttemptsExhausted() implements AudioTrackSwitchRejection {}
 
+  /** The stream session for the chosen track failed before it played, so direct play goes on. */
+  record StreamSessionFailed() implements AudioTrackSwitchRejection {}
+
   /** The stream session for the chosen track did not start, so direct play goes on. */
   record StreamSessionRefused(@NonNull CreateStreamSessionRejection rejection)
       implements AudioTrackSwitchRejection {}
