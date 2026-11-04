@@ -2383,6 +2383,48 @@ class SegmentDeliveryCoordinatorTest {
     deliverSwitch(switching);
   }
 
+  @Test
+  @DisplayName(
+      "Should start a refused copy once one request has stopped a left copy for it when another request of the copy arrives during that stop")
+  void
+      shouldStartARefusedCopyOnceOneRequestHasStoppedALeftCopyForItWhenAnotherRequestOfTheCopyArrivesDuringThatStop()
+          throws Exception {
+    var holding = new StopHoldingExecutor();
+    transcodeExecutor = holding;
+    var rig = rigWith(holding);
+    lifecycle = rig.lifecycle();
+    coordinator = rig.coordinator();
+    holding.limitCopies(ExecutionTargetId.LOCAL, 2);
+    var switching = switchingTo1080p(startedCopyLadderSession());
+    var refused = startedRefusedCopy(ExecutionTargetId.LOCAL);
+    var refusedId = refused.getSessionId();
+    var copy = StreamSession.defaultVariant();
+    holding.holdStopOf(switching.sessionId());
+
+    try (var reclaiming =
+        BoundedTask.start(() -> coordinator.deliver(refusedId, copy, "segment0.m4s"))) {
+      holding.awaitHeldStop();
+      try (var arriving =
+          BoundedTask.start(() -> coordinator.deliver(refusedId, copy, "init.mp4"))) {
+        await()
+            .pollInterval(Duration.ofMillis(1))
+            .atMost(Duration.ofSeconds(5))
+            .until(arriving::isAwaitingALatchWithDeadline);
+        holding.releaseHeldStop();
+        holding.awaitStartedTarget(ExecutionTargetId.LOCAL);
+
+        upload(refusedId, "init.mp4", new byte[] {0x66});
+        upload(refusedId, "segment0.m4s", new byte[] {0});
+        assertThat(arriving.await(Duration.ofSeconds(2))).isInstanceOf(SegmentDelivery.Ready.class);
+        assertThat(reclaiming.await(Duration.ofSeconds(2)))
+            .isInstanceOf(SegmentDelivery.Ready.class);
+      }
+    }
+
+    assertThat(runningVariants(switching.session())).containsExactly("1080p");
+    deliverSwitch(switching);
+  }
+
   // A stream session whose every variant copies the video, so the variant that its player leaves
   // is a copy.
   private StreamSession startedCopyLadderSession() {
@@ -2898,6 +2940,48 @@ class SegmentDeliveryCoordinatorTest {
       try {
         if (!releaseTrap.await(5, TimeUnit.SECONDS)) {
           throw new AssertionError("Timed out waiting to release the trapped segment read");
+        }
+      } catch (InterruptedException _) {
+        Thread.currentThread().interrupt();
+      }
+    }
+  }
+
+  /** Holds the stop of one stream session's variant until the test releases it. */
+  private static final class StopHoldingExecutor extends FakeTranscodeExecutor {
+
+    private final CountDownLatch reachedStop = new CountDownLatch(1);
+    private final CountDownLatch releaseStop = new CountDownLatch(1);
+    private volatile UUID heldSessionId;
+
+    private void holdStopOf(UUID sessionId) {
+      heldSessionId = sessionId;
+    }
+
+    private void awaitHeldStop() throws InterruptedException {
+      assertThat(reachedStop.await(5, TimeUnit.SECONDS))
+          .as("a request must stop the held stream session's variant")
+          .isTrue();
+    }
+
+    private void releaseHeldStop() {
+      releaseStop.countDown();
+    }
+
+    @Override
+    public void stopVariant(UUID sessionId, String variantLabel) {
+      if (sessionId.equals(heldSessionId)) {
+        reachedStop.countDown();
+        awaitRelease();
+      }
+
+      super.stopVariant(sessionId, variantLabel);
+    }
+
+    private void awaitRelease() {
+      try {
+        if (!releaseStop.await(5, TimeUnit.SECONDS)) {
+          throw new AssertionError("Timed out waiting to release the held stop");
         }
       } catch (InterruptedException _) {
         Thread.currentThread().interrupt();

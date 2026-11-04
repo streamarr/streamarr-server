@@ -84,6 +84,10 @@ public class ProducerLifecycleService {
   // The stream sessions whose left variant runs beside the newest media-segment request's variant.
   // A start or a replacement in any stream session that finds no free slot may stop one of them.
   private final Set<UUID> sessionsKeepingLeftVariant = ConcurrentHashMap.newKeySet();
+  // The job attempt of each variant whose refused copy waits while one request stops a left copy
+  // for it. Other requests leave that job attempt alone until the stop settles, so none of them
+  // exhausts the variant or stops a second left copy.
+  private final ConcurrentHashMap<VariantKey, UUID> copyReclaims = new ConcurrentHashMap<>();
   private final TranscodeLimit transcodeLimit = new TranscodeLimit();
 
   public enum RecoveryResult {
@@ -121,37 +125,64 @@ public class ProducerLifecycleService {
   private static final class LeftVariantReclaim {
 
     private final boolean allowed;
+    // The job attempt of a refused copy whose reclaim this pass settles.
+    private final UUID settledCopyAttempt;
     private ExecutionTargetId retryTarget;
     private SlotShortage requestedFor;
+    private UUID refusedCopyAttempt;
 
-    private LeftVariantReclaim(boolean allowed, ExecutionTargetId retryTarget) {
+    private LeftVariantReclaim(
+        boolean allowed, UUID settledCopyAttempt, ExecutionTargetId retryTarget) {
       this.allowed = allowed;
+      this.settledCopyAttempt = settledCopyAttempt;
       this.retryTarget = retryTarget;
     }
 
     private static LeftVariantReclaim allowed() {
-      return new LeftVariantReclaim(true, null);
+      return new LeftVariantReclaim(true, null, null);
     }
 
     private static LeftVariantReclaim spent() {
-      return new LeftVariantReclaim(false, null);
+      return new LeftVariantReclaim(false, null, null);
     }
 
     // After a left copy stopped on the worker that refused a copy, the next replacement tries that
     // worker once more, even when recovery has already tried it. A copy place shortage names only
     // the refusing worker.
-    private static LeftVariantReclaim afterStop(SlotShortage shortage, boolean stopped) {
-      if (!stopped || !shortage.workerCopyPlace()) {
+    private LeftVariantReclaim afterStop(boolean stopped) {
+      if (refusedCopyAttempt == null) {
         return spent();
       }
 
-      return new LeftVariantReclaim(false, shortage.usableTargets().iterator().next());
+      ExecutionTargetId target = null;
+      if (stopped) {
+        target = requestedFor.usableTargets().iterator().next();
+      }
+
+      return new LeftVariantReclaim(false, refusedCopyAttempt, target);
+    }
+
+    private boolean settles(UUID jobAttemptId) {
+      return jobAttemptId.equals(settledCopyAttempt);
     }
 
     private Optional<ExecutionTargetId> takeRetryTarget() {
       var target = Optional.ofNullable(retryTarget);
       retryTarget = null;
       return target;
+    }
+
+    private boolean tryRequestForRefusedCopy(ExecutionTargetId refusingWorker, UUID jobAttemptId) {
+      if (!tryRequest(SlotShortage.copyPlaceOn(refusingWorker))) {
+        return false;
+      }
+
+      refusedCopyAttempt = jobAttemptId;
+      return true;
+    }
+
+    private Optional<UUID> refusedCopyAttempt() {
+      return Optional.ofNullable(refusedCopyAttempt);
     }
 
     private boolean tryRequest(SlotShortage shortage) {
@@ -213,9 +244,15 @@ public class ProducerLifecycleService {
       return result;
     }
 
-    var stopped = stopLeftVariantOfAnotherStreamSession(request.sessionId(), shortage.get());
-    var afterStop = LeftVariantReclaim.afterStop(shortage.get(), stopped);
-    return withSessionLock(request.sessionId(), () -> doRecover(request, afterStop));
+    try {
+      var stopped = stopLeftVariantOfAnotherStreamSession(request.sessionId(), shortage.get());
+      var afterStop = reclaim.afterStop(stopped);
+      return withSessionLock(request.sessionId(), () -> doRecover(request, afterStop));
+    } finally {
+      reclaim
+          .refusedCopyAttempt()
+          .ifPresent(attemptId -> copyReclaims.remove(variantKeyOf(request), attemptId));
+    }
   }
 
   // Also remembered when the relocation or resume fails, so the replacement starts at this
@@ -300,6 +337,7 @@ public class ProducerLifecycleService {
           newestVariantArrivals.remove(sessionId);
           playingVariants.remove(sessionId);
           sessionsKeepingLeftVariant.remove(sessionId);
+          copyReclaims.keySet().removeIf(key -> key.sessionId().equals(sessionId));
         });
     seekPriority.forgetSession(sessionId);
   }
@@ -450,7 +488,8 @@ public class ProducerLifecycleService {
         return RecoveryResult.WAITING;
       }
 
-      if (requestsRoomForRefusedCopy(session, handle, pending)) {
+      if (awaitsAnotherRequestsCopyReclaim(handle, pending)
+          || requestsRoomForRefusedCopy(session, handle, pending)) {
         return RecoveryResult.WAITING;
       }
 
@@ -492,8 +531,18 @@ public class ProducerLifecycleService {
     }
 
     var refusingWorker = transcodeExecutor.refusedCopyStart(handle.attemptId());
-    return refusingWorker.isPresent()
-        && pending.reclaim().tryRequest(SlotShortage.copyPlaceOn(refusingWorker.get()));
+    if (refusingWorker.isEmpty()
+        || !pending.reclaim().tryRequestForRefusedCopy(refusingWorker.get(), handle.attemptId())) {
+      return false;
+    }
+
+    copyReclaims.put(variantKeyOf(pending.request()), handle.attemptId());
+    return true;
+  }
+
+  private boolean awaitsAnotherRequestsCopyReclaim(TranscodeHandle handle, PendingSegment pending) {
+    return handle.attemptId().equals(copyReclaims.get(variantKeyOf(pending.request())))
+        && !pending.reclaim().settles(handle.attemptId());
   }
 
   // Before the player's first media-segment request, a request of the first-listed variant also
