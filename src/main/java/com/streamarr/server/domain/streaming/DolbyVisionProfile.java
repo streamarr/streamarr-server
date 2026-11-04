@@ -21,7 +21,7 @@ public enum DolbyVisionProfile {
   }
 
   /** The number that a configuration record names for this profile: 5, 8 or 10. */
-  int profileNumber() {
+  public int profileNumber() {
     return switch (this) {
       case PROFILE_5 -> 5;
       case PROFILE_8_1, PROFILE_8_4 -> 8;
