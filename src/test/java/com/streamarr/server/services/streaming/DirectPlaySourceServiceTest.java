@@ -4,12 +4,14 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionB
 import static com.streamarr.server.fixtures.StreamSessionFixture.directPlaySessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.RemoteTranscodeProperties;
 import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.fakes.FakeStreamingService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.io.EOFException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -106,6 +108,20 @@ class DirectPlaySourceServiceTest {
       Files.write(sourceFile, new byte[] {4, 5}, StandardOpenOption.APPEND);
 
       assertThat(source.newInputStream().readAllBytes()).containsExactly(1, 2, 3);
+    }
+  }
+
+  @Test
+  @DisplayName("Should fail the read when the file ends before the length it had when it opened")
+  void shouldFailTheReadWhenTheFileEndsBeforeTheLengthItHadWhenItOpened() throws IOException {
+    var session = directPlaySessionBuilder().sourcePath(sourceFile).build();
+    streamingService.addSession(session);
+
+    try (var source = open(session).orElseThrow()) {
+      Files.write(sourceFile, new byte[] {1});
+      var stream = source.newInputStream();
+
+      assertThatThrownBy(stream::readAllBytes).isInstanceOf(EOFException.class);
     }
   }
 
