@@ -102,9 +102,14 @@ public class LibraryFileWalk {
         var admission = libraryOperationAdmissions.openScanAdmission(library);
         var stream = Files.walk(FilepathCodec.decode(fileSystem, library.getFilepathUri()))) {
 
+      // The walk ends at a soft link once the admission end is reached, so a stop never waits
+      // for the remaining soft links to be saved.
       var files =
           stream
-              .flatMap(path -> regularFile(library, libraryOperationId, path).stream())
+              .map(LibraryFileWalk::walkEntry)
+              .takeWhile(
+                  entry -> !(entry instanceof WalkEntry.SoftLink) || !admissionEnd.isReached())
+              .flatMap(entry -> regularFile(library, libraryOperationId, entry).stream())
               .filter(listed -> !ignoredFileValidator.shouldIgnore(listed.path()))
               .filter(listed -> keepSupportedOrWarn(listed.path()))
               .iterator();
@@ -158,30 +163,51 @@ public class LibraryFileWalk {
 
   // Reads the entry itself, never a soft link's target, and skips an entry whose attributes cannot
   // be read. A hard link is a regular file.
-  private Optional<ListedFile> regularFile(Library library, UUID libraryOperationId, Path path) {
+  private static WalkEntry walkEntry(Path path) {
     BasicFileAttributes attributes;
     try {
       attributes = Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
     } catch (IOException _) {
-      return Optional.empty();
+      return new WalkEntry.Other();
     }
 
     if (attributes.isSymbolicLink()) {
-      skippedFileRepository.save(
-          SkippedFile.builder()
-              .libraryId(library.getId())
-              .libraryOperationId(libraryOperationId)
-              .filepathUri(FilepathCodec.encode(path))
-              .reason(SkippedFileReason.SOFT_LINK)
-              .build());
-      return Optional.empty();
+      return new WalkEntry.SoftLink(path);
     }
 
     if (!attributes.isRegularFile()) {
-      return Optional.empty();
+      return new WalkEntry.Other();
     }
 
-    return Optional.of(new ListedFile(path, SourceFileSnapshot.of(attributes)));
+    return new WalkEntry.RegularFile(new ListedFile(path, SourceFileSnapshot.of(attributes)));
+  }
+
+  // Saves a soft link as a skipped file of the scan and lists only regular files.
+  private Optional<ListedFile> regularFile(
+      Library library, UUID libraryOperationId, WalkEntry entry) {
+    return switch (entry) {
+      case WalkEntry.RegularFile(var listed) -> Optional.of(listed);
+      case WalkEntry.SoftLink(var path) -> {
+        skippedFileRepository.save(
+            SkippedFile.builder()
+                .libraryId(library.getId())
+                .libraryOperationId(libraryOperationId)
+                .filepathUri(FilepathCodec.encode(path))
+                .reason(SkippedFileReason.SOFT_LINK)
+                .build());
+        yield Optional.empty();
+      }
+      case WalkEntry.Other _ -> Optional.empty();
+    };
+  }
+
+  private sealed interface WalkEntry {
+
+    record RegularFile(ListedFile listed) implements WalkEntry {}
+
+    record SoftLink(Path path) implements WalkEntry {}
+
+    record Other() implements WalkEntry {}
   }
 
   // The task keeps its admission until the primary artwork it requested has recorded results, so

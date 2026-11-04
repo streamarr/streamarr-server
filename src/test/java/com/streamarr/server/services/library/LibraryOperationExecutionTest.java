@@ -1463,6 +1463,35 @@ class LibraryOperationExecutionTest {
     }
 
     @Test
+    @DisplayName("Should save no further skipped file when a stop is stored while one is saved")
+    void shouldSaveNoFurtherSkippedFileWhenAStopIsStoredWhileOneIsSaved() throws Exception {
+      var target = Files.createFile(elsewhere.resolve("Linked (2002).mkv"));
+      for (var name : List.of("A (2002).mkv", "B (2002).mkv", "C (2002).mkv")) {
+        Files.createSymbolicLink(libraryFolder.resolve(name), target);
+      }
+      var stopped = new AtomicBoolean();
+      skippedFiles.runBeforeEachSave(
+          () -> {
+            if (stopped.compareAndSet(false, true)) {
+              assertThat(runner.service().stopLibraryScan(identity, savedLibraryId))
+                  .isInstanceOf(Outcome.Accepted.class);
+            }
+          });
+
+      scan();
+
+      assertThat(skippedFiles.skippedFilesOf(savedLibraryId)).hasSize(1);
+      assertThat(
+              meterRegistry
+                  .get("streamarr.library.operations.duration")
+                  .tag("kind", LibraryOperationKind.SCAN.tagValue())
+                  .tag("conclusion", "stopped")
+                  .timer()
+                  .count())
+          .isOne();
+    }
+
+    @Test
     @DisplayName("Should end the scan unhealthy when a skipped file cannot be saved")
     void shouldEndTheScanUnhealthyWhenASkippedFileCannotBeSaved() throws Exception {
       var target = Files.createFile(elsewhere.resolve("Linked (2002).mkv"));

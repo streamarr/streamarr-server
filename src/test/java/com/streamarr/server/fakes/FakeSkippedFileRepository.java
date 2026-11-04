@@ -16,6 +16,12 @@ public class FakeSkippedFileRepository implements SkippedFileRepository {
 
   private final Map<Key, SkippedFile> database = new ConcurrentHashMap<>();
   private volatile RuntimeException saveFailure;
+  private volatile Runnable beforeEachSave = () -> {};
+
+  /** Runs {@code action} before every later save. */
+  public void runBeforeEachSave(Runnable action) {
+    beforeEachSave = action;
+  }
 
   /** Makes every later save throw {@code failure} and store nothing. */
   public void failSavesWith(RuntimeException failure) {
@@ -24,6 +30,7 @@ public class FakeSkippedFileRepository implements SkippedFileRepository {
 
   @Override
   public void save(SkippedFile skippedFile) {
+    beforeEachSave.run();
     if (saveFailure != null) {
       throw saveFailure;
     }
