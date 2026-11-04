@@ -457,6 +457,24 @@ class PlaybackSessionCapabilityDeclarationTest {
                     new TooManyAudioEntries(32))));
   }
 
+  // The server checks no value of an overlong list, so it cannot tell whether MP4 or MOV is listed.
+  @Test
+  @DisplayName(
+      "Should refuse only the container list when an overlong list lists MP4 without a sample entry")
+  void shouldRefuseOnlyTheContainerListWhenAnOverlongListListsMp4WithoutASampleEntry() {
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    h264EntryBuilder()
+                        .directPlayContainers(Collections.nCopies(OVERLONG, SourceContainer.MP4))
+                        .build()))
+            .build();
+
+    assertThat(start(declaration))
+        .isEqualTo(Outcome.rejected(new TooManyVideoDirectPlayContainers(0, 32)));
+  }
+
   @Test
   @DisplayName("Should refuse an audio entry's source containers when the list is overlong")
   void shouldRefuseAnAudioEntrysSourceContainersWhenTheListIsOverlong() {
