@@ -1490,6 +1490,7 @@ class LibraryOperationExecutionTest {
       for (var name : List.of("A (2002).mkv", "B (2002).mkv", "C (2002).mkv")) {
         Files.createSymbolicLink(libraryFolder.resolve(name), target);
       }
+
       var stopped = new AtomicBoolean();
       skippedFiles.runBeforeEachSave(
           () -> {
