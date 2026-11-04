@@ -63,7 +63,8 @@ public class ProbeFixture {
         .containerCropping(facts.flatMap(VideoPlaybackFacts::containerCropping))
         .videoProperties(facts.flatMap(VideoPlaybackFacts::videoProperties))
         .masteringDisplay(facts.flatMap(VideoPlaybackFacts::masteringDisplay))
-        .contentLightLevel(facts.flatMap(VideoPlaybackFacts::contentLightLevel));
+        .contentLightLevel(facts.flatMap(VideoPlaybackFacts::contentLightLevel))
+        .sampleEntry(facts.flatMap(VideoPlaybackFacts::sampleEntry));
   }
 
   /**
@@ -82,6 +83,7 @@ public class ProbeFixture {
                 .format(probe.containerFormat())
                 .duration(Optional.of(probe.duration()))
                 .bitrate(OptionalLong.of(probe.bitrate()))
+                .majorBrand(probe.majorBrand())
                 .build())
         .streams(streams(probe))
         .keyframes(probe.keyframes())

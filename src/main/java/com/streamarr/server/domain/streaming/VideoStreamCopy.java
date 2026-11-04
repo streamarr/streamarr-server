@@ -17,7 +17,9 @@ import lombok.NonNull;
  * is the rate at which the copied frames run, empty when the frame-rate rule refused one. {@code
  * maximumFrameRate} is the highest rate at which the stream presents pictures anywhere in the file.
  * It is empty when the probe stores no maximum, which holds for every outcome until
- * streamarr/streamarr-server#652. {@code frameRate} is never a maximum.
+ * streamarr/streamarr-server#652. {@code frameRate} is never a maximum. {@code sampleEntry} is the
+ * sample entry that an MP4 or MOV file stores for the stream, which direct play delivers as it is,
+ * empty in other source containers and before probe version 7.
  */
 @Builder(toBuilder = true)
 public record VideoStreamCopy(
@@ -27,12 +29,19 @@ public record VideoStreamCopy(
     @NonNull Optional<PictureSize> decodedSize,
     @NonNull OptionalDouble frameRate,
     @NonNull Optional<Fraction> maximumFrameRate,
-    @NonNull VideoDynamicRange dynamicRange) {
+    @NonNull VideoDynamicRange dynamicRange,
+    @NonNull Optional<String> sampleEntry) {
 
   // ADR 0037's frame-rate rule snaps the rate that the source's frames run at to a listed rate,
   // which only an encode runs at. A copy keeps every source frame at that unsnapped rate.
   // The rule's fallback passes over a declared rate of 1000 fps or faster as unusable.
   private static final double FASTEST_USABLE_DECLARED_RATE = 1000;
+
+  // Lombok builder default — its generated setter assigns it
+  @SuppressWarnings({"java:S1068", "java:S9438"})
+  public static class VideoStreamCopyBuilder {
+    private Optional<String> sampleEntry = Optional.empty();
+  }
 
   /** The copy of the source's chosen video stream, or empty without a codec or playback facts. */
   public static Optional<VideoStreamCopy> of(@NonNull MediaProbe source) {
@@ -53,6 +62,7 @@ public record VideoStreamCopy(
                     .frameRate(frameRate(facts.frameRateRule()))
                     .maximumFrameRate(Optional.empty())
                     .dynamicRange(facts.dynamicRange())
+                    .sampleEntry(facts.sampleEntry())
                     .build());
   }
 

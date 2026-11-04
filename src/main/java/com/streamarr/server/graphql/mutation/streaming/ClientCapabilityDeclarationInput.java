@@ -12,6 +12,7 @@ import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
+import com.streamarr.server.domain.streaming.VideoSampleEntry;
 import java.util.List;
 import java.util.Optional;
 
@@ -40,7 +41,8 @@ public record ClientCapabilityDeclarationInput(
       List<DolbyVisionProfileCapabilityInput> dolbyVisionProfiles,
       boolean hdr10Plus,
       boolean hls,
-      List<SourceContainer> directPlayContainers) {
+      List<SourceContainer> directPlayContainers,
+      List<VideoSampleEntry> directPlaySampleEntries) {
 
     VideoCapabilityEntry toEntry() {
       return VideoCapabilityEntry.builder()
@@ -59,6 +61,7 @@ public record ClientCapabilityDeclarationInput(
           .hdr10Plus(hdr10Plus)
           .hls(hls)
           .directPlayContainers(directPlayContainers)
+          .directPlaySampleEntries(directPlaySampleEntries)
           .build();
     }
   }

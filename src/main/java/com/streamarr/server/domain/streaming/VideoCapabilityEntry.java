@@ -15,7 +15,9 @@ import lombok.NonNull;
  * together for one codec family. The player accepts every combination that takes one value from
  * each list and stays within every maximum. {@code compatibleBases} names only SDR, PQ or HLG.
  * {@code hls} tells whether the entry applies to HLS delivery, and {@code directPlayContainers}
- * lists the source containers from which the player opens such a stream by direct play.
+ * lists the source containers from which the player opens such a stream by direct play. {@code
+ * directPlaySampleEntries} lists the sample entries that the player opens from MP4 or MOV (ADR
+ * 0045).
  */
 @Builder
 public record VideoCapabilityEntry(
@@ -29,7 +31,8 @@ public record VideoCapabilityEntry(
     @NonNull List<DolbyVisionProfileCapability> dolbyVisionProfiles,
     boolean hdr10Plus,
     boolean hls,
-    @NonNull List<SourceContainer> directPlayContainers) {
+    @NonNull List<SourceContainer> directPlayContainers,
+    @NonNull List<VideoSampleEntry> directPlaySampleEntries) {
 
   private static final EnumSet<CompatibleBase> DECLARABLE_COMPATIBLE_BASES =
       EnumSet.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG);
@@ -57,12 +60,14 @@ public record VideoCapabilityEntry(
     compatibleBases = List.copyOf(compatibleBases);
     dolbyVisionProfiles = List.copyOf(dolbyVisionProfiles);
     directPlayContainers = List.copyOf(directPlayContainers);
+    directPlaySampleEntries = List.copyOf(directPlaySampleEntries);
   }
 
-  // Lombok builder default — its generated setter assigns it
+  // Lombok builder defaults — its generated setters assign them
   @SuppressWarnings({"java:S1068", "java:S9438"})
   public static class VideoCapabilityEntryBuilder {
     private List<SourceContainer> directPlayContainers = List.of();
+    private List<VideoSampleEntry> directPlaySampleEntries = List.of();
   }
 
   /**
@@ -82,9 +87,10 @@ public record VideoCapabilityEntry(
 
   /**
    * Whether this entry accepts direct play of the video stream from the source container (ADR
-   * 0049): the entry lists the container and accepts every property of the stream as it is. A
-   * stream that a probe version 4 outcome describes has no codec profile to check, so it never
-   * plays directly.
+   * 0049): the entry lists the container and accepts every property of the stream as it is. In MP4
+   * or MOV, the entry also lists the stream's sample entry (ADR 0045). A stream that a probe
+   * version 4 outcome describes has no codec profile to check, and an MP4 or MOV stream without a
+   * reported sample entry has none to match, so neither plays directly.
    */
   public boolean acceptsDirectPlay(
       @NonNull VideoStreamCopy video, @NonNull SourceContainer container) {
@@ -92,10 +98,24 @@ public record VideoCapabilityEntry(
       return false;
     }
 
+    if (container.storesSampleEntries() && !listsSampleEntry(video.sampleEntry())) {
+      return false;
+    }
+
     return video
         .videoProperties()
         .filter(properties -> acceptsCodingAndPicture(video, properties))
         .filter(_ -> acceptsDirectPlayDynamicRange(video, container))
+        .isPresent();
+  }
+
+  private boolean listsSampleEntry(Optional<String> sampleEntry) {
+    return sampleEntry
+        .filter(
+            stored ->
+                directPlaySampleEntries.stream()
+                    .map(VideoSampleEntry::getLabel)
+                    .anyMatch(stored::equals))
         .isPresent();
   }
 
@@ -263,9 +283,9 @@ public record VideoCapabilityEntry(
   }
 
   // Direct play sends the stream under its own sample entry and configuration record, so a profile
-  // 5 or 10.0 stream plays where the entry lists its profile. Until the probe reports the source
-  // sample entry, a profile 8.2 or 9 stream plays directly only from Matroska: in MP4 or MOV it may
-  // sit under dvh1 or dvav, which no player plays as its SDR base (streamarr/streamarr-server#395).
+  // 5 or 10.0 stream plays where the entry lists its profile. A profile 8.2 or 9 stream plays
+  // directly only from Matroska until streamarr/streamarr-server#395 decides it by its sample entry
+  // in MP4 or MOV: under dvh1 or dvav, no player plays it as its SDR base.
   private boolean acceptsDirectPlayDolbyVision(VideoStreamCopy video, SourceContainer container) {
     return switch (CopiedDolbyVision.of(video)) {
       case CopiedDolbyVision.None _ -> true;

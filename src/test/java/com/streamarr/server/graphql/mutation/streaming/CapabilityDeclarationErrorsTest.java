@@ -13,6 +13,7 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.Co
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecTierMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecTierNotApplicable;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CompatibleBasesMissing;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DirectPlaySampleEntriesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionLevelNotPositive;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionProfileOutsideCodecFamily;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.HlsAacEntryMissing;
@@ -20,6 +21,7 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.To
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyAudioEntries;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyCodecProfiles;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyCompatibleBases;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyDirectPlaySampleEntries;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyDolbyVisionProfiles;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyVideoDirectPlayContainers;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyVideoEntries;
@@ -155,7 +157,15 @@ class CapabilityDeclarationErrorsTest {
         Arguments.of(
             new TooManyAudioDirectPlayContainers(2, 32),
             CreateStreamSessionError.CapabilityListTooLongError.class,
-            List.of("capabilities", "audio", "2", "directPlayContainers")));
+            List.of("capabilities", "audio", "2", "directPlayContainers")),
+        Arguments.of(
+            new DirectPlaySampleEntriesMissing(3),
+            CreateStreamSessionError.CapabilityValuesRequiredError.class,
+            List.of("capabilities", "video", "3", "directPlaySampleEntries")),
+        Arguments.of(
+            new TooManyDirectPlaySampleEntries(1, 32),
+            CreateStreamSessionError.CapabilityListTooLongError.class,
+            List.of("capabilities", "video", "1", "directPlaySampleEntries")));
   }
 
   @Test

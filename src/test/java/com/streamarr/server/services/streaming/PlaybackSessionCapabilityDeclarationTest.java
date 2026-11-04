@@ -26,6 +26,7 @@ import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
+import com.streamarr.server.domain.streaming.VideoSampleEntry;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.fakes.FakeCreatingStreamingService;
 import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
@@ -39,6 +40,7 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.Co
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecTierMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecTierNotApplicable;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CompatibleBasesMissing;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DirectPlaySampleEntriesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionLevelNotPositive;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionProfileOutsideCodecFamily;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.HlsAacEntryMissing;
@@ -46,6 +48,7 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.To
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyAudioEntries;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyCodecProfiles;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyCompatibleBases;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyDirectPlaySampleEntries;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyDolbyVisionProfiles;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyVideoDirectPlayContainers;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyVideoEntries;
@@ -62,6 +65,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -158,6 +162,7 @@ class PlaybackSessionCapabilityDeclarationTest {
                     h264EntryBuilder()
                         .hls(false)
                         .directPlayContainers(List.of(SourceContainer.MP4, SourceContainer.MOV))
+                        .directPlaySampleEntries(List.of(VideoSampleEntry.AVC1))
                         .build()))
             .audio(
                 List.of(
@@ -190,6 +195,50 @@ class PlaybackSessionCapabilityDeclarationTest {
         .isEqualTo(
             Outcome.rejected(List.of(new VideoDeliveryMissing(1), new AudioDeliveryMissing(1))));
     assertThat(streams.getAllSessions()).isEmpty();
+  }
+
+  // The player alone knows which sample entries it opens from MP4 or MOV, and a player can open a
+  // file under one sample entry and play its sound over a black picture under another (ADR 0045).
+  @ParameterizedTest
+  @EnumSource(
+      value = SourceContainer.class,
+      names = {"MP4", "MOV"})
+  @DisplayName("Should refuse a video entry when it lists MP4 or MOV without a sample entry")
+  void shouldRefuseAVideoEntryWhenItListsMp4OrMovWithoutASampleEntry(SourceContainer container) {
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    h264EntryBuilder().build(),
+                    h264EntryBuilder()
+                        .directPlayContainers(List.of(SourceContainer.MATROSKA, container))
+                        .build()))
+            .build();
+
+    assertThat(start(declaration))
+        .isEqualTo(Outcome.rejected(new DirectPlaySampleEntriesMissing(1)));
+    assertThat(streams.getAllSessions()).isEmpty();
+  }
+
+  // The other source containers store no sample entry (ADR 0045).
+  @Test
+  @DisplayName(
+      "Should start playback when a video entry lists no sample entry and no MP4 or MOV container")
+  void shouldStartPlaybackWhenAVideoEntryListsNoSampleEntryAndNoMp4OrMovContainer() {
+    var everyOtherContainer =
+        List.of(
+            SourceContainer.MATROSKA,
+            SourceContainer.MPEG_TS,
+            SourceContainer.MPEG_PS,
+            SourceContainer.AVI,
+            SourceContainer.ASF,
+            SourceContainer.FLV);
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().directPlayContainers(everyOtherContainer).build()))
+            .build();
+
+    assertThat(start(declaration)).isInstanceOf(Outcome.Accepted.class);
   }
 
   @ParameterizedTest
@@ -388,6 +437,7 @@ class PlaybackSessionCapabilityDeclarationTest {
             .compatibleBases(Collections.nCopies(OVERLONG, CompatibleBase.SDR))
             .dolbyVisionProfiles(Collections.nCopies(OVERLONG, dolbyVision(PROFILE_8_1)))
             .directPlayContainers(Collections.nCopies(OVERLONG, SourceContainer.MP4))
+            .directPlaySampleEntries(Collections.nCopies(OVERLONG, VideoSampleEntry.AVC1))
             .build();
     var declaration =
         defaultDeclarationBuilder()
@@ -403,7 +453,26 @@ class PlaybackSessionCapabilityDeclarationTest {
                     new TooManyCompatibleBases(0, 32),
                     new TooManyDolbyVisionProfiles(0, 32),
                     new TooManyVideoDirectPlayContainers(0, 32),
+                    new TooManyDirectPlaySampleEntries(0, 32),
                     new TooManyAudioEntries(32))));
+  }
+
+  // The server checks no value of an overlong list, so it cannot tell whether MP4 or MOV is listed.
+  @Test
+  @DisplayName(
+      "Should refuse only the container list when an overlong list lists MP4 without a sample entry")
+  void shouldRefuseOnlyTheContainerListWhenAnOverlongListListsMp4WithoutASampleEntry() {
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    h264EntryBuilder()
+                        .directPlayContainers(Collections.nCopies(OVERLONG, SourceContainer.MP4))
+                        .build()))
+            .build();
+
+    assertThat(start(declaration))
+        .isEqualTo(Outcome.rejected(new TooManyVideoDirectPlayContainers(0, 32)));
   }
 
   @Test
@@ -449,7 +518,8 @@ class PlaybackSessionCapabilityDeclarationTest {
                         .build()))
             .compatibleBases(Collections.nCopies(32, CompatibleBase.SDR))
             .dolbyVisionProfiles(Collections.nCopies(32, dolbyVision(PROFILE_8_1)))
-            .directPlayContainers(Collections.nCopies(32, SourceContainer.MATROSKA))
+            .directPlayContainers(Collections.nCopies(32, SourceContainer.MOV))
+            .directPlaySampleEntries(Collections.nCopies(32, VideoSampleEntry.HVC1))
             .build();
     var declaration =
         defaultDeclarationBuilder()

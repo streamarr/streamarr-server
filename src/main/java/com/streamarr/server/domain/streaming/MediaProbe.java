@@ -79,6 +79,11 @@ public record MediaProbe(
     return videoPlaybackFacts.flatMap(VideoPlaybackFacts::interlacedFieldOrder).isPresent();
   }
 
+  /** The file's source container, or empty when the probe's facts name no single one. */
+  public Optional<SourceContainer> sourceContainer() {
+    return containerFormat.flatMap(format -> SourceContainer.ofProbedFormat(format, majorBrand));
+  }
+
   public List<StreamInfo> audioStreams() {
     return streams.stream().filter(s -> "audio".equals(s.codecType())).toList();
   }

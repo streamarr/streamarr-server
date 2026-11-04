@@ -171,18 +171,74 @@ class VideoCapabilityEntryDirectPlayTest {
         .isTrue();
   }
 
-  // Until the probe reports the source sample entry, a profile 8.2 file in MP4 or MOV may be tagged
-  // dvh1, which no client plays as its SDR base (streamarr/streamarr-server#395).
+  // A profile 8.2 file in MP4 or MOV stays off direct play until streamarr/streamarr-server#395
+  // decides it by its sample entry, even under a sample entry that the entry lists.
   @ParameterizedTest
   @EnumSource(
       value = SourceContainer.class,
       names = {"MP4", "MOV"})
   @DisplayName("Should refuse a profile 8.2 stream when its container names a sample entry")
   void shouldRefuseAProfile82StreamWhenItsContainerNamesASampleEntry(SourceContainer container) {
-    var stream = hevcStream().dynamicRange(dolbyVisionProfile82()).build();
-    var entry = directPlayEntry().directPlayContainers(List.of(container)).build();
+    var stream =
+        hevcStream().dynamicRange(dolbyVisionProfile82()).sampleEntry(Optional.of("hvc1")).build();
+    var entry = entryListing(container, VideoSampleEntry.HVC1);
 
     assertThat(entry.acceptsDirectPlay(stream, container)).isFalse();
+  }
+
+  // An MP4 or MOV file's video stream is covered only when the entry lists its sample entry
+  // (ADR 0045).
+  @ParameterizedTest(name = "{0} in {1}")
+  @MethodSource("storedSampleEntries")
+  @DisplayName("Should accept an MP4 or MOV stream only when the entry lists its sample entry")
+  void shouldAcceptAnMp4OrMovStreamOnlyWhenTheEntryListsItsSampleEntry(
+      String storedSampleEntry, SourceContainer container, boolean accepted) {
+    var stream = hevcStream().sampleEntry(Optional.of(storedSampleEntry)).build();
+    var entry = entryListing(container, VideoSampleEntry.HVC1, VideoSampleEntry.DVH1);
+
+    assertThat(entry.acceptsDirectPlay(stream, container)).isEqualTo(accepted);
+  }
+
+  static Stream<Arguments> storedSampleEntries() {
+    return Stream.of(
+        Arguments.of("hvc1", SourceContainer.MP4, true),
+        Arguments.of("hvc1", SourceContainer.MOV, true),
+        Arguments.of("dvh1", SourceContainer.MP4, true),
+        Arguments.of("hev1", SourceContainer.MP4, false),
+        Arguments.of("hev1", SourceContainer.MOV, false),
+        Arguments.of("HVC1", SourceContainer.MP4, false),
+        Arguments.of("mp4v", SourceContainer.MP4, false));
+  }
+
+  // Probe version 7 reports no sample entry for a track with more than one, and an earlier probe
+  // version reports none at all (ADR 0032).
+  @ParameterizedTest
+  @EnumSource(
+      value = SourceContainer.class,
+      names = {"MP4", "MOV"})
+  @DisplayName("Should refuse an MP4 or MOV stream when the probe reports no sample entry")
+  void shouldRefuseAnMp4OrMovStreamWhenTheProbeReportsNoSampleEntry(SourceContainer container) {
+    var entry = entryListing(container, VideoSampleEntry.HVC1);
+
+    assertThat(entry.acceptsDirectPlay(hevcStream().build(), container)).isFalse();
+  }
+
+  // The other source containers store no sample entry, so a stream in one is matched on its other
+  // facts alone (ADR 0045).
+  @Test
+  @DisplayName("Should accept a Matroska stream when the entry lists no sample entry")
+  void shouldAcceptAMatroskaStreamWhenTheEntryListsNoSampleEntry() {
+    var entry = directPlayEntry().directPlaySampleEntries(List.of()).build();
+
+    assertThat(entry.acceptsDirectPlay(hevcStream().build(), SourceContainer.MATROSKA)).isTrue();
+  }
+
+  private static VideoCapabilityEntry entryListing(
+      SourceContainer container, VideoSampleEntry... sampleEntries) {
+    return directPlayEntry()
+        .directPlayContainers(List.of(container))
+        .directPlaySampleEntries(List.of(sampleEntries))
+        .build();
   }
 
   private static VideoCapabilityEntry.VideoCapabilityEntryBuilder directPlayEntry() {
