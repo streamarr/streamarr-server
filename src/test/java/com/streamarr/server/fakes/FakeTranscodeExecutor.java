@@ -44,6 +44,8 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   private final Set<ProcessKey> running = ConcurrentHashMap.newKeySet();
   private final Map<ProcessKey, ExecutionTargetId> runningTargets = new ConcurrentHashMap<>();
+  // The running job attempts that copy the video, which take no job slot.
+  private final Set<ProcessKey> runningCopies = ConcurrentHashMap.newKeySet();
   private final Set<ProcessKey> started = ConcurrentHashMap.newKeySet();
   private final Set<UUID> stopped = ConcurrentHashMap.newKeySet();
   private final Map<UUID, TranscodeFailure> terminalFailures = new ConcurrentHashMap<>();
@@ -165,7 +167,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     }
 
     var key = new ProcessKey(request.sessionId(), request.variantLabel());
-    if (!tryTakeJobSlot(key, runningTarget)) {
+    if (!tryTakeJobSlot(key, runningTarget, !encodesVideo(request.transcodeDecision()))) {
       jobSlotRefusals.incrementAndGet();
       signalObservation();
       throw new TranscodeException("No connected transcode worker has a free job slot");
@@ -261,6 +263,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   private void end(ProcessKey key) {
     runningTargets.remove(key);
+    runningCopies.remove(key);
     if (running.remove(key)) {
       heldRequests.wakeVariant(key.sessionId(), key.variantLabel());
     }
@@ -426,13 +429,14 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     return Math.min(Math.min(availableSlots, freeJobSlots()), freeJobSlotsOn(executionTargets));
   }
 
+  // A copy needs no free slot, only a target that can run it.
   @Override
   public int availableSlots(TranscodeDecision decision) {
-    var slots = Math.min(availableSlots(), freeJobSlotsOn(executionTargets(decision)));
     if (!encodesVideo(decision)) {
-      return slots;
+      return executionTargets(decision).isEmpty() ? 0 : UNBOUNDED_SLOTS;
     }
 
+    var slots = Math.min(availableSlots(), freeJobSlotsOn(executionTargets(decision)));
     return Math.min(slots, encodeSlots(decision.videoCodecFamily()));
   }
 
@@ -452,16 +456,18 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   }
 
   /**
-   * The workers have this many job slots in all. Each running job attempt takes one, and a start
-   * finds no worker when every slot is taken. Ending a job attempt frees its slot.
+   * The workers have this many job slots in all. Each running job attempt that encodes the video
+   * takes one, and an encode's start finds no worker when every slot is taken. A copy takes none.
+   * Ending a job attempt frees its slot.
    */
   public void limitJobSlots(int jobSlots) {
     this.jobSlots = jobSlots;
   }
 
   /**
-   * The target has this many job slots. Each job attempt that runs on it takes one, and a start on
-   * it is refused when every slot is taken. A target left unset has unbounded job slots.
+   * The target has this many job slots. Each job attempt that encodes the video on it takes one,
+   * and an encode's start on it is refused when every slot is taken. A copy takes none. A target
+   * left unset has unbounded job slots.
    */
   public void limitJobSlots(ExecutionTargetId target, int jobSlots) {
     jobSlotsByTarget.put(target, jobSlots);
@@ -472,7 +478,8 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       return UNBOUNDED_SLOTS;
     }
 
-    return Math.max(0, jobSlots - running.size());
+    var taken = running.stream().filter(key -> !runningCopies.contains(key)).count();
+    return (int) Math.max(0, jobSlots - taken);
   }
 
   private synchronized int freeJobSlotsOn(ExecutionTargetId target) {
@@ -481,7 +488,11 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       return UNBOUNDED_SLOTS;
     }
 
-    var taken = runningTargets.values().stream().filter(target::equals).count();
+    var taken =
+        runningTargets.entrySet().stream()
+            .filter(entry -> !runningCopies.contains(entry.getKey()))
+            .filter(entry -> entry.getValue().equals(target))
+            .count();
     return (int) Math.max(0, limit - taken);
   }
 
@@ -494,10 +505,18 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     return (int) Math.min(UNBOUNDED_SLOTS, free);
   }
 
+  // A copy takes no job slot, so it starts whatever the encodes hold.
   private synchronized boolean tryTakeJobSlot(
-      ProcessKey key, Optional<ExecutionTargetId> runningTarget) {
-    if (freeJobSlots() <= 0 || runningTarget.filter(t -> freeJobSlotsOn(t) <= 0).isPresent()) {
+      ProcessKey key, Optional<ExecutionTargetId> runningTarget, boolean copiesVideo) {
+    if (!copiesVideo
+        && (freeJobSlots() <= 0 || runningTarget.filter(t -> freeJobSlotsOn(t) <= 0).isPresent())) {
       return false;
+    }
+
+    if (copiesVideo) {
+      runningCopies.add(key);
+    } else {
+      runningCopies.remove(key);
     }
 
     running.add(key);
@@ -839,6 +858,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   public void reset() {
     running.clear();
     runningTargets.clear();
+    runningCopies.clear();
     started.clear();
     stopped.clear();
     startedRequests.clear();
