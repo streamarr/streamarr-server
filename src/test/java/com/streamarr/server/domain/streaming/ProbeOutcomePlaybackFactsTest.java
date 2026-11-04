@@ -41,16 +41,8 @@ class ProbeOutcomePlaybackFactsTest {
   @Test
   @DisplayName("Should carry the chosen stream's static HDR metadata when the probe stored it")
   void shouldCarryTheChosenStreamsStaticHdrMetadataWhenTheProbeStoredIt() {
-    var display =
-        MasteringDisplayColorVolume.builder()
-            .red(new ChromaticityCoordinates(34_000, 16_000))
-            .green(new ChromaticityCoordinates(13_250, 34_500))
-            .blue(new ChromaticityCoordinates(7_500, 3_000))
-            .whitePoint(new ChromaticityCoordinates(15_635, 16_450))
-            .maxLuminance(10_000_000)
-            .minLuminance(50)
-            .build();
-    var lightLevel = new ContentLightLevel(1_000, 400);
+    var display = VideoPlaybackFactsFixture.MASTERING_DISPLAY;
+    var lightLevel = VideoPlaybackFactsFixture.CONTENT_LIGHT_LEVEL;
     var outcome =
         version4Outcome(
             VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)),

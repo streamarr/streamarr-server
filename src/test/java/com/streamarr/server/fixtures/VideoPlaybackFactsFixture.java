@@ -1,9 +1,11 @@
 package com.streamarr.server.fixtures;
 
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
+import com.streamarr.server.domain.streaming.ChromaticityCoordinates;
 import com.streamarr.server.domain.streaming.ColorPrimaries;
 import com.streamarr.server.domain.streaming.ColorRange;
 import com.streamarr.server.domain.streaming.CompatibleBase;
+import com.streamarr.server.domain.streaming.ContentLightLevel;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.FieldOrder;
@@ -11,6 +13,7 @@ import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRatePacketScan;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
+import com.streamarr.server.domain.streaming.MasteringDisplayColorVolume;
 import com.streamarr.server.domain.streaming.MatrixCoefficients;
 import com.streamarr.server.domain.streaming.OutputFrameRateBasis;
 import com.streamarr.server.domain.streaming.Presence;
@@ -40,6 +43,20 @@ public class VideoPlaybackFactsFixture {
       rangeWithoutEnhancement(CompatibleBase.SDR);
 
   public static final Fraction FILM_RATE = new Fraction(24_000, 1_001);
+
+  /** A BT.2020 mastering display with a D65 white point, from 0.005 to 1000 cd/m². */
+  public static final MasteringDisplayColorVolume MASTERING_DISPLAY =
+      MasteringDisplayColorVolume.builder()
+          .red(new ChromaticityCoordinates(34_000, 16_000))
+          .green(new ChromaticityCoordinates(13_250, 34_500))
+          .blue(new ChromaticityCoordinates(7_500, 3_000))
+          .whitePoint(new ChromaticityCoordinates(15_635, 16_450))
+          .maxLuminance(10_000_000)
+          .minLuminance(50)
+          .build();
+
+  /** MaxCLL 1000 cd/m² and MaxFALL 400 cd/m². */
+  public static final ContentLightLevel CONTENT_LIGHT_LEVEL = new ContentLightLevel(1_000, 400);
 
   /**
    * 8-bit 4:2:0 SDR H.264 at High profile level 4.0 and 24000/1001 fps, after cover art at stream
