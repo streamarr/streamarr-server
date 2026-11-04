@@ -34,6 +34,8 @@ import com.streamarr.server.graphql.mutation.streaming.DestroyPlaybackSessionPay
 import com.streamarr.server.graphql.mutation.streaming.PlaybackSessionError;
 import com.streamarr.server.graphql.mutation.streaming.ReportPlaybackFormatFailureInput;
 import com.streamarr.server.graphql.mutation.streaming.ReportPlaybackFormatFailurePayload;
+import com.streamarr.server.graphql.mutation.streaming.SwitchPlaybackAudioTrackInput;
+import com.streamarr.server.graphql.mutation.streaming.SwitchPlaybackAudioTrackPayload;
 import com.streamarr.server.graphql.mutation.watchprogress.MarkUnwatchedError;
 import com.streamarr.server.graphql.mutation.watchprogress.MarkUnwatchedInput;
 import com.streamarr.server.graphql.mutation.watchprogress.MarkUnwatchedPayload;
@@ -43,6 +45,7 @@ import com.streamarr.server.graphql.mutation.watchprogress.MarkWatchedPayload;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
+import com.streamarr.server.services.streaming.AudioTrackSwitchRejection;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection;
 import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
 import com.streamarr.server.services.streaming.PlaybackFormatAttempt;
@@ -53,6 +56,7 @@ import com.streamarr.server.services.streaming.PlaybackSessionSnapshot;
 import com.streamarr.server.services.streaming.ReportPlaybackFormatFailureCommand;
 import com.streamarr.server.services.streaming.StartPlaybackSessionCommand;
 import com.streamarr.server.services.streaming.StartPlaybackSessionRejection;
+import com.streamarr.server.services.streaming.SwitchPlaybackAudioTrackCommand;
 import com.streamarr.server.services.watchprogress.MarkUnwatchedRejection;
 import com.streamarr.server.services.watchprogress.MarkWatchedRejection;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
@@ -227,6 +231,51 @@ public class StreamingResolver {
   private ReportPlaybackFormatFailurePayload invalidReportId(String field) {
     return MutationPayloads.inputError(
         invalidPlaybackId(field), ReportPlaybackFormatFailurePayload::new);
+  }
+
+  @DgsMutation
+  public SwitchPlaybackAudioTrackPayload switchPlaybackAudioTrack(
+      @InputArgument SwitchPlaybackAudioTrackInput input) {
+    authorizationService.requireProfile();
+    return MutationPayloads.withUuid(
+        input.playbackSessionId(),
+        playbackId ->
+            MutationPayloads.withUuid(
+                input.streamSessionId(),
+                streamId -> switchAudioTrack(input, playbackId, streamId),
+                () -> invalidSwitchId("streamSessionId")),
+        () -> invalidSwitchId("playbackSessionId"));
+  }
+
+  private SwitchPlaybackAudioTrackPayload switchAudioTrack(
+      SwitchPlaybackAudioTrackInput input, UUID playbackId, UUID streamId) {
+    var outcome =
+        playbackSessions.switchAudioTrack(
+            SwitchPlaybackAudioTrackCommand.builder()
+                .playbackSessionId(playbackId)
+                .streamSessionId(streamId)
+                .identity(authorizationService.currentIdentity())
+                .audioTrackPosition(input.audioTrackPosition())
+                .build());
+    return MutationPayloads.payload(
+        outcome.map(this::toPlaybackDto),
+        this::audioTrackSwitchError,
+        SwitchPlaybackAudioTrackPayload::new);
+  }
+
+  private MutationError audioTrackSwitchError(AudioTrackSwitchRejection rejection) {
+    return switch (rejection) {
+      case PLAYBACK_SESSION_CLOSED -> closedError();
+      case AUDIO_TRACK_NOT_IN_FILE ->
+          new PlaybackSessionError.AudioTrackNotInFileError(
+              "This video has no audio track there. Choose another audio track.",
+              InputPath.of("audioTrackPosition"));
+    };
+  }
+
+  private SwitchPlaybackAudioTrackPayload invalidSwitchId(String field) {
+    return MutationPayloads.inputError(
+        invalidPlaybackId(field), SwitchPlaybackAudioTrackPayload::new);
   }
 
   @DgsMutation

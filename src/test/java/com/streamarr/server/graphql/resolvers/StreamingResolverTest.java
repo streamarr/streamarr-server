@@ -8,6 +8,7 @@ import static com.streamarr.server.fixtures.MediaEntityFixture.buildEpisode;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildMovie;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeason;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeries;
+import static com.streamarr.server.fixtures.ProbeFixture.audioStreamBuilder;
 import static com.streamarr.server.fixtures.ServerSettingsFixture.defaultServerSettings;
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
@@ -140,6 +141,7 @@ class StreamingResolverTest {
       audio: [{codec: AAC, maxChannels: 2, hls: true}], selectsAudioTrackInDirectPlay: false}""";
   private static final String REPORTED_PLAYBACK =
       "data.reportPlaybackFormatFailure.playbackSession";
+  private static final String SWITCHED_PLAYBACK = "data.switchPlaybackAudioTrack.playbackSession";
 
   @Test
   @DisplayName("Should conceal playback status when another Profile owns the session")
@@ -561,6 +563,117 @@ class StreamingResolverTest {
     assertThat(ready.read("data.playbackSession.playbackChoice", String.class)).isEqualTo("AUTO");
     assertThat(ready.read("data.playbackSession.formatChange", String.class))
         .isEqualTo("DIRECT_PLAY_FAILED");
+  }
+
+  // ADR 0045: the viewer's switch during direct play starts an HLS format attempt that keeps
+  // Original while it is pending, and its encode plays in Auto with a notice.
+  @Test
+  @DisplayName(
+      "Should expose the change to Auto when the viewer switches audio tracks and no copy is"
+          + " eligible")
+  void shouldExposeTheChangeToAutoWhenTheViewerSwitchesAudioTracksAndNoCopyIsEligible() {
+    STUB_SERVICE.setNextResult(buildDirectPlaySessionOfTwoAudioTracks());
+    var created = startPlaybackReadingChoices(VideoQuality.ORIGINAL);
+    var playbackId = created.read(CREATED_PLAYBACK + ".id", String.class);
+    var streamId =
+        created.read(CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.id", String.class);
+
+    var switched = switchAudioTrack(playbackId, streamId, 1);
+    STUB_SERVICE.setNextResult(
+        buildSessionDeciding(UUID.randomUUID(), fullTranscodeDecision("h264")));
+    REPLACEMENT_TASKS.remove().run();
+
+    assertThat(switched.read(SWITCHED_PLAYBACK + ".currentFormatAttempt.__typename", String.class))
+        .isEqualTo("PendingPlaybackFormatAttempt");
+    assertThat(switched.read(SWITCHED_PLAYBACK + ".playbackChoice", String.class))
+        .isEqualTo("ORIGINAL");
+    var ready = playbackStatus(playbackId);
+    assertThat(ready.read("data.playbackSession.playbackChoice", String.class)).isEqualTo("AUTO");
+    assertThat(ready.read("data.playbackSession.formatChange", String.class))
+        .isEqualTo("AUDIO_TRACK_SWITCHED");
+  }
+
+  @Test
+  @DisplayName("Should return a typed input error when the file has no audio track at the position")
+  void shouldReturnATypedInputErrorWhenTheFileHasNoAudioTrackAtThePosition() {
+    STUB_SERVICE.setNextResult(buildDirectPlaySessionOfTwoAudioTracks());
+    var created = startPlaybackReadingChoices(VideoQuality.ORIGINAL);
+
+    var switched =
+        switchAudioTrack(
+            created.read(CREATED_PLAYBACK + ".id", String.class),
+            created.read(CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.id", String.class),
+            2);
+
+    assertThat(switched.read(SWITCHED_PLAYBACK, Object.class)).isNull();
+    assertThat(
+            switched.read("data.switchPlaybackAudioTrack.userErrors[0].__typename", String.class))
+        .isEqualTo("AudioTrackNotInFileError");
+    List<String> inputPath = switched.read("data.switchPlaybackAudioTrack.userErrors[0].inputPath");
+    assertThat(inputPath).containsExactly("audioTrackPosition");
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"playbackSessionId", "streamSessionId"})
+  @DisplayName("Should identify the malformed field when an audio track switch has an invalid ID")
+  void shouldIdentifyTheMalformedFieldWhenAnAudioTrackSwitchHasAnInvalidId(String field) {
+    var playbackId = "playbackSessionId".equals(field) ? "invalid" : UUID.randomUUID().toString();
+    var streamId = "streamSessionId".equals(field) ? "invalid" : UUID.randomUUID().toString();
+
+    var switched = switchAudioTrack(playbackId, streamId, 1);
+
+    assertThat(switched.read(SWITCHED_PLAYBACK, Object.class)).isNull();
+    assertThat(
+            switched.read("data.switchPlaybackAudioTrack.userErrors[0].__typename", String.class))
+        .isEqualTo("InvalidIdError");
+    List<String> inputPath = switched.read("data.switchPlaybackAudioTrack.userErrors[0].inputPath");
+    assertThat(inputPath).containsExactly(field);
+  }
+
+  @Test
+  @DisplayName("Should return a closed error when the viewer switches audio tracks after playback")
+  void shouldReturnAClosedErrorWhenTheViewerSwitchesAudioTracksAfterPlayback() {
+    var switched = switchAudioTrack(UUID.randomUUID().toString(), UUID.randomUUID().toString(), 1);
+
+    assertThat(switched.read(SWITCHED_PLAYBACK, Object.class)).isNull();
+    assertThat(
+            switched.read("data.switchPlaybackAudioTrack.userErrors[0].__typename", String.class))
+        .isEqualTo("PlaybackSessionClosedError");
+  }
+
+  private StreamSession buildDirectPlaySessionOfTwoAudioTracks() {
+    var session = buildDirectPlaySession(UUID.randomUUID());
+    var probe =
+        session.getMediaProbe().toBuilder()
+            .streams(
+                List.of(
+                    audioStreamBuilder("aac").index(1).build(),
+                    audioStreamBuilder("aac").index(2).build()))
+            .build();
+    return sessionBuilderLike(session)
+        .delivery(StreamDelivery.DIRECT_PLAY)
+        .sourceContainer(SourceContainer.MATROSKA)
+        .mediaProbe(probe)
+        .directPlayAudioTrackPosition(OptionalInt.of(0))
+        .build();
+  }
+
+  private DocumentContext switchAudioTrack(String playbackId, String streamId, int position) {
+    return dgsQueryExecutor.executeAndGetDocumentContext(
+        """
+        mutation {
+          switchPlaybackAudioTrack(
+            input: {playbackSessionId: "%s", streamSessionId: "%s", audioTrackPosition: %d}
+          ) {
+            playbackSession {
+              id playbackChoice formatChange
+              currentFormatAttempt { __typename }
+            }
+            userErrors { __typename ... on InputMutationError { inputPath } }
+          }
+        }
+        """
+            .formatted(playbackId, streamId, position));
   }
 
   // ADR 0052: the client ends playback at the real end of a copy that ran short after every source

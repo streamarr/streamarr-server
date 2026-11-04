@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -39,6 +40,9 @@ import org.springframework.context.event.EventListener;
 
 @Slf4j
 public class PlaybackSessionService implements AutoCloseable {
+  // Original that reaches an encode plays it in Auto (ADR 0052).
+  private static final PlayingChoice AUTO_AFTER_AN_AUDIO_TRACK_SWITCH =
+      new PlayingChoice(VideoQuality.AUTO, Optional.of(PlaybackFormatChange.AUDIO_TRACK_SWITCHED));
   private final StreamingService streamingService;
   private final PlaybackAuthorityGate authorityGate;
   private final Executor executor;
@@ -84,6 +88,9 @@ public class PlaybackSessionService implements AutoCloseable {
     // Every format attempt starts at the start position until playback moves from it.
     private Optional<Duration> startPosition;
     private Instant lastAccessedAt;
+    // The audio track that the viewer switched to during direct play, which every later format
+    // attempt plays.
+    @Builder.Default private OptionalInt audioTrackPosition = OptionalInt.empty();
     @Builder.Default private List<VideoQuality> offeredChoices = List.of();
     @Builder.Default private int formatAttemptCount = 1;
     private final Set<String> excludedEncodeCodecFamilies = new HashSet<>();
@@ -211,6 +218,75 @@ public class PlaybackSessionService implements AutoCloseable {
                   new PlaybackSessionFailure.FixedFormatFailed(command.reason()));
               return snapshot(playback);
             });
+  }
+
+  /**
+   * Moves a playback session that direct-plays the source to HLS for the audio track that the
+   * viewer chose, as a player that cannot select an audio track in a directly played file needs
+   * (ADR 0045). The move is the one that follows a failed direct play: an HLS copy keeps Original
+   * without a format change, and an encode plays in Auto with {@code AUDIO_TRACK_SWITCHED}. Every
+   * later format attempt plays the chosen track. The playback session stays as it is when the
+   * stream session is not its current direct-play format attempt, or when that attempt already
+   * plays the chosen track.
+   */
+  public Outcome<PlaybackSessionSnapshot, AudioTrackSwitchRejection> switchAudioTrack(
+      @NonNull SwitchPlaybackAudioTrackCommand command) {
+    var accessible = accessibleSession(command.playbackSessionId(), command.identity());
+    if (accessible.isEmpty()) {
+      return Outcome.rejected(AudioTrackSwitchRejection.PLAYBACK_SESSION_CLOSED);
+    }
+
+    var playback = accessible.get();
+    var reservation = locked(playback, () -> reserveAudioTrackSwitch(playback, command));
+    return reservation.fold(
+        reserved -> {
+          reserved.ifPresent(this::schedule);
+          return snapshot(playback)
+              .<Outcome<PlaybackSessionSnapshot, AudioTrackSwitchRejection>>map(Outcome::accepted)
+              .orElseGet(() -> Outcome.rejected(AudioTrackSwitchRejection.PLAYBACK_SESSION_CLOSED));
+        },
+        Outcome::rejected);
+  }
+
+  private Outcome<Optional<FormatAttemptReservation>, AudioTrackSwitchRejection>
+      reserveAudioTrackSwitch(PlaybackSession playback, SwitchPlaybackAudioTrackCommand command) {
+    var directPlay = currentDirectPlay(playback, command.streamSessionId());
+    if (directPlay.isEmpty()) {
+      return Outcome.accepted(Optional.empty());
+    }
+
+    var position = command.audioTrackPosition();
+    if (position < 0 || position >= directPlay.get().getMediaProbe().audioStreams().size()) {
+      return Outcome.rejected(AudioTrackSwitchRejection.AUDIO_TRACK_NOT_IN_FILE);
+    }
+
+    if (directPlay.get().getDirectPlayAudioTrackPosition().equals(OptionalInt.of(position))) {
+      return Outcome.accepted(Optional.empty());
+    }
+
+    playback.audioTrackPosition = OptionalInt.of(position);
+    return Outcome.accepted(
+        Optional.of(
+            reserveNextFormatAttempt(
+                playback,
+                command.streamSessionId(),
+                ReservedFormatAttempt.builder()
+                    .videoFormatConstraint(VideoFormatConstraint.COPY_OR_ENCODE)
+                    .choice(playback.choice)
+                    .choiceWhenEncoding(AUTO_AFTER_AN_AUDIO_TRACK_SWITCH))));
+  }
+
+  private Optional<StreamSession> currentDirectPlay(PlaybackSession playback, UUID streamId) {
+    if (!isCurrentAttempt(playback, streamId)) {
+      return Optional.empty();
+    }
+
+    if (playback.current instanceof PlaybackFormatAttempt.Ready(var session)
+        && session.getDelivery() == StreamDelivery.DIRECT_PLAY) {
+      return Optional.of(session);
+    }
+
+    return Optional.empty();
   }
 
   public void close(@NonNull PlaybackSessionRequest request) {
@@ -607,7 +683,8 @@ public class PlaybackSessionService implements AutoCloseable {
                       .build())
               .capabilityDeclaration(playback.command.capabilityDeclaration())
               .excludedEncodeCodecFamilies(Set.copyOf(playback.excludedEncodeCodecFamilies))
-              .startPosition(playback.startPosition);
+              .startPosition(playback.startPosition)
+              .audioTrackPosition(playback.audioTrackPosition);
         });
   }
 

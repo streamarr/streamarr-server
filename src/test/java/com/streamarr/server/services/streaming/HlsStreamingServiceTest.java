@@ -4497,6 +4497,49 @@ class HlsStreamingServiceTest {
                     .isEqualTo("av1"));
   }
 
+  // ADR 0045: a player that cannot select an audio track direct-plays the file's first track, and
+  // the viewer's switch to another track moves it to HLS, which plays the chosen track.
+  @Test
+  @DisplayName(
+      "Should play the chosen audio track over HLS when the viewer switches tracks during direct"
+          + " play")
+  void shouldPlayTheChosenAudioTrackOverHlsWhenTheViewerSwitchesTracksDuringDirectPlay() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra"));
+    var playback = logicalPlayback();
+    var command =
+        logicalStart()
+            .options(StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build())
+            .capabilityDeclaration(
+                directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(false).build())
+            .build();
+    var directPlay = accepted(playback.start(command));
+    assertThat(directPlay.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready ->
+                assertThat(ready.session().getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY));
+
+    var switched =
+        accepted(
+            playback.switchAudioTrack(
+                SwitchPlaybackAudioTrackCommand.builder()
+                    .playbackSessionId(directPlay.playbackSessionId())
+                    .streamSessionId(directPlay.currentFormatAttempt().streamSessionId())
+                    .identity(command.identity())
+                    .audioTrackPosition(1)
+                    .build()));
+
+    assertThat(switched.playbackChoice()).isEqualTo(VideoQuality.ORIGINAL);
+    assertThat(switched.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready -> {
+              assertThat(ready.session().getDelivery()).isEqualTo(StreamDelivery.HLS);
+              assertThat(ready.session().getMediaProbe().sessionAudioTrackPosition()).hasValue(1);
+              assertThat(service.getAllSessions()).containsExactly(ready.session());
+            });
+  }
+
   private PlaybackSessionService logicalPlayback() {
     return PlaybackSessionService.builder()
         .streamingService(service)

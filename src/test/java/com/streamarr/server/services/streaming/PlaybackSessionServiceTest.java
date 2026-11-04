@@ -8,6 +8,7 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.d
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
+import static com.streamarr.server.fixtures.ProbeFixture.audioStreamBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
@@ -1378,6 +1379,173 @@ class PlaybackSessionServiceTest {
             ready -> assertThat(ready.session().getDelivery()).isEqualTo(StreamDelivery.HLS));
   }
 
+  // ADR 0045: a player that cannot select an audio track in a directly played file moves to HLS for
+  // the viewer's newly chosen track, by the move that a failed direct play makes. An HLS copy keeps
+  // Original without a notice.
+  @Test
+  @DisplayName(
+      "Should move to an HLS copy in Original with the chosen track when the viewer switches during"
+          + " direct play")
+  void shouldMoveToAnHlsCopyInOriginalWithTheChosenTrackWhenTheViewerSwitchesDuringDirectPlay() {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlayOfTwoAudioTracks(service, command);
+
+    var switched = accepted(service.switchAudioTrack(audioSwitch(directPlay, command, 1)));
+
+    assertThat(switched.playbackChoice()).isEqualTo(VideoQuality.ORIGINAL);
+    assertThat(switched.formatChange()).isEmpty();
+    assertThat(switched.formatAttemptCount()).isEqualTo(2);
+    assertThat(switched.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready -> {
+              assertThat(ready.session().getDelivery()).isEqualTo(StreamDelivery.HLS);
+              assertThat(streams.getAllSessions()).containsExactly(ready.session());
+            });
+    assertThat(streams.createdCommands.getLast())
+        .satisfies(
+            hls -> {
+              assertThat(hls.videoFormatConstraint())
+                  .isEqualTo(VideoFormatConstraint.COPY_OR_ENCODE);
+              assertThat(hls.options().quality()).isEqualTo(VideoQuality.ORIGINAL);
+              assertThat(hls.audioTrackPosition()).hasValue(1);
+            });
+  }
+
+  // ADR 0052: Original that reaches an encode plays it in Auto, and the notice names the switch.
+  @Test
+  @DisplayName(
+      "Should play an encode in Auto with the audio track switch change when no copy is eligible")
+  void shouldPlayAnEncodeInAutoWithTheAudioTrackSwitchChangeWhenNoCopyIsEligible() {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlayOfTwoAudioTracks(service, command);
+    streams.copiesTheSource = false;
+
+    var switched = accepted(service.switchAudioTrack(audioSwitch(directPlay, command, 1)));
+
+    assertThat(switched.playbackChoice()).isEqualTo(VideoQuality.AUTO);
+    assertThat(switched.formatChange()).contains(PlaybackFormatChange.AUDIO_TRACK_SWITCHED);
+    assertThat(switched.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready ->
+                assertThat(ready.session().getTranscodeDecision().transcodeMode().copiesVideo())
+                    .isFalse());
+  }
+
+  @Test
+  @DisplayName("Should keep the chosen audio track in the format attempt after a failed copy")
+  void shouldKeepTheChosenAudioTrackInTheFormatAttemptAfterAFailedCopy() {
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(4).build();
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlayOfTwoAudioTracks(playback, command);
+    var copy = accepted(playback.switchAudioTrack(audioSwitch(directPlay, command, 1)));
+
+    var encode = playback.reportFormatFailure(report(copy, command).build()).orElseThrow();
+
+    assertThat(encode.formatAttemptCount()).isEqualTo(3);
+    assertThat(streams.createdCommands.getLast())
+        .satisfies(
+            next -> {
+              assertThat(next.videoFormatConstraint()).isEqualTo(VideoFormatConstraint.ENCODE_ONLY);
+              assertThat(next.audioTrackPosition()).hasValue(1);
+            });
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {-1, 2})
+  @DisplayName("Should refuse an audio track that the file does not have")
+  void shouldRefuseAnAudioTrackThatTheFileDoesNotHave(int position) {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlayOfTwoAudioTracks(service, command);
+
+    var outcome = service.switchAudioTrack(audioSwitch(directPlay, command, position));
+
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(AudioTrackSwitchRejection.AUDIO_TRACK_NOT_IN_FILE));
+    assertThat(service.access(request(directPlay, command))).contains(directPlay);
+    assertThat(streams.createdCommands).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("Should keep direct play when the viewer switches to the audio track that it plays")
+  void shouldKeepDirectPlayWhenTheViewerSwitchesToTheAudioTrackThatItPlays() {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlayOfTwoAudioTracks(service, command);
+
+    var unchanged = accepted(service.switchAudioTrack(audioSwitch(directPlay, command, 0)));
+
+    assertThat(unchanged).isEqualTo(directPlay);
+    assertThat(streams.createdCommands).hasSize(1);
+  }
+
+  // Only direct play moves for an audio switch. A second switch names the retired direct-play
+  // stream session, so it starts nothing.
+  @Test
+  @DisplayName(
+      "Should start one HLS format attempt when the viewer switches twice during direct play")
+  void shouldStartOneHlsFormatAttemptWhenTheViewerSwitchesTwiceDuringDirectPlay() {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlayOfTwoAudioTracks(service, command);
+    var first = accepted(service.switchAudioTrack(audioSwitch(directPlay, command, 1)));
+
+    var second = accepted(service.switchAudioTrack(audioSwitch(directPlay, command, 0)));
+
+    assertThat(second).isEqualTo(first);
+    assertThat(streams.createdCommands).hasSize(2);
+  }
+
+  @Test
+  @DisplayName("Should leave an HLS format attempt as it is when the viewer switches audio tracks")
+  void shouldLeaveAnHlsFormatAttemptAsItIsWhenTheViewerSwitchesAudioTracks() {
+    streams.sourceProbe = probeWithTwoAudioTracks();
+    var command = startCommand().build();
+    var hls = accepted(service.start(command));
+
+    var unchanged = accepted(service.switchAudioTrack(audioSwitch(hls, command, 1)));
+
+    assertThat(unchanged).isEqualTo(hls);
+    assertThat(streams.createdCommands).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("Should report a closed playback session when the viewer switches after it ended")
+  void shouldReportAClosedPlaybackSessionWhenTheViewerSwitchesAfterItEnded() {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlayOfTwoAudioTracks(service, command);
+    service.close(request(directPlay, command));
+
+    var outcome = service.switchAudioTrack(audioSwitch(directPlay, command, 1));
+
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(AudioTrackSwitchRejection.PLAYBACK_SESSION_CLOSED));
+  }
+
+  private PlaybackSessionSnapshot startDirectPlayOfTwoAudioTracks(
+      PlaybackSessionService playback, StartPlaybackSessionCommand command) {
+    streams.sourceProbe = probeWithTwoAudioTracks();
+    return startDirectPlay(playback, command);
+  }
+
+  private static MediaProbe probeWithTwoAudioTracks() {
+    return defaultProbeBuilder()
+        .streams(
+            List.of(
+                audioStreamBuilder("aac").index(1).language(Optional.of("eng")).build(),
+                audioStreamBuilder("aac").index(2).language(Optional.of("fra")).build()))
+        .build();
+  }
+
+  private SwitchPlaybackAudioTrackCommand audioSwitch(
+      PlaybackSessionSnapshot snapshot, StartPlaybackSessionCommand command, int position) {
+    return SwitchPlaybackAudioTrackCommand.builder()
+        .playbackSessionId(snapshot.playbackSessionId())
+        .streamSessionId(snapshot.currentFormatAttempt().streamSessionId())
+        .identity(command.identity())
+        .audioTrackPosition(position)
+        .build();
+  }
+
   private PlaybackSessionSnapshot startDirectPlay(
       PlaybackSessionService playback, StartPlaybackSessionCommand command) {
     streams.coversTheSourceForDirectPlay = true;
@@ -2627,8 +2795,7 @@ class PlaybackSessionServiceTest {
         .capabilityDeclaration(declarationBuilderFor(H264, HEVC).build());
   }
 
-  private static PlaybackSessionSnapshot accepted(
-      Outcome<PlaybackSessionSnapshot, StartPlaybackSessionRejection> outcome) {
+  private static <R> PlaybackSessionSnapshot accepted(Outcome<PlaybackSessionSnapshot, R> outcome) {
     return outcome.fold(
         result -> result,
         rejections -> {
@@ -2702,7 +2869,9 @@ class PlaybackSessionServiceTest {
       var constraint = command.videoFormatConstraint();
       if (coversTheSourceForDirectPlay
           && constraint == VideoFormatConstraint.DIRECT_PLAY_OR_COPY_OR_ENCODE) {
-        return directPlaySessionBuilder().transcodeDecision(null);
+        return directPlaySessionBuilder()
+            .transcodeDecision(null)
+            .directPlayAudioTrackPosition(sourceProbe.sessionAudioTrackPosition());
       }
 
       if (constraint == VideoFormatConstraint.ENCODE_ONLY || !copiesTheSource) {
