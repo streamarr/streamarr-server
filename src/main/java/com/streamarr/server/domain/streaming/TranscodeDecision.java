@@ -74,18 +74,21 @@ public record TranscodeDecision(
     return videoSource.flatMap(VideoPlaybackFacts::encodedFrameRate);
   }
 
-  /**
-   * The dynamic range of the decision's video output. A copy keeps the source's compatible base,
-   * and Dolby Vision without one is PQ. Every encode is SDR until the server encodes HDR (#397).
-   */
-  public VideoRange videoRange() {
+  /** What the decision plans the video to become: a copy of the chosen stream or an encode. */
+  public PlannedVideoOutput plannedVideoOutput() {
     if (transcodeMode == null || !transcodeMode.copiesVideo()) {
-      return VideoRange.SDR;
+      return PlannedVideoOutput.Encode.sdr(encodeCodecProfile);
     }
 
-    return videoSource
-        .map(facts -> rangeOf(facts.dynamicRange().compatibleBase()))
-        .orElse(VideoRange.SDR);
+    return PlannedVideoOutput.StreamCopy.of(videoSource.orElseThrow());
+  }
+
+  /**
+   * The dynamic range of the planned video output, as a playlist names it. Dolby Vision without a
+   * compatible base is PQ.
+   */
+  public VideoRange videoRange() {
+    return rangeOf(plannedVideoOutput().dynamicRange().compatibleBase());
   }
 
   private static VideoRange rangeOf(CompatibleBase base) {

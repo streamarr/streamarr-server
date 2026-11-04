@@ -25,6 +25,10 @@ public record VideoDynamicRange(
     }
   }
 
+  /** SDR without HDR10+ or Dolby Vision. */
+  public static final VideoDynamicRange SDR =
+      new VideoDynamicRange(CompatibleBase.SDR, Presence.ABSENT, new DolbyVision.Absent());
+
   /** The dynamic range of a stream whose probe reported none. */
   public static final VideoDynamicRange UNSPECIFIED =
       new VideoDynamicRange(

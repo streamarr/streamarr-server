@@ -4,10 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
+import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.stream.Stream;
 import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -274,6 +277,168 @@ class TranscodeDecisionTest {
             .build();
 
     assertThat(decision.videoRange()).isEqualTo(VideoRange.SDR);
+  }
+
+  @Test
+  @DisplayName(
+      "Should plan a copy with the source's range, profile and level and no rewrites when the"
+          + " decision copies the video")
+  void
+      shouldPlanACopyWithTheSourcesRangeProfileAndLevelAndNoRewritesWhenTheDecisionCopiesTheVideo() {
+    var decision =
+        decisionBuilder(TranscodeMode.REMUX)
+            .videoSource(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .dynamicRange(VideoPlaybackFactsFixture.SDR_WITHOUT_DOLBY_VISION)
+                        .videoProperties(
+                            Optional.of(
+                                VideoPlaybackFactsFixture.h264HighPropertiesBuilder().build()))
+                        .build()))
+            .build();
+
+    assertThat(decision.plannedVideoOutput())
+        .isEqualTo(
+            PlannedVideoOutput.StreamCopy.builder()
+                .dynamicRange(VideoPlaybackFactsFixture.SDR_WITHOUT_DOLBY_VISION)
+                .codecProfile(Optional.of(VideoCodecProfile.H264_HIGH))
+                .codecLevel(OptionalInt.of(40))
+                .bitstreamRewrites(List.of())
+                .build());
+  }
+
+  @Test
+  @DisplayName(
+      "Should plan a copy without a codec profile or level when the probe version 4 outcome"
+          + " stores none")
+  void shouldPlanACopyWithoutACodecProfileOrLevelWhenTheProbeVersion4OutcomeStoresNone() {
+    var decision =
+        decisionBuilder(TranscodeMode.REMUX)
+            .videoSource(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .dynamicRange(VideoPlaybackFactsFixture.SDR_WITHOUT_DOLBY_VISION)
+                        .videoProperties(Optional.empty())
+                        .build()))
+            .build();
+
+    assertThat(decision.plannedVideoOutput())
+        .isInstanceOfSatisfying(
+            PlannedVideoOutput.StreamCopy.class,
+            copy -> {
+              assertThat(copy.codecProfile()).isEmpty();
+              assertThat(copy.codecLevel()).isEmpty();
+            });
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("sourceRangesAndTheRangesThatTheirCopyPlans")
+  @DisplayName(
+      "Should plan each value that the probe could not check as SDR or absent when the decision"
+          + " copies the video")
+  void shouldPlanEachValueThatTheProbeCouldNotCheckAsSdrOrAbsentWhenTheDecisionCopiesTheVideo(
+      VideoDynamicRange source, VideoDynamicRange planned) {
+    var decision =
+        decisionBuilder(TranscodeMode.REMUX)
+            .videoSource(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder().dynamicRange(source).build()))
+            .build();
+
+    assertThat(decision.plannedVideoOutput().dynamicRange()).isEqualTo(planned);
+  }
+
+  // ADR 0013 plans SDR for a copy of a source whose compatible base is UNSPECIFIED.
+  static Stream<Arguments> sourceRangesAndTheRangesThatTheirCopyPlans() {
+    var profile82 = VideoPlaybackFactsFixture.dolbyVisionProfile82();
+    return Stream.of(
+        Arguments.of(
+            Named.of("nothing checked", VideoDynamicRange.UNSPECIFIED),
+            new VideoDynamicRange(CompatibleBase.SDR, Presence.ABSENT, new DolbyVision.Absent())),
+        Arguments.of(
+            Named.of(
+                "an SDR base without HDR10+ or Dolby Vision checked",
+                VideoPlaybackFactsFixture.SDR),
+            new VideoDynamicRange(CompatibleBase.SDR, Presence.ABSENT, new DolbyVision.Absent())),
+        Arguments.of(
+            Named.of(
+                "Dolby Vision profile 8.2 whose HDR10+ and RPUs the probe did not read", profile82),
+            new VideoDynamicRange(CompatibleBase.SDR, Presence.ABSENT, profile82.dolbyVision())));
+  }
+
+  // ADR 0036: a stream copy passes HDR10+ and the Dolby Vision RPUs through unchanged.
+  @Test
+  @DisplayName(
+      "Should keep the source's HDR10+ and Dolby Vision facts in the planned copy when the probe"
+          + " found both")
+  void shouldKeepTheSourcesHdr10PlusAndDolbyVisionFactsInThePlannedCopyWhenTheProbeFoundBoth() {
+    var source =
+        new VideoDynamicRange(CompatibleBase.PQ, Presence.PRESENT, dolbyVisionProfile81Observed());
+    var decision =
+        decisionBuilder(TranscodeMode.REMUX)
+            .videoSource(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder().dynamicRange(source).build()))
+            .build();
+
+    assertThat(decision.plannedVideoOutput().dynamicRange()).isEqualTo(source);
+  }
+
+  // Profile 8.1 as probe version 5 reports it after reading the RPUs: a record, an observed first
+  // RPU header and an RPU after its own picture.
+  private static DolbyVision.Present dolbyVisionProfile81Observed() {
+    return new DolbyVision.Present(
+        Optional.of(
+            DolbyVisionConfiguration.builder()
+                .profile(OptionalInt.of(8))
+                .level(OptionalInt.of(6))
+                .baseLayerCompatibilityId(OptionalInt.of(1))
+                .baseLayer(true)
+                .rpu(true)
+                .build()),
+        Presence.PRESENT,
+        Optional.of(
+            DolbyVisionRpuHeader.builder()
+                .vdrRpuProfile(1)
+                .disableResidual(true)
+                .vdrBitDepth(10)
+                .build()),
+        DolbyVisionRpuPlacement.AFTER_OWN_PICTURE);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("hdrSourceRanges")
+  @DisplayName(
+      "Should plan an SDR encode in the decision's encode codec profile when the decision encodes"
+          + " an HDR source")
+  void shouldPlanAnSdrEncodeInTheDecisionsEncodeCodecProfileWhenTheDecisionEncodesAnHdrSource(
+      VideoDynamicRange source) {
+    var decision =
+        decisionBuilder(TranscodeMode.VIDEO_TRANSCODE)
+            .encodeCodecProfile(Optional.of(EncodeCodecProfile.H264_HIGH))
+            .videoSource(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder().dynamicRange(source).build()))
+            .build();
+
+    assertThat(decision.plannedVideoOutput())
+        .isEqualTo(
+            new PlannedVideoOutput.Encode(
+                Optional.of(EncodeCodecProfile.H264_HIGH),
+                VideoPlaybackFactsFixture.SDR_WITHOUT_DOLBY_VISION));
+  }
+
+  // ADR 0013: every encode plans an SDR base without HDR10+ or Dolby Vision, whatever the source.
+  static Stream<Named<VideoDynamicRange>> hdrSourceRanges() {
+    return Stream.of(
+        Named.of(
+            "a PQ source without HDR10+ or Dolby Vision",
+            VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ)),
+        Named.of(
+            "a PQ source with HDR10+",
+            new VideoDynamicRange(CompatibleBase.PQ, Presence.PRESENT, new DolbyVision.Absent())),
+        Named.of(
+            "a Dolby Vision profile 5 source", VideoPlaybackFactsFixture.dolbyVisionProfile5()));
   }
 
   private static TranscodeDecision.TranscodeDecisionBuilder decisionBuilder(TranscodeMode mode) {
