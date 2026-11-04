@@ -1986,6 +1986,20 @@ class ProducerLifecycleServiceTest {
     return LongStream.of(millis).mapToObj(time -> new KeyframePosition(time, time)).toList();
   }
 
+  // Keyframes that present and decode at these ticks of a 1/timeBaseDenominator s time base.
+  private static KeyframeKnowledge.Known keyframesOnTimeBase(
+      int timeBaseDenominator, long... ticks) {
+    return new KeyframeKnowledge.Known(
+        KeyframePositions.builder()
+            .streamIndex(0)
+            .timeBaseNumerator(1)
+            .timeBaseDenominator(timeBaseDenominator)
+            .source(KeyframePositionSource.CONTAINER_INDEX)
+            .keyframes(
+                LongStream.of(ticks).mapToObj(time -> new KeyframePosition(time, time)).toList())
+            .build());
+  }
+
   private StreamSession startedEncodedSession(
       String containerFormat, List<KeyframePosition> keyframes) {
     return startedEncodedSession(
@@ -2070,23 +2084,11 @@ class ProducerLifecycleServiceTest {
   @DisplayName(
       "Should round an encoded attempt's keyframe position up when the time base divides no nanosecond")
   void shouldRoundAnEncodedAttemptsKeyframePositionUpWhenTheTimeBaseDividesNoNanosecond() {
-    var keyframes =
-        LongStream.of(0, 14_256_001, 14_400_001)
-            .mapToObj(ticks -> new KeyframePosition(ticks, ticks))
-            .toList();
     var session =
         startedEncodedSession(
             defaultProbeBuilder()
                 .containerFormat(Optional.of(MP4))
-                .keyframes(
-                    new KeyframeKnowledge.Known(
-                        KeyframePositions.builder()
-                            .streamIndex(0)
-                            .timeBaseNumerator(1)
-                            .timeBaseDenominator(24_000)
-                            .source(KeyframePositionSource.CONTAINER_INDEX)
-                            .keyframes(keyframes)
-                            .build())));
+                .keyframes(keyframesOnTimeBase(24_000, 0, 14_256_001, 14_400_001)));
 
     var request = relocatedRequest(session, 100);
 
