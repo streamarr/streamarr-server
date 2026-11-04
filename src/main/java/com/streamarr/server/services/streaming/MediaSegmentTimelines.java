@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.DemuxerSeekTime;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
@@ -23,12 +24,13 @@ final class MediaSegmentTimelines {
   /**
    * A stream copy's segments open at the source keyframes. The transcode decision copies the video
    * only when the keyframes are known and open every grid interval except possibly the last, so a
-   * copy session always has them.
+   * copy session always has them. An encode's attempts seek to the source keyframes when they are
+   * known.
    */
   static MediaSegmentTimeline of(StreamSession session, StreamingProperties properties) {
     var probe = session.getMediaProbe();
     if (!session.getTranscodeDecision().transcodeMode().copiesVideo()) {
-      return of(probe, properties);
+      return encodeOf(probe, properties);
     }
 
     return streamCopyOf(probe, properties)
@@ -37,6 +39,17 @@ final class MediaSegmentTimelines {
                 new IllegalStateException(
                     "A stream copy session needs the source's keyframes and a keyframe in every"
                         + " segment"));
+  }
+
+  // Without the keyframes, the worker reads from one period before the attempt's first segment.
+  private static MediaSegmentTimeline encodeOf(MediaProbe probe, StreamingProperties properties) {
+    var grid = of(probe, properties);
+    if (!(probe.keyframes() instanceof KeyframeKnowledge.Known(var positions))) {
+      return grid;
+    }
+
+    return new MediaSegmentTimeline.KeyframeSeekingGrid(
+        grid, positions, DemuxerSeekTime.of(probe.containerFormat()));
   }
 
   /**
