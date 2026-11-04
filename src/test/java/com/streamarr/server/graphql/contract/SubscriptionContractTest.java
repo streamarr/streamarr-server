@@ -18,18 +18,22 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
- * The subscription schema contract from ADR 0042: every field requires a selected Profile with
- * ViewProfileActivity and is nullable so a field error never ends the operation, a removed library
- * is identified by id alone, and a watch-state change lists its items, each nullable so a failed
- * item leaves the others intact.
+ * The subscription schema contract from ADR 0042: every field is nullable so a field error never
+ * ends the operation, every field but the ServerAdmin fields requires a selected Profile with
+ * ViewProfileActivity, a removed library is identified by id alone, and a watch-state change lists
+ * its items, each nullable so a failed item leaves the others intact.
  */
 @Tag("UnitTest")
 @DisplayName("Subscription Contract Tests")
 class SubscriptionContractTest {
 
   private static final TypeDefinitionRegistry SCHEMA = loadSchema();
+  private static final List<String> SERVER_ADMIN_FIELDS =
+      List.of("libraryStatusChanged", "activeStreamsChanged");
 
   @Test
   @DisplayName("Should name the transport and recovery when the Subscription type is documented")
@@ -50,12 +54,17 @@ class SubscriptionContractTest {
             "libraryItemAdded", "libraryItemUpdated", "libraryItemRemoved", "libraryCountsChanged");
   }
 
-  @Test
-  @DisplayName("Should require a ServerAdmin when the library status field is documented")
-  void shouldRequireServerAdminWhenLibraryStatusFieldIsDocumented() {
-    assertThat(descriptionOf(subscriptionField("libraryStatusChanged")))
+  @ParameterizedTest
+  @MethodSource("serverAdminFields")
+  @DisplayName("Should require a ServerAdmin when a ServerAdmin's subscription field is documented")
+  void shouldRequireServerAdminWhenAServerAdminsSubscriptionFieldIsDocumented(String field) {
+    assertThat(descriptionOf(subscriptionField(field)))
         .contains("ServerAdmin")
         .doesNotContain("ViewProfileActivity");
+  }
+
+  static Stream<String> serverAdminFields() {
+    return SERVER_ADMIN_FIELDS.stream();
   }
 
   @Test
@@ -64,7 +73,7 @@ class SubscriptionContractTest {
   void
       shouldRequireSelectedProfileAndViewProfileActivityWhenEachOtherSubscriptionFieldIsDocumented() {
     assertThat(subscriptionFields())
-        .filteredOn(field -> !field.getName().equals("libraryStatusChanged"))
+        .filteredOn(field -> !SERVER_ADMIN_FIELDS.contains(field.getName()))
         .isNotEmpty()
         .allSatisfy(
             field ->
