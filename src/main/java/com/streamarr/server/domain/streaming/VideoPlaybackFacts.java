@@ -12,7 +12,9 @@ import lombok.NonNull;
  * family of the codec that the probe stored, and is empty when the probe stored none. {@code
  * rotationDegrees} is the counterclockwise angle of the stream's display matrix. {@code
  * containerCropping} counts the pixels that the container removes from the picture before the
- * rotation. {@code videoProperties} is empty before probe version 5.
+ * rotation. {@code videoProperties} is empty before probe version 5. {@code masteringDisplay} and
+ * {@code contentLightLevel} are the static HDR metadata values that the probe stored, and are empty
+ * when it stored none.
  */
 @Builder
 public record VideoPlaybackFacts(
@@ -25,7 +27,9 @@ public record VideoPlaybackFacts(
     @NonNull OptionalInt rotationDegrees,
     @NonNull Optional<ContainerCropping> containerCropping,
     @NonNull FrameRateRule frameRateRule,
-    @NonNull Optional<VideoStreamProperties> videoProperties) {
+    @NonNull Optional<VideoStreamProperties> videoProperties,
+    @NonNull Optional<MasteringDisplayColorVolume> masteringDisplay,
+    @NonNull Optional<ContentLightLevel> contentLightLevel) {
 
   /**
    * The output frame rate that the rule chose for the stream (ADR 0037), empty when the rule
@@ -119,5 +123,7 @@ public record VideoPlaybackFacts(
     private OptionalInt rotationDegrees = OptionalInt.empty();
     private Optional<ContainerCropping> containerCropping = Optional.empty();
     private Optional<VideoStreamProperties> videoProperties = Optional.empty();
+    private Optional<MasteringDisplayColorVolume> masteringDisplay = Optional.empty();
+    private Optional<ContentLightLevel> contentLightLevel = Optional.empty();
   }
 }

@@ -39,6 +39,51 @@ class ProbeOutcomePlaybackFactsTest {
   }
 
   @Test
+  @DisplayName("Should carry the chosen stream's static HDR metadata when the probe stored it")
+  void shouldCarryTheChosenStreamsStaticHdrMetadataWhenTheProbeStoredIt() {
+    var display =
+        MasteringDisplayColorVolume.builder()
+            .red(new ChromaticityCoordinates(34_000, 16_000))
+            .green(new ChromaticityCoordinates(13_250, 34_500))
+            .blue(new ChromaticityCoordinates(7_500, 3_000))
+            .whitePoint(new ChromaticityCoordinates(15_635, 16_450))
+            .maxLuminance(10_000_000)
+            .minLuminance(50)
+            .build();
+    var lightLevel = new ContentLightLevel(1_000, 400);
+    var outcome =
+        version4Outcome(
+            VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)),
+            recording()
+                .masteringDisplay(Optional.of(display))
+                .contentLightLevel(Optional.of(lightLevel)));
+
+    var probe = outcome.mediaProbe();
+
+    assertThat(probe.videoPlaybackFacts())
+        .hasValueSatisfying(
+            facts -> {
+              assertThat(facts.masteringDisplay()).contains(display);
+              assertThat(facts.contentLightLevel()).contains(lightLevel);
+            });
+  }
+
+  @Test
+  @DisplayName("Should carry no static HDR metadata when the probe stored none")
+  void shouldCarryNoStaticHdrMetadataWhenTheProbeStoredNone() {
+    var probe =
+        version4Outcome(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))
+            .mediaProbe();
+
+    assertThat(probe.videoPlaybackFacts())
+        .hasValueSatisfying(
+            facts -> {
+              assertThat(facts.masteringDisplay()).isEmpty();
+              assertThat(facts.contentLightLevel()).isEmpty();
+            });
+  }
+
+  @Test
   @DisplayName("Should play at the rule's exact output frame rate when the rule chose one")
   void shouldPlayAtTheRulesExactOutputFrameRateWhenTheRuleChoseOne() {
     var rule = VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24_000, 1_001));
@@ -75,6 +120,11 @@ class ProbeOutcomePlaybackFactsTest {
   }
 
   private static ProbeOutcome.Success version4Outcome(FrameRateRule rule) {
+    return version4Outcome(rule, recording());
+  }
+
+  private static ProbeOutcome.Success version4Outcome(
+      FrameRateRule rule, StreamInfo.StreamInfoBuilder recording) {
     var coverArt =
         StreamInfo.builder()
             .index(0)
@@ -85,7 +135,7 @@ class ProbeOutcomePlaybackFactsTest {
             .build();
     return ProbeOutcome.Success.builder()
         .container(ProbeContainer.builder().build())
-        .streams(List.of(coverArt, recording().index(1).build()))
+        .streams(List.of(coverArt, recording.index(1).build()))
         .keyframes(new KeyframeKnowledge.NotReported())
         .chosenVideoStream(Optional.of(new ChosenVideoStream(1, rule)))
         .build();
