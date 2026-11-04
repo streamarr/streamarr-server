@@ -10,6 +10,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
@@ -44,6 +45,31 @@ class MediaProbeTest {
     var probe = probe(audio("eng"), subtitle("hdmv_pgs_subtitle", "ENG").isForced(true).build());
 
     assertThat(probe.hasForcedImageSubtitleInAnAudioLanguage()).isTrue();
+  }
+
+  // ISO 639-2 gives 20 languages a bibliographic and a terminological code, and files carry either,
+  // or the ISO 639-1 code.
+  @ParameterizedTest(name = "audio {0}, subtitle {1}")
+  @CsvSource({"fra, fre", "fre, fra", "deu, ger", "zho, chi", "en, eng", "eng, en", "fr, fre"})
+  @DisplayName(
+      "Should find a forced image subtitle when its language code is an alias of the audio's")
+  void shouldFindAForcedImageSubtitleWhenItsLanguageCodeIsAnAliasOfTheAudios(
+      String audioLanguage, String subtitleLanguage) {
+    var probe =
+        probe(
+            audio("eng"),
+            audio(audioLanguage),
+            subtitle("hdmv_pgs_subtitle", subtitleLanguage).isForced(true).build());
+
+    assertThat(probe.hasForcedImageSubtitleInAnAudioLanguage()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should find no forced subtitle when two unknown two-letter codes differ")
+  void shouldFindNoForcedSubtitleWhenTwoUnknownTwoLetterCodesDiffer() {
+    var probe = probe(audio("qq"), subtitle("hdmv_pgs_subtitle", "qz").isForced(true).build());
+
+    assertThat(probe.hasForcedImageSubtitleInAnAudioLanguage()).isFalse();
   }
 
   @Test

@@ -2,7 +2,6 @@ package com.streamarr.server.domain.streaming;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
@@ -93,13 +92,13 @@ public record MediaProbe(
     var languages =
         audioStreams().stream()
             .flatMap(stream -> stream.language().stream())
-            .map(language -> language.toLowerCase(Locale.ROOT))
+            .map(LanguageCodes::canonical)
             .collect(Collectors.toSet());
     return subtitleStreams().stream()
         .filter(StreamInfo::isForced)
         .filter(stream -> stream.codec().filter(IMAGE_SUBTITLE_CODECS::contains).isPresent())
         .flatMap(stream -> stream.language().stream())
-        .anyMatch(language -> languages.contains(language.toLowerCase(Locale.ROOT)));
+        .anyMatch(language -> languages.contains(LanguageCodes.canonical(language)));
   }
 
   public List<StreamInfo> subtitleStreams() {

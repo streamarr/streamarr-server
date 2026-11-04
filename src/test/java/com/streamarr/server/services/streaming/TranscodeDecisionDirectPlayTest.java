@@ -194,6 +194,7 @@ class TranscodeDecisionDirectPlayTest {
     return Stream.of(
         Arguments.of("forced track in the first audio track's language", "eng", false),
         Arguments.of("forced track in the second audio track's language", "fra", false),
+        Arguments.of("forced track in an alias of the second audio track's code", "fre", false),
         Arguments.of("forced track in no audio track's language", "deu", true));
   }
 
