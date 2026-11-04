@@ -108,6 +108,23 @@ class SessionReaperDiskPressureTest {
   }
 
   @Test
+  @DisplayName(
+      "Should evict only the idle HLS session when an older idle direct-play session holds no"
+          + " segments")
+  void shouldEvictOnlyIdleHlsSessionWhenOlderIdleDirectPlaySessionHoldsNoSegments() {
+    var directPlay = idleDirectPlaySession(Duration.ofMinutes(50));
+    var hls = storedSession(Duration.ofMinutes(30), 950);
+
+    reaperReading(new StoredSegmentBytes(segmentFolder)).reapSessions();
+
+    assertThat(streamingService.getAllSessions())
+        .extracting(StreamSession::getSessionId)
+        .containsExactly(directPlay);
+    assertThat(segmentFolder.resolve(hls.toString())).doesNotExist();
+    assertThat(meters.counter("streamarr.streaming.disk_pressure_evictions").count()).isEqualTo(1);
+  }
+
+  @Test
   @DisplayName("Should keep every active session when the segment folder's disk stays nearly full")
   void shouldKeepEveryActiveSessionWhenSegmentFolderDiskStaysNearlyFull() {
     var first = storedSession(Duration.ofSeconds(10), 470);
@@ -266,6 +283,13 @@ class SessionReaperDiskPressureTest {
     session.setLastAccessedAt(clock.instant().minus(idleFor));
     registry.save(session);
     segmentStore.storeSegment(session.getSessionId(), "segment0.m4s", new byte[segmentBytes]);
+    return session.getSessionId();
+  }
+
+  private UUID idleDirectPlaySession(Duration idleFor) {
+    var session = StreamSessionFixture.directPlaySessionBuilder().build();
+    session.setLastAccessedAt(clock.instant().minus(idleFor));
+    registry.save(session);
     return session.getSessionId();
   }
 

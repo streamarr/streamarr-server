@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -87,8 +88,10 @@ public class SessionReaper {
 
   private void evictIdleSessionsUnderDiskPressure(Instant now) {
     try {
+      // A direct-play stream session stores no segments, so ending it frees no space.
       var oldestFirst =
           streamingService.getAllSessions().stream()
+              .filter(session -> session.getDelivery() == StreamDelivery.HLS)
               .filter(session -> isIdle(session, now))
               .sorted(Comparator.comparing(StreamSession::getLastAccessedAt))
               .toList();
