@@ -912,12 +912,16 @@ public class ProducerLifecycleService {
   }
 
   // A variant frees a configured transcode slot exactly when the limit counts it, whether or not
-  // its job attempt still runs. It frees a worker job slot, or a copy place when it copies, only
+  // its job attempt still runs. An encode frees a worker job slot, and a copy a copy place, only
   // while its job attempt runs on a worker that can run the start.
   private boolean freesTakenSlots(
       StreamSession session, String variantLabel, SlotShortage shortage) {
     if (shortage.configuredTranscodeSlot()
         && !takesConfiguredTranscodeSlot(session, variantLabel)) {
+      return false;
+    }
+
+    if (shortage.workerJobSlot() && copiesVideo(session)) {
       return false;
     }
 

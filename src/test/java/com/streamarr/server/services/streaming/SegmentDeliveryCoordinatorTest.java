@@ -2364,6 +2364,25 @@ class SegmentDeliveryCoordinatorTest {
     deliverSwitch(idle);
   }
 
+  @Test
+  @DisplayName(
+      "Should keep another stream session's left copy when a variant finds no free worker job slot")
+  void shouldKeepAnotherStreamSessionsLeftCopyWhenAVariantFindsNoFreeWorkerJobSlot()
+      throws Exception {
+    rebuildRig(10, new MutexFactory<>());
+    var requesting = suspendedLadderSession();
+    var switching = switchingTo1080p(startedCopyLadderSession());
+    startedLadderSession();
+    transcodeExecutor.limitJobSlots(1);
+    assertThat(transcodeExecutor.availableSlots()).isZero();
+
+    var delivery = deliverAsync(requesting.getSessionId(), "1080p", "1080p/segment0.m4s");
+
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(runningVariants(switching.session())).containsExactlyInAnyOrder("480p", "1080p");
+    deliverSwitch(switching);
+  }
+
   // A stream session whose every variant copies the video, so the variant that its player leaves
   // is a copy.
   private StreamSession startedCopyLadderSession() {
