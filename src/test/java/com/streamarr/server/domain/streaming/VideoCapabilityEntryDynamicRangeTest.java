@@ -386,14 +386,15 @@ class VideoCapabilityEntryDynamicRangeTest {
                 .build()),
         Arguments.of(
             "8.1 named by its RPU header, at 3840×2160 with a maximum of 500 fps, above every level",
-            constantRateHevcCopy(
+            filmRateHevcCopy(
                 new PictureSize(3840, 2160),
                 new Fraction(500, 1),
                 dolbyVision(CompatibleBase.PQ, singleLayerRpuHeader()))));
   }
 
   // Dolby's level table puts 3840×2160 at 24000/1001 fps at level 6, 3840×2160 at 60000/1001 fps
-  // at level 9, and 1920×1080 at 30 fps at level 4.
+  // at level 9, 1920×1080 at 30 fps at level 4 and 1920×1080 at 60 fps at level 5. Each copy whose
+  // maximum frame rate is above its frame rate takes the level of its maximum.
   @ParameterizedTest(name = "{0}")
   @MethodSource("dolbyVisionCopiesWithoutARecordLevel")
   @DisplayName(
@@ -407,12 +408,12 @@ class VideoCapabilityEntryDynamicRangeTest {
   static Stream<Arguments> dolbyVisionCopiesWithoutARecordLevel() {
     var uhdFilm = new PictureSize(3840, 2160);
     var profile81FromItsRpuHeader =
-        constantRateHevcCopy(
+        filmRateHevcCopy(
             uhdFilm,
             new Fraction(24_000, 1_001),
             dolbyVision(CompatibleBase.PQ, singleLayerRpuHeader()));
     var profile81FromARecordWithoutALevel =
-        constantRateHevcCopy(
+        filmRateHevcCopy(
             uhdFilm,
             new Fraction(60_000, 1_001),
             declaredDolbyVision(
@@ -421,7 +422,7 @@ class VideoCapabilityEntryDynamicRangeTest {
                     .level(OptionalInt.empty())
                     .baseLayerCompatibilityId(OptionalInt.of(1))));
     var profile101FromItsRpuHeader =
-        constantRateAv1Copy(dolbyVision(CompatibleBase.PQ, singleLayerRpuHeader()));
+        av1CopyWithA60FpsMaximum(dolbyVision(CompatibleBase.PQ, singleLayerRpuHeader()));
     return Stream.of(
         Arguments.of(
             "8.1 from its RPU header at level 6, entry at level 6",
@@ -434,6 +435,22 @@ class VideoCapabilityEntryDynamicRangeTest {
             profile81FromItsRpuHeader,
             false),
         Arguments.of(
+            "8.1 from its RPU header at 24000/1001 fps with a 60 fps maximum, entry at level 9",
+            pqEntryListing(DolbyVisionProfile.PROFILE_8_1, 9),
+            filmRateHevcCopy(
+                uhdFilm,
+                new Fraction(60, 1),
+                dolbyVision(CompatibleBase.PQ, singleLayerRpuHeader())),
+            true),
+        Arguments.of(
+            "8.1 from its RPU header at 24000/1001 fps with a 60 fps maximum, entry at level 8",
+            pqEntryListing(DolbyVisionProfile.PROFILE_8_1, 8),
+            filmRateHevcCopy(
+                uhdFilm,
+                new Fraction(60, 1),
+                dolbyVision(CompatibleBase.PQ, singleLayerRpuHeader())),
+            false),
+        Arguments.of(
             "8.1 from a record without a level at level 9, entry at level 9",
             pqEntryListing(DolbyVisionProfile.PROFILE_8_1, 9),
             profile81FromARecordWithoutALevel,
@@ -444,13 +461,13 @@ class VideoCapabilityEntryDynamicRangeTest {
             profile81FromARecordWithoutALevel,
             false),
         Arguments.of(
-            "10.1 from its RPU header at level 4, entry at level 4",
-            av1PqEntryListing(DolbyVisionProfile.PROFILE_10_1, 4),
+            "10.1 from its RPU header at level 5, entry at level 5",
+            av1PqEntryListing(DolbyVisionProfile.PROFILE_10_1, 5),
             profile101FromItsRpuHeader,
             true),
         Arguments.of(
-            "10.1 from its RPU header at level 4, entry at level 3",
-            av1PqEntryListing(DolbyVisionProfile.PROFILE_10_1, 3),
+            "10.1 from its RPU header at level 5, entry at level 4",
+            av1PqEntryListing(DolbyVisionProfile.PROFILE_10_1, 4),
             profile101FromItsRpuHeader,
             false));
   }
@@ -472,12 +489,12 @@ class VideoCapabilityEntryDynamicRangeTest {
     return Stream.of(
         Arguments.of(
             "record level 6 at 3840×2160 with a maximum of 60 fps",
-            constantRateHevcCopy(
+            filmRateHevcCopy(
                 new PictureSize(3840, 2160), new Fraction(60, 1), profile81AtRecordLevel(6)),
             true),
         Arguments.of(
             "record level 7 at 1920×1080 with a maximum of 24 fps",
-            constantRateHevcCopy(
+            filmRateHevcCopy(
                 new PictureSize(1920, 1080), new Fraction(24, 1), profile81AtRecordLevel(7)),
             false));
   }
@@ -495,7 +512,7 @@ class VideoCapabilityEntryDynamicRangeTest {
 
   static Stream<Arguments> dolbyVisionCopiesWithARecordLevelOutsideTheTable() {
     var level0At1080p24 =
-        constantRateHevcCopy(
+        filmRateHevcCopy(
             new PictureSize(1920, 1080), new Fraction(24, 1), profile81AtRecordLevel(0));
     return Stream.of(
         Arguments.of(
@@ -511,7 +528,7 @@ class VideoCapabilityEntryDynamicRangeTest {
         Arguments.of(
             "record level 14 at level 6, entry at level 13",
             pqEntryListing(DolbyVisionProfile.PROFILE_8_1, 13),
-            constantRateHevcCopy(
+            filmRateHevcCopy(
                 new PictureSize(3840, 2160), new Fraction(24, 1), profile81AtRecordLevel(14)),
             true),
         Arguments.of(
@@ -598,13 +615,14 @@ class VideoCapabilityEntryDynamicRangeTest {
     return VideoStreamCopyFixture.sdrHevcCopyBuilder().dynamicRange(range).build();
   }
 
-  // A constant-rate copy runs at its maximum frame rate.
-  private static VideoStreamCopy constantRateHevcCopy(
-      PictureSize decodedSize, Fraction frameRate, VideoDynamicRange range) {
+  // A copy whose frames run at 24000/1001 fps, while a faster section may raise its maximum frame
+  // rate.
+  private static VideoStreamCopy filmRateHevcCopy(
+      PictureSize decodedSize, Fraction maximumFrameRate, VideoDynamicRange range) {
     return VideoStreamCopyFixture.sdrHevcCopyBuilder()
         .decodedSize(Optional.of(decodedSize))
-        .frameRate(OptionalDouble.of(frameRate.toDouble()))
-        .maximumFrameRate(Optional.of(frameRate))
+        .frameRate(OptionalDouble.of(24_000.0 / 1_001))
+        .maximumFrameRate(Optional.of(maximumFrameRate))
         .dynamicRange(range)
         .build();
   }
@@ -613,9 +631,10 @@ class VideoCapabilityEntryDynamicRangeTest {
     return av1CopyBuilder(range).build();
   }
 
-  // A 1920×1080 AV1 copy at a constant 30 fps, as the fixture's HEVC copy is.
-  private static VideoStreamCopy constantRateAv1Copy(VideoDynamicRange range) {
-    return av1CopyBuilder(range).maximumFrameRate(Optional.of(new Fraction(30, 1))).build();
+  // A 1920×1080 AV1 copy whose frames run at 30 fps, as the fixture's HEVC copy does, and whose
+  // faster sections run at 60 fps.
+  private static VideoStreamCopy av1CopyWithA60FpsMaximum(VideoDynamicRange range) {
+    return av1CopyBuilder(range).maximumFrameRate(Optional.of(new Fraction(60, 1))).build();
   }
 
   private static VideoStreamCopy.VideoStreamCopyBuilder av1CopyBuilder(VideoDynamicRange range) {
