@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.nio.file.SecureDirectoryStream;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributeView;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -90,6 +91,12 @@ public class DirectPlaySourceService {
       return openFile(folder, name, container);
     }
 
+    // JDK 25 leaks a descriptor when it opens a name that is not a folder as a folder, and a FIFO
+    // would block the open, so only a name that is a folder opens as one.
+    if (!attributesOf(folder, name).isDirectory()) {
+      return Optional.empty();
+    }
+
     try (var next = folder.newDirectoryStream(name, LinkOption.NOFOLLOW_LINKS)) {
       return openBelow(next, relativePath.subpath(1, relativePath.getNameCount()), container);
     }
@@ -97,11 +104,7 @@ public class DirectPlaySourceService {
 
   private Optional<DirectPlaySource> openFile(
       SecureDirectoryStream<Path> folder, Path name, SourceContainer container) throws IOException {
-    var attributes =
-        folder
-            .getFileAttributeView(name, BasicFileAttributeView.class, LinkOption.NOFOLLOW_LINKS)
-            .readAttributes();
-    if (!attributes.isRegularFile()) {
+    if (!attributesOf(folder, name).isRegularFile()) {
       return Optional.empty();
     }
 
@@ -113,5 +116,12 @@ public class DirectPlaySourceService {
       file.close();
       throw exception;
     }
+  }
+
+  private static BasicFileAttributes attributesOf(SecureDirectoryStream<Path> folder, Path name)
+      throws IOException {
+    return folder
+        .getFileAttributeView(name, BasicFileAttributeView.class, LinkOption.NOFOLLOW_LINKS)
+        .readAttributes();
   }
 }

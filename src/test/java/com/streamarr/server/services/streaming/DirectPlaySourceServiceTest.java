@@ -10,9 +10,11 @@ import com.streamarr.server.config.RemoteTranscodeProperties;
 import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.fakes.FakeStreamingService;
+import com.sun.management.UnixOperatingSystemMXBean;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.EOFException;
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -193,6 +195,22 @@ class DirectPlaySourceServiceTest {
   }
 
   @Test
+  @DisplayName("Should leave no file open when a folder on the path is a regular file")
+  void shouldLeaveNoFileOpenWhenFolderOnThePathIsRegularFile() throws IOException {
+    var show = Files.write(directory.resolve("show"), new byte[] {1});
+    var session = directPlaySessionBuilder().sourcePath(show.resolve("episode.mp4")).build();
+    streamingService.addSession(session);
+    var attempts = 100;
+    var openBefore = openFileCount();
+
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      assertThat(open(session)).isEmpty();
+    }
+
+    assertThat(openFileCount() - openBefore).isLessThan(attempts);
+  }
+
+  @Test
   @DisplayName("Should answer nothing when the source file links outside the media root")
   void shouldAnswerNothingWhenSourceFileLinksOutsideTheMediaRoot() throws IOException {
     var link = Files.createSymbolicLink(directory.resolve("linked.mp4"), outsideFile);
@@ -277,6 +295,12 @@ class DirectPlaySourceServiceTest {
     streamingService.addSession(session);
 
     assertThat(open(session)).isEmpty();
+  }
+
+  private static long openFileCount() {
+    var system = ManagementFactory.getOperatingSystemMXBean();
+    assertThat(system).isInstanceOf(UnixOperatingSystemMXBean.class);
+    return ((UnixOperatingSystemMXBean) system).getOpenFileDescriptorCount();
   }
 
   private double openResponses() {
