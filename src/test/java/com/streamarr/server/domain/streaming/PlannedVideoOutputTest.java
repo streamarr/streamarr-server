@@ -27,12 +27,7 @@ class PlannedVideoOutputTest {
       "Should refuse a planned stream copy when its dynamic range holds an unspecified value")
   void shouldRefuseAPlannedStreamCopyWhenItsDynamicRangeHoldsAnUnspecifiedValue(
       VideoDynamicRange range) {
-    var copy =
-        PlannedVideoOutput.StreamCopy.builder()
-            .dynamicRange(range)
-            .codecProfile(Optional.of(VideoCodecProfile.H264_HIGH))
-            .codecLevel(OptionalInt.of(40))
-            .bitstreamRewrites(List.of());
+    var copy = copyBuilder().dynamicRange(range);
 
     assertThatThrownBy(copy::build)
         .isInstanceOf(IllegalArgumentException.class)
@@ -71,13 +66,7 @@ class PlannedVideoOutputTest {
       "Should keep a copy's bitstream rewrites when the caller changes its list afterwards")
   void shouldKeepACopysBitstreamRewritesWhenTheCallerChangesItsListAfterwards() {
     var rewrites = new ArrayList<>(List.of(BitstreamRewrite.STRIP_HDR10_PLUS));
-    var copy =
-        PlannedVideoOutput.StreamCopy.builder()
-            .dynamicRange(VideoDynamicRange.SDR)
-            .codecProfile(Optional.of(VideoCodecProfile.HEVC_MAIN_10))
-            .codecLevel(OptionalInt.of(150))
-            .bitstreamRewrites(rewrites)
-            .build();
+    var copy = copyBuilder().bitstreamRewrites(rewrites).build();
 
     rewrites.add(BitstreamRewrite.STRIP_DOLBY_VISION);
 
@@ -96,33 +85,50 @@ class PlannedVideoOutputTest {
 
   static Stream<Arguments> plannedOutputsMissingARequiredValue() {
     var range = VideoDynamicRange.SDR;
-    var profile = Optional.of(VideoCodecProfile.H264_HIGH);
-    var level = OptionalInt.of(40);
-    List<BitstreamRewrite> noRewrites = List.of();
     var encodeProfile = Optional.of(EncodeCodecProfile.H264_HIGH);
     return Stream.of(
-        Arguments.of(
+        planWithoutValue(
+            "a stream copy without a dynamic range",
             "dynamicRange",
-            (ThrowingCallable)
-                () -> new PlannedVideoOutput.StreamCopy(null, profile, level, noRewrites)),
-        Arguments.of(
+            () -> copyBuilder().dynamicRange(null).build()),
+        planWithoutValue(
+            "a stream copy without a codec profile",
             "codecProfile",
-            (ThrowingCallable)
-                () -> new PlannedVideoOutput.StreamCopy(range, null, level, noRewrites)),
-        Arguments.of(
+            () -> copyBuilder().codecProfile(null).build()),
+        planWithoutValue(
+            "a stream copy without a codec level",
             "codecLevel",
-            (ThrowingCallable)
-                () -> new PlannedVideoOutput.StreamCopy(range, profile, null, noRewrites)),
-        Arguments.of(
+            () -> copyBuilder().codecLevel(null).build()),
+        planWithoutValue(
+            "a stream copy without bitstream rewrites",
             "bitstreamRewrites",
-            (ThrowingCallable)
-                () -> new PlannedVideoOutput.StreamCopy(range, profile, level, null)),
-        Arguments.of("source", (ThrowingCallable) () -> PlannedVideoOutput.StreamCopy.of(null)),
-        Arguments.of(
-            "codecProfile", (ThrowingCallable) () -> new PlannedVideoOutput.Encode(null, range)),
-        Arguments.of(
+            () -> copyBuilder().bitstreamRewrites(null).build()),
+        planWithoutValue(
+            "a stream copy of no source", "source", () -> PlannedVideoOutput.StreamCopy.of(null)),
+        planWithoutValue(
+            "an encode without a codec profile",
+            "codecProfile",
+            () -> new PlannedVideoOutput.Encode(null, range)),
+        planWithoutValue(
+            "an encode without a dynamic range",
             "dynamicRange",
-            (ThrowingCallable) () -> new PlannedVideoOutput.Encode(encodeProfile, null)),
-        Arguments.of("codecProfile", (ThrowingCallable) () -> PlannedVideoOutput.Encode.sdr(null)));
+            () -> new PlannedVideoOutput.Encode(encodeProfile, null)),
+        planWithoutValue(
+            "an SDR encode without a codec profile",
+            "codecProfile",
+            () -> PlannedVideoOutput.Encode.sdr(null)));
+  }
+
+  private static Arguments planWithoutValue(
+      String plan, String missingValue, ThrowingCallable build) {
+    return Arguments.of(Named.of(plan, missingValue), build);
+  }
+
+  private static PlannedVideoOutput.StreamCopy.StreamCopyBuilder copyBuilder() {
+    return PlannedVideoOutput.StreamCopy.builder()
+        .dynamicRange(VideoDynamicRange.SDR)
+        .codecProfile(Optional.of(VideoCodecProfile.H264_HIGH))
+        .codecLevel(OptionalInt.of(40))
+        .bitstreamRewrites(List.of());
   }
 }
