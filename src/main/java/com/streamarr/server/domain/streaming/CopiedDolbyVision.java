@@ -39,7 +39,8 @@ sealed interface CopiedDolbyVision {
    * and cannot write dav1, and a picture with no compatible base shows wrong colours or is refused
    * without them.
    */
-  record NeedsDolbyVisionSampleEntry() implements CopiedDolbyVision {}
+  record NeedsDolbyVisionSampleEntry(@NonNull DolbyVisionProfile profile, int level)
+      implements CopiedDolbyVision {}
 
   static CopiedDolbyVision of(VideoStreamCopy copy) {
     var range = copy.dynamicRange();
@@ -74,7 +75,7 @@ sealed interface CopiedDolbyVision {
     }
 
     if (profile.get().compatibleBase() == CompatibleBase.NONE) {
-      return new NeedsDolbyVisionSampleEntry();
+      return new NeedsDolbyVisionSampleEntry(profile.get(), level.getAsInt());
     }
 
     return new Declarable(profile.get(), level.getAsInt());

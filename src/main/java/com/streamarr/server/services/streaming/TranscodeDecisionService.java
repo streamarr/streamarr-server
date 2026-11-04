@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.AudioSteps;
@@ -35,7 +36,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.OptionalDouble;
-import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.NonNull;
@@ -51,9 +51,6 @@ public class TranscodeDecisionService {
   private static final List<EncodeCodecProfile> COMPRESSING_BETTER_THAN_H264 =
       List.of(EncodeCodecProfile.AV1_MAIN);
   private static final int STEREO = 2;
-  // The plain aac declaration covers LC, HE-AAC and HE-AAC v2.
-  private static final Set<String> COPYABLE_AAC_CODEC_STRINGS =
-      Set.of("mp4a.40.2", "mp4a.40.5", "mp4a.40.29");
   private static final List<BitstreamRewrite> STRIP_HDR10_PLUS =
       List.of(BitstreamRewrite.STRIP_HDR10_PLUS);
   private static final List<BitstreamRewrite> NORMALIZE_DOLBY_VISION_RECORD =
@@ -456,7 +453,9 @@ public class TranscodeDecisionService {
   }
 
   private static boolean isCopyableAudioCodecString(String codec, String codecString) {
-    return !"aac".equals(codec) || COPYABLE_AAC_CODEC_STRINGS.contains(codecString);
+    return AudioCodec.ofProbedName(codec)
+        .map(declarable -> declarable.coversCodecString(codecString))
+        .orElse(true);
   }
 
   private Optional<EncodeCodecProfile> selectEncodeCodecProfile(TranscodeDecisionRequest request) {
