@@ -4384,7 +4384,6 @@ class HlsStreamingServiceTest {
         .authorityGate(authorityGate)
         .executor(Runnable::run)
         .maximumFormatAttempts(2)
-        .sessionRetention(Duration.ofHours(24))
         .build();
   }
 

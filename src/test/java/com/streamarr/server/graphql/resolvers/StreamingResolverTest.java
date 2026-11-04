@@ -1333,7 +1333,6 @@ class StreamingResolverTest {
           .authorityGate(new FakePlaybackAuthorityGate())
           .executor(REPLACEMENT_TASKS::add)
           .maximumFormatAttempts(2)
-          .sessionRetention(Duration.ofHours(1))
           .build();
     }
 
@@ -1385,7 +1384,7 @@ class StreamingResolverTest {
 
   @BeforeEach
   void resetStubService() {
-    playbackSessions.reapExpired(Instant.MAX);
+    playbackSessions.reapExpired(Instant.MAX, Duration.ZERO);
     REPLACEMENT_TASKS.clear();
     beforeTokenEncoding = _ -> {};
     STUB_SERVICE.reset();

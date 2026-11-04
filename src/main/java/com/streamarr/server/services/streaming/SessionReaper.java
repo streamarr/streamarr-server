@@ -52,7 +52,7 @@ public class SessionReaper {
 
   private void reapExpiredPlayback(Instant now) {
     try {
-      playbackSessionService.reapExpired(now);
+      playbackSessionService.reapExpired(now, properties.sessionRetention());
     } catch (RuntimeException failure) {
       log.warn("Failed to reap expired logical playback sessions", failure);
     }

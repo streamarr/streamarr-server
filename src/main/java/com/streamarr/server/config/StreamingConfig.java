@@ -38,7 +38,6 @@ public class StreamingConfig {
         .streamingService(streamingService)
         .authorityGate(authorityGate)
         .maximumFormatAttempts(properties.maxFormatAttempts())
-        .sessionRetention(properties.sessionRetention())
         .build();
   }
 

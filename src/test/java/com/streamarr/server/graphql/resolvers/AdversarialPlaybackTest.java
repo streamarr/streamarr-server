@@ -251,7 +251,6 @@ class AdversarialPlaybackTest {
           .authorityGate(new FakePlaybackAuthorityGate())
           .executor(Runnable::run)
           .maximumFormatAttempts(2)
-          .sessionRetention(Duration.ofHours(1))
           .build();
     }
 
