@@ -68,6 +68,13 @@ message WorkerCapabilities {
   // This field lists the stream measurement versions whose bitrate scan chunks
   // the worker runs (ADR 0054). A worker without bitrate scans lists none.
   repeated uint32 measurement_versions = 4;
+  // This field lists the bitstream rewrites that the worker applies to a copy
+  // (ADR 0036). The server sends a job that lists a rewrite only to a worker
+  // that lists it.
+  repeated BitstreamRewrite bitstream_rewrites = 5;
+  // This field lists the copy features that the worker supports. The server
+  // sends a copy that needs a feature only to a worker that lists it.
+  repeated VideoCopyFeature video_copy_features = 6;
 }
 
 // The worker sends this message first on its session. Each capacity counts the
@@ -256,6 +263,42 @@ enum VideoMode {
   VIDEO_MODE_ENCODE = 2;
 }
 
+// This value names a change that the worker makes to a copied video stream
+// without decoding it (ADR 0036). The worker applies exactly the rewrites that
+// the job lists, and its produced-output check confirms each one.
+enum BitstreamRewrite {
+  BITSTREAM_REWRITE_UNSPECIFIED = 0;
+  // The worker removes every RPU, every HEVC NAL unit of type 62 or 63, every
+  // AV1 metadata OBU that carries an RPU, and the Dolby Vision record.
+  BITSTREAM_REWRITE_STRIP_DOLBY_VISION = 1;
+  // The worker removes every HDR10+ message and keeps the other SEI messages
+  // and metadata OBUs.
+  BITSTREAM_REWRITE_STRIP_HDR10_PLUS = 2;
+  // The worker writes the Dolby Vision record from dolby_vision_output instead
+  // of the source's record. A profile with a compatible base gets metadata
+  // compression 0.
+  BITSTREAM_REWRITE_NORMALIZE_DOLBY_VISION_RECORD = 3;
+  // The worker converts single-track Dolby Vision profile 7 to profile 8.1.
+  // streamarr/streamarr-server#651 defines this rewrite.
+  BITSTREAM_REWRITE_CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1 = 4;
+}
+
+// This value names something a copy can need beyond passing the source's
+// video through.
+enum VideoCopyFeature {
+  VIDEO_COPY_FEATURE_UNSPECIFIED = 0;
+  // The worker accepts a copy that sets output_dynamic_range. It writes the
+  // static HDR metadata into hvcC and checks the produced output against the
+  // planned range and dolby_vision_output.
+  VIDEO_COPY_FEATURE_PLANNED_OUTPUT = 1;
+  // The worker writes the dvh1 sample entry that dolby_vision_output names,
+  // with the parameter sets in the decoder configuration record.
+  VIDEO_COPY_FEATURE_DVH1_SAMPLE_ENTRY = 2;
+  // The worker renames the av01 sample entry to the dav1 sample entry that
+  // dolby_vision_output names.
+  VIDEO_COPY_FEATURE_DAV1_SAMPLE_ENTRY = 3;
+}
+
 // This value states whether a dynamic-range feature is present (ADR 0036).
 // UNSPECIFIED means that the probe could not check.
 enum Presence {
@@ -332,6 +375,34 @@ enum DolbyVisionRpuPlacement {
   DOLBY_VISION_RPU_PLACEMENT_STARTS_SAMPLE = 2;
 }
 
+// This message states the Dolby Vision that a copy's output carries (ADR
+// 0013). The produced Dolby Vision configuration record holds these values.
+message DolbyVisionOutput {
+  // This field holds the Dolby Vision profile, such as 5, 8 or 10.
+  uint32 profile = 1;
+  // This field holds the Dolby Vision level, from 1 to 13, that the decision
+  // set. It never comes from the RPU's vdr_rpu_level.
+  uint32 level = 2;
+  // This field holds bl_signal_compatibility_id: 0 for profiles 5 and 10.0, 1
+  // for a PQ base, 2 for an SDR base and 4 for an HLG base.
+  uint32 base_layer_compatibility_id = 3;
+  // The playlist's CODECS attribute follows this sample entry.
+  DolbyVisionSampleEntry sample_entry = 4;
+}
+
+// This value names the sample entry of a copy that carries Dolby Vision.
+enum DolbyVisionSampleEntry {
+  DOLBY_VISION_SAMPLE_ENTRY_UNSPECIFIED = 0;
+  // The HEVC base entry with a Dolby Vision record, for profiles 8.1 and 8.4.
+  DOLBY_VISION_SAMPLE_ENTRY_HVC1 = 1;
+  // The Dolby Vision HEVC entry, for profile 5.
+  DOLBY_VISION_SAMPLE_ENTRY_DVH1 = 2;
+  // The AV1 base entry with a Dolby Vision record, for profiles 10.1 and 10.4.
+  DOLBY_VISION_SAMPLE_ENTRY_AV01 = 3;
+  // The Dolby Vision AV1 entry, for profile 10.0.
+  DOLBY_VISION_SAMPLE_ENTRY_DAV1 = 4;
+}
+
 // These RPU header fields identify the Dolby Vision profile when no
 // configuration record names it (ADR 0036).
 message DolbyVisionRpuHeader {
@@ -376,8 +447,10 @@ message VideoDecision {
   string codec_string = 5;
   // This field holds the chosen stream's dynamic range as the probe stored it.
   VideoDynamicRange source_dynamic_range = 7;
-  // This field holds the planned output's dynamic range. Only an encode sets
-  // it.
+  // This field holds the planned output's dynamic range. An encode always sets
+  // it. A copy sets it when its output is PQ, HLG or has no compatible base, or
+  // when it lists a bitstream rewrite. A copy without it passes the source's
+  // range through, and an UNSPECIFIED base plays as SDR (ADR 0013).
   VideoDynamicRange output_dynamic_range = 8;
   // This field holds the chosen video's ProbeStreamInfo.index. Every job sets
   // it.
@@ -404,6 +477,18 @@ message VideoDecision {
   // it only on a job that encodes video and sets advertised_end (ADR 0037,
   // early ends).
   bool hold_last_frame_to_advertised_end = 14;
+  // This field lists every bitstream rewrite of a copy once (ADR 0036). An
+  // encode lists none. Every job attempt of a variant lists the same rewrites.
+  repeated BitstreamRewrite bitstream_rewrites = 15;
+  // A copy that the playlist describes as Dolby Vision sets this field, and
+  // only with output_dynamic_range (ADR 0013). Without it, a copy that keeps
+  // Dolby Vision keeps the source's record.
+  DolbyVisionOutput dolby_vision_output = 16;
+  // A copy with a PQ output sets each static HDR value that the probe holds,
+  // and only with output_dynamic_range. The worker writes each one into an
+  // HEVC copy's hvcC as its own SEI message (ADR 0036).
+  MasteringDisplayColorVolume mastering_display = 17;
+  ContentLightLevel content_light_level = 18;
 }
 
 message Deinterlace {
