@@ -627,7 +627,7 @@ public class HlsStreamingService implements StreamingService {
       return Optional.of(CapacityRefusal.NO_FREE_WORKER_SLOT);
     }
 
-    if (requiresTranscode(decision.transcodeMode())
+    if (countsAgainstTranscodeLimit(decision.transcodeMode())
         && producerLifecycle.freeConfiguredTranscodeSlots() <= 0) {
       return Optional.of(CapacityRefusal.NO_FREE_CONFIGURED_TRANSCODE_SLOT);
     }
@@ -650,7 +650,7 @@ public class HlsStreamingService implements StreamingService {
     NO_FREE_CONFIGURED_TRANSCODE_SLOT
   }
 
-  private boolean requiresTranscode(TranscodeMode mode) {
+  private boolean countsAgainstTranscodeLimit(TranscodeMode mode) {
     return mode != TranscodeMode.REMUX;
   }
 }

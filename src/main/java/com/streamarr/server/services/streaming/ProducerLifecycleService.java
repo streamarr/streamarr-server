@@ -758,8 +758,7 @@ public class ProducerLifecycleService {
         sessionId,
         SlotShortage.builder()
             .configuredTranscodeSlot(
-                decision.transcodeMode() != TranscodeMode.REMUX
-                    && freeConfiguredTranscodeSlots() <= 0)
+                countsAgainstTranscodeLimit(decision) && freeConfiguredTranscodeSlots() <= 0)
             .workerJobSlot(transcodeExecutor.availableSlots(decision) <= 0)
             .usableTargets(transcodeExecutor.executionTargets(decision))
             .build());
@@ -863,7 +862,7 @@ public class ProducerLifecycleService {
   }
 
   private static boolean takesConfiguredTranscodeSlot(StreamSession session, String variantLabel) {
-    return requiresTranscode(session)
+    return countsAgainstTranscodeLimit(session)
         && session
             .getVariantHandle(variantLabel)
             .filter(ProducerLifecycleService::takesConfiguredTranscodeSlot)
@@ -1239,7 +1238,7 @@ public class ProducerLifecycleService {
   }
 
   private boolean hasConfiguredTranscodeSlotFor(StreamSession session) {
-    return !requiresTranscode(session) || freeConfiguredTranscodeSlots() > 0;
+    return !countsAgainstTranscodeLimit(session) || freeConfiguredTranscodeSlots() > 0;
   }
 
   /**
@@ -1265,7 +1264,7 @@ public class ProducerLifecycleService {
     private synchronized long freePlaces() {
       var runningJobAttempts =
           runtimeRegistry.findAll().stream()
-              .filter(ProducerLifecycleService::requiresTranscode)
+              .filter(ProducerLifecycleService::countsAgainstTranscodeLimit)
               .mapToLong(ProducerLifecycleService::countRunningJobAttempts)
               .sum();
       return properties.maxConcurrentTranscodes() - runningJobAttempts - reservedPlaces;
@@ -1273,7 +1272,7 @@ public class ProducerLifecycleService {
 
     // Empty when no place is free. A stream session that only remuxes needs no place.
     private synchronized Optional<TranscodeLimitPlace> tryReserve(StreamSession session) {
-      if (!requiresTranscode(session)) {
+      if (!countsAgainstTranscodeLimit(session)) {
         return Optional.of(() -> {});
       }
 
@@ -1298,9 +1297,13 @@ public class ProducerLifecycleService {
   }
 
   // A direct-play stream session starts no job attempt and holds no transcode decision.
-  private static boolean requiresTranscode(StreamSession session) {
+  private static boolean countsAgainstTranscodeLimit(StreamSession session) {
     return session.getDelivery() == StreamDelivery.HLS
-        && session.getTranscodeDecision().transcodeMode() != TranscodeMode.REMUX;
+        && countsAgainstTranscodeLimit(session.getTranscodeDecision());
+  }
+
+  private static boolean countsAgainstTranscodeLimit(TranscodeDecision decision) {
+    return decision.transcodeMode() != TranscodeMode.REMUX;
   }
 
   private static long countRunningJobAttempts(StreamSession session) {
