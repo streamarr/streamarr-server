@@ -174,6 +174,8 @@ final class LiveWorkerConnectionRegistry {
   private final Map<UUID, TranscodeFailure> terminalFailures = new ConcurrentHashMap<>();
   // The labels of each stream session's variants whose hardware encoder failed (ADR 0044).
   private final Map<UUID, Set<String>> hardwareEncoderFailures = new ConcurrentHashMap<>();
+  // Keyed by job attempt. Each entry lasts until its stream session is destroyed.
+  private final Map<UUID, RefusedCopyStart> refusedCopyStarts = new ConcurrentHashMap<>();
   private final Map<UUID, CompletableFuture<ProbeAttemptReport>> pendingProbes =
       new ConcurrentHashMap<>();
 
@@ -532,6 +534,9 @@ final class LiveWorkerConnectionRegistry {
     } finally {
       terminalFailures.remove(streamSessionId);
       hardwareEncoderFailures.remove(streamSessionId);
+      refusedCopyStarts
+          .values()
+          .removeIf(refusal -> refusal.streamSessionId().equals(streamSessionId));
     }
   }
 
@@ -682,6 +687,12 @@ final class LiveWorkerConnectionRegistry {
     return hardwareEncoderFailures.getOrDefault(streamSessionId, Set.of()).contains(variantLabel);
   }
 
+  Optional<ExecutionTargetId> refusedCopyStart(UUID jobAttemptId) {
+    return Optional.ofNullable(refusedCopyStarts.get(jobAttemptId)).map(RefusedCopyStart::target);
+  }
+
+  private record RefusedCopyStart(UUID streamSessionId, ExecutionTargetId target) {}
+
   /** From this call on, a probe cancelled before its timeout tells its worker of the shutdown. */
   void beginShutdown() {
     shuttingDown = true;
@@ -693,6 +704,7 @@ final class LiveWorkerConnectionRegistry {
     closed.forEach(WorkerConnection::abandonAllJobsWithoutWaiting);
     terminalFailures.clear();
     hardwareEncoderFailures.clear();
+    refusedCopyStarts.clear();
   }
 
   ReportedJobAttemptEnd failJobAttempt(
@@ -1572,6 +1584,7 @@ final class LiveWorkerConnectionRegistry {
         terminalFailure(job, failed)
             .ifPresent(
                 failure -> terminalFailures.put(fromProto(job.getStreamSessionId()), failure));
+        rememberRefusedCopyStart(attemptId, job, failed);
       }
 
       if (job != null && isHardwareEncoderFailure(job, failed)) {
@@ -1589,6 +1602,19 @@ final class LiveWorkerConnectionRegistry {
       hardwareEncoderFailures
           .computeIfAbsent(fromProto(job.getStreamSessionId()), _ -> ConcurrentHashMap.newKeySet())
           .add(job.getVariant().getVariantLabel());
+    }
+
+    // A worker refuses a copy beyond the copies that it holds with STARTUP_FAILED. It is recorded
+    // before the attempt's end wakes the held requests, so a woken request finds it.
+    private void rememberRefusedCopyStart(UUID attemptId, VariantJob job, JobAttemptFailed failed) {
+      if (failed.getFailure() != JobAttemptFailure.JOB_ATTEMPT_FAILURE_STARTUP_FAILED
+          || !copiesVideo(job.getDecision())) {
+        return;
+      }
+
+      refusedCopyStarts.put(
+          attemptId,
+          new RefusedCopyStart(fromProto(job.getStreamSessionId()), executionTargetId()));
     }
 
     // The worker contract says that a replacement attempt with the same decision repeats an output

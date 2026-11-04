@@ -61,6 +61,7 @@ A probe never takes a playback slot, and a job attempt never takes a probe unit.
 A job attempt that copies the video, with or without an audio encode, takes no playback slot, and the server sends one to a worker whose slots are all in use.
 The worker runs as many copies as its heap holds, at up to 256 MiB of output each after its slots' memory and a 512 MiB reserve, and refuses a copy beyond them with `STARTUP_FAILED`, as it refuses an encode beyond its slots.
 The server treats that refusal as any failed start: recovery starts a replacement on an eligible worker, and the variant fails once recovery has tried every eligible worker.
+When the refusing worker runs another stream session's left variant that copies the video, the server first stops that left variant and starts the refused copy on that worker once more, since a left variant never keeps another stream session from playing (https://github.com/streamarr/streamarr-adr/blob/main/adr/0019-recoverable-jit-hls-segment-delivery.adoc[ADR 0019]).
 The worker's `streamarr.worker.copy_fullness` metric tells an autoscaler how full of copies it is.
 A stream session can therefore start on a worker while a library scan probes many files on the same worker.
 A playback probe can also use a free background unit, but a background probe never uses a playback probe unit.

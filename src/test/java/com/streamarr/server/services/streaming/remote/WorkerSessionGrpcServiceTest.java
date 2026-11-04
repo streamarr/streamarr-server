@@ -8,6 +8,8 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.streamCopyDecis
 import static com.streamarr.server.services.streaming.remote.SegmentUploadRefusals.statusDetails;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
+import static com.streamarr.transcode.v1.JobAttemptFailure.JOB_ATTEMPT_FAILURE_STARTUP_FAILED;
+import static com.streamarr.transcode.v1.JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
@@ -17,6 +19,7 @@ import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
@@ -979,6 +982,57 @@ class WorkerSessionGrpcServiceTest {
 
   @Test
   @DisplayName(
+      "Should name the worker that refused a copy when the worker reports that it failed to start")
+  void shouldNameTheWorkerThatRefusedACopyWhenTheWorkerReportsThatItFailedToStart()
+      throws Exception {
+    var started = startedJob(streamCopyDecision());
+    var attemptId = started.job().getJobAttemptId();
+
+    started.session().onNext(failureReport(attemptId, JOB_ATTEMPT_FAILURE_STARTUP_FAILED));
+
+    assertThat(started.registry().refusedCopyStart(fromProto(attemptId)))
+        .contains(new ExecutionTargetId(started.workerSessionId().toString()));
+  }
+
+  @Test
+  @DisplayName("Should name no refusing worker when an encode fails to start")
+  void shouldNameNoRefusingWorkerWhenAnEncodeFailsToStart() throws Exception {
+    var started = startedEncode(new SimpleMeterRegistry());
+    var attemptId = started.job().getJobAttemptId();
+
+    started.session().onNext(failureReport(attemptId, JOB_ATTEMPT_FAILURE_STARTUP_FAILED));
+
+    assertThat(started.isRunning()).isFalse();
+    assertThat(started.registry().refusedCopyStart(fromProto(attemptId))).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should name no refusing worker when a copy fails after it started")
+  void shouldNameNoRefusingWorkerWhenACopyFailsAfterItStarted() throws Exception {
+    var started = startedJob(streamCopyDecision());
+    var attemptId = started.job().getJobAttemptId();
+
+    started.session().onNext(failureReport(attemptId, JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED));
+
+    assertThat(started.isRunning()).isFalse();
+    assertThat(started.registry().refusedCopyStart(fromProto(attemptId))).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should forget the worker that refused a copy when its stream session is destroyed")
+  void shouldForgetTheWorkerThatRefusedACopyWhenItsStreamSessionIsDestroyed() throws Exception {
+    var started = startedJob(streamCopyDecision());
+    var attemptId = started.job().getJobAttemptId();
+    started.session().onNext(failureReport(attemptId, JOB_ATTEMPT_FAILURE_STARTUP_FAILED));
+    assertThat(started.registry().refusedCopyStart(fromProto(attemptId))).isPresent();
+
+    started.registry().destroyStreamSession(fromProto(started.job().getStreamSessionId()));
+
+    assertThat(started.registry().refusedCopyStart(fromProto(attemptId))).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
       "Should keep the established session and its running job when a worker repeats"
           + " registration")
   void shouldKeepEstablishedSessionAndRunningJobWhenWorkerRepeatsRegistration() throws Exception {
@@ -1612,6 +1666,11 @@ class WorkerSessionGrpcServiceTest {
             .build());
   }
 
+  private static StartedJob startedJob(TranscodeDecision decision) throws Exception {
+    return startedJob(
+        WorkerSessionServerConfiguration.builder().build(), new SimpleMeterRegistry(), decision);
+  }
+
   // Starts a job with the decision on a worker that encodes H.264 in software with one slot.
   private static StartedJob startedJob(
       WorkerSessionServerConfiguration configuration,
@@ -1913,11 +1972,14 @@ class WorkerSessionGrpcServiceTest {
   }
 
   private static EstablishWorkerSessionRequest failureReport(Uuid jobAttemptId) {
+    return failureReport(jobAttemptId, JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
+  }
+
+  private static EstablishWorkerSessionRequest failureReport(
+      Uuid jobAttemptId, JobAttemptFailure failure) {
     return EstablishWorkerSessionRequest.newBuilder()
         .setJobAttemptFailed(
-            JobAttemptFailed.newBuilder()
-                .setJobAttemptId(jobAttemptId)
-                .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED))
+            JobAttemptFailed.newBuilder().setJobAttemptId(jobAttemptId).setFailure(failure))
         .build();
   }
 

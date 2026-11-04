@@ -42,6 +42,8 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   private record ProcessKey(UUID sessionId, String variantLabel) {}
 
+  private record RefusedCopyStart(UUID sessionId, ExecutionTargetId target) {}
+
   private final Set<ProcessKey> running = ConcurrentHashMap.newKeySet();
   private final Map<ProcessKey, ExecutionTargetId> runningTargets = new ConcurrentHashMap<>();
   // The running job attempts that copy the video, which take no job slot.
@@ -78,6 +80,8 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private int availableSlots = TranscodeExecutor.UNBOUNDED_SLOTS;
   private volatile int jobSlots = TranscodeExecutor.UNBOUNDED_SLOTS;
   private final Map<ExecutionTargetId, Integer> jobSlotsByTarget = new ConcurrentHashMap<>();
+  private final Map<ExecutionTargetId, Integer> copiesByTarget = new ConcurrentHashMap<>();
+  private final Map<UUID, RefusedCopyStart> refusedCopyStarts = new ConcurrentHashMap<>();
   private final Map<String, Integer> encodeSlotsByVideoCodecFamily =
       new ConcurrentHashMap<>(unboundedEncodeSlots(Set.of("h264", "hevc", "av1")));
   private Set<String> hardwareEncodableVideoCodecFamilies = Set.of();
@@ -142,7 +146,10 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     }
     var handle = doStart(request, Optional.of(target));
     // A recorded start names a job that already runs, so a test that awaits it can end the job.
-    startedTargets.add(target);
+    if (running.contains(new ProcessKey(request.sessionId(), request.variantLabel()))) {
+      startedTargets.add(target);
+    }
+
     signalObservation();
     return advertisedEncoder(target, request.transcodeDecision())
         .map(handle::withEncoder)
@@ -166,6 +173,10 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       throw new TranscodeException("No connected transcode worker can encode this variant");
     }
 
+    if (!encodesVideo(request.transcodeDecision()) && holdsNoMoreCopies(runningTarget)) {
+      return refuseCopyStart(request, runningTarget.orElseThrow());
+    }
+
     var key = new ProcessKey(request.sessionId(), request.variantLabel());
     if (!tryTakeJobSlot(key, runningTarget, !encodesVideo(request.transcodeDecision()))) {
       jobSlotRefusals.incrementAndGet();
@@ -180,6 +191,44 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
             1L, request.attemptId(), TranscodeStatus.ACTIVE, request.startSequenceNumber());
     signalObservation();
     return handle;
+  }
+
+  // The worker accepts the job, then reports that it failed to start. The job attempt never runs,
+  // and its end wakes the requests held on the variant.
+  private TranscodeHandle refuseCopyStart(TranscodeRequest request, ExecutionTargetId target) {
+    refusedCopyStarts.put(request.attemptId(), new RefusedCopyStart(request.sessionId(), target));
+    heldRequests.wakeVariant(request.sessionId(), request.variantLabel());
+    signalObservation();
+    return new TranscodeHandle(
+        1L, request.attemptId(), TranscodeStatus.ACTIVE, request.startSequenceNumber());
+  }
+
+  private synchronized boolean holdsNoMoreCopies(Optional<ExecutionTargetId> target) {
+    var limit = target.map(copiesByTarget::get);
+    if (limit.isEmpty()) {
+      return false;
+    }
+
+    var copies =
+        runningTargets.entrySet().stream()
+            .filter(entry -> runningCopies.contains(entry.getKey()))
+            .filter(entry -> entry.getValue().equals(target.get()))
+            .count();
+    return copies >= limit.get();
+  }
+
+  /**
+   * The target's worker holds this many running copies. It accepts a copy beyond them, then reports
+   * that the copy failed to start, as a worker at its copy cap does: the job attempt never runs,
+   * and {@link #refusedCopyStart} names the target. A target left unset holds any number of copies.
+   */
+  public void limitCopies(ExecutionTargetId target, int copies) {
+    copiesByTarget.put(target, copies);
+  }
+
+  @Override
+  public Optional<ExecutionTargetId> refusedCopyStart(UUID jobAttemptId) {
+    return Optional.ofNullable(refusedCopyStarts.get(jobAttemptId)).map(RefusedCopyStart::target);
   }
 
   /**
@@ -206,6 +255,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     } finally {
       terminalFailures.remove(sessionId);
       hardwareEncoderFailures.removeIf(key -> key.sessionId().equals(sessionId));
+      refusedCopyStarts.values().removeIf(refusal -> refusal.sessionId().equals(sessionId));
     }
   }
 
@@ -863,5 +913,6 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     stopped.clear();
     startedRequests.clear();
     startedTargets.clear();
+    refusedCopyStarts.clear();
   }
 }

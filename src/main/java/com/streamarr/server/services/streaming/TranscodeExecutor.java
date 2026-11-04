@@ -78,6 +78,13 @@ public interface TranscodeExecutor {
    */
   boolean hasHardwareEncoderFailed(UUID sessionId, String variantLabel);
 
+  /**
+   * The execution target whose worker refused this job attempt of a copy when it started, as a
+   * worker refuses a copy beyond the copies that it holds. Empty for any other job attempt, and
+   * once the stream session is destroyed.
+   */
+  Optional<ExecutionTargetId> refusedCopyStart(UUID jobAttemptId);
+
   boolean isHealthy();
 
   int availableSlots();

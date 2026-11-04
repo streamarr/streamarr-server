@@ -115,24 +115,43 @@ public class ProducerLifecycleService {
   private record PendingSegment(
       SegmentRequest request, int requestedIndex, LeftVariantReclaim reclaim) {}
 
-  // Whether a replacement that found no free worker job slot asks its caller to stop another
-  // stream session's left variant and try once more. The caller stops it only after it has
-  // released its own session mutex.
+  // Whether a replacement that found no free worker job slot, or whose copy a worker refused,
+  // asks its caller to stop another stream session's left variant and try once more. The caller
+  // stops it only after it has released its own session mutex.
   private static final class LeftVariantReclaim {
 
     private final boolean allowed;
+    private ExecutionTargetId retryTarget;
     private SlotShortage requestedFor;
 
-    private LeftVariantReclaim(boolean allowed) {
+    private LeftVariantReclaim(boolean allowed, ExecutionTargetId retryTarget) {
       this.allowed = allowed;
+      this.retryTarget = retryTarget;
     }
 
     private static LeftVariantReclaim allowed() {
-      return new LeftVariantReclaim(true);
+      return new LeftVariantReclaim(true, null);
     }
 
     private static LeftVariantReclaim spent() {
-      return new LeftVariantReclaim(false);
+      return new LeftVariantReclaim(false, null);
+    }
+
+    // After a left copy stopped on the worker that refused a copy, the next replacement tries that
+    // worker once more, even when recovery has already tried it. A copy place shortage names only
+    // the refusing worker.
+    private static LeftVariantReclaim afterStop(SlotShortage shortage, boolean stopped) {
+      if (!stopped || !shortage.workerCopyPlace()) {
+        return spent();
+      }
+
+      return new LeftVariantReclaim(false, shortage.usableTargets().iterator().next());
+    }
+
+    private Optional<ExecutionTargetId> takeRetryTarget() {
+      var target = Optional.ofNullable(retryTarget);
+      retryTarget = null;
+      return target;
     }
 
     private boolean tryRequest(SlotShortage shortage) {
@@ -149,15 +168,28 @@ public class ProducerLifecycleService {
   }
 
   // The slots that a start found taken, and the execution targets that can run the start. Stopping
-  // a left variant helps the start only when it frees each taken slot.
+  // a left variant helps the start only when it frees each taken slot. A worker that refused a copy
+  // lacks a copy place, which only a copy frees.
   @Builder(toBuilder = true)
   private record SlotShortage(
       boolean configuredTranscodeSlot,
       boolean workerJobSlot,
+      boolean workerCopyPlace,
       Set<ExecutionTargetId> usableTargets) {
 
     private boolean any() {
-      return configuredTranscodeSlot || workerJobSlot;
+      return configuredTranscodeSlot || workerJobSlot || workerCopyPlace;
+    }
+
+    private boolean onWorker() {
+      return workerJobSlot || workerCopyPlace;
+    }
+
+    private static SlotShortage copyPlaceOn(ExecutionTargetId refusingWorker) {
+      return SlotShortage.builder()
+          .workerCopyPlace(true)
+          .usableTargets(Set.of(refusingWorker))
+          .build();
     }
   }
 
@@ -169,7 +201,9 @@ public class ProducerLifecycleService {
    * dead or stalled job attempt. When a media-segment request's replacement of the requested
    * variant finds no free worker job slot, it stops the stream session's own other video variants
    * that run on the replacement's worker and tries once more, then looks for another stream
-   * session's left variant to stop and tries once more.
+   * session's left variant to stop and tries once more. When a worker refused the variant's copy at
+   * startup, it looks for another stream session's left copy on that worker; once it stops one, it
+   * starts the copy on that worker once more.
    */
   public RecoveryResult recover(SegmentRequest request) {
     var reclaim = LeftVariantReclaim.allowed();
@@ -179,9 +213,9 @@ public class ProducerLifecycleService {
       return result;
     }
 
-    stopLeftVariantOfAnotherStreamSession(request.sessionId(), shortage.get());
-    return withSessionLock(
-        request.sessionId(), () -> doRecover(request, LeftVariantReclaim.spent()));
+    var stopped = stopLeftVariantOfAnotherStreamSession(request.sessionId(), shortage.get());
+    var afterStop = LeftVariantReclaim.afterStop(shortage.get(), stopped);
+    return withSessionLock(request.sessionId(), () -> doRecover(request, afterStop));
   }
 
   // Also remembered when the relocation or resume fails, so the replacement starts at this
@@ -416,7 +450,16 @@ public class ProducerLifecycleService {
         return RecoveryResult.WAITING;
       }
 
-      var target = state.nextTarget(eligibleTargets);
+      if (requestsRoomForRefusedCopy(session, handle, pending)) {
+        return RecoveryResult.WAITING;
+      }
+
+      var target =
+          pending
+              .reclaim()
+              .takeRetryTarget()
+              .filter(eligibleTargets::contains)
+              .or(() -> state.nextTarget(eligibleTargets));
       if (target.isEmpty()) {
         return exhaust(state, pending, handle.attemptId());
       }
@@ -438,6 +481,31 @@ public class ProducerLifecycleService {
         return outcome.get();
       }
     }
+  }
+
+  // A worker that refused the variant's copy at startup may run another stream session's left copy,
+  // whose stop frees the place that the copy lacks (ADR 0019).
+  private boolean requestsRoomForRefusedCopy(
+      StreamSession session, TranscodeHandle handle, PendingSegment pending) {
+    if (!makesRoomForRefusedCopy(session, pending.request())) {
+      return false;
+    }
+
+    var refusingWorker = transcodeExecutor.refusedCopyStart(handle.attemptId());
+    return refusingWorker.isPresent()
+        && pending.reclaim().tryRequest(SlotShortage.copyPlaceOn(refusingWorker.get()));
+  }
+
+  // Before the player's first media-segment request, a request of the first-listed variant also
+  // makes room: the player requests its initialization segment first, and the creation of the
+  // stream session, which started that variant, may stop another stream session's left variant.
+  private boolean makesRoomForRefusedCopy(StreamSession session, SegmentRequest request) {
+    if (isMediaSegmentRequestOfRequestedVariant(request)) {
+      return true;
+    }
+
+    return !newestMediaSegmentRequests.containsKey(request.sessionId())
+        && request.variantLabel().equals(firstListedVariant(session));
   }
 
   // Once a request for a media segment has positioned the variant, a replacement never starts past
@@ -844,8 +912,8 @@ public class ProducerLifecycleService {
   }
 
   // A variant frees a configured transcode slot exactly when the limit counts it, whether or not
-  // its job attempt still runs. It frees a worker job slot only while its job attempt runs on a
-  // worker that can run the start.
+  // its job attempt still runs. It frees a worker job slot, or a copy place when it copies, only
+  // while its job attempt runs on a worker that can run the start.
   private boolean freesTakenSlots(
       StreamSession session, String variantLabel, SlotShortage shortage) {
     if (shortage.configuredTranscodeSlot()
@@ -853,7 +921,11 @@ public class ProducerLifecycleService {
       return false;
     }
 
-    return !shortage.workerJobSlot()
+    if (shortage.workerCopyPlace() && !copiesVideo(session)) {
+      return false;
+    }
+
+    return !shortage.onWorker()
         || transcodeExecutor
             .runningExecutionTarget(session.getSessionId(), variantLabel)
             .filter(shortage.usableTargets()::contains)
@@ -1299,6 +1371,10 @@ public class ProducerLifecycleService {
   private static boolean countsAgainstTranscodeLimit(StreamSession session) {
     return session.getDelivery() == StreamDelivery.HLS
         && countsAgainstTranscodeLimit(session.getTranscodeDecision());
+  }
+
+  private static boolean copiesVideo(StreamSession session) {
+    return session.getTranscodeDecision().transcodeMode().copiesVideo();
   }
 
   // A stream session that copies the video, with or without an audio encode, takes no place.
