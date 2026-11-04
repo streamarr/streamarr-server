@@ -1369,18 +1369,21 @@ class LibraryManagementServiceTest {
     }
 
     @Test
-    @DisplayName("Should accept the media root as the path when the media root is a soft link")
-    void shouldAcceptTheMediaRootAsThePathWhenTheMediaRootIsASoftLink(@TempDir Path temp)
-        throws IOException {
-      var mediaRoot =
-          Files.createSymbolicLink(
-              temp.resolve("media"), Files.createDirectory(temp.resolve("real-media")));
+    @DisplayName(
+        "Should reject with PathThroughSoftLink and schedule no scan when the path is the media"
+            + " root and the media root is a soft link")
+    void shouldRejectWithPathThroughSoftLinkWhenThePathIsTheMediaRootAndTheMediaRootIsASoftLink(
+        @TempDir Path temp) throws IOException {
+      var realMediaRoot = Files.createDirectory(temp.resolve("real-media"));
+      Files.createDirectory(realMediaRoot.resolve("Movies (2001)"));
+      var mediaRoot = Files.createSymbolicLink(temp.resolve("media"), realMediaRoot);
       var service = serviceWithMediaRoot(mediaRoot);
 
-      var library =
-          accepted(service.addLibrary(identity, libraryNamed("Media", mediaRoot.toString())));
+      var outcome = service.addLibrary(identity, libraryNamed("Media", mediaRoot.toString()));
 
-      assertThat(library.getFilepathUri()).isEqualTo(FilepathCodec.encode(mediaRoot));
+      assertThat(outcome)
+          .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathThroughSoftLink()));
+      assertThat(libraryOperationScheduling.scheduledExecutions()).isEmpty();
     }
 
     @Test

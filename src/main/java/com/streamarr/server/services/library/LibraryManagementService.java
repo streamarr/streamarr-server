@@ -159,17 +159,14 @@ public class LibraryManagementService {
     return Optional.empty();
   }
 
-  // Scans and playback never follow a soft link below the media root (ADR 0045), so no folder from
-  // the media root down to the library folder may be one. The media root is configuration, and the
-  // way to it may pass soft links. A folder outside the media root is checked alone.
+  // Scans and playback never follow a soft link below the media root (ADR 0045), and a scan skips a
+  // library folder that is a soft link. So neither the library folder nor a folder between the
+  // media root and it may be one. The media root is configuration, and the way to it may pass soft
+  // links. A folder outside the media root is checked alone.
   private boolean hasSoftLinkBelowMediaRoot(Path folder) {
     var mediaRoot = mediaRoot();
-    if (folder.equals(mediaRoot)) {
-      return false;
-    }
-
     var first = folder;
-    if (folder.startsWith(mediaRoot)) {
+    if (folder.startsWith(mediaRoot) && !folder.equals(mediaRoot)) {
       first = mediaRoot.resolve(mediaRoot.relativize(folder).getName(0));
     }
 
