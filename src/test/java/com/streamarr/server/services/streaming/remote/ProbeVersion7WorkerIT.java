@@ -15,6 +15,7 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.AudioStreamProperties;
 import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.ColorPrimaries;
 import com.streamarr.server.domain.streaming.ColorRange;
@@ -82,12 +83,12 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 
-/** The checks that need a pinned worker image that answers probe version 6. */
+/** The checks that need a pinned worker image that answers probe version 7. */
 @Tag("IntegrationTest")
 @EnableDgsTest
 @WithProfileContext
-@DisplayName("Probe Version 6 Worker Integration Tests")
-class ProbeVersion6WorkerIT extends AbstractIntegrationTest {
+@DisplayName("Probe Version 7 Worker Integration Tests")
+class ProbeVersion7WorkerIT extends AbstractIntegrationTest {
 
   private static final UUID SOURCE_NAMESPACE_ID =
       UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd");
@@ -256,17 +257,14 @@ class ProbeVersion6WorkerIT extends AbstractIntegrationTest {
       var file = createMediaFile(source);
 
       var result =
-          probeExecution.toBuilder()
-              .producer(new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, mediaRoot))
-              .packetScans(new CapturingKeyframePacketScanRequests())
-              .build()
-              .execute(probeTaskRequest(file, source), ProbePriority.BACKGROUND);
+          runProbeJob(
+              new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, mediaRoot), file, source);
 
       assertThat(result).isEqualTo(new ProbeExecutionResult.Completed());
       var stored = reader.find(file.getId()).orElseThrow();
       assertThat(stored.probeVersion())
-          .as("the probe version that reads statistics tags")
-          .isEqualTo(6);
+          .as("the probe version that the server requests")
+          .isEqualTo(ProbeVersion.CURRENT);
       // The BPS tags that mkvmerge wrote. ffprobe reports no bitrate for either stream.
       assertThat(stored.outcome())
           .isInstanceOfSatisfying(
@@ -277,6 +275,50 @@ class ProbeVersion6WorkerIT extends AbstractIntegrationTest {
                       .containsExactly(
                           tuple("video", OptionalLong.of(15_596)),
                           tuple("audio", OptionalLong.of(64_314))));
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should store the audio stream's channel layout and sample format and the video stream's sample entry and major brand when the probe job probes an MP4 file")
+  void
+      shouldStoreTheAudioLayoutAndSampleFormatAndTheVideoSampleEntryAndMajorBrandWhenTheProbeJobProbesAnMp4File()
+          throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+
+    try (var server = server(new LocalSegmentStore(tempDir.resolve("server-segments")));
+        var worker = workerBuilder(server, mediaRoot).build()) {
+      server.start();
+      worker.start();
+      var source = worker.generateMedia(mediaRoot.resolve("four-channel.mp4"), fourChannelMp4());
+      var file = createMediaFile(source);
+
+      var result =
+          runProbeJob(
+              new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, mediaRoot), file, source);
+
+      assertThat(result).isEqualTo(new ProbeExecutionResult.Completed());
+      var stored = reader.find(file.getId()).orElseThrow();
+      // FFmpeg's MP4 muxer writes the isom major brand and the avc1 sample entry for H.264. Its
+      // AAC decoder names AAC channel configuration 4 as the 4.0 layout and decodes to planar
+      // float.
+      assertThat(stored.outcome())
+          .isInstanceOfSatisfying(
+              ProbeOutcome.Success.class,
+              success -> {
+                assertThat(success.container().majorBrand()).contains("isom");
+                assertThat(success.streams())
+                    .extracting(
+                        StreamInfo::codecType,
+                        StreamInfo::sampleEntry,
+                        stream ->
+                            stream.audioProperties().flatMap(AudioStreamProperties::channelLayout),
+                        stream ->
+                            stream.audioProperties().flatMap(AudioStreamProperties::sampleFormat))
+                    .containsExactly(
+                        tuple("video", Optional.of("avc1"), Optional.empty(), Optional.empty()),
+                        tuple("audio", Optional.empty(), Optional.of("4.0"), Optional.of("fltp")));
+              });
     }
   }
 
@@ -331,6 +373,15 @@ class ProbeVersion6WorkerIT extends AbstractIntegrationTest {
             .probe(probeRequest(source));
     assertThat(outcome).isInstanceOf(ProbeOutcome.Success.class);
     return (ProbeOutcome.Success) outcome;
+  }
+
+  private ProbeExecutionResult runProbeJob(
+      RemoteFfprobeService producer, MediaFile file, Path source) throws IOException {
+    return probeExecution.toBuilder()
+        .producer(producer)
+        .packetScans(new CapturingKeyframePacketScanRequests())
+        .build()
+        .execute(probeTaskRequest(file, source), ProbePriority.BACKGROUND);
   }
 
   private static ProbeExecutionRequest probeRequest(Path source) {
@@ -416,6 +467,25 @@ class ProbeVersion6WorkerIT extends AbstractIntegrationTest {
         "4.0",
         "-pix_fmt",
         "yuv420p");
+  }
+
+  // H.264 video and four-channel AAC audio in an MP4 file.
+  private static List<String> fourChannelMp4() {
+    return List.of(
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc=size=320x180:rate=24:duration=2",
+        "-f",
+        "lavfi",
+        "-i",
+        "anullsrc=channel_layout=4.0:sample_rate=48000",
+        "-t",
+        "2",
+        "-c:v",
+        "libx264",
+        "-c:a",
+        "aac");
   }
 
   // Thirty minutes, so the job attempt still runs after the oversized probe ends.

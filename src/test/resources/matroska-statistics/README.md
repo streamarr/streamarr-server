@@ -2,7 +2,7 @@
 
 `statistics-tags.mkv` is a 4-second synthetic file whose statistics tags were written by mkvmerge.
 ffprobe reports no `bit_rate` for either of its streams, so probe version 6 reads each stream's
-bitrate from those tags. `ProbeVersion6WorkerIT` probes it with the pinned worker image.
+bitrate from those tags. `ProbeVersion7WorkerIT` probes it with the pinned worker image.
 
 The FFmpeg of the worker image that `worker-image.env` pinned at the time made the source, and Alpine's `mkvtoolnix=92.0-r0` muxed it:
 

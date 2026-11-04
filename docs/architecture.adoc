@@ -337,7 +337,7 @@ Direct play reads both facts: QuickTime's major brand makes the source container
 The worker contract lets a job that encodes audio name its output channel layout, so the worker encodes with that layout instead of only a channel count; such a job can also name its output sample rate and bit depth, which otherwise follow ADR 0043's rules for the codec and the source.
 The server sets none of them yet.
 Version 2 is unused.
-The server requests version 6.
+The server requests version 7.
 After the version rises, the server scans each library that holds a result of an earlier version at startup.
 Playback keeps using a file's earlier result until the scan stores the file's new result.
 
