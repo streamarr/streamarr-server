@@ -337,6 +337,7 @@ The worker contract lets a copy carry its planned output: its dynamic range, its
 Each worker lists the bitstream rewrites and copy features that it supports.
 The server sends a copy's planned range only when the output is PQ, HLG or Dolby Vision without a compatible base, and only to a worker that lists the planned output.
 The server copies a PQ or HLG source without Dolby Vision to a client whose capability entry declares its base, when probe version 5 or later described the source and a connected worker lists the planned output.
+A client that declares the base but not HDR10+ receives the copy with HDR10+ stripped, when a connected worker also lists that rewrite.
 Otherwise that client receives an encode.
 Dolby Vision on a PQ, HLG or missing base still plays as an encode.
 

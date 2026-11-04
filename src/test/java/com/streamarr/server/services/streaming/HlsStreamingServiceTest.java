@@ -35,6 +35,7 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ChosenVideoStream;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
@@ -42,6 +43,7 @@ import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.Deinterlace;
 import com.streamarr.server.domain.streaming.DeinterlaceOutput;
+import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
@@ -53,6 +55,7 @@ import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.PlannedVideoOutput;
+import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
@@ -70,6 +73,7 @@ import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
+import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
@@ -3731,6 +3735,35 @@ class HlsStreamingServiceTest {
         .doesNotContain("VIDEO-RANGE");
   }
 
+  // ADR 0036: the job of a copy for a client that declares PQ without HDR10+ lists the strip.
+  @Test
+  @DisplayName(
+      "Should start a copy that strips HDR10+ when the client declares PQ without HDR10+ and a"
+          + " connected worker strips it")
+  void
+      shouldStartACopyThatStripsHdr10PlusWhenTheClientDeclaresPqWithoutHdr10PlusAndAConnectedWorkerStripsIt() {
+    probeResults.setDefaultProbe(hdr10HevcProbe(Presence.PRESENT));
+    transcodeExecutor.setVideoCopySupportByWorker(
+        List.of(
+            WorkerVideoCopySupport.builder()
+                .plannedOutput(true)
+                .bitstreamRewrites(Set.of(BitstreamRewrite.STRIP_HDR10_PLUS))
+                .build()));
+
+    accepted(createSessionDeclaring(pqDeclaration(), StreamingOptions.builder().build()));
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(request -> request.transcodeDecision().plannedVideoOutput())
+        .isInstanceOfSatisfying(
+            PlannedVideoOutput.StreamCopy.class,
+            copy -> {
+              assertThat(copy.bitstreamRewrites())
+                  .containsExactly(BitstreamRewrite.STRIP_HDR10_PLUS);
+              assertThat(copy.dynamicRange().hdr10Plus()).isEqualTo(Presence.ABSENT);
+            });
+  }
+
   // HEVC with a PQ base beside H.264, and stereo AAC.
   private static ClientCapabilityDeclaration pqDeclaration() {
     return declarationBuilderFor(H264)
@@ -3746,6 +3779,10 @@ class HlsStreamingServiceTest {
   // A 1920x1080 HDR10 HEVC Main 10 source that probe version 5 described, with its mastering
   // display and content light level.
   private static MediaProbe hdr10HevcProbe() {
+    return hdr10HevcProbe(Presence.ABSENT);
+  }
+
+  private static MediaProbe hdr10HevcProbe(Presence hdr10Plus) {
     return defaultProbeBuilder()
         .videoCodec("hevc")
         .videoPlaybackFacts(
@@ -3756,7 +3793,8 @@ class HlsStreamingServiceTest {
                     .codecString(Optional.of("hvc1.2.4.L150.90"))
                     .bitDepth(OptionalInt.of(10))
                     .dynamicRange(
-                        VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ))
+                        new VideoDynamicRange(
+                            CompatibleBase.PQ, hdr10Plus, new DolbyVision.Absent()))
                     .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))
                     .videoProperties(
                         Optional.of(

@@ -4,6 +4,7 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.AudioSteps;
+import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.EncodedPictureSizes;
@@ -14,6 +15,7 @@ import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.PlannedVideoOutput;
+import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.StreamCopySegments;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -50,6 +52,8 @@ public class TranscodeDecisionService {
   // The plain aac declaration covers LC, HE-AAC and HE-AAC v2.
   private static final Set<String> COPYABLE_AAC_CODEC_STRINGS =
       Set.of("mp4a.40.2", "mp4a.40.5", "mp4a.40.29");
+  private static final List<BitstreamRewrite> STRIP_HDR10_PLUS =
+      List.of(BitstreamRewrite.STRIP_HDR10_PLUS);
   private static final String STREAM_COPY_REFUSALS_METRIC =
       "streamarr.streaming.stream_copy_refusals";
 
@@ -61,28 +65,34 @@ public class TranscodeDecisionService {
    * viewer's limits or that no encode can play: the source has no encoded variant, or no video
    * capability entry for HLS accepts one in a codec that a connected worker's verified encoder
    * encodes, busy or not (ADR 0050). A copy whose planned output needs more than passing the source
-   * through also needs a connected worker, busy or not, that delivers it (ADR 0036). An encode uses, among the codecs that a worker-verified
-   * encoder encodes (ADR 0009), the one whose video capability entry for HLS fits an encoded
-   * variant of the source at the highest frame rate (ADR 0049), and the first in the codec
-   * preference on a tie (ADR 0009). The audio follows the audio capability entries for HLS. Returns
-   * empty when neither a copy nor a supported encode satisfies the request's constraints.
+   * through also needs a connected worker, busy or not, that delivers it (ADR 0036). An encode
+   * uses, among the codecs that a worker-verified encoder encodes (ADR 0009), the one whose video
+   * capability entry for HLS fits an encoded variant of the source at the highest frame rate (ADR
+   * 0049), and the first in the codec preference on a tie (ADR 0009). The audio follows the audio
+   * capability entries for HLS. Returns empty when neither a copy nor a supported encode satisfies
+   * the request's constraints.
    */
   public Optional<TranscodeDecision> decide(@NonNull TranscodeDecisionRequest request) {
     var source = request.source();
     var declaration = request.capabilityDeclaration();
     var sessionAudio = decideAudio(source, declaration);
-    var audioBesideCopy = audioBesideVideoCopy(request, sessionAudio);
-    boolean videoCopyable = audioBesideCopy.isPresent();
+    var videoCopy = videoCopy(request, sessionAudio);
+    boolean videoCopyable = videoCopy.isPresent();
     var encodeCodecProfile =
         videoCopyable ? Optional.<EncodeCodecProfile>empty() : selectEncodeCodecProfile(request);
     if (!videoCopyable && encodeCodecProfile.isEmpty()) {
       return Optional.empty();
     }
 
-    var audioDecision = audioBesideCopy.orElse(sessionAudio);
+    var audioDecision = videoCopy.map(VideoCopy::audio).orElse(sessionAudio);
     var subtitleDecision = SubtitleDecision.exclude();
 
     var mode = resolveTranscodeMode(videoCopyable, audioDecision, subtitleDecision);
+    var bitstreamRewrites =
+        videoCopy
+            .filter(_ -> mode.copiesVideo())
+            .map(VideoCopy::bitstreamRewrites)
+            .orElseGet(List::of);
 
     return Optional.of(
         TranscodeDecision.builder()
@@ -95,8 +105,12 @@ public class TranscodeDecisionService {
             .audioDecision(audioDecision)
             .subtitleDecision(subtitleDecision)
             .videoSource(source.videoPlaybackFacts())
+            .videoBitstreamRewrites(bitstreamRewrites)
             .build());
   }
+
+  // The audio beside a video copy, and the bitstream rewrites of the copy.
+  private record VideoCopy(AudioDecision audio, List<BitstreamRewrite> bitstreamRewrites) {}
 
   // A copy needs a source within the viewer's limits beside the first audio step at which the
   // copy's cost fits the maximum bitrate, so the audio steps down before the video is encoded (ADR
@@ -105,7 +119,7 @@ public class TranscodeDecisionService {
   // capability entry accepts its encoded variant in a codec that a verified encoder encodes. Such a
   // copy takes the first step that fits, or else keeps the session's audio, because a lower step
   // would not bring it within the maximum either.
-  private Optional<AudioDecision> audioBesideVideoCopy(
+  private Optional<VideoCopy> videoCopy(
       TranscodeDecisionRequest request, AudioDecision sessionAudio) {
     if (request.videoFormatConstraint() == VideoFormatConstraint.ENCODE_ONLY) {
       return Optional.empty();
@@ -122,20 +136,24 @@ public class TranscodeDecisionService {
       return Optional.empty();
     }
 
-    if (!decideVideoCopy(source, declaration) || !hasWorkerThatDeliversTheCopy(request)) {
+    var bitstreamRewrites = acceptedVideoCopyRewrites(source, declaration);
+    if (bitstreamRewrites.isEmpty()
+        || !hasWorkerThatDeliversTheCopy(request, bitstreamRewrites.get())) {
       return Optional.empty();
     }
 
-    return Optional.of(stepWithinMaximum.orElse(sessionAudio));
+    return Optional.of(
+        new VideoCopy(stepWithinMaximum.orElse(sessionAudio), bitstreamRewrites.get()));
   }
 
   // A worker that does not deliver a copy's planned output would fail the copy, so the client gets
   // the encode instead (ADR 0036). Busy workers count, so a lack of free slots refuses the session
   // for capacity and never turns the copy into an encode.
-  private static boolean hasWorkerThatDeliversTheCopy(TranscodeDecisionRequest request) {
+  private static boolean hasWorkerThatDeliversTheCopy(
+      TranscodeDecisionRequest request, List<BitstreamRewrite> bitstreamRewrites) {
     var copy =
         PlannedVideoOutput.StreamCopy.of(
-            request.source().videoPlaybackFacts().orElseThrow(), List.of());
+            request.source().videoPlaybackFacts().orElseThrow(), bitstreamRewrites);
     return !copy.requiresPlannedOutputSupport()
         || request.videoCopySupport().stream().anyMatch(worker -> worker.delivers(copy));
   }
@@ -155,14 +173,20 @@ public class TranscodeDecisionService {
         .anyMatch(variantRequest -> declaration.fitHlsEncode(variantRequest).isPresent());
   }
 
-  private boolean decideVideoCopy(MediaProbe source, ClientCapabilityDeclaration declaration) {
-    if (!isCopyAcceptedBeforeTheKeyframeCheck(source, declaration)) {
-      return false;
+  private Optional<List<BitstreamRewrite>> acceptedVideoCopyRewrites(
+      MediaProbe source, ClientCapabilityDeclaration declaration) {
+    var bitstreamRewrites = copyRewritesBeforeTheKeyframeCheck(source, declaration);
+    if (bitstreamRewrites.isEmpty()) {
+      return Optional.empty();
     }
 
     var refusal = streamCopyRefusal(source);
     refusal.ifPresent(this::countStreamCopyRefusal);
-    return refusal.isEmpty();
+    if (refusal.isPresent()) {
+      return Optional.empty();
+    }
+
+    return bitstreamRewrites;
   }
 
   /**
@@ -171,10 +195,33 @@ public class TranscodeDecisionService {
    */
   static boolean isCopyAcceptedBeforeTheKeyframeCheck(
       MediaProbe source, ClientCapabilityDeclaration declaration) {
-    var copyFits = VideoStreamCopy.of(source).filter(declaration::acceptsHlsCopy).isPresent();
-    // Apple's HLS Authoring Specification item 1.14 requires deinterlaced video, so the worker
-    // deinterlaces an interlaced source while it encodes (streamarr/streamarr-server#653).
-    return copyFits && !source.isInterlaced() && permitsCopyUntilHdrCopies(source);
+    return copyRewritesBeforeTheKeyframeCheck(source, declaration).isPresent();
+  }
+
+  // The bitstream rewrites of the copy that a video capability entry for HLS accepts, or empty
+  // when the copy rules or every entry refuse it. A client that declares the base range but not
+  // HDR10+ gets the copy with HDR10+ stripped (ADR 0036). Apple's HLS Authoring Specification item
+  // 1.14 requires deinterlaced video, so the worker deinterlaces an interlaced source while it
+  // encodes (streamarr/streamarr-server#653).
+  private static Optional<List<BitstreamRewrite>> copyRewritesBeforeTheKeyframeCheck(
+      MediaProbe source, ClientCapabilityDeclaration declaration) {
+    var copy = VideoStreamCopy.of(source);
+    if (copy.isEmpty() || source.isInterlaced() || !permitsCopyUntilHdrCopies(source)) {
+      return Optional.empty();
+    }
+
+    if (declaration.acceptsHlsCopy(copy.get())) {
+      return Optional.of(List.of());
+    }
+
+    var hdr10PlusStripped =
+        copy.filter(keeping -> keeping.dynamicRange().hdr10Plus() == Presence.PRESENT)
+            .map(keeping -> keeping.afterRewrites(STRIP_HDR10_PLUS));
+    if (hdr10PlusStripped.filter(declaration::acceptsHlsCopy).isPresent()) {
+      return Optional.of(STRIP_HDR10_PLUS);
+    }
+
+    return Optional.empty();
   }
 
   /**

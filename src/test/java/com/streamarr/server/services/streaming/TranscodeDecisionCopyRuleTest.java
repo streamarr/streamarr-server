@@ -7,6 +7,7 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
@@ -63,6 +64,12 @@ class TranscodeDecisionCopyRuleTest {
 
   private static final WorkerVideoCopySupport PLANNED_OUTPUT_WORKER =
       WorkerVideoCopySupport.builder().plannedOutput(true).bitstreamRewrites(Set.of()).build();
+
+  private static final WorkerVideoCopySupport HDR10_PLUS_STRIPPING_WORKER =
+      WorkerVideoCopySupport.builder()
+          .plannedOutput(true)
+          .bitstreamRewrites(Set.of(BitstreamRewrite.STRIP_HDR10_PLUS))
+          .build();
 
   // What probe version 5 reports for an HEVC Main 10 stream at Main tier level 5.0.
   private static final VideoStreamProperties MAIN_10_PROPERTIES =
@@ -395,6 +402,113 @@ class TranscodeDecisionCopyRuleTest {
         Arguments.of("no worker read", List.of()),
         Arguments.of(
             "two workers that predate the planned output", List.of(olderWorker, olderWorker)));
+  }
+
+  // ADR 0036: a copy keeps HDR10+ for a client that declares it.
+  @Test
+  @DisplayName("Should copy an HDR10+ source with its HDR10+ when the client declares HDR10+")
+  void shouldCopyAnHdr10PlusSourceWithItsHdr10PlusWhenTheClientDeclaresHdr10Plus() {
+    var decision =
+        service
+            .decide(
+                hdrRequestBuilder(hdr10PlusSource())
+                    .capabilityDeclaration(hdrDeclaration())
+                    .videoCopySupport(List.of(PLANNED_OUTPUT_WORKER))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.videoBitstreamRewrites()).isEmpty();
+    assertThat(decision.plannedVideoOutput().dynamicRange().hdr10Plus())
+        .isEqualTo(Presence.PRESENT);
+  }
+
+  // ADR 0036: the server lists the strip for a client that declares the base range but not HDR10+.
+  @Test
+  @DisplayName(
+      "Should copy an HDR10+ source with HDR10+ stripped when the client declares PQ without"
+          + " HDR10+ and a connected worker strips it")
+  void
+      shouldCopyAnHdr10PlusSourceWithHdr10PlusStrippedWhenTheClientDeclaresPqWithoutHdr10PlusAndAConnectedWorkerStripsIt() {
+    var decision =
+        service
+            .decide(
+                hdrRequestBuilder(hdr10PlusSource())
+                    .capabilityDeclaration(pqDeclarationWithoutHdr10Plus())
+                    .videoCopySupport(List.of(HDR10_PLUS_STRIPPING_WORKER))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.videoBitstreamRewrites())
+        .containsExactly(BitstreamRewrite.STRIP_HDR10_PLUS);
+    assertThat(decision.plannedVideoOutput().dynamicRange())
+        .isEqualTo(VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ));
+  }
+
+  // ADR 0036: when no connected worker can strip HDR10+, the server does not plan that copy, and
+  // the client receives an encode instead.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("workersThatCannotStripHdr10Plus")
+  @DisplayName(
+      "Should encode an HDR10+ source when the client declares PQ without HDR10+ and no connected"
+          + " worker strips it")
+  void
+      shouldEncodeAnHdr10PlusSourceWhenTheClientDeclaresPqWithoutHdr10PlusAndNoConnectedWorkerStripsIt(
+          String workers, List<WorkerVideoCopySupport> support) {
+    var decision =
+        service
+            .decide(
+                hdrRequestBuilder(hdr10PlusSource())
+                    .capabilityDeclaration(pqDeclarationWithoutHdr10Plus())
+                    .videoCopySupport(support)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(decision.videoBitstreamRewrites()).isEmpty();
+  }
+
+  static Stream<Arguments> workersThatCannotStripHdr10Plus() {
+    var stripsWithoutPlannedOutput =
+        WorkerVideoCopySupport.builder()
+            .plannedOutput(false)
+            .bitstreamRewrites(Set.of(BitstreamRewrite.STRIP_HDR10_PLUS))
+            .build();
+    var stripsOnlyDolbyVision =
+        WorkerVideoCopySupport.builder()
+            .plannedOutput(true)
+            .bitstreamRewrites(Set.of(BitstreamRewrite.STRIP_DOLBY_VISION))
+            .build();
+    return Stream.of(
+        Arguments.of(
+            "a worker that lists the planned output alone", List.of(PLANNED_OUTPUT_WORKER)),
+        Arguments.of(
+            "a worker that lists only the Dolby Vision strip", List.of(stripsOnlyDolbyVision)),
+        Arguments.of(
+            "a worker that lists the strip but not the planned output",
+            List.of(stripsWithoutPlannedOutput)));
+  }
+
+  private static Source hdr10PlusSource() {
+    return Source.builder()
+        .sampleEntry(SampleEntry.HVC1)
+        .dynamicRange(
+            new VideoDynamicRange(CompatibleBase.PQ, Presence.PRESENT, new DolbyVision.Absent()))
+        .bitDepth(OptionalInt.of(10))
+        .videoProperties(Optional.of(MAIN_10_PROPERTIES))
+        .build();
+  }
+
+  private static ClientCapabilityDeclaration pqDeclarationWithoutHdr10Plus() {
+    return defaultDeclarationBuilder()
+        .video(
+            List.of(
+                h264EntryBuilder().build(),
+                hevcEntryBuilder()
+                    .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
+                    .build()))
+        .build();
   }
 
   // One HEVC entry that declares every HDR format of the sources above, beside H.264.
