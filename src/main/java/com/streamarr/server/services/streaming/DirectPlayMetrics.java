@@ -48,7 +48,7 @@ public class DirectPlayMetrics {
     openResponses.decrementAndGet();
   }
 
-  void countBytesServed(long count) {
+  void countBytesServed(int count) {
     bytesServed.increment(count);
   }
 }

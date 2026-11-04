@@ -22,6 +22,7 @@ public final class DirectPlaySource implements AutoCloseable {
   private final long length;
   private final DirectPlayMetrics metrics;
   private final AtomicBoolean closed = new AtomicBoolean();
+  private final Object fileLock = new Object();
 
   DirectPlaySource(
       @NonNull SeekableByteChannel file,
@@ -67,16 +68,6 @@ public final class DirectPlaySource implements AutoCloseable {
     }
   }
 
-  private synchronized int read(ByteBuffer target, long position) throws IOException {
-    file.position(position);
-    var read = file.read(target);
-    if (read > 0) {
-      metrics.countBytesServed(read);
-    }
-
-    return read;
-  }
-
   private final class SourceInputStream extends InputStream {
 
     private long position;
@@ -105,7 +96,7 @@ public final class DirectPlaySource implements AutoCloseable {
       }
 
       var wanted = (int) Math.min(count, remaining);
-      var read = DirectPlaySource.this.read(ByteBuffer.wrap(target, offset, wanted), position);
+      var read = readAt(ByteBuffer.wrap(target, offset, wanted));
       // A file that shrank cannot fill the length its answer already named.
       if (read < 0) {
         throw new EOFException("The source file ended before its length at open");
@@ -113,6 +104,19 @@ public final class DirectPlaySource implements AutoCloseable {
 
       position += read;
       return read;
+    }
+
+    // The streams of one source share its file and the file's position.
+    private int readAt(ByteBuffer target) throws IOException {
+      synchronized (fileLock) {
+        file.position(position);
+        var read = file.read(target);
+        if (read > 0) {
+          metrics.countBytesServed(read);
+        }
+
+        return read;
+      }
     }
 
     @Override
