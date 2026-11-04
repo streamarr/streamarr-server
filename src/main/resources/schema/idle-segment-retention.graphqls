@@ -2,7 +2,9 @@
 
 """
 How long the server keeps a stream session, and its segments, after the last request for it.
-A viewer who pauses for longer starts again from a new stream session.
+When the segment folder's file system has less than a tenth free, the server deletes idle stream
+sessions sooner, oldest first. It never deletes a stream session that a player requested within
+the server's session timeout, one minute by default.
 """
 type IdleSegmentRetentionSetting {
     minutes: Int!

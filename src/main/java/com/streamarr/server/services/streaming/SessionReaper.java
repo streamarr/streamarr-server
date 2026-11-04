@@ -3,9 +3,12 @@ package com.streamarr.server.services.streaming;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
+import io.micrometer.core.instrument.MeterRegistry;
+import java.io.UncheckedIOException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
@@ -19,11 +22,18 @@ import org.springframework.stereotype.Component;
 @Builder
 public class SessionReaper {
 
+  // Below this free share of the segment folder's file system, idle sessions go before they expire.
+  private static final double MINIMUM_FREE_FRACTION = 0.10;
+  private static final String EVICTION_METRIC = "streamarr.streaming.disk_pressure_evictions";
+  private static final String READ_FAILURE_METRIC = "streamarr.streaming.disk_space_read_failures";
+
   private final StreamingService streamingService;
   private final StreamingProperties properties;
   private final ProducerLifecycleService producerLifecycle;
   private final PlaybackSessionService playbackSessionService;
   private final ServerSettingsService serverSettings;
+  private final SegmentFolderSpace segmentFolderSpace;
+  private final MeterRegistry meterRegistry;
   private final Clock clock;
 
   @Scheduled(fixedDelayString = "${streaming.reaper-interval-ms:15000}")
@@ -38,6 +48,8 @@ public class SessionReaper {
         log.error("Failed to reap session {}", session.getSessionId(), e);
       }
     }
+
+    evictIdleSessionsUnderDiskPressure(now);
   }
 
   // Dead producers are not the reaper's concern: detection and recovery happen at request time in
@@ -52,6 +64,45 @@ public class SessionReaper {
     if (isIdle(session, now) && session.hasActiveTranscodes()) {
       log.info("Suspending idle session {}", session.getSessionId());
       producerLifecycle.suspend(session.getSessionId());
+    }
+  }
+
+  private void evictIdleSessionsUnderDiskPressure(Instant now) {
+    try {
+      var oldestFirst =
+          streamingService.getAllSessions().stream()
+              .filter(session -> isIdle(session, now))
+              .sorted(Comparator.comparing(StreamSession::getLastAccessedAt))
+              .toList();
+      for (var session : oldestFirst) {
+        if (!isUnderDiskPressure()) {
+          return;
+        }
+
+        evict(session);
+      }
+    } catch (UncheckedIOException failure) {
+      meterRegistry.counter(READ_FAILURE_METRIC).increment();
+      log.warn("Failed to read the free space of the segment folder", failure);
+    }
+  }
+
+  private boolean isUnderDiskPressure() {
+    return segmentFolderSpace.freeFraction() < MINIMUM_FREE_FRACTION;
+  }
+
+  private void evict(StreamSession session) {
+    // A request can reach the session after the snapshot; an active session is never evicted.
+    if (!isIdle(session, clock.instant())) {
+      return;
+    }
+
+    try {
+      log.info("Evicting idle session {} to free disk space", session.getSessionId());
+      destroy(session.getSessionId());
+      meterRegistry.counter(EVICTION_METRIC).increment();
+    } catch (RuntimeException e) {
+      log.error("Failed to evict session {}", session.getSessionId(), e);
     }
   }
 

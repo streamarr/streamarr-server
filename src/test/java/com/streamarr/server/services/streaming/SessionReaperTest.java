@@ -27,6 +27,7 @@ import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
@@ -435,6 +436,8 @@ class SessionReaperTest {
         .producerLifecycle(producerLifecycle)
         .playbackSessionService(playback)
         .serverSettings(serverSettings)
+        .segmentFolderSpace(() -> 1.0)
+        .meterRegistry(new SimpleMeterRegistry())
         .clock(clock);
   }
 
