@@ -106,6 +106,10 @@ final class RemoteProbeResultMapper {
     return Integer.compareUnsigned(probeVersion, ProbeVersion.FIRST_TO_REPORT_PLAYBACK_FACTS) >= 0;
   }
 
+  private static boolean reportsSourceFacts(int probeVersion) {
+    return Integer.compareUnsigned(probeVersion, ProbeVersion.FIRST_TO_REPORT_SOURCE_FACTS) >= 0;
+  }
+
   private static boolean reportsFrameFacts(int probeVersion) {
     return Integer.compareUnsigned(probeVersion, ProbeVersion.FIRST_TO_REPORT_FRAME_FACTS) >= 0;
   }
@@ -127,6 +131,10 @@ final class RemoteProbeResultMapper {
                 ? OptionalLong.of(container.getBitrateBitsPerSecond())
                 : OptionalLong.empty())
         .chapters(chapters(container, probeVersion))
+        .majorBrand(
+            reportsSourceFacts(probeVersion)
+                ? RemoteSourceFactsMapper.majorBrand(container)
+                : Optional.empty())
         .build();
   }
 
@@ -232,6 +240,10 @@ final class RemoteProbeResultMapper {
 
     if (Integer.compareUnsigned(probeVersion, ProbeVersion.FIRST_TO_REPORT_AUDIO_FACTS) >= 0) {
       RemoteAudioFactsMapper.addAudioFacts(builder, stream);
+    }
+
+    if (reportsSourceFacts(probeVersion)) {
+      builder.sampleEntry(RemoteSourceFactsMapper.sampleEntry(stream));
     }
 
     return builder.build();

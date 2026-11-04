@@ -46,8 +46,8 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 
 @Tag("IntegrationTest")
-@DisplayName("Probe Version 7 Audio Facts Integration Tests")
-class ProbeVersion7AudioFactsIT extends AbstractIntegrationTest {
+@DisplayName("Probe Version 7 Facts Integration Tests")
+class ProbeVersion7FactsIT extends AbstractIntegrationTest {
 
   private static final int VERSION_7 = ProbeVersion.FIRST_TO_REPORT_AUDIO_FACTS;
 
@@ -141,6 +141,37 @@ class ProbeVersion7AudioFactsIT extends AbstractIntegrationTest {
               assertThat(success.streams().getFirst())
                   .extracting(StreamInfo::comment, StreamInfo::audioProperties)
                   .containsExactly(Optional.empty(), Optional.empty());
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should read the video stream's sample entry and the major brand back when a worker reports"
+          + " them in probe version 7")
+  void shouldReadTheVideoStreamsSampleEntryAndTheMajorBrandBackWhenAWorkerReportsThem()
+      throws Exception {
+    var media = WorkerProbeResultFixture.version4MediaBuilder();
+    media.getStreamsBuilder(0).setCodec("hevc").setSampleEntry("dvh1");
+    media.getContainerBuilder().setFormat("mov,mp4,m4a,3gp,3g2,mj2").setMajorBrand("qt  ");
+    media.addStreams(ProbeStreamInfo.newBuilder().setIndex(1).setCodecType("audio"));
+    var file = createMediaFile();
+
+    publish(file, probeWithWorker(media));
+
+    var stored =
+        containerInfoRepository
+            .findByMediaFileId(file.getId())
+            .orElseThrow()
+            .getOutcome(KeyframeKnowledge.NotReported::new, ChapterKnowledge.NotReported::new);
+    assertThat(stored)
+        .isInstanceOfSatisfying(
+            ProbeOutcome.Success.class,
+            success -> {
+              var playback = success.mediaProbe();
+              assertThat(playback.majorBrand()).contains("qt  ");
+              assertThat(playback.streams())
+                  .extracting(StreamInfo::sampleEntry)
+                  .containsExactly(Optional.of("dvh1"), Optional.empty());
             });
   }
 

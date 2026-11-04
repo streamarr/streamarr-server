@@ -469,6 +469,11 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
      */
     public final TableField<MediaFileStreamInfoRecord, Integer> FLAC_MINIMUM_BLOCK_SIZE_SAMPLES = createField(DSL.name("flac_minimum_block_size_samples"), SQLDataType.INTEGER, this, "");
 
+    /**
+     * The column <code>public.media_file_stream_info.sample_entry</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, String> SAMPLE_ENTRY = createField(DSL.name("sample_entry"), SQLDataType.CLOB, this, "");
+
     private MediaFileStreamInfo(Name alias, Table<MediaFileStreamInfoRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -628,7 +633,9 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
             Internal.createCheck(this, DSL.name("omitted_content_light_level_is_not_listed"), "(((content_light_level_omitted IS NOT TRUE) OR (max_content_light_level IS NULL)))", true),
             Internal.createCheck(this, DSL.name("omitted_mastering_display_is_not_listed"), "(((mastering_display_omitted IS NOT TRUE) OR (mastering_red_x IS NULL)))", true),
             Internal.createCheck(this, DSL.name("presentation_times_require_first_frames_read"), "(((first_packets_carry_presentation_times IS NULL) OR (first_frames_read IS TRUE)))", true),
-            Internal.createCheck(this, DSL.name("rpu_details_require_observed_rpu"), "((((first_rpu_vdr_rpu_profile IS NULL) AND (dolby_vision_rpu_placement IS NULL)) OR (dolby_vision_observed_rpu = 'PRESENT'::text)))", true)
+            Internal.createCheck(this, DSL.name("rpu_details_require_observed_rpu"), "((((first_rpu_vdr_rpu_profile IS NULL) AND (dolby_vision_rpu_placement IS NULL)) OR (dolby_vision_observed_rpu = 'PRESENT'::text)))", true),
+            Internal.createCheck(this, DSL.name("sample_entry_has_four_printable_characters"), "((sample_entry ~ '^[ -~]{4}$'::text)) NOT VALID", true),
+            Internal.createCheck(this, DSL.name("sample_entry_requires_video_stream"), "(((sample_entry IS NULL) OR ((codec_type = 'video'::text) IS TRUE))) NOT VALID", true)
         );
     }
 

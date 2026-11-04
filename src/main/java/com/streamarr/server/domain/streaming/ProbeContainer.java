@@ -11,7 +11,8 @@ public record ProbeContainer(
     @NonNull Optional<String> format,
     @NonNull Optional<Duration> duration,
     @NonNull OptionalLong bitrate,
-    @NonNull ChapterKnowledge chapters) {
+    @NonNull ChapterKnowledge chapters,
+    @NonNull Optional<String> majorBrand) {
 
   // Lombok builder defaults — its generated setters assign them
   @SuppressWarnings({"java:S1068", "java:S9438"})
@@ -20,5 +21,6 @@ public record ProbeContainer(
     private Optional<Duration> duration = Optional.empty();
     private OptionalLong bitrate = OptionalLong.empty();
     private ChapterKnowledge chapters = new ChapterKnowledge.NotReported();
+    private Optional<String> majorBrand = Optional.empty();
   }
 }

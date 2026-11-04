@@ -250,6 +250,11 @@ public class MediaFileContainerInfo extends TableImpl<MediaFileContainerInfoReco
      */
     public final TableField<MediaFileContainerInfoRecord, Integer> PACKET_SCAN_DURATION_NANOS = createField(DSL.name("packet_scan_duration_nanos"), SQLDataType.INTEGER, this, "");
 
+    /**
+     * The column <code>public.media_file_container_info.major_brand</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, String> MAJOR_BRAND = createField(DSL.name("major_brand"), SQLDataType.CLOB, this, "");
+
     private MediaFileContainerInfo(Name alias, Table<MediaFileContainerInfoRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -401,6 +406,7 @@ public class MediaFileContainerInfo extends TableImpl<MediaFileContainerInfoReco
             Internal.createCheck(this, DSL.name("failed_probe_has_no_container_properties"), "(((probe_error IS NULL) OR ((format IS NULL) AND (duration_seconds IS NULL) AND (duration_nanos IS NULL) AND (total_bitrate IS NULL))))", true),
             Internal.createCheck(this, DSL.name("failed_probe_has_no_keyframe_status"), "(((probe_error IS NULL) OR (keyframe_status IS NULL)))", true),
             Internal.createCheck(this, DSL.name("failed_probe_has_no_title_omission"), "(((probe_error IS NULL) OR (stream_titles_omitted IS NULL)))", true),
+            Internal.createCheck(this, DSL.name("major_brand_has_four_printable_characters"), "((major_brand ~ '^[ -~]{4}$'::text)) NOT VALID", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_average_rate_denominator_check"), "((average_rate_denominator > 0))", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_average_rate_numerator_check"), "((average_rate_numerator > 0))", true),
             Internal.createCheck(this, DSL.name("media_file_container_info_base_rate_denominator_check"), "((base_rate_denominator > 0))", true),

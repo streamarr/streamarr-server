@@ -13,6 +13,8 @@ import lombok.NonNull;
  * The playback view of a probe outcome. {@code videoPlaybackFacts} is empty when the outcome's
  * probe version reports no playback facts, which every version before 4 does. {@code
  * streamMeasurements} is empty when the server holds no usable measurement of the file's streams.
+ * {@code majorBrand} is empty unless the file is an MP4 or MOV file whose probe version 7 outcome
+ * names one.
  */
 @Builder
 public record MediaProbe(
@@ -26,6 +28,7 @@ public record MediaProbe(
     OptionalInt audioChannels,
     OptionalLong audioBitrate,
     Optional<String> containerFormat,
+    @NonNull Optional<String> majorBrand,
     List<StreamInfo> streams,
     @NonNull KeyframeKnowledge keyframes,
     @NonNull Optional<VideoPlaybackFacts> videoPlaybackFacts,
@@ -47,6 +50,7 @@ public record MediaProbe(
   @SuppressWarnings({"java:S1068", "java:S9438"})
   public static class MediaProbeBuilder {
     private Optional<String> containerFormat = Optional.empty();
+    private Optional<String> majorBrand = Optional.empty();
     private OptionalDouble framerate = OptionalDouble.empty();
     private Optional<VideoPlaybackFacts> videoPlaybackFacts = Optional.empty();
     private Optional<StreamMeasurements> streamMeasurements = Optional.empty();

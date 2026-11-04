@@ -63,6 +63,7 @@ public sealed interface ProbeOutcome {
           .duration(container.duration().orElse(Duration.ZERO))
           .bitrate(container.bitrate().orElse(0))
           .containerFormat(container.format())
+          .majorBrand(container.majorBrand())
           .videoCodec(video.codec().orElse(null))
           .width(video.width().orElse(0))
           .height(video.height().orElse(0))

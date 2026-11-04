@@ -15,7 +15,8 @@ import lombok.NonNull;
  * ffprobe's commentary disposition, comes from probe version 7 and later, for audio and subtitle
  * streams only. {@code audioProperties} comes from probe version 7 and later, for audio streams
  * only. An empty {@code comment} counts as false, and so does each disposition of an empty {@code
- * audioProperties}.
+ * audioProperties}. {@code sampleEntry} comes from probe version 7 and later, for video streams
+ * whose MP4 or MOV file stores one.
  */
 @Builder
 public record StreamInfo(
@@ -46,7 +47,8 @@ public record StreamInfo(
     @NonNull Optional<Boolean> hearingImpaired,
     @NonNull Optional<VideoStreamProperties> videoProperties,
     @NonNull Optional<Boolean> comment,
-    @NonNull Optional<AudioStreamProperties> audioProperties) {
+    @NonNull Optional<AudioStreamProperties> audioProperties,
+    @NonNull Optional<String> sampleEntry) {
 
   // Lombok builder defaults — its generated setters assign them
   @SuppressWarnings({"java:S1068", "java:S9438"})
@@ -75,5 +77,6 @@ public record StreamInfo(
     private Optional<VideoStreamProperties> videoProperties = Optional.empty();
     private Optional<Boolean> comment = Optional.empty();
     private Optional<AudioStreamProperties> audioProperties = Optional.empty();
+    private Optional<String> sampleEntry = Optional.empty();
   }
 }

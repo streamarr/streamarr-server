@@ -31,6 +31,11 @@ public final class ProbeVersion {
   // subtitle stream.
   public static final int FIRST_TO_REPORT_AUDIO_FACTS = 7;
 
+  // Each video stream's sample entry and the file's major brand, which an MP4 or MOV file stores
+  // and
+  // direct play reads.
+  public static final int FIRST_TO_REPORT_SOURCE_FACTS = 7;
+
   // A worker that lists this version encodes each audio track in the layout that the job names. The
   // server sends a job that names a layout of 3, 4, 7 or 8 channels only to such a worker.
   public static final int FIRST_TO_ENCODE_NAMED_LAYOUTS = 7;
