@@ -329,10 +329,10 @@ class AudioStepsTest {
             Optional.of(ChannelLayout.STEREO));
   }
 
-  // ADR 0050 as streamarr/streamarr-adr#85 states it: a 7.0 track encodes in AAC 5.1.
+  // A 7.0 track encodes in AAC 5.0, which AAC prices at 64 kb/s for each of its five channels.
   @Test
-  @DisplayName("Should step a copied 7.0 AAC track through AAC 5.1 when AAC accepts 8 channels")
-  void shouldStepACopied70AacTrackThroughAac51WhenAacAccepts8Channels() {
+  @DisplayName("Should step a copied 7.0 AAC track through AAC 5.0 when AAC accepts 8 channels")
+  void shouldStepACopied70AacTrackThroughAac50WhenAacAccepts8Channels() {
     var declaration =
         defaultDeclarationBuilder()
             .audio(List.of(aacEntryBuilder().maxChannels(8).build()))
@@ -344,7 +344,8 @@ class AudioStepsTest {
             new AudioTrackChannels(7, Optional.of("7.0")),
             declaration);
 
-    assertThat(describe(steps)).isEqualTo("aac 7 448000, aac 6 320000, " + STEREO_STEPS);
+    assertThat(steps.highestFirst().get(1).channelLayout()).contains(ChannelLayout.FIVE_POINT_ZERO);
+    assertThat(describe(steps)).isEqualTo("aac 7 448000, aac 5 320000, " + STEREO_STEPS);
   }
 
   @Test

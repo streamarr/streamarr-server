@@ -1449,27 +1449,43 @@ class TranscodeDecisionServiceTest {
             .build());
   }
 
-  // ADR 0050 as streamarr/streamarr-adr#85 states it: in AAC, AC-3 and E-AC-3 a 7.0 track encodes
-  // in 5.1 like any other track of 7 or more channels.
+  // In AAC, AC-3 and E-AC-3 a 7.0 track encodes in 5.0: its four surrounds fold into one pair, and
+  // the encode adds no low-frequency channel that the track lacks. It keeps the codec's 5.1
+  // bitrate. A 7-channel track whose layout the probe did not store still encodes in 5.1.
   static Stream<TrackEncode> sevenPointZeroEncodes() {
     var sevenPointZero = TrackEncode.builder().trackChannels(7).trackLayout(Optional.of("7.0"));
     return Stream.of(
         sevenPointZero
-            .scenario("7.0 to AAC 5.1")
+            .scenario("7.0 to AAC 5.0")
             .declaration(declaringAudio(audio(AAC, 8)))
-            .encode(encodeIn(ChannelLayout.FIVE_POINT_ONE).codec("aac").bitrate(384_000L).build())
+            .encode(encodeIn(ChannelLayout.FIVE_POINT_ZERO).codec("aac").bitrate(384_000L).build())
             .build(),
         sevenPointZero
-            .scenario("7.0 to AC-3 5.1(side)")
+            .scenario("7.0 to AAC 5.0 under an AAC maximum of 6")
+            .declaration(declaringAudio(audio(AAC, 6)))
+            .encode(encodeIn(ChannelLayout.FIVE_POINT_ZERO).codec("aac").bitrate(384_000L).build())
+            .build(),
+        sevenPointZero
+            .scenario("7.0 to AC-3 5.0(side)")
             .declaration(declaringAudio(audio(AAC, 2), audio(AC3, 8)))
             .encode(
-                encodeIn(ChannelLayout.FIVE_POINT_ONE_SIDE).codec("ac3").bitrate(640_000L).build())
+                encodeIn(ChannelLayout.FIVE_POINT_ZERO_SIDE).codec("ac3").bitrate(640_000L).build())
             .build(),
         sevenPointZero
-            .scenario("7.0 to E-AC-3 5.1(side)")
+            .scenario("7.0 to E-AC-3 5.0(side)")
             .declaration(declaringAudio(audio(AAC, 2), audio(EAC3, 8)))
             .encode(
-                encodeIn(ChannelLayout.FIVE_POINT_ONE_SIDE).codec("eac3").bitrate(768_000L).build())
+                encodeIn(ChannelLayout.FIVE_POINT_ZERO_SIDE)
+                    .codec("eac3")
+                    .bitrate(768_000L)
+                    .build())
+            .build(),
+        TrackEncode.builder()
+            .scenario("7 channels of an unknown layout to AAC 5.1")
+            .trackChannels(7)
+            .trackLayout(Optional.empty())
+            .declaration(declaringAudio(audio(AAC, 8)))
+            .encode(encodeIn(ChannelLayout.FIVE_POINT_ONE).codec("aac").bitrate(384_000L).build())
             .build());
   }
 

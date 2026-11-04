@@ -40,8 +40,9 @@ public final class HlsAudioEncodes {
   private static final int STEREO = 2;
   private static final int FIVE_POINT_ZERO = 5;
   private static final int FIVE_POINT_ONE = 6;
-  // ADR 0050 encodes a 7.0 track in 5.1 in AAC, AC-3 and E-AC-3.
-  private static final int SEVEN_POINT_ZERO_ENCODE_CHANNELS = FIVE_POINT_ONE;
+  // A 7.0 track has no low-frequency channel, so AAC, AC-3 and E-AC-3 encode it in 5.0: its four
+  // surrounds fold into one pair (ADR 0050).
+  private static final int SEVEN_POINT_ZERO_ENCODE_CHANNELS = FIVE_POINT_ZERO;
 
   private HlsAudioEncodes() {}
 
@@ -117,8 +118,8 @@ public final class HlsAudioEncodes {
   }
 
   // The channels of the track that an encode keeps before a channel maximum caps them: 5 channels
-  // in the encoder's 5.0 layout, and 6 or more in its 5.1 layout. The server's own encode of a 3-
-  // or 4-channel track writes stereo (ADR 0050).
+  // and a 7.0 track in the encoder's 5.0 layout, and any other track of 6 or more in its 5.1
+  // layout. The server's own encode of a 3- or 4-channel track writes stereo (ADR 0050).
   private static int channelsToEncode(AudioTrackChannels track) {
     if (track.layout().filter(SEVEN_POINT_ZERO::equals).isPresent()) {
       return SEVEN_POINT_ZERO_ENCODE_CHANNELS;
