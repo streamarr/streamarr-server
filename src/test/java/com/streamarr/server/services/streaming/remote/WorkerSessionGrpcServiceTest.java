@@ -1593,12 +1593,30 @@ class WorkerSessionGrpcServiceTest {
     }
   }
 
-  private static StartedEncode startedEncode(SimpleMeterRegistry meterRegistry) throws Exception {
+  private static StartedJob startedEncode(SimpleMeterRegistry meterRegistry) throws Exception {
     return startedEncode(WorkerSessionServerConfiguration.builder().build(), meterRegistry);
   }
 
-  private static StartedEncode startedEncode(
+  private static StartedJob startedEncode(
       WorkerSessionServerConfiguration configuration, SimpleMeterRegistry meterRegistry)
+      throws Exception {
+    return startedJob(
+        configuration,
+        meterRegistry,
+        TranscodeDecision.newBuilder()
+            .setMode(TranscodeMode.TRANSCODE_MODE_FULL_TRANSCODE)
+            .setVideo(
+                VideoDecision.newBuilder()
+                    .setMode(VideoMode.VIDEO_MODE_ENCODE)
+                    .setCodecFamily(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264))
+            .build());
+  }
+
+  // Starts a job with the decision on a worker that encodes H.264 in software with one slot.
+  private static StartedJob startedJob(
+      WorkerSessionServerConfiguration configuration,
+      SimpleMeterRegistry meterRegistry,
+      TranscodeDecision decision)
       throws Exception {
     var workerId = UUID.randomUUID();
     var sourceNamespaceId = UUID.randomUUID();
@@ -1617,18 +1635,9 @@ class WorkerSessionGrpcServiceTest {
     registration.getCapabilitiesBuilder().addVideoEncoders(LIBX264);
     session.onNext(
         EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build());
-    var job =
-        variantJob(sourceNamespaceId).toBuilder()
-            .setDecision(
-                TranscodeDecision.newBuilder()
-                    .setMode(TranscodeMode.TRANSCODE_MODE_FULL_TRANSCODE)
-                    .setVideo(
-                        VideoDecision.newBuilder()
-                            .setMode(VideoMode.VIDEO_MODE_ENCODE)
-                            .setCodecFamily(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264)))
-            .build();
+    var job = variantJob(sourceNamespaceId).toBuilder().setDecision(decision).build();
     assertThat(registry.dispatch(job)).isPresent();
-    return StartedEncode.builder()
+    return StartedJob.builder()
         .registry(registry)
         .service(service)
         .segmentStore(segmentStore)
@@ -1642,7 +1651,7 @@ class WorkerSessionGrpcServiceTest {
   }
 
   @Builder
-  private record StartedEncode(
+  private record StartedJob(
       LiveWorkerConnectionRegistry registry,
       WorkerSessionGrpcService service,
       FakeSegmentStore segmentStore,

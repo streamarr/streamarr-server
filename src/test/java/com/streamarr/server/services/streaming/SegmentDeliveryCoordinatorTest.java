@@ -211,10 +211,7 @@ class SegmentDeliveryCoordinatorTest {
   }
 
   private StreamSession startedSession() {
-    var session = defaultSessionBuilder().build();
-    runtimeRegistry.save(session);
-    lifecycle.startFirstListedVariant(session);
-    return session;
+    return started(defaultSessionBuilder().build());
   }
 
   private CompletableFuture<SegmentDelivery> deliverAsync(UUID sessionId, String segmentName) {
@@ -1294,7 +1291,10 @@ class SegmentDeliveryCoordinatorTest {
   }
 
   private StreamSession startedLadderSession() {
-    var session = defaultLadderSessionBuilder().build();
+    return started(defaultLadderSessionBuilder().build());
+  }
+
+  private StreamSession started(StreamSession session) {
     runtimeRegistry.save(session);
     lifecycle.startFirstListedVariant(session);
     return session;
@@ -1682,7 +1682,10 @@ class SegmentDeliveryCoordinatorTest {
 
   // Plays the first-listed variant through the given number of media segments.
   private StreamSession ladderSessionPlayingFirstListedVariant(int deliveredSegments) {
-    var session = startedLadderSession();
+    return playingFirstListedVariant(startedLadderSession(), deliveredSegments);
+  }
+
+  private StreamSession playingFirstListedVariant(StreamSession session, int deliveredSegments) {
     for (var index = 0; index < deliveredSegments; index++) {
       var segmentName = "480p/" + SegmentNames.mediaSegmentName(index);
       upload(session.getSessionId(), segmentName, new byte[] {1});
@@ -2188,7 +2191,11 @@ class SegmentDeliveryCoordinatorTest {
   // Plays the first-listed variant, then holds a request for 1080p, so the stream session keeps
   // 480p as its left variant beside the running switched variant.
   private SwitchingSession switchingLadderSession() {
-    var session = ladderSessionPlayingFirstListedVariant(3);
+    return switchingTo1080p(startedLadderSession());
+  }
+
+  private SwitchingSession switchingTo1080p(StreamSession started) {
+    var session = playingFirstListedVariant(started, 3);
     var switched = heldDelivery(session.getSessionId(), "1080p", "1080p/segment3.m4s");
     return new SwitchingSession(session, switched);
   }
