@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
+import com.streamarr.server.config.RemoteTranscodeProperties;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryFolderProblem;
 import com.streamarr.server.domain.media.MediaFile;
@@ -19,6 +20,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.nio.file.DirectoryIteratorException;
 import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
@@ -26,6 +28,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 @Tag("UnitTest")
 @DisplayName("Library folder check tests")
@@ -39,6 +42,7 @@ class LibraryFolderCheckTest {
           .fileSystem(fileSystem)
           .mediaFileRepository(mediaFiles)
           .meterRegistry(meterRegistry)
+          .mediaRoot(mediaRootAt(fileSystem, "/media"))
           .build();
 
   @AfterEach
@@ -121,6 +125,7 @@ class LibraryFolderCheckTest {
                     () -> new DirectoryIteratorException(new IOException("Simulated I/O error"))))
             .mediaFileRepository(mediaFiles)
             .meterRegistry(meterRegistry)
+            .mediaRoot(mediaRootAt(fileSystem, "/media"))
             .build();
 
     assertThatThrownBy(() -> failingCheck.requirePassed(library))
@@ -141,8 +146,68 @@ class LibraryFolderCheckTest {
     assertFailure(library, LibraryFolderProblem.UNREADABLE, "unreadable");
   }
 
+  // Jimfs diverges from the JDK's link semantics, so these tests use the real file system.
+  @Test
+  @DisplayName(
+      "Should fail as a soft link when a folder between the media root and the library folder is a"
+          + " soft link")
+  void shouldFailAsASoftLinkWhenAFolderBetweenTheMediaRootAndTheLibraryFolderIsASoftLink(
+      @TempDir Path temp) throws IOException {
+    var mediaRoot = Files.createDirectory(temp.resolve("media"));
+    var realShows = Files.createDirectories(temp.resolve("real-shows/Movies"));
+    Files.createFile(realShows.resolve("movie.mkv"));
+    var linkedShows = Files.createSymbolicLink(mediaRoot.resolve("shows"), realShows.getParent());
+    var library = libraryAt(linkedShows.resolve("Movies"));
+
+    assertFailure(
+        checkWithMediaRoot(mediaRoot), library, LibraryFolderProblem.SOFT_LINK, "soft_link");
+  }
+
+  @Test
+  @DisplayName("Should fail as a soft link when the library folder is a soft link")
+  void shouldFailAsASoftLinkWhenTheLibraryFolderIsASoftLink(@TempDir Path temp) throws IOException {
+    var mediaRoot = Files.createDirectory(temp.resolve("media"));
+    var realMovies = Files.createDirectory(temp.resolve("real-movies"));
+    Files.createFile(realMovies.resolve("movie.mkv"));
+    var library = libraryAt(Files.createSymbolicLink(mediaRoot.resolve("Movies"), realMovies));
+
+    assertFailure(
+        checkWithMediaRoot(mediaRoot), library, LibraryFolderProblem.SOFT_LINK, "soft_link");
+  }
+
+  @Test
+  @DisplayName("Should pass when only the way to the media root passes a soft link")
+  void shouldPassWhenOnlyTheWayToTheMediaRootPassesASoftLink(@TempDir Path temp)
+      throws IOException {
+    var realMediaRoot = Files.createDirectory(temp.resolve("real-media"));
+    Files.createFile(Files.createDirectory(realMediaRoot.resolve("Movies")).resolve("movie.mkv"));
+    var mediaRoot = Files.createSymbolicLink(temp.resolve("media"), realMediaRoot);
+    var library = libraryAt(mediaRoot.resolve("Movies"));
+
+    assertThatNoException().isThrownBy(() -> checkWithMediaRoot(mediaRoot).requirePassed(library));
+  }
+
+  private LibraryFolderCheck checkWithMediaRoot(Path mediaRoot) {
+    return LibraryFolderCheck.builder()
+        .fileSystem(FileSystems.getDefault())
+        .mediaFileRepository(mediaFiles)
+        .meterRegistry(meterRegistry)
+        .mediaRoot(mediaRootAt(FileSystems.getDefault(), mediaRoot.toString()))
+        .build();
+  }
+
+  private static MediaRoot mediaRootAt(FileSystem mediaFileSystem, String mediaRoot) {
+    return new MediaRoot(
+        mediaFileSystem, new RemoteTranscodeProperties(UUID.randomUUID(), mediaRoot));
+  }
+
   private void assertFailure(Library library, LibraryFolderProblem problem, String reasonTag) {
-    assertThatThrownBy(() -> libraryFolderCheck.requirePassed(library))
+    assertFailure(libraryFolderCheck, library, problem, reasonTag);
+  }
+
+  private void assertFailure(
+      LibraryFolderCheck check, Library library, LibraryFolderProblem problem, String reasonTag) {
+    assertThatThrownBy(() -> check.requirePassed(library))
         .isInstanceOfSatisfying(
             LibraryFolderCheckFailedException.class,
             failure -> assertThat(failure.getProblem()).isEqualTo(problem));

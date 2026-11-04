@@ -17,12 +17,18 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.SkippedFileRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.LibraryOperationDriver;
 import com.streamarr.server.support.StoredLibraryOperations;
+import com.streamarr.server.support.security.SignedInAccount;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
+import org.assertj.core.groups.Tuple;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,10 +37,13 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
 
 @Tag("IntegrationTest")
 @DisplayName("Library scan soft link integration tests")
+// addLibrary accepts only folders in the media root; @TempDir folders sit in java.io.tmpdir.
+@TestPropertySource(properties = "streaming.remote.source-root=${java.io.tmpdir}")
 class LibraryScanSoftLinkIT extends AbstractIntegrationTest {
 
   @Autowired private LibraryOperationDriver libraryOperationDriver;
@@ -45,12 +54,16 @@ class LibraryScanSoftLinkIT extends AbstractIntegrationTest {
   @Autowired private SkippedFileRepository skippedFileRepository;
   @Autowired private LibraryOperationRepository libraryOperationRepository;
   @Autowired private PlatformTransactionManager transactionManager;
+  @Autowired private LibraryManagementService libraryManagementService;
+  @Autowired private AuthTestSupport authTestSupport;
 
   @TempDir Path tempDir;
 
   private Path libraryFolder;
   private Path elsewhere;
   private Library library;
+  private final List<UUID> addedLibraries = new ArrayList<>();
+  private AuthTestSupport.TestIdentity admin;
 
   @BeforeEach
   void saveALibraryInARealFolder() throws IOException {
@@ -64,8 +77,12 @@ class LibraryScanSoftLinkIT extends AbstractIntegrationTest {
   }
 
   @AfterEach
-  void removeTheLibrary() {
+  void removeTheLibraries() {
     libraryRepository.deleteById(library.getId());
+    addedLibraries.forEach(libraryRepository::deleteById);
+    if (admin != null) {
+      authTestSupport.deleteIdentity(admin);
+    }
   }
 
   @Test
@@ -137,6 +154,84 @@ class LibraryScanSoftLinkIT extends AbstractIntegrationTest {
     assertThat(skippedFiles())
         .extracting(SkippedFileRecord::getFilepathUri, SkippedFileRecord::getLibraryOperationId)
         .containsExactly(tuple(FilepathCodec.encodeEntry(link), newerScan));
+  }
+
+  @Test
+  @DisplayName(
+      "Should end the scan unhealthy and walk nothing when a soft link appears above the library"
+          + " folder after addLibrary")
+  void
+      shouldEndTheScanUnhealthyAndWalkNothingWhenASoftLinkAppearsAboveTheLibraryFolderAfterAddLibrary()
+          throws IOException {
+    var added = addLibraryWithASkippedFile();
+    var firstScanSkippedFiles = skippedFileIdentitiesOf(added);
+    replaceTheShowsFolderWithASoftLink();
+
+    libraryOperationDriver.scanToEnd(added);
+
+    assertThat(statusOf(added)).isEqualTo(LibraryStatus.UNHEALTHY);
+    assertThat(skippedFileIdentitiesOf(added)).isEqualTo(firstScanSkippedFiles).isNotEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should end the next scan healthy when the soft link above the library folder is gone")
+  void shouldEndTheNextScanHealthyWhenTheSoftLinkAboveTheLibraryFolderIsGone() throws IOException {
+    var added = addLibraryWithASkippedFile();
+    var linkedShows = replaceTheShowsFolderWithASoftLink();
+    libraryOperationDriver.scanToEnd(added);
+    assertThat(statusOf(added)).isEqualTo(LibraryStatus.UNHEALTHY);
+    Files.delete(linkedShows);
+    Files.move(tempDir.resolve("real-shows"), linkedShows);
+
+    libraryOperationDriver.scanToEnd(added);
+
+    assertThat(statusOf(added)).isEqualTo(LibraryStatus.HEALTHY);
+  }
+
+  // The library folder holds one soft link, so its first scan stores one skipped file.
+  private UUID addLibraryWithASkippedFile() throws IOException {
+    var folder = Files.createDirectories(tempDir.resolve("shows/Movies"));
+    Files.createSymbolicLink(
+        folder.resolve("Linked (2002).mkv"),
+        Files.createFile(elsewhere.resolve("Linked (2002).mkv")));
+    admin = authTestSupport.createAdminIdentity();
+    var outcome =
+        SignedInAccount.callSignedInAs(
+            admin.account().getId(),
+            () ->
+                libraryManagementService.addLibrary(
+                    authTestSupport.identityOf(admin),
+                    LibraryFixtureCreator.unsavedLibraryBuilder()
+                        .name("Shows")
+                        .filepathUri(folder.toString())
+                        .build()));
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    var addedId = outcome.fold(Library::getId, _ -> null);
+    addedLibraries.add(addedId);
+    libraryOperationDriver.awaitFirstScanEnd(addedId);
+    return addedId;
+  }
+
+  // The library folder's path stays the same, but now passes a soft link below the media root.
+  private Path replaceTheShowsFolderWithASoftLink() throws IOException {
+    var shows = tempDir.resolve("shows");
+    var realShows = Files.move(shows, tempDir.resolve("real-shows"));
+    return Files.createSymbolicLink(shows, realShows);
+  }
+
+  private List<Tuple> skippedFileIdentitiesOf(UUID libraryId) {
+    return dsl
+        .selectFrom(SKIPPED_FILE)
+        .where(SKIPPED_FILE.LIBRARY_ID.eq(libraryId))
+        .fetch()
+        .stream()
+        .map(row -> tuple(row.getFilepathUri(), row.getLibraryOperationId()))
+        .toList();
+  }
+
+  private LibraryStatus statusOf(UUID libraryId) {
+    return libraryRepository.findById(libraryId).orElseThrow().getStatus();
   }
 
   private List<SkippedFileRecord> skippedFiles() {

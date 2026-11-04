@@ -12,6 +12,7 @@ import static org.awaitility.Awaitility.await;
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.config.LibraryScanProperties;
+import com.streamarr.server.config.RemoteTranscodeProperties;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
@@ -1025,6 +1026,7 @@ class LibraryOperationExecutionTest {
                       .fileSystem(fileSystem)
                       .mediaFileRepository(unreadableRecordedFiles)
                       .meterRegistry(meterRegistry)
+                      .mediaRoot(mediaRootOn(fileSystem))
                       .build())
               .build();
 
@@ -1478,9 +1480,8 @@ class LibraryOperationExecutionTest {
 
     @Test
     @DisplayName(
-        "Should save the library folder as a skipped file when the library folder is a soft link")
-    void shouldSaveTheLibraryFolderAsASkippedFileWhenTheLibraryFolderIsASoftLink()
-        throws Exception {
+        "Should end the scan unhealthy and walk nothing when the library folder is a soft link")
+    void shouldEndTheScanUnhealthyAndWalkNothingWhenTheLibraryFolderIsASoftLink() throws Exception {
       createMovieFile(elsewhere, "Real (2001)", "Real (2001).mkv");
       var linkedFolder = Files.createSymbolicLink(media.resolve("linked-library"), elsewhere);
       var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
@@ -1489,9 +1490,9 @@ class LibraryOperationExecutionTest {
 
       scan();
 
-      var scanId = runner.scheduling().scheduledExecutions().getLast();
-      assertThat(skippedFiles.skippedFilesOf(savedLibraryId))
-          .containsExactly(softLink(scanId, linkedFolder));
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+      assertThat(folderCheckFailures("soft_link")).isEqualTo(1);
+      assertThat(skippedFiles.skippedFilesOf(savedLibraryId)).isEmpty();
       assertThat(fakeMediaFileRepository.findByLibraryId(savedLibraryId)).isEmpty();
     }
 
@@ -2774,7 +2775,13 @@ class LibraryOperationExecutionTest {
         .fileSystem(libraryFileSystem)
         .mediaFileRepository(fakeMediaFileRepository)
         .meterRegistry(meterRegistry)
+        .mediaRoot(mediaRootOn(libraryFileSystem))
         .build();
+  }
+
+  private static MediaRoot mediaRootOn(FileSystem mediaFileSystem) {
+    return new MediaRoot(
+        mediaFileSystem, new RemoteTranscodeProperties(UUID.randomUUID(), "/media"));
   }
 
   private double folderCheckFailures(String reason) {

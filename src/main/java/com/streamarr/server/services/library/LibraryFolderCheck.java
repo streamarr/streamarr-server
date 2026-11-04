@@ -21,7 +21,8 @@ import org.springframework.stereotype.Service;
 /**
  * Fails a scan whose library folder does not exist, cannot be read, or is empty while Streamarr
  * still records files for the library. An unmounted share leaves exactly such a folder, and a scan
- * that went on would remove every item of the library.
+ * that went on would remove every item of the library. Also fails a scan whose library folder, or a
+ * folder between the media root and it, is a soft link, because scans never follow one.
  */
 @Service
 @Builder
@@ -33,6 +34,7 @@ public class LibraryFolderCheck {
   private final FileSystem fileSystem;
   private final MediaFileRepository mediaFileRepository;
   private final MeterRegistry meterRegistry;
+  private final MediaRoot mediaRoot;
 
   /**
    * @throws LibraryFolderCheckFailedException if the library folder fails the check
@@ -53,6 +55,10 @@ public class LibraryFolderCheck {
       folder = FilepathCodec.decode(fileSystem, library.getFilepathUri());
     } catch (IllegalArgumentException _) {
       return Optional.of(LibraryFolderProblem.UNREADABLE);
+    }
+
+    if (mediaRoot.hasSoftLinkTo(folder)) {
+      return Optional.of(LibraryFolderProblem.SOFT_LINK);
     }
 
     try (var entries = Files.newDirectoryStream(folder)) {

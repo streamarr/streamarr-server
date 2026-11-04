@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
+import com.streamarr.server.config.RemoteTranscodeProperties;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
@@ -296,6 +297,9 @@ class LibraryOperationFinishingStepsRunnerTest {
                 .fileSystem(fileSystem)
                 .mediaFileRepository(mediaFileRepository)
                 .meterRegistry(meterRegistry)
+                .mediaRoot(
+                    new MediaRoot(
+                        fileSystem, new RemoteTranscodeProperties(UUID.randomUUID(), "/media")))
                 .build())
         .orphanedMediaFileCleanupService(
             new OrphanedMediaFileCleanupService(
