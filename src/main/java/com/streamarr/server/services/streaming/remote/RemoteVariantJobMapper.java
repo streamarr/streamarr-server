@@ -5,6 +5,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.PlannedVideoOutput;
@@ -64,8 +65,8 @@ final class RemoteVariantJobMapper {
     var video =
         switch (transcodeDecision.plannedVideoOutput()) {
           case PlannedVideoOutput.Encode planned -> encode(request, planned);
-          case PlannedVideoOutput.StreamCopy _ ->
-              copy(transcodeDecision, transcodeDecision.videoSource().orElseThrow());
+          case PlannedVideoOutput.StreamCopy planned ->
+              copy(transcodeDecision, transcodeDecision.videoSource().orElseThrow(), planned);
         };
     return decision(transcodeDecision).toBuilder().setVideo(video).build();
   }
@@ -135,21 +136,29 @@ final class RemoteVariantJobMapper {
     };
   }
 
-  // A copy forces no codec profile, tier or level. The job carries a copy's planned output range
-  // only once the worker contract accepts one (streamarr/streamarr-server#396, ADR 0013).
+  // A copy forces no codec profile, tier or level. An SDR copy passes the source's range through,
+  // so it carries no planned range and still reaches a worker that predates the planned output
+  // (ADR 0013).
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.transcode.v1.VideoDecision copy(
-      TranscodeDecision decision, VideoPlaybackFacts source) {
-    return com.streamarr.transcode.v1.VideoDecision.newBuilder()
-        .setMode(VideoMode.VIDEO_MODE_COPY)
-        .setCodecFamily(codecFamily(decision.videoCodecFamily()))
-        .setCodecString(source.codecString().orElseThrow())
-        .setSourceDynamicRange(RemoteDynamicRangeMapper.toProto(source.dynamicRange()))
-        .setStreamIndex(source.streamIndex())
-        .setSourceCodecFamily(sourceCodecFamily(source))
-        .setSourcePacketsCarryPresentationTimes(sourcePacketsCarryPresentationTimes(source))
-        .setCopyKeepsPacketBytes(copyKeepsPacketBytes(source))
-        .build();
+      TranscodeDecision decision,
+      VideoPlaybackFacts source,
+      PlannedVideoOutput.StreamCopy planned) {
+    var video =
+        com.streamarr.transcode.v1.VideoDecision.newBuilder()
+            .setMode(VideoMode.VIDEO_MODE_COPY)
+            .setCodecFamily(codecFamily(decision.videoCodecFamily()))
+            .setCodecString(source.codecString().orElseThrow())
+            .setSourceDynamicRange(RemoteDynamicRangeMapper.toProto(source.dynamicRange()))
+            .setStreamIndex(source.streamIndex())
+            .setSourceCodecFamily(sourceCodecFamily(source))
+            .setSourcePacketsCarryPresentationTimes(sourcePacketsCarryPresentationTimes(source))
+            .setCopyKeepsPacketBytes(copyKeepsPacketBytes(source));
+    if (planned.dynamicRange().compatibleBase() != CompatibleBase.SDR) {
+      video.setOutputDynamicRange(RemoteDynamicRangeMapper.toProto(planned.dynamicRange()));
+    }
+
+    return video.build();
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
