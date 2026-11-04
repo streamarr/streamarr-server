@@ -6,19 +6,19 @@ import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import lombok.Builder;
 import lombok.NonNull;
 
 /**
  * The media segments that a stream copy's media playlist lists, with the EXTINF duration and the
  * EXT-X-TARGETDURATION that it writes for them, over which a measured copy's average and peak
- * bandwidth are counted (ADR 0054). Segment {@code N} also takes its audio from grid slot {@code
- * N}, which starts at {@code N × targetSegmentDurationSeconds} (ADR 0037).
+ * bandwidth are counted (ADR 0054). Each segment also takes its audio from its grid slots, which
+ * run from its slot start to the next segment's (ADR 0037).
  */
-public record CopyMediaPlaylist(
-    @NonNull List<Segment> segments, int targetDurationSeconds, int targetSegmentDurationSeconds) {
+public record CopyMediaPlaylist(@NonNull List<Segment> segments, int targetDurationSeconds) {
 
   /** The media playlist of a source that a stream copy cannot open at its keyframes. */
-  static final CopyMediaPlaylist UNKNOWN = new CopyMediaPlaylist(List.of(), 0, 0);
+  static final CopyMediaPlaylist UNKNOWN = new CopyMediaPlaylist(List.of(), 0);
 
   public CopyMediaPlaylist {
     segments = List.copyOf(segments);
@@ -26,9 +26,12 @@ public record CopyMediaPlaylist(
 
   /**
    * A media segment that opens at the keyframe at {@code openingKeyframeIndex} of the source's
-   * keyframe positions and lasts {@code extinfSeconds} as the media playlist writes it.
+   * keyframe positions, whose grid slots start at {@code slotStartSeconds} of media time, and that
+   * lasts {@code extinfSeconds} as the media playlist writes it.
    */
-  public record Segment(int openingKeyframeIndex, @NonNull BigDecimal extinfSeconds) {}
+  @Builder
+  public record Segment(
+      int openingKeyframeIndex, int slotStartSeconds, @NonNull BigDecimal extinfSeconds) {}
 
   /** The media playlist that a stream copy of the source would list. */
   static CopyMediaPlaylist of(@NonNull MediaProbe source, @NonNull StreamingProperties properties) {
@@ -42,14 +45,15 @@ public record CopyMediaPlaylist(
     var segments = new ArrayList<Segment>();
     for (var index = 0; index < durations.size(); index++) {
       segments.add(
-          new Segment(
-              timeline.openingKeyframes().get(index).keyframeIndex(), durations.get(index)));
+          Segment.builder()
+              .openingKeyframeIndex(timeline.openingKeyframes().get(index).keyframeIndex())
+              .slotStartSeconds(timeline.mediaSegmentStartSeconds(index))
+              .extinfSeconds(durations.get(index))
+              .build());
     }
 
     return new CopyMediaPlaylist(
-        segments,
-        ExtinfDurations.targetDurationSeconds(timeline, durations),
-        timeline.targetSegmentDurationSeconds());
+        segments, ExtinfDurations.targetDurationSeconds(timeline, durations));
   }
 
   int segmentCount() {

@@ -60,6 +60,50 @@ class MediaSegmentTimelineTest {
     assertThat(timeline.mediaSegmentStartSeconds(900)).isEqualTo(5_400);
   }
 
+  @ParameterizedTest
+  @CsvSource({"PT24S, 46", "PT25S, 46", "PT6S, 49", "PT5S, 49", "PT0S, 49"})
+  @DisplayName(
+      "Should count whole target segment durations back, and at least one segment, when finding a"
+          + " media segment before another")
+  void shouldCountWholeTargetSegmentDurationsBackWhenFindingAMediaSegmentBeforeAnother(
+      Duration distance, int expectedIndex) {
+    var timeline = new MediaSegmentTimeline.PlainGrid(Duration.ofHours(2), SIX_SECONDS);
+
+    assertThat(timeline.mediaSegmentIndexBefore(50, distance)).isEqualTo(expectedIndex);
+  }
+
+  @Test
+  @DisplayName(
+      "Should find a media segment before the first one when the distance reaches past the start")
+  void shouldFindAMediaSegmentBeforeTheFirstOneWhenTheDistanceReachesPastTheStart() {
+    var timeline = new MediaSegmentTimeline.PlainGrid(Duration.ofHours(2), SIX_SECONDS);
+
+    assertThat(timeline.mediaSegmentIndexBefore(2, Duration.ofSeconds(24))).isEqualTo(-2);
+  }
+
+  // The last segment of 2 m 5.5 s, segment 20, lasts 5.5 s but opens in a whole 6 s slot.
+  @ParameterizedTest
+  @CsvSource({"0, 1, PT6S", "19, 2, PT12S", "20, 1, PT6S"})
+  @DisplayName(
+      "Should span one whole target segment duration for each segment when measuring their grid"
+          + " slots")
+  void shouldSpanOneWholeTargetSegmentDurationForEachSegmentWhenMeasuringTheirGridSlots(
+      int firstIndex, int segmentCount, Duration expectedSpan) {
+    var timeline = new MediaSegmentTimeline.PlainGrid(Duration.parse("PT2M5.5S"), SIX_SECONDS);
+
+    assertThat(timeline.slotSpan(firstIndex, segmentCount)).isEqualTo(expectedSpan);
+  }
+
+  @Test
+  @DisplayName("Should reject finding a media segment before another without a distance")
+  void shouldRejectFindingAMediaSegmentBeforeAnotherWithoutADistance() {
+    var timeline = new MediaSegmentTimeline.PlainGrid(Duration.ofHours(2), SIX_SECONDS);
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> timeline.mediaSegmentIndexBefore(2, null))
+        .withMessageContaining("distance");
+  }
+
   @Test
   @DisplayName("Should advertise only the indices inside the timeline when asked about an index")
   void shouldAdvertiseOnlyTheIndicesInsideTheTimelineWhenAskedAboutAnIndex() {
