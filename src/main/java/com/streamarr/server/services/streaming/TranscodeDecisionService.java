@@ -29,6 +29,7 @@ import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoStreamCopy;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
@@ -59,6 +60,12 @@ public class TranscodeDecisionService {
       List.of(BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD);
   private static final List<BitstreamRewrite> STRIP_HDR10_PLUS_AND_NORMALIZE_DOLBY_VISION_RECORD =
       List.of(BitstreamRewrite.STRIP_HDR10_PLUS, BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD);
+  private static final CopyPlan STRIPPING_DOLBY_VISION =
+      new CopyPlan(List.of(BitstreamRewrite.STRIP_DOLBY_VISION), Optional.empty());
+  private static final CopyPlan STRIPPING_DOLBY_VISION_AND_HDR10_PLUS =
+      new CopyPlan(
+          List.of(BitstreamRewrite.STRIP_DOLBY_VISION, BitstreamRewrite.STRIP_HDR10_PLUS),
+          Optional.empty());
   private static final String STREAM_COPY_REFUSALS_METRIC =
       "streamarr.streaming.stream_copy_refusals";
 
@@ -224,9 +231,28 @@ public class TranscodeDecisionService {
   // The copies that the server can plan, the best picture first: the server picks one output for
   // each client and format attempt (ADR 0013). A copy that keeps Dolby Vision on a PQ or HLG base
   // writes the record that the playlist describes, and strips HDR10+ by default (ADR 0036). A
-  // client that declares the base range but not HDR10+ gets the copy with HDR10+ stripped.
+  // client that declares the base range but not the Dolby Vision gets the copy with Dolby Vision
+  // stripped, and one that declares the base range but not HDR10+ gets the copy with HDR10+
+  // stripped.
   private static List<CopyPlan> copyPlans(VideoStreamCopy copy) {
     var hasHdr10Plus = copy.dynamicRange().hdr10Plus() == Presence.PRESENT;
+    var plans = new ArrayList<>(keepingDolbyVisionPlans(copy, hasHdr10Plus));
+    if (!copy.hasDolbyVisionStrippableToAnHdrBase()) {
+      return plans;
+    }
+
+    plans.add(STRIPPING_DOLBY_VISION);
+    if (hasHdr10Plus) {
+      plans.add(STRIPPING_DOLBY_VISION_AND_HDR10_PLUS);
+    }
+
+    return plans;
+  }
+
+  // Dolby Vision that no capability entry can name stays in these plans, and every entry refuses
+  // them.
+  private static List<CopyPlan> keepingDolbyVisionPlans(
+      VideoStreamCopy copy, boolean hasHdr10Plus) {
     var dolbyVisionOutput = copy.dolbyVisionOutput();
     if (dolbyVisionOutput.isPresent()) {
       return List.of(new CopyPlan(keepingDolbyVisionRewrites(hasHdr10Plus), dolbyVisionOutput));

@@ -70,6 +70,25 @@ public record VideoStreamCopy(
     return Optional.empty();
   }
 
+  /**
+   * Whether stripping this copy's Dolby Vision leaves a PQ or HLG base that a player shows (ADR
+   * 0036). Profiles 5 and 10.0 have no such base, and Dolby Vision under an SDR base stays.
+   */
+  public boolean hasDolbyVisionStrippableToAnHdrBase() {
+    var base = dynamicRange.compatibleBase();
+    if (base != CompatibleBase.PQ && base != CompatibleBase.HLG) {
+      return false;
+    }
+
+    return switch (CopiedDolbyVision.of(this)) {
+      case CopiedDolbyVision.Declarable _, CopiedDolbyVision.Undeclarable _ -> true;
+      case CopiedDolbyVision.None _,
+          CopiedDolbyVision.KeptUnderSdrBase _,
+          CopiedDolbyVision.NeedsDolbyVisionSampleEntry _ ->
+          false;
+    };
+  }
+
   /** The copy that the worker delivers after the bitstream rewrites (ADR 0036). */
   public VideoStreamCopy afterRewrites(@NonNull Collection<BitstreamRewrite> rewrites) {
     return toBuilder().dynamicRange(dynamicRange.afterRewrites(rewrites)).build();

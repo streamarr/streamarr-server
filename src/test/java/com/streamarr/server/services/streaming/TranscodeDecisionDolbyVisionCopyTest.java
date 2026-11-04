@@ -16,6 +16,8 @@ import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.DolbyVisionOutput;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
+import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
+import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlannedVideoOutput;
 import com.streamarr.server.domain.streaming.Presence;
@@ -130,6 +132,69 @@ class TranscodeDecisionDolbyVisionCopyTest {
                 Optional.of(new DolbyVisionOutput(DolbyVisionProfile.PROFILE_8_1, SOURCE_LEVEL)),
                 VideoRange.PQ)),
         Arguments.of(
+            "Profile 8.1 above the client's maximum level",
+            hevc(profile8(CompatibleBase.PQ, 1)),
+            Clients.dolbyVision(SOURCE_LEVEL - 1),
+            strippingDolbyVision(VideoRange.PQ)),
+        Arguments.of(
+            "Profile 8.1 to a client that declares only PQ",
+            hevc(profile8(CompatibleBase.PQ, 1)),
+            Clients.baseOnly(false),
+            strippingDolbyVision(VideoRange.PQ)),
+        Arguments.of(
+            "Profile 8.4 to a client that declares only HLG",
+            hevc(profile8(CompatibleBase.HLG, 4)),
+            Clients.baseOnly(false),
+            strippingDolbyVision(VideoRange.HLG)),
+        Arguments.of(
+            "Profile 10.1 to a client that declares only PQ",
+            av1(profile10(CompatibleBase.PQ, 1)),
+            Clients.baseOnly(false),
+            strippingDolbyVision(VideoRange.PQ)),
+        Arguments.of(
+            "Profile 8.1 with HDR10+ to a client that declares only PQ",
+            hevc(withHdr10Plus(profile8(CompatibleBase.PQ, 1))),
+            Clients.baseOnly(false),
+            new Outcome(
+                TranscodeMode.REMUX,
+                List.of(BitstreamRewrite.STRIP_DOLBY_VISION, BitstreamRewrite.STRIP_HDR10_PLUS),
+                Optional.empty(),
+                VideoRange.PQ)),
+        Arguments.of(
+            "Profile 8.1 with HDR10+ to a client that declares PQ and HDR10+",
+            hevc(withHdr10Plus(profile8(CompatibleBase.PQ, 1))),
+            Clients.baseOnly(true),
+            strippingDolbyVision(VideoRange.PQ)),
+        Arguments.of(
+            "Profile 8.1 whose record names no level, until the maximum frame rate is stored",
+            hevc(profile81WithoutRecordLevel()),
+            Clients.dolbyVision(13),
+            strippingDolbyVision(VideoRange.PQ)),
+        Arguments.of(
+            "Dolby Vision whose profile neither a record nor an RPU header names",
+            hevc(
+                new VideoDynamicRange(
+                    CompatibleBase.PQ,
+                    Presence.ABSENT,
+                    new DolbyVision.Present(Optional.empty(), Presence.UNSPECIFIED))),
+            Clients.dolbyVision(13),
+            strippingDolbyVision(VideoRange.PQ)),
+        Arguments.of(
+            "The base layer track of a dual-track profile 7 source",
+            hevc(dualTrackBaseLayer(7, 6)),
+            Clients.dolbyVision(13),
+            strippingDolbyVision(VideoRange.PQ)),
+        Arguments.of(
+            "The base layer track of a profile 6 source",
+            hevc(dualTrackBaseLayer(6, 1)),
+            Clients.dolbyVision(13),
+            strippingDolbyVision(VideoRange.PQ)),
+        Arguments.of(
+            "Profile 5 that the RPU header names beside a PQ transfer",
+            hevc(profile5FromTheRpuHeaderBesideAPqTransfer()),
+            Clients.baseOnly(true),
+            ENCODE),
+        Arguments.of(
             "Profile 8.1 to a client that declares only SDR",
             hevc(profile8(CompatibleBase.PQ, 1)),
             Clients.sdrOnly(),
@@ -162,6 +227,46 @@ class TranscodeDecisionDolbyVisionCopyTest {
     assertThat(decision.map(Outcome::of)).contains(ENCODE);
   }
 
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("workersWithoutTheStripRewrite")
+  @DisplayName(
+      "Should encode a profile 8.1 source for a client that declares only PQ when no connected"
+          + " worker strips Dolby Vision")
+  void
+      shouldEncodeAProfile81SourceForAClientThatDeclaresOnlyPqWhenNoConnectedWorkerStripsDolbyVision(
+          String workers, List<WorkerVideoCopySupport> support) {
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(hevc(profile8(CompatibleBase.PQ, 1)))
+                .capabilityDeclaration(Clients.baseOnly(false))
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .videoCopySupport(support)
+                .build());
+
+    assertThat(decision.map(Outcome::of)).contains(ENCODE);
+  }
+
+  static Stream<Arguments> workersWithoutTheStripRewrite() {
+    var normalizingWorker =
+        WorkerVideoCopySupport.builder()
+            .plannedOutput(true)
+            .bitstreamRewrites(
+                Set.of(
+                    BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD,
+                    BitstreamRewrite.STRIP_HDR10_PLUS))
+            .build();
+    var olderWorker =
+        WorkerVideoCopySupport.builder()
+            .plannedOutput(false)
+            .bitstreamRewrites(Set.of(BitstreamRewrite.STRIP_DOLBY_VISION))
+            .build();
+    return Stream.of(
+        Arguments.of("a worker that does not strip Dolby Vision", List.of(normalizingWorker)),
+        Arguments.of(
+            "a worker that lists the strip but not the planned output", List.of(olderWorker)));
+  }
+
   static Stream<Arguments> workersWithoutTheNormalizeRewrite() {
     var strippingWorker =
         WorkerVideoCopySupport.builder()
@@ -191,6 +296,12 @@ class TranscodeDecisionDolbyVisionCopyTest {
         range);
   }
 
+  // ADR 0036: the copy plays its PQ or HLG base without RPUs or a record.
+  private static Outcome strippingDolbyVision(VideoRange range) {
+    return new Outcome(
+        TranscodeMode.REMUX, List.of(BitstreamRewrite.STRIP_DOLBY_VISION), Optional.empty(), range);
+  }
+
   private static VideoDynamicRange profile8(CompatibleBase base, int compatibilityId) {
     return dolbyVisionRecord(base, 8, compatibilityId);
   }
@@ -214,6 +325,54 @@ class TranscodeDecisionDolbyVisionCopyTest {
                     .rpu(true)
                     .build()),
             Presence.PRESENT));
+  }
+
+  private static VideoDynamicRange profile81WithoutRecordLevel() {
+    return new VideoDynamicRange(
+        CompatibleBase.PQ,
+        Presence.ABSENT,
+        new DolbyVision.Present(
+            Optional.of(
+                DolbyVisionConfiguration.builder()
+                    .profile(OptionalInt.of(8))
+                    .baseLayerCompatibilityId(OptionalInt.of(1))
+                    .baseLayer(true)
+                    .rpu(true)
+                    .build()),
+            Presence.PRESENT));
+  }
+
+  // The record of a base layer track names a base layer, and its RPUs sit in the other track.
+  private static VideoDynamicRange dualTrackBaseLayer(int profile, int compatibilityId) {
+    return new VideoDynamicRange(
+        CompatibleBase.PQ,
+        Presence.ABSENT,
+        new DolbyVision.Present(
+            Optional.of(
+                DolbyVisionConfiguration.builder()
+                    .profile(OptionalInt.of(profile))
+                    .level(OptionalInt.of(SOURCE_LEVEL))
+                    .baseLayerCompatibilityId(OptionalInt.of(compatibilityId))
+                    .baseLayer(true)
+                    .build()),
+            Presence.ABSENT));
+  }
+
+  // Profile 5 has no base that a player could show, so the server never strips it (ADR 0036).
+  private static VideoDynamicRange profile5FromTheRpuHeaderBesideAPqTransfer() {
+    return new VideoDynamicRange(
+        CompatibleBase.PQ,
+        Presence.ABSENT,
+        new DolbyVision.Present(
+            Optional.empty(),
+            Presence.PRESENT,
+            Optional.of(
+                DolbyVisionRpuHeader.builder()
+                    .vdrRpuProfile(0)
+                    .baseLayerFullRange(true)
+                    .vdrBitDepth(10)
+                    .build()),
+            DolbyVisionRpuPlacement.AFTER_OWN_PICTURE));
   }
 
   private static VideoDynamicRange withHdr10Plus(VideoDynamicRange range) {
@@ -318,6 +477,17 @@ class TranscodeDecisionDolbyVisionCopyTest {
                               DolbyVisionProfile.PROFILE_10_4))
                       .hdr10Plus(true)
                       .build(),
+                  h264EntryBuilder().build()))
+          .build();
+    }
+
+    // HEVC and AV1 entries that declare every base and no Dolby Vision profile.
+    static ClientCapabilityDeclaration baseOnly(boolean hdr10Plus) {
+      return defaultDeclarationBuilder()
+          .video(
+              List.of(
+                  hevcEntryBuilder().compatibleBases(hdrBases()).hdr10Plus(hdr10Plus).build(),
+                  av1EntryBuilder().compatibleBases(hdrBases()).hdr10Plus(hdr10Plus).build(),
                   h264EntryBuilder().build()))
           .build();
     }
