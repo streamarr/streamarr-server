@@ -123,12 +123,12 @@ public class LibraryFileWalk {
   }
 
   /**
-   * Matches a file that the file watcher discovered, and waits for nothing. A file with an
-   * unsupported extension, a file of another library and a file that was already matched are left
-   * as they are.
+   * Matches a file that the file watcher discovered, and waits for nothing. A soft link, a file
+   * with an unsupported extension, a file of another library and a file that was already matched
+   * are left as they are.
    */
   public void processDiscoveredFile(Library library, Path path) {
-    if (!keepSupportedOrWarn(path)) {
+    if (Files.isSymbolicLink(path) || !keepSupportedOrWarn(path)) {
       return;
     }
 

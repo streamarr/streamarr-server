@@ -102,6 +102,7 @@ import java.net.URI;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.spi.FileSystemProvider;
@@ -300,6 +301,19 @@ class LibraryManagementServiceTest {
 
     assertThat(mediaFile).isPresent();
     assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
+  }
+
+  @Test
+  @DisplayName("Should create no media file when the file watcher discovers a soft link")
+  void shouldCreateNoMediaFileWhenTheFileWatcherDiscoversASoftLink(@TempDir Path media)
+      throws IOException {
+    var target = Files.createFile(media.resolve("Target (2002).mkv"));
+    var link = Files.createSymbolicLink(media.resolve("Linked (2002).mkv"), target);
+
+    serviceWith(FileSystems.getDefault()).processDiscoveredFile(savedLibraryId, link);
+
+    assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(link)))
+        .isEmpty();
   }
 
   @Test
@@ -1819,6 +1833,8 @@ class LibraryManagementServiceTest {
     when(path.getFileSystem()).thenReturn(pathFileSystem);
     when(pathFileSystem.provider()).thenReturn(pathProvider);
     when(pathProvider.readAttributes(path, BasicFileAttributes.class)).thenReturn(fileAttributes);
+    when(pathProvider.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS))
+        .thenReturn(fileAttributes);
     when(fileAttributes.size()).thenReturn(1L);
     return path;
   }
