@@ -400,10 +400,16 @@ class LanguagePreferenceServiceTest {
     @DisplayName("Should refuse and store nothing when the viewer may not set an override")
     void shouldRefuseAndStoreNothingWhenTheViewerMayNotSetAnOverride() {
       allowOnlyLanguagePreferencesOf(UUID.randomUUID());
+      var command =
+          SetLanguageOverrideCommand.builder()
+              .itemId(series.getId())
+              .change(audioChange(Language.JA))
+              .build();
+      var seriesId = series.getId();
 
-      assertThatThrownBy(() -> setAudio(series, Language.JA))
+      assertThatThrownBy(() -> service.setLanguageOverride(viewer, command))
           .isInstanceOf(AccessDeniedException.class);
-      assertThatThrownBy(() -> service.clearLanguageOverride(viewer, series.getId()))
+      assertThatThrownBy(() -> service.clearLanguageOverride(viewer, seriesId))
           .isInstanceOf(AccessDeniedException.class);
       assertThat(repository.overrideCount()).isZero();
     }
