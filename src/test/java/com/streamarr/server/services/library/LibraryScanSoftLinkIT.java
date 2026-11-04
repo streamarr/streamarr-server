@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.domain.SkippedFileReason.SOFT_LINK;
 import static com.streamarr.server.jooq.generated.tables.SkippedFile.SKIPPED_FILE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
@@ -7,13 +8,17 @@ import static org.assertj.core.api.Assertions.tuple;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.SkippedFile;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.jooq.generated.enums.SkippedFileReason;
 import com.streamarr.server.jooq.generated.tables.records.SkippedFileRecord;
+import com.streamarr.server.repositories.LibraryOperationRepository;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.SkippedFileRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.support.LibraryOperationDriver;
+import com.streamarr.server.support.StoredLibraryOperations;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,6 +31,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.PlatformTransactionManager;
 
 @Tag("IntegrationTest")
 @DisplayName("Library scan soft link integration tests")
@@ -35,6 +41,10 @@ class LibraryScanSoftLinkIT extends AbstractIntegrationTest {
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private DSLContext dsl;
+  @Autowired private LibraryFileWalk libraryFileWalk;
+  @Autowired private SkippedFileRepository skippedFileRepository;
+  @Autowired private LibraryOperationRepository libraryOperationRepository;
+  @Autowired private PlatformTransactionManager transactionManager;
 
   @TempDir Path tempDir;
 
@@ -99,6 +109,34 @@ class LibraryScanSoftLinkIT extends AbstractIntegrationTest {
               assertThat(row.getFilepathUri()).isEqualTo(FilepathCodec.encode(keptLink));
               assertThat(row.getLibraryOperationId()).isNotEqualTo(firstScanId);
             });
+  }
+
+  @Test
+  @DisplayName("Should keep the newer scan's skipped file when the walk of an ended scan runs on")
+  void shouldKeepTheNewerScansSkippedFileWhenTheWalkOfAnEndedScanRunsOn() throws Exception {
+    var link =
+        Files.createSymbolicLink(
+            libraryFolder.resolve("Linked (2002).mkv"),
+            Files.createFile(elsewhere.resolve("Linked (2002).mkv")));
+    var libraryOperations =
+        new StoredLibraryOperations(libraryOperationRepository, transactionManager);
+    var endedScan = libraryOperations.storeScan(library.getId());
+    libraryOperations.endAsSystemActor(endedScan);
+    var newerScan = libraryOperations.storeScan(library.getId());
+    var newerSkip =
+        SkippedFile.builder()
+            .libraryId(library.getId())
+            .libraryOperationId(newerScan)
+            .filepathUri(FilepathCodec.encodeEntry(link))
+            .reason(SOFT_LINK)
+            .build();
+    assertThat(skippedFileRepository.trySave(newerSkip)).isTrue();
+
+    libraryFileWalk.discoverFiles(library, endedScan, () -> false);
+
+    assertThat(skippedFiles())
+        .extracting(SkippedFileRecord::getFilepathUri, SkippedFileRecord::getLibraryOperationId)
+        .containsExactly(tuple(FilepathCodec.encodeEntry(link), newerScan));
   }
 
   private List<SkippedFileRecord> skippedFiles() {

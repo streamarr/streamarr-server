@@ -11,12 +11,24 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Predicate;
 
 public class FakeSkippedFileRepository implements SkippedFileRepository {
 
   private final Map<Key, SkippedFile> database = new ConcurrentHashMap<>();
+  private final Predicate<UUID> libraryOperationExists;
   private volatile RuntimeException saveFailure;
   private volatile Runnable beforeEachSave = () -> {};
+
+  /** Writes for every library operation id. */
+  public FakeSkippedFileRepository() {
+    this(_ -> true);
+  }
+
+  /** Writes only for a library operation that {@code libraryOperationExists} still finds. */
+  public FakeSkippedFileRepository(Predicate<UUID> libraryOperationExists) {
+    this.libraryOperationExists = libraryOperationExists;
+  }
 
   /** Runs {@code action} before every later save attempt. */
   public void runBeforeEachSave(Runnable action) {
@@ -35,12 +47,20 @@ public class FakeSkippedFileRepository implements SkippedFileRepository {
       throw saveFailure;
     }
 
+    if (!libraryOperationExists.test(skippedFile.libraryOperationId())) {
+      return false;
+    }
+
     database.put(new Key(skippedFile.libraryId(), skippedFile.filepathUri()), skippedFile);
     return true;
   }
 
   @Override
   public void deleteSkippedFilesOfOtherLibraryOperations(UUID libraryId, UUID libraryOperationId) {
+    if (!libraryOperationExists.test(libraryOperationId)) {
+      return;
+    }
+
     database
         .values()
         .removeIf(

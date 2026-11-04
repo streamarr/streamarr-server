@@ -7,6 +7,7 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.SkippedFile;
 import com.streamarr.server.domain.SkippedFileReason;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.repositories.LibraryOperationRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.SkippedFileRepository;
 import com.streamarr.server.services.pagination.ListPage;
@@ -17,6 +18,7 @@ import com.streamarr.server.services.pagination.Row;
 import com.streamarr.server.services.pagination.SortDirection;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PagedListContract;
+import com.streamarr.server.support.StoredLibraryOperations;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -29,6 +31,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.PlatformTransactionManager;
 
 @Tag("IntegrationTest")
 @DisplayName("Library skipped file paging")
@@ -40,6 +43,8 @@ class LibrarySkippedFilesPagedListIT
   @Autowired private LibraryRepository libraries;
   @Autowired private AuthTestSupport auth;
   @Autowired private DSLContext dsl;
+  @Autowired private LibraryOperationRepository libraryOperationRepository;
+  @Autowired private PlatformTransactionManager transactionManager;
 
   private final Map<String, UUID> idByFilepathUri = new HashMap<>();
 
@@ -60,7 +65,7 @@ class LibrarySkippedFilesPagedListIT
         auth.createAdminIdentity(),
         library,
         new HashSet<>(),
-        new AtomicReference<>(UUID.randomUUID()));
+        new AtomicReference<>(libraryOperations().storeScan(library.getId())));
   }
 
   @Override
@@ -127,15 +132,21 @@ class LibrarySkippedFilesPagedListIT
     }
   }
 
-  // A rescan that finds the same soft links deletes the earlier scan's skips as its walk starts,
-  // then stores each link again.
+  // The earlier scan ends, and a rescan that finds the same soft links deletes the earlier scan's
+  // skips as its walk starts, then stores each link again.
   private void rescan(Scope scope) {
-    var laterScan = UUID.randomUUID();
+    var libraryOperations = libraryOperations();
+    libraryOperations.endAsSystemActor(scope.latestScan().get());
+    var laterScan = libraryOperations.storeScan(scope.library().getId());
     skippedFiles.deleteSkippedFilesOfOtherLibraryOperations(scope.library().getId(), laterScan);
     scope
         .filepathUris()
         .forEach(filepathUri -> skippedFiles.trySave(softLink(scope, laterScan, filepathUri)));
     scope.latestScan().set(laterScan);
+  }
+
+  private StoredLibraryOperations libraryOperations() {
+    return new StoredLibraryOperations(libraryOperationRepository, transactionManager);
   }
 
   private static PageRequest firstPageOf(int limit) {

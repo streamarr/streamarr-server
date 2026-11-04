@@ -116,6 +116,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -198,7 +199,6 @@ class LibraryOperationExecutionTest {
           null,
           _ -> {});
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
-  private final FakeSkippedFileRepository skippedFiles = new FakeSkippedFileRepository();
 
   private final MovieFileProcessor movieFileProcessor =
       new MovieFileProcessor(
@@ -251,6 +251,8 @@ class LibraryOperationExecutionTest {
 
   private final FakeLibraryOperationRepository libraryOperations =
       new FakeLibraryOperationRepository(fakeLibraryRepository);
+  private final FakeSkippedFileRepository skippedFiles =
+      new FakeSkippedFileRepository(id -> libraryOperations.findLibraryOperation(id).isPresent());
   private final OperationRunner operations = serviceBuilder().build();
 
   private UUID savedLibraryId;
@@ -449,7 +451,8 @@ class LibraryOperationExecutionTest {
 
   @Test
   @DisplayName(
-      "Should set library status to unhealthy when file walk throws UncheckedIOException during iteration")
+      "Should set library status to unhealthy when file walk throws UncheckedIOException during"
+          + " iteration")
   void shouldSetLibraryStatusToUnhealthyWhenFileWalkThrowsUncheckedIOException()
       throws IOException {
     var rootPath = createRootLibraryDirectory();
@@ -468,7 +471,8 @@ class LibraryOperationExecutionTest {
 
   @Test
   @DisplayName(
-      "Should set library status to unhealthy when file walk throws SecurityException during iteration")
+      "Should set library status to unhealthy when file walk throws SecurityException during"
+          + " iteration")
   void shouldSetLibraryStatusToUnhealthyWhenFileWalkThrowsSecurityException() throws IOException {
     var rootPath = createRootLibraryDirectory();
     createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
@@ -599,7 +603,8 @@ class LibraryOperationExecutionTest {
 
   @Test
   @DisplayName(
-      "Should skip creating a media file when provided a library containing an unsupported file extension")
+      "Should skip creating a media file when provided a library containing an unsupported file"
+          + " extension")
   void shouldSkipCreatingMediaFileWhenProvidedLibraryContainingUnsupportedMovie()
       throws IOException {
     var rootPath = createRootLibraryDirectory();
@@ -906,7 +911,8 @@ class LibraryOperationExecutionTest {
 
     @Test
     @DisplayName(
-        "Should finish the scan healthy when a retried artwork step stores the result that failed to save")
+        "Should finish the scan healthy when a retried artwork step stores the result that failed"
+            + " to save")
     void shouldFinishTheScanHealthyWhenARetriedArtworkStepStoresTheResultThatFailedToSave()
         throws Exception {
       createMovieFile(createRootLibraryDirectory(), "About Time", "About Time (2013).mkv");
@@ -1078,7 +1084,8 @@ class LibraryOperationExecutionTest {
 
     @Test
     @DisplayName(
-        "Should return every admission when file tasks match, skip a matched file, record a failure, time out and throw")
+        "Should return every admission when file tasks match, skip a matched file, record a"
+            + " failure, time out and throw")
     void shouldReturnEveryAdmissionWhenFileTasksMatchSkipAMatchedFileRecordAFailureTimeOutAndThrow()
         throws Exception {
       var root = createRootLibraryDirectory();
@@ -1197,7 +1204,8 @@ class LibraryOperationExecutionTest {
 
     @Test
     @DisplayName(
-        "Should report one ignored file without side effects when a scan finds another library's file")
+        "Should report one ignored file without side effects when a scan finds another library's"
+            + " file")
     void shouldReportOneIgnoredFileWithoutSideEffectsWhenScanFindsAnotherLibrarysFile()
         throws Exception {
       var path = createMovieFile(createRootLibraryDirectory(), "Foreign", "Foreign (2001).mkv");
@@ -1267,7 +1275,8 @@ class LibraryOperationExecutionTest {
 
     @Test
     @DisplayName(
-        "Should match every file and finish healthy when a file task cannot read its artwork results")
+        "Should match every file and finish healthy when a file task cannot read its artwork"
+            + " results")
     void shouldMatchEveryFileAndFinishHealthyWhenAFileTaskCannotReadItsArtworkResults()
         throws Exception {
       var root = createRootLibraryDirectory();
@@ -1514,6 +1523,31 @@ class LibraryOperationExecutionTest {
     }
 
     @Test
+    @DisplayName(
+        "Should save no further skipped file when another execution ends the scan's library"
+            + " operation while one is saved")
+    void shouldSaveNoFurtherSkippedFileWhenAnotherExecutionEndsTheScansLibraryOperation()
+        throws Exception {
+      var target = Files.createFile(elsewhere.resolve("Linked (2002).mkv"));
+      for (var name : List.of("A (2002).mkv", "B (2002).mkv", "C (2002).mkv")) {
+        Files.createSymbolicLink(libraryFolder.resolve(name), target);
+      }
+
+      var saveAttempts = new AtomicInteger();
+      skippedFiles.runBeforeEachSave(
+          () -> {
+            if (saveAttempts.getAndIncrement() == 0) {
+              endTheRunningScan();
+            }
+          });
+
+      scan();
+
+      assertThat(saveAttempts).hasValue(1);
+      assertThat(skippedFiles.skippedFilesOf(savedLibraryId)).isEmpty();
+    }
+
+    @Test
     @DisplayName("Should end the scan unhealthy when a skipped file cannot be saved")
     void shouldEndTheScanUnhealthyWhenASkippedFileCannotBeSaved() throws Exception {
       var target = Files.createFile(elsewhere.resolve("Linked (2002).mkv"));
@@ -1537,6 +1571,17 @@ class LibraryOperationExecutionTest {
 
     private void scan() throws Exception {
       BoundedTask.runWithin(SCAN_BOUND, () -> runner.scanLibrary(savedLibraryId));
+    }
+
+    private void endTheRunningScan() {
+      assertThat(
+              libraryOperations.tryEndLibraryOperation(
+                  LibraryOperationEnd.builder()
+                      .libraryOperationId(runner.scheduling().scheduledExecutions().getLast())
+                      .conclusion(LibraryOperationConclusion.FINISHED)
+                      .endedAt(Instant.now())
+                      .build()))
+          .isPresent();
     }
   }
 
@@ -1617,7 +1662,8 @@ class LibraryOperationExecutionTest {
 
   @Test
   @DisplayName(
-      "Should match media file when provided a library containing a file with a supported extension")
+      "Should match media file when provided a library containing a file with a supported"
+          + " extension")
   void shouldMatchMediaFileWhenProvidedLibraryContainingSupportedMovie() throws IOException {
     var movieFolder = "About Time";
     var movieFilename = "About Time (2013).mkv";
@@ -1720,7 +1766,8 @@ class LibraryOperationExecutionTest {
 
   @Test
   @DisplayName(
-      "Should skip processing when provided a library containing a system file with a valid extension")
+      "Should skip processing when provided a library containing a system file with a valid"
+          + " extension")
   void shouldSkipProcessingWhenGivenLibraryContainingSystemFile() throws IOException {
     var rootPath = createRootLibraryDirectory();
     var systemFilePath = createMovieFile(rootPath, "About Time", "._About Time (2013).mkv");

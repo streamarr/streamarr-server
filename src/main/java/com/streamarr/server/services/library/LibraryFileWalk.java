@@ -83,10 +83,12 @@ public class LibraryFileWalk {
   /**
    * Walks the library and matches each of its files, then returns the closed discovery whose
    * results the scan waits for. The walk never follows a soft link: it saves each soft link as a
-   * skipped file of the scan, in place of the skipped files of the library's earlier scans. Each
-   * file's task is admitted through the scan's adaptive limit before the walk pulls the next file.
-   * A task that throws ends admission, and so does the admission end: files that were not admitted
-   * yet are not processed in this scan.
+   * skipped file of the scan, in place of the skipped files of the library's earlier scans. It
+   * writes skipped files only while the scan's library operation exists, and once a save finds that
+   * another execution has ended the operation, the walk admits no further task. Each file's task is
+   * admitted through the scan's adaptive limit before the walk pulls the next file. A task that
+   * throws ends admission, and so does the admission end: files that were not admitted yet are not
+   * processed in this scan.
    *
    * @throws LibraryScanFailedException if the library cannot be walked or a file's task fails
    * @throws InterruptedException if the walk is interrupted; the admitted tasks are interrupted and
@@ -98,24 +100,24 @@ public class LibraryFileWalk {
     skippedFileRepository.deleteSkippedFilesOfOtherLibraryOperations(
         library.getId(), libraryOperationId);
     var discovery = fileDiscoveryRuns.openScan(library, libraryOperationId);
+    var walk = new ScanWalk(library, libraryOperationId, admissionEnd);
     try (discovery;
         var admission = libraryOperationAdmissions.openScanAdmission(library);
         var stream = Files.walk(FilepathCodec.decode(fileSystem, library.getFilepathUri()))) {
 
-      // The walk ends at a soft link once the admission end is reached, so a stop never waits
-      // for the remaining soft links to be saved.
+      // The walk ends at a soft link once its end is reached, so a stop never waits for the
+      // remaining soft links to be saved.
       var files =
           stream
               .map(LibraryFileWalk::walkEntry)
-              .takeWhile(
-                  entry -> !(entry instanceof WalkEntry.SoftLink) || !admissionEnd.isReached())
-              .flatMap(entry -> regularFile(library, libraryOperationId, entry).stream())
+              .takeWhile(entry -> !(entry instanceof WalkEntry.SoftLink) || !walk.isReached())
+              .flatMap(entry -> walk.regularFile(entry).stream())
               .filter(listed -> !ignoredFileValidator.shouldIgnore(listed.path()))
               .filter(listed -> keepSupportedOrWarn(listed.path()))
               .iterator();
       var failures =
           admission.forkAdmittedTasks(
-              admissionEnd.untilReached(files),
+              walk.untilReached(files),
               listed -> processAdmittedFile(discovery, listed),
               SystemWork.newThreadFactoryRunningAsSystemActor("library-scan-file-"));
       throwIfAnyFileFailed(library, failures);
@@ -182,23 +184,49 @@ public class LibraryFileWalk {
     return new WalkEntry.RegularFile(new ListedFile(path, SourceFileSnapshot.of(attributes)));
   }
 
-  // Saves a soft link as a skipped file of the scan and lists only regular files.
-  private Optional<ListedFile> regularFile(
-      Library library, UUID libraryOperationId, WalkEntry entry) {
-    return switch (entry) {
-      case WalkEntry.RegularFile(var listed) -> Optional.of(listed);
-      case WalkEntry.SoftLink(var path) -> {
-        skippedFileRepository.trySave(
-            SkippedFile.builder()
-                .libraryId(library.getId())
-                .libraryOperationId(libraryOperationId)
-                .filepathUri(FilepathCodec.encodeEntry(path))
-                .reason(SkippedFileReason.SOFT_LINK)
-                .build());
-        yield Optional.empty();
-      }
-      case WalkEntry.Other _ -> Optional.empty();
-    };
+  // One scan's walk. Its end is the execution's admission end, or the end of the scan's library
+  // operation: a skipped file that cannot be saved because the operation no longer exists means
+  // that another execution of the operation ended it, so this walk admits nothing further.
+  private final class ScanWalk implements AdmissionEnd {
+
+    private final Library library;
+    private final UUID libraryOperationId;
+    private final AdmissionEnd admissionEnd;
+    private volatile boolean libraryOperationEnded;
+
+    private ScanWalk(Library library, UUID libraryOperationId, AdmissionEnd admissionEnd) {
+      this.library = library;
+      this.libraryOperationId = libraryOperationId;
+      this.admissionEnd = admissionEnd;
+    }
+
+    @Override
+    public boolean isReached() {
+      return libraryOperationEnded || admissionEnd.isReached();
+    }
+
+    // Saves a soft link as a skipped file of the scan and lists only regular files.
+    private Optional<ListedFile> regularFile(WalkEntry entry) {
+      return switch (entry) {
+        case WalkEntry.RegularFile(var listed) -> Optional.of(listed);
+        case WalkEntry.SoftLink(var path) -> {
+          var saved =
+              skippedFileRepository.trySave(
+                  SkippedFile.builder()
+                      .libraryId(library.getId())
+                      .libraryOperationId(libraryOperationId)
+                      .filepathUri(FilepathCodec.encodeEntry(path))
+                      .reason(SkippedFileReason.SOFT_LINK)
+                      .build());
+          if (!saved) {
+            libraryOperationEnded = true;
+          }
+
+          yield Optional.empty();
+        }
+        case WalkEntry.Other _ -> Optional.empty();
+      };
+    }
   }
 
   private sealed interface WalkEntry {
