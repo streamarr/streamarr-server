@@ -1,6 +1,5 @@
 package com.streamarr.server.services.library;
 
-import com.streamarr.server.config.RemoteTranscodeProperties;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.domain.LibraryStatus;
@@ -21,7 +20,6 @@ import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.filepath.FilepathNameNormalizer;
-import com.streamarr.server.services.filepath.FilepathSoftLinks;
 import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
@@ -60,7 +58,7 @@ public class LibraryManagementService {
   private final MutationTransactions mutationTransactions;
   private final LibraryOperationRepository libraryOperations;
   private final LibraryOperationService libraryOperationService;
-  private final RemoteTranscodeProperties remoteSource;
+  private final MediaRoot mediaRoot;
 
   public List<LibraryMetadata> getAlphabetIndex(UUID libraryId) {
     return libraryMetadataRepository.findByLibraryIdOrderByLetterAsc(libraryId);
@@ -144,7 +142,7 @@ public class LibraryManagementService {
       }
 
       var folder = FilepathNameNormalizer.normalizeToFileSystemNames(path);
-      if (hasSoftLinkBelowMediaRoot(folder)) {
+      if (mediaRoot.hasSoftLinkTo(folder)) {
         rejections.add(new AddLibraryRejection.PathThroughSoftLink());
         return Optional.empty();
       }
@@ -157,31 +155,6 @@ public class LibraryManagementService {
     }
 
     return Optional.empty();
-  }
-
-  // Scans and playback never follow a soft link below the media root (ADR 0045), and a scan skips a
-  // library folder that is a soft link. So neither the library folder nor a folder between the
-  // media root and it may be one. The media root is configuration, and the way to it may pass soft
-  // links. A folder outside the media root is checked alone.
-  private boolean hasSoftLinkBelowMediaRoot(Path folder) {
-    var mediaRoot = mediaRoot();
-    var first = folder;
-    if (folder.startsWith(mediaRoot) && !folder.equals(mediaRoot)) {
-      first = mediaRoot.resolve(mediaRoot.relativize(folder).getName(0));
-    }
-
-    return FilepathSoftLinks.hasSoftLinkFrom(first, folder);
-  }
-
-  // Library folders carry the names that the file system stores, so the media root does too. A
-  // media root that cannot be listed keeps its configured names.
-  private Path mediaRoot() {
-    var configured = fileSystem.getPath(remoteSource.sourceRoot()).toAbsolutePath().normalize();
-    try {
-      return FilepathNameNormalizer.normalizeToFileSystemNames(configured);
-    } catch (IOException _) {
-      return configured;
-    }
   }
 
   private static Optional<AddLibraryRejection> pathRejection(Path path) {

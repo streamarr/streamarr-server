@@ -1901,7 +1901,7 @@ class LibraryManagementServiceTest {
         .mutationTransactions(mutationTransactions)
         .libraryOperations(libraryOperations)
         .libraryOperationService(libraryOperationService)
-        .remoteSource(new RemoteTranscodeProperties(UUID.randomUUID(), "/media"));
+        .mediaRoot(mediaRootAt(fileSystem, "/media"));
   }
 
   private LibraryFileWalk.LibraryFileWalkBuilder fileWalkBuilder() {
@@ -1938,8 +1938,13 @@ class LibraryManagementServiceTest {
     return serviceBuilder()
         .fileSystem(alternateFileSystem)
         .libraryFileWalk(fileWalkBuilder().fileSystem(alternateFileSystem).build())
-        .remoteSource(new RemoteTranscodeProperties(UUID.randomUUID(), mediaRoot))
+        .mediaRoot(mediaRootAt(alternateFileSystem, mediaRoot))
         .build();
+  }
+
+  private static MediaRoot mediaRootAt(FileSystem mediaFileSystem, String mediaRoot) {
+    return new MediaRoot(
+        mediaFileSystem, new RemoteTranscodeProperties(UUID.randomUUID(), mediaRoot));
   }
 
   private LibraryManagementService libraryManagementServiceWith(
