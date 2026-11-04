@@ -2,12 +2,17 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.NonNull;
 
+/**
+ * What a transcode decision reads. {@code videoCopySupport} lists what each connected worker can
+ * deliver beyond passing a copied video stream through, including busy workers.
+ */
 @Builder(toBuilder = true)
 public record TranscodeDecisionRequest(
     @NonNull MediaProbe source,
@@ -17,7 +22,8 @@ public record TranscodeDecisionRequest(
     @NonNull Set<String> verifiedVideoCodecFamilies,
     @NonNull VideoFormatConstraint videoFormatConstraint,
     @NonNull Set<String> excludedEncodeCodecFamilies,
-    @NonNull ViewerLimits viewerLimits) {
+    @NonNull ViewerLimits viewerLimits,
+    @NonNull List<WorkerVideoCopySupport> videoCopySupport) {
 
   public TranscodeDecisionRequest {
     // A codec family that a worker with a free slot encodes has a worker-verified encoder.
@@ -26,6 +32,7 @@ public record TranscodeDecisionRequest(
             .collect(Collectors.toUnmodifiableSet());
     hardwareEncodableVideoCodecFamilies = Set.copyOf(hardwareEncodableVideoCodecFamilies);
     excludedEncodeCodecFamilies = Set.copyOf(excludedEncodeCodecFamilies);
+    videoCopySupport = List.copyOf(videoCopySupport);
   }
 
   // Lombok builder defaults — its generated setters assign them
@@ -36,6 +43,7 @@ public record TranscodeDecisionRequest(
     private VideoFormatConstraint videoFormatConstraint = VideoFormatConstraint.COPY_OR_ENCODE;
     private Set<String> excludedEncodeCodecFamilies = Set.of();
     private ViewerLimits viewerLimits = ViewerLimits.none();
+    private List<WorkerVideoCopySupport> videoCopySupport = List.of();
 
     public TranscodeDecisionRequest build() {
       return new TranscodeDecisionRequest(
@@ -46,7 +54,8 @@ public record TranscodeDecisionRequest(
           verifiedVideoCodecFamilies,
           videoFormatConstraint,
           excludedEncodeCodecFamilies,
-          viewerLimits);
+          viewerLimits,
+          videoCopySupport);
     }
   }
 }

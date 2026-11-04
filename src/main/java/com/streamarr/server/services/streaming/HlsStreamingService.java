@@ -102,6 +102,7 @@ public class HlsStreamingService implements StreamingService {
                 transcodeExecutor.hardwareEncodableVideoCodecFamilies())
             .verifiedVideoCodecFamilies(codecFamiliesOf(verifiedWorkers))
             .viewerLimits(ViewerLimits.of(options))
+            .videoCopySupport(transcodeExecutor.videoCopySupportByWorker())
             .build();
     var candidate = transcodeDecisionService.decide(request);
     if (candidate.isEmpty()) {

@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
+import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
@@ -17,8 +18,12 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.TranscodeMode;
+import com.streamarr.server.domain.streaming.VideoCodecProfile;
+import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
+import com.streamarr.server.domain.streaming.VideoRange;
+import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -41,18 +46,32 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
- * The interim copy rule of ADR 0013 and ADR 0036, which holds until streamarr/streamarr-server#396.
- * The server copies the video only when every condition holds: the compatible base is SDR or
- * unspecified; no Dolby Vision compatibility identifier disagrees with the signaled transfer; the
- * source is not H.264, or is 8-bit 4:2:0 H.264; and the client names the source's codec. A copy
- * also needs the codec string that the probe stored, under a sample entry that a playlist can
- * describe: never hev1 or a Dolby Vision entry (ADR 0013).
+ * The copy rules of ADR 0013 and ADR 0036. The interim copy rule still holds for a probe version 4
+ * outcome and for Dolby Vision on a PQ, HLG or missing base: the server copies the video only when
+ * every condition holds. The compatible base is SDR or unspecified; no Dolby Vision compatibility
+ * identifier disagrees with the signaled transfer; the source is not H.264, or is 8-bit 4:2:0
+ * H.264; and the client names the source's codec. A copy also needs the codec string that the probe
+ * stored, under a sample entry that a playlist can describe: never hev1 or a Dolby Vision entry
+ * (ADR 0013). Since the third amendment, a PQ or HLG source without Dolby Vision that probe version
+ * 5 described is copied to a client that declares its base (streamarr/streamarr-server#396).
  */
 @Tag("UnitTest")
 @DisplayName("Transcode Decision Copy Rule Tests")
 class TranscodeDecisionCopyRuleTest {
 
   private static final Set<String> EVERY_VIDEO_CODEC_FAMILY = Set.of("h264", "hevc", "av1");
+
+  private static final WorkerVideoCopySupport PLANNED_OUTPUT_WORKER =
+      WorkerVideoCopySupport.builder().plannedOutput(true).bitstreamRewrites(Set.of()).build();
+
+  // What probe version 5 reports for an HEVC Main 10 stream at Main tier level 5.0.
+  private static final VideoStreamProperties MAIN_10_PROPERTIES =
+      VideoStreamProperties.builder()
+          .codecProfile(Optional.of(VideoCodecProfile.HEVC_MAIN_10))
+          .codecLevel(OptionalInt.of(50))
+          .codecTier(Optional.of(VideoCodecTier.MAIN))
+          .firstFramesRead(true)
+          .build();
 
   // The Dolby Vision configuration record's bl_signal_compatibility_id names the base format that
   // the stream claims: 0 none, 1 HDR10, 2 SDR, 4 HLG, and 6 the PQ base of profile 7.
@@ -187,27 +206,44 @@ class TranscodeDecisionCopyRuleTest {
         .contains("hvc1.2.4.L120.90");
   }
 
+  // ADR 0013's third amendment: the server copies PQ only to a client that declares it.
   @Test
-  @DisplayName("Should encode an HDR10 HEVC source to H.264 when the Apple TV app names HEVC")
-  void shouldEncodeAnHdr10HevcSourceToH264WhenTheAppleTvAppNamesHevc() {
-    var source =
-        Source.builder()
-            .sampleEntry(SampleEntry.HVC1)
-            .dynamicRange(
-                new VideoDynamicRange(
-                    CompatibleBase.PQ, Presence.UNSPECIFIED, new DolbyVision.Unspecified()))
-            .bitDepth(OptionalInt.of(10))
-            .build();
-
+  @DisplayName(
+      "Should copy an HDR10 HEVC source when the Apple TV app declares HEVC with a PQ base")
+  void shouldCopyAnHdr10HevcSourceWhenTheAppleTvAppDeclaresHevcWithAPqBase() {
     var decision =
         service
             .decide(
-                TranscodeDecisionRequest.builder()
-                    .source(source.probe())
+                hdrRequestBuilder(appleTvHdr10Source())
+                    .capabilityDeclaration(
+                        defaultDeclarationBuilder()
+                            .video(
+                                List.of(
+                                    h264EntryBuilder().build(),
+                                    hevcEntryBuilder()
+                                        .compatibleBases(
+                                            List.of(CompatibleBase.SDR, CompatibleBase.PQ))
+                                        .build()))
+                            .build())
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.videoRange()).isEqualTo(VideoRange.PQ);
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode an HDR10 HEVC source to H.264 when the Apple TV app declares HEVC with only an"
+          + " SDR base")
+  void shouldEncodeAnHdr10HevcSourceToH264WhenTheAppleTvAppDeclaresHevcWithOnlyAnSdrBase() {
+    var decision =
+        service
+            .decide(
+                hdrRequestBuilder(appleTvHdr10Source())
                     .capabilityDeclaration(
                         declarationBuilderFor(ProbedCodecFamily.H264, ProbedCodecFamily.HEVC)
                             .build())
-                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .build())
             .orElseThrow();
 
@@ -215,12 +251,154 @@ class TranscodeDecisionCopyRuleTest {
     assertThat(decision.videoCodecFamily()).isEqualTo("h264");
   }
 
+  // A probe version 5 outcome of an HDR10 stream whose HDR10+ and Dolby Vision the probe did not
+  // check, as the Apple TV test of 2026-11-02 played it.
+  private static Source appleTvHdr10Source() {
+    return Source.builder()
+        .sampleEntry(SampleEntry.HVC1)
+        .dynamicRange(
+            new VideoDynamicRange(
+                CompatibleBase.PQ, Presence.UNSPECIFIED, new DolbyVision.Unspecified()))
+        .bitDepth(OptionalInt.of(10))
+        .videoProperties(Optional.of(MAIN_10_PROPERTIES))
+        .build();
+  }
+
+  // Every connected worker can deliver a copy with a planned output, so only the declaration
+  // decides.
+  private static TranscodeDecisionRequest.TranscodeDecisionRequestBuilder hdrRequestBuilder(
+      Source source) {
+    return TranscodeDecisionRequest.builder()
+        .source(source.probe())
+        .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+        .videoCopySupport(List.of(PLANNED_OUTPUT_WORKER));
+  }
+
   @ParameterizedTest(name = "{0}")
-  @MethodSource("hdrSources")
+  @MethodSource("hdrSourcesWithoutDolbyVision")
+  @DisplayName("Should copy an HDR10 or HLG source when the client declares its base")
+  void shouldCopyAnHdr10OrHlgSourceWhenTheClientDeclaresItsBase(
+      String scenario, Source source, VideoRange planned) {
+    var decision =
+        service.decide(hdrRequestBuilder(source).capabilityDeclaration(hdrDeclaration()).build());
+
+    assertThat(decision)
+        .hasValueSatisfying(
+            copy -> {
+              assertThat(copy.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+              assertThat(copy.videoRange()).isEqualTo(planned);
+            });
+  }
+
+  static Stream<Arguments> hdrSourcesWithoutDolbyVision() {
+    return Stream.of(
+        Arguments.of(
+            "HDR10", hdrSource(CompatibleBase.PQ, new DolbyVision.Absent()), VideoRange.PQ),
+        Arguments.of(
+            "HLG", hdrSource(CompatibleBase.HLG, new DolbyVision.Absent()), VideoRange.HLG));
+  }
+
+  // Dolby Vision copies on a PQ or HLG base wait for the Dolby Vision slice of #396.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("dolbyVisionSourcesOnAnHdrBase")
   @DisplayName(
-      "Should encode an HDR source when the client declares every HDR format that the source carries")
-  void shouldEncodeAnHdrSourceWhenTheClientDeclaresEveryHdrFormatThatTheSourceCarries(
+      "Should encode a Dolby Vision source on a PQ or HLG base when the client declares its"
+          + " profile")
+  void shouldEncodeADolbyVisionSourceOnAPqOrHlgBaseWhenTheClientDeclaresItsProfile(
       String scenario, Source source) {
+    var decision =
+        service
+            .decide(hdrRequestBuilder(source).capabilityDeclaration(hdrDeclaration()).build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+  }
+
+  static Stream<Arguments> dolbyVisionSourcesOnAnHdrBase() {
+    return Stream.of(
+        Arguments.of(
+            "Dolby Vision 8.1 on a PQ base",
+            hdrSource(CompatibleBase.PQ, dolbyVisionRecord(OptionalInt.of(1)))),
+        Arguments.of(
+            "Dolby Vision 8.4 on an HLG base",
+            hdrSource(CompatibleBase.HLG, dolbyVisionRecord(OptionalInt.of(4)))));
+  }
+
+  // ADR 0032: a file keeps its probe version 4 decision until its probe version 5 outcome is
+  // stored, and probe version 4 reports no codec profile for the entry to check.
+  @Test
+  @DisplayName("Should encode a PQ source when its outcome is from probe version 4")
+  void shouldEncodeAPqSourceWhenItsOutcomeIsFromProbeVersion4() {
+    var version4 =
+        Source.builder()
+            .sampleEntry(SampleEntry.HVC1)
+            .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ))
+            .bitDepth(OptionalInt.of(10))
+            .build();
+
+    var decision =
+        service
+            .decide(hdrRequestBuilder(version4).capabilityDeclaration(hdrDeclaration()).build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+  }
+
+  @Test
+  @DisplayName("Should encode an HLG source when the client declares only a PQ base")
+  void shouldEncodeAnHlgSourceWhenTheClientDeclaresOnlyAPqBase() {
+    var pqOnly =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    h264EntryBuilder().build(),
+                    hevcEntryBuilder()
+                        .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
+                        .build()))
+            .build();
+
+    var decision =
+        service
+            .decide(
+                hdrRequestBuilder(hdrSource(CompatibleBase.HLG, new DolbyVision.Absent()))
+                    .capabilityDeclaration(pqOnly)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+  }
+
+  // ADR 0036: a worker that predates the planned output would refuse the copy, so the client gets
+  // the encode that it would get without the copy.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("workersThatCannotDeliverAPlannedOutput")
+  @DisplayName("Should encode an HDR10 source when no connected worker lists the planned output")
+  void shouldEncodeAnHdr10SourceWhenNoConnectedWorkerListsThePlannedOutput(
+      String workers, List<WorkerVideoCopySupport> support) {
+    var decision =
+        service
+            .decide(
+                hdrRequestBuilder(hdrSource(CompatibleBase.PQ, new DolbyVision.Absent()))
+                    .capabilityDeclaration(hdrDeclaration())
+                    .videoCopySupport(support)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+  }
+
+  static Stream<Arguments> workersThatCannotDeliverAPlannedOutput() {
+    var olderWorker =
+        WorkerVideoCopySupport.builder().plannedOutput(false).bitstreamRewrites(Set.of()).build();
+    return Stream.of(
+        Arguments.of("no worker read", List.of()),
+        Arguments.of(
+            "two workers that predate the planned output", List.of(olderWorker, olderWorker)));
+  }
+
+  // One HEVC entry that declares every HDR format of the sources above, beside H.264.
+  private static ClientCapabilityDeclaration hdrDeclaration() {
     var hdrEntry =
         hevcEntryBuilder()
             .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG))
@@ -236,42 +414,15 @@ class TranscodeDecisionCopyRuleTest {
                         .build()))
             .hdr10Plus(true)
             .build();
-
-    var decision =
-        service
-            .decide(
-                TranscodeDecisionRequest.builder()
-                    .source(source.probe())
-                    .capabilityDeclaration(
-                        defaultDeclarationBuilder()
-                            .video(List.of(hdrEntry, h264EntryBuilder().build()))
-                            .build())
-                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
-                    .build())
-            .orElseThrow();
-
-    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
-    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
-  }
-
-  // Each source's formats are ones the HDR entry above declares.
-  static Stream<Arguments> hdrSources() {
-    return Stream.of(
-        Arguments.of("HDR10", hdrSource(CompatibleBase.PQ, new DolbyVision.Absent())),
-        Arguments.of("HLG", hdrSource(CompatibleBase.HLG, new DolbyVision.Absent())),
-        Arguments.of(
-            "Dolby Vision 8.1 on a PQ base",
-            hdrSource(CompatibleBase.PQ, dolbyVisionRecord(OptionalInt.of(1)))),
-        Arguments.of(
-            "Dolby Vision 8.4 on an HLG base",
-            hdrSource(CompatibleBase.HLG, dolbyVisionRecord(OptionalInt.of(4)))));
+    return defaultDeclarationBuilder().video(List.of(hdrEntry, h264EntryBuilder().build())).build();
   }
 
   private static Source hdrSource(CompatibleBase base, DolbyVision dolbyVision) {
     return Source.builder()
         .sampleEntry(SampleEntry.HVC1)
-        .dynamicRange(new VideoDynamicRange(base, Presence.UNSPECIFIED, dolbyVision))
+        .dynamicRange(new VideoDynamicRange(base, Presence.ABSENT, dolbyVision))
         .bitDepth(OptionalInt.of(10))
+        .videoProperties(Optional.of(MAIN_10_PROPERTIES))
         .build();
   }
 
@@ -432,7 +583,8 @@ class TranscodeDecisionCopyRuleTest {
       @NonNull SampleEntry sampleEntry,
       VideoDynamicRange dynamicRange,
       OptionalInt bitDepth,
-      Optional<ChromaSubsampling> chromaSubsampling) {
+      Optional<ChromaSubsampling> chromaSubsampling,
+      Optional<VideoStreamProperties> videoProperties) {
 
     Source {
       dynamicRange =
@@ -443,6 +595,7 @@ class TranscodeDecisionCopyRuleTest {
       bitDepth = bitDepth == null ? OptionalInt.of(8) : bitDepth;
       chromaSubsampling =
           chromaSubsampling == null ? Optional.of(ChromaSubsampling.CHROMA_420) : chromaSubsampling;
+      videoProperties = videoProperties == null ? Optional.empty() : videoProperties;
     }
 
     // The chosen video stream is stream 1, after cover art. Keyframes open every 6 s grid
@@ -470,6 +623,7 @@ class TranscodeDecisionCopyRuleTest {
                       .bitDepth(bitDepth)
                       .chromaSubsampling(chromaSubsampling)
                       .codecString(sampleEntry.codecString)
+                      .videoProperties(videoProperties)
                       .build()));
     }
 

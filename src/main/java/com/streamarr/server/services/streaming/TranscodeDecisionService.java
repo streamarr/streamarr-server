@@ -13,6 +13,7 @@ import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
+import com.streamarr.server.domain.streaming.PlannedVideoOutput;
 import com.streamarr.server.domain.streaming.StreamCopySegments;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -59,7 +60,8 @@ public class TranscodeDecisionService {
    * A copy needs a video capability entry for HLS that accepts the copy, and a source that fits the
    * viewer's limits or that no encode can play: the source has no encoded variant, or no video
    * capability entry for HLS accepts one in a codec that a connected worker's verified encoder
-   * encodes, busy or not (ADR 0050). An encode uses, among the codecs that a worker-verified
+   * encodes, busy or not (ADR 0050). A copy whose planned output needs more than passing the source
+   * through also needs a connected worker, busy or not, that delivers it (ADR 0036). An encode uses, among the codecs that a worker-verified
    * encoder encodes (ADR 0009), the one whose video capability entry for HLS fits an encoded
    * variant of the source at the highest frame rate (ADR 0049), and the first in the codec
    * preference on a tie (ADR 0009). The audio follows the audio capability entries for HLS. Returns
@@ -120,11 +122,22 @@ public class TranscodeDecisionService {
       return Optional.empty();
     }
 
-    if (!decideVideoCopy(source, declaration)) {
+    if (!decideVideoCopy(source, declaration) || !hasWorkerThatDeliversTheCopy(request)) {
       return Optional.empty();
     }
 
     return Optional.of(stepWithinMaximum.orElse(sessionAudio));
+  }
+
+  // A worker that does not deliver a copy's planned output would fail the copy, so the client gets
+  // the encode instead (ADR 0036). Busy workers count, so a lack of free slots refuses the session
+  // for capacity and never turns the copy into an encode.
+  private static boolean hasWorkerThatDeliversTheCopy(TranscodeDecisionRequest request) {
+    var copy =
+        PlannedVideoOutput.StreamCopy.of(
+            request.source().videoPlaybackFacts().orElseThrow(), List.of());
+    return !copy.requiresPlannedOutputSupport()
+        || request.videoCopySupport().stream().anyMatch(worker -> worker.delivers(copy));
   }
 
   // Busy workers' verified encoders count, so a lack of free slots refuses a session for capacity
