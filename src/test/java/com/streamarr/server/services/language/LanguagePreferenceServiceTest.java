@@ -20,6 +20,7 @@ import com.streamarr.server.domain.language.SubtitlePreferenceMode;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeLanguagePreferenceRepository;
@@ -151,6 +152,17 @@ class LanguagePreferenceServiceTest {
               Outcome.rejected(
                   new SetLanguagePreferencesRejection.RepeatedAudioLanguage(Language.EN, 2)));
       assertThat(service.profilePreferences(viewer).orElseThrow().audioLanguages()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should require a Profile when the selected Profile was deleted before the write")
+    void shouldRequireAProfileWhenTheSelectedProfileWasDeletedBeforeTheWrite() {
+      repository.deleteProfile(viewer.profileId());
+      var wanted =
+          ProfileLanguagePreferences.builder().audioLanguages(List.of(Language.JA)).build();
+
+      assertThatThrownBy(() -> service.setProfilePreferences(viewer, wanted))
+          .isInstanceOf(ProfileRequiredException.class);
     }
 
     @Test

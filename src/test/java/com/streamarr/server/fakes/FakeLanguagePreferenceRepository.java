@@ -15,13 +15,15 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Keeps preferences and overrides in memory. Every Profile id exists, with default preferences
- * until set. Lineages come from the media fakes, as the database derives them from its tables.
+ * until set, unless a test deletes it. Lineages come from the media fakes, as the database derives
+ * them from its tables.
  */
 public class FakeLanguagePreferenceRepository implements LanguagePreferenceRepository {
 
@@ -29,6 +31,7 @@ public class FakeLanguagePreferenceRepository implements LanguagePreferenceRepos
       new ConcurrentHashMap<>();
   private final Map<OverrideKey, LanguageOverride> overrides = new ConcurrentHashMap<>();
   private final AtomicInteger overrideReads = new AtomicInteger();
+  private final Set<UUID> deletedProfiles = ConcurrentHashMap.newKeySet();
   private final FakeMovieRepository movies;
   private final FakeSeriesRepository series;
   private final FakeSeasonRepository seasons;
@@ -47,6 +50,11 @@ public class FakeLanguagePreferenceRepository implements LanguagePreferenceRepos
 
   private record OverrideKey(UUID profileId, UUID titleId) {}
 
+  public void deleteProfile(UUID profileId) {
+    deletedProfiles.add(profileId);
+    profilePreferences.remove(profileId);
+  }
+
   /** How many reads of overrides the repository has served, each for any number of titles. */
   public int overrideReads() {
     return overrideReads.get();
@@ -59,12 +67,20 @@ public class FakeLanguagePreferenceRepository implements LanguagePreferenceRepos
 
   @Override
   public Optional<ProfileLanguagePreferences> findProfilePreferences(UUID profileId) {
+    if (deletedProfiles.contains(profileId)) {
+      return Optional.empty();
+    }
+
     return Optional.of(
         profilePreferences.getOrDefault(profileId, ProfileLanguagePreferences.defaults()));
   }
 
   @Override
   public boolean trySetProfilePreferences(UUID profileId, ProfileLanguagePreferences preferences) {
+    if (deletedProfiles.contains(profileId)) {
+      return false;
+    }
+
     profilePreferences.put(profileId, preferences);
     return true;
   }
