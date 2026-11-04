@@ -5,6 +5,7 @@ import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.default
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -106,6 +107,7 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.nio.file.spi.FileSystemProvider;
 import java.sql.SQLException;
 import java.time.Duration;
@@ -354,6 +356,28 @@ class LibraryManagementServiceTest {
         .isEmpty();
   }
 
+  @Test
+  @DisplayName(
+      "Should create no media file when the file watcher discovers a file in a folder that cannot"
+          + " be searched")
+  void shouldCreateNoMediaFileWhenTheFileWatcherDiscoversAFileInAFolderThatCannotBeSearched(
+      @TempDir Path media) throws IOException {
+    var libraryFolder = placeTheLibraryIn(Files.createDirectory(media.resolve("library")));
+    var locked = Files.createDirectory(libraryFolder.resolve("Locked (2002)"));
+    var file = Files.createFile(locked.resolve("Locked (2002).mkv"));
+    Files.setPosixFilePermissions(locked, Set.of());
+    try {
+      assumeFalse(Files.isReadable(locked), "folder permissions apply to the test user");
+
+      serviceWith(FileSystems.getDefault()).processDiscoveredFile(savedLibraryId, file);
+    } finally {
+      Files.setPosixFilePermissions(locked, PosixFilePermissions.fromString("rwx------"));
+    }
+
+    assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(file)))
+        .isEmpty();
+  }
+
   private Path placeTheLibraryIn(Path libraryFolder) {
     var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
     library.setFilepathUri(FilepathCodec.encode(libraryFolder));
@@ -386,7 +410,7 @@ class LibraryManagementServiceTest {
 
   @Test
   @DisplayName("Should search with external ID from filepath URI when stored filename is mangled")
-  void shouldSearchWithExternalIdFromFilepathUriWhenStoredFilenameIsMangled() {
+  void shouldSearchWithExternalIdFromFilepathUriWhenStoredFilenameIsMangled() throws IOException {
     var expectedSearch =
         VideoFileParserResult.builder()
             .title("Iron Harbor")
@@ -404,17 +428,18 @@ class LibraryManagementServiceTest {
     metadataProvider.willReturnSearchResultFor(expectedSearch, searchResult);
     var service =
         libraryManagementServiceWith(movieFileProcessorWith(metadataProvider), seriesFileProcessor);
-    var filepathUri =
-        "file:///library/Iron%20Harbor%20(2010)/"
-            + "Iron%20Harbor%20(2010)%20%5Bimdb-tt7654321%5D.mkv";
+    var moviePath =
+        createMovieFile(
+            createRootLibraryDirectory(),
+            "Iron Harbor (2010)",
+            "Iron Harbor (2010) [imdb-tt7654321].mkv");
     fakeMediaFileRepository.save(
         MediaFile.builder()
             .libraryId(savedLibraryId)
-            .filepathUri(filepathUri)
+            .filepathUri(FilepathCodec.encode(moviePath))
             .filename("legacy-mangled-name.mkv")
             .status(MediaFileStatus.UNMATCHED)
             .build());
-    var moviePath = Path.of(URI.create(filepathUri));
 
     service.processDiscoveredFile(savedLibraryId, moviePath);
 

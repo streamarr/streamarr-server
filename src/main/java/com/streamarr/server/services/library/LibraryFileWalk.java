@@ -130,11 +130,12 @@ public class LibraryFileWalk {
 
   /**
    * Matches a file that the file watcher discovered, and waits for nothing. A soft link, a file
-   * that the library folder reaches through a soft link, a file with an unsupported extension, a
-   * file of another library and a file that was already matched are left as they are.
+   * that the library folder reaches through a soft link, a file whose path cannot be read, a file
+   * with an unsupported extension, a file of another library and a file that was already matched
+   * are left as they are.
    */
   public void processDiscoveredFile(Library library, Path path) {
-    if (hasSoftLinkOnPath(library, path) || !keepSupportedOrWarn(path)) {
+    if (isSkippedByScans(library, path) || !keepSupportedOrWarn(path)) {
       return;
     }
 
@@ -143,11 +144,16 @@ public class LibraryFileWalk {
     }
   }
 
-  // A scan never walks through a soft link, so the watcher skips the same files: the file itself
-  // and every folder from the library folder down to it must not be soft links.
-  private boolean hasSoftLinkOnPath(Library library, Path path) {
+  // A scan never walks through a soft link and skips an entry it cannot read, so the watcher skips
+  // the same files: the file itself and every folder from the library folder down to it must be
+  // readable and must not be soft links.
+  private boolean isSkippedByScans(Library library, Path path) {
     var libraryFolder = FilepathCodec.decode(fileSystem, library.getFilepathUri());
-    return FilepathSoftLinks.hasSoftLinkFrom(libraryFolder, path);
+    try {
+      return FilepathSoftLinks.hasSoftLinkFrom(libraryFolder, path);
+    } catch (IOException _) {
+      return true;
+    }
   }
 
   // Reads the entry itself, never a soft link's target, and skips an entry whose attributes cannot
