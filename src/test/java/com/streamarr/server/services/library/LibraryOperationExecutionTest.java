@@ -119,6 +119,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -1463,6 +1464,26 @@ class LibraryOperationExecutionTest {
     }
 
     @Test
+    @DisplayName(
+        "Should keep a soft link's filepath when the folder it points at disappears between scans")
+    void shouldKeepASoftLinksFilepathWhenTheFolderItPointsAtDisappearsBetweenScans()
+        throws Exception {
+      var target = Files.createDirectory(elsewhere.resolve("Folder (2003)"));
+      Files.createSymbolicLink(libraryFolder.resolve("Folder (2003)"), target);
+      scan();
+      var firstScan = skippedFiles.skippedFilesOf(savedLibraryId);
+      Files.delete(target);
+
+      scan();
+
+      assertThat(skippedFiles.skippedFilesOf(savedLibraryId))
+          .extracting(SkippedFile::filepathUri)
+          .containsExactlyElementsOf(firstScan.stream().map(SkippedFile::filepathUri).toList())
+          .singleElement(InstanceOfAssertFactories.STRING)
+          .doesNotEndWith("/");
+    }
+
+    @Test
     @DisplayName("Should save no further skipped file when a stop is stored while one is saved")
     void shouldSaveNoFurtherSkippedFileWhenAStopIsStoredWhileOneIsSaved() throws Exception {
       var target = Files.createFile(elsewhere.resolve("Linked (2002).mkv"));
@@ -1508,7 +1529,7 @@ class LibraryOperationExecutionTest {
       return SkippedFile.builder()
           .libraryId(savedLibraryId)
           .libraryOperationId(scanId)
-          .filepathUri(FilepathCodec.encode(link))
+          .filepathUri(FilepathCodec.encodeEntry(link))
           .reason(SkippedFileReason.SOFT_LINK)
           .build();
     }

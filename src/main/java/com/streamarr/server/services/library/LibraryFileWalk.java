@@ -192,7 +192,7 @@ public class LibraryFileWalk {
             SkippedFile.builder()
                 .libraryId(library.getId())
                 .libraryOperationId(libraryOperationId)
-                .filepathUri(FilepathCodec.encode(path))
+                .filepathUri(FilepathCodec.encodeEntry(path))
                 .reason(SkippedFileReason.SOFT_LINK)
                 .build());
         yield Optional.empty();

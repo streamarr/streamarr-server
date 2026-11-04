@@ -75,7 +75,7 @@ class LibraryScanSoftLinkIT extends AbstractIntegrationTest {
         .extracting(SkippedFileRecord::getFilepathUri, SkippedFileRecord::getReason)
         .containsExactlyInAnyOrder(
             tuple(FilepathCodec.encode(fileLink), SkippedFileReason.SOFT_LINK),
-            tuple(FilepathCodec.encode(folderLink), SkippedFileReason.SOFT_LINK));
+            tuple(FilepathCodec.encodeEntry(folderLink), SkippedFileReason.SOFT_LINK));
     assertThat(mediaFileRepository.findByLibraryId(library.getId())).isEmpty();
     assertThat(statusOfLibrary()).isEqualTo(LibraryStatus.HEALTHY);
   }
