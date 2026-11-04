@@ -44,8 +44,8 @@ public final class DirectPlaySource implements AutoCloseable {
   }
 
   /**
-   * A stream over the opened file from its first byte. Each stream keeps its own position, and
-   * closing one leaves the file open for the next.
+   * A stream over the opened file from its first byte to its length at open. Each stream keeps its
+   * own position, and closing one leaves the file open for the next.
    */
   public InputStream newInputStream() {
     return new SourceInputStream();
@@ -97,7 +97,14 @@ public final class DirectPlaySource implements AutoCloseable {
         return 0;
       }
 
-      var read = DirectPlaySource.this.read(ByteBuffer.wrap(target, offset, count), position);
+      // An answer's length is the file's length at open, so bytes appended later stay unread.
+      var remaining = length - position;
+      if (remaining <= 0) {
+        return -1;
+      }
+
+      var wanted = (int) Math.min(count, remaining);
+      var read = DirectPlaySource.this.read(ByteBuffer.wrap(target, offset, wanted), position);
       if (read > 0) {
         position += read;
       }

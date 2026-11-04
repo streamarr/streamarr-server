@@ -13,6 +13,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -92,6 +93,33 @@ class DirectPlaySourceServiceTest {
       Files.createSymbolicLink(show, otherShow);
 
       assertThat(source.newInputStream().readAllBytes()).containsExactly(1, 2, 3);
+    }
+  }
+
+  @Test
+  @DisplayName("Should end each stream at the length the file had when it opened")
+  void shouldEndEachStreamAtTheLengthTheFileHadWhenItOpened() throws IOException {
+    var session = directPlaySessionBuilder().sourcePath(sourceFile).build();
+    streamingService.addSession(session);
+
+    try (var source = open(session).orElseThrow()) {
+      Files.write(sourceFile, new byte[] {4, 5}, StandardOpenOption.APPEND);
+
+      assertThat(source.newInputStream().readAllBytes()).containsExactly(1, 2, 3);
+    }
+  }
+
+  @Test
+  @DisplayName("Should read one byte at a time until the end when a reader asks for single bytes")
+  void shouldReadOneByteAtATimeUntilTheEndWhenReaderAsksForSingleBytes() throws IOException {
+    var session = directPlaySessionBuilder().sourcePath(sourceFile).build();
+    streamingService.addSession(session);
+
+    try (var source = open(session).orElseThrow()) {
+      var stream = source.newInputStream();
+
+      assertThat(new int[] {stream.read(), stream.read(), stream.read(), stream.read()})
+          .containsExactly(1, 2, 3, -1);
     }
   }
 
