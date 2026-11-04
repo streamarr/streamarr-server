@@ -14,7 +14,10 @@ import lombok.NonNull;
  * codec profile, codec level or codec tier. {@code decodedSize} is the size of the frames that a
  * decoder outputs, before the container's cropping and the rotation, because decoder limits bound
  * decoded frames. It is empty when the probe could not read a width or a height. {@code frameRate}
- * is the rate at which the copied frames run, empty when the frame-rate rule refused one.
+ * is the rate at which the copied frames run, empty when the frame-rate rule refused one. {@code
+ * maximumFrameRate} is the highest rate at which the stream presents pictures anywhere in the file.
+ * It is empty when the probe stores no maximum, which holds for every outcome until
+ * streamarr/streamarr-server#652. {@code frameRate} is never a maximum.
  */
 @Builder(toBuilder = true)
 public record VideoStreamCopy(
@@ -23,6 +26,7 @@ public record VideoStreamCopy(
     @NonNull OptionalInt bitDepth,
     @NonNull Optional<PictureSize> decodedSize,
     @NonNull OptionalDouble frameRate,
+    @NonNull Optional<Fraction> maximumFrameRate,
     @NonNull VideoDynamicRange dynamicRange) {
 
   // ADR 0037's frame-rate rule snaps the rate that the source's frames run at to a listed rate,
@@ -47,6 +51,7 @@ public record VideoStreamCopy(
                     .bitDepth(facts.bitDepth())
                     .decodedSize(decodedSize(source))
                     .frameRate(frameRate(facts.frameRateRule()))
+                    .maximumFrameRate(Optional.empty())
                     .dynamicRange(facts.dynamicRange())
                     .build());
   }
