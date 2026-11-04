@@ -132,6 +132,16 @@ class TranscodeDecisionDolbyVisionCopyTest {
                 Optional.of(new DolbyVisionOutput(DolbyVisionProfile.PROFILE_8_1, SOURCE_LEVEL)),
                 VideoRange.PQ)),
         Arguments.of(
+            "Profile 8 with compatibility identifier 6 to a client that declares profile 8.1",
+            hevc(profile8(CompatibleBase.PQ, 6)),
+            Clients.dolbyVision(13),
+            keepingDolbyVision(DolbyVisionProfile.PROFILE_8_1, VideoRange.PQ)),
+        Arguments.of(
+            "Profile 8 with compatibility identifier 6 to a client that declares only PQ",
+            hevc(profile8(CompatibleBase.PQ, 6)),
+            Clients.baseOnly(false),
+            strippingDolbyVision(VideoRange.PQ)),
+        Arguments.of(
             "Profile 8.1 above the client's maximum level",
             hevc(profile8(CompatibleBase.PQ, 1)),
             Clients.dolbyVision(SOURCE_LEVEL - 1),
