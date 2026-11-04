@@ -12,6 +12,7 @@ import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
+import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -75,6 +76,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final AtomicReference<WorkerChange> workerChangeAroundNextVerifiedFamiliesRead =
       new AtomicReference<>();
   private volatile List<WorkerVerifiedCodecFamilies> listedWorkers;
+  private volatile List<WorkerVideoCopySupport> videoCopySupport = List.of();
   private volatile boolean failUntargetedStarts;
 
   @Override
@@ -539,6 +541,16 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   /** Lists these connected workers in place of the one worker that the encode slots describe. */
   public void setVerifiedVideoCodecFamiliesByWorker(List<WorkerVerifiedCodecFamilies> workers) {
     listedWorkers = List.copyOf(workers);
+  }
+
+  /** Lists what each connected worker delivers beyond passing a copy through; none by default. */
+  public void setVideoCopySupportByWorker(List<WorkerVideoCopySupport> support) {
+    videoCopySupport = List.copyOf(support);
+  }
+
+  @Override
+  public List<WorkerVideoCopySupport> videoCopySupportByWorker() {
+    return videoCopySupport;
   }
 
   /** Changes the connected workers just before and just after the next verified families read. */

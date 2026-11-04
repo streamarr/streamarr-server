@@ -61,7 +61,9 @@ public class ProbeFixture {
         .codecString(facts.flatMap(VideoPlaybackFacts::codecString))
         .rotationDegrees(facts.map(VideoPlaybackFacts::rotationDegrees).orElse(OptionalInt.empty()))
         .containerCropping(facts.flatMap(VideoPlaybackFacts::containerCropping))
-        .videoProperties(facts.flatMap(VideoPlaybackFacts::videoProperties));
+        .videoProperties(facts.flatMap(VideoPlaybackFacts::videoProperties))
+        .masteringDisplay(facts.flatMap(VideoPlaybackFacts::masteringDisplay))
+        .contentLightLevel(facts.flatMap(VideoPlaybackFacts::contentLightLevel));
   }
 
   /**

@@ -3,14 +3,15 @@ package com.streamarr.server.services.streaming;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
-import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.EncodedVideoOutput;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.PlannedVideoOutput;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.VideoEncodeDecision;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
+import com.streamarr.server.domain.streaming.VideoRange;
 import com.streamarr.server.domain.streaming.VideoStreamCopy;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import java.math.BigDecimal;
@@ -196,9 +197,8 @@ public class HlsPlaylistService {
 
   // A copy writes the frame rate that the copy match checks against the entry for a probe version
   // 5 outcome. The probe measures no maximum until #652, so a variable-rate source can briefly run
-  // faster. AVPlayer drops a PQ or HLG variant without FRAME-RATE. A copy whose frame rate the rule
-  // refused writes none: every copy announces SDR until #396, and AVPlayer accepts an SDR variant
-  // without it.
+  // faster. A copy whose frame rate the rule refused writes none, even when it announces PQ or HLG:
+  // no encode can replace it (#446), and players other than AVPlayer may play it (ADR 0013).
   private static void appendCopiedFrameRate(StringBuilder sb, MediaProbe probe) {
     var frameRate =
         VideoStreamCopy.of(probe).map(VideoStreamCopy::frameRate).orElseGet(OptionalDouble::empty);
@@ -216,19 +216,21 @@ public class HlsPlaylistService {
     sb.append(",FRAME-RATE=").append(frameRate.toPlainString());
   }
 
-  // A copy of a Dolby Vision source with an SDR compatible base declares its SDR base layer
-  // explicitly and announces no Dolby Vision (ADR 0013, ADR 0036).
+  // The playlist announces the planned output's range (ADR 0013). A copy that keeps Dolby Vision
+  // under an SDR compatible base declares its SDR base layer explicitly and announces no Dolby
+  // Vision (ADR 0036). Every other SDR output announces none, which HLS reads as SDR.
   private static void appendVideoRange(StringBuilder sb, StreamSession session) {
     var decision = session.getTranscodeDecision();
-    var copiesDolbyVisionWithSdrBase =
-        decision.transcodeMode().copiesVideo()
-            && decision
-                .videoSource()
-                .map(VideoPlaybackFacts::dynamicRange)
-                .filter(range -> range.compatibleBase() == CompatibleBase.SDR)
-                .filter(range -> range.dolbyVision() instanceof DolbyVision.Present)
-                .isPresent();
-    if (copiesDolbyVisionWithSdrBase) {
+    var range = decision.videoRange();
+    if (range != VideoRange.SDR) {
+      sb.append(",VIDEO-RANGE=").append(range.name());
+      return;
+    }
+
+    var keepsDolbyVision =
+        decision.plannedVideoOutput() instanceof PlannedVideoOutput.StreamCopy copy
+            && copy.dynamicRange().dolbyVision() instanceof DolbyVision.Present;
+    if (keepsDolbyVision) {
       sb.append(",VIDEO-RANGE=SDR");
     }
   }

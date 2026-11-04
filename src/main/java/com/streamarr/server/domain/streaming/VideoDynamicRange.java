@@ -1,6 +1,7 @@
 package com.streamarr.server.domain.streaming;
 
 import com.streamarr.server.exceptions.ContradictoryDynamicRangeException;
+import java.util.Collection;
 import lombok.NonNull;
 
 /**
@@ -23,6 +24,25 @@ public record VideoDynamicRange(
       throw new ContradictoryDynamicRangeException(
           "A dynamic range without Dolby Vision cannot lack a compatible base");
     }
+  }
+
+  /**
+   * The range that a stream copy of this range delivers after the bitstream rewrites (ADR 0036).
+   * Stripping Dolby Vision from a range without a compatible base throws, because the server never
+   * strips profiles 5 and 10.0.
+   */
+  public VideoDynamicRange afterRewrites(@NonNull Collection<BitstreamRewrite> rewrites) {
+    var hdr10PlusAfter = hdr10Plus;
+    if (rewrites.contains(BitstreamRewrite.STRIP_HDR10_PLUS)) {
+      hdr10PlusAfter = Presence.ABSENT;
+    }
+
+    var dolbyVisionAfter = dolbyVision;
+    if (rewrites.contains(BitstreamRewrite.STRIP_DOLBY_VISION)) {
+      dolbyVisionAfter = new DolbyVision.Absent();
+    }
+
+    return new VideoDynamicRange(compatibleBase, hdr10PlusAfter, dolbyVisionAfter);
   }
 
   /** SDR without HDR10+ or Dolby Vision. */

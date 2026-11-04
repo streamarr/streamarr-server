@@ -15,6 +15,7 @@ import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.ProbeCapacity;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
+import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
@@ -39,6 +40,7 @@ import com.streamarr.transcode.v1.TranscodeDecision;
 import com.streamarr.transcode.v1.TranscodeMode;
 import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
+import com.streamarr.transcode.v1.VideoCopyFeature;
 import com.streamarr.transcode.v1.VideoDecision;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
@@ -521,6 +523,10 @@ final class LiveWorkerConnectionRegistry {
                 new WorkerVerifiedCodecFamilies(
                     entry.getKey(), entry.getValue().countedEncoders.keySet()))
         .toList();
+  }
+
+  List<WorkerVideoCopySupport> videoCopySupportByWorker(UUID sourceNamespaceId) {
+    return connectionsFor(sourceNamespaceId).map(WorkerConnection::videoCopySupport).toList();
   }
 
   boolean hasProbeWorker(UUID sourceNamespaceId, int probeVersion) {
@@ -1082,6 +1088,20 @@ final class LiveWorkerConnectionRegistry {
       return (!encodesVideo(decision) || encoderFor(decision).isPresent())
           && canEncodeAudioLayout(decision)
           && canDeliverVideoAsPlanned(decision.getVideo());
+    }
+
+    // A rewrite that the server's domain does not name yet, such as the profile 7 conversion, is
+    // one that no decision lists.
+    private WorkerVideoCopySupport videoCopySupport() {
+      return WorkerVideoCopySupport.builder()
+          .plannedOutput(
+              videoCopyFeatures.contains(VideoCopyFeature.VIDEO_COPY_FEATURE_PLANNED_OUTPUT_VALUE))
+          .bitstreamRewrites(
+              bitstreamRewrites.stream()
+                  .map(RemoteBitstreamRewriteMapper::fromProto)
+                  .flatMap(Optional::stream)
+                  .collect(Collectors.toUnmodifiableSet()))
+          .build();
     }
 
     private boolean canDeliverVideoAsPlanned(VideoDecision video) {

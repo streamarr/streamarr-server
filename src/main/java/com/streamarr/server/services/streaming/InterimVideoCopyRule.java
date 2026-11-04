@@ -1,7 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
-import com.streamarr.server.domain.streaming.CompatibleBase;
+import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.MediaFileProbePropertyIssue;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import java.util.Optional;
@@ -9,8 +9,11 @@ import java.util.OptionalInt;
 import java.util.Set;
 
 /**
- * The copy rule that holds until the playlist can describe HDR copies (ADR 0013,
- * streamarr/streamarr-server#396). A source that the rule refuses is encoded to 8-bit SDR.
+ * The copy rule that still holds for what the playlist cannot describe yet (ADR 0013,
+ * streamarr/streamarr-server#396). A PQ or HLG source without Dolby Vision that probe version 5 or
+ * later described may be copied, and its capability entry decides whether the client accepts it. A
+ * PQ, HLG or missing base with Dolby Vision, and any HDR base of an earlier probe version, is
+ * refused. A source that the rule refuses is encoded to 8-bit SDR.
  */
 final class InterimVideoCopyRule {
 
@@ -22,7 +25,7 @@ final class InterimVideoCopyRule {
 
   static boolean permitsCopy(String videoCodec, VideoPlaybackFacts facts) {
     var range = facts.dynamicRange();
-    return isSdrOrUnspecified(range.compatibleBase())
+    return isCopyableDynamicRange(facts)
         && MediaFileProbePropertyIssue.foundIn(range).stream()
             .noneMatch(MediaFileProbePropertyIssue::rulesOutCopy)
         && isCopyableBitDepthAndChroma(videoCodec, facts)
@@ -39,8 +42,17 @@ final class InterimVideoCopyRule {
         .orElse(false);
   }
 
-  private static boolean isSdrOrUnspecified(CompatibleBase base) {
-    return base == CompatibleBase.SDR || base == CompatibleBase.UNSPECIFIED;
+  // A probe version 4 outcome reports no codec profile for an entry to check, so it keeps that
+  // version's decision until the file's probe version 5 outcome is stored (ADR 0032).
+  private static boolean isCopyableDynamicRange(VideoPlaybackFacts facts) {
+    var range = facts.dynamicRange();
+    return switch (range.compatibleBase()) {
+      case SDR, UNSPECIFIED -> true;
+      case PQ, HLG ->
+          facts.videoProperties().isPresent()
+              && !(range.dolbyVision() instanceof DolbyVision.Present);
+      case NONE -> false;
+    };
   }
 
   // Clients that declare nothing play only 8-bit 4:2:0 H.264 (streamarr/streamarr-server#395).

@@ -22,11 +22,15 @@ import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.exceptions.UnsupportedVideoEncodeException;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
+import com.streamarr.transcode.v1.BitstreamRewrite;
+import com.streamarr.transcode.v1.ChromaticityCoordinates;
 import com.streamarr.transcode.v1.CompatibleBase;
 import com.streamarr.transcode.v1.ContainerFormat;
+import com.streamarr.transcode.v1.ContentLightLevel;
 import com.streamarr.transcode.v1.DolbyVisionAbsent;
 import com.streamarr.transcode.v1.DolbyVisionConfiguration;
 import com.streamarr.transcode.v1.DolbyVisionPresent;
+import com.streamarr.transcode.v1.MasteringDisplayColorVolume;
 import com.streamarr.transcode.v1.Presence;
 import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.VideoCodecProfile;
@@ -35,6 +39,7 @@ import com.streamarr.transcode.v1.VideoDynamicRange;
 import com.streamarr.transcode.v1.VideoMode;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.UUID;
@@ -580,6 +585,135 @@ class RemoteVariantJobMapperTest {
             .getVideo();
 
     assertThat(video.hasOutputDynamicRange()).isFalse();
+  }
+
+  // ADR 0036: the worker writes each static HDR value that the probe holds into a PQ copy's hvcC
+  // record, in the unit of its SEI field.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @Test
+  @DisplayName("Should send the probed static HDR values when the copy's output is PQ")
+  void shouldSendTheProbedStaticHdrValuesWhenTheCopysOutputIsPq() {
+    var video =
+        mapper
+            .map(copyWithStaticHdrValues(com.streamarr.server.domain.streaming.CompatibleBase.PQ))
+            .getDecision()
+            .getVideo();
+
+    assertThat(video.getMasteringDisplay())
+        .isEqualTo(
+            MasteringDisplayColorVolume.newBuilder()
+                .setRed(ChromaticityCoordinates.newBuilder().setX(34_000).setY(16_000))
+                .setGreen(ChromaticityCoordinates.newBuilder().setX(13_250).setY(34_500))
+                .setBlue(ChromaticityCoordinates.newBuilder().setX(7_500).setY(3_000))
+                .setWhitePoint(ChromaticityCoordinates.newBuilder().setX(15_635).setY(16_450))
+                .setMaxLuminance(10_000_000)
+                .setMinLuminance(50)
+                .build());
+    assertThat(video.getContentLightLevel())
+        .isEqualTo(
+            ContentLightLevel.newBuilder()
+                .setMaxContentLightLevel(1_000)
+                .setMaxFrameAverageLightLevel(400)
+                .build());
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @Test
+  @DisplayName("Should send no static HDR value when the copy's output is HLG")
+  void shouldSendNoStaticHdrValueWhenTheCopysOutputIsHlg() {
+    var video =
+        mapper
+            .map(copyWithStaticHdrValues(com.streamarr.server.domain.streaming.CompatibleBase.HLG))
+            .getDecision()
+            .getVideo();
+
+    assertThat(video.hasMasteringDisplay()).isFalse();
+    assertThat(video.hasContentLightLevel()).isFalse();
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @Test
+  @DisplayName("Should send no static HDR value when the probe stored none for a PQ copy")
+  void shouldSendNoStaticHdrValueWhenTheProbeStoredNoneForAPqCopy() {
+    var video =
+        mapper
+            .map(
+                copyOf(
+                    VideoPlaybackFactsFixture.rangeWithoutEnhancement(
+                        com.streamarr.server.domain.streaming.CompatibleBase.PQ)))
+            .getDecision()
+            .getVideo();
+
+    assertThat(video.hasMasteringDisplay()).isFalse();
+    assertThat(video.hasContentLightLevel()).isFalse();
+  }
+
+  // ADR 0036: the job lists every rewrite of a copy, and the planned range describes the output
+  // after them.
+  @Test
+  @DisplayName(
+      "Should send the rewrite and a range without HDR10+ when the copy strips HDR10+ from its"
+          + " source")
+  void shouldSendTheRewriteAndARangeWithoutHdr10PlusWhenTheCopyStripsHdr10PlusFromItsSource() {
+    var video = mapper.map(hdr10PlusCopyWithHdr10PlusStripped()).getDecision().getVideo();
+
+    assertThat(video.getBitstreamRewritesList())
+        .containsExactly(BitstreamRewrite.BITSTREAM_REWRITE_STRIP_HDR10_PLUS);
+    assertThat(video.getOutputDynamicRange().getHdr10Plus()).isEqualTo(Presence.PRESENCE_ABSENT);
+  }
+
+  // Slot counts and execution targets read this projection, so it carries every field that decides
+  // which workers can run the job.
+  @Test
+  @DisplayName("Should project the copy's rewrites when the copy strips HDR10+ from its source")
+  void shouldProjectTheCopysRewritesWhenTheCopyStripsHdr10PlusFromItsSource() {
+    var video =
+        RemoteVariantJobMapper.decision(hdr10PlusCopyWithHdr10PlusStripped().transcodeDecision())
+            .getVideo();
+
+    assertThat(video.getBitstreamRewritesList())
+        .containsExactly(BitstreamRewrite.BITSTREAM_REWRITE_STRIP_HDR10_PLUS);
+    assertThat(video.hasOutputDynamicRange()).isTrue();
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static TranscodeRequest hdr10PlusCopyWithHdr10PlusStripped() {
+    return copyAttempt()
+        .transcodeDecision(
+            copyDecisionBuilder()
+                .videoSource(
+                    Optional.of(
+                        VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                            .dynamicRange(
+                                new com.streamarr.server.domain.streaming.VideoDynamicRange(
+                                    com.streamarr.server.domain.streaming.CompatibleBase.PQ,
+                                    com.streamarr.server.domain.streaming.Presence.PRESENT,
+                                    new DolbyVision.Absent()))
+                            .build()))
+                .videoBitstreamRewrites(
+                    List.of(
+                        com.streamarr.server.domain.streaming.BitstreamRewrite.STRIP_HDR10_PLUS))
+                .build())
+        .build();
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static TranscodeRequest copyWithStaticHdrValues(
+      com.streamarr.server.domain.streaming.CompatibleBase base) {
+    return copyAttempt()
+        .transcodeDecision(
+            copyDecisionBuilder()
+                .videoSource(
+                    Optional.of(
+                        VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                            .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(base))
+                            .masteringDisplay(
+                                Optional.of(VideoPlaybackFactsFixture.MASTERING_DISPLAY))
+                            .contentLightLevel(
+                                Optional.of(VideoPlaybackFactsFixture.CONTENT_LIGHT_LEVEL))
+                            .build()))
+                .build())
+        .build();
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")

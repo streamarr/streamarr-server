@@ -88,6 +88,8 @@ public sealed interface ProbeOutcome {
                           .containerCropping(video.containerCropping())
                           .frameRateRule(chosen.frameRateRule())
                           .videoProperties(video.videoProperties())
+                          .masteringDisplay(video.masteringDisplay())
+                          .contentLightLevel(video.contentLightLevel())
                           .build()))
           .build();
     }

@@ -21,6 +21,7 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioCapabilityEntry;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DolbyVision;
@@ -57,6 +58,7 @@ import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -1733,8 +1735,9 @@ class TranscodeDecisionServiceTest {
 
   @Test
   @DisplayName(
-      "Should encode a Dolby Vision 8.1 source when an entry accepts it until HDR copies return")
-  void shouldEncodeADolbyVision81SourceWhenAnEntryAcceptsItUntilHdrCopiesReturn() {
+      "Should encode a Dolby Vision 8.1 source when an entry accepts it until Dolby Vision copies"
+          + " exist")
+  void shouldEncodeADolbyVision81SourceWhenAnEntryAcceptsItUntilDolbyVisionCopiesExist() {
     var profile81 =
         new VideoDynamicRange(
             CompatibleBase.PQ,
@@ -1792,6 +1795,13 @@ class TranscodeDecisionServiceTest {
                     .source(source)
                     .capabilityDeclaration(declaration)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .videoCopySupport(
+                        List.of(
+                            WorkerVideoCopySupport.builder()
+                                .plannedOutput(true)
+                                .bitstreamRewrites(
+                                    Set.copyOf(EnumSet.allOf(BitstreamRewrite.class)))
+                                .build()))
                     .build())
             .orElseThrow();
 

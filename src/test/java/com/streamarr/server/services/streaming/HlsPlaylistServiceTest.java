@@ -10,6 +10,7 @@ import static org.assertj.core.api.Assertions.within;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
@@ -56,6 +57,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -759,6 +761,58 @@ class HlsPlaylistServiceTest {
                       .doesNotContain("SUPPLEMENTAL-CODECS"));
     }
 
+    @ParameterizedTest
+    @EnumSource(
+        value = CompatibleBase.class,
+        names = {"PQ", "HLG"})
+    @DisplayName("Should declare the copy's PQ or HLG video range when the session copies it")
+    void shouldDeclareTheCopysPqOrHlgVideoRangeWhenTheSessionCopiesIt(CompatibleBase base) {
+      var session =
+          copySession(
+              VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                  .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(base))
+                  .codecString(Optional.of("hvc1.2.4.L150.B0")));
+
+      var streamInf =
+          service
+              .generateMultivariantPlaylist(session, "test-token")
+              .lines()
+              .filter(line -> line.startsWith("#EXT-X-STREAM-INF:"))
+              .toList();
+
+      assertThat(streamInf)
+          .singleElement()
+          .satisfies(
+              line ->
+                  assertThat(line)
+                      .contains("CODECS=\"hvc1.2.4.L150.B0,mp4a.40.2\"")
+                      .contains(",VIDEO-RANGE=" + base.name())
+                      .doesNotContain("SUPPLEMENTAL-CODECS"));
+    }
+
+    // Every encode is SDR until the server encodes HDR (#397), whatever the source's range.
+    @Test
+    @DisplayName("Should leave the video range out when the session encodes a PQ source")
+    void shouldLeaveTheVideoRangeOutWhenTheSessionEncodesAPqSource() {
+      var pqSource =
+          VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+              .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ))
+              .build();
+      var decision =
+          encodedDecision("h264", new Fraction(24, 1)).toBuilder()
+              .videoSource(Optional.of(pqSource))
+              .build();
+      var session =
+          StreamSessionFixture.defaultSessionBuilder()
+              .transcodeDecision(decision)
+              .variants(List.of(defaultVariantAt(1920, 1080).build()))
+              .build();
+
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
+
+      assertThat(playlist).contains("#EXT-X-STREAM-INF:").doesNotContain("VIDEO-RANGE");
+    }
+
     @Test
     @DisplayName(
         "Should leave the video range out when the session copies a source without Dolby Vision")
@@ -1300,6 +1354,28 @@ class HlsPlaylistServiceTest {
       var session = copySessionWithRule(VideoPlaybackFactsFixture.refusedRule());
 
       assertThat(streamInf(session)).singleElement().asString().doesNotContain("FRAME-RATE");
+    }
+
+    // ADR 0013: no encode can replace a copy whose frame rate is unknown (#446), so the HDR copy
+    // still announces its range.
+    @Test
+    @DisplayName(
+        "Should announce the PQ range without a frame rate when the session copies a PQ stream"
+            + " whose frame rate the rule refused")
+    void
+        shouldAnnounceThePqRangeWithoutAFrameRateWhenTheSessionCopiesAPqStreamWhoseFrameRateTheRuleRefused() {
+      var facts =
+          VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+              .streamIndex(0)
+              .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ))
+              .frameRateRule(VideoPlaybackFactsFixture.refusedRule());
+      var session = StreamSessionFixture.copySessionBuilder(probeWithFacts(facts)).build();
+
+      assertThat(streamInf(session))
+          .singleElement()
+          .asString()
+          .contains(",VIDEO-RANGE=PQ")
+          .doesNotContain("FRAME-RATE");
     }
 
     private StreamSession copySessionWithRule(FrameRateRule rule) {

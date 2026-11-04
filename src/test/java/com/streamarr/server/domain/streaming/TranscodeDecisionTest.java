@@ -384,6 +384,102 @@ class TranscodeDecisionTest {
     assertThat(decision.plannedVideoOutput().dynamicRange()).isEqualTo(source);
   }
 
+  // ADR 0036: a copy that strips HDR10+ plans no HDR10+, and the playlist describes the output
+  // after its rewrites.
+  @Test
+  @DisplayName(
+      "Should plan HDR10+ as absent and list the rewrite when the decision copies an HDR10+ source"
+          + " with HDR10+ stripped")
+  void
+      shouldPlanHdr10PlusAsAbsentAndListTheRewriteWhenTheDecisionCopiesAnHdr10PlusSourceWithHdr10PlusStripped() {
+    var decision =
+        decisionBuilder(TranscodeMode.REMUX)
+            .videoSource(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .dynamicRange(
+                            new VideoDynamicRange(
+                                CompatibleBase.PQ, Presence.PRESENT, new DolbyVision.Absent()))
+                        .build()))
+            .videoBitstreamRewrites(List.of(BitstreamRewrite.STRIP_HDR10_PLUS))
+            .build();
+
+    assertThat(decision.plannedVideoOutput())
+        .isInstanceOfSatisfying(
+            PlannedVideoOutput.StreamCopy.class,
+            copy -> {
+              assertThat(copy.dynamicRange())
+                  .isEqualTo(VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ));
+              assertThat(copy.bitstreamRewrites())
+                  .containsExactly(BitstreamRewrite.STRIP_HDR10_PLUS);
+            });
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = TranscodeMode.class,
+      names = {"VIDEO_TRANSCODE", "FULL_TRANSCODE"})
+  @DisplayName("Should refuse a decision that encodes the video when it lists a bitstream rewrite")
+  void shouldRefuseADecisionThatEncodesTheVideoWhenItListsABitstreamRewrite(TranscodeMode mode) {
+    var decision =
+        decisionBuilder(mode)
+            .encodeCodecProfile(Optional.of(EncodeCodecProfile.H264_HIGH))
+            .videoBitstreamRewrites(List.of(BitstreamRewrite.STRIP_HDR10_PLUS));
+
+    assertThatThrownBy(decision::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("bitstream rewrite");
+  }
+
+  // ADR 0036: the worker writes each static HDR value that the probe holds into an HEVC copy with
+  // a PQ output, and never invents one.
+  @Test
+  @DisplayName("Should plan the source's static HDR metadata when the decision copies a PQ source")
+  void shouldPlanTheSourcesStaticHdrMetadataWhenTheDecisionCopiesAPqSource() {
+    var decision =
+        decisionBuilder(TranscodeMode.REMUX)
+            .videoSource(Optional.of(hdrFactsWithStaticMetadata(CompatibleBase.PQ)))
+            .build();
+
+    assertThat(decision.plannedVideoOutput())
+        .isInstanceOfSatisfying(
+            PlannedVideoOutput.StreamCopy.class,
+            copy -> {
+              assertThat(copy.masteringDisplay())
+                  .contains(VideoPlaybackFactsFixture.MASTERING_DISPLAY);
+              assertThat(copy.contentLightLevel())
+                  .contains(VideoPlaybackFactsFixture.CONTENT_LIGHT_LEVEL);
+            });
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = CompatibleBase.class,
+      names = {"HLG", "SDR"})
+  @DisplayName("Should plan no static HDR metadata when the copy's output is not PQ")
+  void shouldPlanNoStaticHdrMetadataWhenTheCopysOutputIsNotPq(CompatibleBase base) {
+    var decision =
+        decisionBuilder(TranscodeMode.REMUX)
+            .videoSource(Optional.of(hdrFactsWithStaticMetadata(base)))
+            .build();
+
+    assertThat(decision.plannedVideoOutput())
+        .isInstanceOfSatisfying(
+            PlannedVideoOutput.StreamCopy.class,
+            copy -> {
+              assertThat(copy.masteringDisplay()).isEmpty();
+              assertThat(copy.contentLightLevel()).isEmpty();
+            });
+  }
+
+  private static VideoPlaybackFacts hdrFactsWithStaticMetadata(CompatibleBase base) {
+    return VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+        .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(base))
+        .masteringDisplay(Optional.of(VideoPlaybackFactsFixture.MASTERING_DISPLAY))
+        .contentLightLevel(Optional.of(VideoPlaybackFactsFixture.CONTENT_LIGHT_LEVEL))
+        .build();
+  }
+
   // Profile 8.1 as probe version 5 reports it after reading the RPUs: a record, an observed first
   // RPU header and an RPU after its own picture.
   private static DolbyVision.Present dolbyVisionProfile81Observed() {

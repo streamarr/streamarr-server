@@ -9,6 +9,7 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.a
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.declarationBuilderFor;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommandBuilder;
@@ -34,6 +35,7 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ChosenVideoStream;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
@@ -41,6 +43,7 @@ import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.Deinterlace;
 import com.streamarr.server.domain.streaming.DeinterlaceOutput;
+import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
@@ -51,6 +54,8 @@ import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PictureSize;
+import com.streamarr.server.domain.streaming.PlannedVideoOutput;
+import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
@@ -67,7 +72,10 @@ import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
+import com.streamarr.server.domain.streaming.VideoCodecTier;
+import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
@@ -3671,6 +3679,135 @@ class HlsStreamingServiceTest {
             .build();
 
     return accepted(createSessionDeclaring(declaration, options));
+  }
+
+  // ADR 0013's third amendment and ADR 0036: an HDR10 copy reaches a client that declares PQ, and
+  // its job carries the probed static values for the worker to write into hvcC.
+  @Test
+  @DisplayName(
+      "Should copy a PQ source with its static HDR values and announce PQ when the client declares"
+          + " PQ and a connected worker lists the planned output")
+  void
+      shouldCopyAPqSourceWithItsStaticHdrValuesAndAnnouncePqWhenTheClientDeclaresPqAndAConnectedWorkerListsThePlannedOutput() {
+    probeResults.setDefaultProbe(hdr10HevcProbe());
+    transcodeExecutor.setVideoCopySupportByWorker(
+        List.of(
+            WorkerVideoCopySupport.builder()
+                .plannedOutput(true)
+                .bitstreamRewrites(Set.of())
+                .build()));
+
+    var session =
+        accepted(createSessionDeclaring(pqDeclaration(), StreamingOptions.builder().build()));
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(request -> request.transcodeDecision().plannedVideoOutput())
+        .isInstanceOfSatisfying(
+            PlannedVideoOutput.StreamCopy.class,
+            copy -> {
+              assertThat(copy.dynamicRange().compatibleBase()).isEqualTo(CompatibleBase.PQ);
+              assertThat(copy.masteringDisplay())
+                  .contains(VideoPlaybackFactsFixture.MASTERING_DISPLAY);
+              assertThat(copy.contentLightLevel())
+                  .contains(VideoPlaybackFactsFixture.CONTENT_LIGHT_LEVEL);
+            });
+    assertThat(
+            new HlsPlaylistService(streamingProperties())
+                .generateMultivariantPlaylist(session, "t"))
+        .contains(",VIDEO-RANGE=PQ");
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode a PQ source when the client declares PQ and no connected worker lists the"
+          + " planned output")
+  void shouldEncodeAPqSourceWhenTheClientDeclaresPqAndNoConnectedWorkerListsThePlannedOutput() {
+    probeResults.setDefaultProbe(hdr10HevcProbe());
+
+    var session =
+        accepted(createSessionDeclaring(pqDeclaration(), StreamingOptions.builder().build()));
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
+    assertThat(
+            new HlsPlaylistService(streamingProperties())
+                .generateMultivariantPlaylist(session, "t"))
+        .doesNotContain("VIDEO-RANGE");
+  }
+
+  // ADR 0036: the job of a copy for a client that declares PQ without HDR10+ lists the strip.
+  @Test
+  @DisplayName(
+      "Should start a copy that strips HDR10+ when the client declares PQ without HDR10+ and a"
+          + " connected worker strips it")
+  void
+      shouldStartACopyThatStripsHdr10PlusWhenTheClientDeclaresPqWithoutHdr10PlusAndAConnectedWorkerStripsIt() {
+    probeResults.setDefaultProbe(hdr10HevcProbe(Presence.PRESENT));
+    transcodeExecutor.setVideoCopySupportByWorker(
+        List.of(
+            WorkerVideoCopySupport.builder()
+                .plannedOutput(true)
+                .bitstreamRewrites(Set.of(BitstreamRewrite.STRIP_HDR10_PLUS))
+                .build()));
+
+    accepted(createSessionDeclaring(pqDeclaration(), StreamingOptions.builder().build()));
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(request -> request.transcodeDecision().plannedVideoOutput())
+        .isInstanceOfSatisfying(
+            PlannedVideoOutput.StreamCopy.class,
+            copy -> {
+              assertThat(copy.bitstreamRewrites())
+                  .containsExactly(BitstreamRewrite.STRIP_HDR10_PLUS);
+              assertThat(copy.dynamicRange().hdr10Plus()).isEqualTo(Presence.ABSENT);
+            });
+  }
+
+  // HEVC with a PQ base beside H.264, and stereo AAC.
+  private static ClientCapabilityDeclaration pqDeclaration() {
+    return declarationBuilderFor(H264)
+        .video(
+            List.of(
+                h264EntryBuilder().build(),
+                hevcEntryBuilder()
+                    .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
+                    .build()))
+        .build();
+  }
+
+  // A 1920x1080 HDR10 HEVC Main 10 source that probe version 5 described, with its mastering
+  // display and content light level.
+  private static MediaProbe hdr10HevcProbe() {
+    return hdr10HevcProbe(Presence.ABSENT);
+  }
+
+  private static MediaProbe hdr10HevcProbe(Presence hdr10Plus) {
+    return defaultProbeBuilder()
+        .videoCodec("hevc")
+        .videoPlaybackFacts(
+            Optional.of(
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                    .streamIndex(0)
+                    .codecFamily(Optional.of(ProbedCodecFamily.HEVC))
+                    .codecString(Optional.of("hvc1.2.4.L150.90"))
+                    .bitDepth(OptionalInt.of(10))
+                    .dynamicRange(
+                        new VideoDynamicRange(
+                            CompatibleBase.PQ, hdr10Plus, new DolbyVision.Absent()))
+                    .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))
+                    .videoProperties(
+                        Optional.of(
+                            VideoStreamProperties.builder()
+                                .codecProfile(Optional.of(VideoCodecProfile.HEVC_MAIN_10))
+                                .codecLevel(OptionalInt.of(50))
+                                .codecTier(Optional.of(VideoCodecTier.MAIN))
+                                .firstFramesRead(true)
+                                .build()))
+                    .masteringDisplay(Optional.of(VideoPlaybackFactsFixture.MASTERING_DISPLAY))
+                    .contentLightLevel(Optional.of(VideoPlaybackFactsFixture.CONTENT_LIGHT_LEVEL))
+                    .build()))
+        .build();
   }
 
   // A 3840x1920 HEVC source at 49 Mb/s whose keyframes open every segment interval, beside a

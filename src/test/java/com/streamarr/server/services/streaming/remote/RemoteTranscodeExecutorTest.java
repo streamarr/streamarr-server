@@ -10,6 +10,7 @@ import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
+import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
@@ -19,6 +20,7 @@ import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
+import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
 import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.VideoCopyFeature;
 import com.streamarr.transcode.v1.WorkerCapabilities;
@@ -26,6 +28,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
 import java.util.Optional;
 import java.util.OptionalDouble;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
@@ -156,6 +159,54 @@ class RemoteTranscodeExecutorTest {
       } finally {
         olderChannel.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
         plannedOutputChannel.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
+      }
+    }
+  }
+
+  // ADR 0036: the decision plans a copy that needs the planned output or a rewrite only when a
+  // connected worker lists them, so the executor reports what each worker lists.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @Test
+  @DisplayName(
+      "Should report each connected worker's planned output and rewrites when the workers register")
+  void shouldReportEachConnectedWorkersPlannedOutputAndRewritesWhenTheWorkersRegister()
+      throws Exception {
+    var strippingWorkerId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    try (var server = server()) {
+      server.start();
+      var olderChannel = plaintextChannelBuilder(server.port(), WORKER_ID).build();
+      var strippingChannel = plaintextChannelBuilder(server.port(), strippingWorkerId).build();
+      try (var olderWorker =
+              LoopbackWorker.register(olderChannel, WORKER_ID, WorkerCapabilities.newBuilder());
+          var strippingWorker =
+              LoopbackWorker.register(
+                  strippingChannel,
+                  strippingWorkerId,
+                  WorkerCapabilities.newBuilder()
+                      .addVideoCopyFeatures(VideoCopyFeature.VIDEO_COPY_FEATURE_PLANNED_OUTPUT)
+                      .addBitstreamRewrites(
+                          com.streamarr.transcode.v1.BitstreamRewrite
+                              .BITSTREAM_REWRITE_STRIP_HDR10_PLUS)
+                      .addBitstreamRewrites(
+                          com.streamarr.transcode.v1.BitstreamRewrite
+                              .BITSTREAM_REWRITE_CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1))) {
+        assertThat(olderWorker.nextResponse().hasSessionAccepted()).isTrue();
+        assertThat(strippingWorker.nextResponse().hasSessionAccepted()).isTrue();
+        var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, SOURCE_ROOT);
+
+        assertThat(executor.videoCopySupportByWorker())
+            .containsExactlyInAnyOrder(
+                WorkerVideoCopySupport.builder()
+                    .plannedOutput(false)
+                    .bitstreamRewrites(Set.of())
+                    .build(),
+                WorkerVideoCopySupport.builder()
+                    .plannedOutput(true)
+                    .bitstreamRewrites(Set.of(BitstreamRewrite.STRIP_HDR10_PLUS))
+                    .build());
+      } finally {
+        olderChannel.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
+        strippingChannel.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
       }
     }
   }

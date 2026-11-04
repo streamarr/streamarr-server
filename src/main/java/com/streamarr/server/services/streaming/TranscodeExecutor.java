@@ -109,4 +109,11 @@ public interface TranscodeExecutor {
    * busy workers.
    */
   Set<String> verifiedHardwareVideoCodecFamilies();
+
+  /**
+   * What each connected, source-accessible worker can deliver beyond passing a copied video stream
+   * through, including busy workers (ADR 0036). A copy that needs more than passing the source
+   * through runs only on a worker that delivers it.
+   */
+  List<WorkerVideoCopySupport> videoCopySupportByWorker();
 }

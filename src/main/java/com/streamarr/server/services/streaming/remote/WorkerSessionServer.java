@@ -7,6 +7,7 @@ import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.ProbeCapacity;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
+import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.VariantJob;
 import io.grpc.ServerInterceptors;
@@ -211,6 +212,12 @@ public final class WorkerSessionServer
       UUID sourceNamespaceId) {
     requireStarted();
     return workerConnections.verifiedVideoCodecFamiliesByWorker(sourceNamespaceId);
+  }
+
+  public synchronized List<WorkerVideoCopySupport> videoCopySupportByWorker(
+      UUID sourceNamespaceId) {
+    requireStarted();
+    return workerConnections.videoCopySupportByWorker(sourceNamespaceId);
   }
 
   /** Whether a connected worker can read the source namespace and probe at the version. */

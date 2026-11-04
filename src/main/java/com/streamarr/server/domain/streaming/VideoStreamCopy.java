@@ -1,5 +1,6 @@
 package com.streamarr.server.domain.streaming;
 
+import java.util.Collection;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
@@ -15,7 +16,7 @@ import lombok.NonNull;
  * decoded frames. It is empty when the probe could not read a width or a height. {@code frameRate}
  * is the rate at which the copied frames run, empty when the frame-rate rule refused one.
  */
-@Builder
+@Builder(toBuilder = true)
 public record VideoStreamCopy(
     @NonNull ProbedCodecFamily codecFamily,
     @NonNull Optional<VideoStreamProperties> videoProperties,
@@ -48,6 +49,11 @@ public record VideoStreamCopy(
                     .frameRate(frameRate(facts.frameRateRule()))
                     .dynamicRange(facts.dynamicRange())
                     .build());
+  }
+
+  /** The copy that the worker delivers after the bitstream rewrites (ADR 0036). */
+  public VideoStreamCopy afterRewrites(@NonNull Collection<BitstreamRewrite> rewrites) {
+    return toBuilder().dynamicRange(dynamicRange.afterRewrites(rewrites)).build();
   }
 
   private static OptionalDouble frameRate(FrameRateRule rule) {
