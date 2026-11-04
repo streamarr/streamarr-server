@@ -1146,6 +1146,50 @@ class ProbeWorkerContractTest {
   }
 
   @Test
+  @DisplayName(
+      "Should carry the sample entry of each video stream that stores one when returning a probe version 7 result")
+  void shouldCarrySampleEntryOfEachVideoStreamThatStoresOneWhenReturningProbeVersion7Result()
+      throws Exception {
+    var dolbyVisionEntry =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(0)
+            .setCodecType("video")
+            .setCodec("hevc")
+            .setSampleEntry("dvh1")
+            .setCodecString("hvc1.2.4.L153.B0");
+    var matroskaVideo = ProbeStreamInfo.newBuilder().setIndex(1).setCodecType("video");
+    var result =
+        probeVersion7Result(
+            ProbeMediaInfo.newBuilder().addStreams(dolbyVisionEntry).addStreams(matroskaVideo));
+
+    var decoded = ProbeAttemptResult.parseFrom(result.toByteArray()).getMedia();
+
+    assertThat(decoded.getStreams(0).getSampleEntry()).isEqualTo("dvh1");
+    assertThat(decoded.getStreams(0).getCodecString()).startsWith("hvc1.");
+    assertThat(decoded.getStreams(1).hasSampleEntry()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep every character of the major brand when returning a probe version 7 result")
+  void shouldKeepEveryCharacterOfMajorBrandWhenReturningProbeVersion7Result() throws Exception {
+    var quickTime =
+        probeVersion7Result(
+            ProbeMediaInfo.newBuilder()
+                .setContainer(ProbeContainerInfo.newBuilder().setMajorBrand("qt  ")));
+    var withoutFileTypeBox =
+        probeVersion7Result(
+            ProbeMediaInfo.newBuilder()
+                .setContainer(ProbeContainerInfo.newBuilder().setFormat("matroska,webm")));
+
+    var decodedQuickTime = ProbeAttemptResult.parseFrom(quickTime.toByteArray()).getMedia();
+    var decodedWithout = ProbeAttemptResult.parseFrom(withoutFileTypeBox.toByteArray()).getMedia();
+
+    assertThat(decodedQuickTime.getContainer().getMajorBrand()).isEqualTo("qt  ");
+    assertThat(decodedWithout.getContainer().hasMajorBrand()).isFalse();
+  }
+
+  @Test
   @DisplayName("Should preserve a typed media failure when returning an unsuccessful probe")
   void shouldPreserveTypedMediaFailureWhenReturningUnsuccessfulProbe() throws Exception {
     var result =

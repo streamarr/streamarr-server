@@ -731,6 +731,11 @@ message ProbeContainerInfo {
   repeated ProbeChapter chapters = 4;
   // This field is true when the container has chapters that exceed the limit.
   bool chapters_omitted = 5;
+  // From probe version 7, an MP4 or MOV file reports the major brand of its
+  // ftyp box as four printable ASCII characters, trailing spaces kept, such as
+  // isom or "qt  ". The field is absent without an ftyp box, when the brand
+  // holds other bytes, and in other source containers (ADR 0032, ADR 0045).
+  optional string major_brand = 6;
 }
 
 // This message describes one chapter, on the timeline of
@@ -1014,6 +1019,12 @@ message ProbeStreamInfo {
   // field is absent unless the stream's extradata is exactly 34 bytes, and on
   // every other stream (ADR 0032).
   optional uint32 flac_minimum_block_size_samples = 47;
+  // From probe version 7, a video stream of an MP4 or MOV file reports the
+  // four printable ASCII characters that name its sample entry, such as avc1,
+  // hev1 or dvh1. codec_string names a copy's sample entry instead. The field
+  // is absent in other source containers, which store no sample entry, for a
+  // stream without one, such as cover art, and on other streams (ADR 0032).
+  optional string sample_entry = 48;
 }
 
 // These fields count the pixels that the container crop removes from each
