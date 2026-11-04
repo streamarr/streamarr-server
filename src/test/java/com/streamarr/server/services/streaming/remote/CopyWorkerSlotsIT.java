@@ -138,9 +138,11 @@ class CopyWorkerSlotsIT {
           + " slot")
   void shouldStartTwoCopiesAndAnEncodeAndRefuseASecondEncodeWhenTheWorkerHasOneSlot()
       throws Exception {
+    // The encode starts beside a copy, and the second copy while the encode holds the only slot
+    // and the only place under the transcode limit.
     var remux = startedSession(defaultProbeBuilder().build());
-    var copyWithAudioEncode = startedSession(defaultProbeBuilder().audioCodec("flac").build());
     var encode = startedSession(hevcProbe());
+    var copyWithAudioEncode = startedSession(defaultProbeBuilder().audioCodec("flac").build());
 
     var secondEncode = streamingService.createSession(sessionCommand(hevcProbe()));
 
@@ -149,8 +151,9 @@ class CopyWorkerSlotsIT {
         .extracting(job -> fromProto(job.getStreamSessionId()), job -> job.getDecision().getMode())
         .containsExactly(
             tuple(remux.getSessionId(), TranscodeMode.TRANSCODE_MODE_REMUX),
-            tuple(copyWithAudioEncode.getSessionId(), TranscodeMode.TRANSCODE_MODE_AUDIO_TRANSCODE),
-            tuple(encode.getSessionId(), TranscodeMode.TRANSCODE_MODE_VIDEO_TRANSCODE));
+            tuple(encode.getSessionId(), TranscodeMode.TRANSCODE_MODE_VIDEO_TRANSCODE),
+            tuple(
+                copyWithAudioEncode.getSessionId(), TranscodeMode.TRANSCODE_MODE_AUDIO_TRANSCODE));
     assertThat(jobs)
         .allSatisfy(
             job ->
