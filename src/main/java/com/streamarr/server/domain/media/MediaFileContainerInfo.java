@@ -60,6 +60,9 @@ public class MediaFileContainerInfo {
   private String format;
 
   @Getter(AccessLevel.NONE)
+  private String majorBrand;
+
+  @Getter(AccessLevel.NONE)
   private Long durationSeconds;
 
   @Getter(AccessLevel.NONE)
@@ -149,6 +152,7 @@ public class MediaFileContainerInfo {
             Optional.ofNullable(durationSeconds)
                 .map(seconds -> Duration.ofSeconds(seconds, durationNanos)))
         .bitrate(totalBitrate == null ? OptionalLong.empty() : OptionalLong.of(totalBitrate))
+        .majorBrand(Optional.ofNullable(majorBrand))
         .build();
   }
 
@@ -164,6 +168,7 @@ public class MediaFileContainerInfo {
       durationSeconds = container.duration().map(Duration::getSeconds).orElse(null);
       durationNanos = container.duration().map(Duration::getNano).orElse(null);
       totalBitrate = container.bitrate().isPresent() ? container.bitrate().getAsLong() : null;
+      majorBrand = container.majorBrand().orElse(null);
       return this;
     }
 

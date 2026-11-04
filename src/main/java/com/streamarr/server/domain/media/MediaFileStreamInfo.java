@@ -169,6 +169,7 @@ public class MediaFileStreamInfo {
   private Boolean cleanEffects;
   private Boolean dependent;
   private Integer flacMinimumBlockSizeSamples;
+  private String sampleEntry;
 
   @Override
   public boolean equals(Object other) {
@@ -223,6 +224,7 @@ public class MediaFileStreamInfo {
         .videoProperties(videoProperties())
         .comment(Optional.ofNullable(comment))
         .audioProperties(audioProperties())
+        .sampleEntry(Optional.ofNullable(sampleEntry))
         .build();
   }
 
@@ -393,6 +395,7 @@ public class MediaFileStreamInfo {
       info.videoProperties().ifPresent(this::videoProperties);
       comment = info.comment().orElse(null);
       info.audioProperties().ifPresent(this::audioProperties);
+      sampleEntry = info.sampleEntry().orElse(null);
       return this;
     }
 

@@ -583,6 +583,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
         chosenVideoStream.ifPresent(stream -> ChosenVideoStreamRow.set(row, stream));
         setChapterStatus(row, container.chapters());
         row.setFormat(container.format().orElse(null));
+        row.setMajorBrand(container.majorBrand().orElse(null));
         row.setTotalBitrate(
             container.bitrate().isPresent() ? container.bitrate().getAsLong() : null);
         row.setDurationSeconds(container.duration().map(Duration::getSeconds).orElse(null));

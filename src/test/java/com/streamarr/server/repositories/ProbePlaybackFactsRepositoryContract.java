@@ -315,6 +315,42 @@ public interface ProbePlaybackFactsRepositoryContract {
     assertThat(storedOutcome(mediaFileId).streams()).isEqualTo(published.streams());
   }
 
+  @Test
+  @DisplayName(
+      "Should read each video stream's sample entry and the major brand back when a version 7"
+          + " outcome stores them")
+  default void
+      shouldReadEachVideoStreamsSampleEntryAndTheMajorBrandBackWhenAVersion7OutcomeStores() {
+    var mediaFileId = createMediaFile();
+    var quickTime =
+        ProbeContainer.builder()
+            .format(Optional.of("mov,mp4,m4a,3gp,3g2,mj2"))
+            .majorBrand(Optional.of("qt  "))
+            .build();
+    // An MP4 file stores no sample entry for cover art.
+    var published =
+        outcomeBuilder()
+            .container(quickTime)
+            .streams(
+                List.of(
+                    coverArt(),
+                    video()
+                        .index(1)
+                        .codec(Optional.of("hevc"))
+                        .sampleEntry(Optional.of("dvh1"))
+                        .build()))
+            .chosenVideoStream(Optional.of(new ChosenVideoStream(1, declaredFilmRate())))
+            .build();
+
+    repository().publish(audioFactsPublication(mediaFileId, published));
+
+    var stored = storedOutcome(mediaFileId);
+    assertThat(stored.container().majorBrand()).contains("qt  ");
+    assertThat(stored.streams())
+        .extracting(StreamInfo::sampleEntry)
+        .containsExactly(Optional.empty(), Optional.of("dvh1"));
+  }
+
   @ParameterizedTest(name = "{0}")
   @MethodSource("singleAudioDispositions")
   @DisplayName("Should read only the disposition that a version 7 outcome sets back")

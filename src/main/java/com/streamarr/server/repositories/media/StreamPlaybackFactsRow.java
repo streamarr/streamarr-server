@@ -51,6 +51,7 @@ final class StreamPlaybackFactsRow {
     stream.videoProperties().ifPresent(properties -> setVideoProperties(row, properties));
     row.setComment(stream.comment().orElse(null));
     stream.audioProperties().ifPresent(properties -> setAudioProperties(row, properties));
+    row.setSampleEntry(stream.sampleEntry().orElse(null));
   }
 
   private static void setAudioProperties(
