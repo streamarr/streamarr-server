@@ -4544,6 +4544,51 @@ class HlsStreamingServiceTest {
         .isEqualTo(OptionalInt.of(2));
   }
 
+  // ADR 0045: direct play needs no connected worker, so a switch that HLS cannot serve leaves the
+  // viewer on the track that direct play plays.
+  @Test
+  @DisplayName("Should keep direct play when the viewer switches tracks and no worker is connected")
+  void shouldKeepDirectPlayWhenTheViewerSwitchesTracksAndNoWorkerIsConnected() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra"));
+    transcodeExecutor.setHealthy(false);
+    var playback = logicalPlayback();
+    var command =
+        logicalStart()
+            .options(StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build())
+            .capabilityDeclaration(
+                directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(false).build())
+            .build();
+    var directPlay = accepted(playback.start(command));
+
+    var outcome =
+        playback.switchAudioTrack(
+            SwitchPlaybackAudioTrackCommand.builder()
+                .playbackSessionId(directPlay.playbackSessionId())
+                .streamSessionId(directPlay.currentFormatAttempt().streamSessionId())
+                .identity(command.identity())
+                .audioTrackPosition(1)
+                .build());
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            Outcome.Rejected.class,
+            rejected ->
+                assertThat(rejected.rejections())
+                    .singleElement()
+                    .isInstanceOf(AudioTrackSwitchRejection.StreamSessionRefused.class));
+    assertThat(
+            playback.access(
+                PlaybackSessionRequest.builder()
+                    .playbackSessionId(directPlay.playbackSessionId())
+                    .identity(command.identity())
+                    .build()))
+        .contains(directPlay);
+    assertThat(service.getAllSessions())
+        .singleElement()
+        .extracting(StreamSession::getDelivery)
+        .isEqualTo(StreamDelivery.DIRECT_PLAY);
+  }
+
   private PlaybackSessionService logicalPlayback() {
     return PlaybackSessionService.builder()
         .streamingService(service)

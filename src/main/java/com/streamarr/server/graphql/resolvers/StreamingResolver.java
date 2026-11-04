@@ -265,14 +265,17 @@ public class StreamingResolver {
 
   private MutationError audioTrackSwitchError(AudioTrackSwitchRejection rejection) {
     return switch (rejection) {
-      case PLAYBACK_SESSION_CLOSED -> closedError();
-      case AUDIO_TRACK_NOT_IN_FILE ->
+      case AudioTrackSwitchRejection.PlaybackSessionClosed() -> closedError();
+      case AudioTrackSwitchRejection.AudioTrackNotInFile() ->
           new PlaybackSessionError.AudioTrackNotInFileError(
               "This video has no audio track there. Choose another audio track.",
               InputPath.of("audioTrackPosition"));
-      case FORMAT_ATTEMPTS_EXHAUSTED ->
+      case AudioTrackSwitchRejection.FormatAttemptsExhausted() ->
           new PlaybackSessionError.PlaybackFormatAttemptsExhaustedError(
-              "The audio track can't change now. Keep the current audio track, or start the video again.");
+              "The audio track can't change now. Keep the current audio track, or start the video"
+                  + " again.");
+      case AudioTrackSwitchRejection.StreamSessionRefused(var refusal) ->
+          createSessionError(refusal);
     };
   }
 

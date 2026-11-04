@@ -565,8 +565,8 @@ class StreamingResolverTest {
         .isEqualTo("DIRECT_PLAY_FAILED");
   }
 
-  // ADR 0045: the viewer's switch during direct play starts an HLS format attempt that keeps
-  // Original while it is pending, and its encode plays in Auto with a notice.
+  // ADR 0052: Original that reaches an encode after an audio switch plays it in Auto, with a
+  // notice that names the switch.
   @Test
   @DisplayName(
       "Should expose the change to Auto when the viewer switches audio tracks and no copy is"
@@ -577,20 +577,38 @@ class StreamingResolverTest {
     var playbackId = created.read(CREATED_PLAYBACK + ".id", String.class);
     var streamId =
         created.read(CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.id", String.class);
-
-    var switched = switchAudioTrack(playbackId, streamId, 1);
     STUB_SERVICE.setNextResult(
         buildSessionDeciding(UUID.randomUUID(), fullTranscodeDecision("h264")));
-    REPLACEMENT_TASKS.remove().run();
+
+    var switched = switchAudioTrack(playbackId, streamId, 1);
 
     assertThat(switched.read(SWITCHED_PLAYBACK + ".currentFormatAttempt.__typename", String.class))
-        .isEqualTo("PendingPlaybackFormatAttempt");
+        .isEqualTo("ReadyPlaybackFormatAttempt");
     assertThat(switched.read(SWITCHED_PLAYBACK + ".playbackChoice", String.class))
-        .isEqualTo("ORIGINAL");
-    var ready = playbackStatus(playbackId);
-    assertThat(ready.read("data.playbackSession.playbackChoice", String.class)).isEqualTo("AUTO");
-    assertThat(ready.read("data.playbackSession.formatChange", String.class))
+        .isEqualTo("AUTO");
+    assertThat(switched.read(SWITCHED_PLAYBACK + ".formatChange", String.class))
         .isEqualTo("AUDIO_TRACK_SWITCHED");
+  }
+
+  @Test
+  @DisplayName(
+      "Should return the typed creation error when the stream session for an audio switch is"
+          + " refused")
+  void shouldReturnTheTypedCreationErrorWhenTheStreamSessionForAnAudioSwitchIsRefused() {
+    STUB_SERVICE.setNextResult(buildDirectPlaySessionOfTwoAudioTracks());
+    var created = startPlaybackReadingChoices(VideoQuality.ORIGINAL);
+    STUB_SERVICE.setRejection(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(8));
+
+    var switched =
+        switchAudioTrack(
+            created.read(CREATED_PLAYBACK + ".id", String.class),
+            created.read(CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.id", String.class),
+            1);
+
+    assertThat(switched.read(SWITCHED_PLAYBACK, Object.class)).isNull();
+    assertThat(
+            switched.read("data.switchPlaybackAudioTrack.userErrors[0].__typename", String.class))
+        .isEqualTo("TranscodeCapacityUnavailableError");
   }
 
   @Test
@@ -624,9 +642,8 @@ class StreamingResolverTest {
     var playbackId = created.read(CREATED_PLAYBACK + ".id", String.class);
     var directPlayId =
         created.read(CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.id", String.class);
-    switchAudioTrack(playbackId, directPlayId, 1);
     STUB_SERVICE.setNextResult(buildDirectPlaySessionOfTwoAudioTracks());
-    REPLACEMENT_TASKS.remove().run();
+    switchAudioTrack(playbackId, directPlayId, 1);
     var secondId =
         playbackStatus(playbackId)
             .read("data.playbackSession.currentFormatAttempt.streamSession.id", String.class);

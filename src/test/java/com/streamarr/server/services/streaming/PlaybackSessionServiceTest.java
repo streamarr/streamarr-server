@@ -1462,7 +1462,7 @@ class PlaybackSessionServiceTest {
     var outcome = service.switchAudioTrack(audioSwitch(directPlay, command, position));
 
     assertThat(outcome)
-        .isEqualTo(Outcome.rejected(AudioTrackSwitchRejection.AUDIO_TRACK_NOT_IN_FILE));
+        .isEqualTo(Outcome.rejected(new AudioTrackSwitchRejection.AudioTrackNotInFile()));
     assertThat(service.access(request(directPlay, command))).contains(directPlay);
     assertThat(streams.createdCommands).hasSize(1);
   }
@@ -1480,9 +1480,67 @@ class PlaybackSessionServiceTest {
     var outcome = playback.switchAudioTrack(audioSwitch(directPlay, command, 1));
 
     assertThat(outcome)
-        .isEqualTo(Outcome.rejected(AudioTrackSwitchRejection.FORMAT_ATTEMPTS_EXHAUSTED));
+        .isEqualTo(Outcome.rejected(new AudioTrackSwitchRejection.FormatAttemptsExhausted()));
     assertThat(playback.access(request(directPlay, command))).contains(directPlay);
     assertThat(streams.createdCommands).hasSize(1);
+  }
+
+  // A switch is the viewer's choice, not a failure, so direct play plays on until the HLS format
+  // attempt is ready.
+  @Test
+  @DisplayName(
+      "Should keep direct play playing while the HLS stream session for an audio switch starts")
+  void shouldKeepDirectPlayPlayingWhileTheHlsStreamSessionForAnAudioSwitchStarts() {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlayOfTwoAudioTracks(service, command);
+    var directPlayId = directPlay.currentFormatAttempt().streamSessionId();
+    var directPlayDuringStart = new AtomicReference<Optional<StreamSession>>();
+    streams.beforeNextCreation =
+        _ -> directPlayDuringStart.set(Optional.ofNullable(streams.sessions.get(directPlayId)));
+
+    accepted(service.switchAudioTrack(audioSwitch(directPlay, command, 1)));
+
+    assertThat(directPlayDuringStart.get()).isPresent();
+    assertThat(streams.sessions).doesNotContainKey(directPlayId);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep direct play and report the refusal when the HLS stream session for an audio"
+          + " switch is refused")
+  void shouldKeepDirectPlayAndReportTheRefusalWhenTheHlsStreamSessionForAnAudioSwitchIsRefused() {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlayOfTwoAudioTracks(service, command);
+    streams.rejection = new CreateStreamSessionRejection.TranscodeCapacityUnavailable(8);
+
+    var outcome = service.switchAudioTrack(audioSwitch(directPlay, command, 1));
+
+    assertThat(outcome)
+        .isEqualTo(
+            Outcome.rejected(
+                new AudioTrackSwitchRejection.StreamSessionRefused(
+                    new CreateStreamSessionRejection.TranscodeCapacityUnavailable(8))));
+    assertThat(service.access(request(directPlay, command))).contains(directPlay);
+    assertThat(streams.sessions).containsKey(directPlay.currentFormatAttempt().streamSessionId());
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep direct play when the HLS stream session for an audio switch fails to start")
+  void shouldKeepDirectPlayWhenTheHlsStreamSessionForAnAudioSwitchFailsToStart() {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlayOfTwoAudioTracks(service, command);
+    var startupFailure = new IllegalStateException("Startup failed");
+    streams.beforeNextCreation =
+        _ -> {
+          throw startupFailure;
+        };
+    var audioSwitch = audioSwitch(directPlay, command, 1);
+
+    assertThatThrownBy(() -> service.switchAudioTrack(audioSwitch)).isSameAs(startupFailure);
+
+    assertThat(service.access(request(directPlay, command))).contains(directPlay);
+    assertThat(streams.sessions).containsKey(directPlay.currentFormatAttempt().streamSessionId());
   }
 
   @Test
@@ -1514,12 +1572,11 @@ class PlaybackSessionServiceTest {
   }
 
   // The switch and a direct-play failure each move the same direct-play format attempt, so only
-  // the first under the playback session's lock reserves the HLS format attempt.
+  // the first under the playback session's lock starts the HLS format attempt.
   @Test
   @DisplayName(
-      "Should reserve one HLS format attempt when an audio switch and a direct-play failure race")
-  void shouldReserveOneHlsFormatAttemptWhenAnAudioSwitchAndADirectPlayFailureRace()
-      throws Exception {
+      "Should start one HLS format attempt when an audio switch and a direct-play failure race")
+  void shouldStartOneHlsFormatAttemptWhenAnAudioSwitchAndADirectPlayFailureRace() throws Exception {
     var work = new ConcurrentLinkedQueue<Runnable>();
     var playback = serviceRunning(work::add).maximumFormatAttempts(4).build();
     var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
@@ -1547,10 +1604,11 @@ class PlaybackSessionServiceTest {
       failure.get(5, TimeUnit.SECONDS);
     }
 
-    var pending = playback.access(request(directPlay, command)).orElseThrow();
-    assertThat(pending.formatAttemptCount()).isEqualTo(2);
-    assertThat(pending.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Pending.class);
-    assertThat(work).hasSize(1);
+    drain(work);
+    var hls = playback.access(request(directPlay, command)).orElseThrow();
+    assertThat(hls.formatAttemptCount()).isEqualTo(2);
+    assertThat(hls.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+    assertThat(streams.createdCommands).hasSize(2);
   }
 
   @Test
@@ -1576,7 +1634,7 @@ class PlaybackSessionServiceTest {
     var outcome = service.switchAudioTrack(audioSwitch(directPlay, command, 1));
 
     assertThat(outcome)
-        .isEqualTo(Outcome.rejected(AudioTrackSwitchRejection.PLAYBACK_SESSION_CLOSED));
+        .isEqualTo(Outcome.rejected(new AudioTrackSwitchRejection.PlaybackSessionClosed()));
   }
 
   private PlaybackSessionSnapshot startDirectPlayOfTwoAudioTracks(

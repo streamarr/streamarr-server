@@ -223,63 +223,151 @@ public class PlaybackSessionService implements AutoCloseable {
   /**
    * Moves a playback session that direct-plays the source to HLS for the audio track that the
    * viewer chose, as a player that cannot select an audio track in a directly played file needs
-   * (ADR 0045). The move is the one that follows a failed direct play: an HLS copy keeps Original
-   * without a format change, and an encode plays in Auto with {@code AUDIO_TRACK_SWITCHED}. Every
-   * later format attempt plays the chosen track. The playback session stays as it is when the
-   * stream session is not its current direct-play format attempt, or when that attempt already
-   * plays the chosen track. The switch counts against the format-attempt budget, and a switch with
-   * no format attempt left keeps the direct play.
+   * (ADR 0045). The HLS format attempt is the one that follows a failed direct play: a copy keeps
+   * Original without a format change, and an encode plays in Auto with {@code
+   * AUDIO_TRACK_SWITCHED}. It counts against the format-attempt budget, and every later format
+   * attempt plays the chosen track. A switch is the viewer's choice, not a failure, so direct play
+   * stops only once the HLS stream session has started. When it does not start, or no format
+   * attempt is left, direct play goes on and the outcome says why. The playback session stays as it
+   * is when the stream session is not its current direct-play format attempt, or when that attempt
+   * already plays the chosen track.
    */
   public Outcome<PlaybackSessionSnapshot, AudioTrackSwitchRejection> switchAudioTrack(
       @NonNull SwitchPlaybackAudioTrackCommand command) {
     var accessible = accessibleSession(command.playbackSessionId(), command.identity());
     if (accessible.isEmpty()) {
-      return Outcome.rejected(AudioTrackSwitchRejection.PLAYBACK_SESSION_CLOSED);
+      return Outcome.rejected(new AudioTrackSwitchRejection.PlaybackSessionClosed());
     }
 
     var playback = accessible.get();
-    var reservation = locked(playback, () -> reserveAudioTrackSwitch(playback, command));
-    return reservation.fold(
-        reserved -> {
-          reserved.ifPresent(this::schedule);
-          return snapshot(playback)
-              .<Outcome<PlaybackSessionSnapshot, AudioTrackSwitchRejection>>map(Outcome::accepted)
-              .orElseGet(() -> Outcome.rejected(AudioTrackSwitchRejection.PLAYBACK_SESSION_CLOSED));
-        },
-        Outcome::rejected);
+    return switch (locked(playback, () -> reserveAudioTrackSwitch(playback, command))) {
+      case AudioTrackSwitch.Unchanged() -> currentSnapshot(playback);
+      case AudioTrackSwitch.Refused(var rejection) -> Outcome.rejected(rejection);
+      case AudioTrackSwitch.Reserved reserved -> startAudioTrackSwitch(playback, reserved);
+    };
   }
 
-  private Outcome<Optional<FormatAttemptReservation>, AudioTrackSwitchRejection>
-      reserveAudioTrackSwitch(PlaybackSession playback, SwitchPlaybackAudioTrackCommand command) {
+  /** What a switch request does to the playback session, decided under its lock. */
+  private sealed interface AudioTrackSwitch {
+    record Unchanged() implements AudioTrackSwitch {}
+
+    record Refused(AudioTrackSwitchRejection rejection) implements AudioTrackSwitch {}
+
+    /** The HLS format attempt {@code streamId} is pending while {@code directPlay} plays on. */
+    record Reserved(StreamSession directPlay, UUID streamId, OptionalInt previousAudioTrackPosition)
+        implements AudioTrackSwitch {}
+  }
+
+  private AudioTrackSwitch reserveAudioTrackSwitch(
+      PlaybackSession playback, SwitchPlaybackAudioTrackCommand command) {
     var directPlay = currentDirectPlay(playback, command.streamSessionId());
     if (directPlay.isEmpty()) {
-      return Outcome.accepted(Optional.empty());
+      return new AudioTrackSwitch.Unchanged();
     }
 
+    var session = directPlay.get();
     var position = command.audioTrackPosition();
-    if (position < 0 || position >= directPlay.get().getMediaProbe().audioStreams().size()) {
-      return Outcome.rejected(AudioTrackSwitchRejection.AUDIO_TRACK_NOT_IN_FILE);
+    if (position < 0 || position >= session.getMediaProbe().audioStreams().size()) {
+      return new AudioTrackSwitch.Refused(new AudioTrackSwitchRejection.AudioTrackNotInFile());
     }
 
-    if (directPlay.get().getDirectPlayAudioTrackPosition().equals(OptionalInt.of(position))) {
-      return Outcome.accepted(Optional.empty());
+    if (session.getDirectPlayAudioTrackPosition().equals(OptionalInt.of(position))) {
+      return new AudioTrackSwitch.Unchanged();
     }
 
-    // A switch with no format attempt left keeps the direct play that plays (ADR 0052).
     if (playback.formatAttemptCount >= recoveryPolicy.maximumFormatAttempts()) {
-      return Outcome.rejected(AudioTrackSwitchRejection.FORMAT_ATTEMPTS_EXHAUSTED);
+      return new AudioTrackSwitch.Refused(new AudioTrackSwitchRejection.FormatAttemptsExhausted());
     }
 
+    var reserved =
+        new AudioTrackSwitch.Reserved(session, UUID.randomUUID(), playback.audioTrackPosition);
     playback.audioTrackPosition = OptionalInt.of(position);
-    return Outcome.accepted(
-        Optional.of(
-            reserveNextFormatAttempt(
-                playback,
-                command.streamSessionId(),
-                ReservedFormatAttempt.builder()
-                    .videoFormatConstraint(VideoFormatConstraint.COPY_OR_ENCODE)
-                    .choice(playback.choice)
-                    .choiceWhenEncoding(AUTO_AFTER_AN_AUDIO_TRACK_SWITCH))));
+    playback.current = new PlaybackFormatAttempt.Pending(reserved.streamId());
+    playback.formatAttemptCount++;
+    playback.lastAccessedAt = clock.instant();
+    playback.streamIds.add(reserved.streamId());
+    streamOwners.put(reserved.streamId(), playback);
+    return reserved;
+  }
+
+  private Outcome<PlaybackSessionSnapshot, AudioTrackSwitchRejection> startAudioTrackSwitch(
+      PlaybackSession playback, AudioTrackSwitch.Reserved reserved) {
+    Outcome<StreamSession, CreateStreamSessionRejection> outcome;
+    try {
+      outcome =
+          streamingService.createSession(
+              childCommand(playback, reserved.streamId())
+                  .videoFormatConstraint(VideoFormatConstraint.COPY_OR_ENCODE)
+                  .build());
+    } catch (RuntimeException failure) {
+      try {
+        restoreDirectPlay(playback, reserved);
+      } catch (RuntimeException cleanupFailure) {
+        suppress(failure, cleanupFailure);
+      }
+
+      throw failure;
+    }
+
+    return switch (outcome) {
+      case Outcome.Accepted(var session) -> {
+        completeAudioTrackSwitch(playback, reserved, session);
+        yield currentSnapshot(playback);
+      }
+      case Outcome.Rejected(var rejections) -> {
+        restoreDirectPlay(playback, reserved);
+        yield Outcome.rejected(
+            new AudioTrackSwitchRejection.StreamSessionRefused(rejections.getFirst()));
+      }
+    };
+  }
+
+  // Once the HLS format attempt is settled, or the playback session moved on without it, the
+  // direct play stops.
+  private void completeAudioTrackSwitch(
+      PlaybackSession playback, AudioTrackSwitch.Reserved reserved, StreamSession session) {
+    var directPlayId = reserved.directPlay().getSessionId();
+    boolean adopted =
+        locked(
+            playback,
+            () -> {
+              streamOwners.remove(directPlayId, playback);
+              if (!pending(playback, reserved.streamId())) {
+                return false;
+              }
+
+              adopt(playback, session, AUTO_AFTER_AN_AUDIO_TRACK_SWITCH);
+              return true;
+            });
+    if (!adopted) {
+      streamingService.destroySession(session.getSessionId());
+    }
+
+    streamingService.destroySession(directPlayId);
+  }
+
+  private void restoreDirectPlay(PlaybackSession playback, AudioTrackSwitch.Reserved reserved) {
+    locked(
+        playback,
+        () -> {
+          if (pending(playback, reserved.streamId())) {
+            playback.current = new PlaybackFormatAttempt.Ready(reserved.directPlay());
+            playback.formatAttemptCount--;
+            playback.audioTrackPosition = reserved.previousAudioTrackPosition();
+            playback.streamIds.remove(reserved.streamId());
+            streamOwners.remove(reserved.streamId(), playback);
+          }
+
+          return true;
+        });
+    streamingService.destroySession(reserved.streamId());
+  }
+
+  private Outcome<PlaybackSessionSnapshot, AudioTrackSwitchRejection> currentSnapshot(
+      PlaybackSession playback) {
+    return snapshot(playback)
+        .<Outcome<PlaybackSessionSnapshot, AudioTrackSwitchRejection>>map(Outcome::accepted)
+        .orElseGet(() -> Outcome.rejected(new AudioTrackSwitchRejection.PlaybackSessionClosed()));
   }
 
   private Optional<StreamSession> currentDirectPlay(PlaybackSession playback, UUID streamId) {
