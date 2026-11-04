@@ -7,12 +7,15 @@ import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.SkippedFile;
+import com.streamarr.server.domain.SkippedFileReason;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeLibraryMutationTransaction;
 import com.streamarr.server.fakes.FakeLibraryOperationRepository;
 import com.streamarr.server.fakes.FakeLibraryOperationScheduling;
 import com.streamarr.server.fakes.FakeLibraryRepository;
+import com.streamarr.server.fakes.FakeSkippedFileRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -21,6 +24,8 @@ import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.pagination.PageRequest;
+import com.streamarr.server.services.pagination.PaginationDirection;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.Optional;
 import java.util.UUID;
@@ -54,9 +59,13 @@ class LibraryAdministrationServiceTest {
           .eventPublisher(new CapturingEventPublisher())
           .metrics(new LibraryOperationMetrics(new SimpleMeterRegistry()))
           .build();
+  private final FakeSkippedFileRepository skippedFiles = new FakeSkippedFileRepository();
   private final LibraryAdministrationService libraryAdministrationService =
       new LibraryAdministrationService(
-          authorizationService, libraryManagementService, libraryOperationService);
+          authorizationService,
+          libraryManagementService,
+          libraryOperationService,
+          new LibrarySkippedFilesList(skippedFiles));
 
   @Test
   @DisplayName("Should authorize and add a Library through the application service")
@@ -207,6 +216,55 @@ class LibraryAdministrationServiceTest {
     assertThatThrownBy(
             () -> libraryAdministrationService.requireViewLibraryAdministration(identity))
         .isInstanceOf(AccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should return the library's skipped files in filepath order when library administration is"
+          + " viewed")
+  void shouldReturnTheLibrarysSkippedFilesInFilepathOrderWhenLibraryAdministrationIsViewed() {
+    var libraryId = UUID.randomUUID();
+    var scanId = UUID.randomUUID();
+    skippedFiles.save(softLink(libraryId, scanId, "file:///library/B%20(2002).mkv"));
+    skippedFiles.save(softLink(libraryId, scanId, "file:///library/A%20(2001).mkv"));
+    skippedFiles.save(softLink(UUID.randomUUID(), scanId, "file:///other/C%20(2003).mkv"));
+
+    var page =
+        libraryAdministrationService.skippedFiles(
+            identity,
+            libraryId,
+            new PageRequest(Optional.empty(), PaginationDirection.FORWARD, 10));
+
+    assertThat(page.rows())
+        .extracting(row -> row.item().filepathUri())
+        .containsExactly("file:///library/A%20(2001).mkv", "file:///library/B%20(2002).mkv");
+    assertThat(authorizationService.recordedIntents())
+        .containsExactly(new Intent.ViewLibraryAdministration());
+  }
+
+  @Test
+  @DisplayName("Should refuse the library's skipped files when authorization denies")
+  void shouldRefuseTheLibrarysSkippedFilesWhenAuthorizationDenies() {
+    var libraryId = UUID.randomUUID();
+    skippedFiles.save(softLink(libraryId, UUID.randomUUID(), "file:///library/A%20(2001).mkv"));
+    authorizationService.denyAll();
+
+    assertThatThrownBy(
+            () ->
+                libraryAdministrationService.skippedFiles(
+                    identity,
+                    libraryId,
+                    new PageRequest(Optional.empty(), PaginationDirection.FORWARD, 10)))
+        .isInstanceOf(AccessDeniedException.class);
+  }
+
+  private static SkippedFile softLink(UUID libraryId, UUID scanId, String filepathUri) {
+    return SkippedFile.builder()
+        .libraryId(libraryId)
+        .libraryOperationId(scanId)
+        .filepathUri(filepathUri)
+        .reason(SkippedFileReason.SOFT_LINK)
+        .build();
   }
 
   private static final class RecordingLibraryManagementService extends LibraryManagementService {

@@ -1,11 +1,15 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.SkippedFile;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.pagination.ListPage;
+import com.streamarr.server.services.pagination.PageRequest;
+import com.streamarr.server.services.pagination.Pager;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -17,6 +21,7 @@ public class LibraryAdministrationService {
   private final AuthorizationService authorizationService;
   private final LibraryManagementService libraryManagementService;
   private final LibraryOperationService libraryOperationService;
+  private final LibrarySkippedFilesList librarySkippedFilesList;
 
   public Outcome<Library, AddLibraryRejection> addLibrary(
       AuthenticatedIdentity identity, Library library) {
@@ -37,6 +42,16 @@ public class LibraryAdministrationService {
    */
   public void requireViewLibraryAdministration(AuthenticatedIdentity identity) {
     authorizationService.requireAllowed(identity, new Intent.ViewLibraryAdministration());
+  }
+
+  /**
+   * A page of the files that the library's latest scan skipped, in filepath order, for an identity
+   * that may view library administration.
+   */
+  public ListPage<SkippedFile> skippedFiles(
+      AuthenticatedIdentity identity, UUID libraryId, PageRequest request) {
+    authorizationService.requireAllowed(identity, new Intent.ViewLibraryAdministration());
+    return Pager.page(librarySkippedFilesList, libraryId, request);
   }
 
   public Outcome<Library, LibraryOperationRejection> startLibraryScan(

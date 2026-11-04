@@ -4,6 +4,10 @@ import static com.streamarr.server.jooq.generated.tables.SkippedFile.SKIPPED_FIL
 
 import com.streamarr.server.domain.SkippedFile;
 import com.streamarr.server.domain.SkippedFileReason;
+import com.streamarr.server.jooq.generated.tables.records.SkippedFileRecord;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
@@ -36,6 +40,27 @@ public class JooqSkippedFileRepository implements SkippedFileRepository {
         .where(SKIPPED_FILE.LIBRARY_ID.eq(libraryId))
         .and(SKIPPED_FILE.LIBRARY_OPERATION_ID.ne(libraryOperationId))
         .execute();
+  }
+
+  @Override
+  public List<Row<SkippedFile>> rowsBeyond(UUID libraryId, Seek seek) {
+    var keyset =
+        Keyset.<String>builder()
+            .sortValue(SKIPPED_FILE.FILEPATH_URI)
+            .itemId(SKIPPED_FILE.ID)
+            .build();
+    return keyset
+        .rowsBeyond(dsl.selectFrom(SKIPPED_FILE), SKIPPED_FILE.LIBRARY_ID.eq(libraryId), seek)
+        .fetch(row -> new Row<>(toDomain(row), keyset.rowOf(row).position()));
+  }
+
+  private static SkippedFile toDomain(SkippedFileRecord row) {
+    return SkippedFile.builder()
+        .libraryId(row.getLibraryId())
+        .libraryOperationId(row.getLibraryOperationId())
+        .filepathUri(row.getFilepathUri())
+        .reason(SkippedFileReason.valueOf(row.getReason().getLiteral()))
+        .build();
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")

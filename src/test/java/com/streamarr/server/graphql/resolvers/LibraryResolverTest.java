@@ -15,6 +15,8 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.SkippedFile;
+import com.streamarr.server.domain.SkippedFileReason;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
@@ -24,11 +26,13 @@ import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
+import com.streamarr.server.fakes.FakeSkippedFileRepository;
 import com.streamarr.server.graphql.StreamarrDataFetcherExceptionHandler;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dataloaders.LibraryItemCountDataLoader;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.SkippedFileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
@@ -48,6 +52,7 @@ import com.streamarr.server.services.library.LibraryOperationService;
 import com.streamarr.server.services.library.LibraryOperationStopRejection;
 import com.streamarr.server.services.library.LibraryPathOverlap;
 import com.streamarr.server.services.library.LibraryQueryService;
+import com.streamarr.server.services.library.LibrarySkippedFilesList;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.pagination.ListPage;
@@ -98,6 +103,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       LibraryQueryService.class,
       LibraryItemCountDataLoader.class,
       LibraryAdministrationService.class,
+      LibrarySkippedFilesList.class,
       PaginationService.class,
       RelayConnectionAdapter.class,
       PositionCursorCodec.class,
@@ -118,7 +124,16 @@ class LibraryResolverTest {
   private static final FakeLibraryMetadataRepository FAKE_COUNTS =
       new FakeLibraryMetadataRepository();
 
+  private static final FakeSkippedFileRepository FAKE_SKIPPED_FILES =
+      new FakeSkippedFileRepository();
+
   @TestBean private LibraryCountsService libraryCountsService;
+
+  @TestBean private SkippedFileRepository skippedFileRepository;
+
+  static SkippedFileRepository skippedFileRepository() {
+    return FAKE_SKIPPED_FILES;
+  }
 
   static LibraryCountsService libraryCountsService() {
     return new LibraryCountsService(FAKE_COUNTS);
@@ -229,6 +244,49 @@ class LibraryResolverTest {
       assertThat(libraryData).containsEntry("name", "Movies");
       assertThat((Map<String, Object>) libraryData.get("administration"))
           .containsEntry("createdBy", null);
+    }
+
+    @Test
+    @DisplayName(
+        "Should page the library's skipped files with their reasons when a ServerAdmin selects"
+            + " them")
+    void shouldPageTheLibrarysSkippedFilesWithTheirReasonsWhenAServerAdminSelectsThem() {
+      var libraryId = UUID.randomUUID();
+      when(libraryRepository.findById(libraryId))
+          .thenReturn(Optional.of(buildMovieLibrary(libraryId)));
+      var scanId = UUID.randomUUID();
+      FAKE_SKIPPED_FILES.save(softLink(libraryId, scanId, "file:///media/movies/B.mkv"));
+      FAKE_SKIPPED_FILES.save(softLink(libraryId, scanId, "file:///media/movies/A.mkv"));
+      var query =
+          """
+          query($id: ID!, $after: String) {
+            library(id: $id) {
+              administration {
+                skippedFiles(first: 1, after: $after) {
+                  edges { node { filepathUri reason } }
+                  pageInfo { hasNextPage endCursor }
+                }
+              }
+            }
+          }
+          """;
+      var skippedFiles = "data.library.administration.skippedFiles";
+
+      var firstPage =
+          dgsQueryExecutor.executeAndGetDocumentContext(query, Map.of("id", libraryId.toString()));
+      var endCursor = firstPage.<String>read("$." + skippedFiles + ".pageInfo.endCursor");
+      var secondPage =
+          dgsQueryExecutor.executeAndGetDocumentContext(
+              query, Map.of("id", libraryId.toString(), "after", endCursor));
+
+      assertThat(firstPage.<List<Map<String, Object>>>read("$." + skippedFiles + ".edges[*].node"))
+          .containsExactly(
+              Map.of("filepathUri", "file:///media/movies/A.mkv", "reason", "SOFT_LINK"));
+      assertThat(firstPage.<Boolean>read("$." + skippedFiles + ".pageInfo.hasNextPage")).isTrue();
+      assertThat(secondPage.<List<Map<String, Object>>>read("$." + skippedFiles + ".edges[*].node"))
+          .containsExactly(
+              Map.of("filepathUri", "file:///media/movies/B.mkv", "reason", "SOFT_LINK"));
+      assertThat(secondPage.<Boolean>read("$." + skippedFiles + ".pageInfo.hasNextPage")).isFalse();
     }
 
     @Test
@@ -1598,6 +1656,15 @@ class LibraryResolverTest {
   private record RefreshRequest(UUID libraryId, ImageRefreshMode imageRefreshMode) {}
 
   private record StopRequest(UUID libraryId, LibraryOperationKind kind) {}
+
+  private static SkippedFile softLink(UUID libraryId, UUID scanId, String filepathUri) {
+    return SkippedFile.builder()
+        .libraryId(libraryId)
+        .libraryOperationId(scanId)
+        .filepathUri(filepathUri)
+        .reason(SkippedFileReason.SOFT_LINK)
+        .build();
+  }
 
   private Library buildMovieLibrary(UUID libraryId) {
     var library =
