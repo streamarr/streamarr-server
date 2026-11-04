@@ -21,7 +21,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("Audio Steps Tests")
 class AudioStepsTest {
 
-  private static final String STEREO_STEPS = "aac 2 128000, aac 2 96000, aac 2 64000";
+  private static final String STEREO_STEPS = "aac 2 128000, aac 2 96000";
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("surroundEncodes")
@@ -324,7 +324,6 @@ class AudioStepsTest {
             Optional.of(ChannelLayout.FIVE_POINT_ONE_SIDE),
             Optional.of(ChannelLayout.FIVE_POINT_ONE_SIDE),
             Optional.of(ChannelLayout.FIVE_POINT_ONE),
-            Optional.of(ChannelLayout.STEREO),
             Optional.of(ChannelLayout.STEREO),
             Optional.of(ChannelLayout.STEREO));
   }

@@ -17,7 +17,9 @@ public record AudioSteps(@NonNull List<AudioDecision> highestFirst) {
   private static final List<Long> AC3_MULTICHANNEL_BITRATES = List.of(448_000L, 384_000L);
   // Apple's HLS Authoring Specification rate for AAC 5.1, item 2.9, for each full-band channel.
   private static final long AAC_BITRATE_PER_FULL_BAND_CHANNEL = 64_000L;
-  private static final List<Long> STEREO_BITRATES = List.of(128_000L, 96_000L, 64_000L);
+  // The stereo and mono steps stop at 96 kb/s: at 64 kb/s, a downmix limited to -3 dBTP decoded
+  // above 0 dBTP from FFmpeg's AAC encoder more often than at any higher step.
+  private static final List<Long> STEREO_BITRATES = List.of(128_000L, 96_000L);
   private static final long MONO_BITRATE = 96_000L;
   private static final int STEREO = 2;
   // 5.1 and 7.1 carry one low-frequency channel beside their full-band channels.

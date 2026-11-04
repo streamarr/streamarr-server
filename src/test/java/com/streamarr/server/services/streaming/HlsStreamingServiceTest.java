@@ -808,13 +808,13 @@ class HlsStreamingServiceTest {
 
   // ADR 0050: without a source bitrate, a single variant takes the nominal bitrate of the tier that
   // holds its picture within the maximum bitrate less 128 kb/s of audio. When no audio step leaves
-  // the 360p tier's bitrate, the audio takes 64 kb/s and the video the rest, but at least 145 kb/s.
+  // the 360p tier's bitrate, the audio takes 96 kb/s and the video the rest, but at least 145 kb/s.
   static Stream<UnknownSourceBitrate> budgetsForASourceWithoutABitrate() {
     return Stream.of(
         unknownSourceBitrate(fixed1080p().build(), 5_000_000L),
         unknownSourceBitrate(fixed1080p().maxBitrate(20_000_000).build(), 5_000_000L),
         unknownSourceBitrate(fixed1080p().maxBitrate(2_000_000).build(), 1_872_000L),
-        unknownSourceBitrate(fixed1080p().maxBitrate(700_000).build(), 636_000L),
+        unknownSourceBitrate(fixed1080p().maxBitrate(700_000).build(), 604_000L),
         unknownSourceBitrate(fixed1080p().maxBitrate(100_000).build(), 145_000L),
         unknownSourceBitrate(autoAt300Lines().build(), 800_000L),
         unknownSourceBitrate(autoAt300Lines().maxBitrate(1_000_000).build(), 800_000L),
@@ -945,8 +945,8 @@ class HlsStreamingServiceTest {
             .build());
   }
 
-  // Under 864 kb/s, 800 kb/s of video plus 64 kb/s of AAC, no audio step leaves the 360p tier's
-  // bitrate. The audio takes 64 kb/s and the video the rest, but at least 145 kb/s, because an
+  // Under 896 kb/s, 800 kb/s of video plus 96 kb/s of AAC, no audio step leaves the 360p tier's
+  // bitrate. The audio takes 96 kb/s and the video the rest, but at least 145 kb/s, because an
   // encoder reads a zero bitrate as no limit (ADR 0050).
   @ParameterizedTest(name = "{0}")
   @MethodSource("budgetsBelowThe360pTiersBitrateBesideTheAudio")
@@ -965,21 +965,21 @@ class HlsStreamingServiceTest {
         SingleVariantOutcome.builder()
             .options(fixed1080p().maxBitrate(700_000).build())
             .picture(box360p)
-            .videoBitrate(636_000L)
-            .audioBitrate(64_000L)
+            .videoBitrate(604_000L)
+            .audioBitrate(96_000L)
             .build(),
         SingleVariantOutcome.builder()
             .options(fixed1080p().maxBitrate(100_000).build())
             .picture(box360p)
             .videoBitrate(145_000L)
-            .audioBitrate(64_000L)
+            .audioBitrate(96_000L)
             .build(),
         SingleVariantOutcome.builder()
             .options(
                 StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(500_000).build())
             .picture(box360p)
-            .videoBitrate(436_000L)
-            .audioBitrate(64_000L)
+            .videoBitrate(404_000L)
+            .audioBitrate(96_000L)
             .build());
   }
 
@@ -1173,8 +1173,7 @@ class HlsStreamingServiceTest {
   }
 
   // Each step fits from the 360p tier's 800 kb/s plus its bitrate: E-AC-3 5.1 at 448 kb/s from
-  // 1,248 kb/s, at 384 from 1,184, and stereo AAC at 128 from 928, at 96 from 896 and at 64 from
-  // 864.
+  // 1,248 kb/s, at 384 from 1,184, and stereo AAC at 128 from 928 and at 96 from 896.
   static Stream<StepUnderMaximum> maximumsAndTheFirstStepThatLeavesThe360pTier() {
     return Stream.of(
         eac351Step().maxBitrate(1_400_000).bitrate(448_000L).build(),
@@ -1183,7 +1182,7 @@ class HlsStreamingServiceTest {
         stereoAacStep().maxBitrate(1_000_000).bitrate(128_000L).build(),
         stereoAacStep().maxBitrate(928_000).bitrate(128_000L).build(),
         stereoAacStep().maxBitrate(927_999).bitrate(96_000L).build(),
-        stereoAacStep().maxBitrate(870_000).bitrate(64_000L).build());
+        stereoAacStep().maxBitrate(896_000).bitrate(96_000L).build());
   }
 
   private static StepUnderMaximum.StepUnderMaximumBuilder eac351Step() {
@@ -1198,9 +1197,9 @@ class HlsStreamingServiceTest {
   record StepUnderMaximum(
       int maxBitrate, String codec, int channels, long bitrate, String codecString) {}
 
-  // Under 864 kb/s, 800 kb/s of video plus 64 kb/s of AAC, no audio step leaves the 360p tier's
-  // video bitrate. The audio takes AAC stereo at 64 kb/s and the video the rest in the 360p box,
-  // but never less than 145 kb/s, so only a maximum below 209 kb/s is exceeded.
+  // Under 896 kb/s, 800 kb/s of video plus 96 kb/s of AAC, no audio step leaves the 360p tier's
+  // video bitrate. The audio takes AAC stereo at 96 kb/s and the video the rest in the 360p box,
+  // but never less than 145 kb/s, so only a maximum below 241 kb/s is exceeded.
   @ParameterizedTest(name = "{0}")
   @MethodSource("maximumsBelowEveryStepBesideThe360pTier")
   @DisplayName(
@@ -1221,7 +1220,7 @@ class HlsStreamingServiceTest {
 
     assertThat(session.getTranscodeDecision().audioDecision())
         .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
-        .containsExactly("aac", 2, 64_000L);
+        .containsExactly("aac", 2, 96_000L);
     assertThat(transcodeExecutor.getStartedRequests())
         .singleElement()
         .satisfies(
@@ -1230,13 +1229,13 @@ class HlsStreamingServiceTest {
                   .isEqualTo(new PictureSize(640, 360));
               assertThat(request.bitrate()).isEqualTo(expected.videoBitrate());
             });
-    assertThat(averageBandwidths(playlist)).containsExactly(expected.videoBitrate() + 64_000L);
+    assertThat(averageBandwidths(playlist)).containsExactly(expected.videoBitrate() + 96_000L);
   }
 
   static Stream<VideoBesideTheLastStep> maximumsBelowEveryStepBesideThe360pTier() {
     return Stream.of(
-        VideoBesideTheLastStep.builder().maxBitrate(600_000).videoBitrate(536_000L).build(),
-        VideoBesideTheLastStep.builder().maxBitrate(209_000).videoBitrate(145_000L).build(),
+        VideoBesideTheLastStep.builder().maxBitrate(600_000).videoBitrate(504_000L).build(),
+        VideoBesideTheLastStep.builder().maxBitrate(241_000).videoBitrate(145_000L).build(),
         VideoBesideTheLastStep.builder().maxBitrate(150_000).videoBitrate(145_000L).build());
   }
 
@@ -1244,7 +1243,7 @@ class HlsStreamingServiceTest {
   record VideoBesideTheLastStep(int maxBitrate, long videoBitrate) {}
 
   // ADR 0050: a source whose own bitrate is below the 145 kb/s floor still caps the video. Under
-  // 200 kb/s the audio takes 64 kb/s and the floor would ask for 145 kb/s, but the 100 kb/s source
+  // 200 kb/s the audio takes 96 kb/s and the floor would ask for 145 kb/s, but the 100 kb/s source
   // holds less.
   @Test
   @DisplayName(
@@ -1260,7 +1259,7 @@ class HlsStreamingServiceTest {
     var playlist =
         new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
 
-    assertThat(session.getTranscodeDecision().audioDecision().bitrate()).isEqualTo(64_000L);
+    assertThat(session.getTranscodeDecision().audioDecision().bitrate()).isEqualTo(96_000L);
     assertThat(transcodeExecutor.getStartedRequests())
         .singleElement()
         .satisfies(
@@ -1269,7 +1268,7 @@ class HlsStreamingServiceTest {
                   .isEqualTo(new PictureSize(640, 360));
               assertThat(request.bitrate()).isEqualTo(100_000L);
             });
-    assertThat(averageBandwidths(playlist)).containsExactly(164_000L);
+    assertThat(averageBandwidths(playlist)).containsExactly(196_000L);
   }
 
   // E-AC-3 5.1 at 768 kb/s leaves room for the 360p tier at each maximum. At 2,000 kb/s the 480p
@@ -1943,7 +1942,7 @@ class HlsStreamingServiceTest {
         eac351.maxBitrate(4_950_000).bitrate(448_000L).build(),
         eac351.maxBitrate(4_884_000).bitrate(384_000L).build(),
         aacStereo.maxBitrate(4_628_000).bitrate(128_000L).build(),
-        aacStereo.maxBitrate(4_564_000).bitrate(64_000L).build(),
+        aacStereo.maxBitrate(4_596_000).bitrate(96_000L).build(),
         StepBesideCopy.builder()
             .quality(VideoQuality.FULL_HD_1080P)
             .maxBitrate(4_950_000)
@@ -1957,7 +1956,7 @@ class HlsStreamingServiceTest {
   record StepBesideCopy(
       VideoQuality quality, int maxBitrate, String codec, int channels, long bitrate) {}
 
-  // At 4,563,999 kb/s even AAC stereo at 64 kb/s leaves the 4.5 Mb/s copy over the maximum, so the
+  // At 4,595,999 kb/s even AAC stereo at 96 kb/s leaves the 4.5 Mb/s copy over the maximum, so the
   // video is encoded. The encode then takes its audio step by its own rule (ADR 0050): E-AC-3 5.1
   // at 768 kb/s leaves room for the 360p tier there, and under 1,400 kb/s the 360p tier's 800 kb/s
   // fits only beside 448 kb/s.
@@ -1984,7 +1983,7 @@ class HlsStreamingServiceTest {
 
   static Stream<EncodeBesideStep> maximumsBelowTheCopyBesideEveryAudioStep() {
     return Stream.of(
-        EncodeBesideStep.builder().maxBitrate(4_563_999).bitrate(768_000L).build(),
+        EncodeBesideStep.builder().maxBitrate(4_595_999).bitrate(768_000L).build(),
         EncodeBesideStep.builder().maxBitrate(1_400_000).bitrate(448_000L).build());
   }
 
