@@ -1,5 +1,6 @@
 package com.streamarr.server.domain.streaming;
 
+import java.util.Locale;
 import java.util.Optional;
 import lombok.NonNull;
 
@@ -33,6 +34,6 @@ public record DolbyVisionOutput(@NonNull DolbyVisionProfile profile, int level) 
 
   // The level takes two digits, and the brand names the compatible base: db1p for PQ, db4h for HLG.
   private String codec(String entryAndProfile, String brand) {
-    return "%s.%02d/%s".formatted(entryAndProfile, level, brand);
+    return String.format(Locale.ROOT, "%s.%02d/%s", entryAndProfile, level, brand);
   }
 }
