@@ -18,6 +18,7 @@ import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.exceptions.PlaybackSessionClosedException;
+import com.streamarr.server.graphql.dto.PlaybackDecisionDto;
 import com.streamarr.server.graphql.dto.PlaybackFormatAttemptDto;
 import com.streamarr.server.graphql.dto.PlaybackSessionDto;
 import com.streamarr.server.graphql.dto.StreamSessionDto;
@@ -266,6 +267,7 @@ public class StreamingResolver {
         .formatChange(snapshot.formatChange().map(Enum::name).orElse(null))
         .offeredChoices(snapshot.offeredChoices().stream().map(Enum::name).toList())
         .currentFormatAttempt(attempt)
+        .decisions(snapshot.decisions().stream().map(PlaybackDecisionDto::from).toList())
         .build();
   }
 

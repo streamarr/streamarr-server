@@ -29,6 +29,7 @@ import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
+import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
@@ -725,6 +726,65 @@ class StreamingResolverTest {
                 "data.reportPlaybackFormatFailure.userErrors[0].__typename", String.class))
         .isEqualTo("PlaybackSessionClosedError");
     assertThat(playbackStatus(playbackId).read("data.playbackSession", Object.class)).isNull();
+  }
+
+  @Test
+  @DisplayName(
+      "Should expose each format attempt's delivery, source, output and reasons when the owner"
+          + " reads the playback session")
+  void
+      shouldExposeEachFormatAttemptsDeliverySourceOutputAndReasonsWhenTheOwnerReadsThePlaybackSession() {
+    var sessionId = UUID.randomUUID();
+    STUB_SERVICE.setNextResult(
+        buildSessionDeciding(
+            sessionId,
+            remuxDecisionBuilder()
+                .transcodeMode(TranscodeMode.AUDIO_TRANSCODE)
+                .audioDecision(AudioDecision.stereoAac())
+                .reasons(List.of(DecisionReason.AUDIO_CODEC_NOT_DECLARED))
+                .build()));
+    var playbackId = startPlayback(VideoQuality.AUTO).read(CREATED_PLAYBACK + ".id", String.class);
+
+    var result =
+        dgsQueryExecutor.executeAndGetDocumentContext(
+            """
+            query {
+              playbackSession(id: "%s") {
+                decisions {
+                  formatAttempt streamSessionId reasons
+                  video {
+                    delivery
+                    source { codec width height frameRate bitrate videoRange dolbyVision }
+                    output { codec width height videoRange dolbyVision }
+                  }
+                  audio { delivery source { codec channels bitrate } output { codec channels bitrate } }
+                }
+              }
+            }
+            """
+                .formatted(playbackId));
+
+    var decision = "data.playbackSession.decisions[0]";
+    assertThat(result.read("data.playbackSession.decisions.length()", Integer.class)).isEqualTo(1);
+    assertThat(result.read(decision + ".formatAttempt", Integer.class)).isEqualTo(1);
+    assertThat(result.read(decision + ".reasons", List.class))
+        .containsExactly("AUDIO_CODEC_NOT_DECLARED");
+    assertThat(result.read(decision + ".video.delivery", String.class)).isEqualTo("COPY");
+    assertThat(result.read(decision + ".video.source", Map.class))
+        .containsEntry("codec", "h264")
+        .containsEntry("width", 1920)
+        .containsEntry("height", 1080)
+        .containsEntry("videoRange", "SDR")
+        .containsEntry("dolbyVision", false)
+        .containsEntry("bitrate", null);
+    assertThat(result.read(decision + ".audio.delivery", String.class)).isEqualTo("ENCODE");
+    assertThat(result.read(decision + ".audio.source", Map.class))
+        .containsEntry("codec", "aac")
+        .containsEntry("bitrate", null);
+    assertThat(result.read(decision + ".audio.output", Map.class))
+        .containsEntry("codec", "aac")
+        .containsEntry("channels", 2)
+        .containsEntry("bitrate", 128_000);
   }
 
   private DocumentContext startPlayback(VideoQuality quality) {
