@@ -5,9 +5,12 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
-import com.streamarr.server.domain.streaming.CompatibleBase;
+import com.streamarr.server.domain.streaming.BitstreamRewrite;
+import com.streamarr.server.domain.streaming.ChromaticityCoordinates;
+import com.streamarr.server.domain.streaming.ContentLightLevel;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.MasteringDisplayColorVolume;
 import com.streamarr.server.domain.streaming.PlannedVideoOutput;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -150,21 +153,76 @@ final class RemoteVariantJobMapper {
             .setSourceCodecFamily(sourceCodecFamily(source))
             .setSourcePacketsCarryPresentationTimes(sourcePacketsCarryPresentationTimes(source))
             .setCopyKeepsPacketBytes(copyKeepsPacketBytes(source));
-    plannedCopyRange(decision.plannedVideoOutput()).ifPresent(video::setOutputDynamicRange);
+    plannedCopyOutput(video, decision.plannedVideoOutput());
     return video.build();
   }
 
-  // An SDR copy passes the source's range through, so it carries no planned range and still reaches
-  // a worker that predates the planned output (ADR 0013).
+  // An SDR copy without rewrites passes the source's range through, so it carries no planned
+  // output and still reaches a worker that predates the planned output (ADR 0013).
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static Optional<com.streamarr.transcode.v1.VideoDynamicRange> plannedCopyRange(
-      PlannedVideoOutput planned) {
-    if (planned instanceof PlannedVideoOutput.StreamCopy copy
-        && copy.dynamicRange().compatibleBase() != CompatibleBase.SDR) {
-      return Optional.of(RemoteDynamicRangeMapper.toProto(copy.dynamicRange()));
+  private static void plannedCopyOutput(
+      com.streamarr.transcode.v1.VideoDecision.Builder video, PlannedVideoOutput planned) {
+    if (!(planned instanceof PlannedVideoOutput.StreamCopy copy)
+        || !copy.requiresPlannedOutputSupport()) {
+      return;
     }
 
-    return Optional.empty();
+    video.setOutputDynamicRange(RemoteDynamicRangeMapper.toProto(copy.dynamicRange()));
+    copy.bitstreamRewrites().stream()
+        .map(RemoteVariantJobMapper::bitstreamRewrite)
+        .forEach(video::addBitstreamRewrites);
+    copy.masteringDisplay()
+        .map(RemoteVariantJobMapper::masteringDisplay)
+        .ifPresent(video::setMasteringDisplay);
+    copy.contentLightLevel()
+        .map(RemoteVariantJobMapper::contentLightLevel)
+        .ifPresent(video::setContentLightLevel);
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static com.streamarr.transcode.v1.BitstreamRewrite bitstreamRewrite(
+      BitstreamRewrite rewrite) {
+    return switch (rewrite) {
+      case STRIP_DOLBY_VISION ->
+          com.streamarr.transcode.v1.BitstreamRewrite.BITSTREAM_REWRITE_STRIP_DOLBY_VISION;
+      case STRIP_HDR10_PLUS ->
+          com.streamarr.transcode.v1.BitstreamRewrite.BITSTREAM_REWRITE_STRIP_HDR10_PLUS;
+      case NORMALIZE_DOLBY_VISION_RECORD ->
+          com.streamarr.transcode.v1.BitstreamRewrite
+              .BITSTREAM_REWRITE_NORMALIZE_DOLBY_VISION_RECORD;
+    };
+  }
+
+  // The domain values already use the units of the SEI fields and the contract (ADR 0036).
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static com.streamarr.transcode.v1.MasteringDisplayColorVolume masteringDisplay(
+      MasteringDisplayColorVolume display) {
+    return com.streamarr.transcode.v1.MasteringDisplayColorVolume.newBuilder()
+        .setRed(coordinates(display.red()))
+        .setGreen(coordinates(display.green()))
+        .setBlue(coordinates(display.blue()))
+        .setWhitePoint(coordinates(display.whitePoint()))
+        .setMaxLuminance((int) display.maxLuminance())
+        .setMinLuminance((int) display.minLuminance())
+        .build();
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static com.streamarr.transcode.v1.ChromaticityCoordinates coordinates(
+      ChromaticityCoordinates coordinates) {
+    return com.streamarr.transcode.v1.ChromaticityCoordinates.newBuilder()
+        .setX(coordinates.x())
+        .setY(coordinates.y())
+        .build();
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static com.streamarr.transcode.v1.ContentLightLevel contentLightLevel(
+      ContentLightLevel level) {
+    return com.streamarr.transcode.v1.ContentLightLevel.newBuilder()
+        .setMaxContentLightLevel(level.maxContentLightLevel())
+        .setMaxFrameAverageLightLevel(level.maxFrameAverageLightLevel())
+        .build();
   }
 
   // The projection that slot counts and execution targets read carries every video field that
@@ -178,7 +236,7 @@ final class RemoteVariantJobMapper {
                     ? VideoMode.VIDEO_MODE_COPY
                     : VideoMode.VIDEO_MODE_ENCODE)
             .setCodecFamily(codecFamily(decision.videoCodecFamily()));
-    plannedCopyRange(decision.plannedVideoOutput()).ifPresent(video::setOutputDynamicRange);
+    plannedCopyOutput(video, decision.plannedVideoOutput());
     return com.streamarr.transcode.v1.TranscodeDecision.newBuilder()
         .setMode(mode(decision.transcodeMode()))
         .setVideo(video)

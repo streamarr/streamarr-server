@@ -1,5 +1,6 @@
 package com.streamarr.server.domain.streaming;
 
+import java.util.List;
 import java.util.Optional;
 import lombok.Builder;
 import lombok.NonNull;
@@ -8,7 +9,9 @@ import lombok.NonNull;
  * {@code encodeCodecProfile} holds the codec profile that the decision's encode forces (ADR 0013),
  * so a decision that copies the video holds none. {@code videoSource} holds the playback facts of
  * the chosen video stream that the decision read. A decision that copies the video needs the codec
- * string that the probe stored, because the copy job carries it.
+ * string that the probe stored, because the copy job carries it. {@code videoBitstreamRewrites}
+ * lists every bitstream rewrite of the decision's copy, and a decision that encodes the video lists
+ * none (ADR 0036).
  */
 @Builder(toBuilder = true)
 public record TranscodeDecision(
@@ -17,7 +20,8 @@ public record TranscodeDecision(
     @NonNull Optional<EncodeCodecProfile> encodeCodecProfile,
     AudioDecision audioDecision,
     SubtitleDecision subtitleDecision,
-    @NonNull Optional<VideoPlaybackFacts> videoSource) {
+    @NonNull Optional<VideoPlaybackFacts> videoSource,
+    @NonNull List<BitstreamRewrite> videoBitstreamRewrites) {
 
   public TranscodeDecision {
     var copiesVideo = transcodeMode != null && transcodeMode.copiesVideo();
@@ -30,6 +34,13 @@ public record TranscodeDecision(
       throw new IllegalArgumentException(
           "A decision that copies the video cannot hold an encode codec profile");
     }
+
+    if (!copiesVideo && !videoBitstreamRewrites.isEmpty()) {
+      throw new IllegalArgumentException(
+          "A decision that encodes the video cannot list a bitstream rewrite");
+    }
+
+    videoBitstreamRewrites = List.copyOf(videoBitstreamRewrites);
 
     if (encodeCodecProfile
         .filter(profile -> !profile.codecFamilyName().equals(videoCodecFamily))
@@ -80,7 +91,7 @@ public record TranscodeDecision(
       return PlannedVideoOutput.Encode.sdr(encodeCodecProfile);
     }
 
-    return PlannedVideoOutput.StreamCopy.of(videoSource.orElseThrow());
+    return PlannedVideoOutput.StreamCopy.of(videoSource.orElseThrow(), videoBitstreamRewrites);
   }
 
   /**
@@ -104,5 +115,6 @@ public record TranscodeDecision(
   public static class TranscodeDecisionBuilder {
     private Optional<EncodeCodecProfile> encodeCodecProfile = Optional.empty();
     private Optional<VideoPlaybackFacts> videoSource = Optional.empty();
+    private List<BitstreamRewrite> videoBitstreamRewrites = List.of();
   }
 }

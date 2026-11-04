@@ -29,14 +29,19 @@ public sealed interface PlannedVideoOutput {
   /**
    * A stream copy of the chosen video stream. {@code codecProfile} and {@code codecLevel} are what
    * probe version 5 and later report, and are empty for a probe version 4 outcome. {@code
-   * bitstreamRewrites} lists every change that the worker makes to the copied stream.
+   * bitstreamRewrites} lists every change that the worker makes to the copied stream. {@code
+   * masteringDisplay} and {@code contentLightLevel} are the static HDR metadata that the worker
+   * writes into the copy's hvcC record. Only a copy with a PQ output holds them, and only the
+   * values that the probe stored (ADR 0036).
    */
   @Builder
   record StreamCopy(
       @NonNull VideoDynamicRange dynamicRange,
       @NonNull Optional<VideoCodecProfile> codecProfile,
       @NonNull OptionalInt codecLevel,
-      @NonNull List<BitstreamRewrite> bitstreamRewrites)
+      @NonNull List<BitstreamRewrite> bitstreamRewrites,
+      @NonNull Optional<MasteringDisplayColorVolume> masteringDisplay,
+      @NonNull Optional<ContentLightLevel> contentLightLevel)
       implements PlannedVideoOutput {
 
     public StreamCopy {
@@ -44,16 +49,33 @@ public sealed interface PlannedVideoOutput {
       bitstreamRewrites = List.copyOf(bitstreamRewrites);
     }
 
-    /** The copy of the chosen video stream, without bitstream rewrites. */
-    public static StreamCopy of(@NonNull VideoPlaybackFacts source) {
+    /** The copy of the chosen video stream with the bitstream rewrites. */
+    public static StreamCopy of(
+        @NonNull VideoPlaybackFacts source, @NonNull List<BitstreamRewrite> bitstreamRewrites) {
       var properties = source.videoProperties();
-      return StreamCopy.builder()
-          .dynamicRange(plannedRange(source.dynamicRange()))
-          .codecProfile(properties.flatMap(VideoStreamProperties::codecProfile))
-          .codecLevel(
-              properties.map(VideoStreamProperties::codecLevel).orElseGet(OptionalInt::empty))
-          .bitstreamRewrites(List.of())
-          .build();
+      var range = plannedRange(source.dynamicRange().afterRewrites(bitstreamRewrites));
+      var copy =
+          StreamCopy.builder()
+              .dynamicRange(range)
+              .codecProfile(properties.flatMap(VideoStreamProperties::codecProfile))
+              .codecLevel(
+                  properties.map(VideoStreamProperties::codecLevel).orElseGet(OptionalInt::empty))
+              .bitstreamRewrites(bitstreamRewrites);
+      if (range.compatibleBase() == CompatibleBase.PQ) {
+        copy.masteringDisplay(source.masteringDisplay())
+            .contentLightLevel(source.contentLightLevel());
+      }
+
+      return copy.build();
+    }
+
+    /**
+     * Whether only a worker that checks a copy against its planned output can deliver this copy: a
+     * copy whose output is not SDR, or that lists a rewrite. An SDR copy without rewrites passes
+     * the source through, so any worker delivers it (ADR 0013).
+     */
+    public boolean requiresPlannedOutputSupport() {
+      return dynamicRange.compatibleBase() != CompatibleBase.SDR || !bitstreamRewrites.isEmpty();
     }
 
     // A copy of a source whose compatible base is UNSPECIFIED plans SDR (ADR 0013). HDR10+ or
@@ -75,6 +97,13 @@ public sealed interface PlannedVideoOutput {
       }
 
       return new VideoDynamicRange(base, hdr10Plus, dolbyVision);
+    }
+
+    // Lombok builder defaults — its generated setters assign them
+    @SuppressWarnings({"java:S1068", "java:S9438"})
+    public static class StreamCopyBuilder {
+      private Optional<MasteringDisplayColorVolume> masteringDisplay = Optional.empty();
+      private Optional<ContentLightLevel> contentLightLevel = Optional.empty();
     }
   }
 

@@ -73,6 +73,60 @@ class PlannedVideoOutputTest {
     assertThat(copy.bitstreamRewrites()).containsExactly(BitstreamRewrite.STRIP_HDR10_PLUS);
   }
 
+  // ADR 0013: a worker that predates the planned output passes the source through unchanged, so
+  // only an SDR copy without rewrites reaches it.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("copiesAndWhetherTheyRequirePlannedOutputSupport")
+  @DisplayName(
+      "Should require planned output support when the copy's output is not SDR or it lists a"
+          + " rewrite")
+  void shouldRequirePlannedOutputSupportWhenTheCopysOutputIsNotSdrOrItListsARewrite(
+      PlannedVideoOutput.StreamCopy copy, boolean required) {
+    assertThat(copy.requiresPlannedOutputSupport()).isEqualTo(required);
+  }
+
+  static Stream<Arguments> copiesAndWhetherTheyRequirePlannedOutputSupport() {
+    return Stream.of(
+        Arguments.of(Named.of("an SDR copy without rewrites", copyBuilder().build()), false),
+        Arguments.of(
+            Named.of(
+                "an SDR copy that keeps Dolby Vision profile 8.2",
+                copyBuilder()
+                    .dynamicRange(
+                        new VideoDynamicRange(
+                            CompatibleBase.SDR,
+                            Presence.ABSENT,
+                            new DolbyVision.Present(Optional.empty(), Presence.PRESENT)))
+                    .build()),
+            false),
+        Arguments.of(Named.of("a PQ copy", copyOf(CompatibleBase.PQ)), true),
+        Arguments.of(Named.of("an HLG copy", copyOf(CompatibleBase.HLG)), true),
+        Arguments.of(
+            Named.of(
+                "a copy without a compatible base",
+                copyBuilder()
+                    .dynamicRange(
+                        new VideoDynamicRange(
+                            CompatibleBase.NONE,
+                            Presence.ABSENT,
+                            new DolbyVision.Present(Optional.empty(), Presence.PRESENT)))
+                    .build()),
+            true),
+        Arguments.of(
+            Named.of(
+                "an SDR copy that lists a rewrite",
+                copyBuilder()
+                    .bitstreamRewrites(List.of(BitstreamRewrite.STRIP_HDR10_PLUS))
+                    .build()),
+            true));
+  }
+
+  private static PlannedVideoOutput.StreamCopy copyOf(CompatibleBase base) {
+    return copyBuilder()
+        .dynamicRange(new VideoDynamicRange(base, Presence.ABSENT, new DolbyVision.Absent()))
+        .build();
+  }
+
   @ParameterizedTest(name = "{0}")
   @MethodSource("plannedOutputsMissingARequiredValue")
   @DisplayName("Should refuse a planned output when a required value is missing")
@@ -104,7 +158,9 @@ class PlannedVideoOutputTest {
             "bitstreamRewrites",
             () -> copyBuilder().bitstreamRewrites(null).build()),
         planWithoutValue(
-            "a stream copy of no source", "source", () -> PlannedVideoOutput.StreamCopy.of(null)),
+            "a stream copy of no source",
+            "source",
+            () -> PlannedVideoOutput.StreamCopy.of(null, List.of())),
         planWithoutValue(
             "an encode without a codec profile",
             "codecProfile",
