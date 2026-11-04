@@ -25,12 +25,6 @@ sealed interface CopiedDolbyVision {
   record Declarable(@NonNull DolbyVisionProfile profile, int level) implements CopiedDolbyVision {}
 
   /**
-   * Profile 9 whose signaled transfer is not SDR. Profile 9 keeps its RPUs under an SDR base, so no
-   * entry accepts the copy and the server never strips it (ADR 0036).
-   */
-  record Profile9WithoutSdrBase() implements CopiedDolbyVision {}
-
-  /**
    * Dolby Vision that no entry accepts: profile 6 or 7, an unknown profile, a profile that the
    * contract does not name, or a stream whose level neither its record nor the level table gives.
    * Until streamarr/streamarr-server#652 stores a maximum frame rate, the table gives no level. A
@@ -65,10 +59,6 @@ sealed interface CopiedDolbyVision {
 
     if (base == CompatibleBase.SDR && isSdrBaseProfile(codecFamily, profileNumber.getAsInt())) {
       return new KeptUnderSdrBase();
-    }
-
-    if (codecFamily == ProbedCodecFamily.H264 && profileNumber.getAsInt() == 9) {
-      return new Profile9WithoutSdrBase();
     }
 
     // Profile 5 has no compatible base whatever the signaled transfer claims, so a PQ transfer

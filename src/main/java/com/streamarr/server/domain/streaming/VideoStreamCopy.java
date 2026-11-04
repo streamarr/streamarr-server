@@ -89,8 +89,7 @@ public record VideoStreamCopy(
       case CopiedDolbyVision.Declarable _, CopiedDolbyVision.Undeclarable _ -> true;
       case CopiedDolbyVision.None _,
           CopiedDolbyVision.KeptUnderSdrBase _,
-          CopiedDolbyVision.NeedsDolbyVisionSampleEntry _,
-          CopiedDolbyVision.Profile9WithoutSdrBase _ ->
+          CopiedDolbyVision.NeedsDolbyVisionSampleEntry _ ->
           false;
     };
   }
