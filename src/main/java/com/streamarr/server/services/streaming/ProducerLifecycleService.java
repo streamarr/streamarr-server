@@ -209,7 +209,7 @@ public class ProducerLifecycleService {
     var state = recoveryStates.get(key);
     var session = runtimeRegistry.findById(key.sessionId());
     if (state == null || session.isEmpty()) {
-      return startupStallThreshold(FIRST_SEGMENT_ONLY);
+      return startupStallThreshold(properties.targetSegmentDuration());
     }
 
     var deadline =
@@ -508,21 +508,21 @@ public class ProducerLifecycleService {
         clock.instant());
   }
 
-  // Before its first media segment is stored, a job attempt gets the stall threshold plus one
-  // target segment duration for each segment it encodes: its first segment and, when it encodes
-  // video from after segment 0, the preroll segment before it, where the worker starts encoding.
+  // Before its first media segment is stored, a job attempt gets the stall threshold plus the grid
+  // slots of each segment it encodes: its first segment and, when it encodes video from after
+  // segment 0, the preroll segment before it, where the worker starts encoding.
   private Duration startupStallThreshold(StreamSession session, VariantDeliveryState state) {
+    var timeline = timelineOf(session);
     if (session.getTranscodeDecision().transcodeMode().copiesVideo() || state.runStart() == 0) {
-      return startupStallThreshold(FIRST_SEGMENT_ONLY);
+      return startupStallThreshold(timeline.slotSpan(state.runStart(), FIRST_SEGMENT_ONLY));
     }
 
-    return startupStallThreshold(FIRST_SEGMENT_AND_PREROLL);
+    return startupStallThreshold(
+        timeline.slotSpan(state.runStart() - 1, FIRST_SEGMENT_AND_PREROLL));
   }
 
-  private Duration startupStallThreshold(int segmentsEncodedBeforeFirstStored) {
-    return properties
-        .producerStallThreshold()
-        .plus(properties.targetSegmentDuration().multipliedBy(segmentsEncodedBeforeFirstStored));
+  private Duration startupStallThreshold(Duration encodedBeforeFirstStored) {
+    return properties.producerStallThreshold().plus(encodedBeforeFirstStored);
   }
 
   private static ReplacementReason replacementReason(
@@ -1473,7 +1473,9 @@ public class ProducerLifecycleService {
       return true;
     }
 
-    var probeIndex = requestedIndex.getAsInt() - forwardGapSegments();
+    var probeIndex =
+        timelineOf(session)
+            .mediaSegmentIndexBefore(requestedIndex.getAsInt(), FORWARD_RELOCATION_GAP);
     if (probeIndex < startSequenceNumber) {
       return false;
     }
@@ -1505,12 +1507,6 @@ public class ProducerLifecycleService {
     log.info(
         "Relocated variant {} of session {} to segment {}", variantLabel, sessionId, segmentIndex);
     return true;
-  }
-
-  private int forwardGapSegments() {
-    var gapSegments =
-        FORWARD_RELOCATION_GAP.toSeconds() / properties.targetSegmentDuration().toSeconds();
-    return Math.max(1, (int) gapSegments);
   }
 
   /**

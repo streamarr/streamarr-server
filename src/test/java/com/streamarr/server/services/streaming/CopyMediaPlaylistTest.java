@@ -60,11 +60,22 @@ class CopyMediaPlaylistTest {
 
     assertThat(playlist.segments())
         .containsExactly(
-            new CopyMediaPlaylist.Segment(0, new BigDecimal("8.000000")),
-            new CopyMediaPlaylist.Segment(2, new BigDecimal("4.000000")),
-            new CopyMediaPlaylist.Segment(3, new BigDecimal("2.000000")));
+            CopyMediaPlaylist.Segment.builder()
+                .openingKeyframeIndex(0)
+                .slotStartSeconds(0)
+                .extinfSeconds(new BigDecimal("8.000000"))
+                .build(),
+            CopyMediaPlaylist.Segment.builder()
+                .openingKeyframeIndex(2)
+                .slotStartSeconds(6)
+                .extinfSeconds(new BigDecimal("4.000000"))
+                .build(),
+            CopyMediaPlaylist.Segment.builder()
+                .openingKeyframeIndex(3)
+                .slotStartSeconds(12)
+                .extinfSeconds(new BigDecimal("2.000000"))
+                .build());
     assertThat(playlist.targetDurationSeconds()).isEqualTo(8);
-    assertThat(playlist.targetSegmentDurationSeconds()).isEqualTo(6);
   }
 
   @Test
@@ -145,10 +156,10 @@ class CopyMediaPlaylistTest {
   @DisplayName("Should refuse a media playlist without segments or a segment without a duration")
   void shouldRefuseMediaPlaylistWithoutSegmentsOrSegmentWithoutDuration() {
     assertThatNullPointerException()
-        .isThrownBy(() -> new CopyMediaPlaylist(null, 6, 6))
+        .isThrownBy(() -> new CopyMediaPlaylist(null, 6))
         .withMessageContaining("segments");
     assertThatNullPointerException()
-        .isThrownBy(() -> new CopyMediaPlaylist.Segment(0, null))
+        .isThrownBy(() -> CopyMediaPlaylist.Segment.builder().build())
         .withMessageContaining("extinfSeconds");
   }
 }

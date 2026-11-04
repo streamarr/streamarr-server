@@ -27,9 +27,14 @@ class CopyMediaPlaylistFixture {
   private static CopyMediaPlaylist listing(int targetDurationSeconds, List<String> extinfSeconds) {
     var segments = new ArrayList<CopyMediaPlaylist.Segment>();
     for (var index = 0; index < extinfSeconds.size(); index++) {
-      segments.add(new CopyMediaPlaylist.Segment(index, new BigDecimal(extinfSeconds.get(index))));
+      segments.add(
+          CopyMediaPlaylist.Segment.builder()
+              .openingKeyframeIndex(index)
+              .slotStartSeconds(index * targetDurationSeconds)
+              .extinfSeconds(new BigDecimal(extinfSeconds.get(index)))
+              .build());
     }
 
-    return new CopyMediaPlaylist(segments, targetDurationSeconds, targetDurationSeconds);
+    return new CopyMediaPlaylist(segments, targetDurationSeconds);
   }
 }
