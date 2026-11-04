@@ -9,6 +9,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.SystemActor;
+import com.streamarr.server.domain.streaming.EncoderPresetChoice;
+import com.streamarr.server.repositories.ServerSettingsRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Duration;
 import org.jooq.DSLContext;
@@ -19,6 +21,9 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Idle Segment Retention Setting Integration Tests")
@@ -37,6 +42,8 @@ class IdleSegmentRetentionSettingIT extends AbstractIntegrationTest {
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private DSLContext dsl;
   @Autowired private ServerSettingsService serverSettingsService;
+  @Autowired private ServerSettingsRepository serverSettingsRepository;
+  @Autowired private PlatformTransactionManager transactionManager;
 
   private AuthTestSupport.TestIdentity serverAdmin;
   private AuthTestSupport.TestIdentity resident;
@@ -109,6 +116,32 @@ class IdleSegmentRetentionSettingIT extends AbstractIntegrationTest {
 
     assertThat(dsl.selectFrom(SERVER_SETTINGS).fetchSingle().getIdleSegmentRetentionMinutes())
         .isEqualTo(60);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep an encoder preset change that commits while a retention change is in flight")
+  void shouldKeepEncoderPresetChangeThatCommitsWhileRetentionChangeIsInFlight() {
+    var retentionChange = new TransactionTemplate(transactionManager);
+    var presetChange = new TransactionTemplate(transactionManager);
+    presetChange.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+
+    retentionChange.executeWithoutResult(
+        _ -> {
+          var settings = serverSettingsRepository.findAll().getFirst();
+          settings.setIdleSegmentRetentionMinutes(30);
+          presetChange.executeWithoutResult(
+              _ -> {
+                var concurrent = serverSettingsRepository.findAll().getFirst();
+                concurrent.setEncoderPreset(EncoderPresetChoice.MEDIUM);
+                serverSettingsRepository.save(concurrent);
+              });
+          serverSettingsRepository.save(settings);
+        });
+
+    var stored = dsl.selectFrom(SERVER_SETTINGS).fetchSingle();
+    assertThat(stored.getIdleSegmentRetentionMinutes()).isEqualTo(30);
+    assertThat(stored.getEncoderPreset()).isEqualTo("MEDIUM");
   }
 
   @Test
