@@ -49,6 +49,14 @@ public final class SubscriptionBroadcaster<T> {
         });
   }
 
+  /**
+   * Whether an operation is registered now. A publisher may skip reading a value that nobody would
+   * receive: an operation that registers later builds its state from its queries.
+   */
+  public boolean hasRegistrations() {
+    return !registrations.isEmpty();
+  }
+
   public void broadcast(T value) {
     registrations.forEach(sink -> sink.next(value));
   }

@@ -36,9 +36,11 @@ public class StreamingConfig {
   public PlaybackSessionService playbackSessionService(
       StreamingService streamingService,
       PlaybackAuthorityGate authorityGate,
-      StreamingProperties properties) {
+      StreamingProperties properties,
+      ApplicationEventPublisher eventPublisher) {
     return PlaybackSessionService.builder()
         .streamingService(streamingService)
+        .eventPublisher(eventPublisher)
         .authorityGate(authorityGate)
         .maximumFormatAttempts(properties.maxFormatAttempts())
         .build();

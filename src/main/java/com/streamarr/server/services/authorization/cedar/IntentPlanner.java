@@ -180,6 +180,8 @@ final class IntentPlanner {
           unitPlan(AuthorizationCheck.onServer(Action.VIEW_IDLE_SEGMENT_RETENTION));
       case Intent.ChangeIdleSegmentRetention _ ->
           unitPlan(AuthorizationCheck.onServer(Action.CHANGE_IDLE_SEGMENT_RETENTION));
+      case Intent.ViewActiveStreams _ ->
+          unitPlan(AuthorizationCheck.onServer(Action.VIEW_ACTIVE_STREAMS));
     };
   }
 
