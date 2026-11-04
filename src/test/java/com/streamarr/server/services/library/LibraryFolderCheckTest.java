@@ -3,6 +3,7 @@ package com.streamarr.server.services.library;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
@@ -186,6 +187,24 @@ class LibraryFolderCheckTest {
     var library = libraryAt(mediaRoot.resolve("Movies"));
 
     assertThatNoException().isThrownBy(() -> checkWithMediaRoot(mediaRoot).requirePassed(library));
+  }
+
+  @Test
+  @DisplayName(
+      "Should fail as a soft link when the stored library folder differs in letter case from the"
+          + " media root and a folder between them is a soft link")
+  void
+      shouldFailAsASoftLinkWhenTheStoredLibraryFolderDiffersInLetterCaseFromTheMediaRootAndAFolderBetweenThemIsASoftLink(
+          @TempDir Path temp) throws IOException {
+    var mediaRoot = Files.createDirectory(temp.resolve("Media"));
+    assumeTrue(
+        Files.isDirectory(temp.resolve("MEDIA")), "the temporary directory ignores letter case");
+    var realShows = Files.createDirectories(temp.resolve("real-shows/Movies"));
+    Files.createFile(realShows.resolve("movie.mkv"));
+    Files.createSymbolicLink(mediaRoot.resolve("shows"), realShows.getParent());
+    var library = libraryAt(temp.resolve("media/shows/Movies"));
+
+    assertFailure(checkWithMediaRoot(mediaRoot), library, SOFT_LINK_FAILURE);
   }
 
   private LibraryFolderCheck checkWithMediaRoot(Path mediaRoot) {

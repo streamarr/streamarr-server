@@ -23,17 +23,21 @@ public class MediaRoot {
 
   /**
    * Whether {@code folder}, or a folder between the media root and it, is a soft link. A folder
-   * outside the media root is checked alone. {@code folder} carries the names that the file system
-   * stores.
+   * outside the media root is checked alone.
+   *
+   * @throws IOException if {@code folder} does not exist or a folder on its path cannot be listed
    */
-  public boolean hasSoftLinkTo(@NonNull Path folder) {
+  public boolean hasSoftLinkTo(@NonNull Path folder) throws IOException {
+    // A stored library folder can keep a letter case that the file system no longer stores, and
+    // the media root is compared name by name.
+    var stored = FilepathNameNormalizer.normalizeToFileSystemNames(folder);
     var mediaRoot = path();
-    var first = folder;
-    if (folder.startsWith(mediaRoot) && !folder.equals(mediaRoot)) {
-      first = mediaRoot.resolve(mediaRoot.relativize(folder).getName(0));
+    var first = stored;
+    if (stored.startsWith(mediaRoot) && !stored.equals(mediaRoot)) {
+      first = mediaRoot.resolve(mediaRoot.relativize(stored).getName(0));
     }
 
-    return FilepathSoftLinks.hasSoftLinkFrom(first, folder);
+    return FilepathSoftLinks.hasSoftLinkFrom(first, stored);
   }
 
   /**

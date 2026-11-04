@@ -57,8 +57,9 @@ public class LibraryFolderCheck {
       return Optional.of(LibraryFolderProblem.UNREADABLE);
     }
 
-    if (mediaRoot.hasSoftLinkTo(folder)) {
-      return Optional.of(LibraryFolderProblem.SOFT_LINK);
+    var softLinkProblem = softLinkProblem(folder);
+    if (softLinkProblem.isPresent()) {
+      return softLinkProblem;
     }
 
     try (var entries = Files.newDirectoryStream(folder)) {
@@ -76,5 +77,19 @@ public class LibraryFolderCheck {
     }
 
     return Optional.empty();
+  }
+
+  private Optional<LibraryFolderProblem> softLinkProblem(Path folder) {
+    try {
+      if (mediaRoot.hasSoftLinkTo(folder)) {
+        return Optional.of(LibraryFolderProblem.SOFT_LINK);
+      }
+
+      return Optional.empty();
+    } catch (NoSuchFileException _) {
+      return Optional.of(LibraryFolderProblem.MISSING);
+    } catch (IOException | SecurityException _) {
+      return Optional.of(LibraryFolderProblem.UNREADABLE);
+    }
   }
 }

@@ -161,7 +161,7 @@ public class LibraryManagementService {
   // Scans and playback never follow a soft link below the media root (ADR 0045). So a library
   // folder sits in the media root, and neither it nor a folder between the media root and it may
   // be a soft link.
-  private Optional<AddLibraryRejection> folderRejection(Path folder) {
+  private Optional<AddLibraryRejection> folderRejection(Path folder) throws IOException {
     var root = mediaRoot.path();
     if (!folder.startsWith(root)) {
       return Optional.of(new AddLibraryRejection.PathOutsideMediaRoot(root));
