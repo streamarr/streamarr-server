@@ -291,7 +291,12 @@ class LibraryOperationFinishingStepsRunnerTest {
     return LibraryOperationFinishingStepsRunner.builder()
         .libraryOperations(libraryOperations)
         .libraryRepository(libraries)
-        .libraryFolderCheck(new LibraryFolderCheck(fileSystem, mediaFileRepository, meterRegistry))
+        .libraryFolderCheck(
+            LibraryFolderCheck.builder()
+                .fileSystem(fileSystem)
+                .mediaFileRepository(mediaFileRepository)
+                .meterRegistry(meterRegistry)
+                .build())
         .orphanedMediaFileCleanupService(
             new OrphanedMediaFileCleanupService(
                 mediaFileRepository, movieService, fileSystem, _ -> {}))

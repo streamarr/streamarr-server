@@ -1021,7 +1021,11 @@ class LibraryOperationExecutionTest {
           serviceBuilder()
               .executionLibraryOperations(emptyingBeforeTheFinishingStep(path.getParent()))
               .libraryFolderCheck(
-                  new LibraryFolderCheck(fileSystem, unreadableRecordedFiles, meterRegistry))
+                  LibraryFolderCheck.builder()
+                      .fileSystem(fileSystem)
+                      .mediaFileRepository(unreadableRecordedFiles)
+                      .meterRegistry(meterRegistry)
+                      .build())
               .build();
 
       var result = runs.scanLibrary(savedLibraryId);
@@ -2766,7 +2770,11 @@ class LibraryOperationExecutionTest {
   }
 
   private LibraryFolderCheck libraryFolderCheckWith(FileSystem libraryFileSystem) {
-    return new LibraryFolderCheck(libraryFileSystem, fakeMediaFileRepository, meterRegistry);
+    return LibraryFolderCheck.builder()
+        .fileSystem(libraryFileSystem)
+        .mediaFileRepository(fakeMediaFileRepository)
+        .meterRegistry(meterRegistry)
+        .build();
   }
 
   private double folderCheckFailures(String reason) {

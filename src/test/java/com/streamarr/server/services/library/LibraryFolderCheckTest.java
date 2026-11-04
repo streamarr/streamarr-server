@@ -35,7 +35,11 @@ class LibraryFolderCheckTest {
   private final FakeMediaFileRepository mediaFiles = new FakeMediaFileRepository();
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
   private final LibraryFolderCheck libraryFolderCheck =
-      new LibraryFolderCheck(fileSystem, mediaFiles, meterRegistry);
+      LibraryFolderCheck.builder()
+          .fileSystem(fileSystem)
+          .mediaFileRepository(mediaFiles)
+          .meterRegistry(meterRegistry)
+          .build();
 
   @AfterEach
   void closeFileSystem() throws IOException {
@@ -110,12 +114,14 @@ class LibraryFolderCheckTest {
             .filepathUri("file:///library")
             .build();
     var failingCheck =
-        new LibraryFolderCheck(
-            ThrowingFileSystemWrapper.failingBeforeTheFirstEntry(
-                fileSystem,
-                () -> new DirectoryIteratorException(new IOException("Simulated I/O error"))),
-            mediaFiles,
-            meterRegistry);
+        LibraryFolderCheck.builder()
+            .fileSystem(
+                ThrowingFileSystemWrapper.failingBeforeTheFirstEntry(
+                    fileSystem,
+                    () -> new DirectoryIteratorException(new IOException("Simulated I/O error"))))
+            .mediaFileRepository(mediaFiles)
+            .meterRegistry(meterRegistry)
+            .build();
 
     assertThatThrownBy(() -> failingCheck.requirePassed(library))
         .isInstanceOfSatisfying(

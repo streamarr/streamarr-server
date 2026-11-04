@@ -14,6 +14,7 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.NotDirectoryException;
 import java.nio.file.Path;
 import java.util.Optional;
+import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -23,6 +24,7 @@ import org.springframework.stereotype.Service;
  * that went on would remove every item of the library.
  */
 @Service
+@Builder
 @RequiredArgsConstructor
 public class LibraryFolderCheck {
 
