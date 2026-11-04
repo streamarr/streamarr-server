@@ -107,7 +107,7 @@ class ProbeSourceFactsInvariantsIT extends AbstractIntegrationTest {
                 WHERE conname = ANY(?::text[])
                 """,
                 (Object) V113_CONSTRAINTS.keySet().toArray(String[]::new))
-            .map(record -> List.of(record.get(0), record.get(1), record.get(2)));
+            .map(row -> List.of(row.get(0), row.get(1), row.get(2)));
 
     assertThat(validated)
         .containsExactlyInAnyOrderElementsOf(
