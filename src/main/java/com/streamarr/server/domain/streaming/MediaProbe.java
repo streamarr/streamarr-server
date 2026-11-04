@@ -81,7 +81,7 @@ public record MediaProbe(
 
   /** The file's source container, or empty when the probe's facts name no single one. */
   public Optional<SourceContainer> sourceContainer() {
-    return containerFormat.flatMap(SourceContainer::ofProbedFormat);
+    return containerFormat.flatMap(format -> SourceContainer.ofProbedFormat(format, majorBrand));
   }
 
   public List<StreamInfo> audioStreams() {

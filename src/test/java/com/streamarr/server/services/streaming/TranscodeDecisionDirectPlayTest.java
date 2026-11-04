@@ -28,6 +28,7 @@ import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.streaming.VideoSampleEntry;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
@@ -45,7 +46,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * The direct-play decision (ADR 0045, streamarr/streamarr-server#59): the first format attempt of
@@ -56,6 +56,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 class TranscodeDecisionDirectPlayTest {
 
   private static final String MATROSKA_DEMUXER = "matroska,webm";
+  private static final String MOV_DEMUXER = "mov,mp4,m4a,3gp,3g2,mj2";
 
   private final TranscodeDecisionService service =
       new TranscodeDecisionService(
@@ -99,18 +100,69 @@ class TranscodeDecisionDirectPlayTest {
     assertThat(service.decideDirectPlay(request.build())).isEmpty();
   }
 
-  // Probe version 7 adds the major brand that tells MP4 from MOV (streamarr/streamarr-server#59).
-  @ParameterizedTest
-  @ValueSource(strings = {"mov,mp4,m4a,3gp,3g2,mj2", "wav"})
-  @DisplayName("Should play over HLS when the probe's demuxer names no single source container")
-  void shouldPlayOverHlsWhenTheProbesDemuxerNamesNoSingleSourceContainer(String demuxer) {
+  @Test
+  @DisplayName("Should play over HLS when the probe's demuxer names no video container")
+  void shouldPlayOverHlsWhenTheProbesDemuxerNamesNoVideoContainer() {
     var everyContainer = declarationListing(List.of(SourceContainer.values()));
     var request =
         request()
             .capabilityDeclaration(everyContainer)
-            .source(h264Source().containerFormat(Optional.of(demuxer)).build());
+            .source(h264Source().containerFormat(Optional.of("wav")).build());
 
     assertThat(service.decideDirectPlay(request.build())).isEmpty();
+  }
+
+  // The major brand tells MP4 from MOV: QuickTime's brand makes MOV, every other brand makes MP4,
+  // and a file without an ftyp box counts as MP4 (ADR 0045).
+  @ParameterizedTest(name = "major brand {0} in an entry for {1}")
+  @MethodSource("majorBrands")
+  @DisplayName(
+      "Should direct-play an MP4 or MOV file only when its entry lists the brand's container")
+  void shouldDirectPlayAnMp4OrMovFileOnlyWhenItsEntryListsTheBrandsContainer(
+      Optional<String> majorBrand, SourceContainer listed, Optional<SourceContainer> expected) {
+    var request =
+        request()
+            .capabilityDeclaration(isoDeclarationListing(listed))
+            .source(isoSource(majorBrand).build());
+
+    assertThat(service.decideDirectPlay(request.build())).isEqualTo(expected);
+  }
+
+  static Stream<Arguments> majorBrands() {
+    var mp4 = Optional.of(SourceContainer.MP4);
+    var mov = Optional.of(SourceContainer.MOV);
+    return Stream.of(
+        Arguments.of(Optional.of("isom"), SourceContainer.MP4, mp4),
+        Arguments.of(Optional.of("mp42"), SourceContainer.MP4, mp4),
+        Arguments.of(Optional.of("M4V "), SourceContainer.MP4, mp4),
+        Arguments.of(Optional.of("3gp4"), SourceContainer.MP4, mp4),
+        Arguments.of(Optional.empty(), SourceContainer.MP4, mp4),
+        Arguments.of(Optional.of("qt  "), SourceContainer.MOV, mov),
+        Arguments.of(Optional.of("qt  "), SourceContainer.MP4, Optional.empty()),
+        Arguments.of(Optional.of("isom"), SourceContainer.MOV, Optional.empty()),
+        Arguments.of(Optional.empty(), SourceContainer.MOV, Optional.empty()));
+  }
+
+  // An MP4 or MOV file is covered only under a sample entry that the entry lists, and a file probed
+  // before version 7 has no stored sample entry (ADR 0045).
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("sampleEntries")
+  @DisplayName("Should play an MP4 file over HLS when its entry does not list its sample entry")
+  void shouldPlayAnMp4FileOverHlsWhenItsEntryDoesNotListItsSampleEntry(
+      String scenario, Optional<String> storedSampleEntry) {
+    var facts = h264Facts().sampleEntry(storedSampleEntry).build();
+    var request =
+        request()
+            .capabilityDeclaration(isoDeclarationListing(SourceContainer.MP4))
+            .source(isoSource(Optional.of("isom")).videoPlaybackFacts(Optional.of(facts)).build());
+
+    assertThat(service.decideDirectPlay(request.build())).isEmpty();
+  }
+
+  static Stream<Arguments> sampleEntries() {
+    return Stream.of(
+        Arguments.of("avc3, which the entry does not list", Optional.of("avc3")),
+        Arguments.of("no sample entry, as before probe version 7", Optional.empty()));
   }
 
   @Test
@@ -260,6 +312,27 @@ class TranscodeDecisionDirectPlayTest {
         .video(List.of(h264EntryBuilder().directPlayContainers(containers).build()))
         .audio(List.of(aacEntryBuilder().directPlayContainers(containers).build()))
         .build();
+  }
+
+  // H.264 and AAC entries that list the container and the avc1 sample entry.
+  private static ClientCapabilityDeclaration isoDeclarationListing(SourceContainer container) {
+    return ClientCapabilityDeclaration.builder()
+        .video(
+            List.of(
+                h264EntryBuilder()
+                    .directPlayContainers(List.of(container))
+                    .directPlaySampleEntries(List.of(VideoSampleEntry.AVC1))
+                    .build()))
+        .audio(List.of(aacEntryBuilder().directPlayContainers(List.of(container)).build()))
+        .build();
+  }
+
+  // An H.264 file that ffprobe's MP4 and MOV demuxer read, stored under the avc1 sample entry.
+  private static MediaProbe.MediaProbeBuilder isoSource(Optional<String> majorBrand) {
+    return h264Source()
+        .containerFormat(Optional.of(MOV_DEMUXER))
+        .majorBrand(majorBrand)
+        .videoPlaybackFacts(Optional.of(h264Facts().sampleEntry(Optional.of("avc1")).build()));
   }
 
   private static ClientCapabilityDeclaration declarationWith(VideoCapabilityEntry video) {

@@ -80,9 +80,9 @@ The container of a media file as the probe found it. Direct play sends the file 
 with this container's media type.
 """
 enum SourceContainer {
-    "MPEG-4 Part 14, including M4V."
+    "MPEG-4 Part 14: a file whose major brand is not QuickTime's, including M4V and 3GP files, or a file without a major brand."
     MP4
-    "The QuickTime file format."
+    "The QuickTime file format: a file whose major brand is QuickTime's qt."
     MOV
     "Matroska, including WebM."
     MATROSKA
