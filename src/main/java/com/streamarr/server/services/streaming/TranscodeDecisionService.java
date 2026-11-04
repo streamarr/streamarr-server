@@ -155,7 +155,8 @@ public class TranscodeDecisionService {
         PlannedVideoOutput.StreamCopy.of(
             request.source().videoPlaybackFacts().orElseThrow(), bitstreamRewrites);
     return !copy.requiresPlannedOutputSupport()
-        || request.videoCopySupport().stream().anyMatch(worker -> worker.delivers(copy));
+        || request.videoCopySupport().stream()
+            .anyMatch(worker -> worker.deliversPlannedOutputOf(copy));
   }
 
   // Busy workers' verified encoders count, so a lack of free slots refuses a session for capacity

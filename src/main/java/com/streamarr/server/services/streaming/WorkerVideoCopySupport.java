@@ -18,12 +18,11 @@ public record WorkerVideoCopySupport(
     bitstreamRewrites = Set.copyOf(bitstreamRewrites);
   }
 
-  /** Whether this worker delivers the planned copy as the plan describes it. */
-  public boolean delivers(@NonNull PlannedVideoOutput.StreamCopy copy) {
-    if (!copy.requiresPlannedOutputSupport()) {
-      return true;
-    }
-
+  /**
+   * Whether this worker checks a copy against its planned output and applies every bitstream
+   * rewrite that the copy lists.
+   */
+  public boolean deliversPlannedOutputOf(@NonNull PlannedVideoOutput.StreamCopy copy) {
     return plannedOutput && bitstreamRewrites.containsAll(copy.bitstreamRewrites());
   }
 }
