@@ -176,7 +176,7 @@ class RemotePlaybackIT {
   void shouldWithholdUnfinishedInitializationSegmentWhenProducersOutputEndsInsideIt()
       throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var mediaFile = copyTestClip(mediaRoot.resolve("movie.mkv"));
     var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
     var streamSessionId = UUID.randomUUID();
 
@@ -211,7 +211,7 @@ class RemotePlaybackIT {
   void shouldServeSegmentRequestedBeforeWorkersFirstUploadArrivesWhenUsingRemoteWorker()
       throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var mediaFile = copyTestClip(mediaRoot.resolve("movie.mkv"));
     var segmentStore = new FirstRequestSegmentStore(tempDir.resolve("server-segments"));
     var streamSessionId = UUID.randomUUID();
 
@@ -252,7 +252,7 @@ class RemotePlaybackIT {
   @DisplayName("Should preserve executable transcode settings when using a remote worker")
   void shouldPreserveExecutableTranscodeSettingsWhenUsingRemoteWorker() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var mediaFile = copyTestClip(mediaRoot.resolve("movie.mkv"));
     var requests =
         supportedTranscodeDecisions().stream()
             .map(
@@ -273,7 +273,7 @@ class RemotePlaybackIT {
   @DisplayName("Should launch a stream copy when the request has no frame rate")
   void shouldLaunchAStreamCopyWhenTheRequestHasNoFrameRate() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var mediaFile = copyTestClip(mediaRoot.resolve("movie.mkv"));
     var streamCopyModes = EnumSet.of(TranscodeMode.REMUX, TranscodeMode.AUDIO_TRANSCODE);
     var requests =
         supportedTranscodeDecisions().stream()
@@ -877,7 +877,7 @@ class RemotePlaybackIT {
           assertThat(command)
               .as("stereo AAC audio for %s", decision)
               .containsSubsequence("-c:a", "aac")
-              .containsSubsequence("-ac", "2")
+              .containsSubsequence("-ch_layout", "stereo")
               .containsSubsequence("-b:a", "128k");
       case NONE -> assertThat(command).doesNotContain("-c:a", "0:a:0");
     }
