@@ -7,6 +7,8 @@ import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.domain.streaming.QualityVariant;
+import com.streamarr.server.domain.streaming.SourceContainer;
+import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -46,6 +48,14 @@ public final class StreamSessionFixture {
         .transcodeDecision(remuxDecision())
         .options(StreamingOptions.builder().build())
         .createdAt(Instant.now());
+  }
+
+  /** A direct-play stream session that serves an MP4 source file. */
+  public static StreamSession.StreamSessionBuilder directPlaySessionBuilder() {
+    return defaultSessionBuilder()
+        .delivery(StreamDelivery.DIRECT_PLAY)
+        .sourceContainer(SourceContainer.MP4)
+        .sourcePath(Path.of("/media/movie.mp4"));
   }
 
   public static StreamSession.StreamSessionBuilder abrSessionBuilder() {
@@ -153,6 +163,7 @@ public final class StreamSessionFixture {
     return PlaybackRequest.builder()
         .streamSessionId(session.getSessionId())
         .identity(identityFor(session.getAuthority()))
+        .delivery(session.getDelivery())
         .build();
   }
 

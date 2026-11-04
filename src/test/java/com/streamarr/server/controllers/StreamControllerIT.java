@@ -23,6 +23,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -102,6 +104,37 @@ class StreamControllerIT extends AbstractIntegrationTest {
         .perform(
             get("/api/stream/{id}/master.m3u8", session.getSessionId())
                 .param("t", playbackToken(session.getSessionId())))
+        .andExpect(status().isNotFound());
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @ValueSource(strings = {"multivariant.m3u8", "stream.m3u8", "init.mp4", "segment0.m4s"})
+  @DisplayName("Should return 404 without starting a job when an HLS request names direct play")
+  void shouldReturn404WithoutStartingJobWhenHlsRequestNamesDirectPlay(String resource)
+      throws Exception {
+    var session = StreamSessionFixture.directPlaySessionBuilder().build();
+    STUB_SERVICE.addSession(session);
+
+    mockMvc
+        .perform(
+            get("/api/stream/{id}/{resource}", session.getSessionId(), resource)
+                .param("t", playbackToken(session.getSessionId())))
+        .andExpect(status().isNotFound());
+
+    assertThat(FAKE_EXECUTOR.getStarted()).doesNotContain(session.getSessionId());
+  }
+
+  @Test
+  @DisplayName("Should return 404 when a source request names an HLS session")
+  void shouldReturn404WhenSourceRequestNamesHlsSession() throws Exception {
+    var session = StreamSessionFixture.buildActiveSession();
+    STUB_SERVICE.addSession(session);
+
+    mockMvc
+        .perform(
+            get("/api/stream/{id}/source.mp4", session.getSessionId())
+                .param("t", playbackToken(session.getSessionId()))
+                .header("Range", "bytes=0-9"))
         .andExpect(status().isNotFound());
   }
 

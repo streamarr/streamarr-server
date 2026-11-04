@@ -25,6 +25,7 @@ import com.streamarr.server.fakes.FakeStreamingService;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.streaming.DirectPlaySourceService;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
@@ -83,7 +84,8 @@ class StreamControllerTest {
             streamingService,
             playlistService,
             coordinatorOver(segmentStore),
-            new FakeAuthorizationService(this::boundIdentity, VALIDATED_TOKEN));
+            new FakeAuthorizationService(this::boundIdentity, VALIDATED_TOKEN),
+            new DirectPlaySourceService(streamingService));
     mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
   }
 
@@ -338,7 +340,8 @@ class StreamControllerTest {
             streamingService,
             playlistService,
             coordinatorOver(throwingStore),
-            new FakeAuthorizationService(this::boundIdentity, VALIDATED_TOKEN));
+            new FakeAuthorizationService(this::boundIdentity, VALIDATED_TOKEN),
+            new DirectPlaySourceService(streamingService));
     var raceMockMvc = MockMvcBuilders.standaloneSetup(raceController).build();
 
     raceMockMvc

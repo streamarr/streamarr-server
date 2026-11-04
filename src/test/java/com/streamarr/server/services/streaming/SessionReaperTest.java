@@ -230,6 +230,21 @@ class SessionReaperTest {
   }
 
   @Test
+  @DisplayName("Should end a direct-play session when the retention passes without requests")
+  void shouldEndDirectPlaySessionWhenRetentionPassesWithoutRequests() {
+    var expired = StreamSessionFixture.directPlaySessionBuilder().build();
+    expired.setLastAccessedAt(Instant.now().minus(properties.sessionRetention()).minusSeconds(1));
+    var recent = StreamSessionFixture.directPlaySessionBuilder().build();
+    recent.setLastAccessedAt(Instant.now().minus(properties.sessionRetention()).plusSeconds(60));
+    streamingService.addSession(expired);
+    streamingService.addSession(recent);
+
+    reaper.reapSessions();
+
+    assertThat(streamingService.getAllSessions()).containsExactly(recent);
+  }
+
+  @Test
   @DisplayName("Should not suspend session when already suspended")
   void shouldNotSuspendSessionWhenAlreadySuspended() {
     var session = buildSession(Instant.now().minusSeconds(120));

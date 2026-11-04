@@ -15,6 +15,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSes
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommandBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.directPlaySessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest;
@@ -64,6 +65,7 @@ import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.QualityVariant;
+import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamMeasurementSource;
 import com.streamarr.server.domain.streaming.StreamMeasurements;
@@ -104,6 +106,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.URI;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -4412,12 +4415,21 @@ class HlsStreamingServiceTest {
     return service.accessSession(playbackRequest(session));
   }
 
+  private static PlaybackRequest requestFor(StreamSession session, StreamDelivery delivery) {
+    return PlaybackRequest.builder()
+        .streamSessionId(session.getSessionId())
+        .identity(identityFor(session.getAuthority()))
+        .delivery(delivery)
+        .build();
+  }
+
   private Optional<StreamSession> accessMissingSession(UUID streamSessionId) {
     var authority = defaultPlaybackAuthorityBuilder().build();
     return service.accessSession(
         PlaybackRequest.builder()
             .streamSessionId(streamSessionId)
             .identity(identityFor(authority))
+            .delivery(StreamDelivery.HLS)
             .build());
   }
 
@@ -5065,6 +5077,7 @@ class HlsStreamingServiceTest {
         PlaybackRequest.builder()
             .streamSessionId(session.getSessionId())
             .identity(identityFor(otherAuthority))
+            .delivery(StreamDelivery.HLS)
             .build();
 
     var result = service.accessSession(request);
@@ -5110,6 +5123,57 @@ class HlsStreamingServiceTest {
     var retrieved = accessSession(session);
 
     assertThat(retrieved.get().getLastAccessedAt()).isAfterOrEqualTo(initialAccess);
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse an HLS request without touching last access when the session direct-plays")
+  void shouldRefuseHlsRequestWithoutTouchingLastAccessWhenSessionDirectPlays() {
+    var session = directPlaySessionBuilder().build();
+    var lastAccessedAt = Instant.now().minus(Duration.ofHours(1));
+    session.setLastAccessedAt(lastAccessedAt);
+    runtimeRegistry.save(session);
+
+    var result = service.accessSession(requestFor(session, StreamDelivery.HLS));
+
+    assertThat(result).isEmpty();
+    assertThat(session.getLastAccessedAt()).isEqualTo(lastAccessedAt);
+  }
+
+  @Test
+  @DisplayName("Should refuse a direct-play request when the session delivers HLS")
+  void shouldRefuseDirectPlayRequestWhenSessionDeliversHls() {
+    var file = seedMediaFile();
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    var result = service.accessSession(requestFor(session, StreamDelivery.DIRECT_PLAY));
+
+    assertThat(result).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should touch last access when a direct-play request reads a direct-play session")
+  void shouldTouchLastAccessWhenDirectPlayRequestReadsDirectPlaySession() {
+    var session = directPlaySessionBuilder().build();
+    var lastAccessedAt = Instant.now().minus(Duration.ofHours(1));
+    session.setLastAccessedAt(lastAccessedAt);
+    runtimeRegistry.save(session);
+
+    var result = service.accessSession(requestFor(session, StreamDelivery.DIRECT_PLAY));
+
+    assertThat(result).contains(session);
+    assertThat(session.getLastAccessedAt()).isAfter(lastAccessedAt);
+  }
+
+  @Test
+  @DisplayName("Should end a direct-play session when it has no producer")
+  void shouldEndDirectPlaySessionWhenItHasNoProducer() {
+    var session = directPlaySessionBuilder().build();
+    runtimeRegistry.save(session);
+
+    service.destroySession(session.getSessionId());
+
+    assertThat(runtimeRegistry.findById(session.getSessionId())).isEmpty();
   }
 
   @Test

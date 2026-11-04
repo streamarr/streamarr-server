@@ -40,6 +40,7 @@ import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.streaming.DirectPlaySourceService;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
@@ -739,7 +740,8 @@ class RemotePlaybackIT {
             streamingService,
             new HlsPlaylistService(properties),
             rig.coordinator(),
-            authorizationService);
+            authorizationService,
+            new DirectPlaySourceService(streamingService));
     return new PlaybackRig(controller, session);
   }
 

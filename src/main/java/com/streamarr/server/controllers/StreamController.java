@@ -1,8 +1,11 @@
 package com.streamarr.server.controllers;
 
+import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.streaming.DirectPlaySource;
+import com.streamarr.server.services.streaming.DirectPlaySourceService;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.SegmentDelivery;
@@ -12,9 +15,14 @@ import com.streamarr.server.services.streaming.StreamingService;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import java.io.IOException;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpRange;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +30,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -41,6 +50,7 @@ public class StreamController {
   private final HlsPlaylistService playlistService;
   private final SegmentDeliveryCoordinator deliveryCoordinator;
   private final AuthorizationService authorizationService;
+  private final DirectPlaySourceService directPlaySources;
 
   @GetMapping("/{sessionId}/multivariant.m3u8")
   @ApiResponse(responseCode = "200")
@@ -185,6 +195,63 @@ public class StreamController {
         sessionId, variantLabel, SegmentNames.storedSegmentName(variantLabel, segmentName));
   }
 
+  /**
+   * Serves the source file of a direct-play stream session. Spring answers a {@code Range} request
+   * with 206 and the requested bytes, streamed from disk. Each request passes the live
+   * playback-authority check when it starts; a response already streaming is not cut when the
+   * authority ends, and the next request is denied.
+   */
+  @GetMapping("/{sessionId}/source.{extension}")
+  @ApiResponse(
+      responseCode = "200",
+      content =
+          @Content(mediaType = "video/*", schema = @Schema(type = "string", format = "binary")))
+  @ApiResponse(
+      responseCode = "206",
+      description = "The requested byte range",
+      content =
+          @Content(mediaType = "video/*", schema = @Schema(type = "string", format = "binary")))
+  @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
+  @ApiResponse(
+      responseCode = "416",
+      description = "The requested range lies outside the file",
+      content = @Content)
+  public ResponseEntity<Resource> getSource(
+      @PathVariable UUID sessionId,
+      @PathVariable String extension,
+      @RequestHeader(name = HttpHeaders.RANGE, required = false) String range)
+      throws IOException {
+    requireTokenBoundTo(sessionId);
+    var source =
+        directPlaySources
+            .open(sessionId, authorizationService.currentIdentity())
+            .filter(found -> found.container().getExtension().equals(extension));
+    if (source.isEmpty()) {
+      return ResponseEntity.notFound().build();
+    }
+
+    var resource = new SourceFileResource(source.get());
+    // Spring's own 416 still writes the whole file as its body.
+    if (range != null && !isSatisfiable(range, resource)) {
+      return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+          .header(HttpHeaders.CONTENT_RANGE, "bytes */" + resource.contentLength())
+          .build();
+    }
+
+    return ResponseEntity.ok()
+        .contentType(MediaType.parseMediaType(source.get().container().getMediaType()))
+        .body(resource);
+  }
+
+  private static boolean isSatisfiable(String range, Resource resource) {
+    try {
+      HttpRange.toResourceRegions(HttpRange.parseRanges(range), resource);
+      return true;
+    } catch (IllegalArgumentException _) {
+      return false;
+    }
+  }
+
   private ResponseEntity<byte[]> serveSegment(
       UUID sessionId, String variantLabel, String segmentName) {
     return switch (deliveryCoordinator.deliver(sessionId, variantLabel, segmentName)) {
@@ -226,6 +293,7 @@ public class StreamController {
         PlaybackRequest.builder()
             .streamSessionId(sessionId)
             .identity(authorizationService.currentIdentity())
+            .delivery(StreamDelivery.HLS)
             .build());
   }
 
@@ -238,5 +306,22 @@ public class StreamController {
   @ExceptionHandler(InvalidSegmentPathException.class)
   public ResponseEntity<Void> handleInvalidSegmentPath() {
     return ResponseEntity.badRequest().build();
+  }
+
+  // Spring labels each part of a multi-range answer by the resource's name, so the source file
+  // takes the name its container gives it, and the file's own name never sets a media type.
+  private static final class SourceFileResource extends FileSystemResource {
+
+    private final String filename;
+
+    private SourceFileResource(DirectPlaySource source) {
+      super(source.path());
+      filename = "source." + source.container().getExtension();
+    }
+
+    @Override
+    public String getFilename() {
+      return filename;
+    }
   }
 }
