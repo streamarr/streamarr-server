@@ -124,17 +124,36 @@ public class LibraryFileWalk {
 
   /**
    * Matches a file that the file watcher discovered, and waits for nothing. A soft link, a file
-   * with an unsupported extension, a file of another library and a file that was already matched
-   * are left as they are.
+   * that the library folder reaches through a soft link, a file with an unsupported extension, a
+   * file of another library and a file that was already matched are left as they are.
    */
   public void processDiscoveredFile(Library library, Path path) {
-    if (Files.isSymbolicLink(path) || !keepSupportedOrWarn(path)) {
+    if (hasSoftLinkOnPath(library, path) || !keepSupportedOrWarn(path)) {
       return;
     }
 
     try (var discovery = fileDiscoveryRuns.open("file discovery in", library)) {
       processFile(discovery, path, discovery.probeRun()::request);
     }
+  }
+
+  // A scan never walks through a soft link, so the watcher skips the same files: the file itself
+  // and every folder from the library folder down to it must not be soft links.
+  private boolean hasSoftLinkOnPath(Library library, Path path) {
+    if (Files.isSymbolicLink(path)) {
+      return true;
+    }
+
+    var libraryFolder = FilepathCodec.decode(fileSystem, library.getFilepathUri());
+    for (var folder = path.getParent();
+        folder != null && folder.startsWith(libraryFolder);
+        folder = folder.getParent()) {
+      if (Files.isSymbolicLink(folder)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   // Reads the entry itself, never a soft link's target, and skips an entry whose attributes cannot

@@ -307,13 +307,57 @@ class LibraryManagementServiceTest {
   @DisplayName("Should create no media file when the file watcher discovers a soft link")
   void shouldCreateNoMediaFileWhenTheFileWatcherDiscoversASoftLink(@TempDir Path media)
       throws IOException {
+    var libraryFolder = placeTheLibraryIn(Files.createDirectory(media.resolve("library")));
     var target = Files.createFile(media.resolve("Target (2002).mkv"));
-    var link = Files.createSymbolicLink(media.resolve("Linked (2002).mkv"), target);
+    var link = Files.createSymbolicLink(libraryFolder.resolve("Linked (2002).mkv"), target);
 
     serviceWith(FileSystems.getDefault()).processDiscoveredFile(savedLibraryId, link);
 
     assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(link)))
         .isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should create no media file when the file watcher discovers a file inside a soft-linked"
+          + " folder")
+  void shouldCreateNoMediaFileWhenTheFileWatcherDiscoversAFileInsideASoftLinkedFolder(
+      @TempDir Path media) throws IOException {
+    var libraryFolder = placeTheLibraryIn(Files.createDirectory(media.resolve("library")));
+    var target = Files.createDirectory(media.resolve("Target (2002)"));
+    var linkedFolder = Files.createSymbolicLink(libraryFolder.resolve("Linked (2002)"), target);
+    Files.createFile(target.resolve("Linked (2002).mkv"));
+    var file = linkedFolder.resolve("Linked (2002).mkv");
+
+    serviceWith(FileSystems.getDefault()).processDiscoveredFile(savedLibraryId, file);
+
+    assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(file)))
+        .isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should create no media file when the file watcher discovers a file in a soft-linked library"
+          + " folder")
+  void shouldCreateNoMediaFileWhenTheFileWatcherDiscoversAFileInASoftLinkedLibraryFolder(
+      @TempDir Path media) throws IOException {
+    var target = Files.createDirectory(media.resolve("target"));
+    Files.createFile(target.resolve("Linked (2002).mkv"));
+    var libraryFolder =
+        placeTheLibraryIn(Files.createSymbolicLink(media.resolve("library"), target));
+    var file = libraryFolder.resolve("Linked (2002).mkv");
+
+    serviceWith(FileSystems.getDefault()).processDiscoveredFile(savedLibraryId, file);
+
+    assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(file)))
+        .isEmpty();
+  }
+
+  private Path placeTheLibraryIn(Path libraryFolder) {
+    var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+    library.setFilepathUri(FilepathCodec.encode(libraryFolder));
+    fakeLibraryRepository.save(library);
+    return libraryFolder;
   }
 
   @Test
