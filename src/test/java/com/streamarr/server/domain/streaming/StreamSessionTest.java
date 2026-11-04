@@ -3,6 +3,7 @@ package com.streamarr.server.domain.streaming;
 import static com.streamarr.server.fixtures.StreamSessionFixture.abrSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.buildActiveSession;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.h264Nvenc;
 import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libx264;
@@ -104,12 +105,7 @@ class StreamSessionTest {
   @Test
   @DisplayName("Should return an empty handle when the variant is unknown")
   void shouldReturnAnEmptyHandleWhenTheVariantIsUnknown() {
-    var session =
-        StreamSession.builder()
-            .sessionId(UUID.randomUUID())
-            .mediaFileId(UUID.randomUUID())
-            .authority(defaultPlaybackAuthorityBuilder().build())
-            .build();
+    var session = defaultSessionBuilder().build();
 
     assertThat(session.getHandle()).isEmpty();
     assertThat(session.getVariantHandle("nope")).isEmpty();
