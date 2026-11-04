@@ -195,7 +195,10 @@ class DirectPlayIT extends AbstractIntegrationTest {
     assertThat(streamSession.read("$.streamUrl", String.class)).contains("/multivariant.m3u8?t=");
   }
 
-  // A matched media file whose source holds the test's bytes, with the probe's outcome stored.
+  // A matched media file whose source holds the test's bytes, with the probe's outcome stored. The
+  // server reads only outcomes up to the version it requests, which stays 6 until
+  // streamarr/streamarr-server#728 raises it to 7, so the MP4 and MOV cases store version 7's
+  // sample entry and major brand under the current version.
   private MediaFile probedSource(String filename, MediaProbe probe) throws Exception {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     var path = Files.write(directory.resolve(filename), sourceBytes);
