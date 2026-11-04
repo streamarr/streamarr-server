@@ -2,7 +2,9 @@ package com.streamarr.server.services.streaming.local;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.fixtures.StreamSessionFixture;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -68,6 +70,34 @@ class InMemoryStreamSessionRegistryTest {
 
     assertThat(removed).isFalse();
     assertThat(registry.findById(session.getSessionId())).contains(session);
+  }
+
+  @Test
+  @DisplayName("Should keep a session when a timeline report reached it at or after the cutoff")
+  void shouldKeepSessionWhenTimelineReportReachedItAtOrAfterCutoff() {
+    var session = StreamSessionFixture.buildActiveSession();
+    session.setLastAccessedAt(Instant.now().minus(Duration.ofHours(1)));
+    registry.save(session);
+    var cutoff = Instant.now();
+    registry.updatePlaybackState(session.getSessionId(), 300, PlaybackState.PLAYING);
+
+    var removed = registry.removeIfLastAccessedBefore(session.getSessionId(), cutoff);
+
+    assertThat(removed).isFalse();
+    assertThat(registry.findById(session.getSessionId())).contains(session);
+    assertThat(session.getPlaybackSnapshot().positionSeconds()).isEqualTo(300);
+  }
+
+  @Test
+  @DisplayName("Should not register a session again when a timeline report arrives after removal")
+  void shouldNotRegisterSessionAgainWhenTimelineReportArrivesAfterRemoval() {
+    var session = StreamSessionFixture.buildActiveSession();
+    registry.save(session);
+    registry.removeById(session.getSessionId());
+
+    registry.updatePlaybackState(session.getSessionId(), 300, PlaybackState.PLAYING);
+
+    assertThat(registry.findById(session.getSessionId())).isEmpty();
   }
 
   @Test

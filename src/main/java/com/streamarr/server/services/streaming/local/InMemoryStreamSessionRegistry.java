@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.local;
 
+import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import java.time.Instant;
@@ -25,6 +26,16 @@ public class InMemoryStreamSessionRegistry implements RuntimeStreamSessionRegist
         sessionId,
         (_, session) -> {
           session.setLastAccessedAt(accessedAt);
+          return session;
+        });
+  }
+
+  @Override
+  public void updatePlaybackState(UUID sessionId, int positionSeconds, PlaybackState state) {
+    sessions.computeIfPresent(
+        sessionId,
+        (_, session) -> {
+          session.updatePlaybackState(positionSeconds, state);
           return session;
         });
   }

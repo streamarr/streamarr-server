@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
 import java.time.Instant;
 import java.util.Collection;
@@ -16,6 +17,12 @@ public interface RuntimeStreamSessionRegistry {
    * a key.
    */
   void touch(UUID sessionId, Instant accessedAt);
+
+  /**
+   * Records a player's timeline report, which also counts as an access, on a still-registered
+   * session. Like {@link #touch}, it never adds a key, and it is one step with conditional removal.
+   */
+  void updatePlaybackState(UUID sessionId, int positionSeconds, PlaybackState state);
 
   Optional<StreamSession> findById(UUID sessionId);
 

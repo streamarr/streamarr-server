@@ -1,5 +1,6 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import java.time.Instant;
@@ -32,6 +33,16 @@ public class FakeRuntimeStreamSessionRegistry implements RuntimeStreamSessionReg
         sessionId,
         (_, session) -> {
           session.setLastAccessedAt(accessedAt);
+          return session;
+        });
+  }
+
+  @Override
+  public void updatePlaybackState(UUID sessionId, int positionSeconds, PlaybackState state) {
+    sessions.computeIfPresent(
+        sessionId,
+        (_, session) -> {
+          session.updatePlaybackState(positionSeconds, state);
           return session;
         });
   }
