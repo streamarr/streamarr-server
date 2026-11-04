@@ -74,7 +74,8 @@ public class ServerSettingsService {
 
   /**
    * How long the server keeps a stream session, and its segments, after the last request for it.
-   * The reaper reads the setting for the system, not for a caller, so this read is not authorized.
+   * The session reaper and playback tokens read the setting for the system, not for a caller, so
+   * this read is not authorized.
    */
   public Duration idleSegmentRetention() {
     return storedIdleSegmentRetention().duration();
