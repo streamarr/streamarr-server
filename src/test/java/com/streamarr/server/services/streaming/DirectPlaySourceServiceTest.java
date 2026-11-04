@@ -9,6 +9,7 @@ import com.streamarr.server.config.RemoteTranscodeProperties;
 import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.fakes.FakeStreamingService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,6 +28,7 @@ class DirectPlaySourceServiceTest {
   @TempDir private Path temporaryDirectory;
 
   private FakeStreamingService streamingService;
+  private SimpleMeterRegistry meterRegistry;
   private DirectPlaySourceService sources;
   private Path directory;
   private Path outsideFile;
@@ -37,10 +39,12 @@ class DirectPlaySourceServiceTest {
     directory = Files.createDirectory(temporaryDirectory.resolve("media"));
     outsideFile = Files.write(temporaryDirectory.resolve("secret.mp4"), new byte[] {9});
     streamingService = new FakeStreamingService();
+    meterRegistry = new SimpleMeterRegistry();
     sources =
         new DirectPlaySourceService(
             streamingService,
-            new RemoteTranscodeProperties(UUID.randomUUID(), directory.toString()));
+            new RemoteTranscodeProperties(UUID.randomUUID(), directory.toString()),
+            new DirectPlayMetrics(meterRegistry));
     sourceFile = Files.write(directory.resolve("movie.mov"), new byte[] {1, 2, 3});
   }
 
@@ -89,6 +93,37 @@ class DirectPlaySourceServiceTest {
 
       assertThat(source.newInputStream().readAllBytes()).containsExactly(1, 2, 3);
     }
+  }
+
+  @Test
+  @DisplayName("Should count the bytes read from the source when its streams are read")
+  void shouldCountTheBytesReadFromTheSourceWhenItsStreamsAreRead() throws IOException {
+    var session = directPlaySessionBuilder().sourcePath(sourceFile).build();
+    streamingService.addSession(session);
+
+    try (var source = open(session).orElseThrow()) {
+      source.newInputStream().readAllBytes();
+      var laterRange = source.newInputStream();
+      laterRange.skipNBytes(2);
+      laterRange.readAllBytes();
+    }
+
+    assertThat(meterRegistry.get("streamarr.streaming.direct_play_bytes_served").counter().count())
+        .isEqualTo(4);
+  }
+
+  @Test
+  @DisplayName("Should count the source as an open response until it closes")
+  void shouldCountTheSourceAsAnOpenResponseUntilItCloses() {
+    var session = directPlaySessionBuilder().sourcePath(sourceFile).build();
+    streamingService.addSession(session);
+
+    var source = open(session).orElseThrow();
+    assertThat(openResponses()).isEqualTo(1);
+
+    source.close();
+    source.close();
+    assertThat(openResponses()).isZero();
   }
 
   @Test
@@ -198,6 +233,10 @@ class DirectPlaySourceServiceTest {
     streamingService.addSession(session);
 
     assertThat(open(session)).isEmpty();
+  }
+
+  private double openResponses() {
+    return meterRegistry.get("streamarr.streaming.direct_play_open_responses").gauge().value();
   }
 
   private Optional<DirectPlaySource> open(StreamSession session) {

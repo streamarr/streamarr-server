@@ -4,6 +4,7 @@ import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.streaming.DirectPlayMetrics;
 import com.streamarr.server.services.streaming.DirectPlaySource;
 import com.streamarr.server.services.streaming.DirectPlaySourceService;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
@@ -55,6 +56,7 @@ public class StreamController {
   private final SegmentDeliveryCoordinator deliveryCoordinator;
   private final AuthorizationService authorizationService;
   private final DirectPlaySourceService directPlaySources;
+  private final DirectPlayMetrics directPlayMetrics;
 
   @GetMapping("/{sessionId}/multivariant.m3u8")
   @ApiResponse(responseCode = "200")
@@ -224,6 +226,22 @@ public class StreamController {
       @PathVariable UUID sessionId,
       @PathVariable String extension,
       @RequestHeader(name = HttpHeaders.RANGE, required = false) String range) {
+    var answer = sourceAnswer(sessionId, extension, range);
+    directPlayMetrics.countAnswer(statusSent(answer, range));
+    return answer;
+  }
+
+  // Spring answers a satisfiable range with 206 when it writes an OK answer's body.
+  private static int statusSent(ResponseEntity<Resource> answer, String range) {
+    var status = answer.getStatusCode().value();
+    if (status == HttpStatus.OK.value() && range != null) {
+      return HttpStatus.PARTIAL_CONTENT.value();
+    }
+
+    return status;
+  }
+
+  private ResponseEntity<Resource> sourceAnswer(UUID sessionId, String extension, String range) {
     var source = openSource(sessionId, extension);
     if (source.isEmpty()) {
       return ResponseEntity.notFound().build();
@@ -251,6 +269,12 @@ public class StreamController {
   @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
   public ResponseEntity<Void> getSourceHeaders(
       @PathVariable UUID sessionId, @PathVariable String extension) {
+    var answer = sourceHeaders(sessionId, extension);
+    directPlayMetrics.countAnswer(answer.getStatusCode().value());
+    return answer;
+  }
+
+  private ResponseEntity<Void> sourceHeaders(UUID sessionId, String extension) {
     var source = openSource(sessionId, extension);
     if (source.isEmpty()) {
       return ResponseEntity.notFound().build();

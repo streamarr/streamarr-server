@@ -6,6 +6,7 @@ import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.SeekableByteChannel;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.NonNull;
 
 /**
@@ -18,12 +19,19 @@ public final class DirectPlaySource implements AutoCloseable {
   private final SeekableByteChannel file;
   private final SourceContainer container;
   private final long length;
+  private final DirectPlayMetrics metrics;
+  private final AtomicBoolean closed = new AtomicBoolean();
 
-  DirectPlaySource(@NonNull SeekableByteChannel file, @NonNull SourceContainer container)
+  DirectPlaySource(
+      @NonNull SeekableByteChannel file,
+      @NonNull SourceContainer container,
+      @NonNull DirectPlayMetrics metrics)
       throws IOException {
     this.file = file;
     this.container = container;
     this.length = file.size();
+    this.metrics = metrics;
+    metrics.countOpenedSource();
   }
 
   public SourceContainer container() {
@@ -43,8 +51,14 @@ public final class DirectPlaySource implements AutoCloseable {
     return new SourceInputStream();
   }
 
+  /** Closes the file. Closing it again does nothing. */
   @Override
   public void close() {
+    if (!closed.compareAndSet(false, true)) {
+      return;
+    }
+
+    metrics.countClosedSource();
     try {
       file.close();
     } catch (IOException _) {
@@ -54,7 +68,12 @@ public final class DirectPlaySource implements AutoCloseable {
 
   private synchronized int read(ByteBuffer target, long position) throws IOException {
     file.position(position);
-    return file.read(target);
+    var read = file.read(target);
+    if (read > 0) {
+      metrics.countBytesServed(read);
+    }
+
+    return read;
   }
 
   private final class SourceInputStream extends InputStream {

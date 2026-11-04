@@ -26,6 +26,7 @@ public class DirectPlaySourceService {
 
   private final StreamingService streamingService;
   private final RemoteTranscodeProperties remoteSource;
+  private final DirectPlayMetrics metrics;
 
   /**
    * Opens the source file of a direct-play stream session for one player request. The request
@@ -81,7 +82,7 @@ public class DirectPlaySourceService {
     }
   }
 
-  private static Optional<DirectPlaySource> openBelow(
+  private Optional<DirectPlaySource> openBelow(
       SecureDirectoryStream<Path> folder, Path relativePath, SourceContainer container)
       throws IOException {
     var name = relativePath.getName(0);
@@ -94,7 +95,7 @@ public class DirectPlaySourceService {
     }
   }
 
-  private static Optional<DirectPlaySource> openFile(
+  private Optional<DirectPlaySource> openFile(
       SecureDirectoryStream<Path> folder, Path name, SourceContainer container) throws IOException {
     var attributes =
         folder
@@ -107,7 +108,7 @@ public class DirectPlaySourceService {
     var file =
         folder.newByteChannel(name, Set.of(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS));
     try {
-      return Optional.of(new DirectPlaySource(file, container));
+      return Optional.of(new DirectPlaySource(file, container, metrics));
     } catch (IOException exception) {
       file.close();
       throw exception;

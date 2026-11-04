@@ -4,12 +4,14 @@ import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.default
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultVariantBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.directPlaySessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static com.streamarr.server.fixtures.StreamSessionFixture.withActiveVariantHandles;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.config.RemoteTranscodeProperties;
@@ -26,11 +28,16 @@ import com.streamarr.server.fakes.FakeStreamingService;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.streaming.DirectPlayMetrics;
 import com.streamarr.server.services.streaming.DirectPlaySourceService;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.io.IOException;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -39,8 +46,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -64,6 +75,10 @@ class StreamControllerTest {
   private StreamingProperties properties;
   private HlsPlaylistService playlistService;
   private StreamController controller;
+  private SimpleMeterRegistry meterRegistry;
+  private DirectPlayMetrics directPlayMetrics;
+
+  @TempDir private Path mediaRoot;
 
   @BeforeEach
   void setUp() {
@@ -80,19 +95,24 @@ class StreamControllerTest {
             .build();
     playlistService = new HlsPlaylistService(properties);
     boundStreamSession.set(SESSION_ID);
+    meterRegistry = new SimpleMeterRegistry();
+    directPlayMetrics = new DirectPlayMetrics(meterRegistry);
     controller =
         new StreamController(
             streamingService,
             playlistService,
             coordinatorOver(segmentStore),
             new FakeAuthorizationService(this::boundIdentity, VALIDATED_TOKEN),
-            directPlaySources());
+            directPlaySources(),
+            directPlayMetrics);
     mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
   }
 
   private DirectPlaySourceService directPlaySources() {
     return new DirectPlaySourceService(
-        streamingService, new RemoteTranscodeProperties(UUID.randomUUID(), "/media"));
+        streamingService,
+        new RemoteTranscodeProperties(UUID.randomUUID(), mediaRoot.toString()),
+        directPlayMetrics);
   }
 
   private SegmentDeliveryCoordinator coordinatorOver(FakeSegmentStore store) {
@@ -347,7 +367,8 @@ class StreamControllerTest {
             playlistService,
             coordinatorOver(throwingStore),
             new FakeAuthorizationService(this::boundIdentity, VALIDATED_TOKEN),
-            directPlaySources());
+            directPlaySources(),
+            directPlayMetrics);
     var raceMockMvc = MockMvcBuilders.standaloneSetup(raceController).build();
 
     raceMockMvc
@@ -612,6 +633,62 @@ class StreamControllerTest {
     mockMvc
         .perform(get("/api/stream/{sessionId}/{variantLabel}/segment0.m4s", SESSION_ID, "..720p"))
         .andExpect(status().isBadRequest());
+  }
+
+  @ParameterizedTest(name = "{0} {1} with range [{2}] answers {3}")
+  @CsvSource({
+    "GET, source.mp4, , 200",
+    "GET, source.mp4, bytes=0-1, 206",
+    "GET, source.mp4, bytes=3-, 416",
+    "GET, source.mov, , 404",
+    "HEAD, source.mp4, , 200",
+    "HEAD, source.mov, , 404"
+  })
+  @DisplayName("Should count each direct-play answer by its status when a request is answered")
+  void shouldCountEachDirectPlayAnswerByItsStatusWhenRequestIsAnswered(
+      String method, String resource, String range, int expectedStatus) throws Exception {
+    startDirectPlay();
+    var request =
+        request(
+                HttpMethod.valueOf(method),
+                "/api/stream/{sessionId}/{resource}",
+                SESSION_ID,
+                resource)
+            .param("t", "unit-token");
+    if (range != null) {
+      request.header(HttpHeaders.RANGE, range);
+    }
+
+    mockMvc.perform(request).andExpect(status().is(expectedStatus));
+
+    assertThat(
+            meterRegistry
+                .get("streamarr.streaming.direct_play_requests")
+                .tag("status", String.valueOf(expectedStatus))
+                .counter()
+                .count())
+        .isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should count the served bytes and close the source when the answer ends")
+  void shouldCountTheServedBytesAndCloseTheSourceWhenTheAnswerEnds() throws Exception {
+    startDirectPlay();
+
+    mockMvc
+        .perform(get("/api/stream/{sessionId}/source.mp4", SESSION_ID).param("t", "unit-token"))
+        .andExpect(status().isOk());
+
+    assertThat(meterRegistry.get("streamarr.streaming.direct_play_bytes_served").counter().count())
+        .isEqualTo(3);
+    assertThat(meterRegistry.get("streamarr.streaming.direct_play_open_responses").gauge().value())
+        .isZero();
+  }
+
+  private void startDirectPlay() throws IOException {
+    var source = Files.write(mediaRoot.resolve("movie.mp4"), new byte[] {1, 2, 3});
+    streamingService.addSession(
+        directPlaySessionBuilder().sessionId(SESSION_ID).sourcePath(source).build());
   }
 
   private AuthenticatedIdentity boundIdentity() {
