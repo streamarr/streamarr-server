@@ -31,6 +31,149 @@ type PlaybackSession {
     """
     offeredChoices: [VideoQuality!]!
     currentFormatAttempt: PlaybackFormatAttempt!
+    """
+    How each format attempt that started delivers the media title, the initial format first. A format attempt
+    that the server refused, or that failed before its stream session started, has no decision. A playback-data
+    overlay shows the last decision, and the earlier ones show what a fallback changed.
+    """
+    decisions: [PlaybackDecision!]!
+}
+
+"How one format attempt delivers the media title, and why its output differs from the source."
+type PlaybackDecision {
+    "The format attempt's number within its playback session: 1 for the initial format."
+    formatAttempt: Int!
+    "The stream session that the format attempt started."
+    streamSessionId: ID!
+    video: VideoDelivery!
+    "Null when the source has no audio."
+    audio: AudioDelivery
+    """
+    Why the output differs from the source: first the failure of the format attempt before this one, then the
+    video reasons, then the audio reasons. Empty when the format attempt copies every track as the source holds
+    it. A copy can carry reasons too, such as an audio encode beside a video copy, or Dolby Vision that the copy
+    leaves out.
+    """
+    reasons: [DecisionReason!]!
+}
+
+"How a format attempt delivers one track."
+enum PlaybackDelivery {
+    "The source file as it is, without HLS."
+    DIRECT_PLAY
+    "A stream copy of the source's track."
+    COPY
+    "An encode of the source's track."
+    ENCODE
+}
+
+type VideoDelivery {
+    delivery: PlaybackDelivery!
+    source: VideoFormat!
+    "The output of the format attempt. For an encode, the largest variant that it offers."
+    output: VideoFormat!
+}
+
+"The format of a video track. A bitrate is in bits per second."
+type VideoFormat {
+    "The codec family, such as h264, hevc or av1."
+    codec: String!
+    "The displayed picture's width."
+    width: Int!
+    "The displayed picture's height."
+    height: Int!
+    "Frames per second. Null when the probe found no frame rate."
+    frameRate: Float
+    "Null when the probe found no bitrate for the video track."
+    bitrate: Int
+    videoRange: VideoRange!
+    "Whether the track carries Dolby Vision."
+    dolbyVision: Boolean!
+}
+
+type AudioDelivery {
+    delivery: PlaybackDelivery!
+    source: AudioFormat!
+    output: AudioFormat!
+}
+
+"The format of an audio track. A bitrate is in bits per second."
+type AudioFormat {
+    "The codec, such as aac, ac3, eac3, flac or opus."
+    codec: String!
+    channels: Int!
+    "Null when the probe found no bitrate for the audio track."
+    bitrate: Int
+}
+
+"""
+Why a format attempt's output differs from its source. The stream decision names each reason as it decides, so
+the reasons agree with the output. "The closest entry" is the client's video capability entry for HLS of the
+source's codec family that refuses the fewest properties.
+"""
+enum DecisionReason {
+    "No video capability entry for HLS names the source's codec family."
+    VIDEO_CODEC_NOT_DECLARED
+    "The closest entry does not list the source's codec profile."
+    VIDEO_CODEC_PROFILE_NOT_DECLARED
+    "The source's codec level or tier is above the closest entry's maximum for its profile."
+    VIDEO_CODEC_LEVEL_NOT_DECLARED
+    "The source's bit depth is above the closest entry's maximum."
+    VIDEO_BIT_DEPTH_NOT_DECLARED
+    "The source's picture is larger than the closest entry's maximum."
+    VIDEO_PICTURE_SIZE_NOT_DECLARED
+    "The source's frame rate is above the closest entry's maximum."
+    VIDEO_FRAME_RATE_NOT_DECLARED
+    "The closest entry does not declare the source's HDR base, PQ or HLG."
+    DYNAMIC_RANGE_NOT_DECLARED
+    "The closest entry does not declare the source's Dolby Vision profile and level."
+    DOLBY_VISION_NOT_DECLARED
+    "The closest entry does not declare HDR10+."
+    HDR10_PLUS_NOT_DECLARED
+    "The source's picture is larger than the fixed quality or the maximum size that the client sent."
+    PICTURE_ABOVE_VIEWER_LIMIT
+    "A copy costs more than the client's maximum bitrate beside every audio step."
+    BITRATE_ABOVE_VIEWER_LIMIT
+    "The source is interlaced, and HLS delivery needs progressive video."
+    SOURCE_INTERLACED
+    "The source is Dolby Vision without a compatible base."
+    DOLBY_VISION_WITHOUT_COMPATIBLE_BASE
+    "The source's HDR base was probed before the probe described its codec profile."
+    VIDEO_PROPERTIES_NOT_PROBED
+    "The source's Dolby Vision configuration claims another base than the source's transfer signals."
+    DOLBY_VISION_COMPATIBILITY_DISAGREES_WITH_TRANSFER
+    "The source's Dolby Vision RPUs start their samples, so a copy would hand players misplaced RPUs."
+    DOLBY_VISION_RPU_STARTS_SAMPLE
+    "The source is H.264 at another bit depth or chroma subsampling than 8-bit 4:2:0."
+    H264_NOT_8_BIT_4_2_0
+    "The source's sample entry is not one under which a playlist describes a copy, such as hev1."
+    SAMPLE_ENTRY_NOT_COPYABLE
+    "The probe could not name the source's codec profile."
+    VIDEO_CODEC_PROFILE_UNKNOWN
+    "The probe stored no video facts for a copy."
+    VIDEO_SOURCE_NOT_COPYABLE
+    "The source's keyframe positions are not known yet."
+    KEYFRAMES_UNKNOWN
+    "The source's keyframes leave a segment without a keyframe."
+    KEYFRAMES_TOO_SPARSE
+    "The source's keyframe timestamps go backwards or out of range."
+    KEYFRAME_TIMESTAMPS_INVALID
+    "No connected worker can make the copy's planned output."
+    NO_WORKER_DELIVERS_COPY
+    "No audio capability entry for HLS names the source's audio codec."
+    AUDIO_CODEC_NOT_DECLARED
+    "The source has more audio channels than the entry for its codec accepts."
+    AUDIO_CHANNELS_NOT_DECLARED
+    "HLS delivery cannot copy the source's audio codec profile, such as AAC Main."
+    AUDIO_SOURCE_NOT_COPYABLE
+    "A lower audio step keeps the output within the client's maximum bitrate."
+    AUDIO_LOWERED_FOR_BITRATE_LIMIT
+    "The direct play of the format attempt before this one failed, so this one plays over HLS."
+    DIRECT_PLAY_FAILED
+    "The copy of the format attempt before this one failed, so this one encodes the video."
+    COPY_FAILED
+    "The encode of the format attempt before this one failed, so this one encodes in another codec family."
+    ENCODE_FAILED
 }
 
 "Why the output differs from the output that the requested playback choice asked for (ADR 0052)."

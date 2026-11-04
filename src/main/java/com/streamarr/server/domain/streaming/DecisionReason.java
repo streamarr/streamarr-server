@@ -62,6 +62,8 @@ public enum DecisionReason {
   AUDIO_SOURCE_NOT_COPYABLE,
   /** A lower audio step keeps the output within the viewer's maximum bitrate. */
   AUDIO_LOWERED_FOR_BITRATE_LIMIT,
+  /** An earlier format attempt's direct play failed, so this format attempt plays over HLS. */
+  DIRECT_PLAY_FAILED,
   /** An earlier format attempt's copy failed, so this format attempt encodes the video. */
   COPY_FAILED,
   /** An earlier format attempt's encode failed, so this one encodes in another codec family. */
