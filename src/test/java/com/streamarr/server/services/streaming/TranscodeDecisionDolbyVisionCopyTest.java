@@ -234,6 +234,11 @@ class TranscodeDecisionDolbyVisionCopyTest {
             Clients.dolbyVision(13),
             ENCODE),
         Arguments.of(
+            "Profile 9 that claims a PQ base, to a client that declares H.264 with PQ",
+            h264(dolbyVisionRecord(CompatibleBase.PQ, 9, 6)),
+            Clients.h264Pq(),
+            ENCODE),
+        Arguments.of(
             "Profile 8.1 to a client that declares only SDR",
             hevc(profile8(CompatibleBase.PQ, 1)),
             Clients.sdrOnly(),
@@ -446,6 +451,18 @@ class TranscodeDecisionDolbyVisionCopyTest {
         .probe();
   }
 
+  // ADR 0036: profile 9 keeps its RPUs under an SDR base, so the server never strips it.
+  private static MediaProbe h264(VideoDynamicRange range) {
+    return Source.builder()
+        .codec("h264")
+        .codecString("avc1.640028")
+        .bitDepth(8)
+        .dynamicRange(range)
+        .videoProperties(Optional.of(VideoPlaybackFactsFixture.h264HighPropertiesBuilder().build()))
+        .build()
+        .probe();
+  }
+
   private static MediaProbe hevcFromProbeVersion4(VideoDynamicRange range) {
     return Source.builder()
         .codec("hevc")
@@ -475,11 +492,15 @@ class TranscodeDecisionDolbyVisionCopyTest {
         .build();
   }
 
-  /** A 10-bit 1080p source whose keyframes open every 6 s interval, beside stereo AAC. */
+  /**
+   * A 1080p 4:2:0 source, 10-bit unless it names its bit depth, whose keyframes open every 6 s
+   * interval, beside stereo AAC.
+   */
   @Builder
   record Source(
       @NonNull String codec,
       @NonNull String codecString,
+      Integer bitDepth,
       @NonNull VideoDynamicRange dynamicRange,
       @NonNull Optional<VideoStreamProperties> videoProperties) {
 
@@ -499,7 +520,7 @@ class TranscodeDecisionDolbyVisionCopyTest {
                   VideoPlaybackFactsFixture.sdrH264FactsBuilder()
                       .codecFamily(Optional.of(ProbedCodecFamily.fromProbedName(codec)))
                       .dynamicRange(dynamicRange)
-                      .bitDepth(OptionalInt.of(10))
+                      .bitDepth(OptionalInt.of(bitDepth == null ? 10 : bitDepth))
                       .codecString(Optional.of(codecString))
                       .videoProperties(videoProperties)
                       .build()))
@@ -546,6 +567,12 @@ class TranscodeDecisionDolbyVisionCopyTest {
                   hevcEntryBuilder().compatibleBases(hdrBases()).hdr10Plus(hdr10Plus).build(),
                   av1EntryBuilder().compatibleBases(hdrBases()).hdr10Plus(hdr10Plus).build(),
                   h264EntryBuilder().build()))
+          .build();
+    }
+
+    static ClientCapabilityDeclaration h264Pq() {
+      return defaultDeclarationBuilder()
+          .video(List.of(h264EntryBuilder().compatibleBases(hdrBases()).build()))
           .build();
     }
 

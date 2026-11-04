@@ -72,7 +72,8 @@ public record VideoStreamCopy(
 
   /**
    * Whether stripping this copy's Dolby Vision leaves a PQ or HLG base that a player shows (ADR
-   * 0036). Profiles 5 and 10.0 have no such base, and Dolby Vision under an SDR base stays.
+   * 0036). Profiles 5 and 10.0 have no such base, and profiles 8.2 and 9 keep their RPUs under an
+   * SDR base.
    */
   public boolean hasDolbyVisionStrippableToAnHdrBase() {
     var base = dynamicRange.compatibleBase();
@@ -84,7 +85,8 @@ public record VideoStreamCopy(
       case CopiedDolbyVision.Declarable _, CopiedDolbyVision.Undeclarable _ -> true;
       case CopiedDolbyVision.None _,
           CopiedDolbyVision.KeptUnderSdrBase _,
-          CopiedDolbyVision.NeedsDolbyVisionSampleEntry _ ->
+          CopiedDolbyVision.NeedsDolbyVisionSampleEntry _,
+          CopiedDolbyVision.Profile9WithoutSdrBase _ ->
           false;
     };
   }

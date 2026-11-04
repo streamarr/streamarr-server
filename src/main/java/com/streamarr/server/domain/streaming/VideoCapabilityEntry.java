@@ -229,7 +229,9 @@ public record VideoCapabilityEntry(
     return switch (CopiedDolbyVision.of(copy)) {
       case CopiedDolbyVision.None _, CopiedDolbyVision.KeptUnderSdrBase _ -> true;
       case CopiedDolbyVision.Declarable(var profile, var level) -> listsDolbyVision(profile, level);
-      case CopiedDolbyVision.Undeclarable _, CopiedDolbyVision.NeedsDolbyVisionSampleEntry _ ->
+      case CopiedDolbyVision.Undeclarable _,
+          CopiedDolbyVision.NeedsDolbyVisionSampleEntry _,
+          CopiedDolbyVision.Profile9WithoutSdrBase _ ->
           false;
     };
   }
