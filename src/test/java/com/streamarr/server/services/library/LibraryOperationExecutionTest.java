@@ -1461,6 +1461,28 @@ class LibraryOperationExecutionTest {
     }
 
     @Test
+    @DisplayName(
+        "Should save a skipped file for an unreadable entry when the ignore list would drop its"
+            + " name")
+    void shouldSaveASkippedFileForAnUnreadableEntryWhenTheIgnoreListWouldDropItsName()
+        throws Exception {
+      var movie =
+          createMovieFile(createRootLibraryDirectory(), "About Time", "About Time (2013).mkv");
+      var locked = Files.createFile(movie.resolveSibling("About Time (2013).nfo"));
+      var runner =
+          serviceWith(
+              ThrowingFileSystemWrapper.failingLaterAttributeReadsOf(
+                  fileSystem,
+                  "About Time (2013).nfo",
+                  () -> new AccessDeniedException(locked.toString())));
+
+      scan(runner);
+
+      assertThat(skippedFiles.skippedFilesOf(savedLibraryId))
+          .containsExactly(skipped(runner, locked, SkippedFileReason.UNREADABLE));
+    }
+
+    @Test
     @DisplayName("Should save no skipped file for an entry that disappears while a scan reads it")
     void shouldSaveNoSkippedFileForAnEntryThatDisappearsWhileAScanReadsIt() throws Exception {
       var gone = createMovieFile(createRootLibraryDirectory(), "Gone", "Gone (2004).mkv");
