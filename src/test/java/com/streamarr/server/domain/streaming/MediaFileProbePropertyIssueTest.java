@@ -10,9 +10,9 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Media File Probe Property Issue Tests")
@@ -68,13 +68,15 @@ class MediaFileProbePropertyIssueTest {
         Arguments.of(3, CompatibleBase.SDR, true));
   }
 
-  @ParameterizedTest(name = "profile {0}: {1}")
-  @CsvSource({"7, false", "5, true", "8, true", "9, true", "10, true"})
+  // ADR 0013: the server treats profile 8 with compatibility identifier 6 as profile 8.1, and the
+  // worker normalizes the record of a copy that keeps the Dolby Vision.
+  @ParameterizedTest(name = "profile {0}")
+  @ValueSource(ints = {5, 7, 8, 9, 10})
   @DisplayName(
-      "Should rule out a copy when the record pairs compatibility identifier 6 with a profile other"
-          + " than 7")
-  void shouldRuleOutACopyWhenTheRecordPairsCompatibilityIdentifier6WithAProfileOtherThan7(
-      int profile, boolean rulesOutCopy) {
+      "Should find no issue when the record pairs compatibility identifier 6 with any profile on a"
+          + " PQ base")
+  void shouldFindNoIssueWhenTheRecordPairsCompatibilityIdentifier6WithAnyProfileOnAPqBase(
+      int profile) {
     var range =
         new VideoDynamicRange(
             CompatibleBase.PQ,
@@ -90,10 +92,7 @@ class MediaFileProbePropertyIssueTest {
                         .build()),
                 Presence.UNSPECIFIED));
 
-    assertThat(
-            MediaFileProbePropertyIssue.foundIn(range).stream()
-                .anyMatch(MediaFileProbePropertyIssue::rulesOutCopy))
-        .isEqualTo(rulesOutCopy);
+    assertThat(MediaFileProbePropertyIssue.foundIn(range)).isEmpty();
   }
 
   @Test

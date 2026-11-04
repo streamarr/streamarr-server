@@ -11,7 +11,8 @@ import lombok.NonNull;
  * the chosen video stream that the decision read. A decision that copies the video needs the codec
  * string that the probe stored, because the copy job carries it. {@code videoBitstreamRewrites}
  * lists every bitstream rewrite of the decision's copy, and a decision that encodes the video lists
- * none (ADR 0036).
+ * none (ADR 0036). {@code videoDolbyVisionOutput} is the Dolby Vision of a copy that the playlist
+ * describes as Dolby Vision, and a decision that encodes the video holds none (ADR 0013).
  */
 @Builder(toBuilder = true)
 public record TranscodeDecision(
@@ -21,7 +22,8 @@ public record TranscodeDecision(
     AudioDecision audioDecision,
     SubtitleDecision subtitleDecision,
     @NonNull Optional<VideoPlaybackFacts> videoSource,
-    @NonNull List<BitstreamRewrite> videoBitstreamRewrites) {
+    @NonNull List<BitstreamRewrite> videoBitstreamRewrites,
+    @NonNull Optional<DolbyVisionOutput> videoDolbyVisionOutput) {
 
   public TranscodeDecision {
     var copiesVideo = transcodeMode != null && transcodeMode.copiesVideo();
@@ -38,6 +40,11 @@ public record TranscodeDecision(
     if (!copiesVideo && !videoBitstreamRewrites.isEmpty()) {
       throw new IllegalArgumentException(
           "A decision that encodes the video cannot list a bitstream rewrite");
+    }
+
+    if (!copiesVideo && videoDolbyVisionOutput.isPresent()) {
+      throw new IllegalArgumentException(
+          "A decision that encodes the video cannot hold a Dolby Vision output");
     }
 
     videoBitstreamRewrites = List.copyOf(videoBitstreamRewrites);
@@ -91,7 +98,8 @@ public record TranscodeDecision(
       return PlannedVideoOutput.Encode.sdr(encodeCodecProfile);
     }
 
-    return PlannedVideoOutput.StreamCopy.of(videoSource.orElseThrow(), videoBitstreamRewrites);
+    var copy = PlannedVideoOutput.StreamCopy.of(videoSource.orElseThrow(), videoBitstreamRewrites);
+    return videoDolbyVisionOutput.map(copy::withDolbyVisionOutput).orElse(copy);
   }
 
   /**
@@ -116,5 +124,6 @@ public record TranscodeDecision(
     private Optional<EncodeCodecProfile> encodeCodecProfile = Optional.empty();
     private Optional<VideoPlaybackFacts> videoSource = Optional.empty();
     private List<BitstreamRewrite> videoBitstreamRewrites = List.of();
+    private Optional<DolbyVisionOutput> videoDolbyVisionOutput = Optional.empty();
   }
 }

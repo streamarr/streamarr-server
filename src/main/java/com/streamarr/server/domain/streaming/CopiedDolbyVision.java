@@ -25,10 +25,10 @@ sealed interface CopiedDolbyVision {
   record Declarable(@NonNull DolbyVisionProfile profile, int level) implements CopiedDolbyVision {}
 
   /**
-   * Dolby Vision that no entry accepts until a copy can strip it (streamarr/streamarr-server#396):
-   * profile 7, an unknown profile, a profile that the contract does not name, or a stream whose
-   * level neither its record nor the level table gives. Until streamarr/streamarr-server#652 stores
-   * a maximum frame rate, the table gives no level.
+   * Dolby Vision that no entry accepts: profile 6 or 7, an unknown profile, a profile that the
+   * contract does not name, or a stream whose level neither its record nor the level table gives.
+   * Until streamarr/streamarr-server#652 stores a maximum frame rate, the table gives no level. A
+   * copy on a PQ or HLG base can still play with the Dolby Vision stripped (ADR 0013).
    */
   record Undeclarable() implements CopiedDolbyVision {}
 
@@ -59,6 +59,12 @@ sealed interface CopiedDolbyVision {
 
     if (base == CompatibleBase.SDR && isSdrBaseProfile(codecFamily, profileNumber.getAsInt())) {
       return new KeptUnderSdrBase();
+    }
+
+    // Profile 5 has no compatible base whatever the signaled transfer claims, so a PQ transfer
+    // never makes it a profile whose base a stripped copy could play.
+    if (codecFamily == ProbedCodecFamily.HEVC && profileNumber.getAsInt() == 5) {
+      return new NeedsDolbyVisionSampleEntry();
     }
 
     var profile = namedProfile(codecFamily, profileNumber.getAsInt(), base);

@@ -1,7 +1,6 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
-import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.MediaFileProbePropertyIssue;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import java.util.Optional;
@@ -10,10 +9,10 @@ import java.util.Set;
 
 /**
  * The copy rule that still holds for what the playlist cannot describe yet (ADR 0013,
- * streamarr/streamarr-server#396). A PQ or HLG source without Dolby Vision that probe version 5 or
- * later described may be copied, and its capability entry decides whether the client accepts it. A
- * PQ, HLG or missing base with Dolby Vision, and any HDR base of an earlier probe version, is
- * refused. A source that the rule refuses is encoded to 8-bit SDR.
+ * streamarr/streamarr-server#396). A PQ or HLG source that probe version 5 or later described may
+ * be copied, with or without Dolby Vision, and its capability entry decides whether the client
+ * accepts it. Dolby Vision without a compatible base, and any HDR base of an earlier probe version,
+ * is refused. A source that the rule refuses is encoded to 8-bit SDR.
  */
 final class InterimVideoCopyRule {
 
@@ -45,12 +44,9 @@ final class InterimVideoCopyRule {
   // A probe version 4 outcome reports no codec profile for an entry to check, so it keeps that
   // version's decision until the file's probe version 5 outcome is stored (ADR 0032).
   private static boolean isCopyableDynamicRange(VideoPlaybackFacts facts) {
-    var range = facts.dynamicRange();
-    return switch (range.compatibleBase()) {
+    return switch (facts.dynamicRange().compatibleBase()) {
       case SDR, UNSPECIFIED -> true;
-      case PQ, HLG ->
-          facts.videoProperties().isPresent()
-              && !(range.dolbyVision() instanceof DolbyVision.Present);
+      case PQ, HLG -> facts.videoProperties().isPresent();
       case NONE -> false;
     };
   }

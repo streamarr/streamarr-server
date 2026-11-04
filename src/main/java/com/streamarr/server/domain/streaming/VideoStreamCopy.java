@@ -56,6 +56,53 @@ public record VideoStreamCopy(
                     .build());
   }
 
+  /**
+   * The Dolby Vision that the playlist describes when this copy keeps it: a profile with a PQ or
+   * HLG base that a capability entry can name, at the level that the record names or the level
+   * table gives (ADR 0013). Empty for a copy without such Dolby Vision.
+   */
+  public Optional<DolbyVisionOutput> dolbyVisionOutput() {
+    if (CopiedDolbyVision.of(this)
+        instanceof CopiedDolbyVision.Declarable(var profile, var level)) {
+      return Optional.of(new DolbyVisionOutput(profile, level));
+    }
+
+    return Optional.empty();
+  }
+
+  /**
+   * Whether stripping this copy's Dolby Vision leaves a PQ or HLG base that a player shows (ADR
+   * 0036). Only HEVC and AV1 copies strip it. Profiles 5 and 10.0 have no such base, and profiles
+   * 8.2 and 9 keep their RPUs under an SDR base.
+   */
+  public boolean hasDolbyVisionStrippableToAnHdrBase() {
+    if (!isStrippableCodecFamily()) {
+      return false;
+    }
+
+    var base = dynamicRange.compatibleBase();
+    if (base != CompatibleBase.PQ && base != CompatibleBase.HLG) {
+      return false;
+    }
+
+    return switch (CopiedDolbyVision.of(this)) {
+      case CopiedDolbyVision.Declarable _, CopiedDolbyVision.Undeclarable _ -> true;
+      case CopiedDolbyVision.None _,
+          CopiedDolbyVision.KeptUnderSdrBase _,
+          CopiedDolbyVision.NeedsDolbyVisionSampleEntry _ ->
+          false;
+    };
+  }
+
+  // The strip removes HEVC NAL units and AV1 metadata OBUs (ADR 0036). H.264 carries only profile
+  // 9, which keeps its RPUs under an SDR base.
+  private boolean isStrippableCodecFamily() {
+    return switch (codecFamily) {
+      case HEVC, AV1 -> true;
+      case H264, OTHER -> false;
+    };
+  }
+
   /** The copy that the worker delivers after the bitstream rewrites (ADR 0036). */
   public VideoStreamCopy afterRewrites(@NonNull Collection<BitstreamRewrite> rewrites) {
     return toBuilder().dynamicRange(dynamicRange.afterRewrites(rewrites)).build();

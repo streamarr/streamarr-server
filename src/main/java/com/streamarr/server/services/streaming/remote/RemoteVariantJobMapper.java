@@ -170,6 +170,9 @@ final class RemoteVariantJobMapper {
     copy.bitstreamRewrites().stream()
         .map(RemoteBitstreamRewriteMapper::toProto)
         .forEach(video::addBitstreamRewrites);
+    copy.dolbyVisionOutput()
+        .map(RemoteDolbyVisionOutputMapper::toProto)
+        .ifPresent(video::setDolbyVisionOutput);
     copy.masteringDisplay()
         .map(RemoteVariantJobMapper::masteringDisplay)
         .ifPresent(video::setMasteringDisplay);

@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.DolbyVision;
+import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
 import com.streamarr.server.domain.streaming.EncoderPreset;
@@ -29,7 +30,9 @@ import com.streamarr.transcode.v1.ContainerFormat;
 import com.streamarr.transcode.v1.ContentLightLevel;
 import com.streamarr.transcode.v1.DolbyVisionAbsent;
 import com.streamarr.transcode.v1.DolbyVisionConfiguration;
+import com.streamarr.transcode.v1.DolbyVisionOutput;
 import com.streamarr.transcode.v1.DolbyVisionPresent;
+import com.streamarr.transcode.v1.DolbyVisionSampleEntry;
 import com.streamarr.transcode.v1.MasteringDisplayColorVolume;
 import com.streamarr.transcode.v1.Presence;
 import com.streamarr.transcode.v1.VideoCodecFamily;
@@ -674,6 +677,121 @@ class RemoteVariantJobMapperTest {
     assertThat(video.getBitstreamRewritesList())
         .containsExactly(BitstreamRewrite.BITSTREAM_REWRITE_STRIP_HDR10_PLUS);
     assertThat(video.hasOutputDynamicRange()).isTrue();
+  }
+
+  // ADR 0013: the worker writes the record that the playlist describes, under the sample entry that
+  // the playlist's CODECS names.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("dolbyVisionOutputs")
+  @DisplayName("Should send the Dolby Vision output when the copy keeps Dolby Vision")
+  void shouldSendTheDolbyVisionOutputWhenTheCopyKeepsDolbyVision(
+      DolbyVisionProfile profile, DolbyVisionOutput expected) {
+    var video = mapper.map(copyKeepingDolbyVision(profile, 7)).getDecision().getVideo();
+
+    assertThat(video.getDolbyVisionOutput()).isEqualTo(expected);
+  }
+
+  static Stream<Arguments> dolbyVisionOutputs() {
+    return Stream.of(
+        Arguments.of(
+            DolbyVisionProfile.PROFILE_5,
+            dolbyVisionOutput(5, 0, DolbyVisionSampleEntry.DOLBY_VISION_SAMPLE_ENTRY_DVH1)),
+        Arguments.of(
+            DolbyVisionProfile.PROFILE_8_1,
+            dolbyVisionOutput(8, 1, DolbyVisionSampleEntry.DOLBY_VISION_SAMPLE_ENTRY_HVC1)),
+        Arguments.of(
+            DolbyVisionProfile.PROFILE_8_4,
+            dolbyVisionOutput(8, 4, DolbyVisionSampleEntry.DOLBY_VISION_SAMPLE_ENTRY_HVC1)),
+        Arguments.of(
+            DolbyVisionProfile.PROFILE_10_0,
+            dolbyVisionOutput(10, 0, DolbyVisionSampleEntry.DOLBY_VISION_SAMPLE_ENTRY_DAV1)),
+        Arguments.of(
+            DolbyVisionProfile.PROFILE_10_1,
+            dolbyVisionOutput(10, 1, DolbyVisionSampleEntry.DOLBY_VISION_SAMPLE_ENTRY_AV01)),
+        Arguments.of(
+            DolbyVisionProfile.PROFILE_10_4,
+            dolbyVisionOutput(10, 4, DolbyVisionSampleEntry.DOLBY_VISION_SAMPLE_ENTRY_AV01)));
+  }
+
+  private static DolbyVisionOutput dolbyVisionOutput(
+      int profile, int compatibilityId, DolbyVisionSampleEntry sampleEntry) {
+    return DolbyVisionOutput.newBuilder()
+        .setProfile(profile)
+        .setLevel(7)
+        .setBaseLayerCompatibilityId(compatibilityId)
+        .setSampleEntry(sampleEntry)
+        .build();
+  }
+
+  // Slot counts and execution targets read the Dolby Vision output to find the workers that write
+  // its sample entry.
+  @Test
+  @DisplayName("Should project the Dolby Vision output when the copy keeps Dolby Vision")
+  void shouldProjectTheDolbyVisionOutputWhenTheCopyKeepsDolbyVision() {
+    var video =
+        RemoteVariantJobMapper.decision(
+                copyKeepingDolbyVision(DolbyVisionProfile.PROFILE_8_1, 7).transcodeDecision())
+            .getVideo();
+
+    assertThat(video.getDolbyVisionOutput())
+        .isEqualTo(dolbyVisionOutput(8, 1, DolbyVisionSampleEntry.DOLBY_VISION_SAMPLE_ENTRY_HVC1));
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @Test
+  @DisplayName("Should send no Dolby Vision output when the copy strips Dolby Vision")
+  void shouldSendNoDolbyVisionOutputWhenTheCopyStripsDolbyVision() {
+    var video =
+        mapper
+            .map(
+                copyAttempt()
+                    .transcodeDecision(
+                        copyDecisionBuilder()
+                            .videoSource(Optional.of(dolbyVisionFacts()))
+                            .videoBitstreamRewrites(
+                                List.of(
+                                    com.streamarr.server.domain.streaming.BitstreamRewrite
+                                        .STRIP_DOLBY_VISION))
+                            .build())
+                    .build())
+            .getDecision()
+            .getVideo();
+
+    assertThat(video.hasDolbyVisionOutput()).isFalse();
+    assertThat(video.getBitstreamRewritesList())
+        .containsExactly(BitstreamRewrite.BITSTREAM_REWRITE_STRIP_DOLBY_VISION);
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static TranscodeRequest copyKeepingDolbyVision(DolbyVisionProfile profile, int level) {
+    return copyAttempt()
+        .transcodeDecision(
+            copyDecisionBuilder()
+                .videoSource(Optional.of(dolbyVisionFacts()))
+                .videoBitstreamRewrites(
+                    List.of(
+                        com.streamarr.server.domain.streaming.BitstreamRewrite
+                            .NORMALIZE_DOLBY_VISION_RECORD))
+                .videoDolbyVisionOutput(
+                    Optional.of(
+                        new com.streamarr.server.domain.streaming.DolbyVisionOutput(
+                            profile, level)))
+                .build())
+        .build();
+  }
+
+  // The playlist describes the copy from the decision's Dolby Vision output, so the probed facts
+  // need only show that Dolby Vision is present.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static VideoPlaybackFacts dolbyVisionFacts() {
+    return VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+        .dynamicRange(
+            new com.streamarr.server.domain.streaming.VideoDynamicRange(
+                com.streamarr.server.domain.streaming.CompatibleBase.PQ,
+                com.streamarr.server.domain.streaming.Presence.ABSENT,
+                new DolbyVision.Present(
+                    Optional.empty(), com.streamarr.server.domain.streaming.Presence.PRESENT)))
+        .build();
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")

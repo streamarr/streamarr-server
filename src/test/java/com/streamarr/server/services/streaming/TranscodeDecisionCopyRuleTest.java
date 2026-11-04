@@ -48,13 +48,14 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * The copy rules of ADR 0013 and ADR 0036. The interim copy rule still holds for a probe version 4
- * outcome and for Dolby Vision on a PQ, HLG or missing base: the server copies the video only when
+ * outcome and for Dolby Vision without a compatible base: the server copies the video only when
  * every condition holds. The compatible base is SDR or unspecified; no Dolby Vision compatibility
  * identifier disagrees with the signaled transfer; the source is not H.264, or is 8-bit 4:2:0
  * H.264; and the client names the source's codec. A copy also needs the codec string that the probe
  * stored, under a sample entry that a playlist can describe: never hev1 or a Dolby Vision entry
- * (ADR 0013). Since the third amendment, a PQ or HLG source without Dolby Vision that probe version
- * 5 described is copied to a client that declares its base (streamarr/streamarr-server#396).
+ * (ADR 0013). Since the third amendment, a PQ or HLG source that probe version 5 described is
+ * copied to a client that declares its base (streamarr/streamarr-server#396), and {@link
+ * TranscodeDecisionDolbyVisionCopyTest} covers Dolby Vision on such a base.
  */
 @Tag("UnitTest")
 @DisplayName("Transcode Decision Copy Rule Tests")
@@ -303,48 +304,6 @@ class TranscodeDecisionCopyRuleTest {
             "HDR10", hdrSource(CompatibleBase.PQ, new DolbyVision.Absent()), VideoRange.PQ),
         Arguments.of(
             "HLG", hdrSource(CompatibleBase.HLG, new DolbyVision.Absent()), VideoRange.HLG));
-  }
-
-  // Dolby Vision copies on a PQ or HLG base wait for the Dolby Vision slice of #396.
-  @ParameterizedTest(name = "{0}")
-  @MethodSource("dolbyVisionSourcesOnAnHdrBase")
-  @DisplayName(
-      "Should encode a Dolby Vision source on a PQ or HLG base when the client declares its"
-          + " profile")
-  void shouldEncodeADolbyVisionSourceOnAPqOrHlgBaseWhenTheClientDeclaresItsProfile(
-      String scenario, Source source) {
-    var decision =
-        service
-            .decide(hdrRequestBuilder(source).capabilityDeclaration(hdrDeclaration()).build())
-            .orElseThrow();
-
-    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
-    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
-  }
-
-  // Each record names level 6, at or below the declared maximum, so the entry accepts the copy and
-  // only the copy rule refuses it.
-  static Stream<Arguments> dolbyVisionSourcesOnAnHdrBase() {
-    return Stream.of(
-        Arguments.of(
-            "Dolby Vision 8.1 on a PQ base",
-            hdrSource(CompatibleBase.PQ, dolbyVisionRecordAtLevel6(1))),
-        Arguments.of(
-            "Dolby Vision 8.4 on an HLG base",
-            hdrSource(CompatibleBase.HLG, dolbyVisionRecordAtLevel6(4))));
-  }
-
-  private static DolbyVision dolbyVisionRecordAtLevel6(int compatibilityId) {
-    return new DolbyVision.Present(
-        Optional.of(
-            DolbyVisionConfiguration.builder()
-                .profile(OptionalInt.of(8))
-                .level(OptionalInt.of(6))
-                .baseLayerCompatibilityId(OptionalInt.of(compatibilityId))
-                .baseLayer(true)
-                .rpu(true)
-                .build()),
-        Presence.UNSPECIFIED);
   }
 
   // ADR 0032: a file keeps its probe version 4 decision until its probe version 5 outcome is

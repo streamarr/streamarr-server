@@ -44,6 +44,10 @@ import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.Deinterlace;
 import com.streamarr.server.domain.streaming.DeinterlaceOutput;
 import com.streamarr.server.domain.streaming.DolbyVision;
+import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
+import com.streamarr.server.domain.streaming.DolbyVisionOutput;
+import com.streamarr.server.domain.streaming.DolbyVisionProfile;
+import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
 import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
@@ -3764,6 +3768,76 @@ class HlsStreamingServiceTest {
             });
   }
 
+  // ADR 0013: a client that declares profile 8.1 at the copy's level gets the copy that keeps Dolby
+  // Vision, its job carries the record that the playlist describes, and the playlist announces the
+  // Dolby Vision beside the base's CODECS.
+  @Test
+  @DisplayName(
+      "Should copy a profile 8.1 source with its Dolby Vision and announce it when the client"
+          + " declares profile 8.1")
+  void shouldCopyAProfile81SourceWithItsDolbyVisionAndAnnounceItWhenTheClientDeclaresProfile81() {
+    probeResults.setDefaultProbe(profile81HevcProbe());
+    transcodeExecutor.setVideoCopySupportByWorker(
+        List.of(
+            WorkerVideoCopySupport.builder()
+                .plannedOutput(true)
+                .bitstreamRewrites(Set.of(BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD))
+                .build()));
+    var profile81 =
+        declarationBuilderFor(H264)
+            .video(
+                List.of(
+                    h264EntryBuilder().build(),
+                    hevcEntryBuilder()
+                        .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
+                        .dolbyVisionProfiles(
+                            List.of(
+                                DolbyVisionProfileCapability.builder()
+                                    .profile(DolbyVisionProfile.PROFILE_8_1)
+                                    .maxLevel(6)
+                                    .build()))
+                        .build()))
+            .build();
+
+    var session = accepted(createSessionDeclaring(profile81, StreamingOptions.builder().build()));
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(request -> request.transcodeDecision().plannedVideoOutput())
+        .isInstanceOfSatisfying(
+            PlannedVideoOutput.StreamCopy.class,
+            copy -> {
+              assertThat(copy.bitstreamRewrites())
+                  .containsExactly(BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD);
+              assertThat(copy.dolbyVisionOutput())
+                  .contains(new DolbyVisionOutput(DolbyVisionProfile.PROFILE_8_1, 6));
+            });
+    assertThat(
+            new HlsPlaylistService(streamingProperties())
+                .generateMultivariantPlaylist(session, "t"))
+        .contains("CODECS=\"hvc1.2.4.L150.90,")
+        .contains(",VIDEO-RANGE=PQ")
+        .contains(",SUPPLEMENTAL-CODECS=\"dvh1.08.06/db1p\"");
+  }
+
+  // The HDR10 source below with a profile 8.1 record at level 6.
+  private static MediaProbe profile81HevcProbe() {
+    return hevcMain10Probe(
+        new VideoDynamicRange(
+            CompatibleBase.PQ,
+            Presence.ABSENT,
+            new DolbyVision.Present(
+                Optional.of(
+                    DolbyVisionConfiguration.builder()
+                        .profile(OptionalInt.of(8))
+                        .level(OptionalInt.of(6))
+                        .baseLayerCompatibilityId(OptionalInt.of(1))
+                        .baseLayer(true)
+                        .rpu(true)
+                        .build()),
+                Presence.PRESENT)));
+  }
+
   // HEVC with a PQ base beside H.264, and stereo AAC.
   private static ClientCapabilityDeclaration pqDeclaration() {
     return declarationBuilderFor(H264)
@@ -3783,6 +3857,11 @@ class HlsStreamingServiceTest {
   }
 
   private static MediaProbe hdr10HevcProbe(Presence hdr10Plus) {
+    return hevcMain10Probe(
+        new VideoDynamicRange(CompatibleBase.PQ, hdr10Plus, new DolbyVision.Absent()));
+  }
+
+  private static MediaProbe hevcMain10Probe(VideoDynamicRange range) {
     return defaultProbeBuilder()
         .videoCodec("hevc")
         .videoPlaybackFacts(
@@ -3792,9 +3871,7 @@ class HlsStreamingServiceTest {
                     .codecFamily(Optional.of(ProbedCodecFamily.HEVC))
                     .codecString(Optional.of("hvc1.2.4.L150.90"))
                     .bitDepth(OptionalInt.of(10))
-                    .dynamicRange(
-                        new VideoDynamicRange(
-                            CompatibleBase.PQ, hdr10Plus, new DolbyVision.Absent()))
+                    .dynamicRange(range)
                     .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))
                     .videoProperties(
                         Optional.of(

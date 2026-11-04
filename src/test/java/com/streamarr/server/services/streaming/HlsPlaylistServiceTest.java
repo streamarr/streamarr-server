@@ -10,8 +10,12 @@ import static org.assertj.core.api.Assertions.within;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.ContainerCropping;
+import com.streamarr.server.domain.streaming.DolbyVision;
+import com.streamarr.server.domain.streaming.DolbyVisionOutput;
+import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
@@ -23,6 +27,7 @@ import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MeasuredStream;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
+import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamMeasurementSource;
 import com.streamarr.server.domain.streaming.StreamMeasurements;
@@ -32,6 +37,7 @@ import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fixtures.ProbeFixture;
@@ -790,6 +796,112 @@ class HlsPlaylistServiceTest {
                       .doesNotContain("SUPPLEMENTAL-CODECS"));
     }
 
+    // ADR 0013: a copy that keeps Dolby Vision on a PQ or HLG base takes CODECS from its base
+    // sample entry and announces the Dolby Vision at the decision's level beside it.
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("dolbyVisionCopies")
+    @DisplayName(
+        "Should announce the supplemental Dolby Vision codec when the session copies Dolby Vision"
+            + " on a PQ or HLG base")
+    void shouldAnnounceTheSupplementalDolbyVisionCodecWhenTheSessionCopiesDolbyVisionOnAPqOrHlgBase(
+        String scenario, DolbyVisionCopy copy) {
+      var session =
+          copySession(
+              copyDecisionBuilder(
+                      VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                          .dynamicRange(dolbyVisionOn(copy.base()))
+                          .codecString(Optional.of(copy.codecString())))
+                  .videoBitstreamRewrites(List.of(BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD))
+                  .videoDolbyVisionOutput(Optional.of(copy.output())));
+
+      assertThat(streamInfLines(session))
+          .singleElement()
+          .satisfies(
+              line ->
+                  assertThat(line)
+                      .contains("CODECS=\"" + copy.codecString() + ",mp4a.40.2\"")
+                      .contains(",VIDEO-RANGE=" + copy.base().name())
+                      .contains(",SUPPLEMENTAL-CODECS=\"" + copy.supplementalCodecs() + "\""));
+    }
+
+    // ADR 0036: the playlist describes the output after its rewrites.
+    @Test
+    @DisplayName(
+        "Should announce only the PQ range when the session copies profile 8.1 with its Dolby"
+            + " Vision stripped")
+    void shouldAnnounceOnlyThePqRangeWhenTheSessionCopiesProfile81WithItsDolbyVisionStripped() {
+      var session =
+          copySession(
+              copyDecisionBuilder(
+                      VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                          .dynamicRange(dolbyVisionOn(CompatibleBase.PQ))
+                          .codecString(Optional.of("hvc1.2.4.L150.B0")))
+                  .videoBitstreamRewrites(List.of(BitstreamRewrite.STRIP_DOLBY_VISION)));
+
+      assertThat(streamInfLines(session))
+          .singleElement()
+          .asString()
+          .contains(",VIDEO-RANGE=PQ")
+          .doesNotContain("SUPPLEMENTAL-CODECS");
+    }
+
+    static Stream<Arguments> dolbyVisionCopies() {
+      return Stream.of(
+          Arguments.of(
+              "Profile 8.1 at level 6",
+              DolbyVisionCopy.builder()
+                  .output(new DolbyVisionOutput(DolbyVisionProfile.PROFILE_8_1, 6))
+                  .base(CompatibleBase.PQ)
+                  .codecString("hvc1.2.4.L150.B0")
+                  .supplementalCodecs("dvh1.08.06/db1p")
+                  .build()),
+          Arguments.of(
+              "Profile 8.4 at level 9",
+              DolbyVisionCopy.builder()
+                  .output(new DolbyVisionOutput(DolbyVisionProfile.PROFILE_8_4, 9))
+                  .base(CompatibleBase.HLG)
+                  .codecString("hvc1.2.4.L153.B0")
+                  .supplementalCodecs("dvh1.08.09/db4h")
+                  .build()),
+          Arguments.of(
+              "Profile 10.1 at level 13",
+              DolbyVisionCopy.builder()
+                  .output(new DolbyVisionOutput(DolbyVisionProfile.PROFILE_10_1, 13))
+                  .base(CompatibleBase.PQ)
+                  .codecString("av01.0.13M.10")
+                  .supplementalCodecs("dav1.10.13/db1p")
+                  .build()),
+          Arguments.of(
+              "Profile 10.4 at level 1",
+              DolbyVisionCopy.builder()
+                  .output(new DolbyVisionOutput(DolbyVisionProfile.PROFILE_10_4, 1))
+                  .base(CompatibleBase.HLG)
+                  .codecString("av01.0.08M.10")
+                  .supplementalCodecs("dav1.10.01/db4h")
+                  .build()));
+    }
+
+    /** A Dolby Vision copy, its base sample entry's codec string and its supplemental codec. */
+    @Builder
+    record DolbyVisionCopy(
+        DolbyVisionOutput output,
+        CompatibleBase base,
+        String codecString,
+        String supplementalCodecs) {}
+
+    private static VideoDynamicRange dolbyVisionOn(CompatibleBase base) {
+      return new VideoDynamicRange(
+          base, Presence.ABSENT, new DolbyVision.Present(Optional.empty(), Presence.PRESENT));
+    }
+
+    private List<String> streamInfLines(StreamSession session) {
+      return service
+          .generateMultivariantPlaylist(session, "test-token")
+          .lines()
+          .filter(line -> line.startsWith("#EXT-X-STREAM-INF:"))
+          .toList();
+    }
+
     // Every encode is SDR until the server encodes HDR (#397), whatever the source's range.
     @Test
     @DisplayName("Should leave the video range out when the session encodes a PQ source")
@@ -825,23 +937,30 @@ class HlsPlaylistServiceTest {
     }
 
     private StreamSession copySession(VideoPlaybackFacts.VideoPlaybackFactsBuilder source) {
+      return copySession(copyDecisionBuilder(source));
+    }
+
+    private StreamSession copySession(TranscodeDecision.TranscodeDecisionBuilder decision) {
       return StreamSessionFixture.defaultSessionBuilder()
-          .transcodeDecision(
-              TranscodeDecision.builder()
-                  .transcodeMode(TranscodeMode.REMUX)
-                  .videoCodecFamily("hevc")
-                  .audioDecision(
-                      AudioDecision.builder()
-                          .mode(AudioMode.COPY)
-                          .codec("aac")
-                          .channels(2)
-                          .bitrate(128_000L)
-                          .sourceCodecString(Optional.of("mp4a.40.2"))
-                          .build())
-                  .subtitleDecision(SubtitleDecision.exclude())
-                  .videoSource(Optional.of(source.build()))
-                  .build())
+          .transcodeDecision(decision.build())
           .build();
+    }
+
+    private TranscodeDecision.TranscodeDecisionBuilder copyDecisionBuilder(
+        VideoPlaybackFacts.VideoPlaybackFactsBuilder source) {
+      return TranscodeDecision.builder()
+          .transcodeMode(TranscodeMode.REMUX)
+          .videoCodecFamily("hevc")
+          .audioDecision(
+              AudioDecision.builder()
+                  .mode(AudioMode.COPY)
+                  .codec("aac")
+                  .channels(2)
+                  .bitrate(128_000L)
+                  .sourceCodecString(Optional.of("mp4a.40.2"))
+                  .build())
+          .subtitleDecision(SubtitleDecision.exclude())
+          .videoSource(Optional.of(source.build()));
     }
   }
 
