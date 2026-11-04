@@ -59,6 +59,9 @@ Each worker grants four separate capacities when it connects, as https://github.
 
 A probe never takes a playback slot, and a job attempt never takes a probe unit.
 A job attempt that copies the video, with or without an audio encode, takes no playback slot, and the server sends one to a worker whose slots are all in use.
+The worker runs as many copies as its heap holds, at up to 256 MiB of output each after its slots' memory and a 512 MiB reserve, and refuses a copy beyond them with `STARTUP_FAILED`, as it refuses an encode beyond its slots.
+The server treats that refusal as any failed start: recovery starts a replacement on an eligible worker, and the variant fails once recovery has tried every eligible worker.
+The worker's `streamarr.worker.copy_fullness` metric tells an autoscaler how full of copies it is.
 A stream session can therefore start on a worker while a library scan probes many files on the same worker.
 A playback probe can also use a free background unit, but a background probe never uses a playback probe unit.
 A playback probe therefore starts even while a scan uses every background unit.
@@ -143,7 +146,7 @@ A refusal at the per-worker limit carries a `SegmentUploadLimitReached` detail i
 The server frees a worker's place only after it stores the segment, so a worker that frees its own place when it cancels an upload can still meet that refusal.
 Any other refusal fails the job attempt, and the server's recovery handles that failure.
 A worker that reads neither the limit nor the detail fails the job attempt on every refusal.
-Workers budget 256 MiB of buffered output per execution slot and per running copy, plus a 64 KiB read buffer per FFmpeg process. FFmpeg, pipe buffers, and gRPC use additional memory.
+Workers budget 256 MiB of buffered output per execution slot and per running copy, and run only the copies that their heap holds, plus a 64 KiB read buffer per FFmpeg process. FFmpeg, pipe buffers, and gRPC use additional memory.
 Deploy the server with the larger cap before deploying workers that produce larger segments.
 
 Set `TRANSCODE_WORKER_FFPROBE_PATH` to the worker's ffprobe binary. It defaults to `ffprobe` on `PATH`.
