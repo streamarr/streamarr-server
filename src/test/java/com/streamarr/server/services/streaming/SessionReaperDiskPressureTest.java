@@ -156,6 +156,27 @@ class SessionReaperDiskPressureTest {
   }
 
   @Test
+  @DisplayName(
+      "Should keep an idle session and evict the next when a request reaches it just before its"
+          + " removal")
+  void shouldKeepIdleSessionAndEvictNextWhenRequestReachesItJustBeforeItsRemoval() {
+    var resumed = storedSession(Duration.ofMinutes(50), 450);
+    var next = storedSession(Duration.ofMinutes(30), 450);
+    registry.beforeNextRemoval(() -> registry.touch(resumed, clock.instant()));
+    SegmentFolderSpace nearlyFull =
+        () -> new StoredSegmentBytes(segmentFolder).freeFraction() - 0.05;
+
+    reaperReading(nearlyFull).reapSessions();
+
+    assertThat(streamingService.getAllSessions())
+        .extracting(StreamSession::getSessionId)
+        .containsExactly(resumed);
+    assertThat(segmentFolder.resolve(resumed.toString())).exists();
+    assertThat(segmentFolder.resolve(next.toString())).doesNotExist();
+    assertThat(meters.counter("streamarr.streaming.disk_pressure_evictions").count()).isEqualTo(1);
+  }
+
+  @Test
   @DisplayName("Should keep evicting the next idle session when destroying one fails")
   void shouldKeepEvictingNextIdleSessionWhenDestroyingOneFails() {
     var failing = storedSession(Duration.ofMinutes(50), 40);

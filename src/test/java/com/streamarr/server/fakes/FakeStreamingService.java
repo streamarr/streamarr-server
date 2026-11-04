@@ -6,6 +6,7 @@ import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
 import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.StreamingService;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -66,6 +67,16 @@ public final class FakeStreamingService implements StreamingService {
   public void destroySession(UUID sessionId) {
     registry.removeById(sessionId);
     destroyedIds.add(sessionId);
+  }
+
+  @Override
+  public boolean destroySessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
+    if (!registry.removeIfLastAccessedBefore(sessionId, cutoff)) {
+      return false;
+    }
+
+    destroyedIds.add(sessionId);
+    return true;
   }
 
   @Override

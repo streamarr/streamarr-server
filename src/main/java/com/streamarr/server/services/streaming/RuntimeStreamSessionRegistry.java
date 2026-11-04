@@ -21,6 +21,12 @@ public interface RuntimeStreamSessionRegistry {
 
   Optional<StreamSession> removeById(UUID sessionId);
 
+  /**
+   * Removes a session whose last access is before the cutoff and reports whether it did. The check
+   * and the removal are one step with {@link #touch}, so a session a request reached first stays.
+   */
+  boolean removeIfLastAccessedBefore(UUID sessionId, Instant cutoff);
+
   Collection<StreamSession> findAll();
 
   int count();

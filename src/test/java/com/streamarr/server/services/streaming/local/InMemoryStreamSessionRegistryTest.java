@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming.local;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.fixtures.StreamSessionFixture;
+import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -12,6 +13,8 @@ import org.junit.jupiter.api.Test;
 @Tag("UnitTest")
 @DisplayName("In-Memory Stream Session Registry Tests")
 class InMemoryStreamSessionRegistryTest {
+
+  private static final Instant CUTOFF = Instant.parse("2026-01-01T00:00:00Z");
 
   private InMemoryStreamSessionRegistry registry;
 
@@ -38,6 +41,39 @@ class InMemoryStreamSessionRegistryTest {
 
     assertThat(removed).isPresent().contains(session);
     assertThat(registry.findById(session.getSessionId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should remove a session when its last access is before the cutoff")
+  void shouldRemoveSessionWhenItsLastAccessIsBeforeCutoff() {
+    var session = StreamSessionFixture.buildActiveSession();
+    session.setLastAccessedAt(CUTOFF.minusSeconds(1));
+    registry.save(session);
+
+    var removed = registry.removeIfLastAccessedBefore(session.getSessionId(), CUTOFF);
+
+    assertThat(removed).isTrue();
+    assertThat(registry.findById(session.getSessionId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should keep a session when a request touched it at or after the cutoff")
+  void shouldKeepSessionWhenRequestTouchedItAtOrAfterCutoff() {
+    var session = StreamSessionFixture.buildActiveSession();
+    session.setLastAccessedAt(CUTOFF.minusSeconds(60));
+    registry.save(session);
+    registry.touch(session.getSessionId(), CUTOFF);
+
+    var removed = registry.removeIfLastAccessedBefore(session.getSessionId(), CUTOFF);
+
+    assertThat(removed).isFalse();
+    assertThat(registry.findById(session.getSessionId())).contains(session);
+  }
+
+  @Test
+  @DisplayName("Should report nothing removed when the session is not registered")
+  void shouldReportNothingRemovedWhenSessionIsNotRegistered() {
+    assertThat(registry.removeIfLastAccessedBefore(UUID.randomUUID(), CUTOFF)).isFalse();
   }
 
   @Test

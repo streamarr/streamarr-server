@@ -8,6 +8,7 @@ import java.util.Collections;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class InMemoryStreamSessionRegistry implements RuntimeStreamSessionRegistry {
 
@@ -36,6 +37,22 @@ public class InMemoryStreamSessionRegistry implements RuntimeStreamSessionRegist
   @Override
   public Optional<StreamSession> removeById(UUID sessionId) {
     return Optional.ofNullable(sessions.remove(sessionId));
+  }
+
+  @Override
+  public boolean removeIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
+    var removed = new AtomicBoolean();
+    sessions.computeIfPresent(
+        sessionId,
+        (_, session) -> {
+          if (!session.getLastAccessedAt().isBefore(cutoff)) {
+            return session;
+          }
+
+          removed.set(true);
+          return null;
+        });
+    return removed.get();
   }
 
   @Override

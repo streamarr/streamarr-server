@@ -79,7 +79,7 @@ public class SessionReaper {
           return;
         }
 
-        evict(session);
+        evict(session.getSessionId());
       }
     } catch (UncheckedIOException failure) {
       meterRegistry.counter(READ_FAILURE_METRIC).increment();
@@ -91,19 +91,21 @@ public class SessionReaper {
     return segmentFolderSpace.freeFraction() < MINIMUM_FREE_FRACTION;
   }
 
-  private void evict(StreamSession session) {
-    // A request can reach the session after the snapshot; an active session is never evicted.
-    if (!isIdle(session, clock.instant())) {
-      return;
-    }
-
+  private void evict(UUID sessionId) {
+    var lastAccessCutoff = clock.instant().minus(properties.sessionTimeout());
     try {
-      log.info("Evicting idle session {} to free disk space", session.getSessionId());
-      destroy(session.getSessionId());
+      // The removal is one step with request access, so a session a player resumed stays.
+      if (!streamingService.destroySessionIfLastAccessedBefore(sessionId, lastAccessCutoff)) {
+        return;
+      }
+
+      log.info("Evicted idle session {} to free disk space", sessionId);
       meterRegistry.counter(EVICTION_METRIC).increment();
     } catch (RuntimeException e) {
-      log.error("Failed to evict session {}", session.getSessionId(), e);
+      log.error("Failed to evict session {}", sessionId, e);
     }
+
+    closePlaybackSession(sessionId);
   }
 
   private void reapExpiredPlayback(Instant now, Duration retention) {

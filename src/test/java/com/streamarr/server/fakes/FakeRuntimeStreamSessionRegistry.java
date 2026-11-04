@@ -9,10 +9,17 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class FakeRuntimeStreamSessionRegistry implements RuntimeStreamSessionRegistry {
 
   private final Map<UUID, StreamSession> sessions = new ConcurrentHashMap<>();
+  private Runnable beforeNextRemoval = () -> {};
+
+  /** Runs once just before the next removal decides, as a request that arrives then would. */
+  public void beforeNextRemoval(Runnable callback) {
+    beforeNextRemoval = callback;
+  }
 
   @Override
   public void save(StreamSession session) {
@@ -36,7 +43,31 @@ public class FakeRuntimeStreamSessionRegistry implements RuntimeStreamSessionReg
 
   @Override
   public Optional<StreamSession> removeById(UUID sessionId) {
+    runBeforeRemoval();
     return Optional.ofNullable(sessions.remove(sessionId));
+  }
+
+  @Override
+  public boolean removeIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
+    runBeforeRemoval();
+    var removed = new AtomicBoolean();
+    sessions.computeIfPresent(
+        sessionId,
+        (_, session) -> {
+          if (!session.getLastAccessedAt().isBefore(cutoff)) {
+            return session;
+          }
+
+          removed.set(true);
+          return null;
+        });
+    return removed.get();
+  }
+
+  private void runBeforeRemoval() {
+    var callback = beforeNextRemoval;
+    beforeNextRemoval = () -> {};
+    callback.run();
   }
 
   @Override

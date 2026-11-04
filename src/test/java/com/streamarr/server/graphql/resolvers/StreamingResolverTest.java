@@ -1856,6 +1856,11 @@ class StreamingResolverTest {
     }
 
     @Override
+    public boolean destroySessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
     public void destroySession(UUID sessionId, UUID profileId) {
       destroySession(sessionId);
     }

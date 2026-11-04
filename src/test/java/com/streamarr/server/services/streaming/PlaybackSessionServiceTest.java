@@ -43,6 +43,7 @@ import com.streamarr.server.services.streaming.events.CopiedVariantRanShortEvent
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
@@ -1972,6 +1973,11 @@ class PlaybackSessionServiceTest {
       if (failDestroy) {
         throw new IllegalStateException("Cleanup failed");
       }
+    }
+
+    @Override
+    public boolean destroySessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
+      throw new UnsupportedOperationException();
     }
 
     @Override

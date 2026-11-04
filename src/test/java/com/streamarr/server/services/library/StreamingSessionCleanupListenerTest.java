@@ -17,6 +17,7 @@ import com.streamarr.server.services.streaming.PlaybackFormatAttempt;
 import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
+import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.Collection;
 import java.util.Optional;
@@ -161,6 +162,11 @@ class StreamingSessionCleanupListenerTest {
     @Override
     public void destroySession(UUID sessionId) {
       sessions.remove(sessionId);
+    }
+
+    @Override
+    public boolean destroySessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
+      throw new UnsupportedOperationException();
     }
 
     @Override
