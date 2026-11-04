@@ -88,10 +88,11 @@ class CredentialAdmissionConcurrencyIT extends AbstractIntegrationTest {
 
       var holderPid = backendPid(holder);
       // The scheduled sweep can fire while the lock is held, and its DELETE queues behind it too.
+      // At least one: the scheduled run may queue beside this one.
       var sweep = executor.submit(retentionSweeper::deleteExpiredAttempts);
       await()
           .atMost(Duration.ofSeconds(5))
-          .until(() -> waitersBehind(jdbc, holderPid, RETENTION_DELETE) == 1);
+          .until(() -> waitersBehind(jdbc, holderPid, RETENTION_DELETE) >= 1);
       var one = executor.submit(() -> tryLogin(first, correct, admittedOrBlocked));
       var two = executor.submit(() -> tryLogin(second, correct, admittedOrBlocked));
       try {
