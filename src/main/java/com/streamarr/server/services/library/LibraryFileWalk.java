@@ -82,11 +82,11 @@ public class LibraryFileWalk {
 
   /**
    * Walks the library and matches each of its files, then returns the closed discovery whose
-   * results the scan waits for. The walk never follows a soft link: it saves each soft link that it
-   * does not ignore as a skipped file of the scan, in place of the skipped files of the library's
-   * earlier scans. Each file's task is admitted through the scan's adaptive limit before the walk
-   * pulls the next file. A task that throws ends admission, and so does the admission end: files
-   * that were not admitted yet are not processed in this scan.
+   * results the scan waits for. The walk never follows a soft link: it saves each soft link as a
+   * skipped file of the scan, in place of the skipped files of the library's earlier scans. Each
+   * file's task is admitted through the scan's adaptive limit before the walk pulls the next file.
+   * A task that throws ends admission, and so does the admission end: files that were not admitted
+   * yet are not processed in this scan.
    *
    * @throws LibraryScanFailedException if the library cannot be walked or a file's task fails
    * @throws InterruptedException if the walk is interrupted; the admitted tasks are interrupted and
@@ -104,8 +104,8 @@ public class LibraryFileWalk {
 
       var files =
           stream
-              .filter(path -> !ignoredFileValidator.shouldIgnore(path))
               .flatMap(path -> regularFile(library, libraryOperationId, path).stream())
+              .filter(listed -> !ignoredFileValidator.shouldIgnore(listed.path()))
               .filter(listed -> keepSupportedOrWarn(listed.path()))
               .iterator();
       var failures =

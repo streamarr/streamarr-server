@@ -1409,16 +1409,21 @@ class LibraryOperationExecutionTest {
     }
 
     @Test
-    @DisplayName("Should save no skipped file for an ignored soft link when a scan finds one")
-    void shouldSaveNoSkippedFileForAnIgnoredSoftLinkWhenAScanFindsOne() throws Exception {
+    @DisplayName(
+        "Should save a skipped file for a soft link with an ignored name when a scan finds one")
+    void shouldSaveASkippedFileForASoftLinkWithAnIgnoredNameWhenAScanFindsOne() throws Exception {
       var subtitles = Files.createFile(elsewhere.resolve("Real (2001).srt"));
       var movie = createMovieFile(libraryFolder, "Real (2001)", "Real (2001).mkv");
-      Files.createSymbolicLink(movie.resolveSibling("Real (2001).srt"), subtitles);
+      var link = Files.createSymbolicLink(movie.resolveSibling("Real (2001).srt"), subtitles);
 
       scan();
 
-      assertThat(skippedFiles.skippedFilesOf(savedLibraryId)).isEmpty();
-      assertThat(fakeMediaFileRepository.findByLibraryId(savedLibraryId)).hasSize(1);
+      var scanId = runner.scheduling().scheduledExecutions().getLast();
+      assertThat(skippedFiles.skippedFilesOf(savedLibraryId))
+          .containsExactly(softLink(scanId, link));
+      assertThat(fakeMediaFileRepository.findByLibraryId(savedLibraryId))
+          .extracting(MediaFile::getFilepathUri)
+          .containsExactly(FilepathCodec.encode(movie));
     }
 
     @Test
@@ -1436,6 +1441,38 @@ class LibraryOperationExecutionTest {
       var secondScanId = runner.scheduling().scheduledExecutions().getLast();
       assertThat(skippedFiles.skippedFilesOf(savedLibraryId))
           .containsExactly(softLink(secondScanId, secondLink));
+    }
+
+    @Test
+    @DisplayName(
+        "Should save the library folder as a skipped file when the library folder is a soft link")
+    void shouldSaveTheLibraryFolderAsASkippedFileWhenTheLibraryFolderIsASoftLink()
+        throws Exception {
+      createMovieFile(elsewhere, "Real (2001)", "Real (2001).mkv");
+      var linkedFolder = Files.createSymbolicLink(media.resolve("linked-library"), elsewhere);
+      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      library.setFilepathUri(FilepathCodec.encode(linkedFolder));
+      fakeLibraryRepository.save(library);
+
+      scan();
+
+      var scanId = runner.scheduling().scheduledExecutions().getLast();
+      assertThat(skippedFiles.skippedFilesOf(savedLibraryId))
+          .containsExactly(softLink(scanId, linkedFolder));
+      assertThat(fakeMediaFileRepository.findByLibraryId(savedLibraryId)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should end the scan unhealthy when a skipped file cannot be saved")
+    void shouldEndTheScanUnhealthyWhenASkippedFileCannotBeSaved() throws Exception {
+      var target = Files.createFile(elsewhere.resolve("Linked (2002).mkv"));
+      Files.createSymbolicLink(libraryFolder.resolve("Linked (2002).mkv"), target);
+      skippedFiles.failSavesWith(new IllegalStateException("Simulated database outage"));
+
+      scan();
+
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+      assertThat(capturingEventPublisher.getEventsOfType(ScanEndedEvent.class)).hasSize(1);
     }
 
     private SkippedFile softLink(UUID scanId, Path link) {

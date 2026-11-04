@@ -15,9 +15,19 @@ import java.util.concurrent.ConcurrentHashMap;
 public class FakeSkippedFileRepository implements SkippedFileRepository {
 
   private final Map<Key, Stored> database = new ConcurrentHashMap<>();
+  private volatile RuntimeException saveFailure;
+
+  /** Makes every later save throw {@code failure} and store nothing. */
+  public void failSavesWith(RuntimeException failure) {
+    saveFailure = failure;
+  }
 
   @Override
   public void save(SkippedFile skippedFile) {
+    if (saveFailure != null) {
+      throw saveFailure;
+    }
+
     database.compute(
         new Key(skippedFile.libraryId(), skippedFile.filepathUri()),
         (_, stored) -> {
