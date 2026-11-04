@@ -281,9 +281,10 @@ class TranscodeDecisionTest {
 
   @Test
   @DisplayName(
-      "Should plan a copy with the source's range, codec profile and level and no bitstream"
-          + " rewrites when the decision copies the video")
-  void shouldPlanACopyWithTheSourcesRangeCodecProfileAndLevelWhenTheDecisionCopiesTheVideo() {
+      "Should plan a copy with the source's range, profile and level and no rewrites when the"
+          + " decision copies the video")
+  void
+      shouldPlanACopyWithTheSourcesRangeProfileAndLevelAndNoRewritesWhenTheDecisionCopiesTheVideo() {
     var decision =
         decisionBuilder(TranscodeMode.REMUX)
             .videoSource(
@@ -365,20 +366,35 @@ class TranscodeDecisionTest {
             new VideoDynamicRange(CompatibleBase.SDR, Presence.ABSENT, profile82.dolbyVision())));
   }
 
+  // ADR 0036: a stream copy passes HDR10+ information through unchanged.
   @Test
+  @DisplayName("Should keep the source's HDR10+ in the planned copy when the probe found HDR10+")
+  void shouldKeepTheSourcesHdr10PlusInThePlannedCopyWhenTheProbeFoundHdr10Plus() {
+    var source =
+        new VideoDynamicRange(CompatibleBase.PQ, Presence.PRESENT, new DolbyVision.Absent());
+    var decision =
+        decisionBuilder(TranscodeMode.REMUX)
+            .videoSource(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder().dynamicRange(source).build()))
+            .build();
+
+    assertThat(decision.plannedVideoOutput().dynamicRange()).isEqualTo(source);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("hdrSourceRanges")
   @DisplayName(
       "Should plan an SDR encode in the decision's encode codec profile when the decision encodes"
           + " an HDR source")
-  void shouldPlanAnSdrEncodeInTheDecisionsEncodeCodecProfileWhenTheDecisionEncodesAnHdrSource() {
+  void shouldPlanAnSdrEncodeInTheDecisionsEncodeCodecProfileWhenTheDecisionEncodesAnHdrSource(
+      VideoDynamicRange source) {
     var decision =
         decisionBuilder(TranscodeMode.VIDEO_TRANSCODE)
             .encodeCodecProfile(Optional.of(EncodeCodecProfile.H264_HIGH))
             .videoSource(
                 Optional.of(
-                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
-                        .dynamicRange(
-                            VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ))
-                        .build()))
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder().dynamicRange(source).build()))
             .build();
 
     assertThat(decision.plannedVideoOutput())
@@ -386,6 +402,19 @@ class TranscodeDecisionTest {
             new PlannedVideoOutput.Encode(
                 Optional.of(EncodeCodecProfile.H264_HIGH),
                 VideoPlaybackFactsFixture.SDR_WITHOUT_DOLBY_VISION));
+  }
+
+  // ADR 0013: every encode plans an SDR base without HDR10+ or Dolby Vision, whatever the source.
+  static Stream<Named<VideoDynamicRange>> hdrSourceRanges() {
+    return Stream.of(
+        Named.of(
+            "a PQ source without HDR10+ or Dolby Vision",
+            VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ)),
+        Named.of(
+            "a PQ source with HDR10+",
+            new VideoDynamicRange(CompatibleBase.PQ, Presence.PRESENT, new DolbyVision.Absent())),
+        Named.of(
+            "a Dolby Vision profile 5 source", VideoPlaybackFactsFixture.dolbyVisionProfile5()));
   }
 
   private static TranscodeDecision.TranscodeDecisionBuilder decisionBuilder(TranscodeMode mode) {
