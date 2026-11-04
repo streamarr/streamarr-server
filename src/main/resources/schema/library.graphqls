@@ -35,9 +35,11 @@ type LibraryAdministration {
     lastModifiedBy: String
     lastModifiedOn: String!
     """
-    The files that the library's latest scan found and skipped, in filepath order. A scan replaces
-    the skipped files of earlier scans as it starts, so while a scan runs the list holds only what
-    it has skipped so far. A file the file watcher skips appears after the next scan.
+    The files that the latest scan to walk the library's folder found and skipped, in filepath
+    order. A scan replaces the skipped files of earlier scans as its walk starts, so while it walks
+    the list holds only what it has skipped so far. A scan that is stopped before its walk, or whose
+    library folder check fails, leaves the earlier skipped files. A file that the file watcher
+    skips appears after the next scan.
     """
     skippedFiles(first: Int, after: String, last: Int, before: String): SkippedFileConnection!
 }
