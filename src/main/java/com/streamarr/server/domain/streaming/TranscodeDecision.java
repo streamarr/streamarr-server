@@ -107,15 +107,7 @@ public record TranscodeDecision(
    * compatible base is PQ.
    */
   public VideoRange videoRange() {
-    return rangeOf(plannedVideoOutput().dynamicRange().compatibleBase());
-  }
-
-  private static VideoRange rangeOf(CompatibleBase base) {
-    return switch (base) {
-      case SDR, UNSPECIFIED -> VideoRange.SDR;
-      case PQ, NONE -> VideoRange.PQ;
-      case HLG -> VideoRange.HLG;
-    };
+    return VideoRange.ofCompatibleBase(plannedVideoOutput().dynamicRange().compatibleBase());
   }
 
   // Lombok builder defaults — their generated setters assign them

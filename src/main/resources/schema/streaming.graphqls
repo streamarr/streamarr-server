@@ -1,5 +1,32 @@
-type StreamSession {
+"""
+One format attempt's delivery of the media to the player. The server chooses the delivery (ADR 0013):
+HLS, or direct play of the source file (ADR 0045).
+"""
+interface StreamSession {
     id: ID!
+    "The URL that the player opens. It carries the playback token."
+    streamUrl: String!
+}
+
+"""
+A stream session that sends the source file itself. The player reads the file at streamUrl with HTTP
+byte-range requests. The server chooses direct play only in Original, for a file that the capability
+declaration covers.
+"""
+type DirectPlayStreamSession implements StreamSession {
+    id: ID!
+    "The URL of the source file. It carries the playback token."
+    streamUrl: String!
+    "The source container of the file, which also names the URL's extension and media type."
+    sourceContainer: SourceContainer!
+    "The dynamic range of the source's video."
+    videoRange: VideoRange!
+}
+
+"A stream session that sends HLS, from job attempts that copy or encode the source."
+type HlsStreamSession implements StreamSession {
+    id: ID!
+    "The URL of the multivariant playlist. It carries the playback token."
     streamUrl: String!
     transcodeMode: TranscodeMode!
     "The dynamic range of the stream session's video. Every variant of a stream session shares it."
@@ -15,7 +42,7 @@ type StreamSession {
     mediaEndSeconds: Float
 }
 
-"The dynamic range of HLS video, as the playlist's VIDEO-RANGE attribute names it."
+"The dynamic range of a stream session's video, as an HLS playlist's VIDEO-RANGE attribute names it."
 enum VideoRange {
     SDR
     "SMPTE ST 2084, which covers HDR10, PQ10 and the PQ base of Dolby Vision."

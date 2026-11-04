@@ -11,6 +11,7 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.directPlaySessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
 import static com.streamarr.server.fixtures.StreamSessionFixture.remuxDecision;
@@ -980,9 +981,30 @@ class PlaybackSessionServiceTest {
         .containsExactly("h264");
   }
 
+  // T2: picking Original again starts a new playback session, so only its first format attempt may
+  // direct-play.
+  @Test
+  @DisplayName("Should let only the first format attempt direct-play")
+  void shouldLetOnlyTheFirstFormatAttemptDirectPlay() {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlay(service, command);
+
+    var recovered = service.reportFormatFailure(report(directPlay, command).build()).orElseThrow();
+
+    assertThat(streams.createdCommands)
+        .extracting(CreateStreamSessionCommand::videoFormatConstraint)
+        .containsExactly(
+            VideoFormatConstraint.DIRECT_PLAY_OR_COPY_OR_ENCODE,
+            VideoFormatConstraint.COPY_OR_ENCODE);
+    assertThat(recovered.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready -> assertThat(ready.session().getDelivery()).isEqualTo(StreamDelivery.HLS));
+  }
+
   private PlaybackSessionSnapshot startDirectPlay(
       PlaybackSessionService playback, StartPlaybackSessionCommand command) {
-    streams.directPlaysNextCreation = true;
+    streams.coversTheSourceForDirectPlay = true;
     var snapshot = accepted(playback.start(command));
     assertThat(snapshot.currentFormatAttempt())
         .isInstanceOfSatisfying(
@@ -1890,9 +1912,8 @@ class PlaybackSessionServiceTest {
     private RuntimeException destroyFailure;
     // Whether a capability entry accepts a copy of the source, as the transcode decision finds.
     private boolean copiesTheSource = true;
-    // Whether the next stream session direct-plays, as the transcode decision finds for a file that
-    // the declaration covers.
-    private boolean directPlaysNextCreation;
+    // Whether the declaration covers the source for direct play, as the transcode decision finds.
+    private boolean coversTheSourceForDirectPlay;
     private MediaProbe sourceProbe = defaultProbeBuilder().build();
 
     @Override
@@ -1909,22 +1930,13 @@ class PlaybackSessionServiceTest {
         return Outcome.rejected(rejection);
       }
 
-      var directPlays = directPlaysNextCreation;
-      directPlaysNextCreation = false;
-      var encodes =
-          !directPlays
-              && (command.videoFormatConstraint() == VideoFormatConstraint.ENCODE_ONLY
-                  || !copiesTheSource);
-
       var session =
-          defaultSessionBuilder()
+          sessionFor(command)
               .sessionId(command.streamSessionId())
               .mediaFileId(command.mediaFileId())
               .authority(command.identity().playbackAuthority())
               .options(command.options())
               .mediaProbe(sourceProbe)
-              .transcodeDecision(encodes ? fullTranscodeDecision("h264") : remuxDecision())
-              .delivery(directPlays ? StreamDelivery.DIRECT_PLAY : StreamDelivery.HLS)
               .build();
       sessions.put(session.getSessionId(), session);
       if (duringNextCreation != null) {
@@ -1934,6 +1946,21 @@ class PlaybackSessionServiceTest {
       }
 
       return Outcome.accepted(session);
+    }
+
+    // A direct-play stream session carries no transcode decision, because nothing transcodes.
+    private StreamSession.StreamSessionBuilder sessionFor(CreateStreamSessionCommand command) {
+      var constraint = command.videoFormatConstraint();
+      if (coversTheSourceForDirectPlay
+          && constraint == VideoFormatConstraint.DIRECT_PLAY_OR_COPY_OR_ENCODE) {
+        return directPlaySessionBuilder().transcodeDecision(null);
+      }
+
+      if (constraint == VideoFormatConstraint.ENCODE_ONLY || !copiesTheSource) {
+        return defaultSessionBuilder().transcodeDecision(fullTranscodeDecision("h264"));
+      }
+
+      return defaultSessionBuilder().transcodeDecision(remuxDecision());
     }
 
     @Override

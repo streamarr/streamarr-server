@@ -65,6 +65,7 @@ import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.QualityVariant;
+import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamMeasurementSource;
@@ -5174,6 +5175,91 @@ class HlsStreamingServiceTest {
     service.destroySession(session.getSessionId());
 
     assertThat(runtimeRegistry.findById(session.getSessionId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should start direct play without a connected worker when Original covers the file")
+  void shouldStartDirectPlayWithoutAConnectedWorkerWhenOriginalCoversTheFile() {
+    probeResults.setDefaultProbe(directPlayableProbe());
+    transcodeExecutor.setHealthy(false);
+    var file = seedMediaFile();
+
+    var session = accepted(service.createSession(directPlayCommand(file.getId()).build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
+    assertThat(session.getSourceContainer()).contains(SourceContainer.MATROSKA);
+    assertThat(session.getSourcePath()).isEqualTo(Path.of("/media/movies/test.mkv"));
+    assertThat(session.getVariants()).isEmpty();
+    assertThat(runtimeRegistry.findById(session.getSessionId())).contains(session);
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should start HLS when the format attempt may not direct-play")
+  void shouldStartHlsWhenTheFormatAttemptMayNotDirectPlay() {
+    probeResults.setDefaultProbe(directPlayableProbe());
+    var file = seedMediaFile();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId())
+                    .videoFormatConstraint(VideoFormatConstraint.COPY_OR_ENCODE)
+                    .build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.HLS);
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("Should take no transcode place for an open direct-play session")
+  void shouldTakeNoTranscodePlaceForAnOpenDirectPlaySession() {
+    probeResults.setDefaultProbe(directPlayableProbe());
+    accepted(service.createSession(directPlayCommand(seedMediaFile().getId()).build()));
+
+    for (int i = 0; i < streamingProperties().maxConcurrentTranscodes(); i++) {
+      var command =
+          createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+              .capabilityDeclaration(directPlayDeclaration())
+              .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+              .build();
+      assertThat(service.createSession(command)).isInstanceOf(Outcome.Accepted.class);
+    }
+
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(3);
+  }
+
+  private static MediaProbe directPlayableProbe() {
+    var facts =
+        VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+            .streamIndex(0)
+            .videoProperties(
+                Optional.of(VideoPlaybackFactsFixture.h264HighPropertiesBuilder().build()))
+            .build();
+    return defaultProbeBuilder()
+        .containerFormat(Optional.of("matroska,webm"))
+        .audioChannels(OptionalInt.of(2))
+        .videoPlaybackFacts(Optional.of(facts))
+        .build();
+  }
+
+  private static ClientCapabilityDeclaration directPlayDeclaration() {
+    return ClientCapabilityDeclaration.builder()
+        .video(
+            List.of(
+                h264EntryBuilder().directPlayContainers(List.of(SourceContainer.MATROSKA)).build()))
+        .audio(
+            List.of(
+                aacEntryBuilder().directPlayContainers(List.of(SourceContainer.MATROSKA)).build()))
+        .build();
+  }
+
+  private static CreateStreamSessionCommand.CreateStreamSessionCommandBuilder directPlayCommand(
+      UUID mediaFileId) {
+    return createStreamSessionCommandBuilder(mediaFileId, UUID.randomUUID())
+        .options(StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build())
+        .capabilityDeclaration(directPlayDeclaration())
+        .videoFormatConstraint(VideoFormatConstraint.DIRECT_PLAY_OR_COPY_OR_ENCODE);
   }
 
   @Test

@@ -12,6 +12,7 @@ import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.ProbeError;
+import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
@@ -383,24 +384,36 @@ public class StreamingResolver {
   }
 
   private StreamSessionDto toDto(StreamSession session) {
-    // The issuer refuses to mint for sessions the caller does not own — every DTO carries a
-    // playback token, so the ownership check rides along wherever this is called from.
-    return StreamSessionDto.builder()
+    return switch (session.getDelivery()) {
+      case HLS ->
+          StreamSessionDto.HlsStreamSession.builder()
+              .id(session.getSessionId().toString())
+              .streamUrl(streamUrl(session, "multivariant.m3u8"))
+              .transcodeMode(session.getTranscodeDecision().transcodeMode().name())
+              .videoRange(session.getVideoRange().name())
+              .mediaEndSeconds(
+                  session.getNormalEnd().map(end -> end.toMillis() / 1000.0).orElse(null))
+              .build();
+      case DIRECT_PLAY -> directPlayDto(session, session.getSourceContainer().orElseThrow());
+    };
+  }
+
+  private StreamSessionDto directPlayDto(StreamSession session, SourceContainer container) {
+    return StreamSessionDto.DirectPlayStreamSession.builder()
         .id(session.getSessionId().toString())
-        .streamUrl(
-            "/api/stream/"
-                + session.getSessionId()
-                + "/multivariant.m3u8?t="
-                + playbackTokenIssuer
-                    .issue(
-                        authorizationService.currentIdentity(),
-                        session,
-                        playbackTokenValidity(session))
-                    .value())
-        .transcodeMode(session.getTranscodeDecision().transcodeMode().name())
-        .videoRange(session.getTranscodeDecision().videoRange().name())
-        .mediaEndSeconds(session.getNormalEnd().map(end -> end.toMillis() / 1000.0).orElse(null))
+        .streamUrl(streamUrl(session, "source." + container.getExtension()))
+        .sourceContainer(container.name())
+        .videoRange(session.getVideoRange().name())
         .build();
+  }
+
+  // The issuer refuses to mint for sessions the caller does not own — every DTO carries a playback
+  // token, so the ownership check rides along wherever this is called from.
+  private String streamUrl(StreamSession session, String resource) {
+    var token =
+        playbackTokenIssuer.issue(
+            authorizationService.currentIdentity(), session, playbackTokenValidity(session));
+    return "/api/stream/" + session.getSessionId() + "/" + resource + "?t=" + token.value();
   }
 
   private Duration playbackTokenValidity(StreamSession session) {

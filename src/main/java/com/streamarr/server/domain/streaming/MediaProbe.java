@@ -6,6 +6,8 @@ import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.NonNull;
 
@@ -33,6 +35,10 @@ public record MediaProbe(
     @NonNull KeyframeKnowledge keyframes,
     @NonNull Optional<VideoPlaybackFacts> videoPlaybackFacts,
     @NonNull Optional<StreamMeasurements> streamMeasurements) {
+
+  // ffprobe's names for PGS, VobSub and DVB subtitles.
+  private static final Set<String> IMAGE_SUBTITLE_CODECS =
+      Set.of("hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle");
 
   public MediaProbe {
     if (audioChannels == null) {
@@ -75,6 +81,24 @@ public record MediaProbe(
 
   public List<StreamInfo> audioStreams() {
     return streams.stream().filter(s -> "audio".equals(s.codecType())).toList();
+  }
+
+  /**
+   * Whether a forced PGS, VobSub or DVB subtitle track is in the language of any audio track. The
+   * player shows such a track while subtitles are off (streamarr/streamarr-server#506), whichever
+   * audio track plays.
+   */
+  public boolean hasForcedImageSubtitleInAnAudioLanguage() {
+    var languages =
+        audioStreams().stream()
+            .flatMap(stream -> stream.language().stream())
+            .map(LanguageCodes::canonical)
+            .collect(Collectors.toSet());
+    return subtitleStreams().stream()
+        .filter(StreamInfo::isForced)
+        .filter(stream -> stream.codec().filter(IMAGE_SUBTITLE_CODECS::contains).isPresent())
+        .flatMap(stream -> stream.language().stream())
+        .anyMatch(language -> languages.contains(LanguageCodes.canonical(language)));
   }
 
   public List<StreamInfo> subtitleStreams() {

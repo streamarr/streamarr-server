@@ -4,6 +4,7 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.ShortCopy;
+import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
@@ -1216,8 +1217,10 @@ public class ProducerLifecycleService {
     void close();
   }
 
+  // A direct-play stream session starts no job attempt and holds no transcode decision.
   private static boolean requiresTranscode(StreamSession session) {
-    return session.getTranscodeDecision().transcodeMode() != TranscodeMode.REMUX;
+    return session.getDelivery() == StreamDelivery.HLS
+        && session.getTranscodeDecision().transcodeMode() != TranscodeMode.REMUX;
   }
 
   private static long countRunningJobAttempts(StreamSession session) {

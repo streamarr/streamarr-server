@@ -1,6 +1,9 @@
 package com.streamarr.server.domain.streaming;
 
+import java.util.Map;
+import java.util.Optional;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -31,4 +34,23 @@ public enum SourceContainer {
   private final String extension;
 
   private final String mediaType;
+
+  // ffprobe's demuxer names. The mov demuxer reads MP4 and QuickTime files alike, so its name tells
+  // them apart only with the file's major brand, which probe version 7 adds.
+  private static final Map<String, SourceContainer> BY_DEMUXER =
+      Map.of(
+          "matroska,webm", MATROSKA,
+          "mpegts", MPEG_TS,
+          "mpeg", MPEG_PS,
+          "avi", AVI,
+          "asf", ASF,
+          "flv", FLV);
+
+  /**
+   * The source container that ffprobe's demuxer name names, or empty when the name names no single
+   * source container, such as the mov demuxer's name for MP4 and MOV.
+   */
+  public static Optional<SourceContainer> ofProbedFormat(@NonNull String demuxer) {
+    return Optional.ofNullable(BY_DEMUXER.get(demuxer));
+  }
 }
