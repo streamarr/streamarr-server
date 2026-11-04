@@ -1,5 +1,6 @@
 package com.streamarr.server.repositories;
 
+import static com.streamarr.server.jooq.generated.tables.Library.LIBRARY;
 import static com.streamarr.server.jooq.generated.tables.LibraryOperation.LIBRARY_OPERATION;
 import static com.streamarr.server.jooq.generated.tables.SkippedFile.SKIPPED_FILE;
 
@@ -25,8 +26,9 @@ public class JooqSkippedFileRepository implements SkippedFileRepository {
 
   @Override
   public boolean trySave(SkippedFile skippedFile) {
-    var libraryOperation = heldLibraryOperation(skippedFile.libraryOperationId());
-    return dsl.with(libraryOperation)
+    var library = heldLibrary(skippedFile.libraryId());
+    var libraryOperation = heldLibraryOperation(library, skippedFile.libraryOperationId());
+    return dsl.with(library, libraryOperation)
             .insertInto(
                 SKIPPED_FILE,
                 SKIPPED_FILE.ID,
@@ -52,8 +54,9 @@ public class JooqSkippedFileRepository implements SkippedFileRepository {
 
   @Override
   public void deleteSkippedFilesOfOtherLibraryOperations(UUID libraryId, UUID libraryOperationId) {
-    var libraryOperation = heldLibraryOperation(libraryOperationId);
-    dsl.with(libraryOperation)
+    var library = heldLibrary(libraryId);
+    var libraryOperation = heldLibraryOperation(library, libraryOperationId);
+    dsl.with(library, libraryOperation)
         .delete(SKIPPED_FILE)
         .where(SKIPPED_FILE.LIBRARY_ID.eq(libraryId))
         .and(SKIPPED_FILE.LIBRARY_OPERATION_ID.ne(libraryOperationId))
@@ -64,15 +67,27 @@ public class JooqSkippedFileRepository implements SkippedFileRepository {
   // A write holds its library operation's row until it commits, so the transaction that ends the
   // operation and deletes the row waits for the write. A write whose operation has ended finds no
   // row and writes nothing: an execution that db-scheduler revived after its operation ended can
-  // neither delete nor overwrite the skipped files of the library's next scan.
+  // neither delete nor overwrite the skipped files of the library's next scan. The end locks the
+  // library's row before the operation's row, and a new skipped file's foreign key locks the
+  // library's row, so a write takes the library's row first too; the operation's row joins it,
+  // which locks it only after the library's row.
+  private static CommonTableExpression<Record1<UUID>> heldLibrary(UUID libraryId) {
+    return DSL.name("held_library")
+        .asMaterialized(
+            DSL.select(LIBRARY.ID).from(LIBRARY).where(LIBRARY.ID.eq(libraryId)).forKeyShare());
+  }
+
   private static CommonTableExpression<Record1<UUID>> heldLibraryOperation(
-      UUID libraryOperationId) {
+      CommonTableExpression<Record1<UUID>> heldLibrary, UUID libraryOperationId) {
     return DSL.name("held_library_operation")
-        .as(
+        .asMaterialized(
             DSL.select(LIBRARY_OPERATION.ID)
                 .from(LIBRARY_OPERATION)
+                .join(heldLibrary)
+                .on(heldLibrary.field(LIBRARY.ID).eq(LIBRARY_OPERATION.LIBRARY_ID))
                 .where(LIBRARY_OPERATION.ID.eq(libraryOperationId))
-                .forKeyShare());
+                .forKeyShare()
+                .of(LIBRARY_OPERATION));
   }
 
   @Override

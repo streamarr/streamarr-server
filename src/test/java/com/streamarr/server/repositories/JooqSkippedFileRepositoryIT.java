@@ -16,6 +16,8 @@ import com.streamarr.server.support.BoundedTask;
 import com.streamarr.server.support.PostgresLockTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import com.streamarr.server.support.StoredLibraryOperations;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -109,6 +111,40 @@ class JooqSkippedFileRepositoryIT extends AbstractIntegrationTest {
         assertThat(save.await(BOUND)).isTrue();
         assertThat(end.await(BOUND)).contains(LibraryOperationConclusion.FINISHED);
       }
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should save nothing and let the end commit when a new skipped file waits behind the end's"
+          + " library lock")
+  void shouldSaveNothingAndLetTheEndCommitWhenANewSkippedFileWaitsBehindTheEndsLibraryLock()
+      throws Exception {
+    var scan = libraryOperations.storeScan(library.getId());
+
+    // The end locks the library's row and then deletes the operation's row, in that order.
+    try (var observer = dataSource.getConnection();
+        var end = dataSource.getConnection()) {
+      end.setAutoCommit(false);
+      executeUpdate(end, "SELECT id FROM library WHERE id = ? FOR UPDATE", library.getId());
+
+      try (var save = BoundedTask.start(() -> skippedFiles.trySave(softLink(scan, LINK)))) {
+        awaitBlockedBackendPid(observer, PostgresLockTestSupport.backendPid(end), null);
+        executeUpdate(end, "DELETE FROM library_operation WHERE id = ?", scan);
+        end.commit();
+
+        assertThat(save.await(BOUND)).isFalse();
+      }
+    }
+
+    assertThat(storedSkippedFiles()).isEmpty();
+  }
+
+  private static void executeUpdate(Connection connection, String sql, UUID id)
+      throws SQLException {
+    try (var statement = connection.prepareStatement(sql)) {
+      statement.setObject(1, id);
+      statement.execute();
     }
   }
 
