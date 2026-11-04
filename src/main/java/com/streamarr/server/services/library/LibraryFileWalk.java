@@ -1,10 +1,13 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.SkippedFile;
+import com.streamarr.server.domain.SkippedFileReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.exceptions.LibraryScanFailedException;
+import com.streamarr.server.repositories.SkippedFileRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.ArtworkRunWaiter;
 import com.streamarr.server.services.audit.SystemWork;
@@ -19,6 +22,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.List;
@@ -47,6 +51,7 @@ public class LibraryFileWalk {
   private final FileDiscoveryRuns fileDiscoveryRuns;
   private final LibraryOperationAdmissions libraryOperationAdmissions;
   private final ArtworkRunWaiter artworkRunWaiter;
+  private final SkippedFileRepository skippedFileRepository;
   private final MutexFactory<String> mutexFactory;
 
   @Builder
@@ -60,6 +65,7 @@ public class LibraryFileWalk {
       FileDiscoveryRuns fileDiscoveryRuns,
       LibraryOperationAdmissions libraryOperationAdmissions,
       ArtworkRunWaiter artworkRunWaiter,
+      SkippedFileRepository skippedFileRepository,
       MutexFactoryProvider mutexFactoryProvider) {
     this.ignoredFileValidator = ignoredFileValidator;
     this.videoExtensionValidator = videoExtensionValidator;
@@ -70,14 +76,17 @@ public class LibraryFileWalk {
     this.fileDiscoveryRuns = fileDiscoveryRuns;
     this.libraryOperationAdmissions = libraryOperationAdmissions;
     this.artworkRunWaiter = artworkRunWaiter;
+    this.skippedFileRepository = skippedFileRepository;
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
 
   /**
    * Walks the library and matches each of its files, then returns the closed discovery whose
-   * results the scan waits for. Each file's task is admitted through the scan's adaptive limit
-   * before the walk pulls the next file. A task that throws ends admission, and so does the
-   * admission end: files that were not admitted yet are not processed in this scan.
+   * results the scan waits for. The walk never follows a soft link: it saves each soft link that it
+   * does not ignore as a skipped file of the scan, in place of the skipped files of the library's
+   * earlier scans. Each file's task is admitted through the scan's adaptive limit before the walk
+   * pulls the next file. A task that throws ends admission, and so does the admission end: files
+   * that were not admitted yet are not processed in this scan.
    *
    * @throws LibraryScanFailedException if the library cannot be walked or a file's task fails
    * @throws InterruptedException if the walk is interrupted; the admitted tasks are interrupted and
@@ -86,6 +95,8 @@ public class LibraryFileWalk {
   public FileDiscovery discoverFiles(
       Library library, UUID libraryOperationId, AdmissionEnd admissionEnd)
       throws InterruptedException {
+    skippedFileRepository.deleteSkippedFilesOfOtherLibraryOperations(
+        library.getId(), libraryOperationId);
     var discovery = fileDiscoveryRuns.openScan(library, libraryOperationId);
     try (discovery;
         var admission = libraryOperationAdmissions.openScanAdmission(library);
@@ -93,8 +104,8 @@ public class LibraryFileWalk {
 
       var files =
           stream
-              .flatMap(file -> regularFile(file).stream())
-              .filter(listed -> !ignoredFileValidator.shouldIgnore(listed.path()))
+              .filter(path -> !ignoredFileValidator.shouldIgnore(path))
+              .flatMap(path -> regularFile(library, libraryOperationId, path).stream())
               .filter(listed -> keepSupportedOrWarn(listed.path()))
               .iterator();
       var failures =
@@ -126,18 +137,32 @@ public class LibraryFileWalk {
     }
   }
 
-  // Like Files.isRegularFile, this follows links and skips a file whose attributes cannot be read.
-  private static Optional<ListedFile> regularFile(Path path) {
+  // Reads the entry itself, never a soft link's target, and skips an entry whose attributes cannot
+  // be read. A hard link is a regular file.
+  private Optional<ListedFile> regularFile(Library library, UUID libraryOperationId, Path path) {
+    BasicFileAttributes attributes;
     try {
-      var attributes = Files.readAttributes(path, BasicFileAttributes.class);
-      if (!attributes.isRegularFile()) {
-        return Optional.empty();
-      }
-
-      return Optional.of(new ListedFile(path, SourceFileSnapshot.of(attributes)));
+      attributes = Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
     } catch (IOException _) {
       return Optional.empty();
     }
+
+    if (attributes.isSymbolicLink()) {
+      skippedFileRepository.save(
+          SkippedFile.builder()
+              .libraryId(library.getId())
+              .libraryOperationId(libraryOperationId)
+              .filepathUri(FilepathCodec.encode(path))
+              .reason(SkippedFileReason.SOFT_LINK)
+              .build());
+      return Optional.empty();
+    }
+
+    if (!attributes.isRegularFile()) {
+      return Optional.empty();
+    }
+
+    return Optional.of(new ListedFile(path, SourceFileSnapshot.of(attributes)));
   }
 
   // The task keeps its admission until the primary artwork it requested has recorded results, so

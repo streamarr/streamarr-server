@@ -45,6 +45,7 @@ import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeProbeTaskRequests;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
+import com.streamarr.server.fakes.FakeSkippedFileRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.RecordingMetadataProvider;
@@ -1774,6 +1775,7 @@ class LibraryManagementServiceTest {
         .mediaFileRepository(fakeMediaFileRepository)
         .fileSystem(fileSystem)
         .fileDiscoveryRuns(fileDiscoveryRuns)
+        .skippedFileRepository(new FakeSkippedFileRepository())
         .mutexFactoryProvider(new MutexFactoryProvider())
         .libraryOperationAdmissions(admissionsWith(new AdaptiveAdmissions()))
         .artworkRunWaiter(artwork.artworkRunWaiter());

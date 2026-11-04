@@ -60,6 +60,7 @@ import com.streamarr.server.jooq.generated.tables.SeriesPerson;
 import com.streamarr.server.jooq.generated.tables.ServerBootstrap;
 import com.streamarr.server.jooq.generated.tables.ServerSettings;
 import com.streamarr.server.jooq.generated.tables.SessionProgress;
+import com.streamarr.server.jooq.generated.tables.SkippedFile;
 import com.streamarr.server.jooq.generated.tables.UserAccount;
 import com.streamarr.server.jooq.generated.tables.WatchHistory;
 import com.streamarr.server.jooq.generated.tables.records.AccountInvitationRecord;
@@ -118,6 +119,7 @@ import com.streamarr.server.jooq.generated.tables.records.SeriesRecord;
 import com.streamarr.server.jooq.generated.tables.records.ServerBootstrapRecord;
 import com.streamarr.server.jooq.generated.tables.records.ServerSettingsRecord;
 import com.streamarr.server.jooq.generated.tables.records.SessionProgressRecord;
+import com.streamarr.server.jooq.generated.tables.records.SkippedFileRecord;
 import com.streamarr.server.jooq.generated.tables.records.UserAccountRecord;
 import com.streamarr.server.jooq.generated.tables.records.WatchHistoryRecord;
 
@@ -219,6 +221,8 @@ public class Keys {
     public static final UniqueKey<ServerSettingsRecord> UQ_SERVER_SETTINGS_SINGLETON = Internal.createUniqueKey(ServerSettings.SERVER_SETTINGS, DSL.name("uq_server_settings_singleton"), new TableField[] { ServerSettings.SERVER_SETTINGS.SINGLETON }, true);
     public static final UniqueKey<SessionProgressRecord> SESSION_PROGRESS_PKEY = Internal.createUniqueKey(SessionProgress.SESSION_PROGRESS, DSL.name("session_progress_pkey"), new TableField[] { SessionProgress.SESSION_PROGRESS.ID }, true);
     public static final UniqueKey<SessionProgressRecord> UQ_SESSION_PROGRESS_SESSION = Internal.createUniqueKey(SessionProgress.SESSION_PROGRESS, DSL.name("uq_session_progress_session"), new TableField[] { SessionProgress.SESSION_PROGRESS.SESSION_ID }, true);
+    public static final UniqueKey<SkippedFileRecord> SKIPPED_FILE_LIBRARY_ID_FILEPATH_URI_KEY = Internal.createUniqueKey(SkippedFile.SKIPPED_FILE, DSL.name("skipped_file_library_id_filepath_uri_key"), new TableField[] { SkippedFile.SKIPPED_FILE.LIBRARY_ID, SkippedFile.SKIPPED_FILE.FILEPATH_URI }, true);
+    public static final UniqueKey<SkippedFileRecord> SKIPPED_FILE_PKEY = Internal.createUniqueKey(SkippedFile.SKIPPED_FILE, DSL.name("skipped_file_pkey"), new TableField[] { SkippedFile.SKIPPED_FILE.ID }, true);
     public static final UniqueKey<UserAccountRecord> UQ_USER_ACCOUNT_PERSONAL_PROFILE = Internal.createUniqueKey(UserAccount.USER_ACCOUNT, DSL.name("uq_user_account_personal_profile"), new TableField[] { UserAccount.USER_ACCOUNT.PERSONAL_PROFILE_ID }, true);
     public static final UniqueKey<UserAccountRecord> USER_ACCOUNT_PKEY = Internal.createUniqueKey(UserAccount.USER_ACCOUNT, DSL.name("user_account_pkey"), new TableField[] { UserAccount.USER_ACCOUNT.ID }, true);
     public static final UniqueKey<WatchHistoryRecord> UQ_WATCH_HISTORY_PROFILE_COLLECTABLE_WATCHED = Internal.createUniqueKey(WatchHistory.WATCH_HISTORY, DSL.name("uq_watch_history_profile_collectable_watched"), new TableField[] { WatchHistory.WATCH_HISTORY.PROFILE_ID, WatchHistory.WATCH_HISTORY.COLLECTABLE_ID, WatchHistory.WATCH_HISTORY.WATCHED_AT }, true);
@@ -320,6 +324,7 @@ public class Keys {
     public static final ForeignKey<ServerBootstrapRecord, UserAccountRecord> SERVER_BOOTSTRAP__FK_SERVER_BOOTSTRAP_ADMIN_ACCOUNT = Internal.createForeignKey(ServerBootstrap.SERVER_BOOTSTRAP, DSL.name("fk_server_bootstrap_admin_account"), new TableField[] { ServerBootstrap.SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID }, Keys.USER_ACCOUNT_PKEY, new TableField[] { UserAccount.USER_ACCOUNT.ID }, true, ForeignKeyRule.SET_NULL, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<SessionProgressRecord, MediaFileRecord> SESSION_PROGRESS__FK_SESSION_PROGRESS_MEDIA_FILE = Internal.createForeignKey(SessionProgress.SESSION_PROGRESS, DSL.name("fk_session_progress_media_file"), new TableField[] { SessionProgress.SESSION_PROGRESS.MEDIA_FILE_ID }, Keys.MOVIE_FILE_PKEY, new TableField[] { MediaFile.MEDIA_FILE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<SessionProgressRecord, ProfileRecord> SESSION_PROGRESS__FK_SESSION_PROGRESS_PROFILE = Internal.createForeignKey(SessionProgress.SESSION_PROGRESS, DSL.name("fk_session_progress_profile"), new TableField[] { SessionProgress.SESSION_PROGRESS.PROFILE_ID }, Keys.PROFILE_PKEY, new TableField[] { Profile.PROFILE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<SkippedFileRecord, LibraryRecord> SKIPPED_FILE__SKIPPED_FILE_LIBRARY_ID_FKEY = Internal.createForeignKey(SkippedFile.SKIPPED_FILE, DSL.name("skipped_file_library_id_fkey"), new TableField[] { SkippedFile.SKIPPED_FILE.LIBRARY_ID }, Keys.LIBRARY_PKEY, new TableField[] { Library.LIBRARY.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<UserAccountRecord, HouseholdRecord> USER_ACCOUNT__FK_USER_ACCOUNT_HOUSEHOLD = Internal.createForeignKey(UserAccount.USER_ACCOUNT, DSL.name("fk_user_account_household"), new TableField[] { UserAccount.USER_ACCOUNT.HOUSEHOLD_ID }, Keys.HOUSEHOLD_PKEY, new TableField[] { Household.HOUSEHOLD.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<UserAccountRecord, ProfileRecord> USER_ACCOUNT__FK_USER_ACCOUNT_PERSONAL_PROFILE = Internal.createForeignKey(UserAccount.USER_ACCOUNT, DSL.name("fk_user_account_personal_profile"), new TableField[] { UserAccount.USER_ACCOUNT.PERSONAL_PROFILE_ID }, Keys.PROFILE_PKEY, new TableField[] { Profile.PROFILE.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<WatchHistoryRecord, ProfileRecord> WATCH_HISTORY__FK_WATCH_HISTORY_PROFILE = Internal.createForeignKey(WatchHistory.WATCH_HISTORY, DSL.name("fk_watch_history_profile"), new TableField[] { WatchHistory.WATCH_HISTORY.PROFILE_ID }, Keys.PROFILE_PKEY, new TableField[] { Profile.PROFILE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
