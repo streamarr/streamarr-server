@@ -6742,39 +6742,6 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.terminalFailure(sessionId)).isEmpty();
   }
 
-  @ParameterizedTest(name = "terminal copy failure: {0}")
-  @ValueSource(booleans = {true, false})
-  @DisplayName("Should release the configured transcode slot when video copy recovery is exhausted")
-  void shouldReleaseTheConfiguredTranscodeSlotWhenVideoCopyRecoveryIsExhausted(
-      boolean terminalCopyFailure) {
-    probeResults.setDefaultProbe(defaultProbeBuilder().audioCodec("flac").build());
-    var failed = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
-    assertThat(failed.getTranscodeDecision().transcodeMode())
-        .isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
-    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
-    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
-    failVideoCopy(failed.getSessionId(), terminalCopyFailure);
-
-    assertThat(
-            coordinator.deliver(
-                failed.getSessionId(), StreamSession.defaultVariant(), "segment0.m4s"))
-        .isInstanceOf(SegmentDelivery.Unrecoverable.class);
-
-    var next =
-        createStreamSessionCommand(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
-    assertThat(service.createSession(next)).isInstanceOf(Outcome.Accepted.class);
-  }
-
-  private void failVideoCopy(UUID sessionId, boolean terminalCopyFailure) {
-    if (terminalCopyFailure) {
-      transcodeExecutor.failTerminally(sessionId, TranscodeFailure.OUTPUT_MISMATCH);
-      return;
-    }
-
-    transcodeExecutor.markDead(sessionId);
-    transcodeExecutor.setExecutionTargets(List.of());
-  }
-
   @Test
   @DisplayName("Should reject full transcode when at concurrency limit")
   void shouldRejectFullTranscodeWhenAtConcurrencyLimit() {
@@ -6844,6 +6811,48 @@ class HlsStreamingServiceTest {
     var session = createSession(file.getId(), UUID.randomUUID(), remuxOptions);
 
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+  }
+
+  @Test
+  @DisplayName("Should start a copy that encodes the audio when the transcode limit is reached")
+  void shouldStartACopyThatEncodesTheAudioWhenTheTranscodeLimitIsReached() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).videoCodec("hevc").build());
+    var transcodeOptions = StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P).build();
+    for (int i = 0; i < 3; i++) {
+      createSession(seedMediaFile().getId(), UUID.randomUUID(), transcodeOptions);
+    }
+
+    var copy =
+        createDtsSession(
+            defaultProbeBuilder(),
+            8,
+            StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build());
+
+    assertThat(copy.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
+    assertThat(transcodeExecutor.isRunning(copy.getSessionId(), StreamSession.defaultVariant()))
+        .isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should start an encode when copies that encode the audio run up to the transcode limit")
+  void shouldStartAnEncodeWhenCopiesThatEncodeTheAudioRunUpToTheTranscodeLimit() {
+    var copyOptions = StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build();
+    for (int i = 0; i < 3; i++) {
+      createDtsSession(defaultProbeBuilder(), 8, copyOptions);
+    }
+
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).videoCodec("hevc").build());
+    var encode =
+        service.createSession(
+            createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                .options(StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P).build())
+                .build());
+
+    assertThat(accepted(encode).getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
   }
 
   @Test

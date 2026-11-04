@@ -9,7 +9,6 @@ import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
-import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.exceptions.SessionNotFoundException;
@@ -616,7 +615,7 @@ public class ProducerLifecycleService {
    * segment. No other variant starts until the player requests one of its segments (ADR 0019). When
    * no slot is free, another stream session's left variant stops first. Throws {@link
    * TranscodeLimitReachedException} and starts nothing when the transcode limit still leaves no
-   * place for a stream session that transcodes.
+   * place for a stream session that encodes the video.
    */
   public StreamSession startFirstListedVariant(StreamSession session) {
     var sessionId = session.getSessionId();
@@ -1242,17 +1241,17 @@ public class ProducerLifecycleService {
   }
 
   /**
-   * The configured transcode limit minus the running job attempts of every transcoding stream
-   * session and the places that starts hold while their job attempts dispatch. A suspended or
-   * stopped variant has no running job attempt.
+   * The configured transcode limit minus the running job attempts of every stream session that
+   * encodes the video and the places that starts hold while their job attempts dispatch. A
+   * suspended or stopped variant has no running job attempt.
    */
   public long freeConfiguredTranscodeSlots() {
     return transcodeLimit.freePlaces();
   }
 
   /**
-   * The configured transcode limit across every stream session that transcodes (ADR 0019). A start
-   * reserves a place before it dispatches its job attempt, and gives the place back once the
+   * The configured transcode limit across every stream session that encodes the video (ADR 0019). A
+   * start reserves a place before it dispatches its job attempt, and gives the place back once the
    * started job attempt's handle is saved, where the limit counts the job attempt, or once the
    * dispatch fails. Two starts therefore never take the same last place. The monitor guards only
    * these counts, so no start waits on another start's dispatch.
@@ -1270,7 +1269,7 @@ public class ProducerLifecycleService {
       return properties.maxConcurrentTranscodes() - runningJobAttempts - reservedPlaces;
     }
 
-    // Empty when no place is free. A stream session that only remuxes needs no place.
+    // Empty when no place is free. A stream session that copies the video needs no place.
     private synchronized Optional<TranscodeLimitPlace> tryReserve(StreamSession session) {
       if (!countsAgainstTranscodeLimit(session)) {
         return Optional.of(() -> {});
@@ -1302,8 +1301,9 @@ public class ProducerLifecycleService {
         && countsAgainstTranscodeLimit(session.getTranscodeDecision());
   }
 
+  // A stream session that copies the video, with or without an audio encode, takes no place.
   private static boolean countsAgainstTranscodeLimit(TranscodeDecision decision) {
-    return decision.transcodeMode() != TranscodeMode.REMUX;
+    return !decision.transcodeMode().copiesVideo();
   }
 
   private static long countRunningJobAttempts(StreamSession session) {

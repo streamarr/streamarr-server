@@ -651,6 +651,6 @@ public class HlsStreamingService implements StreamingService {
   }
 
   private boolean countsAgainstTranscodeLimit(TranscodeMode mode) {
-    return mode != TranscodeMode.REMUX;
+    return !mode.copiesVideo();
   }
 }
