@@ -247,14 +247,11 @@ class LibraryAdministrationServiceTest {
   void shouldRefuseTheLibrarysSkippedFilesWhenAuthorizationDenies() {
     var libraryId = UUID.randomUUID();
     skippedFiles.save(softLink(libraryId, UUID.randomUUID(), "file:///library/A%20(2001).mkv"));
+    var firstPage = new PageRequest(Optional.empty(), PaginationDirection.FORWARD, 10);
     authorizationService.denyAll();
 
     assertThatThrownBy(
-            () ->
-                libraryAdministrationService.skippedFiles(
-                    identity,
-                    libraryId,
-                    new PageRequest(Optional.empty(), PaginationDirection.FORWARD, 10)))
+            () -> libraryAdministrationService.skippedFiles(identity, libraryId, firstPage))
         .isInstanceOf(AccessDeniedException.class);
   }
 
