@@ -298,7 +298,9 @@ enum Action {
   VIEW_IDLE_SEGMENT_RETENTION(
       "viewIdleSegmentRetention", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
   CHANGE_IDLE_SEGMENT_RETENTION(
-      "changeIdleSegmentRetention", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
+      "changeIdleSegmentRetention", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  VIEW_ACTIVE_STREAMS(
+      "viewActiveStreams", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
 
   private static final String ACTION_TYPE = "Streamarr::Action";
 

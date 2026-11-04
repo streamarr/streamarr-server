@@ -223,4 +223,7 @@ public sealed interface Intent {
 
   /** Change how long the server keeps idle stream sessions; a whole-surface gate. */
   record ChangeIdleSegmentRetention() implements UnitIntent {}
+
+  /** See every active stream on the server and why it plays as it does; a whole-surface gate. */
+  record ViewActiveStreams() implements UnitIntent {}
 }
