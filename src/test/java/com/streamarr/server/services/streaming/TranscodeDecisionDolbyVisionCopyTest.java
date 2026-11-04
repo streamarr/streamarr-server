@@ -67,7 +67,12 @@ class TranscodeDecisionDolbyVisionCopyTest {
   private static final int SOURCE_LEVEL = 6;
 
   private static final Outcome ENCODE =
-      new Outcome(TranscodeMode.VIDEO_TRANSCODE, List.of(), Optional.empty(), VideoRange.SDR);
+      Outcome.builder()
+          .mode(TranscodeMode.VIDEO_TRANSCODE)
+          .rewrites(List.of())
+          .dolbyVisionOutput(Optional.empty())
+          .range(VideoRange.SDR)
+          .build();
 
   private final TranscodeDecisionService service =
       new TranscodeDecisionService(
@@ -77,9 +82,8 @@ class TranscodeDecisionDolbyVisionCopyTest {
   @ParameterizedTest(name = "{0}")
   @MethodSource("decisionMatrix")
   @DisplayName(
-      "Should copy the best picture that the client declares when the source carries Dolby Vision"
-          + " on a PQ or HLG base")
-  void shouldCopyTheBestPictureThatTheClientDeclaresWhenTheSourceCarriesDolbyVisionOnAPqOrHlgBase(
+      "Should plan the best picture that the client declares when the source carries Dolby Vision")
+  void shouldPlanTheBestPictureThatTheClientDeclaresWhenTheSourceCarriesDolbyVision(
       String scenario, MediaProbe source, ClientCapabilityDeclaration client, Outcome expected) {
     var decision =
         service.decide(
@@ -124,13 +128,17 @@ class TranscodeDecisionDolbyVisionCopyTest {
             "Profile 8.1 with HDR10+ to a client that declares profile 8.1 and HDR10+",
             hevc(withHdr10Plus(profile8(CompatibleBase.PQ, 1))),
             Clients.dolbyVision(13),
-            new Outcome(
-                TranscodeMode.REMUX,
-                List.of(
-                    BitstreamRewrite.STRIP_HDR10_PLUS,
-                    BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD),
-                Optional.of(new DolbyVisionOutput(DolbyVisionProfile.PROFILE_8_1, SOURCE_LEVEL)),
-                VideoRange.PQ)),
+            Outcome.builder()
+                .mode(TranscodeMode.REMUX)
+                .rewrites(
+                    List.of(
+                        BitstreamRewrite.STRIP_HDR10_PLUS,
+                        BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD))
+                .dolbyVisionOutput(
+                    Optional.of(
+                        new DolbyVisionOutput(DolbyVisionProfile.PROFILE_8_1, SOURCE_LEVEL)))
+                .range(VideoRange.PQ)
+                .build()),
         Arguments.of(
             "Profile 8 with compatibility identifier 6 to a client that declares profile 8.1",
             hevc(profile8(CompatibleBase.PQ, 6)),
@@ -165,11 +173,13 @@ class TranscodeDecisionDolbyVisionCopyTest {
             "Profile 8.1 with HDR10+ to a client that declares only PQ",
             hevc(withHdr10Plus(profile8(CompatibleBase.PQ, 1))),
             Clients.baseOnly(false),
-            new Outcome(
-                TranscodeMode.REMUX,
-                List.of(BitstreamRewrite.STRIP_DOLBY_VISION, BitstreamRewrite.STRIP_HDR10_PLUS),
-                Optional.empty(),
-                VideoRange.PQ)),
+            Outcome.builder()
+                .mode(TranscodeMode.REMUX)
+                .rewrites(
+                    List.of(BitstreamRewrite.STRIP_DOLBY_VISION, BitstreamRewrite.STRIP_HDR10_PLUS))
+                .dolbyVisionOutput(Optional.empty())
+                .range(VideoRange.PQ)
+                .build()),
         Arguments.of(
             "Profile 8.1 with HDR10+ to a client that declares PQ and HDR10+",
             hevc(withHdr10Plus(profile8(CompatibleBase.PQ, 1))),
@@ -203,6 +213,25 @@ class TranscodeDecisionDolbyVisionCopyTest {
             "Profile 5 that the RPU header names beside a PQ transfer",
             hevc(profile5FromTheRpuHeaderBesideAPqTransfer()),
             Clients.baseOnly(true),
+            ENCODE),
+        Arguments.of(
+            "Profile 5 with its record, to a client that declares PQ",
+            hevc(VideoPlaybackFactsFixture.dolbyVisionProfile5()),
+            Clients.baseOnly(true),
+            ENCODE),
+        Arguments.of(
+            "Dolby Vision whose profile nothing names, on an SDR base",
+            hevc(
+                new VideoDynamicRange(
+                    CompatibleBase.SDR,
+                    Presence.ABSENT,
+                    new DolbyVision.Present(Optional.empty(), Presence.UNSPECIFIED))),
+            Clients.dolbyVision(13),
+            ENCODE),
+        Arguments.of(
+            "Profile 8.1 whose RPUs start their samples",
+            hevc(withRpusStartingTheirSamples(profile8(CompatibleBase.PQ, 1))),
+            Clients.dolbyVision(13),
             ENCODE),
         Arguments.of(
             "Profile 8.1 to a client that declares only SDR",
@@ -299,17 +328,22 @@ class TranscodeDecisionDolbyVisionCopyTest {
   // A copy that keeps Dolby Vision on a PQ or HLG base writes the record that its playlist entry
   // describes, so it lists the normalize rewrite (ADR 0036).
   private static Outcome keepingDolbyVision(DolbyVisionProfile profile, VideoRange range) {
-    return new Outcome(
-        TranscodeMode.REMUX,
-        List.of(BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD),
-        Optional.of(new DolbyVisionOutput(profile, SOURCE_LEVEL)),
-        range);
+    return Outcome.builder()
+        .mode(TranscodeMode.REMUX)
+        .rewrites(List.of(BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD))
+        .dolbyVisionOutput(Optional.of(new DolbyVisionOutput(profile, SOURCE_LEVEL)))
+        .range(range)
+        .build();
   }
 
   // ADR 0036: the copy plays its PQ or HLG base without RPUs or a record.
   private static Outcome strippingDolbyVision(VideoRange range) {
-    return new Outcome(
-        TranscodeMode.REMUX, List.of(BitstreamRewrite.STRIP_DOLBY_VISION), Optional.empty(), range);
+    return Outcome.builder()
+        .mode(TranscodeMode.REMUX)
+        .rewrites(List.of(BitstreamRewrite.STRIP_DOLBY_VISION))
+        .dolbyVisionOutput(Optional.empty())
+        .range(range)
+        .build();
   }
 
   private static VideoDynamicRange profile8(CompatibleBase base, int compatibilityId) {
@@ -383,6 +417,19 @@ class TranscodeDecisionDolbyVisionCopyTest {
                     .vdrBitDepth(10)
                     .build()),
             DolbyVisionRpuPlacement.AFTER_OWN_PICTURE));
+  }
+
+  // ADR 0036: a copy would hand players the misplaced RPUs, so no copy rule overrides this issue.
+  private static VideoDynamicRange withRpusStartingTheirSamples(VideoDynamicRange range) {
+    var present = (DolbyVision.Present) range.dolbyVision();
+    return new VideoDynamicRange(
+        range.compatibleBase(),
+        range.hdr10Plus(),
+        new DolbyVision.Present(
+            present.declared(),
+            Presence.PRESENT,
+            Optional.empty(),
+            DolbyVisionRpuPlacement.STARTS_SAMPLE));
   }
 
   private static VideoDynamicRange withHdr10Plus(VideoDynamicRange range) {
@@ -526,6 +573,7 @@ class TranscodeDecisionDolbyVisionCopyTest {
   }
 
   /** What a decision delivers: its mode, its copy's rewrites and Dolby Vision, and its range. */
+  @Builder
   record Outcome(
       TranscodeMode mode,
       List<BitstreamRewrite> rewrites,
@@ -537,11 +585,12 @@ class TranscodeDecisionDolbyVisionCopyTest {
           decision.plannedVideoOutput() instanceof PlannedVideoOutput.StreamCopy copy
               ? copy.dolbyVisionOutput()
               : Optional.<DolbyVisionOutput>empty();
-      return new Outcome(
-          decision.transcodeMode(),
-          decision.videoBitstreamRewrites(),
-          dolbyVisionOutput,
-          decision.videoRange());
+      return Outcome.builder()
+          .mode(decision.transcodeMode())
+          .rewrites(decision.videoBitstreamRewrites())
+          .dolbyVisionOutput(dolbyVisionOutput)
+          .range(decision.videoRange())
+          .build();
     }
   }
 }

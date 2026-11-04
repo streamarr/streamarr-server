@@ -849,35 +849,40 @@ class HlsPlaylistServiceTest {
       return Stream.of(
           Arguments.of(
               "Profile 8.1 at level 6",
-              new DolbyVisionCopy(
-                  new DolbyVisionOutput(DolbyVisionProfile.PROFILE_8_1, 6),
-                  CompatibleBase.PQ,
-                  "hvc1.2.4.L150.B0",
-                  "dvh1.08.06/db1p")),
+              DolbyVisionCopy.builder()
+                  .output(new DolbyVisionOutput(DolbyVisionProfile.PROFILE_8_1, 6))
+                  .base(CompatibleBase.PQ)
+                  .codecString("hvc1.2.4.L150.B0")
+                  .supplementalCodecs("dvh1.08.06/db1p")
+                  .build()),
           Arguments.of(
               "Profile 8.4 at level 9",
-              new DolbyVisionCopy(
-                  new DolbyVisionOutput(DolbyVisionProfile.PROFILE_8_4, 9),
-                  CompatibleBase.HLG,
-                  "hvc1.2.4.L153.B0",
-                  "dvh1.08.09/db4h")),
+              DolbyVisionCopy.builder()
+                  .output(new DolbyVisionOutput(DolbyVisionProfile.PROFILE_8_4, 9))
+                  .base(CompatibleBase.HLG)
+                  .codecString("hvc1.2.4.L153.B0")
+                  .supplementalCodecs("dvh1.08.09/db4h")
+                  .build()),
           Arguments.of(
               "Profile 10.1 at level 13",
-              new DolbyVisionCopy(
-                  new DolbyVisionOutput(DolbyVisionProfile.PROFILE_10_1, 13),
-                  CompatibleBase.PQ,
-                  "av01.0.13M.10",
-                  "dav1.10.13/db1p")),
+              DolbyVisionCopy.builder()
+                  .output(new DolbyVisionOutput(DolbyVisionProfile.PROFILE_10_1, 13))
+                  .base(CompatibleBase.PQ)
+                  .codecString("av01.0.13M.10")
+                  .supplementalCodecs("dav1.10.13/db1p")
+                  .build()),
           Arguments.of(
               "Profile 10.4 at level 1",
-              new DolbyVisionCopy(
-                  new DolbyVisionOutput(DolbyVisionProfile.PROFILE_10_4, 1),
-                  CompatibleBase.HLG,
-                  "av01.0.08M.10",
-                  "dav1.10.01/db4h")));
+              DolbyVisionCopy.builder()
+                  .output(new DolbyVisionOutput(DolbyVisionProfile.PROFILE_10_4, 1))
+                  .base(CompatibleBase.HLG)
+                  .codecString("av01.0.08M.10")
+                  .supplementalCodecs("dav1.10.01/db4h")
+                  .build()));
     }
 
     /** A Dolby Vision copy, its base sample entry's codec string and its supplemental codec. */
+    @Builder
     record DolbyVisionCopy(
         DolbyVisionOutput output,
         CompatibleBase base,
