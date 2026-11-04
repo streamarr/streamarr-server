@@ -57,7 +57,9 @@ public final class FakeStreamingService implements StreamingService {
       throw failure;
     }
 
-    return registry.findById(request.streamSessionId());
+    return registry
+        .findById(request.streamSessionId())
+        .filter(session -> session.getDelivery() == request.delivery());
   }
 
   @Override

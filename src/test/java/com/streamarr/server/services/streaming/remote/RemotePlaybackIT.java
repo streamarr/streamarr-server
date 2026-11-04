@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import com.google.common.primitives.Bytes;
+import com.streamarr.server.config.RemoteTranscodeProperties;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.controllers.StreamController;
 import com.streamarr.server.domain.media.ItemFailureReason;
@@ -40,6 +41,8 @@ import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.streaming.DirectPlayMetrics;
+import com.streamarr.server.services.streaming.DirectPlaySourceService;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
@@ -734,12 +737,18 @@ class RemotePlaybackIT {
             .build();
     var authorizationService =
         new FakeAuthorizationService(() -> identity(configuration.streamSessionId()), "it-token");
+    var directPlayMetrics = new DirectPlayMetrics(new SimpleMeterRegistry());
     var controller =
         new StreamController(
             streamingService,
             new HlsPlaylistService(properties),
             rig.coordinator(),
-            authorizationService);
+            authorizationService,
+            new DirectPlaySourceService(
+                streamingService,
+                new RemoteTranscodeProperties(UUID.randomUUID(), "/media"),
+                directPlayMetrics),
+            directPlayMetrics);
     return new PlaybackRig(controller, session);
   }
 

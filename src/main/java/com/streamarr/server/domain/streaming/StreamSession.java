@@ -32,6 +32,10 @@ public class StreamSession {
   private final Instant createdAt;
   @Builder.Default private final StreamDelivery delivery = StreamDelivery.HLS;
 
+  /** The source container that a direct-play stream session serves. */
+  @Getter(lombok.AccessLevel.NONE)
+  private final SourceContainer sourceContainer;
+
   @Getter(lombok.AccessLevel.NONE)
   @Builder.Default
   private final Map<String, TranscodeHandle> variantHandles = new ConcurrentHashMap<>();
@@ -58,6 +62,10 @@ public class StreamSession {
   @Getter(lombok.AccessLevel.NONE)
   @Builder.Default
   private final AtomicReference<ShortCopy> shortCopy = new AtomicReference<>();
+
+  public Optional<SourceContainer> getSourceContainer() {
+    return Optional.ofNullable(sourceContainer);
+  }
 
   public boolean isOwnedBy(UUID candidateProfileId) {
     return authority.profileId().equals(candidateProfileId);

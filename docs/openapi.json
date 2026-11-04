@@ -1338,6 +1338,156 @@
         ]
       }
     },
+    "/api/stream/{sessionId}/source.{extension}": {
+      "get": {
+        "operationId": "getSource",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sessionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "extension",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Range",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Playback token bound to this stream session",
+            "in": "query",
+            "name": "t",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "video/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "206": {
+            "content": {
+              "video/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The requested byte range"
+          },
+          "404": {
+            "description": "Stream resource not found"
+          },
+          "416": {
+            "description": "The requested range lies outside the file"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "security": [
+          {
+            "playbackQuery": [
+              "SCOPE_PLAYBACK"
+            ]
+          }
+        ],
+        "tags": [
+          "stream-controller"
+        ]
+      },
+      "head": {
+        "operationId": "getSourceHeaders",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sessionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "extension",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Playback token bound to this stream session",
+            "in": "query",
+            "name": "t",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Stream resource not found"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Refusal: route on `code`, `message` is displayable"
+          }
+        },
+        "security": [
+          {
+            "playbackQuery": [
+              "SCOPE_PLAYBACK"
+            ]
+          }
+        ],
+        "tags": [
+          "stream-controller"
+        ]
+      }
+    },
     "/api/stream/{sessionId}/stream.m3u8": {
       "get": {
         "operationId": "getMediaPlaylist",

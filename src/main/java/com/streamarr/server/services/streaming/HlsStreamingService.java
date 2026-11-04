@@ -351,7 +351,10 @@ public class HlsStreamingService implements StreamingService {
 
   @Override
   public Optional<StreamSession> accessSession(PlaybackRequest request) {
-    var session = runtimeRegistry.findById(request.streamSessionId());
+    var session =
+        runtimeRegistry
+            .findById(request.streamSessionId())
+            .filter(found -> found.getDelivery() == request.delivery());
     if (session.isEmpty()) {
       return Optional.empty();
     }

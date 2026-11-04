@@ -1,6 +1,7 @@
 package com.streamarr.server.controllers;
 
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.directPlaySessionBuilder;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -9,7 +10,7 @@ import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
-import com.streamarr.server.domain.streaming.PlaybackAuthority;
+import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
@@ -22,6 +23,9 @@ import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.support.AuthTestSupport;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
@@ -29,10 +33,15 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -43,6 +52,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @Tag("IntegrationTest")
 @DisplayName("HTTP Playback Revocation Integration Tests")
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@TestPropertySource(properties = "streaming.remote.source-root=${java.io.tmpdir}")
 class HttpPlaybackRevocationIT extends AbstractIntegrationTest {
 
   @Autowired private MockMvc mockMvc;
@@ -57,6 +68,8 @@ class HttpPlaybackRevocationIT extends AbstractIntegrationTest {
   @Autowired private JwtDecoder jwtDecoder;
   @Autowired private TransactionTemplate transactionTemplate;
 
+  @TempDir private Path directory;
+
   private AuthTestSupport.TestIdentity identity;
   private AuthTestSupport.TestIdentity host;
   private StreamSession streamSession;
@@ -64,13 +77,14 @@ class HttpPlaybackRevocationIT extends AbstractIntegrationTest {
   @BeforeEach
   void setUp() {
     identity = authTestSupport.createIdentity();
-    streamSession = defaultSessionBuilder().authority(authority()).build();
-    runtimeRegistry.save(streamSession);
   }
 
   @AfterEach
   void tearDown() {
-    runtimeRegistry.removeById(streamSession.getSessionId());
+    if (streamSession != null) {
+      runtimeRegistry.removeById(streamSession.getSessionId());
+    }
+
     if (host != null) {
       authTestSupport.deleteIdentity(host);
     }
@@ -78,90 +92,81 @@ class HttpPlaybackRevocationIT extends AbstractIntegrationTest {
     authTestSupport.deleteIdentity(identity);
   }
 
-  @Test
-  @DisplayName("Should deny the playlist over HTTP when logout revokes the auth session")
-  void shouldDenyPlaylistOverHttpWhenLogoutRevokesAuthSession() throws Exception {
-    var token = playbackToken();
-
-    mockMvc
-        .perform(
-            get("/api/stream/{id}/multivariant.m3u8", streamSession.getSessionId())
-                .param("t", token))
-        .andExpect(status().isOk());
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(StreamDelivery.class)
+  @DisplayName("Should deny the next request over HTTP when logout revokes the auth session")
+  void shouldDenyNextRequestOverHttpWhenLogoutRevokesAuthSession(StreamDelivery delivery)
+      throws Exception {
+    var token = startStreamSession(delivery, authenticatedIdentity());
+    assertMediaAvailable(token);
 
     authSessionRepository.revoke(
         identity.session().getId(), SessionRevocationReason.LOGOUT, Instant.now());
 
-    mockMvc
-        .perform(
-            get("/api/stream/{id}/multivariant.m3u8", streamSession.getSessionId())
-                .param("t", token))
-        .andExpect(status().isNotFound());
+    assertMediaDenied(token);
   }
 
-  @Test
-  @DisplayName("Should deny the playlist over HTTP when the Account is disabled")
-  void shouldDenyPlaylistOverHttpWhenAccountIsDisabled() throws Exception {
-    var token = playbackToken();
-    assertPlaylistAvailable(token);
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(StreamDelivery.class)
+  @DisplayName("Should deny the next request over HTTP when the Account is disabled")
+  void shouldDenyNextRequestOverHttpWhenAccountIsDisabled(StreamDelivery delivery)
+      throws Exception {
+    var token = startStreamSession(delivery, authenticatedIdentity());
+    assertMediaAvailable(token);
 
     var account = userAccountRepository.findById(identity.account().getId()).orElseThrow();
     account.setEnabled(false);
     userAccountRepository.saveAndFlush(account);
 
-    assertPlaylistDenied(token);
+    assertMediaDenied(token);
   }
 
-  @Test
-  @DisplayName("Should deny the playlist over HTTP when the selected Profile is cleared")
-  void shouldDenyPlaylistOverHttpWhenSelectedProfileIsCleared() throws Exception {
-    var token = playbackToken();
-    assertPlaylistAvailable(token);
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(StreamDelivery.class)
+  @DisplayName("Should deny the next request over HTTP when the selected Profile is cleared")
+  void shouldDenyNextRequestOverHttpWhenSelectedProfileIsCleared(StreamDelivery delivery)
+      throws Exception {
+    var token = startStreamSession(delivery, authenticatedIdentity());
+    assertMediaAvailable(token);
 
     var session = authSessionRepository.findById(identity.session().getId()).orElseThrow();
     session.setSelectedProfileId(null);
     authSessionRepository.saveAndFlush(session);
 
-    assertPlaylistDenied(token);
+    assertMediaDenied(token);
   }
 
-  @Test
-  @DisplayName("Should deny the playlist over HTTP when the selected Profile share ends")
-  void shouldDenyPlaylistOverHttpWhenSelectedProfileShareEnds() throws Exception {
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(StreamDelivery.class)
+  @DisplayName("Should deny the next request over HTTP when the selected Profile share ends")
+  void shouldDenyNextRequestOverHttpWhenSelectedProfileShareEnds(StreamDelivery delivery)
+      throws Exception {
     host = authTestSupport.createIdentity();
     var managedShare = createManagedProfileShare();
     share(identity.profile().getId(), host.household().getId());
     var visiting = useHousehold(host.household().getId(), managedShare.getProfileId());
-    var token = replaceStreamSession(visiting);
-    assertPlaylistAvailable(token);
+    var token = startStreamSession(delivery, visiting);
+    assertMediaAvailable(token);
 
     end(managedShare);
 
-    assertPlaylistDenied(token);
+    assertMediaDenied(token);
   }
 
-  @Test
-  @DisplayName("Should deny the playlist over HTTP when Household access ends")
-  void shouldDenyPlaylistOverHttpWhenHouseholdAccessEnds() throws Exception {
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(StreamDelivery.class)
+  @DisplayName("Should deny the next request over HTTP when Household access ends")
+  void shouldDenyNextRequestOverHttpWhenHouseholdAccessEnds(StreamDelivery delivery)
+      throws Exception {
     host = authTestSupport.createIdentity();
     var visit = share(identity.profile().getId(), host.household().getId());
     var visiting = useHousehold(host.household().getId(), host.profile().getId());
-    var token = replaceStreamSession(visiting);
-    assertPlaylistAvailable(token);
+    var token = startStreamSession(delivery, visiting);
+    assertMediaAvailable(token);
 
     end(visit);
 
-    assertPlaylistDenied(token);
-  }
-
-  private String playbackToken() {
-    return playbackToken(authenticatedIdentity());
-  }
-
-  private String playbackToken(AuthenticatedIdentity authenticatedIdentity) {
-    return playbackTokenIssuer
-        .issue(authenticatedIdentity, streamSession, Duration.ofHours(1))
-        .value();
+    assertMediaDenied(token);
   }
 
   private AuthenticatedIdentity authenticatedIdentity() {
@@ -169,12 +174,20 @@ class HttpPlaybackRevocationIT extends AbstractIntegrationTest {
         jwtDecoder.decode(authTestSupport.profileBearer(identity)));
   }
 
-  private String replaceStreamSession(AuthenticatedIdentity authenticatedIdentity) {
-    runtimeRegistry.removeById(streamSession.getSessionId());
-    streamSession =
-        defaultSessionBuilder().authority(authenticatedIdentity.playbackAuthority()).build();
+  private String startStreamSession(
+      StreamDelivery delivery, AuthenticatedIdentity authenticatedIdentity) throws IOException {
+    var session =
+        switch (delivery) {
+          case HLS -> defaultSessionBuilder();
+          case DIRECT_PLAY ->
+              directPlaySessionBuilder()
+                  .sourcePath(Files.write(directory.resolve("movie.mp4"), new byte[100]));
+        };
+    streamSession = session.authority(authenticatedIdentity.playbackAuthority()).build();
     runtimeRegistry.save(streamSession);
-    return playbackToken(authenticatedIdentity);
+    return playbackTokenIssuer
+        .issue(authenticatedIdentity, streamSession, Duration.ofHours(1))
+        .value();
   }
 
   private AuthenticatedIdentity useHousehold(UUID contextHouseholdId, UUID profileId) {
@@ -227,28 +240,27 @@ class HttpPlaybackRevocationIT extends AbstractIntegrationTest {
     shareRepository.saveAndFlush(ending);
   }
 
-  private void assertPlaylistAvailable(String token) throws Exception {
-    mockMvc
-        .perform(
-            get("/api/stream/{id}/multivariant.m3u8", streamSession.getSessionId())
-                .param("t", token))
-        .andExpect(status().isOk());
+  private void assertMediaAvailable(String token) throws Exception {
+    var expected =
+        switch (streamSession.getDelivery()) {
+          case HLS -> status().isOk();
+          case DIRECT_PLAY -> status().isPartialContent();
+        };
+    mockMvc.perform(mediaRequest(token)).andExpect(expected);
   }
 
-  private void assertPlaylistDenied(String token) throws Exception {
-    mockMvc
-        .perform(
-            get("/api/stream/{id}/multivariant.m3u8", streamSession.getSessionId())
-                .param("t", token))
-        .andExpect(status().isNotFound());
+  private void assertMediaDenied(String token) throws Exception {
+    mockMvc.perform(mediaRequest(token)).andExpect(status().isNotFound());
   }
 
-  private PlaybackAuthority authority() {
-    return PlaybackAuthority.builder()
-        .authSessionId(identity.session().getId())
-        .accountId(identity.account().getId())
-        .householdId(identity.household().getId())
-        .profileId(identity.profile().getId())
-        .build();
+  private MockHttpServletRequestBuilder mediaRequest(String token) {
+    var sessionId = streamSession.getSessionId();
+    return switch (streamSession.getDelivery()) {
+      case HLS -> get("/api/stream/{id}/multivariant.m3u8", sessionId).param("t", token);
+      case DIRECT_PLAY ->
+          get("/api/stream/{id}/source.mp4", sessionId)
+              .param("t", token)
+              .header("Range", "bytes=0-9");
+    };
   }
 }
