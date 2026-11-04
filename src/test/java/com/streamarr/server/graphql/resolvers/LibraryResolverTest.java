@@ -882,6 +882,10 @@ class LibraryResolverTest {
         Arguments.of(
             new AddLibraryRejection.PathNotReadable(), "LibraryPathNotReadableError", "filepath"),
         Arguments.of(
+            new AddLibraryRejection.PathThroughSoftLink(),
+            "LibraryPathThroughSoftLinkError",
+            "filepath"),
+        Arguments.of(
             new AddLibraryRejection.PathAlreadyRegistered(
                 conflictingLibrary(MediaType.OTHER), CONFLICTING_PATH),
             "LibraryPathAlreadyRegisteredError",
@@ -1484,7 +1488,7 @@ class LibraryResolverTest {
     private LibraryOperationRejection removalRejection;
 
     private FakeLibraryManagementService() {
-      super(null, null, null, null, null, null, null, null, null, null, null, null);
+      super(null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Override

@@ -23,6 +23,9 @@ public sealed interface AddLibraryError extends InputMutationError {
   record LibraryPathNotReadableError(String message, List<String> inputPath)
       implements AddLibraryError {}
 
+  record LibraryPathThroughSoftLinkError(String message, List<String> inputPath)
+      implements AddLibraryError {}
+
   record LibraryPathAlreadyRegisteredError(
       String message, List<String> inputPath, Library conflictingLibrary, String conflictingPath)
       implements AddLibraryError {}

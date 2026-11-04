@@ -14,6 +14,7 @@ import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
 import com.google.common.jimfs.PathNormalization;
 import com.streamarr.server.config.LibraryScanProperties;
+import com.streamarr.server.config.RemoteTranscodeProperties;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
@@ -741,7 +742,8 @@ class LibraryManagementServiceTest {
 
   @Test
   @DisplayName(
-      "Should keep one owner without loser side effects when two libraries discover the same path concurrently")
+      "Should keep one owner without loser side effects when two libraries discover the same path"
+          + " concurrently")
   void shouldKeepOneOwnerWithoutLoserSideEffectsWhenTwoLibrariesDiscoverSamePathConcurrently()
       throws Exception {
     var other = fakeLibraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
@@ -1092,7 +1094,7 @@ class LibraryManagementServiceTest {
       try (var twoDriveFileSystem = Jimfs.newFileSystem(twoDrives)) {
         Files.createDirectories(twoDriveFileSystem.getPath("C:\\media\\movies"));
         Files.createDirectories(twoDriveFileSystem.getPath("D:\\media\\movies"));
-        var service = serviceWith(twoDriveFileSystem);
+        var service = serviceWith(twoDriveFileSystem, "C:\\media");
         accepted(service.addLibrary(identity, libraryNamed("Movies", "C:\\media\\movies")));
 
         var outcome = service.addLibrary(identity, libraryNamed("Films", "D:\\media\\movies"));
@@ -1310,6 +1312,77 @@ class LibraryManagementServiceTest {
           .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathNotDirectory()));
     }
 
+    // Jimfs diverges from the JDK's link semantics, so these tests use the real file system.
+    @Test
+    @DisplayName(
+        "Should reject with PathThroughSoftLink when a folder between the media root and the path"
+            + " is a soft link")
+    void shouldRejectWithPathThroughSoftLinkWhenAFolderBetweenTheMediaRootAndThePathIsASoftLink(
+        @TempDir Path temp) throws IOException {
+      var mediaRoot = Files.createDirectory(temp.resolve("media"));
+      var elsewhere = Files.createDirectory(temp.resolve("elsewhere"));
+      Files.createDirectory(elsewhere.resolve("Movies"));
+      var linkedFolder = Files.createSymbolicLink(mediaRoot.resolve("Linked"), elsewhere);
+      var service = serviceWithMediaRoot(mediaRoot);
+
+      var outcome =
+          service.addLibrary(
+              identity, libraryNamed("Movies", linkedFolder.resolve("Movies").toString()));
+
+      assertThat(outcome)
+          .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathThroughSoftLink()));
+      assertThat(fakeLibraryRepository.findAll()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("Should reject with PathThroughSoftLink when the path is a soft link")
+    void shouldRejectWithPathThroughSoftLinkWhenThePathIsASoftLink(@TempDir Path temp)
+        throws IOException {
+      var mediaRoot = Files.createDirectory(temp.resolve("media"));
+      var target = Files.createDirectories(temp.resolve("elsewhere/Movies"));
+      var linkedLibraryFolder = Files.createSymbolicLink(mediaRoot.resolve("Movies"), target);
+      var service = serviceWithMediaRoot(mediaRoot);
+
+      var outcome =
+          service.addLibrary(identity, libraryNamed("Movies", linkedLibraryFolder.toString()));
+
+      assertThat(outcome)
+          .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathThroughSoftLink()));
+    }
+
+    @Test
+    @DisplayName("Should accept the path when only the way to the media root passes a soft link")
+    void shouldAcceptThePathWhenOnlyTheWayToTheMediaRootPassesASoftLink(@TempDir Path temp)
+        throws IOException {
+      var realMediaRoot = Files.createDirectory(temp.resolve("real-media"));
+      Files.createDirectory(realMediaRoot.resolve("Movies"));
+      var mediaRoot = Files.createSymbolicLink(temp.resolve("media"), realMediaRoot);
+      var service = serviceWithMediaRoot(mediaRoot);
+
+      var library =
+          accepted(
+              service.addLibrary(
+                  identity, libraryNamed("Movies", mediaRoot.resolve("Movies").toString())));
+
+      assertThat(library.getFilepathUri())
+          .isEqualTo(FilepathCodec.encode(mediaRoot.resolve("Movies")));
+    }
+
+    @Test
+    @DisplayName("Should accept the media root as the path when the media root is a soft link")
+    void shouldAcceptTheMediaRootAsThePathWhenTheMediaRootIsASoftLink(@TempDir Path temp)
+        throws IOException {
+      var mediaRoot =
+          Files.createSymbolicLink(
+              temp.resolve("media"), Files.createDirectory(temp.resolve("real-media")));
+      var service = serviceWithMediaRoot(mediaRoot);
+
+      var library =
+          accepted(service.addLibrary(identity, libraryNamed("Media", mediaRoot.toString())));
+
+      assertThat(library.getFilepathUri()).isEqualTo(FilepathCodec.encode(mediaRoot));
+    }
+
     @Test
     @DisplayName("Should reject with PathNotReadable when the filesystem denies access")
     void shouldRejectWithPathNotReadableWhenFilesystemDeniesAccess() {
@@ -1484,7 +1557,8 @@ class LibraryManagementServiceTest {
 
     @Test
     @DisplayName(
-        "Should publish LibraryAddedEvent with the persisted ID and encoded path when library is added")
+        "Should publish LibraryAddedEvent with the persisted ID and encoded path when library is"
+            + " added")
     void shouldPublishLibraryAddedEventWhenLibraryIsAdded() throws IOException {
       var newLibraryPath = fileSystem.getPath("/event-library");
       Files.createDirectories(newLibraryPath);
@@ -1558,7 +1632,8 @@ class LibraryManagementServiceTest {
 
     @Test
     @DisplayName(
-        "Should publish LibraryRemovedEvent with correct filepath and media file IDs when library is removed")
+        "Should publish LibraryRemovedEvent with correct filepath and media file IDs when library"
+            + " is removed")
     void shouldPublishLibraryRemovedEventWhenLibraryIsRemoved() {
       var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
       var expectedFilepath = library.getFilepathUri();
@@ -1585,7 +1660,8 @@ class LibraryManagementServiceTest {
 
     @Test
     @DisplayName(
-        "Should publish LibraryRemovedEvent with empty media file IDs when library has no media files")
+        "Should publish LibraryRemovedEvent with empty media file IDs when library has no media"
+            + " files")
     void shouldPublishLibraryRemovedEventWithEmptyMediaFileIdsWhenNoMediaFiles() {
       libraryManagementService.removeLibrary(identity, savedLibraryId);
 
@@ -1821,7 +1897,8 @@ class LibraryManagementServiceTest {
         .libraryMutationTransaction(libraryMutationTransaction)
         .mutationTransactions(mutationTransactions)
         .libraryOperations(libraryOperations)
-        .libraryOperationService(libraryOperationService);
+        .libraryOperationService(libraryOperationService)
+        .remoteSource(new RemoteTranscodeProperties(UUID.randomUUID(), "/media"));
   }
 
   private LibraryFileWalk.LibraryFileWalkBuilder fileWalkBuilder() {
@@ -1846,10 +1923,19 @@ class LibraryManagementServiceTest {
         .build();
   }
 
+  private LibraryManagementService serviceWithMediaRoot(Path mediaRoot) {
+    return serviceWith(FileSystems.getDefault(), mediaRoot.toString());
+  }
+
   private LibraryManagementService serviceWith(FileSystem alternateFileSystem) {
+    return serviceWith(alternateFileSystem, "/media");
+  }
+
+  private LibraryManagementService serviceWith(FileSystem alternateFileSystem, String mediaRoot) {
     return serviceBuilder()
         .fileSystem(alternateFileSystem)
         .libraryFileWalk(fileWalkBuilder().fileSystem(alternateFileSystem).build())
+        .remoteSource(new RemoteTranscodeProperties(UUID.randomUUID(), mediaRoot))
         .build();
   }
 

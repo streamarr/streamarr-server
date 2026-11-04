@@ -30,6 +30,11 @@ public final class AddLibraryErrors {
       case AddLibraryRejection.PathNotReadable _ ->
           new AddLibraryError.LibraryPathNotReadableError(
               "The server cannot read that folder.", InputPath.of(FILEPATH));
+      case AddLibraryRejection.PathThroughSoftLink _ ->
+          new AddLibraryError.LibraryPathThroughSoftLinkError(
+              "That folder is reached through a soft link, and Streamarr never follows soft links."
+                  + " Mount the real folder instead, for example with a bind mount.",
+              InputPath.of(FILEPATH));
       case AddLibraryRejection.PathAlreadyRegistered(var library, var path) ->
           new AddLibraryError.LibraryPathAlreadyRegisteredError(
               "The library \"%s\" already uses this folder (%s). %s"

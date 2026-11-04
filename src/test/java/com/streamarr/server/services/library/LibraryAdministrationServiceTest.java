@@ -271,7 +271,7 @@ class LibraryAdministrationServiceTest {
     private UUID removedLibraryId;
 
     private RecordingLibraryManagementService() {
-      super(null, null, null, null, null, null, null, null, null, null, null, null);
+      super(null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Override

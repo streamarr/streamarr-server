@@ -186,6 +186,7 @@ union AddLibraryError =
   | LibraryPathNotFoundError
   | LibraryPathNotDirectoryError
   | LibraryPathNotReadableError
+  | LibraryPathThroughSoftLinkError
   | LibraryPathAlreadyRegisteredError
   | LibraryPathOverlapError
 
