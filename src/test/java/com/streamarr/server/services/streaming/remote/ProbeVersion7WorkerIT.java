@@ -15,6 +15,7 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.AudioStreamProperties;
 import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.ColorPrimaries;
 import com.streamarr.server.domain.streaming.ColorRange;
@@ -277,6 +278,50 @@ class ProbeVersion7WorkerIT extends AbstractIntegrationTest {
     }
   }
 
+  @Test
+  @DisplayName(
+      "Should store the audio stream's channel layout and sample format and the video stream's sample entry and major brand when the probe job probes an MP4 file")
+  void
+      shouldStoreTheAudioLayoutAndSampleFormatAndTheVideoSampleEntryAndMajorBrandWhenTheProbeJobProbesAnMp4File()
+          throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+
+    try (var server = server(new LocalSegmentStore(tempDir.resolve("server-segments")));
+        var worker = workerBuilder(server, mediaRoot).build()) {
+      server.start();
+      worker.start();
+      var source = worker.generateMedia(mediaRoot.resolve("four-channel.mp4"), fourChannelMp4());
+      var file = createMediaFile(source);
+
+      var result =
+          runProbeJob(
+              new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, mediaRoot), file, source);
+
+      assertThat(result).isEqualTo(new ProbeExecutionResult.Completed());
+      var stored = reader.find(file.getId()).orElseThrow();
+      // FFmpeg's MP4 muxer writes the isom major brand and the avc1 sample entry for H.264. Its
+      // AAC decoder names AAC channel configuration 4 as the 4.0 layout and decodes to planar
+      // float.
+      assertThat(stored.outcome())
+          .isInstanceOfSatisfying(
+              ProbeOutcome.Success.class,
+              success -> {
+                assertThat(success.container().majorBrand()).contains("isom");
+                assertThat(success.streams())
+                    .extracting(
+                        StreamInfo::codecType,
+                        StreamInfo::sampleEntry,
+                        stream ->
+                            stream.audioProperties().flatMap(AudioStreamProperties::channelLayout),
+                        stream ->
+                            stream.audioProperties().flatMap(AudioStreamProperties::sampleFormat))
+                    .containsExactly(
+                        tuple("video", Optional.of("avc1"), Optional.empty(), Optional.empty()),
+                        tuple("audio", Optional.empty(), Optional.of("4.0"), Optional.of("fltp")));
+              });
+    }
+  }
+
   private record Playback(RemoteTranscodeExecutor executor, LocalSegmentStore segmentStore) {}
 
   // Each seek encodes from the media segment that holds the chapter's start. The chapters start on
@@ -422,6 +467,25 @@ class ProbeVersion7WorkerIT extends AbstractIntegrationTest {
         "4.0",
         "-pix_fmt",
         "yuv420p");
+  }
+
+  // H.264 video and four-channel AAC audio in an MP4 file.
+  private static List<String> fourChannelMp4() {
+    return List.of(
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc=size=320x180:rate=24:duration=2",
+        "-f",
+        "lavfi",
+        "-i",
+        "anullsrc=channel_layout=4.0:sample_rate=48000",
+        "-t",
+        "2",
+        "-c:v",
+        "libx264",
+        "-c:a",
+        "aac");
   }
 
   // Thirty minutes, so the job attempt still runs after the oversized probe ends.
