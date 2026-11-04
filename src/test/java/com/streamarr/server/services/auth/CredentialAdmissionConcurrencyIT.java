@@ -32,12 +32,17 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 @Tag("IntegrationTest")
 @DisplayName("Credential Admission Concurrency Tests")
 class CredentialAdmissionConcurrencyIT extends AbstractIntegrationTest {
+  private static final String RESERVATION_INSERT = "insert into %credential_attempt%";
+  private static final String TARGET_LOCK = "%pg_advisory_xact_lock%";
+  private static final String RETENTION_DELETE = "delete from %credential_attempt%";
+
   @Autowired private AuthTestSupport fixtures;
   @Autowired private LoginService login;
   @Autowired private LoginCompletionService completion;
   @Autowired private UserAccountRepository accounts;
   @Autowired private AuthSessionRepository sessions;
   @Autowired private CredentialAttemptRepository attempts;
+  @Autowired private CredentialAttemptRetentionSweeper retentionSweeper;
   @Autowired private PasswordEncoder encoder;
   @Autowired private DataSource dataSource;
   @Autowired private JdbcTemplate jdbc;
@@ -52,8 +57,11 @@ class CredentialAdmissionConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should admit one login when two instances contend for the last attempt slot")
-  void shouldAdmitOneLoginWhenTwoInstancesContendForLastAttemptSlot() throws Exception {
+  @DisplayName(
+      "Should admit one login when two instances contend for the last attempt slot during the"
+          + " retention sweep")
+  void shouldAdmitOneLoginWhenTwoInstancesContendForLastAttemptSlotDuringRetentionSweep()
+      throws Exception {
     account = fixtures.createAccount();
     var wrong = command("wrong");
     for (var i = 0; i < 4; i++) {
@@ -79,10 +87,16 @@ class CredentialAdmissionConcurrencyIT extends AbstractIntegrationTest {
       }
 
       var holderPid = backendPid(holder);
+      // The scheduled sweep can fire while the lock is held, and its DELETE queues behind it too.
+      var sweep = executor.submit(retentionSweeper::deleteExpiredAttempts);
+      await()
+          .atMost(Duration.ofSeconds(5))
+          .until(() -> waitersBehind(jdbc, holderPid, RETENTION_DELETE) == 1);
       var one = executor.submit(() -> tryLogin(first, correct, admittedOrBlocked));
       var two = executor.submit(() -> tryLogin(second, correct, admittedOrBlocked));
       try {
-        await().atMost(Duration.ofSeconds(5)).until(() -> waitersBehind(jdbc, holderPid, "%") == 2);
+        // Release before the contenders' two-second lock timeout ends either wait.
+        await().atMost(Duration.ofSeconds(5)).until(() -> contendersParked(holderPid));
         holder.rollback();
         awaitLatch(admittedOrBlocked);
         assertThat(
@@ -103,6 +117,7 @@ class CredentialAdmissionConcurrencyIT extends AbstractIntegrationTest {
       }
 
       assertThat(one.get(10, TimeUnit.SECONDS)).isNotEqualTo(two.get(10, TimeUnit.SECONDS));
+      sweep.get(10, TimeUnit.SECONDS);
     }
 
     assertThat(sessions.findByAccountId(account.getId())).hasSize(1);
@@ -119,6 +134,11 @@ class CredentialAdmissionConcurrencyIT extends AbstractIntegrationTest {
                 String.class,
                 account.getId()))
         .containsExactly("FAILED", "FAILED", "FAILED", "FAILED", "SUCCEEDED");
+  }
+
+  private boolean contendersParked(int holderPid) {
+    return waitersBehind(jdbc, holderPid, RESERVATION_INSERT) == 1
+        && waitersBehind(jdbc, holderPid, TARGET_LOCK) == 1;
   }
 
   private LoginService instance(PasswordEncoder passwordEncoder) {
