@@ -37,7 +37,9 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -50,6 +52,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @Tag("IntegrationTest")
 @DisplayName("HTTP Playback Revocation Integration Tests")
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@TestPropertySource(properties = "streaming.remote.source-root=${java.io.tmpdir}")
 class HttpPlaybackRevocationIT extends AbstractIntegrationTest {
 
   @Autowired private MockMvc mockMvc;

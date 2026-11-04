@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import com.google.common.primitives.Bytes;
+import com.streamarr.server.config.RemoteTranscodeProperties;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.controllers.StreamController;
 import com.streamarr.server.domain.media.ItemFailureReason;
@@ -741,7 +742,8 @@ class RemotePlaybackIT {
             new HlsPlaylistService(properties),
             rig.coordinator(),
             authorizationService,
-            new DirectPlaySourceService(streamingService));
+            new DirectPlaySourceService(
+                streamingService, new RemoteTranscodeProperties(UUID.randomUUID(), "/media")));
     return new PlaybackRig(controller, session);
   }
 

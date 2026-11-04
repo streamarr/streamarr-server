@@ -16,6 +16,7 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +33,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -43,6 +45,7 @@ public class StreamController {
   private static final MediaType HLS_MEDIA_TYPE =
       MediaType.parseMediaType("application/vnd.apple.mpegurl");
   private static final MediaType MP4_MEDIA_TYPE = MediaType.parseMediaType("video/mp4");
+  private static final String SOURCE_PATH = "/{sessionId}/source.{extension}";
   private static final String MEDIA_SEGMENT_PATH_VARIABLE =
       "{segmentName:.+\\Q" + SegmentNames.MEDIA_SEGMENT_EXTENSION + "\\E}";
 
@@ -201,7 +204,7 @@ public class StreamController {
    * playback-authority check when it starts; a response already streaming is not cut when the
    * authority ends, and the next request is denied.
    */
-  @GetMapping("/{sessionId}/source.{extension}")
+  @GetMapping(SOURCE_PATH)
   @ApiResponse(
       responseCode = "200",
       content =
@@ -221,11 +224,7 @@ public class StreamController {
       @PathVariable String extension,
       @RequestHeader(name = HttpHeaders.RANGE, required = false) String range)
       throws IOException {
-    requireTokenBoundTo(sessionId);
-    var source =
-        directPlaySources
-            .open(sessionId, authorizationService.currentIdentity())
-            .filter(found -> found.container().getExtension().equals(extension));
+    var source = openSource(sessionId, extension);
     if (source.isEmpty()) {
       return ResponseEntity.notFound().build();
     }
@@ -241,6 +240,35 @@ public class StreamController {
     return ResponseEntity.ok()
         .contentType(MediaType.parseMediaType(source.get().container().getMediaType()))
         .body(resource);
+  }
+
+  /**
+   * Answers the headers of the direct-play source alone. A range applies only to {@code GET} (RFC
+   * 9110 section 14.2), so this ignores one.
+   */
+  @RequestMapping(value = SOURCE_PATH, method = RequestMethod.HEAD)
+  @ApiResponse(responseCode = "200")
+  @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
+  public ResponseEntity<Void> getSourceHeaders(
+      @PathVariable UUID sessionId, @PathVariable String extension) throws IOException {
+    var source = openSource(sessionId, extension);
+    if (source.isEmpty()) {
+      return ResponseEntity.notFound().build();
+    }
+
+    // Spring's implicit HEAD reads the whole file and discards it, so this answers without a body.
+    return ResponseEntity.ok()
+        .contentType(MediaType.parseMediaType(source.get().container().getMediaType()))
+        .contentLength(Files.size(source.get().path()))
+        .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+        .build();
+  }
+
+  private Optional<DirectPlaySource> openSource(UUID sessionId, String extension) {
+    requireTokenBoundTo(sessionId);
+    return directPlaySources
+        .open(sessionId, authorizationService.currentIdentity())
+        .filter(source -> source.container().getExtension().equals(extension));
   }
 
   private static boolean isSatisfiable(String range, Resource resource) {

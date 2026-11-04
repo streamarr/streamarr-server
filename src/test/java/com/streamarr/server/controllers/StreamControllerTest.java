@@ -12,6 +12,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.streamarr.server.config.RemoteTranscodeProperties;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -85,8 +86,13 @@ class StreamControllerTest {
             playlistService,
             coordinatorOver(segmentStore),
             new FakeAuthorizationService(this::boundIdentity, VALIDATED_TOKEN),
-            new DirectPlaySourceService(streamingService));
+            directPlaySources());
     mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
+  }
+
+  private DirectPlaySourceService directPlaySources() {
+    return new DirectPlaySourceService(
+        streamingService, new RemoteTranscodeProperties(UUID.randomUUID(), "/media"));
   }
 
   private SegmentDeliveryCoordinator coordinatorOver(FakeSegmentStore store) {
@@ -341,7 +347,7 @@ class StreamControllerTest {
             playlistService,
             coordinatorOver(throwingStore),
             new FakeAuthorizationService(this::boundIdentity, VALIDATED_TOKEN),
-            new DirectPlaySourceService(streamingService));
+            directPlaySources());
     var raceMockMvc = MockMvcBuilders.standaloneSetup(raceController).build();
 
     raceMockMvc

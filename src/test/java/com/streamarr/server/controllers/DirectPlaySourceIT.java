@@ -11,6 +11,7 @@ import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.support.AuthTestSupport;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -32,6 +33,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.test.context.TestPropertySource;
 
 /**
  * Drives the direct-play source endpoint on a real port, so each case shows what Tomcat sends:
@@ -40,6 +42,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 @Tag("IntegrationTest")
 @DisplayName("Direct Play Source Integration Tests")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@TestPropertySource(properties = "streaming.remote.source-root=${java.io.tmpdir}")
 class DirectPlaySourceIT extends AbstractIntegrationTest {
 
   private static final int SOURCE_LENGTH = 1000;
@@ -144,6 +147,27 @@ class DirectPlaySourceIT extends AbstractIntegrationTest {
     assertThat(response.headers().firstValue("Accept-Ranges")).hasValue("bytes");
     assertThat(response.headers().firstValue("Content-Type")).hasValue("video/mp4");
     assertThat(response.body()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should answer HEAD without reading the file when the file is large")
+  void shouldAnswerHeadWithoutReadingTheFileWhenTheFileIsLarge() throws Exception {
+    startDirectPlay(SourceContainer.MP4);
+    var sparseLength = 1L << 40;
+    try (var file = new RandomAccessFile(streamSession.getSourcePath().toFile(), "rw")) {
+      file.setLength(sparseLength);
+    }
+
+    // Reading a sparse 1 TiB file takes minutes, so a HEAD that reads the body misses this bound.
+    var response =
+        send(
+            request("source.mp4")
+                .timeout(Duration.ofSeconds(10))
+                .method("HEAD", HttpRequest.BodyPublishers.noBody()));
+
+    assertThat(response.statusCode()).isEqualTo(200);
+    assertThat(response.headers().firstValue("Content-Length"))
+        .hasValue(String.valueOf(sparseLength));
   }
 
   @Test
