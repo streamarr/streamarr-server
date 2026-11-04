@@ -18,6 +18,7 @@ import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
+import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
 import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
 import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;
@@ -676,8 +677,10 @@ class LiveWorkerConnectionRegistryTest {
         registrationListingProbeVersion(version7WorkerId, 7),
         new CancellableObserver());
 
-    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, quad)).isOne();
-    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, stereo)).isEqualTo(2);
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, quad))
+        .isEqualTo(TranscodeExecutor.UNBOUNDED_SLOTS);
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, stereo))
+        .isEqualTo(TranscodeExecutor.UNBOUNDED_SLOTS);
     assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, quad))
         .singleElement()
         .isIn(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, stereo));
@@ -914,7 +917,8 @@ class LiveWorkerConnectionRegistryTest {
                     .addBitstreamRewrites(BitstreamRewrite.BITSTREAM_REWRITE_STRIP_DOLBY_VISION)),
             new CancellableObserver());
 
-    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, stripping)).isOne();
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, stripping))
+        .isEqualTo(TranscodeExecutor.UNBOUNDED_SLOTS);
     assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, stripping))
         .containsExactly(new ExecutionTargetId(listingSessionId.toString()));
   }
@@ -1261,7 +1265,7 @@ class LiveWorkerConnectionRegistryTest {
 
   @Test
   @DisplayName(
-      "Should count an encode's free slots only on workers that encode its codec family and a copy's on every worker")
+      "Should count an encode's free slots only on workers that encode its codec family and give a copy unbounded slots on every worker")
   void shouldCountAnEncodesFreeSlotsOnlyOnWorkersThatEncodeItsCodecFamily() {
     var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var av1WorkerId = UUID.randomUUID();
@@ -1288,7 +1292,42 @@ class LiveWorkerConnectionRegistryTest {
         .isOne();
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, encodeJob("hevc").getDecision()))
         .isZero();
-    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, hevcCopy)).isEqualTo(2);
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, hevcCopy))
+        .isEqualTo(TranscodeExecutor.UNBOUNDED_SLOTS);
+  }
+
+  @Test
+  @DisplayName(
+      "Should dispatch two copies and an encode and refuse a second encode when the worker has one slot")
+  void shouldDispatchTwoCopiesAndAnEncodeAndRefuseASecondEncodeWhenTheWorkerHasOneSlot() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    registry.register(
+        WORKER_ID, registration(WORKER_ID, libx264Encoder()), new CancellableObserver());
+
+    assertThat(registry.dispatch(remuxJob())).isPresent();
+    assertThat(registry.dispatch(audioEncodeJob(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_STEREO)))
+        .isPresent();
+    assertThat(registry.dispatch(encodeJob("h264"))).isPresent();
+
+    assertThat(registry.dispatch(encodeJob("h264"))).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should leave a copy's slots unbounded and its execution targets in place when every slot holds an encode")
+  void shouldLeaveACopysSlotsUnboundedAndItsTargetsInPlaceWhenEverySlotHoldsAnEncode() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    registry.register(
+        WORKER_ID, registration(WORKER_ID, libx264Encoder()), new CancellableObserver());
+
+    assertThat(registry.dispatch(encodeJob("h264"))).isPresent();
+
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isZero();
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, encodeJob("h264").getDecision()))
+        .isZero();
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, streamCopyDecision()))
+        .isEqualTo(TranscodeExecutor.UNBOUNDED_SLOTS);
+    assertThat(registry.availableSlots(UUID.randomUUID(), streamCopyDecision())).isZero();
   }
 
   @Test
@@ -1846,6 +1885,25 @@ class LiveWorkerConnectionRegistryTest {
 
     assertThat(workerGauge(meterRegistry, "streamarr.streaming.playback_slots")).isEqualTo(2);
     assertThat(workerGauge(meterRegistry, "streamarr.streaming.playback_slots_in_use")).isOne();
+  }
+
+  @Test
+  @DisplayName("Should leave copies out of the playback slots in use when copies and an encode run")
+  void shouldLeaveCopiesOutOfThePlaybackSlotsInUseWhenCopiesAndAnEncodeRun() {
+    var meterRegistry = new SimpleMeterRegistry();
+    var registry = registryReportingTo(meterRegistry);
+    registry.register(
+        WORKER_ID,
+        registration(WORKER_ID, libx264Encoder()).toBuilder().setAvailableSlots(2).build(),
+        collecting(new CopyOnWriteArrayList<>()));
+
+    assertThat(registry.dispatch(remuxJob())).isPresent();
+    assertThat(registry.dispatch(audioEncodeJob(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_STEREO)))
+        .isPresent();
+    assertThat(registry.dispatch(encodeJob("h264"))).isPresent();
+
+    assertThat(workerGauge(meterRegistry, "streamarr.streaming.playback_slots_in_use")).isOne();
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isOne();
   }
 
   @Test
@@ -2494,6 +2552,10 @@ class LiveWorkerConnectionRegistryTest {
                 .setCodec("aac")
                 .setChannelLayout(layout))
         .build();
+  }
+
+  private static VariantJob remuxJob() {
+    return variantJob().toBuilder().setDecision(streamCopyDecision()).build();
   }
 
   // The video is copied, so the job needs no video encoder.

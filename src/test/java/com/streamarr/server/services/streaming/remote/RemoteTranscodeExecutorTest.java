@@ -20,6 +20,7 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
+import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
 import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.VideoCopyFeature;
@@ -139,10 +140,11 @@ class RemoteTranscodeExecutorTest {
   // Admission and capacity reclamation count the same workers that dispatch would use.
   @Test
   @DisplayName(
-      "Should count slots and offer targets only on workers that list the planned output when a"
-          + " decision copies a PQ source")
-  void shouldCountSlotsAndOfferTargetsOnlyOnWorkersThatListThePlannedOutputWhenCopyingAPqSource()
-      throws Exception {
+      "Should leave a copy's slots unbounded and offer targets only on workers that list the planned"
+          + " output when a decision copies a PQ source")
+  void
+      shouldLeaveACopysSlotsUnboundedAndOfferTargetsOnlyOnWorkersThatListThePlannedOutputWhenCopyingAPqSource()
+          throws Exception {
     var plannedOutputWorkerId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
     try (var server = server()) {
       server.start();
@@ -163,9 +165,9 @@ class RemoteTranscodeExecutorTest {
         var pqCopy = copyDecision(CompatibleBase.PQ);
         var sdrCopy = copyDecision(CompatibleBase.SDR);
 
-        assertThat(executor.availableSlots(pqCopy)).isEqualTo(8);
+        assertThat(executor.availableSlots(pqCopy)).isEqualTo(TranscodeExecutor.UNBOUNDED_SLOTS);
         assertThat(executor.executionTargets(pqCopy)).hasSize(1);
-        assertThat(executor.availableSlots(sdrCopy)).isEqualTo(16);
+        assertThat(executor.availableSlots(sdrCopy)).isEqualTo(TranscodeExecutor.UNBOUNDED_SLOTS);
         assertThat(executor.executionTargets(sdrCopy))
             .hasSize(2)
             .containsAll(executor.executionTargets(pqCopy));

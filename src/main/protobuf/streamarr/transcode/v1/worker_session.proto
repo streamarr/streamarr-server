@@ -114,8 +114,10 @@ message WorkerCapabilities {
 message WorkerRegistration {
   WorkerIdentity worker = 1;
   WorkerCapabilities capabilities = 2;
-  // This field counts the job attempts that the connection runs at once. The
-  // worker never changes it during the session.
+  // This field counts the job attempts that encode the video that the
+  // connection runs at once. A job attempt that copies the video, with or
+  // without an audio encode, takes no slot, and the worker never refuses one
+  // for slots. The worker never changes it during the session.
   uint32 available_slots = 3;
   // This field counts the background probes that the worker runs at once.
   // ProbeCapacityChanged replaces the value.

@@ -15,6 +15,7 @@ import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.ProbeCapacity;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
+import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
 import com.streamarr.server.services.streaming.events.DolbyVisionConversionFailedEvent;
@@ -639,15 +640,30 @@ final class LiveWorkerConnectionRegistry {
         || decision.getMode() == TranscodeMode.TRANSCODE_MODE_FULL_TRANSCODE;
   }
 
+  // A job attempt that copies the video, with or without an audio encode, takes no slot, as on the
+  // worker. Any other job attempt takes one.
+  private static boolean copiesVideo(TranscodeDecision decision) {
+    return decision.getMode() == TranscodeMode.TRANSCODE_MODE_REMUX
+        || decision.getMode() == TranscodeMode.TRANSCODE_MODE_AUDIO_TRANSCODE;
+  }
+
   int availableSlots(UUID sourceNamespaceId) {
     return connectionsFor(sourceNamespaceId).mapToInt(WorkerConnection::availableSlots).sum();
   }
 
+  // A copy needs no free slot, only a worker that can run it.
   int availableSlots(UUID sourceNamespaceId, TranscodeDecision decision) {
-    return connectionsFor(sourceNamespaceId)
-        .filter(connection -> connection.canEncode(decision))
-        .mapToInt(WorkerConnection::availableSlots)
-        .sum();
+    var eligible =
+        connectionsFor(sourceNamespaceId).filter(connection -> connection.canEncode(decision));
+    if (!copiesVideo(decision)) {
+      return eligible.mapToInt(WorkerConnection::availableSlots).sum();
+    }
+
+    if (eligible.findAny().isEmpty()) {
+      return 0;
+    }
+
+    return TranscodeExecutor.UNBOUNDED_SLOTS;
   }
 
   int availableSlots(
@@ -1081,7 +1097,7 @@ final class LiveWorkerConnectionRegistry {
           || !canAccessSource(job)
           || !canEncodeAudioLayout(job.getDecision())
           || !canDeliverVideoAsPlanned(job.getDecision().getVideo())
-          || availableSlots() == 0) {
+          || (!copiesVideo(job.getDecision()) && availableSlots() == 0)) {
         return Optional.empty();
       }
 
@@ -1662,7 +1678,12 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private synchronized int availableSlots() {
-      return Math.max(0, maximumActiveVariants - activeVariants.size());
+      return Math.max(0, maximumActiveVariants - slotsInUse());
+    }
+
+    private int slotsInUse() {
+      return (int)
+          activeVariants.values().stream().filter(job -> !copiesVideo(job.getDecision())).count();
     }
 
     private boolean canRunProbes(Uuid sourceNamespaceId, int probeVersion) {
@@ -1685,7 +1706,7 @@ final class LiveWorkerConnectionRegistry {
 
     @Override
     public int playbackSlotsInUse() {
-      return activeVariants.size();
+      return slotsInUse();
     }
 
     @Override

@@ -6856,10 +6856,31 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject remux session creation when no worker slot is available")
-  void shouldRejectRemuxSessionCreationWhenNoWorkerSlotIsAvailable() {
+  @DisplayName("Should start a remux when every worker slot holds an encode")
+  void shouldStartARemuxWhenEveryWorkerSlotHoldsAnEncode() {
+    transcodeExecutor.limitJobSlots(1);
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).videoCodec("hevc").build());
+    createSession(
+        seedMediaFile().getId(),
+        UUID.randomUUID(),
+        StreamingOptions.builder().quality(VideoQuality.FULL_HD_1080P).build());
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().framerate(OptionalDouble.of(23.976)).build());
+
+    var remux = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(remux.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(transcodeExecutor.isRunning(remux.getSessionId(), StreamSession.defaultVariant()))
+        .isTrue();
+    assertThat(capacityRefusals("no_free_worker_slot")).isZero();
+  }
+
+  @Test
+  @DisplayName("Should reject remux session creation when no worker can run the copy")
+  void shouldRejectRemuxSessionCreationWhenNoWorkerCanRunTheCopy() {
     var file = seedMediaFile();
-    transcodeExecutor.setAvailableSlots(0);
+    transcodeExecutor.setExecutionTargets(List.of());
     var command =
         CreateStreamSessionCommand.builder()
             .streamSessionId(UUID.randomUUID())
