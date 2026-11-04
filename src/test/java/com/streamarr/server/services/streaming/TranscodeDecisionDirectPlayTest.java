@@ -275,8 +275,10 @@ class TranscodeDecisionDirectPlayTest {
             .isForced(true)
             .build();
     var source = h264Source().streams(List.of(aac("eng"), aac("fra"), forced)).build();
+    var request =
+        request().capabilityDeclaration(selectingDeclarationListing(SourceContainer.MATROSKA));
 
-    assertThat(service.decideDirectPlay(request().source(source).build())).isEqualTo(expected);
+    assertThat(service.decideDirectPlay(request.source(source).build())).isEqualTo(expected);
   }
 
   static Stream<Arguments> forcedImageSubtitles() {
@@ -334,9 +336,53 @@ class TranscodeDecisionDirectPlayTest {
                 List.of(
                     englishAac(), audioStreamBuilder("ac3").channels(OptionalInt.of(6)).build()))
             .build();
+    var request =
+        request().capabilityDeclaration(selectingDeclarationListing(SourceContainer.MATROSKA));
 
-    assertThat(service.decideDirectPlay(request().source(source).build()))
+    assertThat(service.decideDirectPlay(request.source(source).build()))
         .isEqualTo(refused(DecisionReason.DIRECT_PLAY_AUDIO_NOT_DECLARED));
+  }
+
+  // ADR 0045: a player that cannot select an audio track in a directly played file, such as
+  // Chromium's, direct-plays only a file with one audio track. A file with several plays over HLS
+  // from the start, where an audio switch is a rendition switch.
+  @Test
+  @DisplayName(
+      "Should play over HLS when the file has several audio tracks and the player cannot select"
+          + " one")
+  void shouldPlayOverHlsWhenTheFileHasSeveralAudioTracksAndThePlayerCannotSelectOne() {
+    var source = h264Source().streams(List.of(aac("eng"), aac("fra"))).build();
+    var request =
+        request()
+            .capabilityDeclaration(nonSelectingDeclarationListing(SourceContainer.MATROSKA))
+            .source(source);
+
+    assertThat(service.decideDirectPlay(request.build())).isEqualTo(refused());
+  }
+
+  @Test
+  @DisplayName(
+      "Should direct-play a file with one audio track when the player cannot select an audio track")
+  void shouldDirectPlayAFileWithOneAudioTrackWhenThePlayerCannotSelectAnAudioTrack() {
+    var request =
+        request()
+            .capabilityDeclaration(nonSelectingDeclarationListing(SourceContainer.MATROSKA))
+            .source(h264Source().streams(List.of(aac("eng"))).build());
+
+    assertThat(service.decideDirectPlay(request.build())).isEqualTo(MATROSKA_DIRECT_PLAY);
+  }
+
+  @Test
+  @DisplayName(
+      "Should direct-play a file with several audio tracks when the player selects an audio track")
+  void shouldDirectPlayAFileWithSeveralAudioTracksWhenThePlayerSelectsAnAudioTrack() {
+    var source = h264Source().streams(List.of(aac("eng"), aac("fra"))).build();
+    var request =
+        request()
+            .capabilityDeclaration(selectingDeclarationListing(SourceContainer.MATROSKA))
+            .source(source);
+
+    assertThat(service.decideDirectPlay(request.build())).isEqualTo(MATROSKA_DIRECT_PLAY);
   }
 
   @Test
@@ -397,7 +443,10 @@ class TranscodeDecisionDirectPlayTest {
                     englishAac(), audioStreamBuilder("ac3").channels(OptionalInt.of(6)).build()))
             .build();
 
-    assertThat(service.decideDirectPlay(request().source(source).build()))
+    var request =
+        request().capabilityDeclaration(selectingDeclarationListing(SourceContainer.MATROSKA));
+
+    assertThat(service.decideDirectPlay(request.source(source).build()))
         .isEqualTo(refused(DecisionReason.DIRECT_PLAY_CONTAINER_NOT_DECLARED));
   }
 
@@ -414,9 +463,27 @@ class TranscodeDecisionDirectPlayTest {
   }
 
   private static ClientCapabilityDeclaration declarationListing(List<SourceContainer> containers) {
+    return declarationBuilderListing(containers).build();
+  }
+
+  private static ClientCapabilityDeclaration.ClientCapabilityDeclarationBuilder
+      declarationBuilderListing(List<SourceContainer> containers) {
     return ClientCapabilityDeclaration.builder()
         .video(List.of(h264EntryBuilder().directPlayContainers(containers).build()))
-        .audio(List.of(aacEntryBuilder().directPlayContainers(containers).build()))
+        .audio(List.of(aacEntryBuilder().directPlayContainers(containers).build()));
+  }
+
+  private static ClientCapabilityDeclaration selectingDeclarationListing(
+      SourceContainer container) {
+    return declarationBuilderListing(List.of(container))
+        .selectsAudioTrackInDirectPlay(true)
+        .build();
+  }
+
+  private static ClientCapabilityDeclaration nonSelectingDeclarationListing(
+      SourceContainer container) {
+    return declarationBuilderListing(List.of(container))
+        .selectsAudioTrackInDirectPlay(false)
         .build();
   }
 
@@ -480,12 +547,14 @@ class TranscodeDecisionDirectPlayTest {
     return isoSource(Optional.of("isom")).videoPlaybackFacts(Optional.of(facts)).build();
   }
 
+  // A player that selects an audio track, so that a file with several audio tracks may direct-play.
   private static ClientCapabilityDeclaration declarationWith(VideoCapabilityEntry video) {
     return ClientCapabilityDeclaration.builder()
         .video(List.of(video))
         .audio(
             List.of(
                 aacEntryBuilder().directPlayContainers(List.of(SourceContainer.MATROSKA)).build()))
+        .selectsAudioTrackInDirectPlay(true)
         .build();
   }
 

@@ -78,7 +78,8 @@ public class TranscodeDecisionService {
    * Whether the stream session direct-plays the source file from its source container (ADR 0045),
    * or plays over HLS and why. Only a format attempt that may direct-play does, and only in
    * Original; any other format attempt names no refusal. The declaration must cover the video and
-   * every audio track from the file's source container (ADR 0049). An interlaced source, a property
+   * every audio track from the file's source container (ADR 0049), and a player that cannot select
+   * an audio track plays only a file with at most one (ADR 0045). An interlaced source, a property
    * issue that rules out a copy (ADR 0049) and a forced image subtitle in the language of any audio
    * track (#506) keep the file on HLS. The refusals name every check that the file fails. The
    * keyframe grid, the interim HDR copy rule and the codec string bind only HLS copies. A copy in
@@ -98,8 +99,11 @@ public class TranscodeDecisionService {
       return new DirectPlayChoice.Refused(refusals);
     }
 
-    refusals.addAll(request.capabilityDeclaration().directPlayRefusals(source, container.get()));
-    if (!refusals.isEmpty()) {
+    var declaration = request.capabilityDeclaration();
+    refusals.addAll(declaration.directPlayRefusals(source, container.get()));
+    var audioTrackSelectable =
+        declaration.selectsAudioTrackInDirectPlay() || source.audioStreams().size() <= 1;
+    if (!refusals.isEmpty() || !audioTrackSelectable) {
       return new DirectPlayChoice.Refused(refusals);
     }
 

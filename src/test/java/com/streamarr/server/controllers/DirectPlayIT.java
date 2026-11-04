@@ -78,6 +78,7 @@ class DirectPlayIT extends AbstractIntegrationTest {
           hls: true, directPlayContainers: [MATROSKA, MP4, MOV], directPlaySampleEntries: [AVC1]
         }]
         audio: [{codec: AAC, maxChannels: 2, hls: true, directPlayContainers: [MATROSKA, MP4, MOV]}]
+        selectsAudioTrackInDirectPlay: false
       }""";
 
   @LocalServerPort private int port;

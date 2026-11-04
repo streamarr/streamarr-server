@@ -137,7 +137,7 @@ class StreamingResolverTest {
       {video: [{codecFamily: H264, codecProfiles: [{profile: H264_HIGH, maxLevel: 41}], \
       maxBitDepth: 8, maxWidth: 1920, maxHeight: 1080, maxFrameRate: 60, compatibleBases: [SDR], \
       dolbyVisionProfiles: [], hdr10Plus: false, hls: true}], \
-      audio: [{codec: AAC, maxChannels: 2, hls: true}]}""";
+      audio: [{codec: AAC, maxChannels: 2, hls: true}], selectsAudioTrackInDirectPlay: false}""";
   private static final String REPORTED_PLAYBACK =
       "data.reportPlaybackFormatFailure.playbackSession";
 
@@ -1253,6 +1253,7 @@ class StreamingResolverTest {
                 {codec: AAC, maxChannels: 2, hls: true}
                 {codec: EAC3, maxChannels: 6, hls: false, directPlayContainers: [MOV]}
               ]
+              selectsAudioTrackInDirectPlay: true
             }
           }) {
             playbackSession {
@@ -1342,6 +1343,7 @@ class StreamingResolverTest {
                             .hls(false)
                             .directPlayContainers(List.of(SourceContainer.MOV))
                             .build()))
+                .selectsAudioTrackInDirectPlay(true)
                 .build());
   }
 
@@ -1790,6 +1792,7 @@ class StreamingResolverTest {
                     {codec: AAC, maxChannels: 2, hls: true}
                     {codec: FLAC, maxChannels: 8, hls: true, minBlockSize: 192}
                   ]
+                  selectsAudioTrackInDirectPlay: false
                 }
               }) {
                 playbackSession { id }
@@ -1828,6 +1831,7 @@ class StreamingResolverTest {
                     compatibleBases: [SDR], dolbyVisionProfiles: [], hdr10Plus: false, hls: true
                   }]
                   audio: [{codec: AAC, maxChannels: 2, hls: true, minBlockSize: 192}]
+                  selectsAudioTrackInDirectPlay: false
                 }
               }) {
                 playbackSession { id }
@@ -1871,6 +1875,7 @@ class StreamingResolverTest {
                     compatibleBases: [SDR], dolbyVisionProfiles: [], hdr10Plus: false, hls: true
                   }]
                   audio: [{codec: OPUS, maxChannels: 2, hls: true}]
+                  selectsAudioTrackInDirectPlay: false
                 }
               }) {
                 playbackSession { id }
@@ -1929,6 +1934,7 @@ class StreamingResolverTest {
                     compatibleBases: [SDR], dolbyVisionProfiles: [], hdr10Plus: false, hls: true
                   }]
                   audio: [{codec: AAC, maxChannels: 2, hls: true}]
+                  selectsAudioTrackInDirectPlay: false
                 }
               }) {
                 playbackSession { id }
@@ -2003,6 +2009,35 @@ class StreamingResolverTest {
             "codec family VP9",
             CAPABILITIES.replace("codecFamily: H264", "codecFamily: VP9"),
             "VP9"));
+  }
+
+  // A client states whether its direct-play player selects an audio track (ADR 0045), so the
+  // schema gives the fact no default.
+  @Test
+  @DisplayName(
+      "Should refuse the request when its declaration omits whether the player selects an audio"
+          + " track")
+  void shouldRefuseTheRequestWhenItsDeclarationOmitsWhetherThePlayerSelectsAnAudioTrack() {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+    var capabilities = CAPABILITIES.replace(", selectsAudioTrackInDirectPlay: false", "");
+    assertThat(capabilities).doesNotContain("selectsAudioTrackInDirectPlay");
+
+    var result =
+        dgsQueryExecutor.execute(
+            """
+            mutation {
+              createPlaybackSession(input: {mediaFileId: "%s", capabilities: %s}) {
+                playbackSession { id }
+              }
+            }
+            """
+                .formatted(UUID.randomUUID(), capabilities));
+
+    assertThat(result.getErrors())
+        .singleElement()
+        .satisfies(
+            error -> assertThat(error.getMessage()).contains("selectsAudioTrackInDirectPlay"));
+    assertThat(STUB_SERVICE.getAllSessions()).isEmpty();
   }
 
   @Test
