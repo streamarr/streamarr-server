@@ -1361,7 +1361,7 @@ class TranscodeDecisionServiceTest {
             .trackChannels(1)
             .trackLayout(Optional.of("mono"))
             .declaration(declaringAudio(audio(AAC, 2)))
-            .encode(encodeIn(ChannelLayout.MONO).codec("aac").bitrate(64_000L).build())
+            .encode(encodeIn(ChannelLayout.MONO).codec("aac").bitrate(96_000L).build())
             .build(),
         TrackEncode.builder()
             .scenario("stereo to AAC stereo")

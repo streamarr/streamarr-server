@@ -98,7 +98,8 @@ public record AudioDecision(
     }
 
     return switch (channels) {
-      case 1 -> 64_000L;
+      // A mono downmix limited to -3 dBTP decoded above 0 dBTP from FFmpeg's AAC at 64 kb/s.
+      case 1 -> 96_000L;
       case 5, 6 -> fivePointOneBitrate(codec);
       default -> 128_000L;
     };

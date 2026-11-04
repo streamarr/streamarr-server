@@ -30,7 +30,7 @@ class AudioDecisionTest {
   // never announces less.
   static Stream<BitrateCase> announcedBitrates() {
     return Stream.of(
-        BitrateCase.builder().codec("aac").channels(1).expected(64_000L).build(),
+        BitrateCase.builder().codec("aac").channels(1).expected(96_000L).build(),
         BitrateCase.builder().codec("aac").channels(2).expected(128_000L).build(),
         BitrateCase.builder().codec("aac").channels(5).expected(384_000L).build(),
         BitrateCase.builder().codec("aac").channels(6).expected(384_000L).build(),

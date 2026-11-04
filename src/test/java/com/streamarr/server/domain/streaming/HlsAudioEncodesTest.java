@@ -67,7 +67,7 @@ class HlsAudioEncodesTest {
   static Stream<AudioDecision> aacEncodesOfStereoAndMonoTracks() {
     return Stream.of(
         encode("aac", ChannelLayout.STEREO).bitrate(128_000L).build(),
-        encode("aac", ChannelLayout.MONO).bitrate(64_000L).build());
+        encode("aac", ChannelLayout.MONO).bitrate(96_000L).build());
   }
 
   @ParameterizedTest(name = "{0}")

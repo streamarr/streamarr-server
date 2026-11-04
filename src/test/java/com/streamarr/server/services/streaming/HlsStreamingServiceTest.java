@@ -1632,14 +1632,14 @@ class HlsStreamingServiceTest {
         .containsExactly(AudioMode.TRANSCODE, "ac3", 6, 448_000L);
   }
 
-  // A copied 96 kb/s mono AC-3 track leaves 784 kb/s under 880 kb/s. A mono track's only lower
-  // step is AAC mono at 64 kb/s, which leaves 816.
+  // A copied 128 kb/s mono AC-3 track leaves 772 kb/s under 900 kb/s. A mono track's only lower
+  // step is AAC mono at 96 kb/s, which leaves 804.
   @Test
   @DisplayName(
-      "Should step a copied mono track to AAC mono at 64 kb/s when the copy leaves less than the"
+      "Should step a copied mono track to AAC mono at 96 kb/s when the copy leaves less than the"
           + " 360p tier's video bitrate")
   void
-      shouldStepACopiedMonoTrackToAacMonoAt64KbpsWhenTheCopyLeavesLessThanThe360pTiersVideoBitrate() {
+      shouldStepACopiedMonoTrackToAacMonoAt96KbpsWhenTheCopyLeavesLessThanThe360pTiersVideoBitrate() {
     var declaration =
         defaultDeclarationBuilder()
             .audio(
@@ -1655,9 +1655,9 @@ class HlsStreamingServiceTest {
                     ProbeFixture.audioStreamBuilder("ac3")
                         .index(1)
                         .channels(OptionalInt.of(1))
-                        .bitrate(OptionalLong.of(96_000L)))
+                        .bitrate(OptionalLong.of(128_000L)))
                 .declaration(declaration)
-                .maxBitrate(880_000)
+                .maxBitrate(900_000)
                 .build());
 
     assertThat(session.getTranscodeDecision().audioDecision())
@@ -1666,7 +1666,7 @@ class HlsStreamingServiceTest {
             AudioDecision::codec,
             AudioDecision::channels,
             AudioDecision::bitrate)
-        .containsExactly(AudioMode.TRANSCODE, "aac", 1, 64_000L);
+        .containsExactly(AudioMode.TRANSCODE, "aac", 1, 96_000L);
     assertThat(session.getVariants()).extracting(QualityVariant::label).containsExactly("360p");
   }
 
@@ -4711,7 +4711,7 @@ class HlsStreamingServiceTest {
     assertThat(audio.mode()).isEqualTo(AudioMode.TRANSCODE);
     assertThat(audio.codec()).isEqualTo("aac");
     assertThat(audio.channels()).isEqualTo(1);
-    assertThat(audio.bitrate()).isEqualTo(64_000L);
+    assertThat(audio.bitrate()).isEqualTo(96_000L);
   }
 
   @Test

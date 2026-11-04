@@ -18,7 +18,7 @@ public record AudioSteps(@NonNull List<AudioDecision> highestFirst) {
   // Apple's HLS Authoring Specification rate for AAC 5.1, item 2.9, for each full-band channel.
   private static final long AAC_BITRATE_PER_FULL_BAND_CHANNEL = 64_000L;
   private static final List<Long> STEREO_BITRATES = List.of(128_000L, 96_000L, 64_000L);
-  private static final long MONO_BITRATE = 64_000L;
+  private static final long MONO_BITRATE = 96_000L;
   private static final int STEREO = 2;
   // 5.1 and 7.1 carry one low-frequency channel beside their full-band channels.
   private static final int LAYOUT_WITH_LOW_FREQUENCY_CHANNEL = 6;

@@ -220,22 +220,22 @@ class AudioStepsTest {
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("monoTracks")
-  @DisplayName("Should step a mono track only to AAC mono at 64 kb/s when the track is mono")
-  void shouldStepAMonoTrackOnlyToAacMonoAt64KbpsWhenTheTrackIsMono(StepsCase stepsCase) {
+  @DisplayName("Should step a mono track only to AAC mono at 96 kb/s when the track is mono")
+  void shouldStepAMonoTrackOnlyToAacMonoAt96KbpsWhenTheTrackIsMono(StepsCase stepsCase) {
     assertSteps(stepsCase);
   }
 
   static Stream<StepsCase> monoTracks() {
     return Stream.of(
         StepsCase.builder()
-            .sessionAudio(encode("aac", ChannelLayout.MONO).bitrate(64_000L).build())
+            .sessionAudio(encode("aac", ChannelLayout.MONO).bitrate(96_000L).build())
             .entries(List.of(aacEntryBuilder().build()))
-            .steps(List.of("aac 1 64000"))
+            .steps(List.of("aac 1 96000"))
             .build(),
         StepsCase.builder()
-            .sessionAudio(copy("ac3").channels(1).bitrate(96_000L).build())
+            .sessionAudio(copy("ac3").channels(1).bitrate(128_000L).build())
             .entries(entries(AudioCodec.AC3, 6))
-            .steps(List.of("ac3 1 96000", "aac 1 64000"))
+            .steps(List.of("ac3 1 128000", "aac 1 96000"))
             .build());
   }
 
