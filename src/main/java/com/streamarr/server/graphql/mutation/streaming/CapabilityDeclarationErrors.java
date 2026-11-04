@@ -17,6 +17,7 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.Co
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecTierMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecTierNotApplicable;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CompatibleBasesMissing;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DirectPlaySampleEntriesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionLevelNotPositive;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionProfileOutsideCodecFamily;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.HlsAacEntryMissing;
@@ -24,6 +25,7 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.To
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyAudioEntries;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyCodecProfiles;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyCompatibleBases;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyDirectPlaySampleEntries;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyDolbyVisionProfiles;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyVideoDirectPlayContainers;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyVideoEntries;
@@ -44,6 +46,7 @@ public final class CapabilityDeclarationErrors {
   private static final String DOLBY_VISION_PROFILES = "dolbyVisionProfiles";
   private static final String MAX_LEVEL = "maxLevel";
   private static final String DIRECT_PLAY_CONTAINERS = "directPlayContainers";
+  private static final String DIRECT_PLAY_SAMPLE_ENTRIES = "directPlaySampleEntries";
   private static final String DELIVERY_MISSING =
       "List a source container for direct play, or apply the entry to HLS.";
   private static final String TOO_MANY = "List no more than %d values here.";
@@ -115,6 +118,12 @@ public final class CapabilityDeclarationErrors {
           tooMany(maximum, videoPath(entry, DIRECT_PLAY_CONTAINERS));
       case TooManyAudioDirectPlayContainers(var entry, var maximum) ->
           tooMany(maximum, audioPath(entry, DIRECT_PLAY_CONTAINERS));
+      case DirectPlaySampleEntriesMissing(var entry) ->
+          new CapabilityValuesRequiredError(
+              "List the sample entries that the player opens from MP4 or MOV.",
+              videoPath(entry, DIRECT_PLAY_SAMPLE_ENTRIES));
+      case TooManyDirectPlaySampleEntries(var entry, var maximum) ->
+          tooMany(maximum, videoPath(entry, DIRECT_PLAY_SAMPLE_ENTRIES));
     };
   }
 

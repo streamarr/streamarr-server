@@ -264,6 +264,7 @@ Each capability entry applies to HLS, to direct play from the source containers 
 
 In Original, the first format attempt direct-plays a file that the declaration covers (https://github.com/streamarr/streamarr-adr/blob/main/adr/0045-clients-direct-play-covered-files-and-use-platform-players.adoc[ADR 0045]).
 One video entry must accept the video stream and list the file's source container, and audio entries that list the container must accept every audio track.
+A video entry that lists MP4 or MOV also lists the sample entries that the player opens, and an MP4 or MOV file plays directly only when that entry lists its video stream's sample entry.
 A direct-play stream session needs no worker and starts no job attempt.
 `/api/stream/{sessionId}/source.{extension}` serves the source file with byte ranges, and each request passes the live playback-authority check.
 A failed direct play falls back to HLS at original quality.
@@ -332,7 +333,7 @@ The server sets that fact on each job that copies the stream, and the worker dro
 Version 7 adds the channel layout of each audio stream, as ffprobe names it, such as `quad` or `3.0(back)`, and its sample format and bit depth.
 It also adds seven dispositions of each audio stream, such as commentary and audio description, the minimum block size from each FLAC stream's STREAMINFO block, and the commentary disposition of each subtitle stream.
 For an MP4 or MOV file, version 7 also adds the sample entry that the file stores for each video stream, such as `hvc1` or `dvh1`, and the major brand of the file's `ftyp` box, such as `isom` or `qt  `.
-Direct play needs both facts, and the server reads neither yet.
+Direct play needs both facts. The server reads the sample entry, and does not read the major brand yet.
 The worker contract lets a job that encodes audio name its output channel layout, so the worker encodes with that layout instead of only a channel count; such a job can also name its output sample rate and bit depth, which otherwise follow ADR 0043's rules for the codec and the source.
 The server sets none of them yet.
 Version 2 is unused.

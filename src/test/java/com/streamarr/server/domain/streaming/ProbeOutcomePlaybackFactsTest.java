@@ -38,6 +38,31 @@ class ProbeOutcomePlaybackFactsTest {
             });
   }
 
+  // Direct play reads the sample entry of the stream that it would play (ADR 0045).
+  @Test
+  @DisplayName(
+      "Should report the chosen video stream's sample entry when another stream comes first")
+  void shouldReportTheChosenVideoStreamsSampleEntryWhenAnotherStreamComesFirst() {
+    var outcome =
+        ProbeOutcome.Success.builder()
+            .container(ProbeContainer.builder().majorBrand(Optional.of("isom")).build())
+            .streams(
+                List.of(
+                    recording().sampleEntry(Optional.of("avc1")).build(),
+                    recording().index(1).sampleEntry(Optional.of("avc3")).build()))
+            .keyframes(new KeyframeKnowledge.NotReported())
+            .chosenVideoStream(
+                Optional.of(
+                    new ChosenVideoStream(
+                        1, VideoPlaybackFactsFixture.declaredRateRule(new Fraction(25, 1)))))
+            .build();
+
+    var probe = outcome.mediaProbe();
+
+    assertThat(probe.videoPlaybackFacts().flatMap(VideoPlaybackFacts::sampleEntry))
+        .contains("avc3");
+  }
+
   @Test
   @DisplayName("Should carry the chosen stream's static HDR metadata when the probe stored it")
   void shouldCarryTheChosenStreamsStaticHdrMetadataWhenTheProbeStoredIt() {

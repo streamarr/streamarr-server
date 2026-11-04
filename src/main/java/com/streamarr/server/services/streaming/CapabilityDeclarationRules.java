@@ -5,6 +5,7 @@ import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
+import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.AudioChannelsNotPositive;
@@ -16,6 +17,7 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.Co
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecTierMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecTierNotApplicable;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CompatibleBasesMissing;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DirectPlaySampleEntriesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionLevelNotPositive;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionProfileOutsideCodecFamily;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.HlsAacEntryMissing;
@@ -23,6 +25,7 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.To
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyAudioEntries;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyCodecProfiles;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyCompatibleBases;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyDirectPlaySampleEntries;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyDolbyVisionProfiles;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyVideoDirectPlayContainers;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyVideoEntries;
@@ -79,6 +82,7 @@ final class CapabilityDeclarationRules {
     compatibleBaseRejection(index, entry).ifPresent(rejections::add);
     rejections.addAll(dolbyVisionRejections(index, entry));
     videoDeliveryRejection(index, entry).ifPresent(rejections::add);
+    sampleEntryRejection(index, entry).ifPresent(rejections::add);
     return rejections;
   }
 
@@ -222,6 +226,26 @@ final class CapabilityDeclarationRules {
 
     if (!entry.hls() && containers.isEmpty()) {
       return Optional.of(new VideoDeliveryMissing(index));
+    }
+
+    return Optional.empty();
+  }
+
+  // Only the player knows which sample entries it opens from MP4 or MOV, so an entry that lists
+  // either names them rather than accepting every sample entry by leaving the list out (ADR 0045).
+  // An overlong container list goes unchecked, so it never leads to this check.
+  private static Optional<CapabilityDeclarationRejection> sampleEntryRejection(
+      int index, VideoCapabilityEntry entry) {
+    var sampleEntries = entry.directPlaySampleEntries();
+    if (sampleEntries.size() > MAXIMUM_LIST_SIZE) {
+      return Optional.of(new TooManyDirectPlaySampleEntries(index, MAXIMUM_LIST_SIZE));
+    }
+
+    var containers = entry.directPlayContainers();
+    if (sampleEntries.isEmpty()
+        && containers.size() <= MAXIMUM_LIST_SIZE
+        && containers.stream().anyMatch(SourceContainer::storesSampleEntries)) {
+      return Optional.of(new DirectPlaySampleEntriesMissing(index));
     }
 
     return Optional.empty();

@@ -77,4 +77,10 @@ public sealed interface CapabilityDeclarationRejection extends StartPlaybackSess
 
   record TooManyAudioDirectPlayContainers(int audioEntry, int maximum)
       implements CapabilityDeclarationRejection {}
+
+  /** The video entry lists MP4 or MOV for direct play but no sample entry that its player opens. */
+  record DirectPlaySampleEntriesMissing(int videoEntry) implements CapabilityDeclarationRejection {}
+
+  record TooManyDirectPlaySampleEntries(int videoEntry, int maximum)
+      implements CapabilityDeclarationRejection {}
 }

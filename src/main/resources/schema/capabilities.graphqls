@@ -41,6 +41,8 @@ input VideoCapabilityEntryInput {
     hls: Boolean!
     "The source containers from which the player opens a stream that this entry accepts, by direct play. An entry that does not apply to HLS lists at least one."
     directPlayContainers: [SourceContainer!]! = []
+    "The sample entries that the player opens from MP4 or MOV by direct play. An entry that lists MP4 or MOV lists at least one, and the player plays each listed sample entry from a real test file. An MP4 or MOV file plays directly only when its video stream's sample entry is listed. The other source containers store no sample entry."
+    directPlaySampleEntries: [VideoSampleEntry!]! = []
 }
 
 "A codec profile that the player decodes, with the highest level and tier it accepts for that profile."
@@ -94,6 +96,32 @@ enum SourceContainer {
     ASF
     "Flash Video."
     FLV
+}
+
+"""
+A sample entry: the four characters that name a video stream's coding format in an MP4 or MOV file.
+"""
+enum VideoSampleEntry {
+    "H.264 with its parameter sets in the sample entry: avc1."
+    AVC1
+    "H.264 with its parameter sets allowed in the samples: avc3."
+    AVC3
+    "HEVC with its parameter sets in the sample entry: hvc1."
+    HVC1
+    "HEVC with its parameter sets allowed in the samples: hev1."
+    HEV1
+    "Dolby Vision over H.264 with its parameter sets in the sample entry: dva1."
+    DVA1
+    "Dolby Vision over H.264 with its parameter sets allowed in the samples: dvav."
+    DVAV
+    "Dolby Vision over HEVC with its parameter sets in the sample entry: dvh1."
+    DVH1
+    "Dolby Vision over HEVC with its parameter sets allowed in the samples: dvhe."
+    DVHE
+    "AV1: av01."
+    AV01
+    "Dolby Vision over AV1: dav1."
+    DAV1
 }
 
 "A video codec family that a client can declare."

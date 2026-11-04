@@ -51,6 +51,7 @@ import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.streaming.VideoSampleEntry;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import com.streamarr.server.fakes.FakeProfileRepository;
@@ -1004,6 +1005,7 @@ class StreamingResolverTest {
                 compatibleBases: [SDR, PQ, HLG]
                 dolbyVisionProfiles: [{profile: PROFILE_8_1, maxLevel: 6}]
                 hdr10Plus: true, hls: true, directPlayContainers: [MATROSKA, MP4]
+                directPlaySampleEntries: [HVC1, DVH1]
               }]
               audio: [
                 {codec: AAC, maxChannels: 2, hls: true}
@@ -1087,6 +1089,8 @@ class StreamingResolverTest {
                             .hls(true)
                             .directPlayContainers(
                                 List.of(SourceContainer.MATROSKA, SourceContainer.MP4))
+                            .directPlaySampleEntries(
+                                List.of(VideoSampleEntry.HVC1, VideoSampleEntry.DVH1))
                             .build()))
                 .audio(
                     List.of(

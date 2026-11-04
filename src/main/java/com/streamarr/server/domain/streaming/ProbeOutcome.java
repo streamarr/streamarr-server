@@ -90,6 +90,7 @@ public sealed interface ProbeOutcome {
                           .videoProperties(video.videoProperties())
                           .masteringDisplay(video.masteringDisplay())
                           .contentLightLevel(video.contentLightLevel())
+                          .sampleEntry(video.sampleEntry())
                           .build()))
           .build();
     }

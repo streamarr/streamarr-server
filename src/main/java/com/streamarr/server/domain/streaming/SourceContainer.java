@@ -46,6 +46,11 @@ public enum SourceContainer {
           "asf", ASF,
           "flv", FLV);
 
+  /** Whether the container stores a sample entry for each video stream, as MP4 and MOV do. */
+  public boolean storesSampleEntries() {
+    return this == MP4 || this == MOV;
+  }
+
   /**
    * The source container that ffprobe's demuxer name names, or empty when the name names no single
    * source container, such as the mov demuxer's name for MP4 and MOV.
