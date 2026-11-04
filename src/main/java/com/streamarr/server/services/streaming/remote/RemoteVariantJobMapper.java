@@ -5,7 +5,6 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
-import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ChromaticityCoordinates;
 import com.streamarr.server.domain.streaming.ContentLightLevel;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
@@ -169,7 +168,7 @@ final class RemoteVariantJobMapper {
 
     video.setOutputDynamicRange(RemoteDynamicRangeMapper.toProto(copy.dynamicRange()));
     copy.bitstreamRewrites().stream()
-        .map(RemoteVariantJobMapper::bitstreamRewrite)
+        .map(RemoteBitstreamRewriteMapper::toProto)
         .forEach(video::addBitstreamRewrites);
     copy.masteringDisplay()
         .map(RemoteVariantJobMapper::masteringDisplay)
@@ -177,20 +176,6 @@ final class RemoteVariantJobMapper {
     copy.contentLightLevel()
         .map(RemoteVariantJobMapper::contentLightLevel)
         .ifPresent(video::setContentLightLevel);
-  }
-
-  @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static com.streamarr.transcode.v1.BitstreamRewrite bitstreamRewrite(
-      BitstreamRewrite rewrite) {
-    return switch (rewrite) {
-      case STRIP_DOLBY_VISION ->
-          com.streamarr.transcode.v1.BitstreamRewrite.BITSTREAM_REWRITE_STRIP_DOLBY_VISION;
-      case STRIP_HDR10_PLUS ->
-          com.streamarr.transcode.v1.BitstreamRewrite.BITSTREAM_REWRITE_STRIP_HDR10_PLUS;
-      case NORMALIZE_DOLBY_VISION_RECORD ->
-          com.streamarr.transcode.v1.BitstreamRewrite
-              .BITSTREAM_REWRITE_NORMALIZE_DOLBY_VISION_RECORD;
-    };
   }
 
   // The domain values already use the units of the SEI fields and the contract (ADR 0036).
