@@ -159,8 +159,8 @@ class DirectPlaySourceServiceTest {
   }
 
   @Test
-  @DisplayName("Should count the source as an open response until it closes")
-  void shouldCountTheSourceAsAnOpenResponseUntilItCloses() {
+  @DisplayName("Should count an open response until the source closes when a source opens")
+  void shouldCountAnOpenResponseUntilTheSourceClosesWhenSourceOpens() {
     var session = directPlaySessionBuilder().sourcePath(sourceFile).build();
     streamingService.addSession(session);
 
