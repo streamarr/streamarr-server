@@ -22,6 +22,7 @@ import com.streamarr.server.jooq.generated.tables.Household;
 import com.streamarr.server.jooq.generated.tables.HouseholdGuard;
 import com.streamarr.server.jooq.generated.tables.Image;
 import com.streamarr.server.jooq.generated.tables.ItemResult;
+import com.streamarr.server.jooq.generated.tables.LanguageOverride;
 import com.streamarr.server.jooq.generated.tables.Library;
 import com.streamarr.server.jooq.generated.tables.LibraryMetadata;
 import com.streamarr.server.jooq.generated.tables.LibraryOperation;
@@ -128,6 +129,7 @@ public class Public extends SchemaImpl {
             HouseholdGuard.HOUSEHOLD_GUARD,
             Image.IMAGE,
             ItemResult.ITEM_RESULT,
+            LanguageOverride.LANGUAGE_OVERRIDE,
             Library.LIBRARY,
             LibraryMetadata.LIBRARY_METADATA,
             LibraryOperation.LIBRARY_OPERATION,

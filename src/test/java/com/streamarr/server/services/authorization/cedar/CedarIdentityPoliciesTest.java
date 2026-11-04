@@ -270,6 +270,82 @@ class CedarIdentityPoliciesTest {
   }
 
   @Nested
+  @DisplayName("Language preferences")
+  class LanguagePreferences {
+
+    @Test
+    @DisplayName("Should allow language preferences when the Profile is the selected one")
+    void shouldAllowLanguagePreferencesWhenTheProfileIsTheSelectedOne() {
+      var identity =
+          identityBuilder().scope(TokenScope.PROFILE).profileId(personal.getId()).build();
+
+      assertThat(decide(identity, new Intent.SetLanguagePreferences(personal.getId())))
+          .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should deny language preferences when the Profile is not the selected one")
+    void shouldDenyLanguagePreferencesWhenTheProfileIsNotTheSelectedOne() {
+      var other =
+          profiles.save(
+              ProfileFixture.defaultProfileBuilder().householdId(account.getHouseholdId()).build());
+      shares.share(other.getId(), account.getHouseholdId(), false);
+      managers.save(
+          ProfileManager.builder().accountId(account.getId()).profileId(other.getId()).build());
+      account.setServerAdmin(true);
+      accounts.save(account);
+      var identity =
+          identityBuilder().scope(TokenScope.PROFILE).profileId(personal.getId()).build();
+
+      assertThat(decide(identity, new Intent.SetLanguagePreferences(other.getId())))
+          .isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.SetLanguagePreferences(personal.getId())))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should deny language preferences when the selected Profile is no longer shared")
+    void shouldDenyLanguagePreferencesWhenTheSelectedProfileIsNoLongerShared() {
+      var shared =
+          profiles.save(
+              ProfileFixture.defaultProfileBuilder().householdId(account.getHouseholdId()).build());
+      var share = shares.share(shared.getId(), account.getHouseholdId(), false);
+      var identity = identityBuilder().scope(TokenScope.PROFILE).profileId(shared.getId()).build();
+
+      share.setStatus(ProfileShareStatus.ENDED);
+      share.setEndedAt(Instant.now());
+      shares.save(share);
+
+      assertThat(decide(identity, new Intent.SetLanguagePreferences(shared.getId())))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should deny language preferences when the Account may no longer use the context Household")
+    void shouldDenyLanguagePreferencesWhenTheAccountMayNoLongerUseTheContextHousehold() {
+      var identity =
+          identityBuilder()
+              .scope(TokenScope.PROFILE)
+              .contextHouseholdId(visitedHouseholdId)
+              .profileId(personal.getId())
+              .build();
+
+      assertThat(decide(identity, new Intent.SetLanguagePreferences(personal.getId())))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should deny language preferences when the selected Profile is unknown")
+    void shouldDenyLanguagePreferencesWhenTheSelectedProfileIsUnknown() {
+      var missing = UUID.randomUUID();
+      var identity = identityBuilder().scope(TokenScope.PROFILE).profileId(missing).build();
+
+      assertThat(decide(identity, new Intent.SetLanguagePreferences(missing))).isEqualTo(DENIED);
+    }
+  }
+
+  @Nested
   @DisplayName("Reads")
   class Reads {
 

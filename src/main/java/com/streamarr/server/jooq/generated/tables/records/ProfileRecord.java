@@ -190,6 +190,48 @@ public class ProfileRecord extends UpdatableRecordImpl<ProfileRecord> {
         return (Boolean) get(11);
     }
 
+    /**
+     * Setter for <code>public.profile.audio_languages</code>.
+     */
+    public void setAudioLanguages(String[] value) {
+        set(12, value);
+    }
+
+    /**
+     * Getter for <code>public.profile.audio_languages</code>.
+     */
+    public String[] getAudioLanguages() {
+        return (String[]) get(12);
+    }
+
+    /**
+     * Setter for <code>public.profile.subtitle_language</code>.
+     */
+    public void setSubtitleLanguage(String value) {
+        set(13, value);
+    }
+
+    /**
+     * Getter for <code>public.profile.subtitle_language</code>.
+     */
+    public String getSubtitleLanguage() {
+        return (String) get(13);
+    }
+
+    /**
+     * Setter for <code>public.profile.subtitle_mode</code>.
+     */
+    public void setSubtitleMode(String value) {
+        set(14, value);
+    }
+
+    /**
+     * Getter for <code>public.profile.subtitle_mode</code>.
+     */
+    public String getSubtitleMode() {
+        return (String) get(14);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -213,7 +255,7 @@ public class ProfileRecord extends UpdatableRecordImpl<ProfileRecord> {
     /**
      * Create a detached, initialised ProfileRecord
      */
-    public ProfileRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID householdId, String name, ProfileKind kind, Integer maximumAllowedRatingAge, String pinHash, String picture, Boolean restricted) {
+    public ProfileRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID householdId, String name, ProfileKind kind, Integer maximumAllowedRatingAge, String pinHash, String picture, Boolean restricted, String[] audioLanguages, String subtitleLanguage, String subtitleMode) {
         super(Profile.PROFILE);
 
         setId(id);
@@ -228,6 +270,9 @@ public class ProfileRecord extends UpdatableRecordImpl<ProfileRecord> {
         setPinHash(pinHash);
         setPicture(picture);
         setRestricted(restricted);
+        setAudioLanguages(audioLanguages);
+        setSubtitleLanguage(subtitleLanguage);
+        setSubtitleMode(subtitleMode);
         resetTouchedOnNotNull();
     }
 }

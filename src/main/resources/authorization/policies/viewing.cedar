@@ -41,3 +41,17 @@ when {
   principal has selectedProfile && principal.selectedProfile == resource &&
   resource has availableInContext && resource.availableInContext
 };
+
+// ADR 0043: a viewer sets the language preferences of the Profile it watches as, and that
+// Profile's overrides of titles, while the Profile is still available in the context Household.
+@id("set-language-preferences-of-the-selected-available-profile")
+permit (
+  principal,
+  action == Streamarr::Action::"setLanguagePreferences",
+  resource
+)
+when {
+  principal has contextHouseholdUsable && principal.contextHouseholdUsable &&
+  principal has selectedProfile && principal.selectedProfile == resource &&
+  resource has availableInContext && resource.availableInContext
+};
