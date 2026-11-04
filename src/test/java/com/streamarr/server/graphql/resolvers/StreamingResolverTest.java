@@ -49,6 +49,7 @@ import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
+import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
@@ -397,6 +398,83 @@ class StreamingResolverTest {
         .isEqualTo("COPY_FAILED");
   }
 
+  // T13: a direct-play stream session's range is the source's compatible base, and Dolby Vision
+  // without one is PQ, as a copy's is.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("sourceRanges")
+  @DisplayName("Should expose the source URL, container and range when the session direct-plays")
+  void shouldExposeTheSourceUrlContainerAndRangeWhenTheSessionDirectPlays(
+      String scenario, VideoDynamicRange range, String expectedRange) {
+    var session = buildSession(UUID.randomUUID());
+    var probe = session.getMediaProbe();
+    STUB_SERVICE.setNextResult(
+        sessionBuilderLike(session)
+            .transcodeDecision(null)
+            .delivery(StreamDelivery.DIRECT_PLAY)
+            .sourceContainer(SourceContainer.MATROSKA)
+            .mediaProbe(
+                MediaProbe.builder()
+                    .keyframes(probe.keyframes())
+                    .duration(probe.duration())
+                    .width(probe.width())
+                    .height(probe.height())
+                    .videoCodec(probe.videoCodec())
+                    .videoPlaybackFacts(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                                .dynamicRange(range)
+                                .build()))
+                    .build())
+            .build());
+
+    var context =
+        dgsQueryExecutor.executeAndGetDocumentContext(
+            """
+            mutation {
+              createPlaybackSession(
+                input: {mediaFileId: "%s", options: {quality: ORIGINAL}, capabilities: %s}
+              ) {
+                playbackSession {
+                  currentFormatAttempt {
+                    ... on ReadyPlaybackFormatAttempt {
+                      streamSession {
+                        __typename id streamUrl
+                        ... on DirectPlayStreamSession { sourceContainer videoRange }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """
+                .formatted(UUID.randomUUID(), CAPABILITIES));
+
+    var streamSession = CREATED_PLAYBACK + ".currentFormatAttempt.streamSession";
+    assertThat(context.read(streamSession + ".__typename", String.class))
+        .isEqualTo("DirectPlayStreamSession");
+    assertThat(context.read(streamSession + ".sourceContainer", String.class))
+        .isEqualTo("MATROSKA");
+    assertThat(context.read(streamSession + ".videoRange", String.class)).isEqualTo(expectedRange);
+    var streamUrl = context.read(streamSession + ".streamUrl", String.class);
+    var sessionId = context.read(streamSession + ".id", String.class);
+    assertThat(streamUrl).startsWith("/api/stream/" + sessionId + "/source.mkv?t=");
+    var decoded = decodeToken(streamUrl.substring(streamUrl.indexOf("?t=") + 3));
+    assertThat(Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt()))
+        .isEqualTo(probe.duration().plus(streamingProperties.sessionRetention()));
+  }
+
+  static Stream<Arguments> sourceRanges() {
+    return Stream.of(
+        Arguments.of(
+            "SDR", VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.SDR), "SDR"),
+        Arguments.of(
+            "PQ", VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ), "PQ"),
+        Arguments.of(
+            "HLG", VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.HLG), "HLG"),
+        Arguments.of(
+            "Dolby Vision profile 5", VideoPlaybackFactsFixture.dolbyVisionProfile5(), "PQ"));
+  }
+
   // ADR 0045: the HLS format attempt after a failed direct play keeps Original while it is pending,
   // and its encode plays in Auto with a notice.
   @Test
@@ -487,7 +565,7 @@ class StreamingResolverTest {
               id requestedChoice playbackChoice formatChange offeredChoices
               currentFormatAttempt {
                 ... on ReadyPlaybackFormatAttempt {
-                  streamSession { id videoRange mediaEndSeconds }
+                  streamSession { id ... on HlsStreamSession { videoRange mediaEndSeconds } }
                 }
               }
             }
@@ -700,7 +778,9 @@ class StreamingResolverTest {
             id formatAttemptCount maximumFormatAttempts playbackChoice formatChange
             currentFormatAttempt {
               __typename
-              ... on ReadyPlaybackFormatAttempt { streamSession { id streamUrl videoRange } }
+              ... on ReadyPlaybackFormatAttempt {
+                streamSession { id streamUrl ... on HlsStreamSession { videoRange } }
+              }
               ... on FailedPlaybackFormatAttempt { error { __typename ... on MutationError { message } } }
             }
           }
@@ -931,7 +1011,14 @@ class StreamingResolverTest {
               ]
             }
           }) {
-            playbackSession { id currentFormatAttempt { ... on ReadyPlaybackFormatAttempt { streamSession { id streamUrl transcodeMode } } } }
+            playbackSession {
+              id
+              currentFormatAttempt {
+                ... on ReadyPlaybackFormatAttempt {
+                  streamSession { __typename id streamUrl ... on HlsStreamSession { transcodeMode } }
+                }
+              }
+            }
             userErrors { __typename }
           }
         }
@@ -943,6 +1030,11 @@ class StreamingResolverTest {
                 "data.createPlaybackSession.playbackSession.currentFormatAttempt.streamSession.id",
                 String.class))
         .isEqualTo(STUB_SERVICE.getAllSessions().iterator().next().getSessionId().toString());
+    assertThat(
+            context.read(
+                CREATED_PLAYBACK + ".currentFormatAttempt.streamSession['__typename']",
+                String.class))
+        .isEqualTo("HlsStreamSession");
     assertThat(
             context.read(
                 "data.createPlaybackSession.playbackSession.currentFormatAttempt.streamSession.transcodeMode",
@@ -1304,8 +1396,13 @@ class StreamingResolverTest {
     return sessionBuilderLike(buildSession(sessionId)).transcodeDecision(decision).build();
   }
 
+  // A direct-play stream session carries no transcode decision, because nothing transcodes.
   private StreamSession buildDirectPlaySession(UUID sessionId) {
-    return sessionBuilderLike(buildSession(sessionId)).delivery(StreamDelivery.DIRECT_PLAY).build();
+    return sessionBuilderLike(buildSession(sessionId))
+        .transcodeDecision(null)
+        .delivery(StreamDelivery.DIRECT_PLAY)
+        .sourceContainer(SourceContainer.MATROSKA)
+        .build();
   }
 
   private static StreamSession.StreamSessionBuilder sessionBuilderLike(StreamSession session) {
@@ -1739,6 +1836,7 @@ class StreamingResolverTest {
               .mediaProbe(nextResult.getMediaProbe())
               .transcodeDecision(nextResult.getTranscodeDecision())
               .delivery(nextResult.getDelivery())
+              .sourceContainer(nextResult.getSourceContainer().orElse(null))
               .options(command.options())
               .createdAt(Instant.now())
               .build();

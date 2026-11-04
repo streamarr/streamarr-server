@@ -27,9 +27,15 @@ body:graphql {
           }
           ... on ReadyPlaybackFormatAttempt {
             streamSession {
+              __typename
               id
               streamUrl
-              transcodeMode
+              ... on HlsStreamSession {
+                transcodeMode
+              }
+              ... on DirectPlayStreamSession {
+                sourceContainer
+              }
             }
           }
           ... on FailedPlaybackFormatAttempt {

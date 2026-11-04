@@ -27,6 +27,7 @@ public class StreamSession {
   @NonNull private final PlaybackAuthority authority;
   private final Path sourcePath;
   private final MediaProbe mediaProbe;
+  // Null for a direct-play stream session, which starts no job attempt.
   private final TranscodeDecision transcodeDecision;
   private final StreamingOptions options;
   private final Instant createdAt;
@@ -65,6 +66,21 @@ public class StreamSession {
 
   public Optional<SourceContainer> getSourceContainer() {
     return Optional.ofNullable(sourceContainer);
+  }
+
+  /**
+   * The dynamic range of the video that the stream session sends. A direct-play stream session
+   * sends the source's video, which keeps its compatible base as a copy does.
+   */
+  public VideoRange getVideoRange() {
+    if (delivery == StreamDelivery.HLS) {
+      return transcodeDecision.videoRange();
+    }
+
+    return mediaProbe
+        .videoPlaybackFacts()
+        .map(facts -> VideoRange.ofCompatibleBase(facts.dynamicRange().compatibleBase()))
+        .orElse(VideoRange.SDR);
   }
 
   public boolean isOwnedBy(UUID candidateProfileId) {

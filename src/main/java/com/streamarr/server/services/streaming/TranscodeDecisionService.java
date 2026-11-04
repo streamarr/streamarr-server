@@ -14,10 +14,12 @@ import com.streamarr.server.domain.streaming.EncodedVariantRequest;
 import com.streamarr.server.domain.streaming.HlsAudioEncodes;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePositions;
+import com.streamarr.server.domain.streaming.MediaFileProbePropertyIssue;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.PlannedVideoOutput;
 import com.streamarr.server.domain.streaming.Presence;
+import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.StreamCopySegments;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -27,6 +29,7 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
+import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.streaming.VideoStreamCopy;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -68,6 +71,46 @@ public class TranscodeDecisionService {
 
   private final StreamingProperties properties;
   private final MeterRegistry meterRegistry;
+
+  /**
+   * The source container from which the stream session direct-plays the source file (ADR 0045), or
+   * empty when it plays over HLS. Only a format attempt that may direct-play does, and only in
+   * Original. The declaration must cover the video and every audio track from the file's source
+   * container (ADR 0049). An interlaced source, a property issue that rules out a copy (ADR 0049)
+   * and a forced image subtitle that applies (#506) keep the file on HLS. The keyframe grid, the
+   * interim HDR copy rule and the codec string bind only HLS copies. A copy in Original ignores the
+   * viewer's limits (ADR 0050), and so does direct play.
+   */
+  public Optional<SourceContainer> decideDirectPlay(@NonNull DirectPlayRequest request) {
+    if (request.videoFormatConstraint() != VideoFormatConstraint.DIRECT_PLAY_OR_COPY_OR_ENCODE
+        || request.viewerLimits().quality() != VideoQuality.ORIGINAL) {
+      return Optional.empty();
+    }
+
+    var source = request.source();
+    if (!permitsDirectPlay(source)) {
+      return Optional.empty();
+    }
+
+    return source
+        .containerFormat()
+        .flatMap(SourceContainer::ofProbedFormat)
+        .filter(container -> request.capabilityDeclaration().acceptsDirectPlay(source, container));
+  }
+
+  // The worker deinterlaces an interlaced source for HLS, and no player's handling of an
+  // interlaced file was measured.
+  private static boolean permitsDirectPlay(MediaProbe source) {
+    return !source.isInterlaced()
+        && !hasPropertyIssueThatRulesOutACopy(source)
+        && source.forcedImageSubtitleOfSelectedAudio().isEmpty();
+  }
+
+  private static boolean hasPropertyIssueThatRulesOutACopy(MediaProbe source) {
+    return source.videoPlaybackFacts().stream()
+        .flatMap(facts -> MediaFileProbePropertyIssue.foundIn(facts.dynamicRange()).stream())
+        .anyMatch(MediaFileProbePropertyIssue::rulesOutCopy);
+  }
 
   /**
    * A copy needs a video capability entry for HLS that accepts the copy, and a source that fits the

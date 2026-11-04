@@ -81,6 +81,25 @@ public record VideoCapabilityEntry(
   }
 
   /**
+   * Whether this entry accepts direct play of the video stream from the source container (ADR
+   * 0049): the entry lists the container and accepts every property of the stream as it is. A
+   * stream that a probe version 4 outcome describes has no codec profile to check, so it never
+   * plays directly.
+   */
+  public boolean acceptsDirectPlay(
+      @NonNull VideoStreamCopy video, @NonNull SourceContainer container) {
+    if (!directPlayContainers.contains(container) || video.codecFamily() != codecFamily) {
+      return false;
+    }
+
+    return video
+        .videoProperties()
+        .filter(properties -> acceptsCodingAndPicture(video, properties))
+        .filter(_ -> acceptsDirectPlayDynamicRange(video, container))
+        .isPresent();
+  }
+
+  /**
    * The largest encoded output within the request's bounds that this entry accepts over HLS (ADR
    * 0049), or empty when this entry accepts no encode of the request. The output keeps the source's
    * aspect ratio, and the entry's maximums bound it in the source's orientation. A frame rate above
@@ -182,11 +201,14 @@ public record VideoCapabilityEntry(
   // An unknown codec level or tier fits wherever the known picture size and frame rate fit, so it
   // passes its own check and leaves the decision to those maximums.
   private boolean acceptsEveryProperty(VideoStreamCopy copy, VideoStreamProperties properties) {
+    return acceptsCodingAndPicture(copy, properties) && acceptsDynamicRange(copy);
+  }
+
+  private boolean acceptsCodingAndPicture(VideoStreamCopy copy, VideoStreamProperties properties) {
     return acceptsCodecProfile(properties)
         && acceptsBitDepth(copy.bitDepth())
         && acceptsPictureSize(copy.decodedSize())
-        && acceptsFrameRate(copy.frameRate())
-        && acceptsDynamicRange(copy);
+        && acceptsFrameRate(copy.frameRate());
   }
 
   private boolean acceptsCodecProfile(VideoStreamProperties properties) {
@@ -228,10 +250,31 @@ public record VideoCapabilityEntry(
 
   // Declaring a compatible base declares neither Dolby Vision nor HDR10+ (ADR 0049).
   private boolean acceptsDynamicRange(VideoStreamCopy copy) {
-    var range = copy.dynamicRange();
-    return acceptsDolbyVision(copy)
-        && acceptsCompatibleBase(range.compatibleBase())
-        && acceptsHdr10Plus(range.hdr10Plus());
+    return acceptsDolbyVision(copy) && acceptsBaseAndHdr10Plus(copy.dynamicRange());
+  }
+
+  private boolean acceptsDirectPlayDynamicRange(VideoStreamCopy video, SourceContainer container) {
+    return acceptsDirectPlayDolbyVision(video, container)
+        && acceptsBaseAndHdr10Plus(video.dynamicRange());
+  }
+
+  private boolean acceptsBaseAndHdr10Plus(VideoDynamicRange range) {
+    return acceptsCompatibleBase(range.compatibleBase()) && acceptsHdr10Plus(range.hdr10Plus());
+  }
+
+  // Direct play sends the stream under its own sample entry and configuration record, so a profile
+  // 5 or 10.0 stream plays where the entry lists its profile. Until the probe reports the source
+  // sample entry, a profile 8.2 or 9 stream plays directly only from Matroska: in MP4 or MOV it may
+  // sit under dvh1 or dvav, which no player plays as its SDR base (streamarr/streamarr-server#395).
+  private boolean acceptsDirectPlayDolbyVision(VideoStreamCopy video, SourceContainer container) {
+    return switch (CopiedDolbyVision.of(video.codecFamily(), video.dynamicRange())) {
+      case CopiedDolbyVision.None _ -> true;
+      case CopiedDolbyVision.KeptUnderSdrBase _ -> container == SourceContainer.MATROSKA;
+      case CopiedDolbyVision.Declarable(var profile, var level) -> listsDolbyVision(profile, level);
+      case CopiedDolbyVision.NeedsDolbyVisionSampleEntry(var profile, var level) ->
+          listsDolbyVision(profile, level);
+      case CopiedDolbyVision.Undeclarable _ -> false;
+    };
   }
 
   private boolean acceptsDolbyVision(VideoStreamCopy copy) {

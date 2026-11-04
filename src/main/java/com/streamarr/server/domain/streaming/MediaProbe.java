@@ -6,6 +6,7 @@ import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
+import java.util.Set;
 import lombok.Builder;
 import lombok.NonNull;
 
@@ -33,6 +34,10 @@ public record MediaProbe(
     @NonNull KeyframeKnowledge keyframes,
     @NonNull Optional<VideoPlaybackFacts> videoPlaybackFacts,
     @NonNull Optional<StreamMeasurements> streamMeasurements) {
+
+  // ffprobe's names for PGS, VobSub and DVB subtitles.
+  private static final Set<String> IMAGE_SUBTITLE_CODECS =
+      Set.of("hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle");
 
   public MediaProbe {
     if (audioChannels == null) {
@@ -75,6 +80,24 @@ public record MediaProbe(
 
   public List<StreamInfo> audioStreams() {
     return streams.stream().filter(s -> "audio".equals(s.codecType())).toList();
+  }
+
+  /**
+   * The forced image subtitle track that applies while subtitles are off: a forced PGS, VobSub or
+   * DVB track in the language of the selected audio, which is the first audio stream
+   * (streamarr/streamarr-server#506). Empty when the selected audio names no language.
+   */
+  public Optional<StreamInfo> forcedImageSubtitleOfSelectedAudio() {
+    var language = audioStreams().stream().findFirst().flatMap(StreamInfo::language);
+    if (language.isEmpty()) {
+      return Optional.empty();
+    }
+
+    return subtitleStreams().stream()
+        .filter(StreamInfo::isForced)
+        .filter(stream -> stream.codec().filter(IMAGE_SUBTITLE_CODECS::contains).isPresent())
+        .filter(stream -> stream.language().filter(language.get()::equalsIgnoreCase).isPresent())
+        .findFirst();
   }
 
   public List<StreamInfo> subtitleStreams() {

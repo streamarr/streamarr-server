@@ -123,7 +123,13 @@ public class PlaybackSessionService implements AutoCloseable {
     var childId = UUID.randomUUID();
     var playback = register(command, childId);
     try {
-      var outcome = streamingService.createSession(childCommand(playback, childId).build());
+      // Only the first format attempt may direct-play: picking Original again starts a new playback
+      // session (ADR 0045, ADR 0052).
+      var outcome =
+          streamingService.createSession(
+              childCommand(playback, childId)
+                  .videoFormatConstraint(VideoFormatConstraint.DIRECT_PLAY_OR_COPY_OR_ENCODE)
+                  .build());
       return switch (outcome) {
         case Outcome.Accepted(var session) -> {
           offerChoicesOf(playback, session);
@@ -652,7 +658,9 @@ public class PlaybackSessionService implements AutoCloseable {
   private static void adopt(
       PlaybackSession playback, StreamSession session, PlayingChoice choiceWhenEncoding) {
     playback.current = new PlaybackFormatAttempt.Ready(session);
-    if (!session.getTranscodeDecision().transcodeMode().copiesVideo()) {
+    // A direct-play stream session sends the source as it is and holds no transcode decision.
+    if (session.getDelivery() == StreamDelivery.HLS
+        && !session.getTranscodeDecision().transcodeMode().copiesVideo()) {
       playback.choice = choiceWhenEncoding;
     }
   }
