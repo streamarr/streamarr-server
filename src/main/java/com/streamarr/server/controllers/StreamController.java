@@ -229,7 +229,7 @@ public class StreamController {
       return ResponseEntity.notFound().build();
     }
 
-    var resource = new SourceFileResource(source.get());
+    var resource = sourceFileResource(source.get());
     // Spring's own 416 still writes the whole file as its body.
     if (range != null && !isSatisfiable(range, resource)) {
       return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
@@ -338,18 +338,13 @@ public class StreamController {
 
   // Spring labels each part of a multi-range answer by the resource's name, so the source file
   // takes the name its container gives it, and the file's own name never sets a media type.
-  private static final class SourceFileResource extends FileSystemResource {
-
-    private final String filename;
-
-    private SourceFileResource(DirectPlaySource source) {
-      super(source.path());
-      filename = "source." + source.container().getExtension();
-    }
-
-    @Override
-    public String getFilename() {
-      return filename;
-    }
+  private static Resource sourceFileResource(DirectPlaySource source) {
+    var filename = "source." + source.container().getExtension();
+    return new FileSystemResource(source.path()) {
+      @Override
+      public String getFilename() {
+        return filename;
+      }
+    };
   }
 }
