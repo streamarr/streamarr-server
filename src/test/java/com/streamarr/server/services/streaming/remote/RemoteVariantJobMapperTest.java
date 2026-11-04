@@ -47,6 +47,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
+import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
@@ -92,6 +93,41 @@ class RemoteVariantJobMapperTest {
     var job = mapper.map(request);
 
     assertThat(job.getDecision().getContainer()).isEqualTo(ContainerFormat.CONTAINER_FORMAT_FMP4);
+  }
+
+  @Test
+  @DisplayName(
+      "Should name the session's audio stream when the decision plays a later audio stream")
+  void shouldNameTheSessionsAudioStreamWhenTheDecisionPlaysALaterAudioStream() {
+    var job = mapper.map(remuxRequest(OptionalInt.of(3), AudioDecision.stereoAac()));
+
+    assertThat(job.getDecision().getAudio().getStreamIndex()).isEqualTo(3);
+  }
+
+  @Test
+  @DisplayName("Should leave the audio stream out when the decision carries no audio")
+  void shouldLeaveTheAudioStreamOutWhenTheDecisionCarriesNoAudio() {
+    var job = mapper.map(remuxRequest(OptionalInt.empty(), AudioDecision.none()));
+
+    assertThat(job.getDecision().getAudio().hasStreamIndex()).isFalse();
+  }
+
+  private static TranscodeRequest remuxRequest(OptionalInt audioStreamIndex, AudioDecision audio) {
+    return TranscodeRequest.builder()
+        .sessionId(UUID.randomUUID())
+        .sourcePath(SOURCE_ROOT.resolve("movie.mkv"))
+        .variantLabel(StreamSession.defaultVariant())
+        .transcodeDecision(
+            TranscodeDecision.builder()
+                .transcodeMode(TranscodeMode.REMUX)
+                .videoCodecFamily("h264")
+                .audioDecision(audio)
+                .audioStreamIndex(audioStreamIndex)
+                .subtitleDecision(SubtitleDecision.exclude())
+                .videoSource(Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()))
+                .build())
+        .encoderPreset(EncoderPreset.FASTER)
+        .build();
   }
 
   @ParameterizedTest(name = "{0} → {1}")

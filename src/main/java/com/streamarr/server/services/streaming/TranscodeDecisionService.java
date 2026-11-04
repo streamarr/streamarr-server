@@ -186,7 +186,17 @@ public class TranscodeDecisionService {
             .videoDolbyVisionOutput(copyPlan.flatMap(CopyPlan::dolbyVisionOutput))
             .reasons(
                 afterDirectPlayRefusals(request, reasons(videoCopy, sessionAudio, audioDecision)))
+            .audioStreamIndex(audioStreamIndex(source, audioDecision))
             .build());
+  }
+
+  // Every decision about the audio reads the source's first audio stream, the session's.
+  private static OptionalInt audioStreamIndex(MediaProbe source, AudioDecision audio) {
+    if (audio.mode() == AudioMode.NONE) {
+      return OptionalInt.empty();
+    }
+
+    return source.audioStreams().stream().mapToInt(StreamInfo::index).findFirst();
   }
 
   // Video reasons come first. Audio that a copy lowers below the session's audio for the viewer's

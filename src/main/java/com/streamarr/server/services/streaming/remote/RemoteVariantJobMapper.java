@@ -3,7 +3,6 @@ package com.streamarr.server.services.streaming.remote;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ChannelLayout;
 import com.streamarr.server.domain.streaming.ChromaticityCoordinates;
@@ -230,7 +229,7 @@ final class RemoteVariantJobMapper {
     return com.streamarr.transcode.v1.TranscodeDecision.newBuilder()
         .setMode(mode(decision.transcodeMode()))
         .setVideo(video)
-        .setAudio(audio(decision.audioDecision()))
+        .setAudio(audio(decision))
         .setSubtitle(subtitle(decision.subtitleDecision()))
         // Every HLS variant is fMP4 (ADR 0037); the additive contract keeps the field.
         .setContainer(ContainerFormat.CONTAINER_FORMAT_FMP4)
@@ -238,7 +237,8 @@ final class RemoteVariantJobMapper {
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static com.streamarr.transcode.v1.AudioDecision audio(AudioDecision decision) {
+  private static com.streamarr.transcode.v1.AudioDecision audio(TranscodeDecision transcode) {
+    var decision = transcode.audioDecision();
     var audio =
         com.streamarr.transcode.v1.AudioDecision.newBuilder()
             .setMode(audioMode(decision.mode()))
@@ -252,6 +252,7 @@ final class RemoteVariantJobMapper {
         .channelLayout()
         .map(RemoteVariantJobMapper::channelLayout)
         .ifPresent(audio::setChannelLayout);
+    transcode.audioStreamIndex().ifPresent(audio::setStreamIndex);
     return audio.build();
   }
 

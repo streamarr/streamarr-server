@@ -4538,6 +4538,10 @@ class HlsStreamingServiceTest {
               assertThat(ready.session().getMediaProbe().sessionAudioTrackPosition()).hasValue(1);
               assertThat(service.getAllSessions()).containsExactly(ready.session());
             });
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(request -> request.transcodeDecision().audioStreamIndex())
+        .isEqualTo(OptionalInt.of(2));
   }
 
   private PlaybackSessionService logicalPlayback() {
@@ -5547,6 +5551,10 @@ class HlsStreamingServiceTest {
         .extracting(StreamInfo::language)
         .isEqualTo(Optional.of("fra"));
     assertThat(session.getMediaProbe().sessionAudioTrackPosition()).hasValue(1);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(request -> request.transcodeDecision().audioStreamIndex())
+        .isEqualTo(OptionalInt.of(2));
   }
 
   @Test
