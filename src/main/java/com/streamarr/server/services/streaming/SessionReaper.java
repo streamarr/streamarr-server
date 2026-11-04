@@ -2,7 +2,9 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.services.serversettings.ServerSettingsService;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.Builder;
@@ -21,15 +23,17 @@ public class SessionReaper {
   private final StreamingProperties properties;
   private final ProducerLifecycleService producerLifecycle;
   private final PlaybackSessionService playbackSessionService;
+  private final ServerSettingsService serverSettings;
   private final Clock clock;
 
   @Scheduled(fixedDelayString = "${streaming.reaper-interval-ms:15000}")
   public void reapSessions() {
     var now = clock.instant();
-    reapExpiredPlayback(now);
+    var retention = serverSettings.idleSegmentRetention();
+    reapExpiredPlayback(now, retention);
     for (var session : streamingService.getAllSessions()) {
       try {
-        processSession(session, now);
+        processSession(session, now, retention);
       } catch (RuntimeException e) {
         log.error("Failed to reap session {}", session.getSessionId(), e);
       }
@@ -38,8 +42,8 @@ public class SessionReaper {
 
   // Dead producers are not the reaper's concern: detection and recovery happen at request time in
   // SegmentDeliveryCoordinator, and a dead producer nobody watches is just an idle session.
-  private void processSession(StreamSession session, Instant now) {
-    if (isExpired(session, now)) {
+  private void processSession(StreamSession session, Instant now, Duration retention) {
+    if (isExpired(session, now, retention)) {
       log.info("Reaping expired session {}", session.getSessionId());
       closePlaybackSession(session.getSessionId());
       streamingService.destroySession(session.getSessionId());
@@ -52,9 +56,9 @@ public class SessionReaper {
     }
   }
 
-  private void reapExpiredPlayback(Instant now) {
+  private void reapExpiredPlayback(Instant now, Duration retention) {
     try {
-      playbackSessionService.reapExpired(now, properties.sessionRetention());
+      playbackSessionService.reapExpired(now, retention);
     } catch (RuntimeException failure) {
       log.warn("Failed to reap expired logical playback sessions", failure);
     }
@@ -68,9 +72,9 @@ public class SessionReaper {
     }
   }
 
-  private boolean isExpired(StreamSession session, Instant now) {
+  private boolean isExpired(StreamSession session, Instant now, Duration retention) {
     var idleSeconds = now.getEpochSecond() - session.getLastAccessedAt().getEpochSecond();
-    return idleSeconds > properties.sessionRetention().toSeconds();
+    return idleSeconds > retention.toSeconds();
   }
 
   private boolean isIdle(StreamSession session, Instant now) {

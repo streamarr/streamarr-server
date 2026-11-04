@@ -23,4 +23,6 @@ public class ServerSettings extends BaseAuditableEntity<ServerSettings> {
   @Enumerated(EnumType.STRING)
   @Builder.Default
   private EncoderPresetChoice encoderPreset = EncoderPresetChoice.AUTOMATIC;
+
+  @Builder.Default private int idleSegmentRetentionMinutes = 60;
 }

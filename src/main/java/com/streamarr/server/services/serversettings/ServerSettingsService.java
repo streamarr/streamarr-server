@@ -9,6 +9,7 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.Outcome;
+import java.time.Duration;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -48,6 +49,14 @@ public class ServerSettingsService {
    */
   public EncoderPreset resolveEncoderPreset(@NonNull String videoCodecFamily) {
     return storedSettings().getEncoderPreset().resolveFor(videoCodecFamily);
+  }
+
+  /**
+   * How long the server keeps a stream session, and its segments, after the last request for it.
+   * The reaper reads the setting for the system, not for a caller, so this read is not authorized.
+   */
+  public Duration idleSegmentRetention() {
+    return Duration.ofMinutes(storedSettings().getIdleSegmentRetentionMinutes());
   }
 
   private ServerSettings storedSettings() {

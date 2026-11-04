@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.resolvers;
 
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static com.streamarr.server.fixtures.ProbeFixture.completeProbe;
+import static com.streamarr.server.fixtures.ServerSettingsFixture.defaultServerSettings;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -35,6 +36,7 @@ import com.streamarr.server.services.authorization.SecurityContextAuthorizationS
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.library.MediaFileProbeTaskScheduler;
 import com.streamarr.server.services.probe.PersistedProbeReader;
+import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.PlaybackSessionService;
 import com.streamarr.server.services.streaming.QualityLadderService;
@@ -241,7 +243,6 @@ class AdversarialPlaybackTest {
             .maxConcurrentTranscodes(8)
             .targetSegmentDuration(Duration.ofSeconds(6))
             .sessionTimeout(Duration.ofMinutes(1))
-            .sessionRetention(Duration.ofHours(1))
             .build();
 
     @Bean
@@ -267,6 +268,11 @@ class AdversarialPlaybackTest {
     @Bean
     FakeMediaFileContainerInfoRepository probeOutcomes() {
       return outcomes;
+    }
+
+    @Bean
+    ServerSettingsService serverSettingsService() {
+      return defaultServerSettings();
     }
 
     @Bean

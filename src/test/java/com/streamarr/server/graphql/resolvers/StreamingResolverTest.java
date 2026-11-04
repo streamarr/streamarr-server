@@ -8,6 +8,7 @@ import static com.streamarr.server.fixtures.MediaEntityFixture.buildEpisode;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildMovie;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeason;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeries;
+import static com.streamarr.server.fixtures.ServerSettingsFixture.defaultServerSettings;
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackAuthorityFor;
@@ -21,7 +22,6 @@ import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
-import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.streaming.AudioCodec;
@@ -62,6 +62,7 @@ import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.auth.TokenClaims;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
 import com.streamarr.server.services.streaming.PlaybackRequest;
@@ -461,7 +462,7 @@ class StreamingResolverTest {
     assertThat(streamUrl).startsWith("/api/stream/" + sessionId + "/source.mkv?t=");
     var decoded = decodeToken(streamUrl.substring(streamUrl.indexOf("?t=") + 3));
     assertThat(Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt()))
-        .isEqualTo(probe.duration().plus(streamingProperties.sessionRetention()));
+        .isEqualTo(probe.duration().plus(Duration.ofHours(1)));
   }
 
   static Stream<Arguments> sourceRanges() {
@@ -1055,7 +1056,7 @@ class StreamingResolverTest {
                 + "/multivariant.m3u8?t=");
     var decoded = decodeToken(streamUrl.substring(streamUrl.indexOf("?t=") + 3));
     assertThat(Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt()))
-        .isEqualTo(session.getMediaProbe().duration().plus(streamingProperties.sessionRetention()));
+        .isEqualTo(session.getMediaProbe().duration().plus(Duration.ofHours(1)));
     assertThat(STUB_SERVICE.getLastCreateProfileId()).isEqualTo(TestIdentityConstants.PROFILE_ID);
     var options = STUB_SERVICE.getLastReceivedOptions();
     assertThat(options.quality()).isEqualTo(VideoQuality.HIGH_720P);
@@ -1337,13 +1338,8 @@ class StreamingResolverTest {
     }
 
     @Bean
-    StreamingProperties streamingProperties() {
-      return StreamingProperties.builder()
-          .maxConcurrentTranscodes(8)
-          .targetSegmentDuration(Duration.ofSeconds(6))
-          .sessionTimeout(Duration.ofSeconds(60))
-          .sessionRetention(Duration.ofHours(1))
-          .build();
+    ServerSettingsService serverSettingsService() {
+      return defaultServerSettings();
     }
 
     /** The real issuer, so the resolver tests exercise its ownership refusal end to end. */
@@ -1379,7 +1375,6 @@ class StreamingResolverTest {
   }
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
-  @Autowired private StreamingProperties streamingProperties;
   @Autowired private PlaybackSessionService playbackSessions;
 
   @BeforeEach

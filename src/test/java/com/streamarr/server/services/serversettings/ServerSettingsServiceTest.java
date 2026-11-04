@@ -13,6 +13,7 @@ import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeServerSettingsRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.Intent;
+import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -125,6 +126,12 @@ class ServerSettingsServiceTest {
 
     assertThatThrownBy(() -> serverSettingsService.changeEncoderPreset(identity, "PLACEBO"))
         .isInstanceOf(AccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should keep idle stream sessions for one hour when no ServerAdmin has changed it")
+  void shouldKeepIdleStreamSessionsForOneHourWhenNoServerAdminHasChangedIt() {
+    assertThat(serverSettingsService.idleSegmentRetention()).isEqualTo(Duration.ofHours(1));
   }
 
   @Test

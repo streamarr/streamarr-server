@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountScopedBuilder;
 import static com.streamarr.server.fixtures.PlaybackSessionFixture.acceptedPlayback;
 import static com.streamarr.server.fixtures.PlaybackSessionFixture.playbackServiceBuilder;
 import static com.streamarr.server.fixtures.PlaybackSessionFixture.startPlaybackBuilder;
@@ -14,14 +15,17 @@ import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeCreatingStreamingService;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fakes.FakeServerSettingsRepository;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.PlaybackSessionFixture;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -46,6 +50,11 @@ class SessionReaperTest {
 
   // Starts at the wall clock, which new stream sessions stamp as their last access.
   private final MutableClock clock = new MutableClock(new AtomicReference<>(Instant.now()));
+  private final FakeServerSettingsRepository serverSettingsRepository =
+      new FakeServerSettingsRepository();
+  private final ServerSettingsService serverSettings =
+      new ServerSettingsService(
+          new FakeAuthorizationService(accountScopedBuilder().build()), serverSettingsRepository);
   private FakeTranscodeExecutor executor;
   private FakeCreatingStreamingService streamingService;
   private PlaybackSessionService playback;
@@ -65,7 +74,6 @@ class SessionReaperTest {
         StreamingProperties.builder()
             .targetSegmentDuration(Duration.ofSeconds(6))
             .sessionTimeout(Duration.ofSeconds(60))
-            .sessionRetention(Duration.ofHours(24))
             .build();
     producerLifecycle =
         StreamingRigFixture.streamingRigBuilder()
@@ -237,15 +245,63 @@ class SessionReaperTest {
   @DisplayName("Should end a direct-play session when the retention passes without requests")
   void shouldEndDirectPlaySessionWhenRetentionPassesWithoutRequests() {
     var expired = StreamSessionFixture.directPlaySessionBuilder().build();
-    expired.setLastAccessedAt(Instant.now().minus(properties.sessionRetention()).minusSeconds(1));
+    expired.setLastAccessedAt(clock.instant().minus(Duration.ofHours(1)).minusSeconds(1));
     var recent = StreamSessionFixture.directPlaySessionBuilder().build();
-    recent.setLastAccessedAt(Instant.now().minus(properties.sessionRetention()).plusSeconds(60));
+    recent.setLastAccessedAt(clock.instant().minus(Duration.ofHours(1)).plusSeconds(60));
     streamingService.addSession(expired);
     streamingService.addSession(recent);
 
     reaper.reapSessions();
 
     assertThat(streamingService.getAllSessions()).containsExactly(recent);
+  }
+
+  @Test
+  @DisplayName(
+      "Should destroy a session idle past one hour when no ServerAdmin has changed the retention")
+  void shouldDestroySessionIdlePastOneHourWhenNoServerAdminHasChangedRetention() {
+    var session = buildSession(clock.instant());
+    streamingService.addSession(session);
+    clock.advance(Duration.ofMinutes(61));
+
+    reaper.reapSessions();
+
+    assertThat(streamingService.accessSession(playbackRequest(session))).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should close logical playback idle past one hour when no ServerAdmin has changed the"
+          + " retention")
+  void shouldCloseLogicalPlaybackIdlePastOneHourWhenNoServerAdminHasChangedRetention() {
+    playback = playbackServiceBuilder(streamingService).clock(clock).build();
+    var command = startPlaybackBuilder().build();
+    var initial = acceptedPlayback(playback.start(command));
+    clock.advance(Duration.ofMinutes(61));
+
+    reaperBuilder().build().reapSessions();
+
+    assertThat(playback.access(PlaybackSessionFixture.playbackRequest(initial, command))).isEmpty();
+    assertThat(streamingService.getAllSessions()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep an idle session until the stored retention passes when it is three hours")
+  void shouldKeepIdleSessionUntilStoredRetentionPassesWhenItIsThreeHours() {
+    serverSettingsRepository.findAll().getFirst().setIdleSegmentRetentionMinutes(180);
+    var session = buildSession(clock.instant());
+    streamingService.addSession(session);
+    clock.advance(Duration.ofHours(2));
+
+    reaper.reapSessions();
+
+    assertThat(streamingService.accessSession(playbackRequest(session))).isPresent();
+
+    clock.advance(Duration.ofMinutes(61));
+    reaper.reapSessions();
+
+    assertThat(streamingService.accessSession(playbackRequest(session))).isEmpty();
   }
 
   @Test
@@ -378,6 +434,7 @@ class SessionReaperTest {
         .properties(properties)
         .producerLifecycle(producerLifecycle)
         .playbackSessionService(playback)
+        .serverSettings(serverSettings)
         .clock(clock);
   }
 
