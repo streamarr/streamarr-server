@@ -5,6 +5,7 @@ import com.streamarr.server.services.filepath.FilepathNameNormalizer;
 import com.streamarr.server.services.filepath.FilepathSoftLinks;
 import java.io.IOException;
 import java.nio.file.FileSystem;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -42,13 +43,15 @@ public class MediaRoot {
 
   /**
    * The media root in the names that the file system stores, as library folders carry them. A media
-   * root that cannot be listed keeps its configured names.
+   * root that does not exist keeps its configured names, because no folder sits below it.
+   *
+   * @throws IOException if a folder on the media root's path cannot be read
    */
-  public Path path() {
+  public Path path() throws IOException {
     var configured = fileSystem.getPath(remoteSource.sourceRoot()).toAbsolutePath().normalize();
     try {
       return FilepathNameNormalizer.normalizeToFileSystemNames(configured);
-    } catch (IOException _) {
+    } catch (NoSuchFileException _) {
       return configured;
     }
   }

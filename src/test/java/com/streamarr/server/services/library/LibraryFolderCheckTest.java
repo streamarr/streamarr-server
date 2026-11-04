@@ -3,6 +3,7 @@ package com.streamarr.server.services.library;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.google.common.jimfs.Configuration;
@@ -24,6 +25,8 @@ import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -205,6 +208,27 @@ class LibraryFolderCheckTest {
     var library = libraryAt(temp.resolve("media/shows/Movies"));
 
     assertFailure(checkWithMediaRoot(mediaRoot), library, SOFT_LINK_FAILURE);
+  }
+
+  @Test
+  @DisplayName("Should fail as unreadable when the media root cannot be read")
+  void shouldFailAsUnreadableWhenTheMediaRootCannotBeRead(@TempDir Path temp) throws IOException {
+    var locked = Files.createDirectory(temp.resolve("locked"));
+    var mediaRoot = Files.createDirectory(locked.resolve("media"));
+    var libraryFolder = Files.createDirectory(temp.resolve("library"));
+    Files.createFile(libraryFolder.resolve("movie.mkv"));
+    var library = libraryAt(libraryFolder);
+    Files.setPosixFilePermissions(locked, Set.of());
+    try {
+      assumeFalse(Files.isReadable(locked), "folder permissions apply to the test user");
+
+      assertFailure(
+          checkWithMediaRoot(mediaRoot),
+          library,
+          new ExpectedFailure(LibraryFolderProblem.UNREADABLE, "unreadable"));
+    } finally {
+      Files.setPosixFilePermissions(locked, PosixFilePermissions.fromString("rwx------"));
+    }
   }
 
   private LibraryFolderCheck checkWithMediaRoot(Path mediaRoot) {
