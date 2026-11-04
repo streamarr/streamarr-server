@@ -472,7 +472,7 @@ public class ProducerLifecycleService {
       var handle = session.getVariantHandle(request.variantLabel()).orElseThrow();
       syncProgress(state, handle, pending);
       var running = transcodeExecutor.isRunning(request.sessionId(), request.variantLabel());
-      if (running && !hasStalled(state, session)) {
+      if (runsWithoutStall(running, state, session)) {
         return RecoveryResult.WAITING;
       }
 
@@ -484,12 +484,11 @@ public class ProducerLifecycleService {
       var eligibleTargets = eligibleTargets(session, request.variantLabel());
       // Segment publication is external to the session mutex and may advance during discovery.
       syncProgress(state, handle, pending);
-      if (noLongerNeedsRecovery(pending, running && !hasStalled(state, session))) {
+      if (noLongerNeedsRecovery(pending, runsWithoutStall(running, state, session))) {
         return RecoveryResult.WAITING;
       }
 
-      if (awaitsAnotherRequestsCopyReclaim(handle, pending)
-          || requestsRoomForRefusedCopy(session, handle, pending)) {
+      if (waitsForRoomForRefusedCopy(session, handle, pending)) {
         return RecoveryResult.WAITING;
       }
 
@@ -520,6 +519,17 @@ public class ProducerLifecycleService {
         return outcome.get();
       }
     }
+  }
+
+  private boolean runsWithoutStall(
+      boolean running, VariantDeliveryState state, StreamSession session) {
+    return running && !hasStalled(state, session);
+  }
+
+  private boolean waitsForRoomForRefusedCopy(
+      StreamSession session, TranscodeHandle handle, PendingSegment pending) {
+    return awaitsAnotherRequestsCopyReclaim(handle, pending)
+        || requestsRoomForRefusedCopy(session, handle, pending);
   }
 
   // A worker that refused the variant's copy at startup may run another stream session's left copy,
