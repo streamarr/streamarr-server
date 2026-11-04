@@ -2078,6 +2078,25 @@ class ProducerLifecycleServiceTest {
     assertThat(request.keyframeSeekPosition()).hasValue(Duration.ofMillis(599_500));
   }
 
+  // On a 1/2,000,000,000 time base, 1,199,000,000,001 ticks are 599.5000000005 s, half a
+  // nanosecond less than half a second before segment 100 starts at 600 s.
+  @Test
+  @DisplayName(
+      "Should skip a keyframe for an encoded attempt when it presents a fraction of a nanosecond inside the half second before its segment")
+  void
+      shouldSkipAKeyframeForAnEncodedAttemptWhenItPresentsAFractionOfANanosecondInsideTheHalfSecondBeforeItsSegment() {
+    var session =
+        startedEncodedSession(
+            defaultProbeBuilder()
+                .containerFormat(Optional.of(MATROSKA))
+                .keyframes(
+                    keyframesOnTimeBase(2_000_000_000, 0, 1_188_000_000_000L, 1_199_000_000_001L)));
+
+    var request = relocatedRequest(session, 100);
+
+    assertThat(request.keyframeSeekPosition()).hasValue(Duration.ofSeconds(594));
+  }
+
   // On a 1/24000 time base, 14,256,001 ticks are 594.0000416666... s. A position rounded down
   // would lie before the keyframe, and the demuxer would land on the keyframe before it.
   @Test
