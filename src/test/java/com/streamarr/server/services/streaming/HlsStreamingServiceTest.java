@@ -3101,6 +3101,48 @@ class HlsStreamingServiceTest {
 
     @Test
     @DisplayName(
+        "Should play the exact regional track when a track of the base language comes first")
+    void shouldPlayTheExactRegionalTrackWhenATrackOfTheBaseLanguageComesFirst() {
+      overrideAudio(episode.getId(), Language.PT_BR);
+      useAudioTracks(audioTrack(1, "por").build(), audioTrack(2, "pt-BR").build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+    }
+
+    @Test
+    @DisplayName("Should play the session's own language when the file belongs to no title")
+    void shouldPlayTheSessionsOwnLanguageWhenTheFileBelongsToNoTitle() {
+      var file = seedMediaFile();
+
+      var session =
+          accepted(
+              service.createSession(
+                  createStreamSessionCommandBuilder(file.getId(), profileId)
+                      .options(
+                          StreamingOptions.builder()
+                              .quality(VideoQuality.AUTO)
+                              .audioLanguage(Language.JA)
+                              .build())
+                      .build()));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+    }
+
+    @Test
+    @DisplayName("Should name no audio stream when the session carries no audio")
+    void shouldNameNoAudioStreamWhenTheSessionCarriesNoAudio() {
+      useAudioTracks(StreamInfo.builder().index(1).codecType("audio").build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioDecision().mode()).isEqualTo(AudioMode.NONE);
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
         "Should play the session's own language when it names one over an episode override")
     void shouldPlayTheSessionsOwnLanguageWhenItNamesOneOverAnEpisodeOverride() {
       overrideAudio(episode.getId(), Language.EN);
