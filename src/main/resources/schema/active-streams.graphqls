@@ -1,0 +1,63 @@
+extend type Query {
+    """
+    Every stream that plays or prepares on this server instance now, one per playback session, in no fixed
+    order. Ended and failed playback sessions are not listed; the server keeps no history of them. Requires a
+    ServerAdmin. Every other caller gets FORBIDDEN, and so does a ServerAdmin's device-bound session.
+    """
+    activeStreams: [ActiveStream!]!
+}
+
+extend type Subscription {
+    """
+    An active stream started, changed its format attempt, playing state or position, or ended. Delivers the
+    stream as the server reads it after the change, with activeStream null once it ended or failed. Requires a
+    ServerAdmin. Every other caller gets FORBIDDEN, and so does a ServerAdmin's device-bound session.
+
+    To build current state, subscribe first, then query activeStreams, and apply each change by
+    playbackSessionId. One stream's changes arrive in the order they happened. A client may miss an
+    intermediate state, but the last change it receives for a stream carries that stream's latest state.
+    """
+    activeStreamsChanged: ActiveStreamChange
+}
+
+"One change to the active streams."
+type ActiveStreamChange {
+    playbackSessionId: ID!
+    "The stream after the change, or null once it ended or failed."
+    activeStream: ActiveStream
+}
+
+"One playback session that plays or prepares a stream now."
+type ActiveStream {
+    playbackSessionId: ID!
+    "The viewer's Profile."
+    profile: ActiveStreamProfile!
+    "The device name that the viewer's sign-in gave, such as the app and device. Null when it gave none."
+    deviceName: String
+    mediaFileId: ID!
+    "The movie or episode title. Null for a media file without a matched movie or episode."
+    title: String
+    "The series of an episode. Null for a movie."
+    seriesTitle: String
+    "The season number of an episode. Null for a movie."
+    seasonNumber: Int
+    "The episode number of an episode. Null for a movie."
+    episodeNumber: Int
+    "Seconds into the media title, as the client last reported. Null while the format attempt prepares."
+    positionSeconds: Int
+    "Whether the client last reported playing or paused. Null while the format attempt prepares."
+    state: PlaybackState
+    """
+    How the current format attempt delivers the media title, including its output bitrates and its reasons.
+    Null while the format attempt prepares.
+    """
+    decision: PlaybackDecision
+    "The worker connection that runs each running job of the stream, by its worker session id."
+    workers: [String!]!
+}
+
+type ActiveStreamProfile {
+    id: ID!
+    "Null when the Profile was deleted while it played."
+    name: String
+}

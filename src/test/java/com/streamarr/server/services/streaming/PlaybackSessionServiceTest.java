@@ -48,12 +48,15 @@ import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.PlaybackSessionClosedException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
+import com.streamarr.server.services.events.watchprogress.StreamSessionTimelineReportedEvent;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.events.CopiedVariantRanShortEvent;
+import com.streamarr.server.services.streaming.events.PlaybackSessionChangedEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import java.time.Duration;
@@ -96,8 +99,10 @@ class PlaybackSessionServiceTest {
   private final ChildStreams streams = new ChildStreams();
   private final FakePlaybackAuthorityGate authority = new FakePlaybackAuthorityGate();
   private final MutableClock clock = new MutableClock();
+  private final CapturingEventPublisher events = new CapturingEventPublisher();
   private final PlaybackSessionService service =
       PlaybackSessionService.builder()
+          .eventPublisher(events)
           .streamingService(streams)
           .authorityGate(authority)
           .executor(Runnable::run)
@@ -358,6 +363,73 @@ class PlaybackSessionServiceTest {
     assertThat(recovered.decisions())
         .extracting(PlaybackDecision::reasons)
         .containsExactly(List.of(), List.of(DecisionReason.ENCODE_FAILED));
+  }
+
+  @Test
+  @DisplayName(
+      "Should announce a playback session's start, format attempts, timeline and end when they"
+          + " change")
+  void shouldAnnounceAPlaybackSessionsStartFormatAttemptsTimelineAndEndWhenTheyChange() {
+    var command = startCommand().build();
+    var initial = accepted(service.start(command));
+    var started = changesOf(initial);
+
+    service.reportFormatFailure(report(initial, command).build()).orElseThrow();
+    var afterFallback = changesOf(initial);
+    var replacement = streams.createdCommands.getLast().streamSessionId();
+    service.onStreamSessionTimelineReported(new StreamSessionTimelineReportedEvent(replacement));
+    var afterTimeline = changesOf(initial);
+    service.close(request(initial, command));
+
+    assertThat(started).isEqualTo(1);
+    assertThat(afterFallback).isEqualTo(3);
+    assertThat(afterTimeline).isEqualTo(4);
+    assertThat(changesOf(initial)).isEqualTo(5);
+  }
+
+  @Test
+  @DisplayName("Should announce nothing when a timeline report names a stream that no session owns")
+  void shouldAnnounceNothingWhenATimelineReportNamesAStreamThatNoSessionOwns() {
+    service.onStreamSessionTimelineReported(
+        new StreamSessionTimelineReportedEvent(UUID.randomUUID()));
+
+    assertThat(events.getEventsOfType(PlaybackSessionChangedEvent.class)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should report each open playback session's activity without keeping it open when activity is"
+          + " read")
+  void shouldReportEachOpenPlaybackSessionsActivityWithoutKeepingItOpenWhenActivityIsRead() {
+    var command = startCommand().build();
+    var snapshot = accepted(service.start(command));
+    if (snapshot.currentFormatAttempt() instanceof PlaybackFormatAttempt.Ready(var session)) {
+      session.setLastAccessedAt(clock.instant());
+    }
+
+    clock.advance(Duration.ofHours(25));
+
+    var activity = service.activity();
+    service.reapExpired(clock.instant(), RETENTION);
+
+    assertThat(activity)
+        .singleElement()
+        .satisfies(
+            open -> {
+              assertThat(open.playbackSessionId()).isEqualTo(snapshot.playbackSessionId());
+              assertThat(open.authority()).isEqualTo(command.identity().playbackAuthority());
+              assertThat(open.mediaFileId()).isEqualTo(command.mediaFileId());
+              assertThat(open.currentFormatAttempt()).isEqualTo(snapshot.currentFormatAttempt());
+              assertThat(open.decision()).isEqualTo(snapshot.decisions().stream().findFirst());
+            });
+    assertThat(service.activity()).isEmpty();
+    assertThat(service.activity(snapshot.playbackSessionId())).isEmpty();
+  }
+
+  private long changesOf(PlaybackSessionSnapshot snapshot) {
+    return events.getEventsOfType(PlaybackSessionChangedEvent.class).stream()
+        .filter(event -> event.playbackSessionId().equals(snapshot.playbackSessionId()))
+        .count();
   }
 
   // ADR 0052: an encode that Original reaches plays in Auto, and the playback session says so.
@@ -814,6 +886,7 @@ class PlaybackSessionServiceTest {
       VideoQuality quality, int maximum) {
     var playback =
         PlaybackSessionService.builder()
+            .eventPublisher(_ -> {})
             .streamingService(streams)
             .authorityGate(authority)
             .executor(Runnable::run)
@@ -2330,6 +2403,7 @@ class PlaybackSessionServiceTest {
   void shouldRejectTheTotalAttemptLimitWhenItIsNotPositive(int maximum) {
     var builder =
         PlaybackSessionService.builder()
+            .eventPublisher(_ -> {})
             .streamingService(streams)
             .authorityGate(authority)
             .executor(Runnable::run)
@@ -2352,6 +2426,7 @@ class PlaybackSessionServiceTest {
     var work = new ConcurrentLinkedQueue<Runnable>();
     var playback =
         PlaybackSessionService.builder()
+            .eventPublisher(_ -> {})
             .streamingService(streams)
             .authorityGate(authority)
             .executor(work::add)
@@ -2483,6 +2558,7 @@ class PlaybackSessionServiceTest {
     var work = new ConcurrentLinkedQueue<Runnable>();
     var playback =
         PlaybackSessionService.builder()
+            .eventPublisher(_ -> {})
             .streamingService(streams)
             .authorityGate(authority)
             .executor(work::add)
@@ -2578,6 +2654,7 @@ class PlaybackSessionServiceTest {
     var work = new ConcurrentLinkedQueue<Runnable>();
     var playback =
         PlaybackSessionService.builder()
+            .eventPublisher(_ -> {})
             .streamingService(streams)
             .authorityGate(authority)
             .executor(work::add)
@@ -2600,6 +2677,7 @@ class PlaybackSessionServiceTest {
   void shouldSettleATerminalFailureWhenReplacementSchedulingIsRejected() {
     var playback =
         PlaybackSessionService.builder()
+            .eventPublisher(_ -> {})
             .streamingService(streams)
             .authorityGate(authority)
             .executor(
@@ -2696,6 +2774,7 @@ class PlaybackSessionServiceTest {
     var work = new ConcurrentLinkedQueue<Runnable>();
     var playback =
         PlaybackSessionService.builder()
+            .eventPublisher(_ -> {})
             .streamingService(streams)
             .authorityGate(authority)
             .executor(work::add)
@@ -2769,6 +2848,7 @@ class PlaybackSessionServiceTest {
     var work = new ConcurrentLinkedQueue<Runnable>();
     var playback =
         PlaybackSessionService.builder()
+            .eventPublisher(_ -> {})
             .streamingService(streams)
             .authorityGate(authority)
             .executor(work::add)
@@ -2970,6 +3050,7 @@ class PlaybackSessionServiceTest {
     var work = new ConcurrentLinkedQueue<Runnable>();
     var playback =
         PlaybackSessionService.builder()
+            .eventPublisher(_ -> {})
             .streamingService(streams)
             .authorityGate(authority)
             .executor(work::add)
@@ -2999,6 +3080,7 @@ class PlaybackSessionServiceTest {
     var work = new ConcurrentLinkedQueue<Runnable>();
     var playback =
         PlaybackSessionService.builder()
+            .eventPublisher(_ -> {})
             .streamingService(streams)
             .authorityGate(authority)
             .executor(work::add)
@@ -3024,6 +3106,7 @@ class PlaybackSessionServiceTest {
   void shouldFinishAsynchronousReplacementAndCleanupWhenItsOwnedExecutorCloses() {
     var playback =
         PlaybackSessionService.builder()
+            .eventPublisher(_ -> {})
             .streamingService(streams)
             .authorityGate(authority)
             .maximumFormatAttempts(2)
@@ -3110,6 +3193,7 @@ class PlaybackSessionServiceTest {
 
   private PlaybackSessionService.PlaybackSessionServiceBuilder serviceRunning(Executor executor) {
     return PlaybackSessionService.builder()
+        .eventPublisher(_ -> {})
         .streamingService(streams)
         .authorityGate(authority)
         .executor(executor)
