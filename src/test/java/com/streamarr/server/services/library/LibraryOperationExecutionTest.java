@@ -1810,6 +1810,11 @@ class LibraryOperationExecutionTest {
   @DisplayName("Refresh Library Tests")
   class RefreshLibraryTests {
 
+    @BeforeEach
+    void createTheLibraryFolder() throws IOException {
+      createRootLibraryDirectory();
+    }
+
     @Test
     @DisplayName("Should transition library to HEALTHY when refresh succeeds")
     void shouldTransitionToHealthyWhenRefreshSucceeds() {
@@ -1940,6 +1945,48 @@ class LibraryOperationExecutionTest {
   }
 
   @Nested
+  @DisplayName("Refresh Library Folder Check Tests")
+  class RefreshLibraryFolderCheckTests {
+
+    @Test
+    @DisplayName(
+        "Should end the refresh unhealthy and refresh nothing when the library folder is missing")
+    void shouldEndTheRefreshUnhealthyAndRefreshNothingWhenTheLibraryFolderIsMissing() {
+      var result = operations.refreshLibrary(savedLibraryId);
+
+      assertThat(result).isEqualTo(new LibraryOperationExecutionResult.Ended());
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+      assertThat(folderCheckFailures("missing")).isEqualTo(1);
+      assertThat(libraryRefreshService.imageRefreshMode()).isNull();
+      assertThat(capturingEventPublisher.getEventsOfType(RefreshEndedEvent.class))
+          .containsExactly(new RefreshEndedEvent(savedLibraryId));
+    }
+
+    @Test
+    @DisplayName(
+        "Should check no library folder and return the library HEALTHY when the refresh execution"
+            + " finds the stop already stored")
+    void shouldCheckNoLibraryFolderAndReturnTheLibraryHealthyWhenTheRefreshFindsTheStopStored() {
+      assertThat(
+              operations
+                  .service()
+                  .startLibraryRefresh(identity, savedLibraryId, ImageRefreshMode.PRESERVE))
+          .isInstanceOf(Outcome.Accepted.class);
+      assertThat(operations.service().stopLibraryRefresh(identity, savedLibraryId))
+          .isInstanceOf(Outcome.Accepted.class);
+
+      var result =
+          operations
+              .execution()
+              .execute(operations.scheduling().scheduledExecutions().getLast(), NOT_SHUTTING_DOWN);
+
+      assertThat(result).isEqualTo(new LibraryOperationExecutionResult.Ended());
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+      assertThat(meterRegistry.find(LibraryFolderCheck.FAILURES_METRIC).counters()).isEmpty();
+    }
+  }
+
+  @Nested
   @DisplayName("Library Status Change Tests")
   class LibraryStatusChangeTests {
 
@@ -1973,7 +2020,9 @@ class LibraryOperationExecutionTest {
 
     @Test
     @DisplayName("Should publish REFRESHING then HEALTHY status changes when a refresh succeeds")
-    void shouldPublishRefreshingThenHealthyStatusChangesWhenRefreshSucceeds() {
+    void shouldPublishRefreshingThenHealthyStatusChangesWhenRefreshSucceeds() throws IOException {
+      createRootLibraryDirectory();
+
       service.refreshLibrary(savedLibraryId);
 
       assertThat(statusObserver.observedChanges())
@@ -1984,7 +2033,8 @@ class LibraryOperationExecutionTest {
 
     @Test
     @DisplayName("Should publish an UNHEALTHY status change when a refresh fails")
-    void shouldPublishUnhealthyStatusChangeWhenRefreshFails() {
+    void shouldPublishUnhealthyStatusChangeWhenRefreshFails() throws IOException {
+      createRootLibraryDirectory();
       libraryRefreshService.failWith(new RuntimeException("simulated refresh failure"));
 
       service.refreshLibrary(savedLibraryId);
@@ -2066,7 +2116,9 @@ class LibraryOperationExecutionTest {
     @Test
     @DisplayName(
         "Should keep the operation stored when a refresh fails on a thread a shutdown interrupted")
-    void shouldKeepTheOperationStoredWhenARefreshFailsOnAThreadAShutdownInterrupted() {
+    void shouldKeepTheOperationStoredWhenARefreshFailsOnAThreadAShutdownInterrupted()
+        throws IOException {
+      createRootLibraryDirectory();
       libraryRefreshService.answerRefreshesWith(
           () -> {
             Thread.currentThread().interrupt();
@@ -2265,7 +2317,8 @@ class LibraryOperationExecutionTest {
 
     @Test
     @DisplayName("Should return the library UNHEALTHY when a stop is stored during a refresh")
-    void shouldReturnTheLibraryUnhealthyWhenAStopIsStoredDuringARefresh() {
+    void shouldReturnTheLibraryUnhealthyWhenAStopIsStoredDuringARefresh() throws IOException {
+      createRootLibraryDirectory();
       markLibrary(LibraryStatus.UNHEALTHY);
       libraryRefreshService.answerRefreshesWith(
           () -> operations.service().stopLibraryRefresh(identity, savedLibraryId));
@@ -2282,7 +2335,9 @@ class LibraryOperationExecutionTest {
         "Should return the library to its earlier status when the stop is stored after the"
             + " execution last read the stop")
     void
-        shouldReturnTheLibraryToItsEarlierStatusWhenTheStopIsStoredAfterTheExecutionLastReadTheStop() {
+        shouldReturnTheLibraryToItsEarlierStatusWhenTheStopIsStoredAfterTheExecutionLastReadTheStop()
+            throws IOException {
+      createRootLibraryDirectory();
       markLibrary(LibraryStatus.UNHEALTHY);
       var stopBeforeEnd =
           serviceBuilder()

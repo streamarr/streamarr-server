@@ -29,13 +29,13 @@ import org.springframework.transaction.support.TransactionTemplate;
  * scheduler shuts down, and the tasks it admitted finish their foreground steps (ADR 0027). A
  * shutdown leaves the operation stored, so the operation runs again when a scheduler starts. An
  * execution that finds the stop stored when it starts admits no task and waits only for the primary
- * artwork that earlier executions of the operation requested. Otherwise the finishing steps run,
- * and then one transaction ends the operation: as failed when the scan or refresh threw or the
- * library folder failed its check before a finishing step, as stopped when the stop is stored, and
- * as finished otherwise. The transaction locks the library's row, gives the library its final
- * status and deletes the operation. It also publishes the status change and the end of the scan or
- * refresh for listeners that run after the commit. An end that cannot be saved escapes, so the
- * scheduler runs the operation again with backoff.
+ * artwork that earlier executions of the operation requested. Otherwise a scan or refresh first
+ * checks the library folder. Then the finishing steps run, and one transaction ends the operation:
+ * as failed when the scan or refresh threw or the library folder failed its check, as stopped when
+ * the stop is stored, and as finished otherwise. The transaction locks the library's row, gives the
+ * library its final status and deletes the operation. It also publishes the status change and the
+ * end of the scan or refresh for listeners that run after the commit. An end that cannot be saved
+ * escapes, so the scheduler runs the operation again with backoff.
  */
 @Slf4j
 @Service
@@ -159,6 +159,7 @@ public class LibraryOperationExecution {
       throws InterruptedException {
     log.info("Starting {} library refresh.", library.getName());
     try {
+      requireLibraryFolderPassedUnlessStopped(library, operation);
       libraryRefreshService.refreshLibrary(library, operation, admissionEnd);
       log.info("Finished {} library refresh.", library.getName());
       return LibraryOperationConclusion.FINISHED;
@@ -166,6 +167,17 @@ public class LibraryOperationExecution {
       log.error("Refresh failed for library '{}'", library.getName(), e);
       return LibraryOperationConclusion.FAILED;
     }
+  }
+
+  // A refresh reads no media file, so the check alone keeps a finished refresh from marking a
+  // library HEALTHY whose folder a scan would fail.
+  private void requireLibraryFolderPassedUnlessStopped(
+      Library library, LibraryOperation operation) {
+    if (operation.stopRequested()) {
+      return;
+    }
+
+    libraryFolderCheck.requirePassed(library);
   }
 
   private void end(LibraryOperation operation, LibraryOperationConclusion conclusion) {
