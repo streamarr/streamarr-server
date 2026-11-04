@@ -336,10 +336,14 @@ Playback keeps using a file's earlier result until the scan stores the file's ne
 The worker contract lets a copy carry its planned output: its dynamic range, its bitstream rewrites, the Dolby Vision that the output carries, and the static HDR metadata that the worker writes into an HEVC copy's `hvcC` record (https://github.com/streamarr/streamarr-adr/blob/main/adr/0013-stream-decision-architecture.adoc[ADR 0013], https://github.com/streamarr/streamarr-adr/blob/main/adr/0036-video-contracts-share-vocabulary-and-dynamic-range-facts.adoc[ADR 0036]).
 Each worker lists the bitstream rewrites and copy features that it supports.
 The server sends a copy's planned range only when the output is PQ, HLG or Dolby Vision without a compatible base, and only to a worker that lists the planned output.
-The server copies a PQ or HLG source without Dolby Vision to a client whose capability entry declares its base, when probe version 5 or later described the source and a connected worker lists the planned output.
+The server copies a PQ or HLG source to a client whose capability entry declares its base, when probe version 5 or later described the source and a connected worker lists the planned output.
 A client that declares the base but not HDR10+ receives the copy with HDR10+ stripped, when a connected worker also lists that rewrite.
-Otherwise that client receives an encode.
-Dolby Vision on a PQ, HLG or missing base still plays as an encode.
+A client that declares Dolby Vision profile 8.1, 8.4, 10.1 or 10.4 at or above the copy's Dolby Vision level receives the copy that keeps Dolby Vision.
+That copy lists the rewrite that normalizes the Dolby Vision record, strips HDR10+, and carries `SUPPLEMENTAL-CODECS` beside the base's `CODECS`.
+A profile 8 stream with compatibility identifier 6 counts as profile 8.1.
+A client that declares the base but not the Dolby Vision receives the copy with Dolby Vision stripped, and so does every client that declares the base of an unknown profile, of a stream without a known level, or of profile 6 or dual-track profile 7.
+When no connected worker lists every rewrite that the copy needs, the client receives an encode.
+Dolby Vision without a compatible base still plays as an encode.
 
 https://github.com/streamarr/streamarr-adr/blob/main/adr/0033-transcode-worker-is-a-separate-service.adoc[ADR 0033] requires workers for probing, transcoding, and remuxing.
 Each worker opens an outbound, long-lived gRPC `WorkerSession` over the server's single plaintext listener.
