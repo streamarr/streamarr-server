@@ -72,10 +72,14 @@ public record VideoStreamCopy(
 
   /**
    * Whether stripping this copy's Dolby Vision leaves a PQ or HLG base that a player shows (ADR
-   * 0036). Profiles 5 and 10.0 have no such base, and profiles 8.2 and 9 keep their RPUs under an
-   * SDR base.
+   * 0036). Only HEVC and AV1 copies strip it. Profiles 5 and 10.0 have no such base, and profiles
+   * 8.2 and 9 keep their RPUs under an SDR base.
    */
   public boolean hasDolbyVisionStrippableToAnHdrBase() {
+    if (!isStrippableCodecFamily()) {
+      return false;
+    }
+
     var base = dynamicRange.compatibleBase();
     if (base != CompatibleBase.PQ && base != CompatibleBase.HLG) {
       return false;
@@ -88,6 +92,15 @@ public record VideoStreamCopy(
           CopiedDolbyVision.NeedsDolbyVisionSampleEntry _,
           CopiedDolbyVision.Profile9WithoutSdrBase _ ->
           false;
+    };
+  }
+
+  // The strip removes HEVC NAL units and AV1 metadata OBUs (ADR 0036). H.264 carries only profile
+  // 9, which keeps its RPUs under an SDR base.
+  private boolean isStrippableCodecFamily() {
+    return switch (codecFamily) {
+      case HEVC, AV1 -> true;
+      case H264, OTHER -> false;
     };
   }
 

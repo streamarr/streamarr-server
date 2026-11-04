@@ -239,6 +239,16 @@ class TranscodeDecisionDolbyVisionCopyTest {
             Clients.h264Pq(),
             ENCODE),
         Arguments.of(
+            "H.264 Dolby Vision whose profile nothing names, beside a PQ transfer",
+            h264(unnamedDolbyVisionOn(CompatibleBase.PQ)),
+            Clients.h264Pq(),
+            ENCODE),
+        Arguments.of(
+            "H.264 Dolby Vision whose profile nothing names, beside an HLG transfer",
+            h264(unnamedDolbyVisionOn(CompatibleBase.HLG)),
+            Clients.h264Pq(),
+            ENCODE),
+        Arguments.of(
             "Profile 8.1 to a client that declares only SDR",
             hevc(profile8(CompatibleBase.PQ, 1)),
             Clients.sdrOnly(),
@@ -422,6 +432,12 @@ class TranscodeDecisionDolbyVisionCopyTest {
                     .vdrBitDepth(10)
                     .build()),
             DolbyVisionRpuPlacement.AFTER_OWN_PICTURE));
+  }
+
+  // A probe can find Dolby Vision from the sample entry alone, without a record or an RPU header.
+  private static VideoDynamicRange unnamedDolbyVisionOn(CompatibleBase base) {
+    return new VideoDynamicRange(
+        base, Presence.ABSENT, new DolbyVision.Present(Optional.empty(), Presence.UNSPECIFIED));
   }
 
   // ADR 0036: a copy would hand players the misplaced RPUs, so no copy rule overrides this issue.
