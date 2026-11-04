@@ -37,6 +37,7 @@ import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.ShortCopy;
+import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -395,6 +396,36 @@ class StreamingResolverTest {
         .isEqualTo("COPY_FAILED");
   }
 
+  // ADR 0045: the HLS format attempt after a failed direct play keeps Original while it is pending,
+  // and its encode plays in Auto with a notice.
+  @Test
+  @DisplayName("Should expose the change to Auto when direct play fails and no copy is eligible")
+  void shouldExposeTheChangeToAutoWhenDirectPlayFailsAndNoCopyIsEligible() {
+    STUB_SERVICE.setNextResult(buildDirectPlaySession(UUID.randomUUID()));
+    var created = startPlaybackReadingChoices(VideoQuality.ORIGINAL);
+    var playbackId = created.read(CREATED_PLAYBACK + ".id", String.class);
+
+    var reported =
+        reportFailure(
+            playbackId,
+            created.read(CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.id", String.class),
+            "UNSUPPORTED_FORMAT");
+    STUB_SERVICE.setNextResult(
+        buildSessionDeciding(UUID.randomUUID(), fullTranscodeDecision("h264")));
+    REPLACEMENT_TASKS.remove().run();
+
+    assertThat(reported.read(REPORTED_PLAYBACK + ".currentFormatAttempt.__typename", String.class))
+        .isEqualTo("PendingPlaybackFormatAttempt");
+    assertThat(reported.read(REPORTED_PLAYBACK + ".playbackChoice", String.class))
+        .isEqualTo("ORIGINAL");
+    assertThat(reported.read(REPORTED_PLAYBACK + ".formatChange", Object.class)).isNull();
+    var ready = playbackStatus(playbackId);
+    assertThat(ready.read("data.playbackSession.formatAttemptCount", Integer.class)).isEqualTo(2);
+    assertThat(ready.read("data.playbackSession.playbackChoice", String.class)).isEqualTo("AUTO");
+    assertThat(ready.read("data.playbackSession.formatChange", String.class))
+        .isEqualTo("DIRECT_PLAY_FAILED");
+  }
+
   // ADR 0052: the client ends playback at the real end of a copy that ran short after every source
   // stream ended.
   @ParameterizedTest
@@ -665,7 +696,7 @@ class StreamingResolverTest {
         """
         query {
           playbackSession(id: "%s") {
-            id formatAttemptCount maximumFormatAttempts
+            id formatAttemptCount maximumFormatAttempts playbackChoice formatChange
             currentFormatAttempt {
               __typename
               ... on ReadyPlaybackFormatAttempt { streamSession { id streamUrl videoRange } }
@@ -1260,17 +1291,23 @@ class StreamingResolverTest {
   }
 
   private StreamSession buildSessionDeciding(UUID sessionId, TranscodeDecision decision) {
-    var session = buildSession(sessionId);
+    return sessionBuilderLike(buildSession(sessionId)).transcodeDecision(decision).build();
+  }
+
+  private StreamSession buildDirectPlaySession(UUID sessionId) {
+    return sessionBuilderLike(buildSession(sessionId)).delivery(StreamDelivery.DIRECT_PLAY).build();
+  }
+
+  private static StreamSession.StreamSessionBuilder sessionBuilderLike(StreamSession session) {
     return StreamSession.builder()
-        .sessionId(sessionId)
+        .sessionId(session.getSessionId())
         .authority(session.getAuthority())
         .mediaFileId(session.getMediaFileId())
         .sourcePath(session.getSourcePath())
         .mediaProbe(session.getMediaProbe())
-        .transcodeDecision(decision)
+        .transcodeDecision(session.getTranscodeDecision())
         .options(session.getOptions())
-        .createdAt(session.getCreatedAt())
-        .build();
+        .createdAt(session.getCreatedAt());
   }
 
   private StreamSession buildSessionOwnedBy(UUID sessionId, UUID profileId) {
@@ -1691,6 +1728,7 @@ class StreamingResolverTest {
               .sourcePath(nextResult.getSourcePath())
               .mediaProbe(nextResult.getMediaProbe())
               .transcodeDecision(nextResult.getTranscodeDecision())
+              .delivery(nextResult.getDelivery())
               .options(command.options())
               .createdAt(Instant.now())
               .build();
