@@ -496,7 +496,10 @@ class StreamingResolverTest {
                 playbackSession {
                   currentFormatAttempt {
                     ... on ReadyPlaybackFormatAttempt {
-                      streamSession { ... on DirectPlayStreamSession { audioTrackPosition } }
+                      streamSession {
+                        __typename
+                        ... on DirectPlayStreamSession { audioTrackPosition }
+                      }
                     }
                   }
                 }
@@ -505,10 +508,10 @@ class StreamingResolverTest {
             """
                 .formatted(UUID.randomUUID(), CAPABILITIES));
 
-    assertThat(
-            context.read(
-                CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.audioTrackPosition",
-                Integer.class))
+    var streamSession = CREATED_PLAYBACK + ".currentFormatAttempt.streamSession";
+    assertThat(context.read(streamSession + ".__typename", String.class))
+        .isEqualTo("DirectPlayStreamSession");
+    assertThat(context.read(streamSession + ".audioTrackPosition", Integer.class))
         .isEqualTo(expected);
   }
 

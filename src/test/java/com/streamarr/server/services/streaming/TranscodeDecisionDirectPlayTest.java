@@ -451,8 +451,9 @@ class TranscodeDecisionDirectPlayTest {
   }
 
   // The stream session plays the first audio stream that the probe lists, over HLS and in direct
-  // play alike. The client finds that track by its position among the file's audio tracks in stream
-  // order, which is the order of a player's own track list.
+  // play alike, and a choice of the session's audio track lists the chosen track first. The client
+  // finds that track by its position among the file's audio tracks in stream order, which is the
+  // order of a player's own track list.
   @ParameterizedTest(name = "{0}")
   @MethodSource("namedAudioTracks")
   @DisplayName(
