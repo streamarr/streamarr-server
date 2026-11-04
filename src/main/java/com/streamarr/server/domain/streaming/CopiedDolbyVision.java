@@ -17,13 +17,18 @@ sealed interface CopiedDolbyVision {
    */
   record KeptUnderSdrBase() implements CopiedDolbyVision {}
 
-  /** A profile that an entry can list, at the level that the configuration record names. */
+  /**
+   * A profile that an entry can list, at the level that the configuration record names. Without a
+   * record level, the level is the lowest one in Dolby's level table that carries the decoded size
+   * at the maximum frame rate.
+   */
   record Declarable(@NonNull DolbyVisionProfile profile, int level) implements CopiedDolbyVision {}
 
   /**
    * Dolby Vision that no entry accepts until a copy can strip it (streamarr/streamarr-server#396):
-   * profile 7, an unknown profile, a profile that the contract does not name, or a record that
-   * names no Dolby Vision level.
+   * profile 7, an unknown profile, a profile that the contract does not name, or a stream whose
+   * level neither its record nor the level table gives. Until streamarr/streamarr-server#652 stores
+   * a maximum frame rate, the table gives no level.
    */
   record Undeclarable() implements CopiedDolbyVision {}
 
@@ -40,13 +45,13 @@ sealed interface CopiedDolbyVision {
     var range = copy.dynamicRange();
     return switch (range.dolbyVision()) {
       case DolbyVision.Unspecified _, DolbyVision.Absent _ -> new None();
-      case DolbyVision.Present present ->
-          ofPresent(copy.codecFamily(), range.compatibleBase(), present);
+      case DolbyVision.Present present -> ofPresent(copy, present);
     };
   }
 
-  private static CopiedDolbyVision ofPresent(
-      ProbedCodecFamily codecFamily, CompatibleBase base, DolbyVision.Present present) {
+  private static CopiedDolbyVision ofPresent(VideoStreamCopy copy, DolbyVision.Present present) {
+    var codecFamily = copy.codecFamily();
+    var base = copy.dynamicRange().compatibleBase();
     var profileNumber = profileNumberFromRecordOrRpuHeader(codecFamily, present);
     if (profileNumber.isEmpty()) {
       return new Undeclarable();
@@ -57,7 +62,7 @@ sealed interface CopiedDolbyVision {
     }
 
     var profile = namedProfile(codecFamily, profileNumber.getAsInt(), base);
-    var level = present.declared().map(DolbyVisionConfiguration::level).orElse(OptionalInt.empty());
+    var level = levelFromRecordOrTable(copy, present);
     if (profile.isEmpty() || level.isEmpty()) {
       return new Undeclarable();
     }
@@ -67,6 +72,24 @@ sealed interface CopiedDolbyVision {
     }
 
     return new Declarable(profile.get(), level.getAsInt());
+  }
+
+  // The level never comes from the RPU's vdr_rpu_level. A size or maximum frame rate that the
+  // probe does not store gives no level.
+  private static OptionalInt levelFromRecordOrTable(
+      VideoStreamCopy copy, DolbyVision.Present present) {
+    var recordLevel =
+        present.declared().map(DolbyVisionConfiguration::level).orElse(OptionalInt.empty());
+    if (recordLevel.isPresent()) {
+      return recordLevel;
+    }
+
+    return copy.decodedSize()
+        .flatMap(
+            size ->
+                copy.maximumFrameRate()
+                    .map(rate -> DolbyVisionLevelTable.lowestLevelFor(size, rate)))
+        .orElse(OptionalInt.empty());
   }
 
   private static OptionalInt profileNumberFromRecordOrRpuHeader(
