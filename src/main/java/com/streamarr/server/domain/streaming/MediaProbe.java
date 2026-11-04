@@ -1,5 +1,6 @@
 package com.streamarr.server.domain.streaming;
 
+import com.streamarr.server.domain.language.Language;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -186,6 +187,61 @@ public record MediaProbe(
         .filter(stream -> stream.codec().filter(IMAGE_SUBTITLE_CODECS::contains).isPresent())
         .flatMap(stream -> stream.language().stream())
         .anyMatch(language -> languages.contains(LanguageCodes.canonical(language)));
+  }
+
+  /**
+   * This probe with the audio stream that the session plays first among the streams, and the audio
+   * facts taken from it, so every decision about the session's audio reads that stream (ADR 0043).
+   * The stream is the first eligible stream in the first of {@code languages}, in order, that the
+   * file holds: one in exactly that language before one that shares its base language. A
+   * commentary, an audio description, a clean-effects stream and a dependent stream are never
+   * eligible. When no language matches, the file's own default plays: the first eligible stream
+   * whose default flag is set, else the first eligible stream, else the first audio stream.
+   */
+  public MediaProbe withSessionAudio(@NonNull List<Language> languages) {
+    var eligible = audioStreams().stream().filter(MediaProbe::isEligibleSessionAudio).toList();
+    return languages.stream()
+        .flatMap(language -> matchingAudio(eligible, language).stream())
+        .findFirst()
+        .or(() -> eligible.stream().filter(StreamInfo::isDefault).findFirst())
+        .or(() -> eligible.stream().findFirst())
+        .map(this::withAudioFirst)
+        .orElse(this);
+  }
+
+  private static Optional<StreamInfo> matchingAudio(List<StreamInfo> eligible, Language language) {
+    return eligible.stream()
+        .filter(stream -> languageOf(stream).filter(language::equals).isPresent())
+        .findFirst()
+        .or(
+            () ->
+                eligible.stream()
+                    .filter(
+                        stream ->
+                            languageOf(stream)
+                                .filter(tagged -> tagged.base() == language.base())
+                                .isPresent())
+                    .findFirst());
+  }
+
+  private static Optional<Language> languageOf(StreamInfo stream) {
+    return stream.language().flatMap(Language::ofFileCode);
+  }
+
+  private static boolean isEligibleSessionAudio(StreamInfo stream) {
+    if (stream.comment().orElse(false)) {
+      return false;
+    }
+
+    return stream
+        .audioProperties()
+        .filter(
+            properties ->
+                properties.visualImpaired()
+                    || properties.descriptions()
+                    || properties.cleanEffects()
+                    || properties.dependent())
+        .isEmpty();
   }
 
   public List<StreamInfo> subtitleStreams() {

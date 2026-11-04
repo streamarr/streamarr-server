@@ -31,6 +31,11 @@ import static org.assertj.core.api.Assertions.tuple;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.language.Language;
+import com.streamarr.server.domain.language.LanguageOverrideChange;
+import com.streamarr.server.domain.language.OverrideFieldChange;
+import com.streamarr.server.domain.language.ProfileLanguagePreferences;
+import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.AudioCodec;
@@ -91,18 +96,29 @@ import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeAuthorizationService;
+import com.streamarr.server.fakes.FakeEpisodeRepository;
+import com.streamarr.server.fakes.FakeLanguagePreferenceRepository;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
+import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
+import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.HardwareEncodedFamiliesAndExpectedEncode;
+import com.streamarr.server.fixtures.MediaEntityFixture;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamMeasurementFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.services.language.LanguagePreferenceService;
+import com.streamarr.server.services.language.SetLanguageOverrideCommand;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import io.micrometer.core.instrument.Counter;
@@ -130,6 +146,7 @@ import java.util.stream.Stream;
 import lombok.Builder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -165,6 +182,7 @@ class HlsStreamingServiceTest {
   private HlsStreamingService service;
   private SegmentDeliveryCoordinator coordinator;
   private SimpleMeterRegistry meters;
+  private PlaybackLanguagePreferences languagePreferences = (profileId, titleId) -> List.of();
   private final MutexFactory<UUID> sessionMutex = new MutexFactory<>();
 
   @Test
@@ -2955,6 +2973,241 @@ class HlsStreamingServiceTest {
         .toList();
   }
 
+  @Nested
+  @DisplayName("Session audio language")
+  class SessionAudioLanguage {
+
+    private final FakeMovieRepository movies = new FakeMovieRepository();
+    private final FakeSeriesRepository seriesRepository = new FakeSeriesRepository();
+    private final FakeSeasonRepository seasons = new FakeSeasonRepository();
+    private final FakeEpisodeRepository episodes = new FakeEpisodeRepository();
+    private final UUID profileId = UUID.randomUUID();
+    private final AuthenticatedIdentity viewer =
+        AuthenticatedIdentityFixture.profileScopedBuilder().profileId(profileId).build();
+    private LanguagePreferenceService languages;
+    private Episode episode;
+
+    @BeforeEach
+    void preferEnglishThenGermanForAnEpisodeWithEnglishAndJapaneseTracks() {
+      languages =
+          new LanguagePreferenceService(
+              new FakeAuthorizationService(viewer),
+              new FakeLanguagePreferenceRepository(movies, seriesRepository, seasons, episodes),
+              movies,
+              seriesRepository,
+              seasons,
+              episodes);
+      languagePreferences = languages;
+      var series = seriesRepository.save(MediaEntityFixture.buildSeries("Series"));
+      var season = MediaEntityFixture.buildSeason("Season 1", 1);
+      season.setSeries(series);
+      seasons.save(season);
+      var unsavedEpisode = MediaEntityFixture.buildEpisode("Episode 1", 1);
+      unsavedEpisode.setSeason(season);
+      episode = episodes.save(unsavedEpisode);
+      languages.setProfilePreferences(
+          viewer,
+          ProfileLanguagePreferences.builder()
+              .audioLanguages(List.of(Language.EN, Language.DE))
+              .build());
+      useAudioTracks(
+          audioTrack(1, "eng").build(),
+          audioTrack(2, "jpn").build(),
+          audioTrack(3, "fre").comment(Optional.of(true)).build());
+    }
+
+    @Test
+    @DisplayName(
+        "Should play the Japanese track when the series overrides the audio although the Profile"
+            + " lists English first")
+    void shouldPlayTheJapaneseTrackWhenTheSeriesOverridesTheAudio() {
+      overrideAudio(episode.getSeason().getSeries().getId(), Language.JA);
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+    }
+
+    @Test
+    @DisplayName("Should play the Profile's first language when no override names one")
+    void shouldPlayTheProfilesFirstLanguageWhenNoOverrideNamesOne() {
+      useAudioTracks(audioTrack(1, "jpn").build(), audioTrack(2, "en").build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+    }
+
+    @Test
+    @DisplayName("Should try the next language when the file holds no track in the first")
+    void shouldTryTheNextLanguageWhenTheFileHoldsNoTrackInTheFirst() {
+      overrideAudio(episode.getId(), Language.KO);
+      useAudioTracks(audioTrack(1, "jpn").build(), audioTrack(2, "ger").build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+    }
+
+    @Test
+    @DisplayName(
+        "Should play the file's first audio track when the file holds none of the languages")
+    void shouldPlayTheFilesFirstAudioTrackWhenTheFileHoldsNoneOfTheLanguages() {
+      useAudioTracks(audioTrack(1, "jpn").build(), audioTrack(2, "kor").build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(1);
+    }
+
+    @Test
+    @DisplayName(
+        "Should play the file's default audio track when the file holds none of the languages")
+    void shouldPlayTheFilesDefaultAudioTrackWhenTheFileHoldsNoneOfTheLanguages() {
+      useAudioTracks(
+          audioTrack(1, "jpn").build(),
+          audioTrack(2, "kor").isDefault(true).build(),
+          audioTrack(3, "ita").build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+    }
+
+    @Test
+    @DisplayName(
+        "Should play the next track when the file's first track is a commentary and no language"
+            + " matches")
+    void shouldPlayTheNextTrackWhenTheFilesFirstTrackIsACommentaryAndNoLanguageMatches() {
+      useAudioTracks(
+          audioTrack(1, "jpn").comment(Optional.of(true)).isDefault(true).build(),
+          audioTrack(2, "kor").build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+    }
+
+    @Test
+    @DisplayName("Should play a regional track when the preferred language names its base language")
+    void shouldPlayARegionalTrackWhenThePreferredLanguageNamesItsBaseLanguage() {
+      overrideAudio(episode.getId(), Language.PT);
+      useAudioTracks(audioTrack(1, "eng").build(), audioTrack(2, "pt-BR").build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+    }
+
+    @Test
+    @DisplayName(
+        "Should play the session's own language when it names one over an episode override")
+    void shouldPlayTheSessionsOwnLanguageWhenItNamesOneOverAnEpisodeOverride() {
+      overrideAudio(episode.getId(), Language.EN);
+
+      var session =
+          createEpisodeSession(
+              StreamingOptions.builder().quality(VideoQuality.AUTO).audioLanguage(Language.JA));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+    }
+
+    @Test
+    @DisplayName("Should pass over a commentary track when it is the only track in a language")
+    void shouldPassOverACommentaryTrackWhenItIsTheOnlyTrackInALanguage() {
+      overrideAudio(episode.getId(), Language.FR);
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(1);
+    }
+
+    @Test
+    @DisplayName("Should pass over an audio description track when it is in the preferred language")
+    void shouldPassOverAnAudioDescriptionTrackWhenItIsInThePreferredLanguage() {
+      useAudioTracks(
+          audioTrack(1, "jpn").build(),
+          audioTrack(2, "eng")
+              .audioProperties(
+                  Optional.of(AudioStreamProperties.builder().visualImpaired(true).build()))
+              .build(),
+          audioTrack(3, "eng").build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(3);
+    }
+
+    @Test
+    @DisplayName("Should describe the chosen track's codec when the chosen track is not the first")
+    void shouldDescribeTheChosenTracksCodecWhenTheChosenTrackIsNotTheFirst() {
+      useAudioTracks(
+          audioTrack(1, "jpn").build(),
+          ProbeFixture.audioStreamBuilder("ac3")
+              .index(2)
+              .language(Optional.of("eng"))
+              .channels(OptionalInt.of(6))
+              .build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+      assertThat(session.getMediaProbe().audioCodec()).isEqualTo("ac3");
+      assertThat(session.getMediaProbe().audioChannels()).hasValue(6);
+    }
+
+    private void overrideAudio(UUID titleId, Language language) {
+      languages.setLanguageOverride(
+          viewer,
+          SetLanguageOverrideCommand.builder()
+              .itemId(titleId)
+              .change(
+                  LanguageOverrideChange.builder()
+                      .audioLanguage(OverrideFieldChange.replaceWith(Optional.of(language)))
+                      .build())
+              .build());
+    }
+
+    private StreamInfo.StreamInfoBuilder audioTrack(int index, String language) {
+      return ProbeFixture.audioStreamBuilder("aac")
+          .index(index)
+          .language(Optional.of(language))
+          .channels(OptionalInt.of(2));
+    }
+
+    private void useAudioTracks(StreamInfo... audioTracks) {
+      var probe = ProbeFixture.completeProbe(defaultProbeBuilder().build());
+      var streams = new ArrayList<StreamInfo>();
+      streams.add(probe.streams().getFirst());
+      streams.addAll(List.of(audioTracks));
+      probeResults.setDefaultOutcome(
+          ProbeOutcome.Success.builder()
+              .container(probe.container())
+              .streams(streams)
+              .keyframes(probe.keyframes())
+              .chosenVideoStream(probe.chosenVideoStream())
+              .streamTitlesOmitted(probe.streamTitlesOmitted())
+              .build());
+    }
+
+    private StreamSession createEpisodeSession(StreamingOptions.StreamingOptionsBuilder options) {
+      var file =
+          mediaFileRepository.save(
+              MediaFile.builder()
+                  .mediaId(episode.getId())
+                  .filepathUri("file:///media/series/episode.mkv")
+                  .filename("episode.mkv")
+                  .status(MediaFileStatus.MATCHED)
+                  .size(1_000_000L)
+                  .build());
+      return accepted(
+          service.createSession(
+              createStreamSessionCommandBuilder(file.getId(), profileId)
+                  .options(options.build())
+                  .build()));
+    }
+  }
+
   @BeforeEach
   void setUp() {
     mediaFileRepository = new FakeMediaFileRepository();
@@ -3005,6 +3258,8 @@ class HlsStreamingServiceTest {
         .producerLifecycle(rig.lifecycle())
         .deliveryCoordinator(rig.coordinator())
         .meterRegistry(meters)
+        .languagePreferences(
+            (profileId, titleId) -> languagePreferences.audioLanguagesFor(profileId, titleId))
         .build();
   }
 
@@ -5034,7 +5289,7 @@ class HlsStreamingServiceTest {
                 List.of(
                     probe.streams().getFirst(),
                     audio,
-                    ProbeFixture.audioStreamBuilder("aac").index(2).isDefault(true).build()))
+                    ProbeFixture.audioStreamBuilder("aac").index(2).build()))
             .keyframes(probe.keyframes())
             .chosenVideoStream(probe.chosenVideoStream())
             .streamTitlesOmitted(probe.streamTitlesOmitted())
@@ -5152,7 +5407,7 @@ class HlsStreamingServiceTest {
                 List.of(
                     probe.streams().getFirst(),
                     firstAudio,
-                    ProbeFixture.audioStreamBuilder("ac3").index(2).isDefault(true).build()))
+                    ProbeFixture.audioStreamBuilder("ac3").index(2).build()))
             .keyframes(probe.keyframes())
             .chosenVideoStream(probe.chosenVideoStream())
             .streamTitlesOmitted(probe.streamTitlesOmitted())
@@ -5582,7 +5837,14 @@ class HlsStreamingServiceTest {
     var session =
         accepted(
             service.createSession(
-                directPlayCommand(file.getId()).capabilityDeclaration(declaration).build()));
+                directPlayCommand(file.getId())
+                    .options(
+                        StreamingOptions.builder()
+                            .quality(VideoQuality.ORIGINAL)
+                            .audioLanguage(Language.EN)
+                            .build())
+                    .capabilityDeclaration(declaration)
+                    .build()));
 
     assertThat(session.getDelivery()).isEqualTo(StreamDelivery.HLS);
     assertThat(session.getMediaProbe().sessionAudioTrackPosition()).hasValue(0);
@@ -5710,11 +5972,17 @@ class HlsStreamingServiceTest {
 
   private static MediaProbe directPlayableProbeWhoseDefaultAudioTrackIsTheSecond() {
     var video = ProbeFixture.videoStreamBuilder(directPlayableProbe()).build();
-    var first = ProbeFixture.audioStreamBuilder("aac").index(1).channels(OptionalInt.of(2)).build();
+    var first =
+        ProbeFixture.audioStreamBuilder("aac")
+            .index(1)
+            .channels(OptionalInt.of(2))
+            .language(Optional.of("eng"))
+            .build();
     var second =
         ProbeFixture.audioStreamBuilder("aac")
             .index(2)
             .channels(OptionalInt.of(2))
+            .language(Optional.of("fra"))
             .isDefault(true)
             .build();
     return directPlayableProbeBuilder().streams(List.of(video, first, second)).build();

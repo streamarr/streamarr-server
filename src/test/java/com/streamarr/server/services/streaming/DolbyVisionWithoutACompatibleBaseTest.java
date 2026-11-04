@@ -5,6 +5,7 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.d
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
+import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.noLanguagePreferences;
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
@@ -339,6 +340,7 @@ class DolbyVisionWithoutACompatibleBaseTest {
             .heldRequests(workers.heldSegmentRequests())
             .build();
     return HlsStreamingService.builder()
+        .languagePreferences(noLanguagePreferences())
         .mediaFileRepository(mediaFiles)
         .transcodeExecutor(workers)
         .segmentStore(segments)

@@ -103,8 +103,10 @@ input StreamingOptionsInput {
     maxWidth: Int
     maxHeight: Int
     maxBitrate: Int
-    audioLanguage: String
-    subtitleLanguage: String
+    "The audio language of this session. It wins over the Profile's language preferences and overrides."
+    audioLanguage: Language
+    "The subtitle language of this session. Stored now; subtitles apply when they ship."
+    subtitleLanguage: Language
 }
 
 enum VideoQuality {

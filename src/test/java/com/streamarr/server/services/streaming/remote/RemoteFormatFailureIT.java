@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.noLanguagePreferences;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChannelBuilder;
@@ -143,6 +144,7 @@ class RemoteFormatFailureIT {
       rig.awaitStopped();
       var service =
           HlsStreamingService.builder()
+              .languagePreferences(noLanguagePreferences())
               .meterRegistry(new SimpleMeterRegistry())
               .runtimeRegistry(rig.registry)
               .producerLifecycle(rig.streaming.lifecycle())

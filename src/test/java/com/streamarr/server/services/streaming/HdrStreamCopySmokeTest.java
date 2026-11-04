@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.declarationBuilderFor;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
+import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.noLanguagePreferences;
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommandBuilder;
 import static com.streamarr.server.fixtures.SyntheticHdrSource.CONTENT_LIGHT_LEVEL;
@@ -152,6 +153,7 @@ class HdrStreamCopySmokeTest {
             .runtimeRegistry(sessionRegistry)
             .producerLifecycle(rig.lifecycle())
             .deliveryCoordinator(coordinator)
+            .languagePreferences(noLanguagePreferences())
             .build();
     playlistService = new HlsPlaylistService(properties);
   }

@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.noLanguagePreferences;
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommandBuilder;
@@ -124,6 +125,7 @@ class HlsStreamingSmokeTest {
             .build();
     streamingService =
         HlsStreamingService.builder()
+            .languagePreferences(noLanguagePreferences())
             .meterRegistry(new SimpleMeterRegistry())
             .mediaFileRepository(mediaFileRepository)
             .transcodeExecutor(transcodeExecutor)

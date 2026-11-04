@@ -17,6 +17,7 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.streaming.PlaybackLanguagePreferences;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -36,7 +37,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 @RequiredArgsConstructor
-public class LanguagePreferenceService {
+public class LanguagePreferenceService implements PlaybackLanguagePreferences {
 
   private static final TitleLineage NO_TITLE = new TitleLineage(List.of());
 
@@ -150,6 +151,12 @@ public class LanguagePreferenceService {
     }
 
     return result;
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<Language> audioLanguagesFor(@NonNull UUID profileId, @NonNull UUID titleId) {
+    return languagePreferences(profileId, List.of(titleId)).get(titleId).audioLanguages();
   }
 
   private UUID requireMayChangeLanguages(AuthenticatedIdentity identity) {

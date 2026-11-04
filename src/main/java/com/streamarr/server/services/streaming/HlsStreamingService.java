@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.language.Language;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.streaming.AudioSteps;
 import com.streamarr.server.domain.streaming.AudioTrackChannels;
@@ -21,6 +22,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -52,6 +54,7 @@ public class HlsStreamingService implements StreamingService {
   private final ProducerLifecycleService producerLifecycle;
   private final SegmentDeliveryCoordinator deliveryCoordinator;
   private final MeterRegistry meterRegistry;
+  private final PlaybackLanguagePreferences languagePreferences;
 
   @Override
   public Outcome<StreamSession, CreateStreamSessionRejection> createSession(
@@ -75,18 +78,33 @@ public class HlsStreamingService implements StreamingService {
     return playbackProbeService
         .read(mediaFileId)
         .fold(
-            probe -> startSession(command, mediaFile.get(), withChosenAudioTrack(probe, command)),
+            probe ->
+                startSession(
+                    command, mediaFile.get(), withSessionAudio(probe, command, mediaFile.get())),
             Outcome::rejected);
   }
 
-  private static MediaProbe withChosenAudioTrack(
-      MediaProbe probe, CreateStreamSessionCommand command) {
+  // A track the viewer switched to, else the session's own language, then the Profile's
+  // preferences for the title (ADR 0043).
+  private MediaProbe withSessionAudio(
+      MediaProbe probe, CreateStreamSessionCommand command, MediaFile mediaFile) {
     var position = command.audioTrackPosition();
-    if (position.isEmpty()) {
-      return probe;
+    if (position.isPresent()) {
+      return probe.withSessionAudioTrackAt(position.getAsInt());
     }
 
-    return probe.withSessionAudioTrackAt(position.getAsInt());
+    return probe.withSessionAudio(audioLanguages(command, mediaFile));
+  }
+
+  private List<Language> audioLanguages(CreateStreamSessionCommand command, MediaFile mediaFile) {
+    var languages = new ArrayList<Language>();
+    Optional.ofNullable(command.options().audioLanguage()).ifPresent(languages::add);
+    Optional.ofNullable(mediaFile.getMediaId())
+        .map(
+            titleId ->
+                languagePreferences.audioLanguagesFor(command.identity().profileId(), titleId))
+        .ifPresent(languages::addAll);
+    return languages;
   }
 
   private Outcome<StreamSession, CreateStreamSessionRejection> startSession(
