@@ -93,8 +93,7 @@ public class TranscodeDecisionService {
     }
 
     return source
-        .containerFormat()
-        .flatMap(SourceContainer::ofProbedFormat)
+        .sourceContainer()
         .filter(container -> request.capabilityDeclaration().acceptsDirectPlay(source, container));
   }
 
