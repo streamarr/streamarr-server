@@ -3,13 +3,10 @@ package com.streamarr.server.domain.streaming;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.OptionalInt;
-import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * Each expected level comes from Dolby's level table, as FFmpeg 8.1.3 copies it in
@@ -24,68 +21,68 @@ import org.junit.jupiter.params.provider.MethodSource;
 class DolbyVisionLevelTableTest {
 
   @ParameterizedTest(name = "{0}×{1} at {2}/{3} fps is level {4}")
-  @MethodSource("picturesWithinALevel")
+  @CsvSource(
+      textBlock =
+          """
+      # width, height, frames, seconds, level
+       1280,   720,     24,     1,     1
+       1280,   720,  24001,  1000,     2
+       1280,   720,     30,     1,     2
+       1920,  1080,  24000,  1001,     3
+       1920,  1080,     24,     1,     3
+       2560,   720,     24,     1,     4
+       1920,  1080,     25,     1,     4
+       1920,  1080,  30000,  1001,     4
+       1920,  1080,     30,     1,     4
+       3840,  1080,     24,     1,     5
+       2560,  1440,     24,     1,     5
+       1920,  1080,     50,     1,     5
+       1920,  1080,     60,     1,     5
+       3840,  1600,     24,     1,     6
+       3840,  2160,  24000,  1001,     6
+       3840,  2160,     24,     1,     6
+       3840,  2160,     25,     1,     7
+       3840,  2160,     30,     1,     7
+       3840,  2160,     48,     1,     8
+       3840,  2160,     50,     1,     9
+       3840,  2160,  60000,  1001,     9
+       3840,  2160,     60,     1,     9
+       3840,  2160,    100,     1,    10
+       3840,  2160,    120,     1,    10
+       7680,  4320,     24,     1,    11
+       7680,  4320,     30,     1,    11
+       7680,  4320,     60,     1,    12
+       7680,  4320,    120,     1,    13
+      """)
   @DisplayName(
       "Should give the lowest level whose pixel rate and width carry the picture when a level"
           + " carries it")
   void shouldGiveTheLowestLevelWhosePixelRateAndWidthCarryThePictureWhenALevelCarriesIt(
-      int width, int height, int rateNumerator, int rateDenominator, int expectedLevel) {
+      int width, int height, int frames, int seconds, int expectedLevel) {
     var level =
         DolbyVisionLevelTable.lowestLevelFor(
-            new PictureSize(width, height), new Fraction(rateNumerator, rateDenominator));
+            new PictureSize(width, height), new Fraction(frames, seconds));
 
     assertThat(level).isEqualTo(OptionalInt.of(expectedLevel));
   }
 
-  static Stream<Arguments> picturesWithinALevel() {
-    return Stream.of(
-        Arguments.of(1280, 720, 24, 1, 1),
-        Arguments.of(1280, 720, 24_001, 1_000, 2),
-        Arguments.of(1280, 720, 30, 1, 2),
-        Arguments.of(1920, 1080, 24_000, 1_001, 3),
-        Arguments.of(1920, 1080, 24, 1, 3),
-        Arguments.of(2560, 720, 24, 1, 4),
-        Arguments.of(1920, 1080, 25, 1, 4),
-        Arguments.of(1920, 1080, 30_000, 1_001, 4),
-        Arguments.of(1920, 1080, 30, 1, 4),
-        Arguments.of(3840, 1080, 24, 1, 5),
-        Arguments.of(2560, 1440, 24, 1, 5),
-        Arguments.of(1920, 1080, 50, 1, 5),
-        Arguments.of(1920, 1080, 60, 1, 5),
-        Arguments.of(3840, 1600, 24, 1, 6),
-        Arguments.of(3840, 2160, 24_000, 1_001, 6),
-        Arguments.of(3840, 2160, 24, 1, 6),
-        Arguments.of(3840, 2160, 25, 1, 7),
-        Arguments.of(3840, 2160, 30, 1, 7),
-        Arguments.of(3840, 2160, 48, 1, 8),
-        Arguments.of(3840, 2160, 50, 1, 9),
-        Arguments.of(3840, 2160, 60_000, 1_001, 9),
-        Arguments.of(3840, 2160, 60, 1, 9),
-        Arguments.of(3840, 2160, 100, 1, 10),
-        Arguments.of(3840, 2160, 120, 1, 10),
-        Arguments.of(7680, 4320, 24, 1, 11),
-        Arguments.of(7680, 4320, 30, 1, 11),
-        Arguments.of(7680, 4320, 60, 1, 12),
-        Arguments.of(7680, 4320, 120, 1, 13));
-  }
-
   @ParameterizedTest(name = "{0}×{1} at {2}/{3} fps")
-  @MethodSource("picturesAboveEveryLevel")
+  @CsvSource(
+      textBlock =
+          """
+      # width, height, frames, seconds
+       7680,  4320, 120001,  1000
+       7680,  4320,    240,     1
+       7681,  1080,     24,     1
+      """)
   @DisplayName("Should give no level when the picture exceeds every level of the table")
   void shouldGiveNoLevelWhenThePictureExceedsEveryLevelOfTheTable(
-      int width, int height, int rateNumerator, int rateDenominator) {
+      int width, int height, int frames, int seconds) {
     var level =
         DolbyVisionLevelTable.lowestLevelFor(
-            new PictureSize(width, height), new Fraction(rateNumerator, rateDenominator));
+            new PictureSize(width, height), new Fraction(frames, seconds));
 
     assertThat(level).isEmpty();
-  }
-
-  static Stream<Arguments> picturesAboveEveryLevel() {
-    return Stream.of(
-        Arguments.of(7680, 4320, 120_001, 1_000),
-        Arguments.of(7680, 4320, 240, 1),
-        Arguments.of(7681, 1080, 24, 1));
   }
 
   @ParameterizedTest(name = "level {0}")
