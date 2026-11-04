@@ -270,6 +270,9 @@ public class StreamingResolver {
           new PlaybackSessionError.AudioTrackNotInFileError(
               "This video has no audio track there. Choose another audio track.",
               InputPath.of("audioTrackPosition"));
+      case FORMAT_ATTEMPTS_EXHAUSTED ->
+          new PlaybackSessionError.PlaybackFormatAttemptsExhaustedError(
+              "The audio track can't change now. Keep the current audio track, or start the video again.");
     };
   }
 

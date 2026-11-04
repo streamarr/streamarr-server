@@ -329,7 +329,7 @@ type SwitchPlaybackAudioTrackPayload {
     userErrors: [SwitchPlaybackAudioTrackError!]!
 }
 
-union SwitchPlaybackAudioTrackError = InvalidIdError | PlaybackSessionClosedError | AudioTrackNotInFileError
+union SwitchPlaybackAudioTrackError = InvalidIdError | PlaybackSessionClosedError | AudioTrackNotInFileError | PlaybackFormatAttemptsExhaustedError
 
 "The file has no audio track at the position that the input names."
 type AudioTrackNotInFileError implements InputMutationError & MutationError {

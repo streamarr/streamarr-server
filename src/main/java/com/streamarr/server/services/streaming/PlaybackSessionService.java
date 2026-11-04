@@ -227,7 +227,8 @@ public class PlaybackSessionService implements AutoCloseable {
    * without a format change, and an encode plays in Auto with {@code AUDIO_TRACK_SWITCHED}. Every
    * later format attempt plays the chosen track. The playback session stays as it is when the
    * stream session is not its current direct-play format attempt, or when that attempt already
-   * plays the chosen track.
+   * plays the chosen track. The switch counts against the format-attempt budget, and a switch with
+   * no format attempt left keeps the direct play.
    */
   public Outcome<PlaybackSessionSnapshot, AudioTrackSwitchRejection> switchAudioTrack(
       @NonNull SwitchPlaybackAudioTrackCommand command) {
@@ -262,6 +263,11 @@ public class PlaybackSessionService implements AutoCloseable {
 
     if (directPlay.get().getDirectPlayAudioTrackPosition().equals(OptionalInt.of(position))) {
       return Outcome.accepted(Optional.empty());
+    }
+
+    // A switch with no format attempt left keeps the direct play that plays (ADR 0052).
+    if (playback.formatAttemptCount >= recoveryPolicy.maximumFormatAttempts()) {
+      return Outcome.rejected(AudioTrackSwitchRejection.FORMAT_ATTEMPTS_EXHAUSTED);
     }
 
     playback.audioTrackPosition = OptionalInt.of(position);

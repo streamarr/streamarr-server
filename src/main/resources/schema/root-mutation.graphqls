@@ -15,7 +15,8 @@ type Mutation {
     HLS copy keeps Original, and an encode plays in Auto with AUDIO_TRACK_SWITCHED. The client seeks the new
     stream session to its current position. Every later format attempt plays the chosen track. The playback
     session stays as it is when streamSessionId is not its current direct-play stream session, or when that
-    stream session already plays the chosen track.
+    stream session already plays the chosen track. The switch counts against the format-attempt budget; with
+    no format attempt left, direct play goes on and the payload holds PlaybackFormatAttemptsExhaustedError.
     """
     switchPlaybackAudioTrack(input: SwitchPlaybackAudioTrackInput!): SwitchPlaybackAudioTrackPayload
     destroyPlaybackSession(input: DestroyPlaybackSessionInput!): DestroyPlaybackSessionPayload

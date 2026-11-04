@@ -1467,6 +1467,24 @@ class PlaybackSessionServiceTest {
     assertThat(streams.createdCommands).hasSize(1);
   }
 
+  // ADR 0052: the format-attempt budget bounds every format attempt. A switch with no attempt left
+  // keeps the direct play that plays, instead of ending playback.
+  @Test
+  @DisplayName(
+      "Should keep direct play when the viewer switches tracks with no format attempt left")
+  void shouldKeepDirectPlayWhenTheViewerSwitchesTracksWithNoFormatAttemptLeft() {
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(1).build();
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlayOfTwoAudioTracks(playback, command);
+
+    var outcome = playback.switchAudioTrack(audioSwitch(directPlay, command, 1));
+
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(AudioTrackSwitchRejection.FORMAT_ATTEMPTS_EXHAUSTED));
+    assertThat(playback.access(request(directPlay, command))).contains(directPlay);
+    assertThat(streams.createdCommands).hasSize(1);
+  }
+
   @Test
   @DisplayName("Should keep direct play when the viewer switches to the audio track that it plays")
   void shouldKeepDirectPlayWhenTheViewerSwitchesToTheAudioTrackThatItPlays() {
