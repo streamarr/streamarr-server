@@ -376,6 +376,7 @@ class WorkerPlaybackRecoveryIT {
               .build();
       sessions =
           PlaybackSessionService.builder()
+              .eventPublisher(events)
               .streamingService(streams)
               .authorityGate((_, _) -> true)
               .maximumFormatAttempts(3)
