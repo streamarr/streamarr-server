@@ -1,0 +1,24 @@
+# Idle segment retention (ADR 0026 shapes). Only a ServerAdmin reads or changes it.
+
+"""
+How long the server keeps a stream session, and its segments, after the last request for it.
+A viewer who pauses for longer starts again from a new stream session.
+"""
+type IdleSegmentRetentionSetting {
+    minutes: Int!
+    "The shortest retention a ServerAdmin can choose."
+    minimumMinutes: Int!
+    "The longest retention a ServerAdmin can choose."
+    maximumMinutes: Int!
+}
+
+input ChangeIdleSegmentRetentionInput {
+    minutes: Int!
+}
+
+type ChangeIdleSegmentRetentionPayload {
+    idleSegmentRetentionSetting: IdleSegmentRetentionSetting
+    userErrors: [ChangeIdleSegmentRetentionError!]!
+}
+
+union ChangeIdleSegmentRetentionError = IdleSegmentRetentionOutOfRangeError

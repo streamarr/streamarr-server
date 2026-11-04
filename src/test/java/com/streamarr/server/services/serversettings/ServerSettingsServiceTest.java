@@ -135,6 +135,59 @@ class ServerSettingsServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should report one hour and the allowed range when a ServerAdmin reads the retention")
+  void shouldReportOneHourAndAllowedRangeWhenServerAdminReadsRetention() {
+    var setting = serverSettingsService.readIdleSegmentRetentionSetting(identity);
+
+    assertThat(setting.minutes()).isEqualTo(60);
+    assertThat(setting.minimumMinutes()).isEqualTo(5);
+    assertThat(setting.maximumMinutes()).isEqualTo(10_080);
+    assertThat(authorizationService.recordedIntents())
+        .containsExactly(new Intent.ViewIdleSegmentRetention());
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {5, 30, 10_080})
+  @DisplayName("Should keep idle stream sessions for the new time when a ServerAdmin changes it")
+  void shouldKeepIdleStreamSessionsForNewTimeWhenServerAdminChangesIt(int minutes) {
+    var setting = accepted(serverSettingsService.changeIdleSegmentRetention(identity, minutes));
+
+    assertThat(setting.minutes()).isEqualTo(minutes);
+    assertThat(serverSettingsService.readIdleSegmentRetentionSetting(identity).minutes())
+        .isEqualTo(minutes);
+    assertThat(serverSettingsService.idleSegmentRetention()).isEqualTo(Duration.ofMinutes(minutes));
+    assertThat(authorizationService.recordedIntents())
+        .startsWith(new Intent.ChangeIdleSegmentRetention());
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {Integer.MIN_VALUE, -60, 0, 4, 10_081, Integer.MAX_VALUE})
+  @DisplayName("Should reject the change and keep one hour when the retention is out of range")
+  void shouldRejectChangeAndKeepOneHourWhenRetentionIsOutOfRange(int minutes) {
+    var outcome = serverSettingsService.changeIdleSegmentRetention(identity, minutes);
+
+    assertThat(rejectionOf(outcome))
+        .isEqualTo(new ChangeIdleSegmentRetentionRejection.OutOfRange());
+    assertThat(serverSettingsService.idleSegmentRetention()).isEqualTo(Duration.ofHours(1));
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {30, 4})
+  @DisplayName(
+      "Should refuse a caller who is not a ServerAdmin and keep one hour when the retention"
+          + " changes")
+  void shouldRefuseCallerWhoIsNotServerAdminAndKeepOneHourWhenRetentionChanges(int minutes) {
+    authorizationService.denyAll();
+
+    assertThatThrownBy(() -> serverSettingsService.changeIdleSegmentRetention(identity, minutes))
+        .isInstanceOf(AccessDeniedException.class);
+    assertThatThrownBy(() -> serverSettingsService.readIdleSegmentRetentionSetting(identity))
+        .isInstanceOf(AccessDeniedException.class);
+    assertThat(serverSettingsService.idleSegmentRetention()).isEqualTo(Duration.ofHours(1));
+  }
+
+  @Test
   @DisplayName("Should fail with a missing-settings error when the settings row is absent")
   void shouldFailWithMissingSettingsErrorWhenSettingsRowIsAbsent() {
     serverSettingsRepository.deleteAll();

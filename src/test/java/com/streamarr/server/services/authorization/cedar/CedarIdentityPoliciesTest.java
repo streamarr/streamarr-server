@@ -1300,7 +1300,11 @@ class CedarIdentityPoliciesTest {
   class ServerSettingsAdministration {
 
     private final List<Intent.UnitIntent> serverSettingsIntents =
-        List.of(new Intent.ViewEncoderPreset(), new Intent.ChangeEncoderPreset());
+        List.of(
+            new Intent.ViewEncoderPreset(),
+            new Intent.ChangeEncoderPreset(),
+            new Intent.ViewIdleSegmentRetention(),
+            new Intent.ChangeIdleSegmentRetention());
 
     @Test
     @DisplayName("Should allow reading and changing server settings when the caller is ServerAdmin")

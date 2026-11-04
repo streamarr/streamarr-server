@@ -51,12 +51,37 @@ public class ServerSettingsService {
     return storedSettings().getEncoderPreset().resolveFor(videoCodecFamily);
   }
 
+  public IdleSegmentRetentionSetting readIdleSegmentRetentionSetting(
+      @NonNull AuthenticatedIdentity identity) {
+    authorizationService.requireAllowed(identity, new Intent.ViewIdleSegmentRetention());
+    return storedIdleSegmentRetention();
+  }
+
+  /** Last write wins; the audit columns record the ServerAdmin who made the change. */
+  @Transactional
+  public Outcome<IdleSegmentRetentionSetting, ChangeIdleSegmentRetentionRejection>
+      changeIdleSegmentRetention(@NonNull AuthenticatedIdentity identity, int minutes) {
+    authorizationService.requireAllowed(identity, new Intent.ChangeIdleSegmentRetention());
+    if (!IdleSegmentRetentionSetting.allows(minutes)) {
+      return Outcome.rejected(new ChangeIdleSegmentRetentionRejection.OutOfRange());
+    }
+
+    var settings = storedSettings();
+    settings.setIdleSegmentRetentionMinutes(minutes);
+    serverSettingsRepository.save(settings);
+    return Outcome.accepted(new IdleSegmentRetentionSetting(minutes));
+  }
+
   /**
    * How long the server keeps a stream session, and its segments, after the last request for it.
    * The reaper reads the setting for the system, not for a caller, so this read is not authorized.
    */
   public Duration idleSegmentRetention() {
-    return Duration.ofMinutes(storedSettings().getIdleSegmentRetentionMinutes());
+    return storedIdleSegmentRetention().duration();
+  }
+
+  private IdleSegmentRetentionSetting storedIdleSegmentRetention() {
+    return new IdleSegmentRetentionSetting(storedSettings().getIdleSegmentRetentionMinutes());
   }
 
   private ServerSettings storedSettings() {

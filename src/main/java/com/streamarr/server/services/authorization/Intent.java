@@ -217,4 +217,10 @@ public sealed interface Intent {
 
   /** Change the server's encoder preset setting (ADR 0044); a whole-surface gate. */
   record ChangeEncoderPreset() implements UnitIntent {}
+
+  /** Read how long the server keeps idle stream sessions; a whole-surface gate. */
+  record ViewIdleSegmentRetention() implements UnitIntent {}
+
+  /** Change how long the server keeps idle stream sessions; a whole-surface gate. */
+  record ChangeIdleSegmentRetention() implements UnitIntent {}
 }
