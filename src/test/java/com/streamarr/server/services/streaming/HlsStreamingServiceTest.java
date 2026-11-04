@@ -5422,12 +5422,13 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(3);
   }
 
-  // ADR 0045: a player that cannot select an audio track in a directly played file plays a file
-  // with several audio tracks over HLS from the start.
+  // ADR 0045: a player that cannot select an audio track in a directly played file plays the
+  // file's first audio track, so it direct-plays a file whose chosen audio track is the first.
   @Test
   @DisplayName(
-      "Should start HLS when the file has several audio tracks and the player cannot select one")
-  void shouldStartHlsWhenTheFileHasSeveralAudioTracksAndThePlayerCannotSelectOne() {
+      "Should direct-play several audio tracks when the player cannot select one and the first is"
+          + " chosen")
+  void shouldDirectPlaySeveralAudioTracksWhenThePlayerCannotSelectOneAndTheFirstIsChosen() {
     probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra"));
     var file = seedMediaFile();
     var declaration = directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(false).build();
@@ -5437,7 +5438,31 @@ class HlsStreamingServiceTest {
             service.createSession(
                 directPlayCommand(file.getId()).capabilityDeclaration(declaration).build()));
 
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
+    assertThat(session.getDirectPlayAudioTrackPosition()).hasValue(0);
+  }
+
+  // ADR 0045: such a player would play the file's first audio track instead of the chosen one, so
+  // it plays over HLS from the start.
+  @Test
+  @DisplayName(
+      "Should start HLS with the chosen audio track when the player cannot select one and a later"
+          + " track is chosen")
+  void shouldStartHlsWithTheChosenAudioTrackWhenThePlayerCannotSelectOneAndALaterTrackIsChosen() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra"));
+    var file = seedMediaFile();
+    var declaration = directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(false).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId())
+                    .capabilityDeclaration(declaration)
+                    .audioTrackPosition(OptionalInt.of(1))
+                    .build()));
+
     assertThat(session.getDelivery()).isEqualTo(StreamDelivery.HLS);
+    assertThat(session.getMediaProbe().sessionAudioTrackPosition()).hasValue(1);
   }
 
   // ADR 0045: a player that selects audio tracks direct-plays a file with several, and selects the

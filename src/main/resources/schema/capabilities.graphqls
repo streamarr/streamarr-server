@@ -13,9 +13,9 @@ input ClientCapabilityDeclarationInput {
     audio: [AudioCapabilityEntryInput!]!
     """
     Whether the player selects an audio track inside a file that it direct-plays, as AVPlayer and Safari's
-    player do (ADR 0045). A player that cannot, such as Chromium's, direct-plays only a file with at most one
-    audio track, and plays a file with several audio tracks over HLS from the start, where an audio switch is
-    a rendition switch.
+    player do (ADR 0045). A player that cannot, such as Chromium's, plays the file's first audio track. It
+    direct-plays a file only when the stream session's audio track is the file's first audio track, and
+    otherwise plays over HLS from the start.
     """
     selectsAudioTrackInDirectPlay: Boolean!
 }

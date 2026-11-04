@@ -344,32 +344,32 @@ class TranscodeDecisionDirectPlayTest {
   }
 
   // ADR 0045: a player that cannot select an audio track in a directly played file, such as
-  // Chromium's, direct-plays only a file with one audio track. A file with several plays over HLS
-  // from the start, where an audio switch is a rendition switch.
-  @Test
+  // Chromium's, plays the file's first audio track. It direct-plays the file when the stream
+  // session's chosen audio track is that track, and plays over HLS from the start otherwise. The
+  // probe lists the chosen track first, so a later track listed first is a later choice.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("chosenAudioTracksForAPlayerThatCannotSelectOne")
   @DisplayName(
-      "Should play over HLS when the file has several audio tracks and the player cannot select"
-          + " one")
-  void shouldPlayOverHlsWhenTheFileHasSeveralAudioTracksAndThePlayerCannotSelectOne() {
-    var source = h264Source().streams(List.of(aac("eng"), aac("fra"))).build();
+      "Should direct-play only when the chosen audio track is the first when the player cannot"
+          + " select one")
+  void shouldDirectPlayOnlyWhenTheChosenAudioTrackIsTheFirstWhenThePlayerCannotSelectOne(
+      String scenario, List<StreamInfo> streams, DirectPlayChoice expected) {
     var request =
         request()
             .capabilityDeclaration(nonSelectingDeclarationListing(SourceContainer.MATROSKA))
-            .source(source);
+            .source(h264Source().streams(streams).build());
 
-    assertThat(service.decideDirectPlay(request.build())).isEqualTo(refused());
+    assertThat(service.decideDirectPlay(request.build())).isEqualTo(expected);
   }
 
-  @Test
-  @DisplayName(
-      "Should direct-play a file with one audio track when the player cannot select an audio track")
-  void shouldDirectPlayAFileWithOneAudioTrackWhenThePlayerCannotSelectAnAudioTrack() {
-    var request =
-        request()
-            .capabilityDeclaration(nonSelectingDeclarationListing(SourceContainer.MATROSKA))
-            .source(h264Source().streams(List.of(aac("eng"))).build());
-
-    assertThat(service.decideDirectPlay(request.build())).isEqualTo(MATROSKA_DIRECT_PLAY);
+  static Stream<Arguments> chosenAudioTracksForAPlayerThatCannotSelectOne() {
+    var englishFirst = aacBuilder("eng").index(1).build();
+    var frenchSecond = aacBuilder("fra").index(2).build();
+    return Stream.of(
+        Arguments.of("one track", List.of(englishFirst), MATROSKA_DIRECT_PLAY),
+        Arguments.of(
+            "the first of two tracks", List.of(englishFirst, frenchSecond), MATROSKA_DIRECT_PLAY),
+        Arguments.of("the second of two tracks", List.of(frenchSecond, englishFirst), refused()));
   }
 
   @Test

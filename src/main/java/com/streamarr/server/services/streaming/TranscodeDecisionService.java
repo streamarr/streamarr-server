@@ -78,13 +78,14 @@ public class TranscodeDecisionService {
    * Whether the stream session direct-plays the source file from its source container (ADR 0045),
    * or plays over HLS and why. Only a format attempt that may direct-play does, and only in
    * Original; any other format attempt names no refusal. The declaration must cover the video and
-   * every audio track from the file's source container (ADR 0049), and a player that cannot select
-   * an audio track plays only a file with at most one (ADR 0045). The decision names the audio track
-   * that HLS would play, for a player that selects one. An interlaced source, a property issue that
-   * rules out a copy (ADR 0049) and a forced image subtitle in the language of any audio track
-   * (#506) keep the file on HLS. The refusals name every check that the file fails. The
-   * keyframe grid, the interim HDR copy rule and the codec string bind only HLS copies. A copy in
-   * Original ignores the viewer's limits (ADR 0050), and so does direct play.
+   * every audio track from the file's source container (ADR 0049). The decision names the stream
+   * session's audio track, which a player that selects audio tracks selects. A player that cannot
+   * select one plays the file's first audio track, so it direct-plays only when that track is the
+   * session's (ADR 0045). An interlaced source, a property issue that rules out a copy (ADR 0049)
+   * and a forced image subtitle in the language of any audio track (#506) keep the file on HLS. The
+   * refusals name every check that the file fails. The keyframe grid, the interim HDR copy rule and
+   * the codec string bind only HLS copies. A copy in Original ignores the viewer's limits (ADR
+   * 0050), and so does direct play.
    */
   public DirectPlayChoice decideDirectPlay(@NonNull DirectPlayRequest request) {
     if (request.videoFormatConstraint() != VideoFormatConstraint.DIRECT_PLAY_OR_COPY_OR_ENCODE
@@ -102,13 +103,17 @@ public class TranscodeDecisionService {
 
     var declaration = request.capabilityDeclaration();
     refusals.addAll(declaration.directPlayRefusals(source, container.get()));
-    var audioTrackSelectable =
-        declaration.selectsAudioTrackInDirectPlay() || source.audioStreams().size() <= 1;
-    if (!refusals.isEmpty() || !audioTrackSelectable) {
+    var audioTrackPosition = source.sessionAudioTrackPosition();
+    if (!refusals.isEmpty() || !canPlayTheSessionsAudioTrack(declaration, audioTrackPosition)) {
       return new DirectPlayChoice.Refused(refusals);
     }
 
-    return new DirectPlayChoice.Accepted(container.get(), source.sessionAudioTrackPosition());
+    return new DirectPlayChoice.Accepted(container.get(), audioTrackPosition);
+  }
+
+  private static boolean canPlayTheSessionsAudioTrack(
+      ClientCapabilityDeclaration declaration, OptionalInt audioTrackPosition) {
+    return declaration.selectsAudioTrackInDirectPlay() || audioTrackPosition.orElse(0) == 0;
   }
 
   // No player's direct play of an interlaced file was measured.
