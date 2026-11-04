@@ -57,6 +57,20 @@ class StreamSessionTest {
   }
 
   @Test
+  @DisplayName("Should reject construction when the source path is missing")
+  void shouldRejectConstructionWhenTheSourcePathIsMissing() {
+    var builder =
+        StreamSession.builder()
+            .sessionId(UUID.randomUUID())
+            .mediaFileId(UUID.randomUUID())
+            .authority(defaultPlaybackAuthorityBuilder().build());
+
+    assertThatThrownBy(builder::build)
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("sourcePath");
+  }
+
+  @Test
   @DisplayName(
       "Should reject direct mutation of the exposed variant handle map when enforcing session invariants")
   void shouldRejectDirectMutationOfExposedVariantHandleMapWhenEnforcingSessionInvariants() {
