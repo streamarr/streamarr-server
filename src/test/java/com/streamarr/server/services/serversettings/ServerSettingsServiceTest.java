@@ -175,16 +175,23 @@ class ServerSettingsServiceTest {
   @ParameterizedTest
   @ValueSource(ints = {30, 4})
   @DisplayName(
-      "Should refuse a caller who is not a ServerAdmin and keep one hour when the retention"
-          + " changes")
-  void shouldRefuseCallerWhoIsNotServerAdminAndKeepOneHourWhenRetentionChanges(int minutes) {
+      "Should refuse a caller who is not a ServerAdmin and keep one hour when the caller changes"
+          + " the retention")
+  void shouldRefuseCallerWhoIsNotServerAdminAndKeepOneHourWhenCallerChangesRetention(int minutes) {
     authorizationService.denyAll();
 
     assertThatThrownBy(() -> serverSettingsService.changeIdleSegmentRetention(identity, minutes))
         .isInstanceOf(AccessDeniedException.class);
+    assertThat(serverSettingsService.idleSegmentRetention()).isEqualTo(Duration.ofHours(1));
+  }
+
+  @Test
+  @DisplayName("Should refuse the retention read when the caller is not a ServerAdmin")
+  void shouldRefuseRetentionReadWhenCallerIsNotServerAdmin() {
+    authorizationService.denyAll();
+
     assertThatThrownBy(() -> serverSettingsService.readIdleSegmentRetentionSetting(identity))
         .isInstanceOf(AccessDeniedException.class);
-    assertThat(serverSettingsService.idleSegmentRetention()).isEqualTo(Duration.ofHours(1));
   }
 
   @Test

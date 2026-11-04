@@ -43,6 +43,7 @@ class SessionReaperDiskPressureTest {
   private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
   private LocalSegmentStore segmentStore;
   private HlsStreamingService streamingService;
+  private final FakeTranscodeExecutor executor = new FakeTranscodeExecutor();
   private ProducerLifecycleService producerLifecycle;
 
   @BeforeEach
@@ -53,7 +54,6 @@ class SessionReaperDiskPressureTest {
             .targetSegmentDuration(Duration.ofSeconds(6))
             .sessionTimeout(Duration.ofSeconds(60))
             .build();
-    var executor = new FakeTranscodeExecutor();
     var rig =
         StreamingRigFixture.streamingRigBuilder()
             .transcodeExecutor(executor)
@@ -151,6 +151,24 @@ class SessionReaperDiskPressureTest {
     assertThat(streamingService.getAllSessions())
         .extracting(StreamSession::getSessionId)
         .containsExactly(resumed);
+    assertThat(segmentFolder.resolve(next.toString())).doesNotExist();
+    assertThat(meters.counter("streamarr.streaming.disk_pressure_evictions").count()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should keep evicting the next idle session when destroying one fails")
+  void shouldKeepEvictingNextIdleSessionWhenDestroyingOneFails() {
+    var failing = storedSession(Duration.ofMinutes(50), 40);
+    var next = storedSession(Duration.ofMinutes(30), 40);
+    var idleFiveMinutes = storedSession(Duration.ofMinutes(5), 400);
+    var active = storedSession(Duration.ofSeconds(10), 470);
+    executor.failOnStop(failing);
+
+    reaperReading(new StoredSegmentBytes(segmentFolder)).reapSessions();
+
+    assertThat(streamingService.getAllSessions())
+        .extracting(StreamSession::getSessionId)
+        .containsExactlyInAnyOrder(idleFiveMinutes, active);
     assertThat(segmentFolder.resolve(next.toString())).doesNotExist();
     assertThat(meters.counter("streamarr.streaming.disk_pressure_evictions").count()).isEqualTo(1);
   }

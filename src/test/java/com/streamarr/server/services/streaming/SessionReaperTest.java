@@ -272,18 +272,17 @@ class SessionReaperTest {
 
   @Test
   @DisplayName(
-      "Should close logical playback idle past one hour when no ServerAdmin has changed the"
-          + " retention")
-  void shouldCloseLogicalPlaybackIdlePastOneHourWhenNoServerAdminHasChangedRetention() {
+      "Should close logical playback idle past one hour when its stream session is already gone")
+  void shouldCloseLogicalPlaybackIdlePastOneHourWhenItsStreamSessionIsAlreadyGone() {
     playback = playbackServiceBuilder(streamingService).clock(clock).build();
     var command = startPlaybackBuilder().build();
     var initial = acceptedPlayback(playback.start(command));
+    streamingService.destroySession(initial.currentFormatAttempt().streamSessionId());
     clock.advance(Duration.ofMinutes(61));
 
     reaperBuilder().build().reapSessions();
 
     assertThat(playback.access(PlaybackSessionFixture.playbackRequest(initial, command))).isEmpty();
-    assertThat(streamingService.getAllSessions()).isEmpty();
   }
 
   @Test
