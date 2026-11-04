@@ -115,8 +115,10 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
-  public int availableSlots(@NonNull WorkerVerifiedEncoder pinnedEncoder) {
-    return workerServer.availableSlots(sourceNamespaceId, pinnedEncoder);
+  public int availableSlots(
+      @NonNull TranscodeDecision decision, @NonNull WorkerVerifiedEncoder pinnedEncoder) {
+    return workerServer.availableSlots(
+        sourceNamespaceId, RemoteVariantJobMapper.decision(decision), pinnedEncoder);
   }
 
   @Override
@@ -126,8 +128,10 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
-  public Set<ExecutionTargetId> executionTargets(@NonNull WorkerVerifiedEncoder pinnedEncoder) {
-    return workerServer.eligibleWorkers(sourceNamespaceId, pinnedEncoder);
+  public Set<ExecutionTargetId> executionTargets(
+      @NonNull TranscodeDecision decision, @NonNull WorkerVerifiedEncoder pinnedEncoder) {
+    return workerServer.eligibleWorkers(
+        sourceNamespaceId, RemoteVariantJobMapper.decision(decision), pinnedEncoder);
   }
 
   @Override

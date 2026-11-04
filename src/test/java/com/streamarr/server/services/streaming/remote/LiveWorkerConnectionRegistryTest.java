@@ -795,6 +795,34 @@ class LiveWorkerConnectionRegistryTest {
         .containsExactly(new ExecutionTargetId(listingSessionId.toString()));
   }
 
+  // A later job attempt of a pinned variant carries the session's audio, so the pinned queries
+  // agree with dispatch about which workers encode its layout.
+  @Test
+  @DisplayName(
+      "Should count a pinned encode's free slots and targets only on probe version 7 workers when"
+          + " its job names a quad layout")
+  void
+      shouldCountAPinnedEncodesFreeSlotsAndTargetsOnlyOnProbeVersion7WorkersWhenItsJobNamesAQuadLayout() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var version7WorkerId = UUID.randomUUID();
+    registry.register(
+        WORKER_ID, libx264RegistrationListingProbeVersion(WORKER_ID, 6), new CancellableObserver());
+    var version7WorkerSessionId =
+        registry.register(
+            version7WorkerId,
+            libx264RegistrationListingProbeVersion(version7WorkerId, 7),
+            new CancellableObserver());
+    var pinned = WorkerVerifiedEncoderFixture.libx264();
+    var quad = h264EncodeNaming(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_QUAD);
+    var stereo = h264EncodeNaming(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_STEREO);
+
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, quad, pinned)).isOne();
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, quad, pinned))
+        .containsExactly(new ExecutionTargetId(version7WorkerSessionId.toString()));
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, stereo, pinned)).isEqualTo(2);
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, stereo, pinned)).hasSize(2);
+  }
+
   @Test
   @DisplayName(
       "Should count only software and keyframe-verified encoders when reporting the codec families that workers encode")
@@ -1419,7 +1447,9 @@ class LiveWorkerConnectionRegistryTest {
     var pinned = WorkerVerifiedEncoderFixture.libx264();
     var job = encodeJob("h264");
 
-    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, pinned)).isEmpty();
+    assertThat(
+            registry.eligibleWorkers(SOURCE_NAMESPACE_ID, encodeJob("h264").getDecision(), pinned))
+        .isEmpty();
     assertThat(registry.dispatch(job, pinned)).isEmpty();
 
     var verifiedWorkerSessionId =
@@ -1428,7 +1458,8 @@ class LiveWorkerConnectionRegistryTest {
             registration(verifiedWorkerId, libx264Encoder()),
             new CancellableObserver());
 
-    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, pinned))
+    assertThat(
+            registry.eligibleWorkers(SOURCE_NAMESPACE_ID, encodeJob("h264").getDecision(), pinned))
         .containsExactly(new ExecutionTargetId(verifiedWorkerSessionId.toString()));
     assertThat(registry.dispatch(job, pinned))
         .map(VariantDispatch::encoder)
@@ -1446,7 +1477,9 @@ class LiveWorkerConnectionRegistryTest {
 
     var pinned = WorkerVerifiedEncoderFixture.libx264NotKeyframeVerified();
 
-    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, pinned)).isEmpty();
+    assertThat(
+            registry.eligibleWorkers(SOURCE_NAMESPACE_ID, encodeJob("h264").getDecision(), pinned))
+        .isEmpty();
     assertThat(registry.dispatch(encodeJob("h264"), pinned)).isEmpty();
   }
 
@@ -1505,10 +1538,17 @@ class LiveWorkerConnectionRegistryTest {
             new CancellableObserver());
 
     var targets =
-        registry.eligibleWorkers(SOURCE_NAMESPACE_ID, WorkerVerifiedEncoderFixture.libx264());
+        registry.eligibleWorkers(
+            SOURCE_NAMESPACE_ID,
+            encodeJob("h264").getDecision(),
+            WorkerVerifiedEncoderFixture.libx264());
 
     assertThat(targets).containsExactly(new ExecutionTargetId(libx264WorkerSessionId.toString()));
-    assertThat(registry.eligibleWorkers(UUID.randomUUID(), WorkerVerifiedEncoderFixture.libx264()))
+    assertThat(
+            registry.eligibleWorkers(
+                UUID.randomUUID(),
+                encodeJob("h264").getDecision(),
+                WorkerVerifiedEncoderFixture.libx264()))
         .isEmpty();
   }
 
@@ -1530,15 +1570,19 @@ class LiveWorkerConnectionRegistryTest {
         registration(libx264WorkerId, libx264Encoder()),
         new CancellableObserver());
     var pinned = WorkerVerifiedEncoderFixture.libx264();
-    var freeSlots = registry.availableSlots(SOURCE_NAMESPACE_ID, pinned);
+    var freeSlots =
+        registry.availableSlots(SOURCE_NAMESPACE_ID, encodeJob("h264").getDecision(), pinned);
 
     registry.dispatch(encodeJob("h264"), pinned);
 
     assertThat(freeSlots).isOne();
-    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, pinned)).isZero();
+    assertThat(
+            registry.availableSlots(SOURCE_NAMESPACE_ID, encodeJob("h264").getDecision(), pinned))
+        .isZero();
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, encodeJob("h264").getDecision()))
         .isOne();
-    assertThat(registry.availableSlots(UUID.randomUUID(), pinned)).isZero();
+    assertThat(registry.availableSlots(UUID.randomUUID(), encodeJob("h264").getDecision(), pinned))
+        .isZero();
   }
 
   @Test
@@ -1555,7 +1599,10 @@ class LiveWorkerConnectionRegistryTest {
     assertThat(
             encode
                 .registry()
-                .eligibleWorkers(SOURCE_NAMESPACE_ID, WorkerVerifiedEncoderFixture.libx264()))
+                .eligibleWorkers(
+                    SOURCE_NAMESPACE_ID,
+                    encodeJob("h264").getDecision(),
+                    WorkerVerifiedEncoderFixture.libx264()))
         .isEmpty();
     assertThat(encode.registry().encodableVideoCodecFamilies(SOURCE_NAMESPACE_ID))
         .doesNotContain("h264");
@@ -1915,6 +1962,23 @@ class LiveWorkerConnectionRegistryTest {
         .setLevel(6)
         .setBaseLayerCompatibilityId(1)
         .setSampleEntry(sampleEntry)
+        .build();
+  }
+
+  private static WorkerRegistration libx264RegistrationListingProbeVersion(
+      UUID workerId, int probeVersion) {
+    var registration = registration(workerId, libx264Encoder()).toBuilder();
+    registration.getCapabilitiesBuilder().addProbeVersions(probeVersion);
+    return registration.build();
+  }
+
+  private static TranscodeDecision h264EncodeNaming(AudioChannelLayout layout) {
+    return encodeJob("h264").getDecision().toBuilder()
+        .setAudio(
+            AudioDecision.newBuilder()
+                .setMode(AudioMode.AUDIO_MODE_TRANSCODE)
+                .setCodec("aac")
+                .setChannelLayout(layout))
         .build();
   }
 

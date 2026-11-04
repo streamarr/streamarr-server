@@ -16,7 +16,8 @@ import lombok.NonNull;
  * probe version reports no playback facts, which every version before 4 does. {@code
  * streamMeasurements} is empty when the server holds no usable measurement of the file's streams.
  * {@code majorBrand} is empty unless the file is an MP4 or MOV file whose probe version 7 outcome
- * names one.
+ * names one. {@code audioChannelLayout} is the first audio stream's channel layout as ffprobe names
+ * it, and is empty when the probe stored none, which every version before 7 does.
  */
 @Builder
 public record MediaProbe(
@@ -28,6 +29,7 @@ public record MediaProbe(
     String audioCodec,
     long bitrate,
     OptionalInt audioChannels,
+    @NonNull Optional<String> audioChannelLayout,
     OptionalLong audioBitrate,
     Optional<String> containerFormat,
     @NonNull Optional<String> majorBrand,
@@ -57,6 +59,7 @@ public record MediaProbe(
   public static class MediaProbeBuilder {
     private Optional<String> containerFormat = Optional.empty();
     private Optional<String> majorBrand = Optional.empty();
+    private Optional<String> audioChannelLayout = Optional.empty();
     private OptionalDouble framerate = OptionalDouble.empty();
     private Optional<VideoPlaybackFacts> videoPlaybackFacts = Optional.empty();
     private Optional<StreamMeasurements> streamMeasurements = Optional.empty();

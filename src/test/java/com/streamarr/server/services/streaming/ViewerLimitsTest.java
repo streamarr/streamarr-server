@@ -8,6 +8,7 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.AudioSteps;
+import com.streamarr.server.domain.streaming.ChannelLayout;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.StreamMeasurementSource;
@@ -39,6 +40,7 @@ class ViewerLimitsTest {
               AudioDecision.stereoAac().toBuilder()
                   .mode(AudioMode.COPY)
                   .sourceCodecString(Optional.of("mp4a.40.2"))
+                  .channelLayout(Optional.empty())
                   .build()));
 
   private static final AudioSteps STEREO_AAC_ONLY =
@@ -179,7 +181,11 @@ class ViewerLimitsTest {
                         .bitrate(OptionalLong.of(4_500_000L))
                         .build()))
             .build();
-    var eac3 = AudioDecision.stereoAac().toBuilder().codec("eac3").channels(6);
+    var eac3 =
+        AudioDecision.stereoAac().toBuilder()
+            .codec("eac3")
+            .channels(6)
+            .channelLayout(Optional.of(ChannelLayout.FIVE_POINT_ONE_SIDE));
     var steps =
         new AudioSteps(List.of(eac3.bitrate(768_000L).build(), eac3.bitrate(448_000L).build()));
 

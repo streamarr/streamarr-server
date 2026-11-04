@@ -513,8 +513,8 @@ class HeldSegmentRequestConcurrencyIT {
     }
 
     @Override
-    public int availableSlots(WorkerVerifiedEncoder pinnedEncoder) {
-      return delegate.availableSlots(pinnedEncoder);
+    public int availableSlots(TranscodeDecision decision, WorkerVerifiedEncoder pinnedEncoder) {
+      return delegate.availableSlots(decision, pinnedEncoder);
     }
 
     @Override
@@ -523,8 +523,9 @@ class HeldSegmentRequestConcurrencyIT {
     }
 
     @Override
-    public Set<ExecutionTargetId> executionTargets(WorkerVerifiedEncoder pinnedEncoder) {
-      return delegate.executionTargets(pinnedEncoder);
+    public Set<ExecutionTargetId> executionTargets(
+        TranscodeDecision decision, WorkerVerifiedEncoder pinnedEncoder) {
+      return delegate.executionTargets(decision, pinnedEncoder);
     }
 
     @Override

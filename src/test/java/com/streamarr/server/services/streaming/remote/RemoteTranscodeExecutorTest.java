@@ -15,11 +15,11 @@ import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
-import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
+import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
 import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
 import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.VideoCopyFeature;
@@ -42,13 +42,26 @@ class RemoteTranscodeExecutorTest {
   private static final Path SOURCE_ROOT = Path.of("/media");
 
   @Test
-  @DisplayName("Should reject a pinned execution-target lookup when its pinned encoder is missing")
-  void shouldRejectPinnedExecutionTargetLookupWhenItsPinnedEncoderIsMissing() {
+  @DisplayName(
+      "Should reject a pinned execution-target lookup when its decision or pinned encoder is"
+          + " missing")
+  void shouldRejectPinnedExecutionTargetLookupWhenItsDecisionOrPinnedEncoderIsMissing() {
     var executor = new RemoteTranscodeExecutor(server(), UUID.randomUUID(), SOURCE_ROOT);
+    var decision = TranscodeDecision.builder().build();
+    var pinnedEncoder = WorkerVerifiedEncoderFixture.libx264();
 
     assertThatNullPointerException()
-        .isThrownBy(() -> executor.executionTargets((WorkerVerifiedEncoder) null))
+        .isThrownBy(() -> executor.executionTargets(decision, null))
         .withMessageContaining("pinnedEncoder");
+    assertThatNullPointerException()
+        .isThrownBy(() -> executor.executionTargets(null, pinnedEncoder))
+        .withMessageContaining("decision");
+    assertThatNullPointerException()
+        .isThrownBy(() -> executor.availableSlots(decision, null))
+        .withMessageContaining("pinnedEncoder");
+    assertThatNullPointerException()
+        .isThrownBy(() -> executor.availableSlots(null, pinnedEncoder))
+        .withMessageContaining("decision");
   }
 
   @Test

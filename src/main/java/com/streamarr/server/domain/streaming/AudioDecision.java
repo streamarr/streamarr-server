@@ -6,13 +6,20 @@ import java.util.Set;
 import lombok.Builder;
 import lombok.NonNull;
 
+/**
+ * {@code channelLayout} names an encode's output layout (ADR 0050). A copy keeps the source's own
+ * layout, so it names none.
+ */
 @Builder(toBuilder = true)
 public record AudioDecision(
     AudioMode mode,
     String codec,
     int channels,
     long bitrate,
-    @NonNull Optional<String> sourceCodecString) {
+    @NonNull Optional<String> sourceCodecString,
+    @NonNull Optional<ChannelLayout> channelLayout) {
+
+  private static final int SEVEN_CHANNELS = 7;
 
   // Every HLS variant is multiplexed fragmented MP4, which carries exactly these audio codecs.
   // Encodes use these codec strings; copies carry the source's probed codec string instead.
@@ -32,12 +39,24 @@ public record AudioDecision(
       throw new IllegalArgumentException(
           "A decision that copies the audio needs the source's codec string");
     }
+
+    var encodes = mode == AudioMode.TRANSCODE;
+    if (encodes != channelLayout.isPresent()) {
+      throw new IllegalArgumentException(
+          "An audio encode names its output layout, and no other decision names one");
+    }
+
+    if (channelLayout.filter(layout -> layout.getChannels() != channels).isPresent()) {
+      throw new IllegalArgumentException(
+          "An encode's output layout must hold the encode's channel count");
+    }
   }
 
   // Lombok builder default — its generated setter assigns it
   @SuppressWarnings({"java:S1068", "java:S9438"})
   public static class AudioDecisionBuilder {
     private Optional<String> sourceCodecString = Optional.empty();
+    private Optional<ChannelLayout> channelLayout = Optional.empty();
   }
 
   public static AudioDecision stereoAac() {
@@ -46,6 +65,7 @@ public record AudioDecision(
         .codec("aac")
         .channels(2)
         .bitrate(128_000L)
+        .channelLayout(Optional.of(ChannelLayout.STEREO))
         .build();
   }
 
@@ -72,26 +92,23 @@ public record AudioDecision(
             () -> new IllegalStateException("HLS delivery cannot carry audio codec " + codec));
   }
 
-  public static int normalizeChannels(int sourceChannels) {
-    return switch (sourceChannels) {
-      case 1 -> 1;
-      case 5, 6 -> 6;
-      default -> sourceChannels >= 7 ? 8 : 2;
-    };
-  }
-
   public static long bitrateFor(@NonNull String codec, int channels) {
+    if (channels >= SEVEN_CHANNELS) {
+      return Math.max(512_000L, fivePointOneBitrate(codec));
+    }
+
     return switch (channels) {
-      case 1 -> 64_000L;
+      // A mono downmix limited to -3 dBTP decoded above 0 dBTP from FFmpeg's AAC at 64 kb/s.
+      case 1 -> 96_000L;
       case 5, 6 -> fivePointOneBitrate(codec);
-      case 8 -> Math.max(512_000L, fivePointOneBitrate(codec));
       default -> 128_000L;
     };
   }
 
   // AC-3 takes 640 kb/s, the most that FFmpeg's AC-3 encoder produces however much more it is asked
   // for. E-AC-3 takes 768 kb/s, the highest 5.1 bitrate that streamed E-AC-3 commonly uses. Every
-  // other codec keeps 384 kb/s. A 7.1 track never announces less than its codec's 5.1 bitrate.
+  // other codec keeps 384 kb/s. A track of 7 or more channels never announces less than its codec's
+  // 5.1 bitrate.
   private static long fivePointOneBitrate(String codec) {
     return switch (codec) {
       case "ac3" -> 640_000L;

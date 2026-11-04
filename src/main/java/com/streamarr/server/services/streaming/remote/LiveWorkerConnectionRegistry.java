@@ -436,10 +436,11 @@ final class LiveWorkerConnectionRegistry {
 
   // Every worker that advertises the pin runs the pinned encoder backend, so no worker comes first.
   Set<ExecutionTargetId> eligibleWorkers(
-      UUID sourceNamespaceId, WorkerVerifiedEncoder pinnedEncoder) {
+      UUID sourceNamespaceId, TranscodeDecision decision, WorkerVerifiedEncoder pinnedEncoder) {
     return executionTargets(
         connectionsFor(sourceNamespaceId)
-            .filter(connection -> connection.advertises(pinnedEncoder)));
+            .filter(connection -> connection.advertises(pinnedEncoder))
+            .filter(connection -> connection.canEncodeAudioLayout(decision)));
   }
 
   private Stream<WorkerConnection> connectionsFor(UUID sourceNamespaceId) {
@@ -585,9 +586,11 @@ final class LiveWorkerConnectionRegistry {
         .sum();
   }
 
-  int availableSlots(UUID sourceNamespaceId, WorkerVerifiedEncoder pinnedEncoder) {
+  int availableSlots(
+      UUID sourceNamespaceId, TranscodeDecision decision, WorkerVerifiedEncoder pinnedEncoder) {
     return connectionsFor(sourceNamespaceId)
         .filter(connection -> connection.advertises(pinnedEncoder))
+        .filter(connection -> connection.canEncodeAudioLayout(decision))
         .mapToInt(WorkerConnection::availableSlots)
         .sum();
   }

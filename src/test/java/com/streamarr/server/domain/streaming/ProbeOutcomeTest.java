@@ -45,6 +45,37 @@ class ProbeOutcomeTest {
   }
 
   @Test
+  @DisplayName(
+      "Should carry the first audio stream's channel layout in the media probe when probe version"
+          + " 7 stored layouts")
+  void shouldCarryTheFirstAudioStreamsChannelLayoutInTheMediaProbeWhenProbeVersion7StoredLayouts() {
+    var outcome =
+        new ProbeOutcome.Success(
+            ProbeContainer.builder().build(),
+            List.of(
+                streamBuilder("video", "h264").index(0).build(),
+                audioStreamWithLayout("7.0").index(1).build(),
+                audioStreamWithLayout("5.1(side)").index(2).build()),
+            new KeyframeKnowledge.NotReported());
+
+    assertThat(outcome.mediaProbe().audioChannelLayout()).contains("7.0");
+  }
+
+  @Test
+  @DisplayName("Should leave the media probe's channel layout empty when the probe stored none")
+  void shouldLeaveTheMediaProbesChannelLayoutEmptyWhenTheProbeStoredNone() {
+    var outcome =
+        new ProbeOutcome.Success(
+            ProbeContainer.builder().build(),
+            List.of(
+                streamBuilder("video", "h264").index(0).build(),
+                streamBuilder("audio", "ac3").index(1).build()),
+            new KeyframeKnowledge.NotReported());
+
+    assertThat(outcome.mediaProbe().audioChannelLayout()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should carry the outcome's keyframe knowledge in the media probe")
   void shouldCarryTheOutcomesKeyframeKnowledgeInTheMediaProbe() {
     var keyframes = new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.NO_KEYFRAMES);
@@ -167,6 +198,13 @@ class ProbeOutcomeTest {
 
   private StreamInfo.StreamInfoBuilder streamBuilder(String codecType, String codec) {
     return StreamInfo.builder().codecType(codecType).codec(Optional.of(codec));
+  }
+
+  private StreamInfo.StreamInfoBuilder audioStreamWithLayout(String layout) {
+    return streamBuilder("audio", "dts")
+        .audioProperties(
+            Optional.of(
+                AudioStreamProperties.builder().channelLayout(Optional.of(layout)).build()));
   }
 
   @ParameterizedTest

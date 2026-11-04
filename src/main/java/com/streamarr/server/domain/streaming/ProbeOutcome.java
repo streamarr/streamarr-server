@@ -70,6 +70,10 @@ public sealed interface ProbeOutcome {
           .framerate(framerate(video))
           .audioCodec(audio.flatMap(StreamInfo::codec).orElse(null))
           .audioChannels(audio.map(StreamInfo::channels).orElse(OptionalInt.empty()))
+          .audioChannelLayout(
+              audio
+                  .flatMap(StreamInfo::audioProperties)
+                  .flatMap(AudioStreamProperties::channelLayout))
           .audioBitrate(audio.map(StreamInfo::bitrate).orElse(OptionalLong.empty()))
           .streams(streams)
           .keyframes(keyframes)

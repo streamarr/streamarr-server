@@ -17,10 +17,11 @@ public record AudioSteps(@NonNull List<AudioDecision> highestFirst) {
   private static final List<Long> AC3_MULTICHANNEL_BITRATES = List.of(448_000L, 384_000L);
   // Apple's HLS Authoring Specification rate for AAC 5.1, item 2.9, for each full-band channel.
   private static final long AAC_BITRATE_PER_FULL_BAND_CHANNEL = 64_000L;
-  private static final List<Long> STEREO_BITRATES = List.of(128_000L, 96_000L, 64_000L);
-  private static final long MONO_BITRATE = 64_000L;
+  // The stereo and mono steps stop at 96 kb/s: at 64 kb/s, a downmix limited to -3 dBTP decoded
+  // above 0 dBTP from FFmpeg's AAC encoder more often than at any higher step.
+  private static final List<Long> STEREO_BITRATES = List.of(128_000L, 96_000L);
+  private static final long MONO_BITRATE = 96_000L;
   private static final int STEREO = 2;
-  private static final int FIVE_POINT_ONE = 6;
   // 5.1 and 7.1 carry one low-frequency channel beside their full-band channels.
   private static final int LAYOUT_WITH_LOW_FREQUENCY_CHANNEL = 6;
 
@@ -33,25 +34,26 @@ public record AudioSteps(@NonNull List<AudioDecision> highestFirst) {
   }
 
   /**
-   * The steps below the session's audio. Multichannel steps keep the codec and channels of the
-   * encode that the server would choose for the track, which a capability entry already accepts,
-   * and exist only when that encode has more than two channels; AAC above 5.1 also steps through
-   * AAC 5.1, which the same entry accepts. A copy in a codec that the server encodes also steps
-   * through that codec's multichannel steps: the steps of both codecs come highest bitrate first,
-   * the copied codec first at an equal bitrate. Then come AAC stereo steps, or one AAC mono step
-   * for a mono track; every declaration carries an AAC entry for HLS (ADR 0049).
+   * The steps below the session's audio, which the server chose for the track (ADR 0050's step
+   * track). Multichannel steps keep the codec and channels of the encode that the server would
+   * choose for the track, which a capability entry already accepts, and exist only when that encode
+   * has more than two channels. A copy in a codec that the server encodes also steps through that
+   * codec's multichannel steps: the steps of both codecs come highest bitrate first, the copied
+   * codec first at an equal bitrate. Then come AAC stereo steps, or one AAC mono step for a mono
+   * track; every declaration carries an AAC entry for HLS (ADR 0049).
    */
   public static AudioSteps below(
-      @NonNull AudioDecision sessionAudio, @NonNull ClientCapabilityDeclaration declaration) {
+      @NonNull AudioDecision sessionAudio,
+      @NonNull AudioTrackChannels track,
+      @NonNull ClientCapabilityDeclaration declaration) {
     if (sessionAudio.mode() == AudioMode.NONE) {
       return new AudioSteps(List.of(sessionAudio));
     }
 
-    var normalizedChannels = AudioDecision.normalizeChannels(sessionAudio.channels());
     var candidates = new ArrayList<AudioDecision>();
     candidates.add(sessionAudio);
-    candidates.addAll(multichannelSteps(sessionAudio, declaration, normalizedChannels));
-    candidates.addAll(downmixSteps(HlsAudioEncodes.aacForTrack(declaration, normalizedChannels)));
+    candidates.addAll(multichannelSteps(sessionAudio, declaration, track));
+    candidates.addAll(downmixSteps(HlsAudioEncodes.aacForTrack(declaration, track)));
     return new AudioSteps(eachLowerThanTheStepsBefore(candidates));
   }
 
@@ -68,14 +70,16 @@ public record AudioSteps(@NonNull List<AudioDecision> highestFirst) {
   // The sort is stable, so the copied codec's step stays ahead of an equal-bitrate step of the
   // server's encode, which then no longer counts.
   private static List<AudioDecision> multichannelSteps(
-      AudioDecision sessionAudio, ClientCapabilityDeclaration declaration, int normalizedChannels) {
+      AudioDecision sessionAudio,
+      ClientCapabilityDeclaration declaration,
+      AudioTrackChannels track) {
     var encodes = new ArrayList<AudioDecision>();
     if (sessionAudio.mode() == AudioMode.COPY) {
-      HlsAudioEncodes.multichannelEncode(declaration, sessionAudio.codec(), normalizedChannels)
+      HlsAudioEncodes.multichannelEncode(declaration, sessionAudio.codec(), track)
           .ifPresent(encodes::add);
     }
 
-    encodes.add(HlsAudioEncodes.forTrack(declaration, normalizedChannels));
+    encodes.add(HlsAudioEncodes.forTrack(declaration, track));
     return encodes.stream()
         .flatMap(encode -> multichannelSteps(encode).stream())
         .sorted(Comparator.comparingLong(AudioDecision::bitrate).reversed())
@@ -99,20 +103,10 @@ public record AudioSteps(@NonNull List<AudioDecision> highestFirst) {
   }
 
   private static List<AudioDecision> aacMultichannelSteps(AudioDecision encode) {
-    var steps = new ArrayList<AudioDecision>();
-    steps.add(aacStep(encode, encode.channels()));
-    if (encode.channels() > FIVE_POINT_ONE) {
-      steps.add(aacStep(encode, FIVE_POINT_ONE));
-    }
-
-    return steps;
-  }
-
-  private static AudioDecision aacStep(AudioDecision encode, int channels) {
-    return encode.toBuilder()
-        .channels(channels)
-        .bitrate(AAC_BITRATE_PER_FULL_BAND_CHANNEL * fullBandChannels(channels))
-        .build();
+    return List.of(
+        encode.toBuilder()
+            .bitrate(AAC_BITRATE_PER_FULL_BAND_CHANNEL * fullBandChannels(encode.channels()))
+            .build());
   }
 
   private static int fullBandChannels(int channels) {

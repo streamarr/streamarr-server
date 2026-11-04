@@ -166,10 +166,13 @@ public final class WorkerSessionServer
     return workerConnections.eligibleWorkers(sourceNamespaceId, decision);
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   public synchronized Set<ExecutionTargetId> eligibleWorkers(
-      UUID sourceNamespaceId, @NonNull WorkerVerifiedEncoder pinnedEncoder) {
+      UUID sourceNamespaceId,
+      @NonNull com.streamarr.transcode.v1.TranscodeDecision decision,
+      @NonNull WorkerVerifiedEncoder pinnedEncoder) {
     requireStarted();
-    return workerConnections.eligibleWorkers(sourceNamespaceId, pinnedEncoder);
+    return workerConnections.eligibleWorkers(sourceNamespaceId, decision, pinnedEncoder);
   }
 
   public synchronized boolean stopVariant(UUID streamSessionId, String variantLabel) {
@@ -253,10 +256,13 @@ public final class WorkerSessionServer
     return workerConnections.availableSlots(sourceNamespaceId, decision);
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   public synchronized int availableSlots(
-      UUID sourceNamespaceId, @NonNull WorkerVerifiedEncoder pinnedEncoder) {
+      UUID sourceNamespaceId,
+      @NonNull com.streamarr.transcode.v1.TranscodeDecision decision,
+      @NonNull WorkerVerifiedEncoder pinnedEncoder) {
     requireStarted();
-    return workerConnections.availableSlots(sourceNamespaceId, pinnedEncoder);
+    return workerConnections.availableSlots(sourceNamespaceId, decision, pinnedEncoder);
   }
 
   private void requireStarted() {

@@ -7,7 +7,6 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.media.ProbeVersion;
-import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
@@ -165,7 +164,10 @@ class WorkerSessionServerTest {
     var pinnedEncoder = WorkerVerifiedEncoderFixture.libx264();
 
     assertNotStarted(() -> server.eligibleWorkers(sourceNamespaceId, streamCopyDecision()));
-    assertNotStarted(() -> server.eligibleWorkers(sourceNamespaceId, pinnedEncoder));
+    assertNotStarted(
+        () -> server.eligibleWorkers(sourceNamespaceId, streamCopyDecision(), pinnedEncoder));
+    assertNotStarted(
+        () -> server.availableSlots(sourceNamespaceId, streamCopyDecision(), pinnedEncoder));
     assertNotStarted(() -> server.dispatch(job, pinnedEncoder));
     assertNotStarted(() -> server.hasConnectedWorker(sourceNamespaceId));
     assertNotStarted(() -> server.hardwareEncodableVideoCodecFamilies(sourceNamespaceId));
@@ -204,8 +206,10 @@ class WorkerSessionServerTest {
     var server = unstartedServer();
     var sourceNamespaceId = UUID.randomUUID();
 
+    var decision = streamCopyDecision();
+
     assertThatNullPointerException()
-        .isThrownBy(() -> server.eligibleWorkers(sourceNamespaceId, (WorkerVerifiedEncoder) null))
+        .isThrownBy(() -> server.eligibleWorkers(sourceNamespaceId, decision, null))
         .withMessageContaining("pinnedEncoder");
   }
 

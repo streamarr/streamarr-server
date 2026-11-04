@@ -12,6 +12,8 @@ import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.AudioSteps;
+import com.streamarr.server.domain.streaming.AudioTrackChannels;
+import com.streamarr.server.domain.streaming.ChannelLayout;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
@@ -46,11 +48,14 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("Quality Ladder Service Tests")
 class QualityLadderServiceTest {
 
+  private static final AudioTrackChannels FIVE_POINT_ONE_TRACK =
+      new AudioTrackChannels(6, Optional.of("5.1(side)"));
   private static final AudioDecision SURROUND_EAC3 =
       AudioDecision.builder()
           .mode(AudioMode.TRANSCODE)
           .codec("eac3")
           .channels(6)
+          .channelLayout(Optional.of(ChannelLayout.FIVE_POINT_ONE_SIDE))
           .bitrate(768_000L)
           .build();
 
@@ -646,7 +651,7 @@ class QualityLadderServiceTest {
       PictureSize picture,
       long videoBitrate) {}
 
-  // E-AC-3 5.1 at 768 kb/s steps to 640, 448 and 384 kb/s and then AAC stereo at 128, 96 and 64.
+  // E-AC-3 5.1 at 768 kb/s steps to 640, 448 and 384 kb/s and then AAC stereo at 128 and 96.
   // Each maximum is the 360p tier's 800 kb/s plus a step's bitrate, or one bit/s below it.
   @ParameterizedTest(name = "{0}")
   @MethodSource("maximumsAroundEachStepBesideThe360pTier")
@@ -676,12 +681,10 @@ class QualityLadderServiceTest {
         StepAt.builder().maxBitrate(1_183_999).audioBitrate(128_000L).build(),
         StepAt.builder().maxBitrate(928_000).audioBitrate(128_000L).build(),
         StepAt.builder().maxBitrate(927_999).audioBitrate(96_000L).build(),
-        StepAt.builder().maxBitrate(896_000).audioBitrate(96_000L).build(),
-        StepAt.builder().maxBitrate(895_999).audioBitrate(64_000L).build(),
-        StepAt.builder().maxBitrate(864_000).audioBitrate(64_000L).build());
+        StepAt.builder().maxBitrate(896_000).audioBitrate(96_000L).build());
   }
 
-  // Below 864 kb/s no step leaves the 360p tier's 800 kb/s, so the ladder takes the last step.
+  // Below 896 kb/s no step leaves the 360p tier's 800 kb/s, so the ladder takes the last step.
   @ParameterizedTest(name = "{0}")
   @MethodSource("maximumsBelowEveryStepBesideThe360pTier")
   @DisplayName(
@@ -694,7 +697,7 @@ class QualityLadderServiceTest {
 
     assertThat(ladder.audio())
         .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
-        .containsExactly("aac", 2, 64_000L);
+        .containsExactly("aac", 2, 96_000L);
     assertThat(ladder.variants())
         .extracting(QualityVariant::width, QualityVariant::height, QualityVariant::videoBitrate)
         .containsExactly(tuple(640, 360, expected.videoBitrate()));
@@ -702,10 +705,10 @@ class QualityLadderServiceTest {
 
   static Stream<VideoAt> maximumsBelowEveryStepBesideThe360pTier() {
     return Stream.of(
-        VideoAt.builder().maxBitrate(863_999).videoBitrate(799_999L).build(),
-        VideoAt.builder().maxBitrate(600_000).videoBitrate(536_000L).build(),
-        VideoAt.builder().maxBitrate(209_000).videoBitrate(145_000L).build(),
-        VideoAt.builder().maxBitrate(208_999).videoBitrate(145_000L).build());
+        VideoAt.builder().maxBitrate(895_999).videoBitrate(799_999L).build(),
+        VideoAt.builder().maxBitrate(600_000).videoBitrate(504_000L).build(),
+        VideoAt.builder().maxBitrate(241_000).videoBitrate(145_000L).build(),
+        VideoAt.builder().maxBitrate(240_999).videoBitrate(145_000L).build());
   }
 
   // The 480p tier's 1,500 kb/s fits beside E-AC-3 5.1 at 768 kb/s from 2,268 kb/s, at 640 kb/s
@@ -1121,7 +1124,7 @@ class QualityLadderServiceTest {
             .build();
     return ladderRequest(probe, options)
         .capabilityDeclaration(declaration)
-        .audioSteps(AudioSteps.below(SURROUND_EAC3, declaration))
+        .audioSteps(AudioSteps.below(SURROUND_EAC3, FIVE_POINT_ONE_TRACK, declaration))
         .build();
   }
 
