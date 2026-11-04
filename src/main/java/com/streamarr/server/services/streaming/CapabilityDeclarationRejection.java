@@ -65,4 +65,16 @@ public sealed interface CapabilityDeclarationRejection extends StartPlaybackSess
       implements CapabilityDeclarationRejection {}
 
   record AudioChannelsNotPositive(int audioEntry) implements CapabilityDeclarationRejection {}
+
+  /** The video entry neither applies to HLS nor lists a source container for direct play. */
+  record VideoDeliveryMissing(int videoEntry) implements CapabilityDeclarationRejection {}
+
+  /** The audio entry neither applies to HLS nor lists a source container for direct play. */
+  record AudioDeliveryMissing(int audioEntry) implements CapabilityDeclarationRejection {}
+
+  record TooManyVideoDirectPlayContainers(int videoEntry, int maximum)
+      implements CapabilityDeclarationRejection {}
+
+  record TooManyAudioDirectPlayContainers(int audioEntry, int maximum)
+      implements CapabilityDeclarationRejection {}
 }

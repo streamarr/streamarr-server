@@ -9,6 +9,7 @@ import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionError.
 import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionError.VideoCodecTierInvalidError;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.AudioChannelsNotPositive;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.AudioDeliveryMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.AudioEntriesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecLevelNotPositive;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecProfileOutsideCodecFamily;
@@ -19,11 +20,14 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.Co
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionLevelNotPositive;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionProfileOutsideCodecFamily;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.HlsAacEntryMissing;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyAudioDirectPlayContainers;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyAudioEntries;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyCodecProfiles;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyCompatibleBases;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyDolbyVisionProfiles;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyVideoDirectPlayContainers;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyVideoEntries;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoDeliveryMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoEntriesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoEntryMaximum;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoMaximumInvalid;
@@ -39,6 +43,9 @@ public final class CapabilityDeclarationErrors {
   private static final String CODEC_PROFILES = "codecProfiles";
   private static final String DOLBY_VISION_PROFILES = "dolbyVisionProfiles";
   private static final String MAX_LEVEL = "maxLevel";
+  private static final String DIRECT_PLAY_CONTAINERS = "directPlayContainers";
+  private static final String DELIVERY_MISSING =
+      "List a source container for direct play, or apply the entry to HLS.";
   private static final String TOO_MANY = "List no more than %d values here.";
   private static final String NOT_POSITIVE = "Enter a maximum above zero.";
   private static final String NOT_FINITE_AND_POSITIVE = "Enter a finite maximum above zero.";
@@ -98,6 +105,16 @@ public final class CapabilityDeclarationErrors {
               videoPath(entry, DOLBY_VISION_PROFILES, Integer.toString(profile), MAX_LEVEL));
       case AudioChannelsNotPositive(var entry) ->
           new CapabilityMaximumInvalidError(NOT_POSITIVE, audioPath(entry, "maxChannels"));
+      case VideoDeliveryMissing(var entry) ->
+          new CapabilityValuesRequiredError(
+              DELIVERY_MISSING, videoPath(entry, DIRECT_PLAY_CONTAINERS));
+      case AudioDeliveryMissing(var entry) ->
+          new CapabilityValuesRequiredError(
+              DELIVERY_MISSING, audioPath(entry, DIRECT_PLAY_CONTAINERS));
+      case TooManyVideoDirectPlayContainers(var entry, var maximum) ->
+          tooMany(maximum, videoPath(entry, DIRECT_PLAY_CONTAINERS));
+      case TooManyAudioDirectPlayContainers(var entry, var maximum) ->
+          tooMany(maximum, audioPath(entry, DIRECT_PLAY_CONTAINERS));
     };
   }
 

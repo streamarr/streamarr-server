@@ -2,8 +2,9 @@
 The client capability declaration that a client builds from its current player and display each
 time it starts a playback session (ADR 0049). The server chooses each output from these capability
 entries. An output fits only when one capability entry accepts every property of the output; the
-server never combines the properties of two capability entries. Every list of the declaration holds
-at most 32 values, and every maximum must be above zero.
+server never combines the properties of two capability entries. Each capability entry applies to HLS,
+to direct play from the source containers that it lists, or to both. Every list of the declaration
+holds at most 32 values, and every maximum must be above zero.
 """
 input ClientCapabilityDeclarationInput {
     "The video capability entries. The declaration needs at least one."
@@ -38,6 +39,8 @@ input VideoCapabilityEntryInput {
     hdr10Plus: Boolean!
     "Whether this entry applies to HLS delivery."
     hls: Boolean!
+    "The source containers from which the player opens a stream that this entry accepts, by direct play. An entry that does not apply to HLS lists at least one."
+    directPlayContainers: [SourceContainer!]! = []
 }
 
 "A codec profile that the player decodes, with the highest level and tier it accepts for that profile."
@@ -66,6 +69,31 @@ input AudioCapabilityEntryInput {
     maxChannels: Int!
     "Whether this entry applies to HLS delivery."
     hls: Boolean!
+    "The source containers from which the player opens a stream of this codec, by direct play. An entry that does not apply to HLS lists at least one."
+    directPlayContainers: [SourceContainer!]! = []
+}
+
+"""
+The container of a media file as the probe found it. Direct play sends the file in this container,
+with this container's media type.
+"""
+enum SourceContainer {
+    "MPEG-4 Part 14, including M4V."
+    MP4
+    "The QuickTime file format."
+    MOV
+    "Matroska, including WebM."
+    MATROSKA
+    "The MPEG-2 transport stream, including M2TS."
+    MPEG_TS
+    "The MPEG-2 program stream, as in MPG and VOB files."
+    MPEG_PS
+    "Audio Video Interleave."
+    AVI
+    "The Advanced Systems Format, as in WMV files."
+    ASF
+    "Flash Video."
+    FLV
 }
 
 "A video codec family that a client can declare."

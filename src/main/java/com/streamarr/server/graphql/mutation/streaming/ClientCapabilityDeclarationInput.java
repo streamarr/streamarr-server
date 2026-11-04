@@ -7,6 +7,7 @@ import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
+import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
@@ -38,7 +39,8 @@ public record ClientCapabilityDeclarationInput(
       List<CompatibleBase> compatibleBases,
       List<DolbyVisionProfileCapabilityInput> dolbyVisionProfiles,
       boolean hdr10Plus,
-      boolean hls) {
+      boolean hls,
+      List<SourceContainer> directPlayContainers) {
 
     VideoCapabilityEntry toEntry() {
       return VideoCapabilityEntry.builder()
@@ -56,6 +58,7 @@ public record ClientCapabilityDeclarationInput(
                   .toList())
           .hdr10Plus(hdr10Plus)
           .hls(hls)
+          .directPlayContainers(directPlayContainers)
           .build();
     }
   }
@@ -79,10 +82,16 @@ public record ClientCapabilityDeclarationInput(
     }
   }
 
-  public record AudioCapabilityEntryInput(AudioCodec codec, int maxChannels, boolean hls) {
+  public record AudioCapabilityEntryInput(
+      AudioCodec codec, int maxChannels, boolean hls, List<SourceContainer> directPlayContainers) {
 
     AudioCapabilityEntry toEntry() {
-      return AudioCapabilityEntry.builder().codec(codec).maxChannels(maxChannels).hls(hls).build();
+      return AudioCapabilityEntry.builder()
+          .codec(codec)
+          .maxChannels(maxChannels)
+          .hls(hls)
+          .directPlayContainers(directPlayContainers)
+          .build();
     }
   }
 }

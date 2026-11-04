@@ -259,6 +259,7 @@ ClientCapabilityDeclaration (client)  +  MediaProbe (persisted probe rows)
 ----
 
 The client capability declaration lists video and audio capability entries (https://github.com/streamarr/streamarr-adr/blob/main/adr/0049-capability-declarations-list-entries-and-an-output-fits-one-entry.adoc[ADR 0049]).
+Each capability entry applies to HLS, to direct play from the source containers that it lists, or to both.
 `StreamingOptions` carries only the viewer's playback choices, such as the quality.
 
 The decision carries no container.
