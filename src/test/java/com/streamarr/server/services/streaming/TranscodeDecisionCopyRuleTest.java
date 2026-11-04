@@ -322,14 +322,29 @@ class TranscodeDecisionCopyRuleTest {
     assertThat(decision.videoCodecFamily()).isEqualTo("h264");
   }
 
+  // Each record names level 6, at or below the declared maximum, so the entry accepts the copy and
+  // only the copy rule refuses it.
   static Stream<Arguments> dolbyVisionSourcesOnAnHdrBase() {
     return Stream.of(
         Arguments.of(
             "Dolby Vision 8.1 on a PQ base",
-            hdrSource(CompatibleBase.PQ, dolbyVisionRecord(OptionalInt.of(1)))),
+            hdrSource(CompatibleBase.PQ, dolbyVisionRecordAtLevel6(1))),
         Arguments.of(
             "Dolby Vision 8.4 on an HLG base",
-            hdrSource(CompatibleBase.HLG, dolbyVisionRecord(OptionalInt.of(4)))));
+            hdrSource(CompatibleBase.HLG, dolbyVisionRecordAtLevel6(4))));
+  }
+
+  private static DolbyVision dolbyVisionRecordAtLevel6(int compatibilityId) {
+    return new DolbyVision.Present(
+        Optional.of(
+            DolbyVisionConfiguration.builder()
+                .profile(OptionalInt.of(8))
+                .level(OptionalInt.of(6))
+                .baseLayerCompatibilityId(OptionalInt.of(compatibilityId))
+                .baseLayer(true)
+                .rpu(true)
+                .build()),
+        Presence.UNSPECIFIED);
   }
 
   // ADR 0032: a file keeps its probe version 4 decision until its probe version 5 outcome is

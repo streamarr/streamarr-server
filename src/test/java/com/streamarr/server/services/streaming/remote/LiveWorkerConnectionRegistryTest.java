@@ -428,6 +428,8 @@ class LiveWorkerConnectionRegistryTest {
     assertThat(registry.hasConnectedWorker(unavailableNamespace)).isFalse();
     assertThat(registry.availableSlots(unavailableNamespace)).isZero();
     assertThat(registry.eligibleWorkers(unavailableNamespace, streamCopyDecision())).isEmpty();
+    assertThat(registry.videoCopySupportByWorker(SOURCE_NAMESPACE_ID)).hasSize(1);
+    assertThat(registry.videoCopySupportByWorker(unavailableNamespace)).isEmpty();
   }
 
   @Test
