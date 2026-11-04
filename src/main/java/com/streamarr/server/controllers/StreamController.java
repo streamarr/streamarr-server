@@ -15,12 +15,11 @@ import com.streamarr.server.services.streaming.StreamingService;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import java.io.IOException;
-import java.nio.file.Files;
+import java.io.InputStream;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.AbstractResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpRange;
@@ -35,6 +34,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.context.request.RequestAttributes;
+import org.springframework.web.context.request.RequestContextHolder;
 
 @RestController
 @RequestMapping("/api/stream")
@@ -222,14 +223,13 @@ public class StreamController {
   public ResponseEntity<Resource> getSource(
       @PathVariable UUID sessionId,
       @PathVariable String extension,
-      @RequestHeader(name = HttpHeaders.RANGE, required = false) String range)
-      throws IOException {
+      @RequestHeader(name = HttpHeaders.RANGE, required = false) String range) {
     var source = openSource(sessionId, extension);
     if (source.isEmpty()) {
       return ResponseEntity.notFound().build();
     }
 
-    var resource = sourceFileResource(source.get());
+    var resource = new OpenedSourceResource(source.get());
     // Spring's own 416 still writes the whole file as its body.
     if (range != null && !isSatisfiable(range, resource)) {
       return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
@@ -250,7 +250,7 @@ public class StreamController {
   @ApiResponse(responseCode = "200")
   @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
   public ResponseEntity<Void> getSourceHeaders(
-      @PathVariable UUID sessionId, @PathVariable String extension) throws IOException {
+      @PathVariable UUID sessionId, @PathVariable String extension) {
     var source = openSource(sessionId, extension);
     if (source.isEmpty()) {
       return ResponseEntity.notFound().build();
@@ -259,16 +259,23 @@ public class StreamController {
     // Spring's implicit HEAD reads the whole file and discards it, so this answers without a body.
     return ResponseEntity.ok()
         .contentType(MediaType.parseMediaType(source.get().container().getMediaType()))
-        .contentLength(Files.size(source.get().path()))
+        .contentLength(source.get().length())
         .header(HttpHeaders.ACCEPT_RANGES, "bytes")
         .build();
   }
 
   private Optional<DirectPlaySource> openSource(UUID sessionId, String extension) {
     requireTokenBoundTo(sessionId);
-    return directPlaySources
-        .open(sessionId, authorizationService.currentIdentity())
-        .filter(source -> source.container().getExtension().equals(extension));
+    var source = directPlaySources.open(sessionId, authorizationService.currentIdentity());
+    source.ifPresent(StreamController::closeWhenRequestCompletes);
+    return source.filter(opened -> opened.container().getExtension().equals(extension));
+  }
+
+  // Spring writes the body after this controller returns, so the request's end closes the file.
+  private static void closeWhenRequestCompletes(DirectPlaySource source) {
+    RequestContextHolder.currentRequestAttributes()
+        .registerDestructionCallback(
+            DirectPlaySource.class.getName(), source::close, RequestAttributes.SCOPE_REQUEST);
   }
 
   private static boolean isSatisfiable(String range, Resource resource) {
@@ -336,15 +343,48 @@ public class StreamController {
     return ResponseEntity.badRequest().build();
   }
 
-  // Spring labels each part of a multi-range answer by the resource's name, so the source file
-  // takes the name its container gives it, and the file's own name never sets a media type.
-  private static Resource sourceFileResource(DirectPlaySource source) {
-    var filename = "source." + source.container().getExtension();
-    return new FileSystemResource(source.path()) {
-      @Override
-      public String getFilename() {
-        return filename;
-      }
-    };
+  /**
+   * Serves the file that the request opened. Spring reads one stream for each range, and each
+   * stream starts at the first byte of that same file, so no range opens a name again. Spring
+   * labels each part of a multi-range answer by the resource's name, so the source takes the name
+   * its container gives it, and the file's own name never sets a media type.
+   */
+  private static final class OpenedSourceResource extends AbstractResource {
+
+    private final DirectPlaySource source;
+
+    private OpenedSourceResource(DirectPlaySource source) {
+      this.source = source;
+    }
+
+    @Override
+    public InputStream getInputStream() {
+      return source.newInputStream();
+    }
+
+    @Override
+    public long contentLength() {
+      return source.length();
+    }
+
+    @Override
+    public String getFilename() {
+      return "source." + source.container().getExtension();
+    }
+
+    @Override
+    public String getDescription() {
+      return "direct-play source " + getFilename();
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      return this == other;
+    }
+
+    @Override
+    public int hashCode() {
+      return System.identityHashCode(this);
+    }
   }
 }

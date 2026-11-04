@@ -54,9 +54,63 @@ class DirectPlaySourceServiceTest {
             .build();
     streamingService.addSession(session);
 
-    var source = open(session);
+    try (var source = open(session).orElseThrow()) {
+      assertThat(source.container()).isEqualTo(SourceContainer.MOV);
+      assertThat(source.length()).isEqualTo(3);
+      assertThat(source.newInputStream().readAllBytes()).containsExactly(1, 2, 3);
+    }
+  }
 
-    assertThat(source).contains(new DirectPlaySource(sourceFile.toRealPath(), SourceContainer.MOV));
+  @Test
+  @DisplayName("Should open the file when it is a hard link to another file")
+  void shouldOpenTheFileWhenItIsHardLinkToAnotherFile() throws IOException {
+    var hardLink = Files.createLink(directory.resolve("linked.mov"), sourceFile);
+    var session = directPlaySessionBuilder().sourcePath(hardLink).build();
+    streamingService.addSession(session);
+
+    try (var source = open(session).orElseThrow()) {
+      assertThat(source.newInputStream().readAllBytes()).containsExactly(1, 2, 3);
+    }
+  }
+
+  @Test
+  @DisplayName("Should keep reading the opened file when a folder on its path becomes a soft link")
+  void shouldKeepReadingTheOpenedFileWhenFolderOnItsPathBecomesSoftLink() throws IOException {
+    var show = Files.createDirectory(directory.resolve("show"));
+    var otherShow = Files.createDirectory(directory.resolve("other-show"));
+    var episode = Files.write(show.resolve("episode.mp4"), new byte[] {1, 2, 3});
+    Files.write(otherShow.resolve("episode.mp4"), new byte[] {7, 8, 9});
+    var session = directPlaySessionBuilder().sourcePath(episode).build();
+    streamingService.addSession(session);
+
+    try (var source = open(session).orElseThrow()) {
+      Files.move(show, directory.resolve("show-before-swap"));
+      Files.createSymbolicLink(show, otherShow);
+
+      assertThat(source.newInputStream().readAllBytes()).containsExactly(1, 2, 3);
+    }
+  }
+
+  @Test
+  @DisplayName("Should answer nothing when the source file is a soft link inside the media root")
+  void shouldAnswerNothingWhenSourceFileIsSoftLinkInsideTheMediaRoot() throws IOException {
+    var link = Files.createSymbolicLink(directory.resolve("linked.mov"), sourceFile);
+    var session = directPlaySessionBuilder().sourcePath(link).build();
+    streamingService.addSession(session);
+
+    assertThat(open(session)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should answer nothing when a parent folder is a soft link inside the media root")
+  void shouldAnswerNothingWhenParentFolderIsSoftLinkInsideTheMediaRoot() throws IOException {
+    var show = Files.createDirectory(directory.resolve("show"));
+    Files.write(show.resolve("episode.mp4"), new byte[] {1, 2, 3});
+    var linkedShow = Files.createSymbolicLink(directory.resolve("linked-show"), show);
+    var session = directPlaySessionBuilder().sourcePath(linkedShow.resolve("episode.mp4")).build();
+    streamingService.addSession(session);
+
+    assertThat(open(session)).isEmpty();
   }
 
   @Test
@@ -81,15 +135,21 @@ class DirectPlaySourceServiceTest {
   }
 
   @Test
-  @DisplayName("Should open the link's target when a source link stays inside the media root")
-  void shouldOpenTheLinksTargetWhenSourceLinkStaysInsideTheMediaRoot() throws IOException {
-    var link = Files.createSymbolicLink(directory.resolve("linked.mov"), sourceFile);
-    var session =
-        directPlaySessionBuilder().sourcePath(link).sourceContainer(SourceContainer.MOV).build();
+  @DisplayName("Should answer nothing when the source file lies outside the media root")
+  void shouldAnswerNothingWhenSourceFileLiesOutsideTheMediaRoot() {
+    var session = directPlaySessionBuilder().sourcePath(outsideFile).build();
     streamingService.addSession(session);
 
-    assertThat(open(session))
-        .contains(new DirectPlaySource(sourceFile.toRealPath(), SourceContainer.MOV));
+    assertThat(open(session)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should answer nothing when the source path climbs out of the media root")
+  void shouldAnswerNothingWhenSourcePathClimbsOutOfTheMediaRoot() {
+    var session = directPlaySessionBuilder().sourcePath(directory.resolve("../secret.mp4")).build();
+    streamingService.addSession(session);
+
+    assertThat(open(session)).isEmpty();
   }
 
   @Test
@@ -113,9 +173,19 @@ class DirectPlaySourceServiceTest {
   }
 
   @Test
-  @DisplayName("Should answer nothing when the source path is a directory")
-  void shouldAnswerNothingWhenSourcePathIsDirectory() {
+  @DisplayName("Should answer nothing when the source path is the media root")
+  void shouldAnswerNothingWhenSourcePathIsTheMediaRoot() {
     var session = directPlaySessionBuilder().sourcePath(directory).build();
+    streamingService.addSession(session);
+
+    assertThat(open(session)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should answer nothing when the source path is a directory")
+  void shouldAnswerNothingWhenSourcePathIsDirectory() throws IOException {
+    var show = Files.createDirectory(directory.resolve("show"));
+    var session = directPlaySessionBuilder().sourcePath(show).build();
     streamingService.addSession(session);
 
     assertThat(open(session)).isEmpty();

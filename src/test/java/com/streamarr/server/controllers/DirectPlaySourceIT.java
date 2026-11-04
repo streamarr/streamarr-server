@@ -11,6 +11,7 @@ import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.support.AuthTestSupport;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.RandomAccessFile;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -46,6 +47,9 @@ import org.springframework.test.context.TestPropertySource;
 class DirectPlaySourceIT extends AbstractIntegrationTest {
 
   private static final int SOURCE_LENGTH = 1000;
+  private static final long LARGE_SOURCE_LENGTH = 256L << 20;
+  private static final String OPENED_FILE_MARKER = "opened-file-head";
+  private static final String SWAPPED_FILE_MARKER = "swapped-in-head!";
 
   @LocalServerPort private int port;
 
@@ -232,9 +236,82 @@ class DirectPlaySourceIT extends AbstractIntegrationTest {
     assertThat(response.statusCode()).isEqualTo(404);
   }
 
+  @Test
+  @DisplayName("Should answer 404 when a folder on the source path is a soft link")
+  void shouldAnswer404WhenFolderOnSourcePathIsSoftLink() throws Exception {
+    var show = Files.createDirectory(directory.resolve("show"));
+    Files.write(show.resolve("movie.mkv"), sourceBytes);
+    var linkedShow = Files.createSymbolicLink(directory.resolve("linked-show"), show);
+    startDirectPlay(linkedShow.resolve("movie.mkv"), SourceContainer.MP4);
+
+    var response = send(get("source.mp4").header("Range", "bytes=0-99"));
+
+    assertThat(response.statusCode()).isEqualTo(404);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep serving the opened file when a folder on its path becomes a soft link mid-answer")
+  void shouldKeepServingTheOpenedFileWhenFolderOnItsPathBecomesSoftLinkMidAnswer()
+      throws Exception {
+    var show = Files.createDirectory(directory.resolve("show"));
+    var otherShow = Files.createDirectory(directory.resolve("other-show"));
+    var source = largeSparseSource(show.resolve("movie.mkv"), OPENED_FILE_MARKER);
+    largeSparseSource(otherShow.resolve("movie.mkv"), SWAPPED_FILE_MARKER);
+    startDirectPlay(source, SourceContainer.MP4);
+    // The first range is far larger than every socket buffer, so the server stays inside it until
+    // the client reads on. The second range starts before the first, so serving it by opening the
+    // file's name again would open whatever the name leads to after the swap.
+    var ranges =
+        "bytes=%d-%d,0-%d"
+            .formatted(
+                LARGE_SOURCE_LENGTH / 2, LARGE_SOURCE_LENGTH - 1, OPENED_FILE_MARKER.length() - 1);
+
+    var response =
+        client.send(
+            get("source.mp4").header("Range", ranges).build(),
+            HttpResponse.BodyHandlers.ofInputStream());
+    try (var body = response.body()) {
+      assertThat(body.readNBytes(1024)).hasSize(1024);
+      Files.move(show, directory.resolve("show-before-swap"));
+      Files.createSymbolicLink(show, otherShow);
+
+      assertThat(response.statusCode()).isEqualTo(206);
+      assertThat(lastBytesOf(body))
+          .contains(OPENED_FILE_MARKER)
+          .doesNotContain(SWAPPED_FILE_MARKER);
+    }
+  }
+
+  private static Path largeSparseSource(Path path, String headMarker) throws IOException {
+    try (var file = new RandomAccessFile(path.toFile(), "rw")) {
+      file.write(headMarker.getBytes(StandardCharsets.ISO_8859_1));
+      file.setLength(LARGE_SOURCE_LENGTH);
+    }
+
+    return path;
+  }
+
+  // The second range and the closing boundary end the body, so its last few kilobytes hold them.
+  private static String lastBytesOf(InputStream body) throws IOException {
+    var keep = 4096;
+    var buffer = new byte[64 * 1024];
+    var last = new byte[0];
+    for (var count = body.read(buffer); count != -1; count = body.read(buffer)) {
+      var joined = Arrays.copyOf(last, last.length + count);
+      System.arraycopy(buffer, 0, joined, last.length, count);
+      last = Arrays.copyOfRange(joined, Math.max(0, joined.length - keep), joined.length);
+    }
+
+    return new String(last, StandardCharsets.ISO_8859_1);
+  }
+
   // The file name names Matroska, so a media type taken from the name would show.
   private void startDirectPlay(SourceContainer container) throws IOException {
-    var source = Files.write(directory.resolve("movie.mkv"), sourceBytes);
+    startDirectPlay(Files.write(directory.resolve("movie.mkv"), sourceBytes), container);
+  }
+
+  private void startDirectPlay(Path source, SourceContainer container) {
     var authenticatedIdentity =
         AuthenticatedIdentity.fromJwt(jwtDecoder.decode(authTestSupport.profileBearer(identity)));
     streamSession =
