@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountScopedBuilder;
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static com.streamarr.server.fixtures.PlaybackSessionFixture.playbackServiceBuilder;
 import static com.streamarr.server.fixtures.ServerSettingsFixture.defaultServerSettings;
@@ -7,14 +8,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
+import com.streamarr.server.fakes.FakeServerSettingsRepository;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
@@ -216,6 +220,32 @@ class SessionReaperDiskPressureTest {
   }
 
   private SessionReaper reaperReading(SegmentFolderSpace space) {
+    return reaperBuilderReading(space).build();
+  }
+
+  @Test
+  @DisplayName("Should still evict the oldest idle session when the retention cannot be read")
+  void shouldStillEvictOldestIdleSessionWhenRetentionCannotBeRead() {
+    var oldest = storedSession(Duration.ofMinutes(50), 100);
+    var newest = storedSession(Duration.ofMinutes(5), 850);
+    var missingSettings = new FakeServerSettingsRepository();
+    missingSettings.deleteAll();
+
+    reaperBuilderReading(new StoredSegmentBytes(segmentFolder))
+        .serverSettings(
+            new ServerSettingsService(
+                new FakeAuthorizationService(accountScopedBuilder().build()), missingSettings))
+        .build()
+        .reapSessions();
+
+    assertThat(streamingService.getAllSessions())
+        .extracting(StreamSession::getSessionId)
+        .containsExactly(newest);
+    assertThat(segmentFolder.resolve(oldest.toString())).doesNotExist();
+    assertThat(meters.counter("streamarr.streaming.retention_read_failures").count()).isEqualTo(1);
+  }
+
+  private SessionReaper.SessionReaperBuilder reaperBuilderReading(SegmentFolderSpace space) {
     return SessionReaper.builder()
         .streamingService(streamingService)
         .properties(
@@ -228,8 +258,7 @@ class SessionReaperDiskPressureTest {
         .serverSettings(defaultServerSettings())
         .segmentFolderSpace(space)
         .meterRegistry(meters)
-        .clock(clock)
-        .build();
+        .clock(clock);
   }
 
   private UUID storedSession(Duration idleFor, int segmentBytes) {

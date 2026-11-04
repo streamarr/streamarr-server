@@ -56,6 +56,7 @@ class SessionReaperTest {
   private final ServerSettingsService serverSettings =
       new ServerSettingsService(
           new FakeAuthorizationService(accountScopedBuilder().build()), serverSettingsRepository);
+  private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
   private FakeTranscodeExecutor executor;
   private FakeCreatingStreamingService streamingService;
   private PlaybackSessionService playback;
@@ -305,6 +306,23 @@ class SessionReaperTest {
   }
 
   @Test
+  @DisplayName(
+      "Should still suspend an idle session and keep an old one when the retention cannot be read")
+  void shouldStillSuspendIdleSessionAndKeepOldOneWhenRetentionCannotBeRead() {
+    var idle = buildSession(clock.instant().minusSeconds(120));
+    var old = buildSession(clock.instant().minus(Duration.ofHours(25)));
+    streamingService.addSession(idle);
+    streamingService.addSession(old);
+    serverSettingsRepository.deleteAll();
+
+    reaper.reapSessions();
+
+    assertThat(idle.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.SUSPENDED);
+    assertThat(streamingService.accessSession(playbackRequest(old))).isPresent();
+    assertThat(meters.counter("streamarr.streaming.retention_read_failures").count()).isEqualTo(1);
+  }
+
+  @Test
   @DisplayName("Should not suspend session when already suspended")
   void shouldNotSuspendSessionWhenAlreadySuspended() {
     var session = buildSession(clock.instant().minusSeconds(120));
@@ -436,7 +454,7 @@ class SessionReaperTest {
         .playbackSessionService(playback)
         .serverSettings(serverSettings)
         .segmentFolderSpace(() -> 1.0)
-        .meterRegistry(new SimpleMeterRegistry())
+        .meterRegistry(meters)
         .clock(clock);
   }
 

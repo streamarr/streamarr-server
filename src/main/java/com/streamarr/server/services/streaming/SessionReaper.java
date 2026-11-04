@@ -9,7 +9,9 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Predicate;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,6 +28,8 @@ public class SessionReaper {
   private static final double MINIMUM_FREE_FRACTION = 0.10;
   private static final String EVICTION_METRIC = "streamarr.streaming.disk_pressure_evictions";
   private static final String READ_FAILURE_METRIC = "streamarr.streaming.disk_space_read_failures";
+  private static final String RETENTION_READ_FAILURE_METRIC =
+      "streamarr.streaming.retention_read_failures";
 
   private final StreamingService streamingService;
   private final StreamingProperties properties;
@@ -39,11 +43,14 @@ public class SessionReaper {
   @Scheduled(fixedDelayString = "${streaming.reaper-interval-ms:15000}")
   public void reapSessions() {
     var now = clock.instant();
-    var retention = serverSettings.idleSegmentRetention();
-    reapExpiredPlayback(now, retention);
+    var retention = readRetention();
+    retention.ifPresent(duration -> reapExpiredPlayback(now, duration));
+    // Without the retention nothing expires this sweep; suspension and eviction do not need it.
+    Predicate<StreamSession> isExpired =
+        session -> retention.filter(duration -> isExpired(session, now, duration)).isPresent();
     for (var session : streamingService.getAllSessions()) {
       try {
-        processSession(session, now, retention);
+        processSession(session, now, isExpired);
       } catch (RuntimeException e) {
         log.error("Failed to reap session {}", session.getSessionId(), e);
       }
@@ -54,8 +61,9 @@ public class SessionReaper {
 
   // Dead producers are not the reaper's concern: detection and recovery happen at request time in
   // SegmentDeliveryCoordinator, and a dead producer nobody watches is just an idle session.
-  private void processSession(StreamSession session, Instant now, Duration retention) {
-    if (isExpired(session, now, retention)) {
+  private void processSession(
+      StreamSession session, Instant now, Predicate<StreamSession> isExpired) {
+    if (isExpired.test(session)) {
       log.info("Reaping expired session {}", session.getSessionId());
       destroy(session.getSessionId());
       return;
@@ -64,6 +72,16 @@ public class SessionReaper {
     if (isIdle(session, now) && session.hasActiveTranscodes()) {
       log.info("Suspending idle session {}", session.getSessionId());
       producerLifecycle.suspend(session.getSessionId());
+    }
+  }
+
+  private Optional<Duration> readRetention() {
+    try {
+      return Optional.of(serverSettings.idleSegmentRetention());
+    } catch (RuntimeException failure) {
+      meterRegistry.counter(RETENTION_READ_FAILURE_METRIC).increment();
+      log.warn("Failed to read the idle segment retention; no session expires this sweep", failure);
+      return Optional.empty();
     }
   }
 
