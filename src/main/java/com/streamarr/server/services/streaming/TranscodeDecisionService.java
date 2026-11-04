@@ -8,6 +8,7 @@ import com.streamarr.server.domain.streaming.AudioSteps;
 import com.streamarr.server.domain.streaming.AudioTrackChannels;
 import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
+import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.DolbyVisionOutput;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.EncodedPictureSizes;
@@ -36,10 +37,13 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.OptionalDouble;
+import java.util.OptionalInt;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.NonNull;
@@ -127,19 +131,24 @@ public class TranscodeDecisionService {
     var source = request.source();
     var declaration = request.capabilityDeclaration();
     var sessionAudio = decideAudio(source, declaration);
-    var videoCopy = videoCopy(request, sessionAudio);
-    boolean videoCopyable = videoCopy.isPresent();
+    var videoCopy = videoCopy(request, sessionAudio.decision());
+    var copy =
+        switch (videoCopy) {
+          case VideoCopyChoice.Copied copied -> Optional.of(copied);
+          case VideoCopyChoice.Refused _ -> Optional.<VideoCopyChoice.Copied>empty();
+        };
+    boolean videoCopyable = copy.isPresent();
     var encodeCodecProfile =
         videoCopyable ? Optional.<EncodeCodecProfile>empty() : selectEncodeCodecProfile(request);
     if (!videoCopyable && encodeCodecProfile.isEmpty()) {
       return Optional.empty();
     }
 
-    var audioDecision = videoCopy.map(VideoCopy::audio).orElse(sessionAudio);
+    var audioDecision = copy.map(VideoCopyChoice.Copied::audio).orElse(sessionAudio.decision());
     var subtitleDecision = SubtitleDecision.exclude();
 
     var mode = resolveTranscodeMode(videoCopyable, audioDecision, subtitleDecision);
-    var copyPlan = videoCopy.filter(_ -> mode.copiesVideo()).map(VideoCopy::plan);
+    var copyPlan = copy.filter(_ -> mode.copiesVideo()).map(VideoCopyChoice.Copied::plan);
 
     return Optional.of(
         TranscodeDecision.builder()
@@ -154,16 +163,41 @@ public class TranscodeDecisionService {
             .videoSource(source.videoPlaybackFacts())
             .videoBitstreamRewrites(copyPlan.map(CopyPlan::bitstreamRewrites).orElseGet(List::of))
             .videoDolbyVisionOutput(copyPlan.flatMap(CopyPlan::dolbyVisionOutput))
+            .reasons(reasons(videoCopy, sessionAudio, audioDecision))
             .build());
   }
 
-  // The audio beside a video copy, and the plan of the copy.
-  private record VideoCopy(AudioDecision audio, CopyPlan plan) {}
+  // Video reasons come first. Audio that a copy lowers below the session's audio for the viewer's
+  // bitrate limit names that limit beside any reason that the session's audio is encoded.
+  private static List<DecisionReason> reasons(
+      VideoCopyChoice videoCopy, SessionAudio sessionAudio, AudioDecision audio) {
+    var reasons = new ArrayList<>(videoCopy.reasons());
+    sessionAudio.encodeReason().ifPresent(reasons::add);
+    if (!audio.equals(sessionAudio.decision())) {
+      reasons.add(DecisionReason.AUDIO_LOWERED_FOR_BITRATE_LIMIT);
+    }
+
+    return reasons;
+  }
+
+  // Whether the decision copies the video, with the audio beside the copy and its plan, and why the
+  // copy leaves part of the source out or why the video is not copied.
+  private sealed interface VideoCopyChoice {
+    List<DecisionReason> reasons();
+
+    record Copied(AudioDecision audio, CopyPlan plan, List<DecisionReason> reasons)
+        implements VideoCopyChoice {}
+
+    record Refused(List<DecisionReason> reasons) implements VideoCopyChoice {}
+  }
 
   // The bitstream rewrites of a copy, and its Dolby Vision when the playlist describes the copy as
   // Dolby Vision.
   private record CopyPlan(
       List<BitstreamRewrite> bitstreamRewrites, Optional<DolbyVisionOutput> dolbyVisionOutput) {}
+
+  // The session's audio, and why it is encoded when it is.
+  private record SessionAudio(AudioDecision decision, Optional<DecisionReason> encodeReason) {}
 
   // A copy needs a source within the viewer's limits beside the first audio step at which the
   // copy's cost fits the maximum bitrate, so the audio steps down before the video is encoded (ADR
@@ -171,11 +205,11 @@ public class TranscodeDecisionService {
   // source has no output frame rate (#446) or no picture size that the worker encodes, or no video
   // capability entry accepts its encoded variant in a codec that a verified encoder encodes. Such a
   // copy takes the first step that fits, or else keeps the session's audio, because a lower step
-  // would not bring it within the maximum either.
-  private Optional<VideoCopy> videoCopy(
-      TranscodeDecisionRequest request, AudioDecision sessionAudio) {
+  // would not bring it within the maximum either. A format attempt that must encode names no
+  // reason here: the playback session names the failure that led to it.
+  private VideoCopyChoice videoCopy(TranscodeDecisionRequest request, AudioDecision sessionAudio) {
     if (request.videoFormatConstraint() == VideoFormatConstraint.ENCODE_ONLY) {
-      return Optional.empty();
+      return new VideoCopyChoice.Refused(List.of());
     }
 
     var source = request.source();
@@ -184,17 +218,32 @@ public class TranscodeDecisionService {
     var steps = AudioSteps.below(sessionAudio, AudioTrackChannels.of(source), declaration);
     var stepWithinMaximum =
         limits.audioStepBesideCopyOf(source, steps, CopyMediaPlaylist.of(source, properties));
-    var withinLimits = limits.allowsCopyPictureOf(source) && stepWithinMaximum.isPresent();
-    if (!withinLimits && hasVerifiedEncodeThatTheClientPlays(request)) {
-      return Optional.empty();
+    var limitRefusal = viewerLimitRefusal(limits.allowsCopyPictureOf(source), stepWithinMaximum);
+    if (limitRefusal.isPresent() && hasVerifiedEncodeThatTheClientPlays(request)) {
+      return new VideoCopyChoice.Refused(List.of(limitRefusal.get()));
     }
 
-    var plan = acceptedVideoCopyPlan(source, declaration);
-    if (plan.isEmpty() || !hasWorkerThatDeliversTheCopy(request, plan.get().bitstreamRewrites())) {
-      return Optional.empty();
+    return switch (acceptedVideoCopyPlan(source, declaration)) {
+      case PlanChoice.Refused(var reasons) -> new VideoCopyChoice.Refused(reasons);
+      case PlanChoice.Accepted(var plan, _)
+          when !hasWorkerThatDeliversTheCopy(request, plan.bitstreamRewrites()) ->
+          new VideoCopyChoice.Refused(List.of(DecisionReason.NO_WORKER_DELIVERS_COPY));
+      case PlanChoice.Accepted(var plan, var reasons) ->
+          new VideoCopyChoice.Copied(stepWithinMaximum.orElse(sessionAudio), plan, reasons);
+    };
+  }
+
+  private static Optional<DecisionReason> viewerLimitRefusal(
+      boolean pictureWithinLimits, Optional<AudioDecision> stepWithinMaximum) {
+    if (!pictureWithinLimits) {
+      return Optional.of(DecisionReason.PICTURE_ABOVE_VIEWER_LIMIT);
     }
 
-    return Optional.of(new VideoCopy(stepWithinMaximum.orElse(sessionAudio), plan.get()));
+    if (stepWithinMaximum.isEmpty()) {
+      return Optional.of(DecisionReason.BITRATE_ABOVE_VIEWER_LIMIT);
+    }
+
+    return Optional.empty();
   }
 
   // A worker that does not deliver a copy's planned output would fail the copy, so the client gets
@@ -225,20 +274,28 @@ public class TranscodeDecisionService {
         .anyMatch(variantRequest -> declaration.fitHlsEncode(variantRequest).isPresent());
   }
 
-  private Optional<CopyPlan> acceptedVideoCopyPlan(
+  private PlanChoice acceptedVideoCopyPlan(
       MediaProbe source, ClientCapabilityDeclaration declaration) {
-    var plan = copyPlanBeforeTheKeyframeCheck(source, declaration);
-    if (plan.isEmpty()) {
-      return Optional.empty();
+    var choice = copyPlanBeforeTheKeyframeCheck(source, declaration);
+    if (choice instanceof PlanChoice.Refused) {
+      return choice;
     }
 
     var refusal = streamCopyRefusal(source);
-    refusal.ifPresent(this::countStreamCopyRefusal);
     if (refusal.isPresent()) {
-      return Optional.empty();
+      countStreamCopyRefusal(refusal.get());
+      return new PlanChoice.Refused(List.of(refusal.get().reason()));
     }
 
-    return plan;
+    return choice;
+  }
+
+  // The copy plan that a video capability entry accepts with why it leaves part of the source out,
+  // or why the copy rules or every entry refuse each plan.
+  private sealed interface PlanChoice {
+    record Accepted(CopyPlan plan, List<DecisionReason> reasons) implements PlanChoice {}
+
+    record Refused(List<DecisionReason> reasons) implements PlanChoice {}
   }
 
   /**
@@ -247,24 +304,48 @@ public class TranscodeDecisionService {
    */
   static boolean isCopyAcceptedBeforeTheKeyframeCheck(
       MediaProbe source, ClientCapabilityDeclaration declaration) {
-    return copyPlanBeforeTheKeyframeCheck(source, declaration).isPresent();
+    return copyPlanBeforeTheKeyframeCheck(source, declaration) instanceof PlanChoice.Accepted;
   }
 
-  // The first copy plan that a video capability entry for HLS accepts, or empty when the copy rules
-  // or every entry refuse each plan. Apple's HLS Authoring Specification item 1.14 requires
+  // The first copy plan that a video capability entry for HLS accepts, or the reasons that the copy
+  // rules or every entry refuse each plan. Apple's HLS Authoring Specification item 1.14 requires
   // deinterlaced video, so the worker deinterlaces an interlaced source while it encodes
-  // (streamarr/streamarr-server#653).
-  private static Optional<CopyPlan> copyPlanBeforeTheKeyframeCheck(
+  // (streamarr/streamarr-server#653). A plan after the first leaves out what the entries refused in
+  // the plans before it.
+  private static PlanChoice copyPlanBeforeTheKeyframeCheck(
       MediaProbe source, ClientCapabilityDeclaration declaration) {
     var copy = VideoStreamCopy.of(source);
-    if (copy.isEmpty() || source.isInterlaced() || !permitsCopyUntilHdrCopies(source)) {
-      return Optional.empty();
+    var facts = source.videoPlaybackFacts();
+    if (copy.isEmpty() || facts.isEmpty()) {
+      return new PlanChoice.Refused(List.of(DecisionReason.VIDEO_SOURCE_NOT_COPYABLE));
     }
 
-    return copyPlans(copy.get()).stream()
-        .filter(
-            plan -> declaration.acceptsHlsCopy(copy.get().afterRewrites(plan.bitstreamRewrites())))
-        .findFirst();
+    if (source.isInterlaced()) {
+      return new PlanChoice.Refused(List.of(DecisionReason.SOURCE_INTERLACED));
+    }
+
+    var ruleRefusal = InterimVideoCopyRule.copyRefusal(source.videoCodec(), facts.get());
+    if (ruleRefusal.isPresent()) {
+      return new PlanChoice.Refused(List.of(ruleRefusal.get()));
+    }
+
+    var refusedSoFar = new LinkedHashSet<DecisionReason>();
+    for (var plan : copyPlans(copy.get())) {
+      var refusals =
+          declaration.hlsCopyRefusals(copy.get().afterRewrites(plan.bitstreamRewrites()));
+      if (refusals.isEmpty()) {
+        return new PlanChoice.Accepted(plan, List.copyOf(refusedSoFar));
+      }
+
+      refusedSoFar.addAll(refusals);
+    }
+
+    return new PlanChoice.Refused(
+        declaration.hlsCopyRefusals(copy.get().afterRewrites(firstPlanRewrites(copy.get()))));
+  }
+
+  private static List<BitstreamRewrite> firstPlanRewrites(VideoStreamCopy copy) {
+    return copyPlans(copy).getFirst().bitstreamRewrites();
   }
 
   // The copies that the server can plan, the best picture first: the server picks one output for
@@ -374,14 +455,6 @@ public class TranscodeDecisionService {
     return declaration.video().stream().filter(VideoCapabilityEntry::hls);
   }
 
-  // A source without playback facts has no codec string for a copy job to carry.
-  private static boolean permitsCopyUntilHdrCopies(MediaProbe source) {
-    return source
-        .videoPlaybackFacts()
-        .map(facts -> InterimVideoCopyRule.permitsCopy(source.videoCodec(), facts))
-        .orElse(false);
-  }
-
   // A stream copy's segments can start only at source keyframes (ADR 0037), so the video is copied
   // only when the known keyframes open every interval of the grid except possibly the last. A last
   // interval without a keyframe joins the copy segment before it, which then runs to the media end.
@@ -435,13 +508,23 @@ public class TranscodeDecisionService {
   }
 
   private enum StreamCopyRefusal {
-    KEYFRAMES_NOT_REPORTED,
-    PACKET_SCAN_REQUIRED,
-    KEYFRAMES_UNAVAILABLE,
-    INTERVAL_WITHOUT_KEYFRAME,
-    PRESENTATION_TIME_REGRESSED,
-    PRESENTATION_TIME_OUT_OF_RANGE,
-    DECODE_TIME_OUT_OF_RANGE
+    KEYFRAMES_NOT_REPORTED(DecisionReason.KEYFRAMES_UNKNOWN),
+    PACKET_SCAN_REQUIRED(DecisionReason.KEYFRAMES_UNKNOWN),
+    KEYFRAMES_UNAVAILABLE(DecisionReason.KEYFRAMES_UNKNOWN),
+    INTERVAL_WITHOUT_KEYFRAME(DecisionReason.KEYFRAMES_TOO_SPARSE),
+    PRESENTATION_TIME_REGRESSED(DecisionReason.KEYFRAME_TIMESTAMPS_INVALID),
+    PRESENTATION_TIME_OUT_OF_RANGE(DecisionReason.KEYFRAME_TIMESTAMPS_INVALID),
+    DECODE_TIME_OUT_OF_RANGE(DecisionReason.KEYFRAME_TIMESTAMPS_INVALID);
+
+    private final DecisionReason reason;
+
+    StreamCopyRefusal(DecisionReason reason) {
+      this.reason = reason;
+    }
+
+    DecisionReason reason() {
+      return reason;
+    }
   }
 
   private static TranscodeMode resolveTranscodeMode(
@@ -450,9 +533,9 @@ public class TranscodeDecisionService {
     return TranscodeMode.of(videoCopyable && !subtitleForcesTranscode, audio.mode());
   }
 
-  private AudioDecision decideAudio(MediaProbe source, ClientCapabilityDeclaration declaration) {
+  private SessionAudio decideAudio(MediaProbe source, ClientCapabilityDeclaration declaration) {
     if (source.audioCodec() == null) {
-      return AudioDecision.none();
+      return new SessionAudio(AudioDecision.none(), Optional.empty());
     }
 
     // A copy carries every source channel, so the copy rule and the announced count use the
@@ -465,22 +548,40 @@ public class TranscodeDecisionService {
             .flatMap(StreamInfo::codecString)
             .filter(codecString -> isCopyableAudioCodecString(source.audioCodec(), codecString));
     var copyChannelMaximum = HlsAudioEncodes.channelMaximum(declaration, source.audioCodec());
-    if (copyChannelMaximum.isPresent()
-        && sourceChannels <= copyChannelMaximum.getAsInt()
-        && sourceCodecString.isPresent()) {
-      return AudioDecision.builder()
-          .mode(AudioMode.COPY)
-          .codec(source.audioCodec())
-          .channels(sourceChannels)
-          .bitrate(
-              source
-                  .audioBitrate()
-                  .orElse(AudioDecision.bitrateFor(source.audioCodec(), sourceChannels)))
-          .sourceCodecString(sourceCodecString)
-          .build();
+    var encodeReason = audioEncodeReason(copyChannelMaximum, sourceChannels, sourceCodecString);
+    if (encodeReason.isPresent()) {
+      return new SessionAudio(HlsAudioEncodes.forTrack(declaration, track), encodeReason);
     }
 
-    return HlsAudioEncodes.forTrack(declaration, track);
+    var copy =
+        AudioDecision.builder()
+            .mode(AudioMode.COPY)
+            .codec(source.audioCodec())
+            .channels(sourceChannels)
+            .bitrate(
+                source
+                    .audioBitrate()
+                    .orElse(AudioDecision.bitrateFor(source.audioCodec(), sourceChannels)))
+            .sourceCodecString(sourceCodecString)
+            .build();
+    return new SessionAudio(copy, Optional.empty());
+  }
+
+  private static Optional<DecisionReason> audioEncodeReason(
+      OptionalInt copyChannelMaximum, int sourceChannels, Optional<String> sourceCodecString) {
+    if (copyChannelMaximum.isEmpty()) {
+      return Optional.of(DecisionReason.AUDIO_CODEC_NOT_DECLARED);
+    }
+
+    if (sourceChannels > copyChannelMaximum.getAsInt()) {
+      return Optional.of(DecisionReason.AUDIO_CHANNELS_NOT_DECLARED);
+    }
+
+    if (sourceCodecString.isEmpty()) {
+      return Optional.of(DecisionReason.AUDIO_SOURCE_NOT_COPYABLE);
+    }
+
+    return Optional.empty();
   }
 
   private static boolean isCopyableAudioCodecString(String codec, String codecString) {
