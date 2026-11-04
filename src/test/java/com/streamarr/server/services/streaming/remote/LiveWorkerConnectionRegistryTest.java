@@ -1304,10 +1304,11 @@ class LiveWorkerConnectionRegistryTest {
     registry.register(
         WORKER_ID, registration(WORKER_ID, libx264Encoder()), new CancellableObserver());
 
+    // The encode dispatches beside a copy, and the second copy while the encode holds the slot.
     assertThat(registry.dispatch(remuxJob())).isPresent();
+    assertThat(registry.dispatch(encodeJob("h264"))).isPresent();
     assertThat(registry.dispatch(audioEncodeJob(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_STEREO)))
         .isPresent();
-    assertThat(registry.dispatch(encodeJob("h264"))).isPresent();
 
     assertThat(registry.dispatch(encodeJob("h264"))).isEmpty();
   }
