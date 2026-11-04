@@ -256,11 +256,8 @@ class ProbeVersion7WorkerIT extends AbstractIntegrationTest {
       var file = createMediaFile(source);
 
       var result =
-          probeExecution.toBuilder()
-              .producer(new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, mediaRoot))
-              .packetScans(new CapturingKeyframePacketScanRequests())
-              .build()
-              .execute(probeTaskRequest(file, source), ProbePriority.BACKGROUND);
+          runProbeJob(
+              new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, mediaRoot), file, source);
 
       assertThat(result).isEqualTo(new ProbeExecutionResult.Completed());
       var stored = reader.find(file.getId()).orElseThrow();
@@ -331,6 +328,15 @@ class ProbeVersion7WorkerIT extends AbstractIntegrationTest {
             .probe(probeRequest(source));
     assertThat(outcome).isInstanceOf(ProbeOutcome.Success.class);
     return (ProbeOutcome.Success) outcome;
+  }
+
+  private ProbeExecutionResult runProbeJob(
+      RemoteFfprobeService producer, MediaFile file, Path source) throws IOException {
+    return probeExecution.toBuilder()
+        .producer(producer)
+        .packetScans(new CapturingKeyframePacketScanRequests())
+        .build()
+        .execute(probeTaskRequest(file, source), ProbePriority.BACKGROUND);
   }
 
   private static ProbeExecutionRequest probeRequest(Path source) {
