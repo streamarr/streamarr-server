@@ -134,6 +134,16 @@ public class LanguagePreferenceService implements PlaybackLanguagePreferences {
   @Transactional(readOnly = true)
   public Map<UUID, LanguagePreference> languagePreferences(
       @NonNull UUID profileId, @NonNull Collection<UUID> titleIds) {
+    return preferencesOf(profileId, titleIds);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<Language> audioLanguagesFor(@NonNull UUID profileId, @NonNull UUID titleId) {
+    return preferencesOf(profileId, List.of(titleId)).get(titleId).audioLanguages();
+  }
+
+  private Map<UUID, LanguagePreference> preferencesOf(UUID profileId, Collection<UUID> titleIds) {
     var lineages = languagePreferenceRepository.findLineages(titleIds);
     var scopedTitleIds =
         lineages.values().stream()
@@ -151,12 +161,6 @@ public class LanguagePreferenceService implements PlaybackLanguagePreferences {
     }
 
     return result;
-  }
-
-  @Override
-  @Transactional(readOnly = true)
-  public List<Language> audioLanguagesFor(@NonNull UUID profileId, @NonNull UUID titleId) {
-    return languagePreferences(profileId, List.of(titleId)).get(titleId).audioLanguages();
   }
 
   private UUID requireMayChangeLanguages(AuthenticatedIdentity identity) {
