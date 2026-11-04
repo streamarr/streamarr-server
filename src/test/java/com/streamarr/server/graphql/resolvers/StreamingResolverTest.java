@@ -471,6 +471,53 @@ class StreamingResolverTest {
         .isEqualTo(probe.duration().plus(Duration.ofHours(1)));
   }
 
+  // ADR 0045: a player that selects audio tracks selects the track that the stream decision names.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("directPlayAudioTrackPositions")
+  @DisplayName(
+      "Should expose the audio track that the decision names when the session direct-plays")
+  void shouldExposeTheAudioTrackThatTheDecisionNamesWhenTheSessionDirectPlays(
+      String scenario, OptionalInt position, Integer expected) {
+    STUB_SERVICE.setNextResult(
+        sessionBuilderLike(buildSession(UUID.randomUUID()))
+            .transcodeDecision(null)
+            .delivery(StreamDelivery.DIRECT_PLAY)
+            .sourceContainer(SourceContainer.MATROSKA)
+            .directPlayAudioTrackPosition(position)
+            .build());
+
+    var context =
+        dgsQueryExecutor.executeAndGetDocumentContext(
+            """
+            mutation {
+              createPlaybackSession(
+                input: {mediaFileId: "%s", options: {quality: ORIGINAL}, capabilities: %s}
+              ) {
+                playbackSession {
+                  currentFormatAttempt {
+                    ... on ReadyPlaybackFormatAttempt {
+                      streamSession { ... on DirectPlayStreamSession { audioTrackPosition } }
+                    }
+                  }
+                }
+              }
+            }
+            """
+                .formatted(UUID.randomUUID(), CAPABILITIES));
+
+    assertThat(
+            context.read(
+                CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.audioTrackPosition",
+                Integer.class))
+        .isEqualTo(expected);
+  }
+
+  static Stream<Arguments> directPlayAudioTrackPositions() {
+    return Stream.of(
+        Arguments.of("the second audio track", OptionalInt.of(1), 1),
+        Arguments.of("a file without audio", OptionalInt.empty(), null));
+  }
+
   static Stream<Arguments> sourceRanges() {
     return Stream.of(
         Arguments.of(
@@ -2202,6 +2249,7 @@ class StreamingResolverTest {
               .transcodeDecision(nextResult.getTranscodeDecision())
               .delivery(nextResult.getDelivery())
               .sourceContainer(nextResult.getSourceContainer().orElse(null))
+              .directPlayAudioTrackPosition(nextResult.getDirectPlayAudioTrackPosition())
               .options(command.options())
               .startPosition(command.startPosition().orElse(null))
               .createdAt(Instant.now())

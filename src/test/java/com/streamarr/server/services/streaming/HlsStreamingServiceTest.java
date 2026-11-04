@@ -5440,6 +5440,25 @@ class HlsStreamingServiceTest {
     assertThat(session.getDelivery()).isEqualTo(StreamDelivery.HLS);
   }
 
+  // ADR 0045: a player that selects audio tracks direct-plays a file with several, and selects the
+  // audio track that the stream decision names: the track that HLS plays for the same file.
+  @Test
+  @DisplayName(
+      "Should direct-play and name the first audio track when the player selects an audio track")
+  void shouldDirectPlayAndNameTheFirstAudioTrackWhenThePlayerSelectsAnAudioTrack() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra"));
+    var file = seedMediaFile();
+    var declaration = directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(true).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId()).capabilityDeclaration(declaration).build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
+    assertThat(session.getDirectPlayAudioTrackPosition()).hasValue(0);
+  }
+
   // One stereo AAC track for each language, in stream order after the video stream.
   private static MediaProbe directPlayableProbeWithAudioIn(String... languages) {
     var streams = new ArrayList<StreamInfo>();

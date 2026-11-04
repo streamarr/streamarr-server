@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming;
 import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.SourceContainer;
 import java.util.List;
+import java.util.OptionalInt;
 import lombok.NonNull;
 
 /** Whether a format attempt direct-plays the source file (ADR 0045), and why it does not. */
@@ -14,8 +15,14 @@ public sealed interface DirectPlayChoice {
    */
   List<DecisionReason> refusals();
 
-  /** The format attempt direct-plays the source file from its source container. */
-  record Accepted(@NonNull SourceContainer container) implements DirectPlayChoice {
+  /**
+   * The format attempt direct-plays the source file from its source container. {@code
+   * audioTrackPosition} names the audio track that a player that selects audio tracks selects: its
+   * position, counting from 0, among the file's audio tracks in stream order. It is empty for a
+   * file without audio.
+   */
+  record Accepted(@NonNull SourceContainer container, @NonNull OptionalInt audioTrackPosition)
+      implements DirectPlayChoice {
 
     @Override
     public List<DecisionReason> refusals() {

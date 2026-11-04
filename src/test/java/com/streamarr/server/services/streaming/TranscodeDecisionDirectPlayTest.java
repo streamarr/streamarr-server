@@ -59,7 +59,7 @@ class TranscodeDecisionDirectPlayTest {
   private static final String MATROSKA_DEMUXER = "matroska,webm";
   private static final String MOV_DEMUXER = "mov,mp4,m4a,3gp,3g2,mj2";
   private static final DirectPlayChoice MATROSKA_DIRECT_PLAY =
-      new DirectPlayChoice.Accepted(SourceContainer.MATROSKA);
+      new DirectPlayChoice.Accepted(SourceContainer.MATROSKA, OptionalInt.of(0));
 
   private final TranscodeDecisionService service =
       new TranscodeDecisionService(
@@ -136,8 +136,8 @@ class TranscodeDecisionDirectPlayTest {
   }
 
   static Stream<Arguments> majorBrands() {
-    var mp4 = new DirectPlayChoice.Accepted(SourceContainer.MP4);
-    var mov = new DirectPlayChoice.Accepted(SourceContainer.MOV);
+    var mp4 = new DirectPlayChoice.Accepted(SourceContainer.MP4, OptionalInt.of(0));
+    var mov = new DirectPlayChoice.Accepted(SourceContainer.MOV, OptionalInt.of(0));
     var otherContainer = refused(DecisionReason.DIRECT_PLAY_CONTAINER_NOT_DECLARED);
     return Stream.of(
         Arguments.of(Optional.of("isom"), SourceContainer.MP4, mp4),
@@ -192,7 +192,7 @@ class TranscodeDecisionDirectPlayTest {
   }
 
   static Stream<Arguments> sdrBaseDolbyVisionFiles() {
-    var mp4 = new DirectPlayChoice.Accepted(SourceContainer.MP4);
+    var mp4 = new DirectPlayChoice.Accepted(SourceContainer.MP4, OptionalInt.of(0));
     var videoRefused = refused(DecisionReason.DIRECT_PLAY_VIDEO_NOT_DECLARED);
     return Stream.of(
         Arguments.of("profile 8.2 under hvc1", profile82Mp4File("hvc1"), mp4),
@@ -450,6 +450,39 @@ class TranscodeDecisionDirectPlayTest {
         .isEqualTo(refused(DecisionReason.DIRECT_PLAY_CONTAINER_NOT_DECLARED));
   }
 
+  // The stream session plays the first audio stream that the probe lists, over HLS and in direct
+  // play alike. The client finds that track by its position among the file's audio tracks in stream
+  // order, which is the order of a player's own track list.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("namedAudioTracks")
+  @DisplayName(
+      "Should name the session's audio track by its position among the file's audio tracks when the"
+          + " file direct-plays")
+  void shouldNameTheSessionsAudioTrackByItsPositionAmongTheFilesAudioTracksWhenTheFileDirectPlays(
+      String scenario, List<StreamInfo> streams, OptionalInt expected) {
+    var request =
+        request()
+            .capabilityDeclaration(selectingDeclarationListing(SourceContainer.MATROSKA))
+            .source(h264Source().streams(streams).build());
+
+    assertThat(service.decideDirectPlay(request.build()))
+        .isEqualTo(new DirectPlayChoice.Accepted(SourceContainer.MATROSKA, expected));
+  }
+
+  static Stream<Arguments> namedAudioTracks() {
+    var englishFirst = aacBuilder("eng").index(1).build();
+    var frenchSecond = aacBuilder("fra").index(2).build();
+    var subtitle = StreamInfo.builder().index(3).codecType("subtitle").build();
+    return Stream.of(
+        Arguments.of(
+            "the first of two tracks", List.of(englishFirst, frenchSecond), OptionalInt.of(0)),
+        Arguments.of(
+            "a later track that the probe lists first",
+            List.of(frenchSecond, englishFirst),
+            OptionalInt.of(1)),
+        Arguments.of("a file without audio", List.of(subtitle), OptionalInt.empty()));
+  }
+
   private static DirectPlayChoice refused(DecisionReason... reasons) {
     return new DirectPlayChoice.Refused(List.of(reasons));
   }
@@ -603,10 +636,11 @@ class TranscodeDecisionDirectPlayTest {
   }
 
   private static StreamInfo aac(String language) {
-    return audioStreamBuilder("aac")
-        .channels(OptionalInt.of(2))
-        .language(Optional.of(language))
-        .build();
+    return aacBuilder(language).build();
+  }
+
+  private static StreamInfo.StreamInfoBuilder aacBuilder(String language) {
+    return audioStreamBuilder("aac").channels(OptionalInt.of(2)).language(Optional.of(language));
   }
 
   // Profile 8.1 at Dolby Vision level 6, with its RPUs placed as given.
