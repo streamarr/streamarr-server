@@ -4,6 +4,7 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.DolbyVision;
+import com.streamarr.server.domain.streaming.DolbyVisionOutput;
 import com.streamarr.server.domain.streaming.EncodedVideoOutput;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlannedVideoOutput;
@@ -58,6 +59,7 @@ public class HlsPlaylistService {
           sb, copyBandwidth(probe, audio), size.width(), size.height(), codecs, hasAudio);
       appendCopiedFrameRate(sb, probe);
       appendVideoRange(sb, session);
+      appendSupplementalCodecs(sb, session);
       sb.append("\n");
       sb.append("stream.m3u8?t=").append(token).append("\n");
       return sb.toString();
@@ -233,6 +235,16 @@ public class HlsPlaylistService {
     if (keepsDolbyVision) {
       sb.append(",VIDEO-RANGE=SDR");
     }
+  }
+
+  // A copy that keeps Dolby Vision on a PQ or HLG base announces the Dolby Vision beside its base
+  // sample entry's CODECS, at the decision's level (ADR 0013).
+  private static void appendSupplementalCodecs(StringBuilder sb, StreamSession session) {
+    session
+        .getTranscodeDecision()
+        .videoDolbyVisionOutput()
+        .flatMap(DolbyVisionOutput::supplementalCodecs)
+        .ifPresent(codecs -> sb.append(",SUPPLEMENTAL-CODECS=\"").append(codecs).append("\""));
   }
 
   /**
