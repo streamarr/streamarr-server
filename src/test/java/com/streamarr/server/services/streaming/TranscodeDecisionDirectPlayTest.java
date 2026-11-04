@@ -169,11 +169,13 @@ class TranscodeDecisionDirectPlayTest {
         .isEmpty();
   }
 
+  // A native player may start any audio track, and the viewer can switch tracks inside the file,
+  // so a forced image track in the language of any audio track would go unshown.
   @ParameterizedTest(name = "{0}")
   @MethodSource("forcedImageSubtitles")
   @DisplayName(
-      "Should play over HLS only when a forced image subtitle matches the first audio language")
-  void shouldPlayOverHlsOnlyWhenAForcedImageSubtitleMatchesTheFirstAudioLanguage(
+      "Should play over HLS only when a forced image subtitle matches an audio track's language")
+  void shouldPlayOverHlsOnlyWhenAForcedImageSubtitleMatchesAnAudioTracksLanguage(
       String scenario, String subtitleLanguage, boolean directPlays) {
     var forced =
         StreamInfo.builder()
@@ -182,7 +184,7 @@ class TranscodeDecisionDirectPlayTest {
             .language(Optional.of(subtitleLanguage))
             .isForced(true)
             .build();
-    var source = h264Source().streams(List.of(englishAac(), forced)).build();
+    var source = h264Source().streams(List.of(aac("eng"), aac("fra"), forced)).build();
 
     assertThat(service.decideDirectPlay(request().source(source).build()).isPresent())
         .isEqualTo(directPlays);
@@ -190,8 +192,9 @@ class TranscodeDecisionDirectPlayTest {
 
   static Stream<Arguments> forcedImageSubtitles() {
     return Stream.of(
-        Arguments.of("forced track in the audio language", "eng", false),
-        Arguments.of("forced track in another language", "fra", true));
+        Arguments.of("forced track in the first audio track's language", "eng", false),
+        Arguments.of("forced track in the second audio track's language", "fra", false),
+        Arguments.of("forced track in no audio track's language", "deu", true));
   }
 
   // The keyframe grid, the interim HDR rule and the codec string bind only HLS copies.
@@ -305,9 +308,13 @@ class TranscodeDecisionDirectPlayTest {
   }
 
   private static StreamInfo englishAac() {
+    return aac("eng");
+  }
+
+  private static StreamInfo aac(String language) {
     return audioStreamBuilder("aac")
         .channels(OptionalInt.of(2))
-        .language(Optional.of("eng"))
+        .language(Optional.of(language))
         .build();
   }
 

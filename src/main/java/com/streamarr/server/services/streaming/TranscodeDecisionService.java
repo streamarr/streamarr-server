@@ -77,9 +77,9 @@ public class TranscodeDecisionService {
    * empty when it plays over HLS. Only a format attempt that may direct-play does, and only in
    * Original. The declaration must cover the video and every audio track from the file's source
    * container (ADR 0049). An interlaced source, a property issue that rules out a copy (ADR 0049)
-   * and a forced image subtitle that applies (#506) keep the file on HLS. The keyframe grid, the
-   * interim HDR copy rule and the codec string bind only HLS copies. A copy in Original ignores the
-   * viewer's limits (ADR 0050), and so does direct play.
+   * and a forced image subtitle in the language of any audio track (#506) keep the file on HLS. The
+   * keyframe grid, the interim HDR copy rule and the codec string bind only HLS copies. A copy in
+   * Original ignores the viewer's limits (ADR 0050), and so does direct play.
    */
   public Optional<SourceContainer> decideDirectPlay(@NonNull DirectPlayRequest request) {
     if (request.videoFormatConstraint() != VideoFormatConstraint.DIRECT_PLAY_OR_COPY_OR_ENCODE
@@ -103,7 +103,7 @@ public class TranscodeDecisionService {
   private static boolean permitsDirectPlay(MediaProbe source) {
     return !source.isInterlaced()
         && !hasPropertyIssueThatRulesOutACopy(source)
-        && source.forcedImageSubtitleOfSelectedAudio().isEmpty();
+        && !source.hasForcedImageSubtitleInAnAudioLanguage();
   }
 
   private static boolean hasPropertyIssueThatRulesOutACopy(MediaProbe source) {

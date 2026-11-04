@@ -19,32 +19,51 @@ class MediaProbeTest {
   @ParameterizedTest
   @ValueSource(strings = {"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle"})
   @DisplayName(
-      "Should find the forced image subtitle when its language matches the first audio track")
-  void shouldFindTheForcedImageSubtitleWhenItsLanguageMatchesTheFirstAudioTrack(String codec) {
-    var forced = subtitle(codec, "eng").isForced(true).index(3).build();
-    var probe = probe(audio("eng"), audio("fra"), subtitle(codec, "eng").index(2).build(), forced);
+      "Should find a forced image subtitle when its language matches the first audio track")
+  void shouldFindAForcedImageSubtitleWhenItsLanguageMatchesTheFirstAudioTrack(String codec) {
+    var probe = probe(audio("eng"), audio("fra"), subtitle(codec, "eng").isForced(true).build());
 
-    assertThat(probe.forcedImageSubtitleOfSelectedAudio()).contains(forced);
+    assertThat(probe.hasForcedImageSubtitleInAnAudioLanguage()).isTrue();
   }
 
   @Test
-  @DisplayName("Should match the languages without regard to case")
-  void shouldMatchTheLanguagesWithoutRegardToCase() {
-    var forced = subtitle("hdmv_pgs_subtitle", "ENG").isForced(true).build();
-
-    assertThat(probe(audio("eng"), forced).forcedImageSubtitleOfSelectedAudio()).contains(forced);
-  }
-
-  @Test
-  @DisplayName("Should find no forced subtitle when the forced image track is in another language")
-  void shouldFindNoForcedSubtitleWhenTheForcedImageTrackIsInAnotherLanguage() {
+  @DisplayName("Should find a forced image subtitle when its language matches a later audio track")
+  void shouldFindAForcedImageSubtitleWhenItsLanguageMatchesALaterAudioTrack() {
     var probe =
         probe(
             audio("eng"),
             audio("fra"),
             subtitle("hdmv_pgs_subtitle", "fra").isForced(true).build());
 
-    assertThat(probe.forcedImageSubtitleOfSelectedAudio()).isEmpty();
+    assertThat(probe.hasForcedImageSubtitleInAnAudioLanguage()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should match the languages without regard to case")
+  void shouldMatchTheLanguagesWithoutRegardToCase() {
+    var probe = probe(audio("eng"), subtitle("hdmv_pgs_subtitle", "ENG").isForced(true).build());
+
+    assertThat(probe.hasForcedImageSubtitleInAnAudioLanguage()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should find no forced subtitle when the forced image track matches no audio track")
+  void shouldFindNoForcedSubtitleWhenTheForcedImageTrackMatchesNoAudioTrack() {
+    var probe =
+        probe(
+            audio("eng"),
+            audio("fra"),
+            subtitle("hdmv_pgs_subtitle", "deu").isForced(true).build());
+
+    assertThat(probe.hasForcedImageSubtitleInAnAudioLanguage()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should find no forced subtitle when the image track in the language is not forced")
+  void shouldFindNoForcedSubtitleWhenTheImageTrackInTheLanguageIsNotForced() {
+    var probe = probe(audio("eng"), subtitle("hdmv_pgs_subtitle", "eng").build());
+
+    assertThat(probe.hasForcedImageSubtitleInAnAudioLanguage()).isFalse();
   }
 
   @Test
@@ -52,18 +71,18 @@ class MediaProbeTest {
   void shouldFindNoForcedSubtitleWhenTheForcedTrackInTheLanguageIsText() {
     var probe = probe(audio("eng"), subtitle("subrip", "eng").isForced(true).build());
 
-    assertThat(probe.forcedImageSubtitleOfSelectedAudio()).isEmpty();
+    assertThat(probe.hasForcedImageSubtitleInAnAudioLanguage()).isFalse();
   }
 
   @Test
-  @DisplayName("Should find no forced subtitle when the first audio track names no language")
-  void shouldFindNoForcedSubtitleWhenTheFirstAudioTrackNamesNoLanguage() {
+  @DisplayName("Should find no forced subtitle when no audio track names a language")
+  void shouldFindNoForcedSubtitleWhenNoAudioTrackNamesALanguage() {
     var probe =
         probe(
             audioStreamBuilder("aac").build(),
             subtitle("hdmv_pgs_subtitle", "eng").isForced(true).build());
 
-    assertThat(probe.forcedImageSubtitleOfSelectedAudio()).isEmpty();
+    assertThat(probe.hasForcedImageSubtitleInAnAudioLanguage()).isFalse();
   }
 
   private static MediaProbe probe(StreamInfo... streams) {

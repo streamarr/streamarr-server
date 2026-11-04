@@ -2,11 +2,13 @@ package com.streamarr.server.domain.streaming;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.NonNull;
 
@@ -83,21 +85,21 @@ public record MediaProbe(
   }
 
   /**
-   * The forced image subtitle track that applies while subtitles are off: a forced PGS, VobSub or
-   * DVB track in the language of the selected audio, which is the first audio stream
-   * (streamarr/streamarr-server#506). Empty when the selected audio names no language.
+   * Whether a forced PGS, VobSub or DVB subtitle track is in the language of any audio track. The
+   * player shows such a track while subtitles are off (streamarr/streamarr-server#506), whichever
+   * audio track plays.
    */
-  public Optional<StreamInfo> forcedImageSubtitleOfSelectedAudio() {
-    var language = audioStreams().stream().findFirst().flatMap(StreamInfo::language);
-    if (language.isEmpty()) {
-      return Optional.empty();
-    }
-
+  public boolean hasForcedImageSubtitleInAnAudioLanguage() {
+    var languages =
+        audioStreams().stream()
+            .flatMap(stream -> stream.language().stream())
+            .map(language -> language.toLowerCase(Locale.ROOT))
+            .collect(Collectors.toSet());
     return subtitleStreams().stream()
         .filter(StreamInfo::isForced)
         .filter(stream -> stream.codec().filter(IMAGE_SUBTITLE_CODECS::contains).isPresent())
-        .filter(stream -> stream.language().filter(language.get()::equalsIgnoreCase).isPresent())
-        .findFirst();
+        .flatMap(stream -> stream.language().stream())
+        .anyMatch(language -> languages.contains(language.toLowerCase(Locale.ROOT)));
   }
 
   public List<StreamInfo> subtitleStreams() {
