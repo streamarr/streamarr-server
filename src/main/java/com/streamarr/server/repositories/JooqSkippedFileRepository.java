@@ -21,18 +21,19 @@ public class JooqSkippedFileRepository implements SkippedFileRepository {
   private final DSLContext dsl;
 
   @Override
-  public void save(SkippedFile skippedFile) {
-    dsl.insertInto(SKIPPED_FILE)
-        .set(SKIPPED_FILE.ID, skippedFile.id())
-        .set(SKIPPED_FILE.LIBRARY_ID, skippedFile.libraryId())
-        .set(SKIPPED_FILE.LIBRARY_OPERATION_ID, skippedFile.libraryOperationId())
-        .set(SKIPPED_FILE.FILEPATH_URI, skippedFile.filepathUri())
-        .set(SKIPPED_FILE.REASON, toJooq(skippedFile.reason()))
-        .onConflict(SKIPPED_FILE.LIBRARY_ID, SKIPPED_FILE.FILEPATH_URI)
-        .doUpdate()
-        .set(SKIPPED_FILE.LIBRARY_OPERATION_ID, DSL.excluded(SKIPPED_FILE.LIBRARY_OPERATION_ID))
-        .set(SKIPPED_FILE.REASON, DSL.excluded(SKIPPED_FILE.REASON))
-        .execute();
+  public boolean trySave(SkippedFile skippedFile) {
+    return dsl.insertInto(SKIPPED_FILE)
+            .set(SKIPPED_FILE.ID, skippedFile.id())
+            .set(SKIPPED_FILE.LIBRARY_ID, skippedFile.libraryId())
+            .set(SKIPPED_FILE.LIBRARY_OPERATION_ID, skippedFile.libraryOperationId())
+            .set(SKIPPED_FILE.FILEPATH_URI, skippedFile.filepathUri())
+            .set(SKIPPED_FILE.REASON, toJooq(skippedFile.reason()))
+            .onConflict(SKIPPED_FILE.LIBRARY_ID, SKIPPED_FILE.FILEPATH_URI)
+            .doUpdate()
+            .set(SKIPPED_FILE.LIBRARY_OPERATION_ID, DSL.excluded(SKIPPED_FILE.LIBRARY_OPERATION_ID))
+            .set(SKIPPED_FILE.REASON, DSL.excluded(SKIPPED_FILE.REASON))
+            .execute()
+        == 1;
   }
 
   @Override

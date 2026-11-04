@@ -255,8 +255,8 @@ class LibraryResolverTest {
       when(libraryRepository.findById(libraryId))
           .thenReturn(Optional.of(buildMovieLibrary(libraryId)));
       var scanId = UUID.randomUUID();
-      FAKE_SKIPPED_FILES.save(softLink(libraryId, scanId, "file:///media/movies/B.mkv"));
-      FAKE_SKIPPED_FILES.save(softLink(libraryId, scanId, "file:///media/movies/A.mkv"));
+      FAKE_SKIPPED_FILES.trySave(softLink(libraryId, scanId, "file:///media/movies/B.mkv"));
+      FAKE_SKIPPED_FILES.trySave(softLink(libraryId, scanId, "file:///media/movies/A.mkv"));
       var query =
           """
           query($id: ID!, $after: String) {
@@ -359,7 +359,8 @@ class LibraryResolverTest {
 
     @Test
     @DisplayName(
-        "Should return the library SCANNING with no userErrors when startLibraryScan starts an idle library")
+        "Should return the library SCANNING with no userErrors when startLibraryScan starts an idle"
+            + " library")
     void shouldReturnLibraryScanningWithNoUserErrorsWhenStartLibraryScanStartsIdleLibrary() {
       var libraryId = UUID.randomUUID();
 
@@ -377,7 +378,8 @@ class LibraryResolverTest {
 
     @Test
     @DisplayName(
-        "Should return the library REFRESHING with no userErrors when startLibraryRefresh starts an idle library")
+        "Should return the library REFRESHING with no userErrors when startLibraryRefresh starts an"
+            + " idle library")
     void shouldReturnLibraryRefreshingWithNoUserErrorsWhenStartLibraryRefreshStartsIdleLibrary() {
       var libraryId = UUID.randomUUID();
 
@@ -420,7 +422,8 @@ class LibraryResolverTest {
 
     @Test
     @DisplayName(
-        "Should reject the request when the startLibraryRefresh input sets imageRefreshMode to null")
+        "Should reject the request when the startLibraryRefresh input sets imageRefreshMode to"
+            + " null")
     void shouldRejectRequestWhenStartLibraryRefreshInputSetsImageRefreshModeToNull() {
       var result =
           dgsQueryExecutor.execute(
@@ -441,7 +444,8 @@ class LibraryResolverTest {
 
     @Test
     @DisplayName(
-        "Should return the removed library's id with no userErrors when removeLibrary removes an idle library")
+        "Should return the removed library's id with no userErrors when removeLibrary removes an"
+            + " idle library")
     void shouldReturnRemovedLibraryIdWithNoUserErrorsWhenRemoveLibraryRemovesIdleLibrary() {
       var libraryId = UUID.randomUUID();
 
@@ -535,7 +539,8 @@ class LibraryResolverTest {
         name = "Should return LibraryBusyError with {2} and no result when {0} meets a running {1}")
     @MethodSource("com.streamarr.server.graphql.resolvers.LibraryResolverTest#libraryBusyRefusals")
     @DisplayName(
-        "Should return LibraryBusyError naming the running kind and no result when the library is busy")
+        "Should return LibraryBusyError naming the running kind and no result when the library is"
+            + " busy")
     @SuppressWarnings("checkstyle:fullyQualifiedName")
     void shouldReturnLibraryBusyErrorNamingRunningKindAndNoResultWhenLibraryIsBusy(
         LibraryOperationMutation mutation,
@@ -558,7 +563,8 @@ class LibraryResolverTest {
         name = "Should return InvalidIdError and no result when {0} receives a malformed id")
     @EnumSource(LibraryOperationMutation.class)
     @DisplayName(
-        "Should return InvalidIdError at libraryId and start nothing when the libraryId is malformed")
+        "Should return InvalidIdError at libraryId and start nothing when the libraryId is"
+            + " malformed")
     void shouldReturnInvalidIdErrorAndStartNothingWhenLibraryIdIsMalformed(
         LibraryOperationMutation mutation) {
       var payload = payloadOf(mutation, "not-a-uuid");
@@ -600,7 +606,8 @@ class LibraryResolverTest {
         value = LibraryOperationMutation.class,
         names = {"START_LIBRARY_SCAN", "START_LIBRARY_REFRESH"})
     @DisplayName(
-        "Should return LIBRARY_OPERATION_NOT_STARTED and a null payload when the start transaction fails")
+        "Should return LIBRARY_OPERATION_NOT_STARTED and a null payload when the start transaction"
+            + " fails")
     void shouldReturnLibraryOperationNotStartedAndNullPayloadWhenStartTransactionFails(
         LibraryOperationMutation mutation) {
       FAKE_LIBRARY_OPERATION_SERVICE.throwWhenStarted(
@@ -1030,18 +1037,18 @@ class LibraryResolverTest {
 
     String document(String libraryId) {
       return """
-          mutation {
-            %s(input: { libraryId: "%s" }) {
-              %s
-              userErrors {
-                __typename
-                ... on MutationError { message }
-                ... on InputMutationError { inputPath }
-                ... on %s { status }
-              }
-            }
+      mutation {
+        %s(input: { libraryId: "%s" }) {
+          %s
+          userErrors {
+            __typename
+            ... on MutationError { message }
+            ... on InputMutationError { inputPath }
+            ... on %s { status }
           }
-          """
+        }
+      }
+      """
           .formatted(fieldName, libraryId, resultSelection, errorWithStatus);
     }
 

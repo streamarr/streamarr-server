@@ -188,7 +188,7 @@ public class LibraryFileWalk {
     return switch (entry) {
       case WalkEntry.RegularFile(var listed) -> Optional.of(listed);
       case WalkEntry.SoftLink(var path) -> {
-        skippedFileRepository.save(
+        skippedFileRepository.trySave(
             SkippedFile.builder()
                 .libraryId(library.getId())
                 .libraryOperationId(libraryOperationId)

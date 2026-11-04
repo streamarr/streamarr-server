@@ -18,7 +18,7 @@ public class FakeSkippedFileRepository implements SkippedFileRepository {
   private volatile RuntimeException saveFailure;
   private volatile Runnable beforeEachSave = () -> {};
 
-  /** Runs {@code action} before every later save. */
+  /** Runs {@code action} before every later save attempt. */
   public void runBeforeEachSave(Runnable action) {
     beforeEachSave = action;
   }
@@ -29,13 +29,14 @@ public class FakeSkippedFileRepository implements SkippedFileRepository {
   }
 
   @Override
-  public void save(SkippedFile skippedFile) {
+  public boolean trySave(SkippedFile skippedFile) {
     beforeEachSave.run();
     if (saveFailure != null) {
       throw saveFailure;
     }
 
     database.put(new Key(skippedFile.libraryId(), skippedFile.filepathUri()), skippedFile);
+    return true;
   }
 
   @Override

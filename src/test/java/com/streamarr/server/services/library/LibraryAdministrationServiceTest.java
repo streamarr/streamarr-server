@@ -225,9 +225,9 @@ class LibraryAdministrationServiceTest {
   void shouldReturnTheLibrarysSkippedFilesInFilepathOrderWhenLibraryAdministrationIsViewed() {
     var libraryId = UUID.randomUUID();
     var scanId = UUID.randomUUID();
-    skippedFiles.save(softLink(libraryId, scanId, "file:///library/B%20(2002).mkv"));
-    skippedFiles.save(softLink(libraryId, scanId, "file:///library/A%20(2001).mkv"));
-    skippedFiles.save(softLink(UUID.randomUUID(), scanId, "file:///other/C%20(2003).mkv"));
+    skippedFiles.trySave(softLink(libraryId, scanId, "file:///library/B%20(2002).mkv"));
+    skippedFiles.trySave(softLink(libraryId, scanId, "file:///library/A%20(2001).mkv"));
+    skippedFiles.trySave(softLink(UUID.randomUUID(), scanId, "file:///other/C%20(2003).mkv"));
 
     var page =
         libraryAdministrationService.skippedFiles(
@@ -246,7 +246,7 @@ class LibraryAdministrationServiceTest {
   @DisplayName("Should refuse the library's skipped files when authorization denies")
   void shouldRefuseTheLibrarysSkippedFilesWhenAuthorizationDenies() {
     var libraryId = UUID.randomUUID();
-    skippedFiles.save(softLink(libraryId, UUID.randomUUID(), "file:///library/A%20(2001).mkv"));
+    skippedFiles.trySave(softLink(libraryId, UUID.randomUUID(), "file:///library/A%20(2001).mkv"));
     var firstPage = new PageRequest(Optional.empty(), PaginationDirection.FORWARD, 10);
     authorizationService.denyAll();
 

@@ -72,7 +72,7 @@ class LibrarySkippedFilesPagedListIT
   @Override
   protected UUID add(Scope scope, int rank) {
     var filepathUri = "file:///skipped/%03d-%s.mkv".formatted(rank, UUID.randomUUID());
-    skippedFiles.save(softLink(scope, scope.latestScan().get(), filepathUri));
+    skippedFiles.trySave(softLink(scope, scope.latestScan().get(), filepathUri));
     var id =
         dsl.select(SKIPPED_FILE.ID)
             .from(SKIPPED_FILE)
@@ -134,7 +134,7 @@ class LibrarySkippedFilesPagedListIT
     skippedFiles.deleteSkippedFilesOfOtherLibraryOperations(scope.library().getId(), laterScan);
     scope
         .filepathUris()
-        .forEach(filepathUri -> skippedFiles.save(softLink(scope, laterScan, filepathUri)));
+        .forEach(filepathUri -> skippedFiles.trySave(softLink(scope, laterScan, filepathUri)));
     scope.latestScan().set(laterScan);
   }
 

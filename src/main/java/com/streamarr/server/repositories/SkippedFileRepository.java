@@ -9,8 +9,12 @@ import java.util.UUID;
 /** Stores the files that the latest scan of each library skipped. */
 public interface SkippedFileRepository {
 
-  /** Stores the skip, replacing the one that an earlier scan stored for the same file. */
-  void save(SkippedFile skippedFile);
+  /**
+   * Stores the skip, replacing the one that an earlier scan stored for the same file.
+   *
+   * @return whether the skip was stored
+   */
+  boolean trySave(SkippedFile skippedFile);
 
   /**
    * Deletes the library's skipped files that another library operation stored, so the library's
