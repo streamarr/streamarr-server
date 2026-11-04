@@ -25,6 +25,11 @@ public record ClientCapabilityDeclaration(
     return hlsCopyRefusals(copy).isEmpty();
   }
 
+  /** The first video capability entry that accepts the stream copy over HLS. */
+  public Optional<VideoCapabilityEntry> hlsCopyEntry(@NonNull VideoStreamCopy copy) {
+    return video.stream().filter(entry -> entry.acceptsHlsCopy(copy)).findFirst();
+  }
+
   /**
    * Why no video capability entry accepts the stream copy over HLS: the codec family that no HLS
    * entry names, or the properties that the closest HLS entry of the codec family refuses. The

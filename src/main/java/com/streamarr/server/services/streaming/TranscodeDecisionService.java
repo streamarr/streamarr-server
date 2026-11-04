@@ -37,7 +37,6 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -207,10 +206,22 @@ public class TranscodeDecisionService {
   // would not bring it within the maximum either. A format attempt that must encode names no
   // reason here: the playback session names the failure that led to it.
   private VideoCopyChoice videoCopy(TranscodeDecisionRequest request, AudioDecision sessionAudio) {
-    if (request.videoFormatConstraint() == VideoFormatConstraint.ENCODE_ONLY) {
-      return new VideoCopyChoice.Refused(List.of());
+    var encodeOnly = request.videoFormatConstraint() == VideoFormatConstraint.ENCODE_ONLY;
+    var choice = copyChoice(request, sessionAudio, !encodeOnly);
+    if (!encodeOnly) {
+      return choice;
     }
 
+    return switch (choice) {
+      case VideoCopyChoice.Refused refused -> refused;
+      case VideoCopyChoice.Copied _ -> new VideoCopyChoice.Refused(List.of());
+    };
+  }
+
+  // Only a decision that may copy counts its keyframe refusals: an encode-only decision checks
+  // the copy again only to name why it was refused.
+  private VideoCopyChoice copyChoice(
+      TranscodeDecisionRequest request, AudioDecision sessionAudio, boolean countsRefusals) {
     var source = request.source();
     var declaration = request.capabilityDeclaration();
     var limits = request.viewerLimits();
@@ -222,7 +233,7 @@ public class TranscodeDecisionService {
       return new VideoCopyChoice.Refused(List.of(limitRefusal.get()));
     }
 
-    return switch (acceptedVideoCopyPlan(source, declaration)) {
+    return switch (acceptedVideoCopyPlan(source, declaration, countsRefusals)) {
       case PlanChoice.Refused(var reasons) -> new VideoCopyChoice.Refused(reasons);
       case PlanChoice.Accepted(var plan, _)
           when !hasWorkerThatDeliversTheCopy(request, plan.bitstreamRewrites()) ->
@@ -274,19 +285,22 @@ public class TranscodeDecisionService {
   }
 
   private PlanChoice acceptedVideoCopyPlan(
-      MediaProbe source, ClientCapabilityDeclaration declaration) {
+      MediaProbe source, ClientCapabilityDeclaration declaration, boolean countsRefusals) {
     var choice = copyPlanBeforeTheKeyframeCheck(source, declaration);
     if (choice instanceof PlanChoice.Refused) {
       return choice;
     }
 
     var refusal = streamCopyRefusal(source);
-    if (refusal.isPresent()) {
-      countStreamCopyRefusal(refusal.get());
-      return new PlanChoice.Refused(List.of(refusal.get().reason()));
+    if (refusal.isEmpty()) {
+      return choice;
     }
 
-    return choice;
+    if (countsRefusals) {
+      countStreamCopyRefusal(refusal.get());
+    }
+
+    return new PlanChoice.Refused(List.of(refusal.get().reason()));
   }
 
   // The copy plan that a video capability entry accepts with why it leaves part of the source out,
@@ -328,23 +342,29 @@ public class TranscodeDecisionService {
       return new PlanChoice.Refused(List.of(ruleRefusal.get()));
     }
 
-    var refusedSoFar = new LinkedHashSet<DecisionReason>();
-    for (var plan : copyPlans(copy.get())) {
-      var refusals =
-          declaration.hlsCopyRefusals(copy.get().afterRewrites(plan.bitstreamRewrites()));
-      if (refusals.isEmpty()) {
-        return new PlanChoice.Accepted(plan, List.copyOf(refusedSoFar));
+    var plans = copyPlans(copy.get());
+    for (var index = 0; index < plans.size(); index++) {
+      var plan = plans.get(index);
+      var entry = declaration.hlsCopyEntry(copy.get().afterRewrites(plan.bitstreamRewrites()));
+      if (entry.isPresent()) {
+        var leftOut = refusedBy(entry.get(), copy.get(), plans.subList(0, index));
+        return new PlanChoice.Accepted(plan, leftOut);
       }
-
-      refusedSoFar.addAll(refusals);
     }
 
-    return new PlanChoice.Refused(
-        declaration.hlsCopyRefusals(copy.get().afterRewrites(firstPlanRewrites(copy.get()))));
+    var bestPicture = copy.get().afterRewrites(plans.getFirst().bitstreamRewrites());
+    return new PlanChoice.Refused(declaration.hlsCopyRefusals(bestPicture));
   }
 
-  private static List<BitstreamRewrite> firstPlanRewrites(VideoStreamCopy copy) {
-    return copyPlans(copy).getFirst().bitstreamRewrites();
+  // What the entry that accepts a later plan refused in the plans before it: only the dynamic-range
+  // information that the later plan strips, because the plans differ in nothing else.
+  private static List<DecisionReason> refusedBy(
+      VideoCapabilityEntry entry, VideoStreamCopy copy, List<CopyPlan> earlierPlans) {
+    return earlierPlans.stream()
+        .flatMap(
+            plan -> entry.hlsCopyRefusals(copy.afterRewrites(plan.bitstreamRewrites())).stream())
+        .distinct()
+        .toList();
   }
 
   // The copies that the server can plan, the best picture first: the server picks one output for
