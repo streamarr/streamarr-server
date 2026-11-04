@@ -34,6 +34,9 @@ import org.junit.jupiter.api.io.TempDir;
 @DisplayName("Library folder check tests")
 class LibraryFolderCheckTest {
 
+  private static final ExpectedFailure SOFT_LINK_FAILURE =
+      new ExpectedFailure(LibraryFolderProblem.SOFT_LINK, "soft_link");
+
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
   private final FakeMediaFileRepository mediaFiles = new FakeMediaFileRepository();
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
@@ -159,8 +162,7 @@ class LibraryFolderCheckTest {
     var linkedShows = Files.createSymbolicLink(mediaRoot.resolve("shows"), realShows.getParent());
     var library = libraryAt(linkedShows.resolve("Movies"));
 
-    assertFailure(
-        checkWithMediaRoot(mediaRoot), library, LibraryFolderProblem.SOFT_LINK, "soft_link");
+    assertFailure(checkWithMediaRoot(mediaRoot), library, SOFT_LINK_FAILURE);
   }
 
   @Test
@@ -171,8 +173,7 @@ class LibraryFolderCheckTest {
     Files.createFile(realMovies.resolve("movie.mkv"));
     var library = libraryAt(Files.createSymbolicLink(mediaRoot.resolve("Movies"), realMovies));
 
-    assertFailure(
-        checkWithMediaRoot(mediaRoot), library, LibraryFolderProblem.SOFT_LINK, "soft_link");
+    assertFailure(checkWithMediaRoot(mediaRoot), library, SOFT_LINK_FAILURE);
   }
 
   @Test
@@ -202,23 +203,25 @@ class LibraryFolderCheckTest {
   }
 
   private void assertFailure(Library library, LibraryFolderProblem problem, String reasonTag) {
-    assertFailure(libraryFolderCheck, library, problem, reasonTag);
+    assertFailure(libraryFolderCheck, library, new ExpectedFailure(problem, reasonTag));
   }
 
   private void assertFailure(
-      LibraryFolderCheck check, Library library, LibraryFolderProblem problem, String reasonTag) {
+      LibraryFolderCheck check, Library library, ExpectedFailure expectedFailure) {
     assertThatThrownBy(() -> check.requirePassed(library))
         .isInstanceOfSatisfying(
             LibraryFolderCheckFailedException.class,
-            failure -> assertThat(failure.getProblem()).isEqualTo(problem));
+            failure -> assertThat(failure.getProblem()).isEqualTo(expectedFailure.problem()));
     assertThat(
             meterRegistry
                 .get(LibraryFolderCheck.FAILURES_METRIC)
-                .tag("reason", reasonTag)
+                .tag("reason", expectedFailure.reasonTag())
                 .counter()
                 .count())
         .isEqualTo(1);
   }
+
+  private record ExpectedFailure(LibraryFolderProblem problem, String reasonTag) {}
 
   private static Library libraryAt(Path folder) {
     return LibraryFixtureCreator.buildFakeLibrary().toBuilder()
