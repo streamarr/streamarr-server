@@ -55,9 +55,10 @@ public enum SourceContainer {
 
   /**
    * The source container that ffprobe's demuxer name names, or empty when the name names no video
-   * container. For the demuxer of MP4 and MOV files, QuickTime's major brand {@code "qt "} names
-   * MOV, and every other major brand names MP4, among them the M4V and 3GP brands. A file without a
-   * major brand, which ISO/IEC 14496-12 reads as {@code mp41}, also counts as MP4 (ADR 0045).
+   * container. For the demuxer of MP4 and MOV files, QuickTime's major brand, {@code qt} and two
+   * spaces, names MOV, and every other major brand names MP4, among them the M4V and 3GP brands. A
+   * file without a major brand, which ISO/IEC 14496-12 reads as {@code mp41}, also counts as MP4
+   * (ADR 0045).
    */
   public static Optional<SourceContainer> ofProbedFormat(
       @NonNull String demuxer, @NonNull Optional<String> majorBrand) {
