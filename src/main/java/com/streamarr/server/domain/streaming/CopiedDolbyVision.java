@@ -19,8 +19,8 @@ sealed interface CopiedDolbyVision {
 
   /**
    * A profile that an entry can list, at the level that the configuration record names. Without a
-   * record level, the level is the lowest one in Dolby's level table that carries the decoded size
-   * at the maximum frame rate.
+   * record level from 1 to 13, the level is the lowest one in Dolby's level table that carries the
+   * decoded size at the maximum frame rate.
    */
   record Declarable(@NonNull DolbyVisionProfile profile, int level) implements CopiedDolbyVision {}
 
@@ -74,13 +74,13 @@ sealed interface CopiedDolbyVision {
     return new Declarable(profile.get(), level.getAsInt());
   }
 
-  // The level never comes from the RPU's vdr_rpu_level. A size or maximum frame rate that the
-  // probe does not store gives no level.
+  // The level never comes from the RPU's vdr_rpu_level. A record level outside the table names no
+  // level. A size or maximum frame rate that the probe does not store gives no level.
   private static OptionalInt levelFromRecordOrTable(
       VideoStreamCopy copy, DolbyVision.Present present) {
     var recordLevel =
         present.declared().map(DolbyVisionConfiguration::level).orElse(OptionalInt.empty());
-    if (recordLevel.isPresent()) {
+    if (recordLevel.isPresent() && DolbyVisionLevelTable.isTableLevel(recordLevel.getAsInt())) {
       return recordLevel;
     }
 

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
@@ -85,5 +86,12 @@ class DolbyVisionLevelTableTest {
         Arguments.of(7680, 4320, 120_001, 1_000),
         Arguments.of(7680, 4320, 240, 1),
         Arguments.of(7681, 1080, 24, 1));
+  }
+
+  @ParameterizedTest(name = "level {0}")
+  @CsvSource({"0, false", "1, true", "13, true", "14, false"})
+  @DisplayName("Should hold only the levels from 1 to 13 when asked for a level number")
+  void shouldHoldOnlyTheLevelsFrom1To13WhenAskedForALevelNumber(int level, boolean held) {
+    assertThat(DolbyVisionLevelTable.isTableLevel(level)).isEqualTo(held);
   }
 }

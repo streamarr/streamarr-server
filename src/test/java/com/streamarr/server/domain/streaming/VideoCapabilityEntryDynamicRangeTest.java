@@ -482,6 +482,45 @@ class VideoCapabilityEntryDynamicRangeTest {
             false));
   }
 
+  // Dolby's level table runs from level 1 to 13, and puts 1920×1080 at 24 fps at level 3 and
+  // 3840×2160 at 24 fps at level 6.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("dolbyVisionCopiesWithARecordLevelOutsideTheTable")
+  @DisplayName(
+      "Should derive the Dolby Vision level when the record names a level outside the level table")
+  void shouldDeriveTheDolbyVisionLevelWhenTheRecordNamesALevelOutsideTheLevelTable(
+      String scenario, VideoCapabilityEntry entry, VideoStreamCopy copy, boolean accepted) {
+    assertThat(entry.acceptsHlsCopy(copy)).isEqualTo(accepted);
+  }
+
+  static Stream<Arguments> dolbyVisionCopiesWithARecordLevelOutsideTheTable() {
+    var level0At1080p24 =
+        constantRateHevcCopy(
+            new PictureSize(1920, 1080), new Fraction(24, 1), profile81AtRecordLevel(0));
+    return Stream.of(
+        Arguments.of(
+            "record level 0 at level 3, entry at level 3",
+            pqEntryListing(DolbyVisionProfile.PROFILE_8_1, 3),
+            level0At1080p24,
+            true),
+        Arguments.of(
+            "record level 0 at level 3, entry at level 2",
+            pqEntryListing(DolbyVisionProfile.PROFILE_8_1, 2),
+            level0At1080p24,
+            false),
+        Arguments.of(
+            "record level 14 at level 6, entry at level 13",
+            pqEntryListing(DolbyVisionProfile.PROFILE_8_1, 13),
+            constantRateHevcCopy(
+                new PictureSize(3840, 2160), new Fraction(24, 1), profile81AtRecordLevel(14)),
+            true),
+        Arguments.of(
+            "record level 0 without a maximum frame rate, entry at level 13",
+            pqEntryListing(DolbyVisionProfile.PROFILE_8_1, 13),
+            hevcCopy(profile81AtRecordLevel(0)),
+            false));
+  }
+
   // Until streamarr/streamarr-server#652, no probe outcome stores a maximum frame rate, and the
   // copy's own frame rate is no maximum.
   @Test

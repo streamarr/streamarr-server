@@ -32,6 +32,11 @@ class DolbyVisionLevelTable {
           new Level(12, 7680L * 4320 * 60, 7680),
           new Level(13, 7680L * 4320 * 120, 7680));
 
+  /** Whether the table holds a level with this number, from 1 to 13. */
+  static boolean isTableLevel(int level) {
+    return LEVELS.stream().anyMatch(tableLevel -> tableLevel.number() == level);
+  }
+
   /**
    * The lowest level that carries the decoded picture at the maximum frame rate, or empty when the
    * picture exceeds every level. The pixel rate is exact, so 3840×2160 at 24000/1001 fps fits level
