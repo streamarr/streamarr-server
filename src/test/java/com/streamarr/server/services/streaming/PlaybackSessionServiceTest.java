@@ -1581,12 +1581,12 @@ class PlaybackSessionServiceTest {
                         new VideoCopyOutputMismatchEvent(streamId, UUID.randomUUID(), "default"))));
   }
 
-  // Direct play stays the current format attempt during a switch, so its failure recovers as any
-  // direct-play failure does, and the recovery plays the chosen track.
+  // A direct-play failure during a switch waits for the switch, whose stream session already moves
+  // to HLS with the chosen track.
   @Test
   @DisplayName(
-      "Should recover with the chosen audio track when direct play fails during an audio switch")
-  void shouldRecoverWithTheChosenAudioTrackWhenDirectPlayFailsDuringAnAudioSwitch() {
+      "Should play the switch's stream session when direct play fails during an audio switch")
+  void shouldPlayTheSwitchsStreamSessionWhenDirectPlayFailsDuringAnAudioSwitch() {
     var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
     var directPlay = startDirectPlayOfTwoAudioTracks(service, command);
     streams.duringNextCreation =
@@ -1599,6 +1599,32 @@ class PlaybackSessionServiceTest {
         .isInstanceOfSatisfying(
             PlaybackFormatAttempt.Ready.class,
             ready -> assertThat(streams.getAllSessions()).containsExactly(ready.session()));
+    assertThat(streams.createdCommands).hasSize(2);
+    assertThat(streams.createdCommands.getLast().audioTrackPosition()).hasValue(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should recover with the chosen audio track when direct play and the switch's stream session"
+          + " both fail")
+  void shouldRecoverWithTheChosenAudioTrackWhenDirectPlayAndTheSwitchsStreamSessionBothFail() {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlayOfTwoAudioTracks(service, command);
+    streams.duringNextCreation =
+        next -> {
+          service.reportFormatFailure(report(directPlay, command).build());
+          service.onTerminalTranscodeFailure(
+              terminalFailure(next.streamSessionId(), TranscodeFailure.INVALID_SPECIFICATION));
+        };
+
+    var recovered = accepted(service.switchAudioTrack(audioSwitch(directPlay, command, 1)));
+
+    assertThat(recovered.formatAttemptCount()).isEqualTo(2);
+    assertThat(recovered.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready -> assertThat(streams.getAllSessions()).containsExactly(ready.session()));
+    assertThat(streams.createdCommands).hasSize(3);
     assertThat(streams.createdCommands.getLast().audioTrackPosition()).hasValue(1);
   }
 
