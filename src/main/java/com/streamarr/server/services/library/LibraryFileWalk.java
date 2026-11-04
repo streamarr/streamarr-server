@@ -24,6 +24,7 @@ import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.List;
@@ -83,13 +84,14 @@ public class LibraryFileWalk {
 
   /**
    * Walks the library and matches each of its files, then returns the closed discovery whose
-   * results the scan waits for. The walk never follows a soft link: it saves each soft link as a
-   * skipped file of the scan, in place of the skipped files of the library's earlier scans. It
-   * writes skipped files only while the scan's library operation exists, and once a save finds that
-   * another execution has ended the operation, the walk admits no further task. Each file's task is
-   * admitted through the scan's adaptive limit before the walk pulls the next file. A task that
-   * throws ends admission, and so does the admission end: files that were not admitted yet are not
-   * processed in this scan.
+   * results the scan waits for. The walk never follows a soft link. It saves each soft link, each
+   * file with an unsupported extension that the ignore list does not ignore, and each entry whose
+   * attributes it cannot read as a skipped file of the scan, in place of the skipped files of the
+   * library's earlier scans. It writes skipped files only while the scan's library operation
+   * exists, and once a save finds that another execution has ended the operation, the walk admits
+   * no further task. Each file's task is admitted through the scan's adaptive limit before the walk
+   * pulls the next file. A task that throws ends admission, and so does the admission end: files
+   * that were not admitted yet are not processed in this scan.
    *
    * @throws LibraryScanFailedException if the library cannot be walked or a file's task fails
    * @throws InterruptedException if the walk is interrupted; the admitted tasks are interrupted and
@@ -108,11 +110,9 @@ public class LibraryFileWalk {
 
       var files =
           stream
-              .map(LibraryFileWalk::walkEntry)
+              .map(this::walkEntry)
               .takeWhile(walk::admits)
               .flatMap(entry -> walk.regularFile(entry).stream())
-              .filter(listed -> !ignoredFileValidator.shouldIgnore(listed.path()))
-              .filter(listed -> keepSupportedOrWarn(listed.path()))
               .iterator();
       var failures =
           admission.forkAdmittedTasks(
@@ -156,22 +156,30 @@ public class LibraryFileWalk {
     }
   }
 
-  // Reads the entry itself, never a soft link's target, and skips an entry whose attributes cannot
-  // be read. A hard link is a regular file.
-  private static WalkEntry walkEntry(Path path) {
+  // Reads the entry itself, never a soft link's target. A hard link is a regular file. Files.walk
+  // has read the same attributes once already and fails the scan when it cannot, so this read fails
+  // only when the entry changed after the walk listed it. An entry that has gone since then leaves
+  // nothing to skip.
+  private WalkEntry walkEntry(Path path) {
     BasicFileAttributes attributes;
     try {
       attributes = Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-    } catch (IOException _) {
+    } catch (NoSuchFileException _) {
       return new WalkEntry.Other();
+    } catch (IOException _) {
+      return new WalkEntry.Skipped(path, SkippedFileReason.UNREADABLE);
     }
 
     if (attributes.isSymbolicLink()) {
-      return new WalkEntry.SoftLink(path);
+      return new WalkEntry.Skipped(path, SkippedFileReason.SOFT_LINK);
     }
 
-    if (!attributes.isRegularFile()) {
+    if (!attributes.isRegularFile() || ignoredFileValidator.shouldIgnore(path)) {
       return new WalkEntry.Other();
+    }
+
+    if (!hasSupportedExtension(path)) {
+      return new WalkEntry.Skipped(path, SkippedFileReason.UNSUPPORTED_FILE_TYPE);
     }
 
     return new WalkEntry.RegularFile(new ListedFile(path, SourceFileSnapshot.of(attributes)));
@@ -198,29 +206,29 @@ public class LibraryFileWalk {
       return libraryOperationEnded || admissionEnd.isReached();
     }
 
-    // The walk ends at the entry after a save that finds the operation ended, and at a soft link
-    // once the admission end is reached, so a stop never waits for the remaining soft links to be
-    // saved.
+    // The walk ends at the entry after a save that finds the operation ended, and at a skipped
+    // entry once the admission end is reached, so a stop never waits for the remaining skipped
+    // entries to be saved.
     private boolean admits(WalkEntry entry) {
       if (libraryOperationEnded) {
         return false;
       }
 
-      return !(entry instanceof WalkEntry.SoftLink) || !admissionEnd.isReached();
+      return !(entry instanceof WalkEntry.Skipped) || !admissionEnd.isReached();
     }
 
-    // Saves a soft link as a skipped file of the scan and lists only regular files.
+    // Saves a skipped entry as a skipped file of the scan and lists only the files to match.
     private Optional<ListedFile> regularFile(WalkEntry entry) {
       return switch (entry) {
         case WalkEntry.RegularFile(var listed) -> Optional.of(listed);
-        case WalkEntry.SoftLink(var path) -> {
+        case WalkEntry.Skipped(var path, var reason) -> {
           var saved =
               skippedFileRepository.trySave(
                   SkippedFile.builder()
                       .libraryId(library.getId())
                       .libraryOperationId(libraryOperationId)
                       .filepathUri(FilepathCodec.encodeEntry(path))
-                      .reason(SkippedFileReason.SOFT_LINK)
+                      .reason(reason)
                       .build());
           if (!saved) {
             libraryOperationEnded = true;
@@ -237,7 +245,7 @@ public class LibraryFileWalk {
 
     record RegularFile(ListedFile listed) implements WalkEntry {}
 
-    record SoftLink(Path path) implements WalkEntry {}
+    record Skipped(Path path, SkippedFileReason reason) implements WalkEntry {}
 
     record Other() implements WalkEntry {}
   }

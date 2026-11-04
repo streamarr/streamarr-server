@@ -289,6 +289,37 @@ class LibraryResolverTest {
       assertThat(secondPage.<Boolean>read("$." + skippedFiles + ".pageInfo.hasNextPage")).isFalse();
     }
 
+    @ParameterizedTest
+    @EnumSource(SkippedFileReason.class)
+    @DisplayName("Should return each skipped file reason when a ServerAdmin selects skipped files")
+    void shouldReturnEachSkippedFileReasonWhenAServerAdminSelectsSkippedFiles(
+        SkippedFileReason reason) {
+      var libraryId = UUID.randomUUID();
+      when(libraryRepository.findById(libraryId))
+          .thenReturn(Optional.of(buildMovieLibrary(libraryId)));
+      FAKE_SKIPPED_FILES.trySave(
+          SkippedFile.builder()
+              .libraryId(libraryId)
+              .libraryOperationId(UUID.randomUUID())
+              .filepathUri("file:///media/movies/A.mkv")
+              .reason(reason)
+              .build());
+
+      var reasons =
+          dgsQueryExecutor.<List<String>>executeAndExtractJsonPath(
+              """
+              query($id: ID!) {
+                library(id: $id) {
+                  administration { skippedFiles { edges { node { reason } } } }
+                }
+              }
+              """,
+              "data.library.administration.skippedFiles.edges[*].node.reason",
+              Map.of("id", libraryId.toString()));
+
+      assertThat(reasons).containsExactly(reason.name());
+    }
+
     @Test
     @DisplayName("Should reject the query when it selects a library's modification time directly")
     void shouldRejectQueryWhenItSelectsLibrarysModificationTimeDirectly() {

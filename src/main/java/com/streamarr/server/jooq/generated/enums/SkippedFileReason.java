@@ -17,7 +17,11 @@ import org.jooq.Schema;
 @SuppressWarnings({ "all", "unchecked", "rawtypes", "this-escape" })
 public enum SkippedFileReason implements EnumType {
 
-    SOFT_LINK("SOFT_LINK");
+    SOFT_LINK("SOFT_LINK"),
+
+    UNSUPPORTED_FILE_TYPE("UNSUPPORTED_FILE_TYPE"),
+
+    UNREADABLE("UNREADABLE");
 
     private final String literal;
 

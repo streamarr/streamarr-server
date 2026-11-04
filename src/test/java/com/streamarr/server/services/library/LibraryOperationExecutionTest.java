@@ -98,10 +98,12 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.http.HttpTimeoutException;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.DirectoryIteratorException;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.sql.SQLTransientConnectionException;
 import java.time.Clock;
@@ -1361,6 +1363,131 @@ class LibraryOperationExecutionTest {
     BoundedTask.runWithin(SCAN_BOUND, () -> operations.scanLibrary(savedLibraryId));
 
     assertThat(fakeMediaFileRepository.findByLibraryId(savedLibraryId)).isEmpty();
+  }
+
+  @Nested
+  @DisplayName("Unsupported And Unreadable File Tests")
+  class UnsupportedAndUnreadableFileTests {
+
+    @Test
+    @DisplayName(
+        "Should save a skipped file for a file with an unsupported extension when a scan finds one")
+    void shouldSaveASkippedFileForAFileWithAnUnsupportedExtensionWhenAScanFindsOne()
+        throws Exception {
+      var root = createRootLibraryDirectory();
+      var movie = createMovieFile(root, "About Time", "About Time (2013).mkv");
+      var unsupported = movie.resolveSibling("About Time (2013).iso");
+      Files.createFile(unsupported);
+
+      scan(operations);
+
+      assertThat(skippedFiles.skippedFilesOf(savedLibraryId))
+          .containsExactly(
+              skipped(operations, unsupported, SkippedFileReason.UNSUPPORTED_FILE_TYPE));
+      assertThat(fakeMediaFileRepository.findByLibraryId(savedLibraryId))
+          .extracting(MediaFile::getFilepathUri)
+          .containsExactly(FilepathCodec.encode(movie));
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+    }
+
+    @Test
+    @DisplayName(
+        "Should save no skipped file for a file the ignore list ignores when a scan finds it")
+    void shouldSaveNoSkippedFileForAFileTheIgnoreListIgnoresWhenAScanFindsIt() throws Exception {
+      var movie =
+          createMovieFile(createRootLibraryDirectory(), "About Time", "About Time (2013).mkv");
+      for (var name : List.of("About Time (2013).nfo", ".DS_Store", "._About Time (2013).mkv")) {
+        Files.createFile(movie.resolveSibling(name));
+      }
+
+      scan(operations);
+
+      assertThat(skippedFiles.skippedFilesOf(savedLibraryId)).isEmpty();
+    }
+
+    // Jimfs lists a folder's entries in name order, so the stop is stored while the first file is
+    // saved.
+    @Test
+    @DisplayName(
+        "Should save no further skipped file when a stop is stored while an unsupported file is"
+            + " saved")
+    void shouldSaveNoFurtherSkippedFileWhenAStopIsStoredWhileAnUnsupportedFileIsSaved()
+        throws Exception {
+      var root = createRootLibraryDirectory();
+      for (var name : List.of("A (2002).iso", "B (2002).iso", "C (2002).iso")) {
+        Files.createFile(root.resolve(name));
+      }
+
+      var stopped = new AtomicBoolean();
+      skippedFiles.runBeforeEachSave(
+          () -> {
+            if (stopped.compareAndSet(false, true)) {
+              assertThat(operations.service().stopLibraryScan(identity, savedLibraryId))
+                  .isInstanceOf(Outcome.Accepted.class);
+            }
+          });
+
+      scan(operations);
+
+      assertThat(skippedFiles.skippedFilesOf(savedLibraryId))
+          .extracting(SkippedFile::filepathUri)
+          .containsExactly(FilepathCodec.encodeEntry(root.resolve("A (2002).iso")));
+    }
+
+    @Test
+    @DisplayName(
+        "Should save a skipped file for an entry whose attributes cannot be read when a scan"
+            + " reaches it")
+    void shouldSaveASkippedFileForAnEntryWhoseAttributesCannotBeReadWhenAScanReachesIt()
+        throws Exception {
+      var root = createRootLibraryDirectory();
+      var movie = createMovieFile(root, "About Time", "About Time (2013).mkv");
+      var locked = createMovieFile(root, "Locked", "Locked (2004).mkv");
+      var runner =
+          serviceWith(
+              ThrowingFileSystemWrapper.failingLaterAttributeReadsOf(
+                  fileSystem,
+                  "Locked (2004).mkv",
+                  () -> new AccessDeniedException(locked.toString())));
+
+      scan(runner);
+
+      assertThat(skippedFiles.skippedFilesOf(savedLibraryId))
+          .containsExactly(skipped(runner, locked, SkippedFileReason.UNREADABLE));
+      assertThat(fakeMediaFileRepository.findByLibraryId(savedLibraryId))
+          .extracting(MediaFile::getFilepathUri)
+          .containsExactly(FilepathCodec.encode(movie));
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+    }
+
+    @Test
+    @DisplayName("Should save no skipped file for an entry that disappears while a scan reads it")
+    void shouldSaveNoSkippedFileForAnEntryThatDisappearsWhileAScanReadsIt() throws Exception {
+      var gone = createMovieFile(createRootLibraryDirectory(), "Gone", "Gone (2004).mkv");
+      var runner =
+          serviceWith(
+              ThrowingFileSystemWrapper.failingLaterAttributeReadsOf(
+                  fileSystem, "Gone (2004).mkv", () -> new NoSuchFileException(gone.toString())));
+
+      scan(runner);
+
+      assertThat(skippedFiles.skippedFilesOf(savedLibraryId)).isEmpty();
+      assertThat(fakeMediaFileRepository.findByLibraryId(savedLibraryId)).isEmpty();
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+    }
+
+    private SkippedFile skipped(OperationRunner runner, Path path, SkippedFileReason reason) {
+      return SkippedFile.builder()
+          .libraryId(savedLibraryId)
+          .libraryOperationId(runner.scheduling().scheduledExecutions().getLast())
+          .filepathUri(FilepathCodec.encodeEntry(path))
+          .reason(reason)
+          .build();
+    }
+
+    private void scan(OperationRunner runner) throws Exception {
+      BoundedTask.runWithin(SCAN_BOUND, () -> runner.scanLibrary(savedLibraryId));
+    }
   }
 
   @Nested

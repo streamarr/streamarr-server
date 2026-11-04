@@ -12,6 +12,12 @@ import com.streamarr.server.domain.SkippedFileReason;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.jooq.generated.tables.records.SkippedFileRecord;
 import com.streamarr.server.services.library.LibraryOperationConclusion;
+import com.streamarr.server.services.pagination.ListOrder;
+import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.services.pagination.Row;
+import com.streamarr.server.services.pagination.Seek;
+import com.streamarr.server.services.pagination.SortDirection;
+import com.streamarr.server.services.pagination.SortValueKind;
 import com.streamarr.server.support.BoundedTask;
 import com.streamarr.server.support.PostgresLockTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
@@ -20,6 +26,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.jooq.DSLContext;
@@ -28,6 +35,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.PlatformTransactionManager;
 
@@ -57,6 +66,27 @@ class JooqSkippedFileRepositoryIT extends AbstractIntegrationTest {
   @AfterEach
   void removeTheLibrary() {
     libraryRepository.deleteById(library.getId());
+  }
+
+  @ParameterizedTest
+  @EnumSource(SkippedFileReason.class)
+  @DisplayName("Should read each skipped file reason back when a scan saves it")
+  void shouldReadEachSkippedFileReasonBackWhenAScanSavesIt(SkippedFileReason reason) {
+    var scan = libraryOperations.storeScan(library.getId());
+    var skippedFile =
+        SkippedFile.builder()
+            .libraryId(library.getId())
+            .libraryOperationId(scan)
+            .filepathUri(LINK)
+            .reason(reason)
+            .build();
+
+    var saved = skippedFiles.trySave(skippedFile);
+
+    assertThat(saved).isTrue();
+    assertThat(skippedFiles.rowsBeyond(library.getId(), firstRows()))
+        .extracting(Row::item)
+        .containsExactly(skippedFile);
   }
 
   @Test
@@ -156,6 +186,16 @@ class JooqSkippedFileRepositoryIT extends AbstractIntegrationTest {
             .table("skipped_file")
             .rowId(skippedFileId)
             .build());
+  }
+
+  private static Seek firstRows() {
+    return Seek.builder()
+        .order(
+            ListOrder.builder().valueKind(SortValueKind.TEXT).direction(SortDirection.ASC).build())
+        .position(Optional.empty())
+        .direction(PaginationDirection.FORWARD)
+        .limit(10)
+        .build();
   }
 
   private List<SkippedFileRecord> storedSkippedFiles() {
