@@ -333,6 +333,11 @@ The server requests version 6.
 After the version rises, the server scans each library that holds a result of an earlier version at startup.
 Playback keeps using a file's earlier result until the scan stores the file's new result.
 
+The worker contract lets a copy carry its planned output: its dynamic range, its bitstream rewrites, the Dolby Vision that the output carries, and the static HDR metadata that the worker writes into an HEVC copy's `hvcC` record (https://github.com/streamarr/streamarr-adr/blob/main/adr/0013-stream-decision-architecture.adoc[ADR 0013], https://github.com/streamarr/streamarr-adr/blob/main/adr/0036-video-contracts-share-vocabulary-and-dynamic-range-facts.adoc[ADR 0036]).
+Each worker lists the bitstream rewrites and copy features that it supports.
+The server sends a copy's planned range only when the output is PQ, HLG or Dolby Vision without a compatible base, and only to a worker that lists the planned output.
+The interim copy rule allows no such copy yet, and the server lists no rewrite yet.
+
 https://github.com/streamarr/streamarr-adr/blob/main/adr/0033-transcode-worker-is-a-separate-service.adoc[ADR 0033] requires workers for probing, transcoding, and remuxing.
 Each worker opens an outbound, long-lived gRPC `WorkerSession` over the server's single plaintext listener.
 https://github.com/streamarr/streamarr-adr/blob/main/adr/0035-worker-uses-spring-boot-and-mesh-transport-security.adoc[ADR 0035] keeps colocated connections on loopback and requires mesh mutual TLS and worker ServiceAccount authorization for distributed connections.

@@ -504,6 +504,99 @@ class RemoteVariantJobMapperTest {
     assertThat(video.hasOutputDynamicRange()).isFalse();
   }
 
+  // ADR 0013's third amendment: a copy plans the source's compatible base, and a planned output
+  // holds no UNSPECIFIED value (ADR 0036). A worker that lists the planned output feature accepts
+  // the range on a copy.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("copiesWithAPlannedRange")
+  @DisplayName(
+      "Should send the copy's planned range when its output is PQ, HLG or has no compatible base")
+  void shouldSendTheCopysPlannedRangeWhenItsOutputIsPqHlgOrHasNoCompatibleBase(
+      String source,
+      com.streamarr.server.domain.streaming.VideoDynamicRange stored,
+      VideoDynamicRange planned) {
+    var video = mapper.map(copyOf(stored)).getDecision().getVideo();
+
+    assertThat(video.getOutputDynamicRange()).isEqualTo(planned);
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  static Stream<Arguments> copiesWithAPlannedRange() {
+    return Stream.of(
+        Arguments.of(
+            "an HDR10+ source with an unchecked Dolby Vision",
+            new com.streamarr.server.domain.streaming.VideoDynamicRange(
+                com.streamarr.server.domain.streaming.CompatibleBase.PQ,
+                com.streamarr.server.domain.streaming.Presence.PRESENT,
+                new DolbyVision.Unspecified()),
+            VideoDynamicRange.newBuilder()
+                .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
+                .setHdr10Plus(Presence.PRESENCE_PRESENT)
+                .setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance())
+                .build()),
+        Arguments.of(
+            "an HLG source",
+            VideoPlaybackFactsFixture.rangeWithoutEnhancement(
+                com.streamarr.server.domain.streaming.CompatibleBase.HLG),
+            VideoDynamicRange.newBuilder()
+                .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_HLG)
+                .setHdr10Plus(Presence.PRESENCE_ABSENT)
+                .setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance())
+                .build()),
+        Arguments.of(
+            "a Dolby Vision profile 5 source with an unchecked HDR10+",
+            VideoPlaybackFactsFixture.dolbyVisionProfile5(),
+            VideoDynamicRange.newBuilder()
+                .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_NONE)
+                .setHdr10Plus(Presence.PRESENCE_ABSENT)
+                .setDolbyVisionPresent(
+                    DolbyVisionPresent.newBuilder()
+                        .setDeclared(
+                            DolbyVisionConfiguration.newBuilder()
+                                .setProfile(5)
+                                .setLevel(6)
+                                .setBaseLayerCompatibilityId(0)
+                                .setBaseLayer(true)
+                                .setRpu(true))
+                        .setObservedRpu(Presence.PRESENCE_UNSPECIFIED))
+                .build()));
+  }
+
+  // An SDR copy without rewrites passes the source's range through, so it still reaches a worker
+  // that predates the planned output. An untagged source plays as SDR (ADR 0013).
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @ParameterizedTest
+  @EnumSource(
+      value = com.streamarr.server.domain.streaming.CompatibleBase.class,
+      names = {"SDR", "UNSPECIFIED"})
+  @DisplayName("Should send no output range when the copy passes an SDR or untagged source through")
+  void shouldSendNoOutputRangeWhenTheCopyPassesAnSdrOrUntaggedSourceThrough(
+      com.streamarr.server.domain.streaming.CompatibleBase base) {
+    var video =
+        mapper
+            .map(copyOf(VideoPlaybackFactsFixture.rangeWithoutEnhancement(base)))
+            .getDecision()
+            .getVideo();
+
+    assertThat(video.hasOutputDynamicRange()).isFalse();
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static TranscodeRequest copyOf(
+      com.streamarr.server.domain.streaming.VideoDynamicRange stored) {
+    return copyAttempt()
+        .transcodeDecision(
+            copyDecisionBuilder()
+                .videoSource(
+                    Optional.of(
+                        VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                            .dynamicRange(stored)
+                            .build()))
+                .build())
+        .build();
+  }
+
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   @Test
   @DisplayName("Should send the source's dynamic range and stream when the job encodes the video")

@@ -5,6 +5,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.PlannedVideoOutput;
@@ -135,34 +136,52 @@ final class RemoteVariantJobMapper {
     };
   }
 
-  // A copy forces no codec profile, tier or level. The job carries a copy's planned output range
-  // only once the worker contract accepts one (streamarr/streamarr-server#396, ADR 0013).
+  // A copy forces no codec profile, tier or level.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.transcode.v1.VideoDecision copy(
       TranscodeDecision decision, VideoPlaybackFacts source) {
-    return com.streamarr.transcode.v1.VideoDecision.newBuilder()
-        .setMode(VideoMode.VIDEO_MODE_COPY)
-        .setCodecFamily(codecFamily(decision.videoCodecFamily()))
-        .setCodecString(source.codecString().orElseThrow())
-        .setSourceDynamicRange(RemoteDynamicRangeMapper.toProto(source.dynamicRange()))
-        .setStreamIndex(source.streamIndex())
-        .setSourceCodecFamily(sourceCodecFamily(source))
-        .setSourcePacketsCarryPresentationTimes(sourcePacketsCarryPresentationTimes(source))
-        .setCopyKeepsPacketBytes(copyKeepsPacketBytes(source))
-        .build();
+    var video =
+        com.streamarr.transcode.v1.VideoDecision.newBuilder()
+            .setMode(VideoMode.VIDEO_MODE_COPY)
+            .setCodecFamily(codecFamily(decision.videoCodecFamily()))
+            .setCodecString(source.codecString().orElseThrow())
+            .setSourceDynamicRange(RemoteDynamicRangeMapper.toProto(source.dynamicRange()))
+            .setStreamIndex(source.streamIndex())
+            .setSourceCodecFamily(sourceCodecFamily(source))
+            .setSourcePacketsCarryPresentationTimes(sourcePacketsCarryPresentationTimes(source))
+            .setCopyKeepsPacketBytes(copyKeepsPacketBytes(source));
+    plannedCopyRange(decision.plannedVideoOutput()).ifPresent(video::setOutputDynamicRange);
+    return video.build();
   }
 
+  // An SDR copy passes the source's range through, so it carries no planned range and still reaches
+  // a worker that predates the planned output (ADR 0013).
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static Optional<com.streamarr.transcode.v1.VideoDynamicRange> plannedCopyRange(
+      PlannedVideoOutput planned) {
+    if (planned instanceof PlannedVideoOutput.StreamCopy copy
+        && copy.dynamicRange().compatibleBase() != CompatibleBase.SDR) {
+      return Optional.of(RemoteDynamicRangeMapper.toProto(copy.dynamicRange()));
+    }
+
+    return Optional.empty();
+  }
+
+  // The projection that slot counts and execution targets read carries every video field that
+  // decides which workers can run the job.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   static com.streamarr.transcode.v1.TranscodeDecision decision(TranscodeDecision decision) {
+    var video =
+        com.streamarr.transcode.v1.VideoDecision.newBuilder()
+            .setMode(
+                decision.transcodeMode().copiesVideo()
+                    ? VideoMode.VIDEO_MODE_COPY
+                    : VideoMode.VIDEO_MODE_ENCODE)
+            .setCodecFamily(codecFamily(decision.videoCodecFamily()));
+    plannedCopyRange(decision.plannedVideoOutput()).ifPresent(video::setOutputDynamicRange);
     return com.streamarr.transcode.v1.TranscodeDecision.newBuilder()
         .setMode(mode(decision.transcodeMode()))
-        .setVideo(
-            com.streamarr.transcode.v1.VideoDecision.newBuilder()
-                .setMode(
-                    decision.transcodeMode().copiesVideo()
-                        ? VideoMode.VIDEO_MODE_COPY
-                        : VideoMode.VIDEO_MODE_ENCODE)
-                .setCodecFamily(codecFamily(decision.videoCodecFamily())))
+        .setVideo(video)
         .setAudio(audio(decision.audioDecision()))
         .setSubtitle(subtitle(decision.subtitleDecision()))
         // Every HLS variant is fMP4 (ADR 0037); the additive contract keeps the field.

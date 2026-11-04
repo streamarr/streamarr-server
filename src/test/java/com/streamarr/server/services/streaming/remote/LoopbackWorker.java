@@ -70,6 +70,14 @@ final class LoopbackWorker implements AutoCloseable {
     return register(channel, registration(workerId, DEFAULT_AVAILABLE_SLOTS, encoders));
   }
 
+  /** A worker without encoders that lists the copy support's rewrites and copy features. */
+  static LoopbackWorker register(
+      ManagedChannel channel, UUID workerId, WorkerCapabilities.Builder copySupport) {
+    var registration = registration(workerId, DEFAULT_AVAILABLE_SLOTS).toBuilder();
+    registration.getCapabilitiesBuilder().mergeFrom(copySupport.build());
+    return register(channel, registration.build());
+  }
+
   private static LoopbackWorker register(ManagedChannel channel, WorkerRegistration registration) {
     var responses = new LinkedBlockingQueue<EstablishWorkerSessionResponse>();
     var requests =
