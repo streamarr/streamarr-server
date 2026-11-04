@@ -1513,6 +1513,46 @@ class PlaybackSessionServiceTest {
     assertThat(streams.createdCommands).hasSize(2);
   }
 
+  // The switch and a direct-play failure each move the same direct-play format attempt, so only
+  // the first under the playback session's lock reserves the HLS format attempt.
+  @Test
+  @DisplayName(
+      "Should reserve one HLS format attempt when an audio switch and a direct-play failure race")
+  void shouldReserveOneHlsFormatAttemptWhenAnAudioSwitchAndADirectPlayFailureRace()
+      throws Exception {
+    var work = new ConcurrentLinkedQueue<Runnable>();
+    var playback = serviceRunning(work::add).maximumFormatAttempts(4).build();
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlayOfTwoAudioTracks(playback, command);
+    var ready = new CountDownLatch(2);
+    var release = new CountDownLatch(1);
+    try (var threads = Executors.newVirtualThreadPerTaskExecutor()) {
+      var audioSwitch =
+          threads.submit(
+              () -> {
+                ready.countDown();
+                assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
+                return playback.switchAudioTrack(audioSwitch(directPlay, command, 1));
+              });
+      var failure =
+          threads.submit(
+              () -> {
+                ready.countDown();
+                assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
+                return playback.reportFormatFailure(report(directPlay, command).build());
+              });
+      assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+      release.countDown();
+      audioSwitch.get(5, TimeUnit.SECONDS);
+      failure.get(5, TimeUnit.SECONDS);
+    }
+
+    var pending = playback.access(request(directPlay, command)).orElseThrow();
+    assertThat(pending.formatAttemptCount()).isEqualTo(2);
+    assertThat(pending.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Pending.class);
+    assertThat(work).hasSize(1);
+  }
+
   @Test
   @DisplayName("Should leave an HLS format attempt as it is when the viewer switches audio tracks")
   void shouldLeaveAnHlsFormatAttemptAsItIsWhenTheViewerSwitchesAudioTracks() {
