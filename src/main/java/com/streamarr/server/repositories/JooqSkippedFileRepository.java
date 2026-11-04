@@ -23,6 +23,7 @@ public class JooqSkippedFileRepository implements SkippedFileRepository {
   @Override
   public void save(SkippedFile skippedFile) {
     dsl.insertInto(SKIPPED_FILE)
+        .set(SKIPPED_FILE.ID, skippedFile.id())
         .set(SKIPPED_FILE.LIBRARY_ID, skippedFile.libraryId())
         .set(SKIPPED_FILE.LIBRARY_OPERATION_ID, skippedFile.libraryOperationId())
         .set(SKIPPED_FILE.FILEPATH_URI, skippedFile.filepathUri())

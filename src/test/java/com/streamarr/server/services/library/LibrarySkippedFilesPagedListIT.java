@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static com.streamarr.server.jooq.generated.tables.SkippedFile.SKIPPED_FILE;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.SkippedFile;
@@ -10,7 +11,9 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.SkippedFileRepository;
 import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.PageRequest;
+import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.Position;
+import com.streamarr.server.services.pagination.Row;
 import com.streamarr.server.services.pagination.SortDirection;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PagedListContract;
@@ -24,6 +27,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 @Tag("IntegrationTest")
@@ -80,22 +84,66 @@ class LibrarySkippedFilesPagedListIT
     return id;
   }
 
-  // A later scan stores every other soft link again and replaces the earlier scan's skips.
+  // A later scan no longer finds the item's soft link.
   @Override
   protected void remove(Scope scope, UUID item) {
-    var laterScan = UUID.randomUUID();
     scope.filepathUris().removeIf(filepathUri -> idByFilepathUri.get(filepathUri).equals(item));
-    scope
-        .filepathUris()
-        .forEach(filepathUri -> skippedFiles.save(softLink(scope, laterScan, filepathUri)));
-    skippedFiles.deleteSkippedFilesOfOtherLibraryOperations(scope.library().getId(), laterScan);
-    scope.latestScan().set(laterScan);
+    rescan(scope);
   }
 
   @Override
   protected ListPage<SkippedFile> page(Scope scope, PageRequest request) {
     return libraryAdministration.skippedFiles(
         auth.identityOf(scope.admin()), scope.library().getId(), request);
+  }
+
+  @Test
+  @DisplayName(
+      "Should continue after a skipped file's position when a rescan stores the file again")
+  void shouldContinueAfterASkippedFilesPositionWhenARescanStoresTheFileAgain() {
+    var scope = createScope();
+    try {
+      add(scope, 0);
+      var second = add(scope, 1);
+      var firstPage = page(scope, firstPageOf(1));
+      rescan(scope);
+
+      var nextPage =
+          page(
+              scope,
+              PageRequest.builder()
+                  .position(Optional.of(firstPage.rows().getFirst().position()))
+                  .direction(PaginationDirection.FORWARD)
+                  .limit(2)
+                  .build());
+
+      assertThat(page(scope, firstPageOf(2)).rows())
+          .extracting(Row::position)
+          .first()
+          .isEqualTo(firstPage.rows().getFirst().position());
+      assertThat(nextPage.rows()).extracting(row -> idOf(row.item())).containsExactly(second);
+    } finally {
+      deleteScope(scope);
+    }
+  }
+
+  // A rescan that finds the same soft links deletes the earlier scan's skips as its walk starts,
+  // then stores each link again.
+  private void rescan(Scope scope) {
+    var laterScan = UUID.randomUUID();
+    skippedFiles.deleteSkippedFilesOfOtherLibraryOperations(scope.library().getId(), laterScan);
+    scope
+        .filepathUris()
+        .forEach(filepathUri -> skippedFiles.save(softLink(scope, laterScan, filepathUri)));
+    scope.latestScan().set(laterScan);
+  }
+
+  private static PageRequest firstPageOf(int limit) {
+    return PageRequest.builder()
+        .position(Optional.empty())
+        .direction(PaginationDirection.FORWARD)
+        .limit(limit)
+        .build();
   }
 
   @Override
