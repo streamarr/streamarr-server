@@ -366,12 +366,14 @@ class TranscodeDecisionTest {
             new VideoDynamicRange(CompatibleBase.SDR, Presence.ABSENT, profile82.dolbyVision())));
   }
 
-  // ADR 0036: a stream copy passes HDR10+ information through unchanged.
+  // ADR 0036: a stream copy passes HDR10+ and the Dolby Vision RPUs through unchanged.
   @Test
-  @DisplayName("Should keep the source's HDR10+ in the planned copy when the probe found HDR10+")
-  void shouldKeepTheSourcesHdr10PlusInThePlannedCopyWhenTheProbeFoundHdr10Plus() {
+  @DisplayName(
+      "Should keep the source's HDR10+ and Dolby Vision facts in the planned copy when the probe"
+          + " found both")
+  void shouldKeepTheSourcesHdr10PlusAndDolbyVisionFactsInThePlannedCopyWhenTheProbeFoundBoth() {
     var source =
-        new VideoDynamicRange(CompatibleBase.PQ, Presence.PRESENT, new DolbyVision.Absent());
+        new VideoDynamicRange(CompatibleBase.PQ, Presence.PRESENT, dolbyVisionProfile81Observed());
     var decision =
         decisionBuilder(TranscodeMode.REMUX)
             .videoSource(
@@ -380,6 +382,28 @@ class TranscodeDecisionTest {
             .build();
 
     assertThat(decision.plannedVideoOutput().dynamicRange()).isEqualTo(source);
+  }
+
+  // Profile 8.1 as probe version 5 reports it after reading the RPUs: a record, an observed first
+  // RPU header and an RPU after its own picture.
+  private static DolbyVision.Present dolbyVisionProfile81Observed() {
+    return new DolbyVision.Present(
+        Optional.of(
+            DolbyVisionConfiguration.builder()
+                .profile(OptionalInt.of(8))
+                .level(OptionalInt.of(6))
+                .baseLayerCompatibilityId(OptionalInt.of(1))
+                .baseLayer(true)
+                .rpu(true)
+                .build()),
+        Presence.PRESENT,
+        Optional.of(
+            DolbyVisionRpuHeader.builder()
+                .vdrRpuProfile(1)
+                .disableResidual(true)
+                .vdrBitDepth(10)
+                .build()),
+        DolbyVisionRpuPlacement.AFTER_OWN_PICTURE);
   }
 
   @ParameterizedTest(name = "{0}")
