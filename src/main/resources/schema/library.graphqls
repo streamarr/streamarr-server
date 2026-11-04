@@ -187,6 +187,7 @@ union AddLibraryError =
   | LibraryPathNotDirectoryError
   | LibraryPathNotReadableError
   | LibraryPathThroughSoftLinkError
+  | LibraryPathOutsideMediaRootError
   | LibraryPathAlreadyRegisteredError
   | LibraryPathOverlapError
 

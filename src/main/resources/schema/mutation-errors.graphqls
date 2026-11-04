@@ -111,6 +111,12 @@ type LibraryPathThroughSoftLinkError implements InputMutationError & MutationErr
     inputPath: [String!]!
 }
 
+"The path is outside the media root, the folder that every library folder sits in. The server is configured with the media root."
+type LibraryPathOutsideMediaRootError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
 "Another library already uses the path."
 type LibraryPathAlreadyRegisteredError implements InputMutationError & MutationError {
     message: String!

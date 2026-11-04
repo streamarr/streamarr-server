@@ -44,6 +44,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
@@ -55,6 +56,8 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @Tag("IntegrationTest")
 @DisplayName("Add Library Integration Tests")
 @Import(AddLibraryIT.CommittedLibraryRecorder.class)
+// addLibrary accepts only folders in the media root; @TempDir folders sit in java.io.tmpdir.
+@TestPropertySource(properties = "streaming.remote.source-root=${java.io.tmpdir}")
 class AddLibraryIT extends AbstractIntegrationTest {
 
   @TempDir Path tempDir;

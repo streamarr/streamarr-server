@@ -142,8 +142,9 @@ public class LibraryManagementService {
       }
 
       var folder = FilepathNameNormalizer.normalizeToFileSystemNames(path);
-      if (mediaRoot.hasSoftLinkTo(folder)) {
-        rejections.add(new AddLibraryRejection.PathThroughSoftLink());
+      var folderRejection = folderRejection(folder);
+      if (folderRejection.isPresent()) {
+        rejections.add(folderRejection.get());
         return Optional.empty();
       }
 
@@ -152,6 +153,22 @@ public class LibraryManagementService {
       rejections.add(new AddLibraryRejection.PathNotFound());
     } catch (SecurityException | IOException _) {
       rejections.add(new AddLibraryRejection.PathNotReadable());
+    }
+
+    return Optional.empty();
+  }
+
+  // Scans and playback never follow a soft link below the media root (ADR 0045). So a library
+  // folder sits in the media root, and neither it nor a folder between the media root and it may
+  // be a soft link.
+  private Optional<AddLibraryRejection> folderRejection(Path folder) {
+    var root = mediaRoot.path();
+    if (!folder.startsWith(root)) {
+      return Optional.of(new AddLibraryRejection.PathOutsideMediaRoot(root));
+    }
+
+    if (mediaRoot.hasSoftLinkTo(folder)) {
+      return Optional.of(new AddLibraryRejection.PathThroughSoftLink());
     }
 
     return Optional.empty();

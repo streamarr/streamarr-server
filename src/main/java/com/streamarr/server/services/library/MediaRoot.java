@@ -36,9 +36,11 @@ public class MediaRoot {
     return FilepathSoftLinks.hasSoftLinkFrom(first, folder);
   }
 
-  // Library folders carry the names that the file system stores, so the media root does too. A
-  // media root that cannot be listed keeps its configured names.
-  private Path path() {
+  /**
+   * The media root in the names that the file system stores, as library folders carry them. A media
+   * root that cannot be listed keeps its configured names.
+   */
+  public Path path() {
     var configured = fileSystem.getPath(remoteSource.sourceRoot()).toAbsolutePath().normalize();
     try {
       return FilepathNameNormalizer.normalizeToFileSystemNames(configured);

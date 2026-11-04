@@ -926,7 +926,7 @@ class LibraryManagementServiceTest {
     @Test
     @DisplayName("Should reject with NameRequired when the name is blank")
     void shouldRejectWithNameRequiredWhenNameIsBlank() throws IOException {
-      var libraryPath = fileSystem.getPath("/unnamed-library");
+      var libraryPath = fileSystem.getPath("/media/unnamed-library");
       Files.createDirectories(libraryPath);
       var library =
           LibraryFixtureCreator.unsavedLibraryBuilder()
@@ -941,7 +941,7 @@ class LibraryManagementServiceTest {
     @Test
     @DisplayName("Should reject with NameRequired when the name is null")
     void shouldRejectWithNameRequiredWhenNameIsNull() throws IOException {
-      var libraryPath = fileSystem.getPath("/null-name-library");
+      var libraryPath = fileSystem.getPath("/media/null-name-library");
       Files.createDirectories(libraryPath);
       var library =
           LibraryFixtureCreator.unsavedLibraryBuilder()
@@ -959,7 +959,7 @@ class LibraryManagementServiceTest {
             + " the path")
     void shouldRejectWithPathAlreadyRegisteredNamingLibraryWhenAnotherLibraryUsesPath()
         throws IOException {
-      var libraryPath = fileSystem.getPath("/duplicate-library");
+      var libraryPath = fileSystem.getPath("/media/duplicate-library");
       Files.createDirectories(libraryPath);
       var firstLibrary =
           accepted(
@@ -995,7 +995,7 @@ class LibraryManagementServiceTest {
     @Test
     @DisplayName("Should reject with PathAlreadyRegistered when paths are lexically equivalent")
     void shouldRejectWithPathAlreadyRegisteredWhenPathsAreLexicallyEquivalent() throws IOException {
-      var libraryPath = fileSystem.getPath("/equivalent-library");
+      var libraryPath = fileSystem.getPath("/media/equivalent-library");
       Files.createDirectories(libraryPath);
       var firstLibrary =
           LibraryFixtureCreator.unsavedLibraryBuilder()
@@ -1094,10 +1094,14 @@ class LibraryManagementServiceTest {
       try (var twoDriveFileSystem = Jimfs.newFileSystem(twoDrives)) {
         Files.createDirectories(twoDriveFileSystem.getPath("C:\\media\\movies"));
         Files.createDirectories(twoDriveFileSystem.getPath("D:\\media\\movies"));
-        var service = serviceWith(twoDriveFileSystem, "C:\\media");
-        accepted(service.addLibrary(identity, libraryNamed("Movies", "C:\\media\\movies")));
+        // Every library folder sits in the media root, so the media root moves between the adds.
+        accepted(
+            serviceWith(twoDriveFileSystem, "C:\\media")
+                .addLibrary(identity, libraryNamed("Movies", "C:\\media\\movies")));
 
-        var outcome = service.addLibrary(identity, libraryNamed("Films", "D:\\media\\movies"));
+        var outcome =
+            serviceWith(twoDriveFileSystem, "D:\\media")
+                .addLibrary(identity, libraryNamed("Films", "D:\\media\\movies"));
 
         assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
       }
@@ -1194,7 +1198,7 @@ class LibraryManagementServiceTest {
             @TempDir Path media) throws IOException {
       var folder = Files.createDirectory(media.resolve("Movies"));
       assumeIgnoresLetterCase(media);
-      var service = serviceWith(FileSystems.getDefault());
+      var service = serviceWithMediaRoot(media);
       var movies =
           accepted(service.addLibrary(identity, libraryNamed("Movies", folder.toString())));
 
@@ -1216,7 +1220,7 @@ class LibraryManagementServiceTest {
       var folder = Files.createDirectory(media.resolve("Movies"));
       Files.createDirectory(folder.resolve("Action"));
       assumeIgnoresLetterCase(media);
-      var service = serviceWith(FileSystems.getDefault());
+      var service = serviceWithMediaRoot(media);
       var movies =
           accepted(service.addLibrary(identity, libraryNamed("Movies", folder.toString())));
 
@@ -1239,7 +1243,7 @@ class LibraryManagementServiceTest {
             @TempDir Path media) throws IOException {
       var folder = Files.createDirectories(media.resolve("Movies/Action"));
       assumeIgnoresLetterCase(media);
-      var service = serviceWith(FileSystems.getDefault());
+      var service = serviceWithMediaRoot(media);
       var action =
           accepted(service.addLibrary(identity, libraryNamed("Action", folder.toString())));
 
@@ -1387,6 +1391,75 @@ class LibraryManagementServiceTest {
     }
 
     @Test
+    @DisplayName(
+        "Should reject with PathOutsideMediaRoot and add no library when the folder is outside the"
+            + " media root")
+    void shouldRejectWithPathOutsideMediaRootAndAddNoLibraryWhenTheFolderIsOutsideTheMediaRoot(
+        @TempDir Path temp) throws IOException {
+      var mediaRoot = Files.createDirectory(temp.resolve("media"));
+      var outside = Files.createDirectories(temp.resolve("elsewhere/Movies"));
+      var librariesBefore = fakeLibraryRepository.count();
+
+      var outcome =
+          serviceWithMediaRoot(mediaRoot)
+              .addLibrary(identity, libraryNamed("Movies", outside.toString()));
+
+      assertThat(outcome)
+          .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathOutsideMediaRoot(mediaRoot)));
+      assertThat(fakeLibraryRepository.count()).isEqualTo(librariesBefore);
+      assertThat(libraryOperationScheduling.scheduledExecutions()).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+        "Should reject with PathOutsideMediaRoot when the folder's name only begins with the media"
+            + " root's name")
+    void shouldRejectWithPathOutsideMediaRootWhenTheFolderNameOnlyBeginsWithTheMediaRootName(
+        @TempDir Path temp) throws IOException {
+      var mediaRoot = Files.createDirectory(temp.resolve("media"));
+      var sibling = Files.createDirectory(temp.resolve("media-archive"));
+
+      var outcome =
+          serviceWithMediaRoot(mediaRoot)
+              .addLibrary(identity, libraryNamed("Archive", sibling.toString()));
+
+      assertThat(outcome)
+          .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathOutsideMediaRoot(mediaRoot)));
+    }
+
+    @Test
+    @DisplayName(
+        "Should reject with PathOutsideMediaRoot when dot segments lead out of the media root")
+    void shouldRejectWithPathOutsideMediaRootWhenDotSegmentsLeadOutOfTheMediaRoot(
+        @TempDir Path temp) throws IOException {
+      var mediaRoot = Files.createDirectory(temp.resolve("media"));
+      Files.createDirectory(temp.resolve("elsewhere"));
+
+      var outcome =
+          serviceWithMediaRoot(mediaRoot)
+              .addLibrary(
+                  identity,
+                  libraryNamed("Elsewhere", mediaRoot.resolve("../elsewhere").toString()));
+
+      assertThat(outcome)
+          .isEqualTo(Outcome.rejected(new AddLibraryRejection.PathOutsideMediaRoot(mediaRoot)));
+    }
+
+    @Test
+    @DisplayName("Should accept the media root itself when it is the library folder")
+    void shouldAcceptTheMediaRootItselfWhenItIsTheLibraryFolder(@TempDir Path temp)
+        throws IOException {
+      var mediaRoot = Files.createDirectory(temp.resolve("media"));
+
+      var library =
+          accepted(
+              serviceWithMediaRoot(mediaRoot)
+                  .addLibrary(identity, libraryNamed("Media", mediaRoot.toString())));
+
+      assertThat(library.getFilepathUri()).isEqualTo(FilepathCodec.encode(mediaRoot));
+    }
+
+    @Test
     @DisplayName("Should reject with PathNotReadable when the filesystem denies access")
     void shouldRejectWithPathNotReadableWhenFilesystemDeniesAccess() {
       var deniedService = serviceWith(new SecurityExceptionFileSystem(fileSystem));
@@ -1432,7 +1505,7 @@ class LibraryManagementServiceTest {
     @Test
     @DisplayName("Should save library and return a generated ID when input is valid")
     void shouldSaveLibraryAndReturnGeneratedIdWhenInputIsValid() throws IOException {
-      var newLibraryPath = fileSystem.getPath("/new-library");
+      var newLibraryPath = fileSystem.getPath("/media/new-library");
       Files.createDirectories(newLibraryPath);
       var library =
           LibraryFixtureCreator.unsavedLibraryBuilder()
@@ -1450,7 +1523,7 @@ class LibraryManagementServiceTest {
     @Test
     @DisplayName("Should authorize add library with the authenticated identity")
     void shouldAuthorizeAddLibraryWithAuthenticatedIdentity() throws IOException {
-      var newLibraryPath = fileSystem.getPath("/authorized-library");
+      var newLibraryPath = fileSystem.getPath("/media/authorized-library");
       Files.createDirectories(newLibraryPath);
       var library =
           LibraryFixtureCreator.buildUnsavedLibrary(
@@ -1470,7 +1543,7 @@ class LibraryManagementServiceTest {
     @Test
     @DisplayName("Should store filepathUri as encoded URI when adding library")
     void shouldStoreFilepathUriAsEncodedUriWhenAddingLibrary() throws IOException {
-      var newLibraryPath = fileSystem.getPath("/encoded-library");
+      var newLibraryPath = fileSystem.getPath("/media/encoded-library");
       Files.createDirectories(newLibraryPath);
       var library =
           LibraryFixtureCreator.unsavedLibraryBuilder()
@@ -1487,7 +1560,7 @@ class LibraryManagementServiceTest {
     @Test
     @DisplayName("Should return the library SCANNING with its first scan scheduled when added")
     void shouldReturnTheLibraryScanningWithItsFirstScanScheduledWhenAdded() throws IOException {
-      var newLibraryPath = fileSystem.getPath("/new-library");
+      var newLibraryPath = fileSystem.getPath("/media/new-library");
       Files.createDirectories(newLibraryPath);
       var library =
           LibraryFixtureCreator.unsavedLibraryBuilder()
@@ -1515,7 +1588,7 @@ class LibraryManagementServiceTest {
             + " scan cannot be scheduled")
     void shouldThrowLibraryOperationNotStartedAndRollBackTheAddWhenTheFirstScanCannotBeScheduled()
         throws IOException {
-      var newLibraryPath = fileSystem.getPath("/unscheduled-library");
+      var newLibraryPath = fileSystem.getPath("/media/unscheduled-library");
       Files.createDirectories(newLibraryPath);
       var library =
           LibraryFixtureCreator.unsavedLibraryBuilder()
@@ -1539,7 +1612,7 @@ class LibraryManagementServiceTest {
     @Test
     @DisplayName("Should store no first scan when the add is refused for a registered path")
     void shouldStoreNoFirstScanWhenTheAddIsRefusedForARegisteredPath() throws IOException {
-      var libraryPath = fileSystem.getPath("/registered-library");
+      var libraryPath = fileSystem.getPath("/media/registered-library");
       Files.createDirectories(libraryPath);
       var library =
           LibraryFixtureCreator.unsavedLibraryBuilder()
@@ -1563,7 +1636,7 @@ class LibraryManagementServiceTest {
         "Should publish LibraryAddedEvent with the persisted ID and encoded path when library is"
             + " added")
     void shouldPublishLibraryAddedEventWhenLibraryIsAdded() throws IOException {
-      var newLibraryPath = fileSystem.getPath("/event-library");
+      var newLibraryPath = fileSystem.getPath("/media/event-library");
       Files.createDirectories(newLibraryPath);
       var library =
           LibraryFixtureCreator.unsavedLibraryBuilder()
@@ -1583,7 +1656,7 @@ class LibraryManagementServiceTest {
     @Test
     @DisplayName("Should not mutate input library when adding")
     void shouldNotMutateInputLibraryWhenAdding() throws IOException {
-      var newLibraryPath = fileSystem.getPath("/no-mutate");
+      var newLibraryPath = fileSystem.getPath("/media/no-mutate");
       Files.createDirectories(newLibraryPath);
       var library =
           LibraryFixtureCreator.unsavedLibraryBuilder()

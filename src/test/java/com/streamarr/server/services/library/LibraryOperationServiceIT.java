@@ -44,9 +44,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.TestPropertySource;
 
 @Tag("IntegrationTest")
 @DisplayName("Library operation service integration tests")
+// addLibrary accepts only folders in the media root; @TempDir folders sit in java.io.tmpdir.
+@TestPropertySource(properties = "streaming.remote.source-root=${java.io.tmpdir}")
 class LibraryOperationServiceIT extends AbstractIntegrationTest {
 
   private static final Duration BOUND = Duration.ofSeconds(20);

@@ -36,11 +36,14 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.test.context.TestPropertySource;
 import tools.jackson.databind.JsonNode;
 
 @Tag("IntegrationTest")
 @DisplayName("Library Subscription Integration Tests")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+// addLibrary accepts only folders in the media root; @TempDir folders sit in java.io.tmpdir.
+@TestPropertySource(properties = "streaming.remote.source-root=${java.io.tmpdir}")
 class LibrarySubscriptionIT extends AbstractIntegrationTest {
 
   private static final String STATUS_FIELD = "libraryStatusChanged";

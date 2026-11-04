@@ -800,6 +800,22 @@ class LibraryResolverTest {
     }
 
     @Test
+    @DisplayName(
+        "Should name the media root when addLibrary is refused for a folder outside the media root")
+    void shouldNameTheMediaRootWhenAddLibraryIsRefusedForAFolderOutsideTheMediaRoot() {
+      FAKE_LIBRARY_MANAGEMENT_SERVICE.returnOutcomeWhenAdded(
+          Outcome.rejected(new AddLibraryRejection.PathOutsideMediaRoot(Path.of("/srv/media"))));
+
+      String message =
+          dgsQueryExecutor.executeAndExtractJsonPath(
+              ADD_LIBRARY_MUTATION, "data.addLibrary.userErrors[0].message");
+
+      assertThat(message)
+          .isEqualTo(
+              "That folder is outside the media root (/srv/media). Choose a folder inside it.");
+    }
+
+    @Test
     @DisplayName("Should report every rejection when addLibrary is rejected for several reasons")
     void shouldReportEveryRejectionWhenAddLibraryIsRejectedForSeveralReasons() {
       FAKE_LIBRARY_MANAGEMENT_SERVICE.returnOutcomeWhenAdded(
@@ -884,6 +900,10 @@ class LibraryResolverTest {
         Arguments.of(
             new AddLibraryRejection.PathThroughSoftLink(),
             "LibraryPathThroughSoftLinkError",
+            "filepath"),
+        Arguments.of(
+            new AddLibraryRejection.PathOutsideMediaRoot(Path.of("/media")),
+            "LibraryPathOutsideMediaRootError",
             "filepath"),
         Arguments.of(
             new AddLibraryRejection.PathAlreadyRegistered(
