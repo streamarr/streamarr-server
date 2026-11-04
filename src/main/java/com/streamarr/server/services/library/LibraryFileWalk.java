@@ -106,12 +106,10 @@ public class LibraryFileWalk {
         var admission = libraryOperationAdmissions.openScanAdmission(library);
         var stream = Files.walk(FilepathCodec.decode(fileSystem, library.getFilepathUri()))) {
 
-      // The walk ends at a soft link once its end is reached, so a stop never waits for the
-      // remaining soft links to be saved.
       var files =
           stream
               .map(LibraryFileWalk::walkEntry)
-              .takeWhile(entry -> !(entry instanceof WalkEntry.SoftLink) || !walk.isReached())
+              .takeWhile(walk::admits)
               .flatMap(entry -> walk.regularFile(entry).stream())
               .filter(listed -> !ignoredFileValidator.shouldIgnore(listed.path()))
               .filter(listed -> keepSupportedOrWarn(listed.path()))
@@ -192,6 +190,17 @@ public class LibraryFileWalk {
     @Override
     public boolean isReached() {
       return libraryOperationEnded || admissionEnd.isReached();
+    }
+
+    // The walk ends at the entry after a save that finds the operation ended, and at a soft link
+    // once the admission end is reached, so a stop never waits for the remaining soft links to be
+    // saved.
+    private boolean admits(WalkEntry entry) {
+      if (libraryOperationEnded) {
+        return false;
+      }
+
+      return !(entry instanceof WalkEntry.SoftLink) || !admissionEnd.isReached();
     }
 
     // Saves a soft link as a skipped file of the scan and lists only regular files.

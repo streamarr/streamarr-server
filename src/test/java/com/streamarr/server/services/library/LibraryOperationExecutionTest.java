@@ -1338,6 +1338,25 @@ class LibraryOperationExecutionTest {
     }
   }
 
+  // Jimfs lists a folder's entries in name order, so the walk meets the soft link before the
+  // movie, which the real file system does not promise.
+  @Test
+  @DisplayName(
+      "Should create no media file after a skipped file save finds the scan's library operation"
+          + " ended")
+  void shouldCreateNoMediaFileAfterASkippedFileSaveFindsTheScansLibraryOperationEnded()
+      throws Exception {
+    var rootPath = createRootLibraryDirectory();
+    Files.createSymbolicLink(
+        rootPath.resolve("A (2002).mkv"), fileSystem.getPath("/elsewhere/A (2002).mkv"));
+    createMovieFile(rootPath, "B (2003)", "B (2003).mkv");
+    skippedFiles.runBeforeEachSave(this::endTheRunningScan);
+
+    BoundedTask.runWithin(SCAN_BOUND, () -> operations.scanLibrary(savedLibraryId));
+
+    assertThat(fakeMediaFileRepository.findByLibraryId(savedLibraryId)).isEmpty();
+  }
+
   @Nested
   @DisplayName("Soft Link Tests")
   class SoftLinkTests {
@@ -1572,17 +1591,19 @@ class LibraryOperationExecutionTest {
     private void scan() throws Exception {
       BoundedTask.runWithin(SCAN_BOUND, () -> runner.scanLibrary(savedLibraryId));
     }
+  }
 
-    private void endTheRunningScan() {
-      assertThat(
-              libraryOperations.tryEndLibraryOperation(
-                  LibraryOperationEnd.builder()
-                      .libraryOperationId(runner.scheduling().scheduledExecutions().getLast())
-                      .conclusion(LibraryOperationConclusion.FINISHED)
-                      .endedAt(Instant.now())
-                      .build()))
-          .isPresent();
-    }
+  // Another execution of the running scan ends the scan's library operation.
+  private void endTheRunningScan() {
+    var runningScan = libraryOperations.operationFor(savedLibraryId).orElseThrow();
+    assertThat(
+            libraryOperations.tryEndLibraryOperation(
+                LibraryOperationEnd.builder()
+                    .libraryOperationId(runningScan.id())
+                    .conclusion(LibraryOperationConclusion.FINISHED)
+                    .endedAt(Instant.now())
+                    .build()))
+        .isPresent();
   }
 
   private void matchMovieWithPoster(String title) {
