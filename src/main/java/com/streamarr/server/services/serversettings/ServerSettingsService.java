@@ -69,7 +69,7 @@ public class ServerSettingsService {
     var settings = storedSettings();
     settings.setIdleSegmentRetentionMinutes(minutes);
     serverSettingsRepository.save(settings);
-    return Outcome.accepted(new IdleSegmentRetentionSetting(minutes));
+    return Outcome.accepted(idleSegmentRetentionOf(settings));
   }
 
   /**
@@ -82,7 +82,12 @@ public class ServerSettingsService {
   }
 
   private IdleSegmentRetentionSetting storedIdleSegmentRetention() {
-    return new IdleSegmentRetentionSetting(storedSettings().getIdleSegmentRetentionMinutes());
+    return idleSegmentRetentionOf(storedSettings());
+  }
+
+  private static IdleSegmentRetentionSetting idleSegmentRetentionOf(ServerSettings settings) {
+    return new IdleSegmentRetentionSetting(
+        settings.getId(), settings.getIdleSegmentRetentionMinutes());
   }
 
   private ServerSettings storedSettings() {

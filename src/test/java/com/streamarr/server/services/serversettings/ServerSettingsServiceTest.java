@@ -161,6 +161,21 @@ class ServerSettingsServiceTest {
         .startsWith(new Intent.ChangeIdleSegmentRetention());
   }
 
+  @Test
+  @DisplayName(
+      "Should identify the setting by the stored settings id when a ServerAdmin reads and changes"
+          + " the retention")
+  void shouldIdentifySettingByStoredSettingsIdWhenServerAdminReadsAndChangesRetention() {
+    var settingsId = serverSettingsRepository.findAll().getFirst().getId();
+
+    var read = serverSettingsService.readIdleSegmentRetentionSetting(identity);
+    var changed = accepted(serverSettingsService.changeIdleSegmentRetention(identity, 30));
+
+    assertThat(settingsId).isNotNull();
+    assertThat(read.id()).isEqualTo(settingsId);
+    assertThat(changed.id()).isEqualTo(settingsId);
+  }
+
   @ParameterizedTest
   @ValueSource(ints = {Integer.MIN_VALUE, -60, 0, 4, 10_081, Integer.MAX_VALUE})
   @DisplayName("Should reject the change and keep one hour when the retention is out of range")

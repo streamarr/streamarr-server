@@ -91,6 +91,34 @@ class IdleSegmentRetentionSettingIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should identify the setting by the same id in the change and the read when a ServerAdmin"
+          + " saves it")
+  void shouldIdentifySettingBySameIdInChangeAndReadWhenServerAdminSavesIt() throws Exception {
+    var bearer = authTestSupport.accountBearer(serverAdmin);
+    var settingId = dsl.selectFrom(SERVER_SETTINGS).fetchSingle().getId().toString();
+
+    mockMvc
+        .perform(
+            graphqlRequest(
+                bearer,
+                """
+                mutation { changeIdleSegmentRetention(input: {minutes: 30}) {
+                  idleSegmentRetentionSetting { id } } }
+                """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.changeIdleSegmentRetention.idleSegmentRetentionSetting.id")
+                .value(settingId));
+    mockMvc
+        .perform(graphqlRequest(bearer, "query { idleSegmentRetentionSetting { id } }"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.idleSegmentRetentionSetting.id").value(settingId));
+  }
+
+  @Test
   @DisplayName("Should reject the change and keep one hour when the retention is out of range")
   void shouldRejectChangeAndKeepOneHourWhenRetentionIsOutOfRange() throws Exception {
     mockMvc

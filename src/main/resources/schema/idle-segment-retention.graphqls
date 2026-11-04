@@ -7,6 +7,8 @@ sessions sooner, oldest first. It never deletes a stream session that a player r
 the server's session timeout, one minute by default.
 """
 type IdleSegmentRetentionSetting {
+    "The same for every read and change, so a client cache can update the setting in place."
+    id: ID!
     minutes: Int!
     "The shortest retention a ServerAdmin can choose."
     minimumMinutes: Int!
