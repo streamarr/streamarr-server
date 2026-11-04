@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Planned Video Output Tests")
@@ -125,6 +126,27 @@ class PlannedVideoOutputTest {
     return copyBuilder()
         .dynamicRange(new VideoDynamicRange(base, Presence.ABSENT, new DolbyVision.Absent()))
         .build();
+  }
+
+  // ADR 0013: only a copy that keeps Dolby Vision is described as Dolby Vision.
+  @Test
+  @DisplayName("Should refuse a Dolby Vision output when the planned copy carries no Dolby Vision")
+  void shouldRefuseADolbyVisionOutputWhenThePlannedCopyCarriesNoDolbyVision() {
+    var copy = copyOf(CompatibleBase.PQ);
+    var output = new DolbyVisionOutput(DolbyVisionProfile.PROFILE_8_1, 6);
+
+    assertThatThrownBy(() -> copy.withDolbyVisionOutput(output))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("Dolby Vision output");
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {0, 14})
+  @DisplayName("Should refuse a Dolby Vision output when its level is outside the level table")
+  void shouldRefuseADolbyVisionOutputWhenItsLevelIsOutsideTheLevelTable(int level) {
+    assertThatThrownBy(() -> new DolbyVisionOutput(DolbyVisionProfile.PROFILE_8_1, level))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("level");
   }
 
   @ParameterizedTest(name = "{0}")

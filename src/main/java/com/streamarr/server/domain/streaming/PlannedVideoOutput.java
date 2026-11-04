@@ -32,21 +32,33 @@ public sealed interface PlannedVideoOutput {
    * bitstreamRewrites} lists every change that the worker makes to the copied stream. {@code
    * masteringDisplay} and {@code contentLightLevel} are the static HDR metadata that the worker
    * writes into the copy's hvcC record. Only a copy with a PQ output holds them, and only the
-   * values that the probe stored (ADR 0036).
+   * values that the probe stored (ADR 0036). {@code dolbyVisionOutput} is present only on a copy
+   * that keeps Dolby Vision and that the playlist describes as Dolby Vision (ADR 0013).
    */
-  @Builder
+  @Builder(toBuilder = true)
   record StreamCopy(
       @NonNull VideoDynamicRange dynamicRange,
       @NonNull Optional<VideoCodecProfile> codecProfile,
       @NonNull OptionalInt codecLevel,
       @NonNull List<BitstreamRewrite> bitstreamRewrites,
       @NonNull Optional<MasteringDisplayColorVolume> masteringDisplay,
-      @NonNull Optional<ContentLightLevel> contentLightLevel)
+      @NonNull Optional<ContentLightLevel> contentLightLevel,
+      @NonNull Optional<DolbyVisionOutput> dolbyVisionOutput)
       implements PlannedVideoOutput {
 
     public StreamCopy {
       requireSpecified(dynamicRange);
       bitstreamRewrites = List.copyOf(bitstreamRewrites);
+      if (dolbyVisionOutput.isPresent()
+          && !(dynamicRange.dolbyVision() instanceof DolbyVision.Present)) {
+        throw new IllegalArgumentException(
+            "A planned copy without Dolby Vision cannot hold a Dolby Vision output");
+      }
+    }
+
+    /** This copy, described as Dolby Vision with the output. */
+    public StreamCopy withDolbyVisionOutput(@NonNull DolbyVisionOutput output) {
+      return toBuilder().dolbyVisionOutput(Optional.of(output)).build();
     }
 
     /** The copy of the chosen video stream with the bitstream rewrites. */
@@ -104,6 +116,7 @@ public sealed interface PlannedVideoOutput {
     public static class StreamCopyBuilder {
       private Optional<MasteringDisplayColorVolume> masteringDisplay = Optional.empty();
       private Optional<ContentLightLevel> contentLightLevel = Optional.empty();
+      private Optional<DolbyVisionOutput> dolbyVisionOutput = Optional.empty();
     }
   }
 

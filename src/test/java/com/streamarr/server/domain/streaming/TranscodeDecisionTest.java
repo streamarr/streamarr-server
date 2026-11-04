@@ -480,6 +480,51 @@ class TranscodeDecisionTest {
         .build();
   }
 
+  // ADR 0013: the playlist describes a copy that keeps Dolby Vision on a PQ base as Dolby Vision,
+  // at the level that the decision set.
+  @Test
+  @DisplayName(
+      "Should plan the Dolby Vision output when the decision copies a source that it describes as"
+          + " Dolby Vision")
+  void shouldPlanTheDolbyVisionOutputWhenTheDecisionCopiesASourceThatItDescribesAsDolbyVision() {
+    var output = new DolbyVisionOutput(DolbyVisionProfile.PROFILE_8_1, 6);
+    var decision =
+        decisionBuilder(TranscodeMode.REMUX)
+            .videoSource(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .dynamicRange(
+                            new VideoDynamicRange(
+                                CompatibleBase.PQ, Presence.ABSENT, dolbyVisionProfile81Observed()))
+                        .build()))
+            .videoBitstreamRewrites(List.of(BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD))
+            .videoDolbyVisionOutput(Optional.of(output))
+            .build();
+
+    assertThat(decision.plannedVideoOutput())
+        .isInstanceOfSatisfying(
+            PlannedVideoOutput.StreamCopy.class,
+            copy -> assertThat(copy.dolbyVisionOutput()).contains(output));
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = TranscodeMode.class,
+      names = {"VIDEO_TRANSCODE", "FULL_TRANSCODE"})
+  @DisplayName(
+      "Should refuse a decision that encodes the video when it holds a Dolby Vision output")
+  void shouldRefuseADecisionThatEncodesTheVideoWhenItHoldsADolbyVisionOutput(TranscodeMode mode) {
+    var decision =
+        decisionBuilder(mode)
+            .encodeCodecProfile(Optional.of(EncodeCodecProfile.H264_HIGH))
+            .videoDolbyVisionOutput(
+                Optional.of(new DolbyVisionOutput(DolbyVisionProfile.PROFILE_8_1, 6)));
+
+    assertThatThrownBy(decision::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("Dolby Vision output");
+  }
+
   // Profile 8.1 as probe version 5 reports it after reading the RPUs: a record, an observed first
   // RPU header and an RPU after its own picture.
   private static DolbyVision.Present dolbyVisionProfile81Observed() {
