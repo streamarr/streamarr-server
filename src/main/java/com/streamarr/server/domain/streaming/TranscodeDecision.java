@@ -2,6 +2,7 @@ package com.streamarr.server.domain.streaming;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.NonNull;
 
@@ -12,7 +13,8 @@ import lombok.NonNull;
  * string that the probe stored, because the copy job carries it. {@code videoBitstreamRewrites}
  * lists every bitstream rewrite of the decision's copy, and a decision that encodes the video lists
  * none (ADR 0036). {@code videoDolbyVisionOutput} is the Dolby Vision of a copy that the playlist
- * describes as Dolby Vision, and a decision that encodes the video holds none (ADR 0013).
+ * describes as Dolby Vision, and a decision that encodes the video holds none (ADR 0013). {@code
+ * reasons} names why the output differs from the source, video reasons before audio reasons.
  */
 @Builder(toBuilder = true)
 public record TranscodeDecision(
@@ -23,7 +25,8 @@ public record TranscodeDecision(
     SubtitleDecision subtitleDecision,
     @NonNull Optional<VideoPlaybackFacts> videoSource,
     @NonNull List<BitstreamRewrite> videoBitstreamRewrites,
-    @NonNull Optional<DolbyVisionOutput> videoDolbyVisionOutput) {
+    @NonNull Optional<DolbyVisionOutput> videoDolbyVisionOutput,
+    @NonNull List<DecisionReason> reasons) {
 
   public TranscodeDecision {
     var copiesVideo = transcodeMode != null && transcodeMode.copiesVideo();
@@ -48,6 +51,7 @@ public record TranscodeDecision(
     }
 
     videoBitstreamRewrites = List.copyOf(videoBitstreamRewrites);
+    reasons = List.copyOf(reasons);
 
     if (encodeCodecProfile
         .filter(profile -> !profile.codecFamilyName().equals(videoCodecFamily))
@@ -58,14 +62,29 @@ public record TranscodeDecision(
   }
 
   /**
-   * This decision with other audio, such as a lower audio step (ADR 0050). Audio that no longer
-   * passes through moves the mode to the one that encodes the audio, and the reverse.
+   * This decision with a lower audio step that keeps the output within the viewer's maximum bitrate
+   * (ADR 0050), which the reasons name. Audio that no longer passes through moves the mode to the
+   * one that encodes the audio, and the reverse. The decision's own audio leaves it unchanged.
    */
   public TranscodeDecision withAudioDecision(@NonNull AudioDecision audio) {
+    if (audio.equals(audioDecision)) {
+      return this;
+    }
+
     return toBuilder()
         .audioDecision(audio)
         .transcodeMode(TranscodeMode.of(transcodeMode.copiesVideo(), audio.mode()))
+        .reasons(withReason(reasons, DecisionReason.AUDIO_LOWERED_FOR_BITRATE_LIMIT))
         .build();
+  }
+
+  private static List<DecisionReason> withReason(
+      List<DecisionReason> reasons, DecisionReason added) {
+    if (reasons.contains(added)) {
+      return reasons;
+    }
+
+    return Stream.concat(reasons.stream(), Stream.of(added)).toList();
   }
 
   /**
@@ -117,5 +136,6 @@ public record TranscodeDecision(
     private Optional<VideoPlaybackFacts> videoSource = Optional.empty();
     private List<BitstreamRewrite> videoBitstreamRewrites = List.of();
     private Optional<DolbyVisionOutput> videoDolbyVisionOutput = Optional.empty();
+    private List<DecisionReason> reasons = List.of();
   }
 }

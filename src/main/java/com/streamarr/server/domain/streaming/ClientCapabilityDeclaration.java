@@ -1,5 +1,6 @@
 package com.streamarr.server.domain.streaming;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import lombok.Builder;
@@ -21,7 +22,21 @@ public record ClientCapabilityDeclaration(
 
   /** Whether one video capability entry accepts the stream copy over HLS. */
   public boolean acceptsHlsCopy(@NonNull VideoStreamCopy copy) {
-    return video.stream().anyMatch(entry -> entry.acceptsHlsCopy(copy));
+    return hlsCopyRefusals(copy).isEmpty();
+  }
+
+  /**
+   * Why no video capability entry accepts the stream copy over HLS: the codec family that no HLS
+   * entry names, or the properties that the closest HLS entry of the codec family refuses. The
+   * closest entry refuses the fewest properties, and the first declared wins a tie. Empty when an
+   * entry accepts the copy.
+   */
+  public List<DecisionReason> hlsCopyRefusals(@NonNull VideoStreamCopy copy) {
+    return video.stream()
+        .filter(entry -> entry.appliesToHlsCopyOf(copy))
+        .map(entry -> entry.hlsCopyRefusals(copy))
+        .min(Comparator.comparingInt(List::size))
+        .orElse(List.of(DecisionReason.VIDEO_CODEC_NOT_DECLARED));
   }
 
   /**
