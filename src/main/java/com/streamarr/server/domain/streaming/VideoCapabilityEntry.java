@@ -267,12 +267,12 @@ public record VideoCapabilityEntry(
   // sample entry, a profile 8.2 or 9 stream plays directly only from Matroska: in MP4 or MOV it may
   // sit under dvh1 or dvav, which no player plays as its SDR base (streamarr/streamarr-server#395).
   private boolean acceptsDirectPlayDolbyVision(VideoStreamCopy video, SourceContainer container) {
-    return switch (CopiedDolbyVision.of(video.codecFamily(), video.dynamicRange())) {
+    return switch (CopiedDolbyVision.of(video)) {
       case CopiedDolbyVision.None _ -> true;
       case CopiedDolbyVision.KeptUnderSdrBase _ -> container == SourceContainer.MATROSKA;
       case CopiedDolbyVision.Declarable(var profile, var level) -> listsDolbyVision(profile, level);
       case CopiedDolbyVision.NeedsDolbyVisionSampleEntry(var profile, var level) ->
-          listsDolbyVision(profile, level);
+          level.isPresent() && listsDolbyVision(profile, level.getAsInt());
       case CopiedDolbyVision.Undeclarable _ -> false;
     };
   }

@@ -37,9 +37,11 @@ sealed interface CopiedDolbyVision {
    * entry and configuration record that such a copy needs: dvh1 for profile 5, dav1 for 10.0
    * (streamarr/streamarr-server#396). The worker writes HEVC copies under hvc1 without the record
    * and cannot write dav1, and a picture with no compatible base shows wrong colours or is refused
-   * without them.
+   * without them. Direct play delivers the stream under its own sample entry, so it reads {@code
+   * level}, which is empty when neither the record nor the level table gives one.
    */
-  record NeedsDolbyVisionSampleEntry(@NonNull DolbyVisionProfile profile, int level)
+  record NeedsDolbyVisionSampleEntry(
+      @NonNull DolbyVisionProfile profile, @NonNull OptionalInt level)
       implements CopiedDolbyVision {}
 
   static CopiedDolbyVision of(VideoStreamCopy copy) {
@@ -65,7 +67,8 @@ sealed interface CopiedDolbyVision {
     // Profile 5 has no compatible base whatever the signaled transfer claims, so a PQ transfer
     // never makes it a profile whose base a stripped copy could play.
     if (codecFamily == ProbedCodecFamily.HEVC && profileNumber.getAsInt() == 5) {
-      return new NeedsDolbyVisionSampleEntry();
+      return new NeedsDolbyVisionSampleEntry(
+          DolbyVisionProfile.PROFILE_5, levelFromRecordOrTable(copy, present));
     }
 
     var profile = namedProfile(codecFamily, profileNumber.getAsInt(), base);
@@ -75,7 +78,7 @@ sealed interface CopiedDolbyVision {
     }
 
     if (profile.get().compatibleBase() == CompatibleBase.NONE) {
-      return new NeedsDolbyVisionSampleEntry(profile.get(), level.getAsInt());
+      return new NeedsDolbyVisionSampleEntry(profile.get(), level);
     }
 
     return new Declarable(profile.get(), level.getAsInt());
