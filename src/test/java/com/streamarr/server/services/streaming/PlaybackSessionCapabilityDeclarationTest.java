@@ -21,6 +21,7 @@ import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
+import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
@@ -30,6 +31,7 @@ import com.streamarr.server.fakes.FakeCreatingStreamingService;
 import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.AudioChannelsNotPositive;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.AudioDeliveryMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.AudioEntriesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecLevelNotPositive;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecProfileOutsideCodecFamily;
@@ -40,11 +42,14 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.Co
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionLevelNotPositive;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionProfileOutsideCodecFamily;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.HlsAacEntryMissing;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyAudioDirectPlayContainers;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyAudioEntries;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyCodecProfiles;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyCompatibleBases;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyDolbyVisionProfiles;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyVideoDirectPlayContainers;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyVideoEntries;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoDeliveryMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoEntriesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoEntryMaximum;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoMaximumInvalid;
@@ -134,7 +139,57 @@ class PlaybackSessionCapabilityDeclarationTest {
   static Stream<Arguments> audioWithoutHlsAac() {
     return Stream.of(
         Arguments.of("Opus only", List.of(audioEntryBuilder(AudioCodec.OPUS).build())),
-        Arguments.of("AAC for direct play only", List.of(aacEntryBuilder().hls(false).build())));
+        Arguments.of(
+            "AAC for direct play only",
+            List.of(
+                aacEntryBuilder()
+                    .hls(false)
+                    .directPlayContainers(List.of(SourceContainer.MP4))
+                    .build())));
+  }
+
+  @Test
+  @DisplayName("Should start playback when an entry applies to direct play alone")
+  void shouldStartPlaybackWhenAnEntryAppliesToDirectPlayAlone() {
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    h264EntryBuilder()
+                        .hls(false)
+                        .directPlayContainers(List.of(SourceContainer.MP4, SourceContainer.MOV))
+                        .build()))
+            .audio(
+                List.of(
+                    aacEntryBuilder().build(),
+                    audioEntryBuilder(AudioCodec.EAC3)
+                        .hls(false)
+                        .directPlayContainers(List.of(SourceContainer.MATROSKA))
+                        .build()))
+            .build();
+
+    var outcome = start(declaration);
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(streams.getAllSessions()).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("Should refuse an entry when it applies neither to HLS nor to a source container")
+  void shouldRefuseAnEntryWhenItAppliesNeitherToHlsNorToASourceContainer() {
+    var declaration =
+        defaultDeclarationBuilder()
+            .video(List.of(h264EntryBuilder().build(), h264EntryBuilder().hls(false).build()))
+            .audio(
+                List.of(
+                    aacEntryBuilder().build(),
+                    audioEntryBuilder(AudioCodec.EAC3).hls(false).build()))
+            .build();
+
+    assertThat(start(declaration))
+        .isEqualTo(
+            Outcome.rejected(List.of(new VideoDeliveryMissing(1), new AudioDeliveryMissing(1))));
+    assertThat(streams.getAllSessions()).isEmpty();
   }
 
   @ParameterizedTest
@@ -332,6 +387,7 @@ class PlaybackSessionCapabilityDeclarationTest {
                     OVERLONG, codecProfileBuilder(VideoCodecProfile.H264_HIGH).maxLevel(0).build()))
             .compatibleBases(Collections.nCopies(OVERLONG, CompatibleBase.SDR))
             .dolbyVisionProfiles(Collections.nCopies(OVERLONG, dolbyVision(PROFILE_8_1)))
+            .directPlayContainers(Collections.nCopies(OVERLONG, SourceContainer.MP4))
             .build();
     var declaration =
         defaultDeclarationBuilder()
@@ -346,7 +402,26 @@ class PlaybackSessionCapabilityDeclarationTest {
                     new TooManyCodecProfiles(0, 32),
                     new TooManyCompatibleBases(0, 32),
                     new TooManyDolbyVisionProfiles(0, 32),
+                    new TooManyVideoDirectPlayContainers(0, 32),
                     new TooManyAudioEntries(32))));
+  }
+
+  @Test
+  @DisplayName("Should refuse an audio entry's source containers when the list is overlong")
+  void shouldRefuseAnAudioEntrysSourceContainersWhenTheListIsOverlong() {
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(
+                List.of(
+                    aacEntryBuilder().build(),
+                    audioEntryBuilder(AudioCodec.AC3)
+                        .hls(false)
+                        .directPlayContainers(Collections.nCopies(OVERLONG, SourceContainer.MOV))
+                        .build()))
+            .build();
+
+    assertThat(start(declaration))
+        .isEqualTo(Outcome.rejected(new TooManyAudioDirectPlayContainers(1, 32)));
   }
 
   @Test
@@ -374,11 +449,17 @@ class PlaybackSessionCapabilityDeclarationTest {
                         .build()))
             .compatibleBases(Collections.nCopies(32, CompatibleBase.SDR))
             .dolbyVisionProfiles(Collections.nCopies(32, dolbyVision(PROFILE_8_1)))
+            .directPlayContainers(Collections.nCopies(32, SourceContainer.MATROSKA))
             .build();
     var declaration =
         defaultDeclarationBuilder()
             .video(Collections.nCopies(32, fullEntry))
-            .audio(Collections.nCopies(32, aacEntryBuilder().build()))
+            .audio(
+                Collections.nCopies(
+                    32,
+                    aacEntryBuilder()
+                        .directPlayContainers(Collections.nCopies(32, SourceContainer.MP4))
+                        .build()))
             .build();
 
     assertThat(start(declaration)).isInstanceOf(Outcome.Accepted.class);

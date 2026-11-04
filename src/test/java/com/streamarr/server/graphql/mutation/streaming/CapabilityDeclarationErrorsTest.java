@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.graphql.mutation.InputMutationError;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.AudioChannelsNotPositive;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.AudioDeliveryMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.AudioEntriesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecLevelNotPositive;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecProfileOutsideCodecFamily;
@@ -15,11 +16,14 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.Co
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionLevelNotPositive;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionProfileOutsideCodecFamily;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.HlsAacEntryMissing;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyAudioDirectPlayContainers;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyAudioEntries;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyCodecProfiles;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyCompatibleBases;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyDolbyVisionProfiles;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyVideoDirectPlayContainers;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyVideoEntries;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoDeliveryMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoEntriesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoEntryMaximum;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoMaximumInvalid;
@@ -135,7 +139,23 @@ class CapabilityDeclarationErrorsTest {
         Arguments.of(
             new AudioChannelsNotPositive(5),
             CreateStreamSessionError.CapabilityMaximumInvalidError.class,
-            List.of("capabilities", "audio", "5", "maxChannels")));
+            List.of("capabilities", "audio", "5", "maxChannels")),
+        Arguments.of(
+            new VideoDeliveryMissing(3),
+            CreateStreamSessionError.CapabilityValuesRequiredError.class,
+            List.of("capabilities", "video", "3", "directPlayContainers")),
+        Arguments.of(
+            new AudioDeliveryMissing(4),
+            CreateStreamSessionError.CapabilityValuesRequiredError.class,
+            List.of("capabilities", "audio", "4", "directPlayContainers")),
+        Arguments.of(
+            new TooManyVideoDirectPlayContainers(1, 32),
+            CreateStreamSessionError.CapabilityListTooLongError.class,
+            List.of("capabilities", "video", "1", "directPlayContainers")),
+        Arguments.of(
+            new TooManyAudioDirectPlayContainers(2, 32),
+            CreateStreamSessionError.CapabilityListTooLongError.class,
+            List.of("capabilities", "audio", "2", "directPlayContainers")));
   }
 
   @Test

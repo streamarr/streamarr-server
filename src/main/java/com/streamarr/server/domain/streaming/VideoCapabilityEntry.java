@@ -14,7 +14,8 @@ import lombok.NonNull;
  * One video capability entry (ADR 0049): one group of values and maximums that the player accepts
  * together for one codec family. The player accepts every combination that takes one value from
  * each list and stays within every maximum. {@code compatibleBases} names only SDR, PQ or HLG.
- * {@code hls} tells whether the entry applies to HLS delivery.
+ * {@code hls} tells whether the entry applies to HLS delivery, and {@code directPlayContainers}
+ * lists the source containers from which the player opens such a stream by direct play.
  */
 @Builder
 public record VideoCapabilityEntry(
@@ -27,7 +28,8 @@ public record VideoCapabilityEntry(
     @NonNull List<CompatibleBase> compatibleBases,
     @NonNull List<DolbyVisionProfileCapability> dolbyVisionProfiles,
     boolean hdr10Plus,
-    boolean hls) {
+    boolean hls,
+    @NonNull List<SourceContainer> directPlayContainers) {
 
   private static final EnumSet<CompatibleBase> DECLARABLE_COMPATIBLE_BASES =
       EnumSet.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG);
@@ -54,6 +56,13 @@ public record VideoCapabilityEntry(
     codecProfiles = List.copyOf(codecProfiles);
     compatibleBases = List.copyOf(compatibleBases);
     dolbyVisionProfiles = List.copyOf(dolbyVisionProfiles);
+    directPlayContainers = List.copyOf(directPlayContainers);
+  }
+
+  // Lombok builder default — its generated setter assigns it
+  @SuppressWarnings({"java:S1068", "java:S9438"})
+  public static class VideoCapabilityEntryBuilder {
+    private List<SourceContainer> directPlayContainers = List.of();
   }
 
   /**

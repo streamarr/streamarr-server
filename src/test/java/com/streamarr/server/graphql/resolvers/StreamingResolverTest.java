@@ -37,6 +37,7 @@ import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.ShortCopy;
+import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
@@ -922,9 +923,12 @@ class StreamingResolverTest {
                 maxBitDepth: 10, maxWidth: 3840, maxHeight: 2160, maxFrameRate: 59.94
                 compatibleBases: [SDR, PQ, HLG]
                 dolbyVisionProfiles: [{profile: PROFILE_8_1, maxLevel: 6}]
-                hdr10Plus: true, hls: true
+                hdr10Plus: true, hls: true, directPlayContainers: [MATROSKA, MP4]
               }]
-              audio: [{codec: AAC, maxChannels: 2, hls: true}, {codec: EAC3, maxChannels: 6, hls: false}]
+              audio: [
+                {codec: AAC, maxChannels: 2, hls: true}
+                {codec: EAC3, maxChannels: 6, hls: false, directPlayContainers: [MOV]}
+              ]
             }
           }) {
             playbackSession { id currentFormatAttempt { ... on ReadyPlaybackFormatAttempt { streamSession { id streamUrl transcodeMode } } } }
@@ -989,11 +993,17 @@ class StreamingResolverTest {
                                         .build()))
                             .hdr10Plus(true)
                             .hls(true)
+                            .directPlayContainers(
+                                List.of(SourceContainer.MATROSKA, SourceContainer.MP4))
                             .build()))
                 .audio(
                     List.of(
                         aacEntryBuilder().build(),
-                        audioEntryBuilder(AudioCodec.EAC3).maxChannels(6).hls(false).build()))
+                        audioEntryBuilder(AudioCodec.EAC3)
+                            .maxChannels(6)
+                            .hls(false)
+                            .directPlayContainers(List.of(SourceContainer.MOV))
+                            .build()))
                 .build());
   }
 

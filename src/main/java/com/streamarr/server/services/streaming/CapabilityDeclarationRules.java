@@ -8,6 +8,7 @@ import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.AudioChannelsNotPositive;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.AudioDeliveryMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.AudioEntriesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecLevelNotPositive;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecProfileOutsideCodecFamily;
@@ -18,11 +19,14 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.Co
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionLevelNotPositive;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionProfileOutsideCodecFamily;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.HlsAacEntryMissing;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyAudioDirectPlayContainers;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyAudioEntries;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyCodecProfiles;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyCompatibleBases;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyDolbyVisionProfiles;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyVideoDirectPlayContainers;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyVideoEntries;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoDeliveryMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoEntriesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoEntryMaximum;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.VideoMaximumInvalid;
@@ -74,6 +78,7 @@ final class CapabilityDeclarationRules {
     rejections.addAll(codecProfileRejections(index, entry));
     compatibleBaseRejection(index, entry).ifPresent(rejections::add);
     rejections.addAll(dolbyVisionRejections(index, entry));
+    videoDeliveryRejection(index, entry).ifPresent(rejections::add);
     return rejections;
   }
 
@@ -183,8 +188,8 @@ final class CapabilityDeclarationRules {
 
     var rejections = new ArrayList<CapabilityDeclarationRejection>();
     IntStream.range(0, entries.size())
-        .filter(index -> entries.get(index).maxChannels() <= 0)
-        .mapToObj(AudioChannelsNotPositive::new)
+        .boxed()
+        .flatMap(index -> audioEntryRejections(index, entries.get(index)).stream())
         .forEach(rejections::add);
     boolean declaresHlsAac =
         entries.stream().anyMatch(entry -> entry.codec() == AudioCodec.AAC && entry.hls());
@@ -193,5 +198,46 @@ final class CapabilityDeclarationRules {
     }
 
     return rejections;
+  }
+
+  private static List<CapabilityDeclarationRejection> audioEntryRejections(
+      int index, AudioCapabilityEntry entry) {
+    var rejections = new ArrayList<CapabilityDeclarationRejection>();
+    if (entry.maxChannels() <= 0) {
+      rejections.add(new AudioChannelsNotPositive(index));
+    }
+
+    audioDeliveryRejection(index, entry).ifPresent(rejections::add);
+    return rejections;
+  }
+
+  // An entry applies to HLS, to direct play from the source containers that it lists, or to both
+  // (ADR 0049), so an entry with neither applies to no delivery.
+  private static Optional<CapabilityDeclarationRejection> videoDeliveryRejection(
+      int index, VideoCapabilityEntry entry) {
+    var containers = entry.directPlayContainers();
+    if (containers.size() > MAXIMUM_LIST_SIZE) {
+      return Optional.of(new TooManyVideoDirectPlayContainers(index, MAXIMUM_LIST_SIZE));
+    }
+
+    if (!entry.hls() && containers.isEmpty()) {
+      return Optional.of(new VideoDeliveryMissing(index));
+    }
+
+    return Optional.empty();
+  }
+
+  private static Optional<CapabilityDeclarationRejection> audioDeliveryRejection(
+      int index, AudioCapabilityEntry entry) {
+    var containers = entry.directPlayContainers();
+    if (containers.size() > MAXIMUM_LIST_SIZE) {
+      return Optional.of(new TooManyAudioDirectPlayContainers(index, MAXIMUM_LIST_SIZE));
+    }
+
+    if (!entry.hls() && containers.isEmpty()) {
+      return Optional.of(new AudioDeliveryMissing(index));
+    }
+
+    return Optional.empty();
   }
 }
