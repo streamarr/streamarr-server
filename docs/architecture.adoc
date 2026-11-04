@@ -324,6 +324,8 @@ Version 6 also reports, for each H.264 and HEVC video stream, whether a copy kee
 The server sets that fact on each job that copies the stream, and the worker drops the filter only then.
 Version 7 adds the channel layout of each audio stream, as ffprobe names it, such as `quad` or `3.0(back)`, and its sample format and bit depth.
 It also adds seven dispositions of each audio stream, such as commentary and audio description, the minimum block size from each FLAC stream's STREAMINFO block, and the commentary disposition of each subtitle stream.
+For an MP4 or MOV file, version 7 also adds the sample entry that the file stores for each video stream, such as `hvc1` or `dvh1`, and the major brand of the file's `ftyp` box, such as `isom` or `qt  `.
+Direct play reads both facts.
 The worker contract lets a job that encodes audio name its output channel layout, so the worker encodes with that layout instead of only a channel count; such a job can also name its output sample rate and bit depth, which otherwise follow ADR 0043's rules for the codec and the source.
 The server sets none of them yet.
 Version 2 is unused.
