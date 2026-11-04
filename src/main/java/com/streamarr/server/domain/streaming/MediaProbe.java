@@ -89,6 +89,22 @@ public record MediaProbe(
   }
 
   /**
+   * The position, counting from 0, of the stream session's audio track among the file's audio
+   * tracks in stream order, or empty when the file has no audio track. The stream session plays the
+   * first audio stream that the probe lists.
+   */
+  public OptionalInt sessionAudioTrackPosition() {
+    var tracks = audioStreams();
+    if (tracks.isEmpty()) {
+      return OptionalInt.empty();
+    }
+
+    var sessionTrack = tracks.getFirst().index();
+    return OptionalInt.of(
+        (int) tracks.stream().filter(track -> track.index() < sessionTrack).count());
+  }
+
+  /**
    * Whether a forced PGS, VobSub or DVB subtitle track is in the language of any audio track. The
    * player shows such a track while subtitles are off (streamarr/streamarr-server#506), whichever
    * audio track plays.

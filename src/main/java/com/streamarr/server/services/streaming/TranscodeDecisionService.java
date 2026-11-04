@@ -20,7 +20,6 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.PlannedVideoOutput;
 import com.streamarr.server.domain.streaming.Presence;
-import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.StreamCopySegments;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -75,15 +74,17 @@ public class TranscodeDecisionService {
   private final MeterRegistry meterRegistry;
 
   /**
-   * The source container from which the stream session direct-plays the source file (ADR 0045), or
-   * empty when it plays over HLS. Only a format attempt that may direct-play does, and only in
+   * The decision to direct-play the source file from its source container (ADR 0045), or empty when
+   * the stream session plays over HLS. Only a format attempt that may direct-play does, and only in
    * Original. The declaration must cover the video and every audio track from the file's source
-   * container (ADR 0049). An interlaced source, a property issue that rules out a copy (ADR 0049)
-   * and a forced image subtitle in the language of any audio track (#506) keep the file on HLS. The
+   * container (ADR 0049), and a player that cannot select an audio track plays only a file with at
+   * most one (ADR 0045). The decision names the audio track that HLS would play, for a player that
+   * selects one. An interlaced source, a property issue that rules out a copy (ADR 0049) and a
+   * forced image subtitle in the language of any audio track (#506) keep the file on HLS. The
    * keyframe grid, the interim HDR copy rule and the codec string bind only HLS copies. A copy in
    * Original ignores the viewer's limits (ADR 0050), and so does direct play.
    */
-  public Optional<SourceContainer> decideDirectPlay(@NonNull DirectPlayRequest request) {
+  public Optional<DirectPlayDecision> decideDirectPlay(@NonNull DirectPlayRequest request) {
     if (request.videoFormatConstraint() != VideoFormatConstraint.DIRECT_PLAY_OR_COPY_OR_ENCODE
         || request.viewerLimits().quality() != VideoQuality.ORIGINAL) {
       return Optional.empty();
@@ -96,7 +97,13 @@ public class TranscodeDecisionService {
 
     return source
         .sourceContainer()
-        .filter(container -> request.capabilityDeclaration().acceptsDirectPlay(source, container));
+        .filter(container -> request.capabilityDeclaration().acceptsDirectPlay(source, container))
+        .map(
+            container ->
+                DirectPlayDecision.builder()
+                    .sourceContainer(container)
+                    .audioTrackPosition(source.sessionAudioTrackPosition())
+                    .build());
   }
 
   // The worker deinterlaces an interlaced source for HLS, and no player's handling of an

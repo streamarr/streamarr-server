@@ -200,7 +200,7 @@ public class HlsStreamingService implements StreamingService {
     return transcodeDecisionService
         .decideDirectPlay(request)
         .map(
-            container ->
+            decision ->
                 StreamSession.builder()
                     .sessionId(command.streamSessionId())
                     .mediaFileId(command.mediaFileId())
@@ -210,7 +210,8 @@ public class HlsStreamingService implements StreamingService {
                     .options(command.options())
                     .createdAt(Instant.now())
                     .delivery(StreamDelivery.DIRECT_PLAY)
-                    .sourceContainer(container)
+                    .sourceContainer(decision.sourceContainer())
+                    .directPlayAudioTrackPosition(decision.audioTrackPosition())
                     .build());
   }
 

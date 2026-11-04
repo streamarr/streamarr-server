@@ -23,7 +23,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 /**
  * How a client capability declaration covers a file for direct play (ADR 0049): one video entry
  * accepts the video stream and lists the file's source container, and every audio track of the file
- * is covered by an audio entry that lists the container.
+ * is covered by an audio entry that lists the container. A player that cannot select an audio track
+ * in a directly played file plays only a file with one audio track (ADR 0045).
  */
 @Tag("UnitTest")
 @DisplayName("Client Capability Declaration Direct Play Tests")
@@ -107,6 +108,46 @@ class ClientCapabilityDeclarationDirectPlayTest {
             List.of(stereoAac().build())));
   }
 
+  @ParameterizedTest(name = "{0} audio tracks")
+  @MethodSource("audioTrackCounts")
+  @DisplayName(
+      "Should cover the file only when it has at most one audio track when the player cannot select"
+          + " one")
+  void shouldCoverTheFileOnlyWhenItHasAtMostOneAudioTrackWhenThePlayerCannotSelectOne(
+      int trackCount, boolean covered) {
+    var declaration =
+        declarationBuilder(List.of(directPlayAac().build()))
+            .selectsAudioTrackInDirectPlay(false)
+            .build();
+    var tracks = Stream.generate(() -> stereoAac().build()).limit(trackCount);
+
+    assertThat(declaration.acceptsDirectPlay(source(tracks.toArray(StreamInfo[]::new)), CONTAINER))
+        .isEqualTo(covered);
+  }
+
+  static Stream<Arguments> audioTrackCounts() {
+    return Stream.of(
+        Arguments.of(0, true),
+        Arguments.of(1, true),
+        Arguments.of(2, false),
+        Arguments.of(3, false));
+  }
+
+  @Test
+  @DisplayName(
+      "Should cover a file with several audio tracks when the player selects an audio track")
+  void shouldCoverAFileWithSeveralAudioTracksWhenThePlayerSelectsAnAudioTrack() {
+    var declaration =
+        declarationBuilder(List.of(directPlayAac().build()))
+            .selectsAudioTrackInDirectPlay(true)
+            .build();
+
+    assertThat(
+            declaration.acceptsDirectPlay(
+                source(stereoAac().build(), stereoAac().build()), CONTAINER))
+        .isTrue();
+  }
+
   @Test
   @DisplayName("Should refuse the file when the entry that accepts its video lists no container")
   void shouldRefuseTheFileWhenTheEntryThatAcceptsItsVideoListsNoContainer() {
@@ -140,11 +181,16 @@ class ClientCapabilityDeclarationDirectPlayTest {
     assertThat(declaration.acceptsDirectPlay(source, CONTAINER)).isFalse();
   }
 
+  // A player that selects an audio track, so that every audio track's coverage decides.
   private static ClientCapabilityDeclaration declaration(List<AudioCapabilityEntry> audio) {
+    return declarationBuilder(audio).selectsAudioTrackInDirectPlay(true).build();
+  }
+
+  private static ClientCapabilityDeclaration.ClientCapabilityDeclarationBuilder declarationBuilder(
+      List<AudioCapabilityEntry> audio) {
     return ClientCapabilityDeclaration.builder()
         .video(List.of(h264EntryBuilder().directPlayContainers(List.of(CONTAINER)).build()))
-        .audio(audio)
-        .build();
+        .audio(audio);
   }
 
   private static AudioCapabilityEntry.AudioCapabilityEntryBuilder directPlayAac() {

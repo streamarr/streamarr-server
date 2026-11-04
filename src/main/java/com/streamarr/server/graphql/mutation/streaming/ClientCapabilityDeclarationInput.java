@@ -21,12 +21,15 @@ import java.util.Optional;
  * enums' values, and its codec families and compatible bases are the declarable subsets.
  */
 public record ClientCapabilityDeclarationInput(
-    List<VideoCapabilityEntryInput> video, List<AudioCapabilityEntryInput> audio) {
+    List<VideoCapabilityEntryInput> video,
+    List<AudioCapabilityEntryInput> audio,
+    boolean selectsAudioTrackInDirectPlay) {
 
   public ClientCapabilityDeclaration toDeclaration() {
     return ClientCapabilityDeclaration.builder()
         .video(video.stream().map(VideoCapabilityEntryInput::toEntry).toList())
         .audio(audio.stream().map(AudioCapabilityEntryInput::toEntry).toList())
+        .selectsAudioTrackInDirectPlay(selectsAudioTrackInDirectPlay)
         .build();
   }
 

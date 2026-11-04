@@ -9,11 +9,15 @@ import lombok.NonNull;
 /**
  * The client capability declaration that a stream session request carries (ADR 0049): the video and
  * audio capability entries of the player and display that the stream session uses. An output fits
- * only when one capability entry accepts every property of the output.
+ * only when one capability entry accepts every property of the output. {@code
+ * selectsAudioTrackInDirectPlay} states whether the player selects an audio track inside a file
+ * that it direct-plays (ADR 0045).
  */
 @Builder
 public record ClientCapabilityDeclaration(
-    @NonNull List<VideoCapabilityEntry> video, @NonNull List<AudioCapabilityEntry> audio) {
+    @NonNull List<VideoCapabilityEntry> video,
+    @NonNull List<AudioCapabilityEntry> audio,
+    boolean selectsAudioTrackInDirectPlay) {
 
   public ClientCapabilityDeclaration {
     video = List.copyOf(video);
@@ -48,9 +52,16 @@ public record ClientCapabilityDeclaration(
    * Whether the declaration covers direct play of the source from its source container (ADR 0049):
    * one video entry accepts the video stream and lists the container, and an audio entry that lists
    * the container accepts each audio track of the file. Every track counts, because a player may
-   * start any track and the viewer can switch tracks inside the file.
+   * start any track and the viewer can switch tracks inside the file. A player that cannot select
+   * an audio track covers only a file with at most one audio track, because it would start a track
+   * by its own rule (ADR 0045).
    */
   public boolean acceptsDirectPlay(@NonNull MediaProbe source, @NonNull SourceContainer container) {
+    var audioTracks = source.audioStreams();
+    if (!selectsAudioTrackInDirectPlay && audioTracks.size() > 1) {
+      return false;
+    }
+
     var videoCovered =
         VideoStreamCopy.of(source)
             .filter(
@@ -58,7 +69,7 @@ public record ClientCapabilityDeclaration(
                     video.stream().anyMatch(entry -> entry.acceptsDirectPlay(stream, container)))
             .isPresent();
     return videoCovered
-        && source.audioStreams().stream()
+        && audioTracks.stream()
             .allMatch(
                 track ->
                     audio.stream().anyMatch(entry -> entry.acceptsDirectPlay(track, container)));

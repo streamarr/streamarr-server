@@ -406,7 +406,18 @@ public class StreamingResolver {
         .streamUrl(streamUrl(session, "source." + container.getExtension()))
         .sourceContainer(container.name())
         .videoRange(session.getVideoRange().name())
+        .audioTrackPosition(audioTrackPosition(session))
         .build();
+  }
+
+  // GraphQL's null names a file without audio.
+  private static Integer audioTrackPosition(StreamSession session) {
+    var position = session.getDirectPlayAudioTrackPosition();
+    if (position.isEmpty()) {
+      return null;
+    }
+
+    return position.getAsInt();
   }
 
   // The issuer refuses to mint for sessions the caller does not own — every DTO carries a playback

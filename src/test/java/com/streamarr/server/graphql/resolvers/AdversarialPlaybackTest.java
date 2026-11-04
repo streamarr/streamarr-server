@@ -219,6 +219,7 @@ class AdversarialPlaybackTest {
                   compatibleBases: [SDR], dolbyVisionProfiles: [], hdr10Plus: false, hls: true
                 }]
                 audio: [{codec: AAC, maxChannels: 2, hls: true}]
+                selectsAudioTrackInDirectPlay: false
               }
             }
           ) {

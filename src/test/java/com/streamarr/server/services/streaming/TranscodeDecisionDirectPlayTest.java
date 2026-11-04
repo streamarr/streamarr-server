@@ -66,7 +66,7 @@ class TranscodeDecisionDirectPlayTest {
   @Test
   @DisplayName("Should direct-play the source in Original when the declaration covers the file")
   void shouldDirectPlayTheSourceInOriginalWhenTheDeclarationCoversTheFile() {
-    assertThat(service.decideDirectPlay(request().build())).contains(SourceContainer.MATROSKA);
+    assertThat(decidedContainer(request().build())).contains(SourceContainer.MATROSKA);
   }
 
   @ParameterizedTest
@@ -78,7 +78,7 @@ class TranscodeDecisionDirectPlayTest {
   void shouldPlayOverHlsWhenThePlaybackChoiceIsNotOriginal(VideoQuality quality) {
     var request = request().viewerLimits(ViewerLimits.builder().quality(quality).build()).build();
 
-    assertThat(service.decideDirectPlay(request)).isEmpty();
+    assertThat(decidedContainer(request)).isEmpty();
   }
 
   @ParameterizedTest
@@ -88,8 +88,7 @@ class TranscodeDecisionDirectPlayTest {
       mode = EnumSource.Mode.EXCLUDE)
   @DisplayName("Should play over HLS when the format attempt may not direct-play")
   void shouldPlayOverHlsWhenTheFormatAttemptMayNotDirectPlay(VideoFormatConstraint constraint) {
-    assertThat(service.decideDirectPlay(request().videoFormatConstraint(constraint).build()))
-        .isEmpty();
+    assertThat(decidedContainer(request().videoFormatConstraint(constraint).build())).isEmpty();
   }
 
   @Test
@@ -97,7 +96,7 @@ class TranscodeDecisionDirectPlayTest {
   void shouldPlayOverHlsWhenTheDeclarationDoesNotCoverTheFilesContainer() {
     var request = request().source(h264Source().containerFormat(Optional.of("mpegts")).build());
 
-    assertThat(service.decideDirectPlay(request.build())).isEmpty();
+    assertThat(decidedContainer(request.build())).isEmpty();
   }
 
   @Test
@@ -109,7 +108,7 @@ class TranscodeDecisionDirectPlayTest {
             .capabilityDeclaration(everyContainer)
             .source(h264Source().containerFormat(Optional.of("wav")).build());
 
-    assertThat(service.decideDirectPlay(request.build())).isEmpty();
+    assertThat(decidedContainer(request.build())).isEmpty();
   }
 
   // The major brand tells MP4 from MOV: QuickTime's brand makes MOV, every other brand makes MP4,
@@ -125,7 +124,7 @@ class TranscodeDecisionDirectPlayTest {
             .capabilityDeclaration(isoDeclarationListing(listed))
             .source(isoSource(majorBrand).build());
 
-    assertThat(service.decideDirectPlay(request.build())).isEqualTo(expected);
+    assertThat(decidedContainer(request.build())).isEqualTo(expected);
   }
 
   static Stream<Arguments> majorBrands() {
@@ -156,7 +155,7 @@ class TranscodeDecisionDirectPlayTest {
             .capabilityDeclaration(isoDeclarationListing(SourceContainer.MP4))
             .source(isoSource(Optional.of("isom")).videoPlaybackFacts(Optional.of(facts)).build());
 
-    assertThat(service.decideDirectPlay(request.build())).isEmpty();
+    assertThat(decidedContainer(request.build())).isEmpty();
   }
 
   static Stream<Arguments> sampleEntries() {
@@ -170,7 +169,7 @@ class TranscodeDecisionDirectPlayTest {
   void shouldPlayOverHlsWhenTheProbeReportsNoContainer() {
     var request = request().source(h264Source().containerFormat(Optional.empty()).build());
 
-    assertThat(service.decideDirectPlay(request.build())).isEmpty();
+    assertThat(decidedContainer(request.build())).isEmpty();
   }
 
   @Test
@@ -184,7 +183,7 @@ class TranscodeDecisionDirectPlayTest {
     var request =
         request().source(h264Source().videoPlaybackFacts(Optional.of(interlaced)).build());
 
-    assertThat(service.decideDirectPlay(request.build())).isEmpty();
+    assertThat(decidedContainer(request.build())).isEmpty();
   }
 
   @Test
@@ -206,14 +205,14 @@ class TranscodeDecisionDirectPlayTest {
     var startingSample = profile81(DolbyVisionRpuPlacement.STARTS_SAMPLE);
 
     assertThat(
-            service.decideDirectPlay(
+            decidedContainer(
                 request()
                     .capabilityDeclaration(declaration)
                     .source(hevcSource(placedAfter))
                     .build()))
         .contains(SourceContainer.MATROSKA);
     assertThat(
-            service.decideDirectPlay(
+            decidedContainer(
                 request()
                     .capabilityDeclaration(declaration)
                     .source(hevcSource(startingSample))
@@ -237,9 +236,10 @@ class TranscodeDecisionDirectPlayTest {
             .isForced(true)
             .build();
     var source = h264Source().streams(List.of(aac("eng"), aac("fra"), forced)).build();
+    var request =
+        request().capabilityDeclaration(selectingDeclarationListing(SourceContainer.MATROSKA));
 
-    assertThat(service.decideDirectPlay(request().source(source).build()).isPresent())
-        .isEqualTo(directPlays);
+    assertThat(decidedContainer(request.source(source).build()).isPresent()).isEqualTo(directPlays);
   }
 
   static Stream<Arguments> forcedImageSubtitles() {
@@ -265,7 +265,7 @@ class TranscodeDecisionDirectPlayTest {
             .build();
 
     assertThat(
-            service.decideDirectPlay(
+            decidedContainer(
                 request().capabilityDeclaration(declarationWith(pqEntry)).source(source).build()))
         .contains(SourceContainer.MATROSKA);
   }
@@ -282,7 +282,7 @@ class TranscodeDecisionDirectPlayTest {
             .maxBitrate(OptionalLong.of(500_000))
             .build();
 
-    assertThat(service.decideDirectPlay(request().viewerLimits(limits).build()))
+    assertThat(decidedContainer(request().viewerLimits(limits).build()))
         .contains(SourceContainer.MATROSKA);
   }
 
@@ -295,8 +295,91 @@ class TranscodeDecisionDirectPlayTest {
                 List.of(
                     englishAac(), audioStreamBuilder("ac3").channels(OptionalInt.of(6)).build()))
             .build();
+    var request =
+        request().capabilityDeclaration(selectingDeclarationListing(SourceContainer.MATROSKA));
 
-    assertThat(service.decideDirectPlay(request().source(source).build())).isEmpty();
+    assertThat(decidedContainer(request.source(source).build())).isEmpty();
+  }
+
+  // ADR 0045: a player that cannot select an audio track in a directly played file, such as
+  // Chromium's, direct-plays only a file with one audio track. A file with several plays over HLS
+  // from the start, where an audio switch is a rendition switch.
+  @Test
+  @DisplayName(
+      "Should play over HLS when the file has several audio tracks and the player cannot select"
+          + " one")
+  void shouldPlayOverHlsWhenTheFileHasSeveralAudioTracksAndThePlayerCannotSelectOne() {
+    var source = h264Source().streams(List.of(aac("eng"), aac("fra"))).build();
+    var request =
+        request()
+            .capabilityDeclaration(nonSelectingDeclarationListing(SourceContainer.MATROSKA))
+            .source(source);
+
+    assertThat(decidedContainer(request.build())).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should direct-play a file with one audio track when the player cannot select an audio track")
+  void shouldDirectPlayAFileWithOneAudioTrackWhenThePlayerCannotSelectAnAudioTrack() {
+    var request =
+        request()
+            .capabilityDeclaration(nonSelectingDeclarationListing(SourceContainer.MATROSKA))
+            .source(h264Source().streams(List.of(aac("eng"))).build());
+
+    assertThat(decidedContainer(request.build())).contains(SourceContainer.MATROSKA);
+  }
+
+  @Test
+  @DisplayName(
+      "Should direct-play a file with several audio tracks when the player selects an audio track")
+  void shouldDirectPlayAFileWithSeveralAudioTracksWhenThePlayerSelectsAnAudioTrack() {
+    var source = h264Source().streams(List.of(aac("eng"), aac("fra"))).build();
+    var request =
+        request()
+            .capabilityDeclaration(selectingDeclarationListing(SourceContainer.MATROSKA))
+            .source(source);
+
+    assertThat(decidedContainer(request.build())).contains(SourceContainer.MATROSKA);
+  }
+
+  // The stream session plays the first audio stream that the probe lists, over HLS and in direct
+  // play alike, and a choice of the session's audio track lists the chosen track first. The client
+  // finds that track by its position among the file's audio tracks in stream order, which is the
+  // order of a player's own track list.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("namedAudioTracks")
+  @DisplayName(
+      "Should name the session's audio track by its position among the file's audio tracks when the"
+          + " file direct-plays")
+  void shouldNameTheSessionsAudioTrackByItsPositionAmongTheFilesAudioTracksWhenTheFileDirectPlays(
+      String scenario, List<StreamInfo> streams, OptionalInt expected) {
+    var request =
+        request()
+            .capabilityDeclaration(selectingDeclarationListing(SourceContainer.MATROSKA))
+            .source(h264Source().streams(streams).build());
+
+    assertThat(service.decideDirectPlay(request.build()))
+        .map(DirectPlayDecision::audioTrackPosition)
+        .contains(expected);
+  }
+
+  static Stream<Arguments> namedAudioTracks() {
+    var englishFirst = aacBuilder("eng").index(1).build();
+    var frenchSecond = aacBuilder("fra").index(2).build();
+    var subtitle = StreamInfo.builder().index(3).codecType("subtitle").build();
+    return Stream.of(
+        Arguments.of(
+            "the first of two tracks", List.of(englishFirst, frenchSecond), OptionalInt.of(0)),
+        Arguments.of(
+            "a later track that the probe lists first",
+            List.of(frenchSecond, englishFirst),
+            OptionalInt.of(1)),
+        Arguments.of("a file without audio", List.of(subtitle), OptionalInt.empty()));
+  }
+
+  private Optional<SourceContainer> decidedContainer(DirectPlayRequest request) {
+    return service.decideDirectPlay(request).map(DirectPlayDecision::sourceContainer);
   }
 
   private static DirectPlayRequest.DirectPlayRequestBuilder request() {
@@ -308,9 +391,27 @@ class TranscodeDecisionDirectPlayTest {
   }
 
   private static ClientCapabilityDeclaration declarationListing(List<SourceContainer> containers) {
+    return declarationBuilderListing(containers).build();
+  }
+
+  private static ClientCapabilityDeclaration.ClientCapabilityDeclarationBuilder
+      declarationBuilderListing(List<SourceContainer> containers) {
     return ClientCapabilityDeclaration.builder()
         .video(List.of(h264EntryBuilder().directPlayContainers(containers).build()))
-        .audio(List.of(aacEntryBuilder().directPlayContainers(containers).build()))
+        .audio(List.of(aacEntryBuilder().directPlayContainers(containers).build()));
+  }
+
+  private static ClientCapabilityDeclaration selectingDeclarationListing(
+      SourceContainer container) {
+    return declarationBuilderListing(List.of(container))
+        .selectsAudioTrackInDirectPlay(true)
+        .build();
+  }
+
+  private static ClientCapabilityDeclaration nonSelectingDeclarationListing(
+      SourceContainer container) {
+    return declarationBuilderListing(List.of(container))
+        .selectsAudioTrackInDirectPlay(false)
         .build();
   }
 
@@ -386,10 +487,11 @@ class TranscodeDecisionDirectPlayTest {
   }
 
   private static StreamInfo aac(String language) {
-    return audioStreamBuilder("aac")
-        .channels(OptionalInt.of(2))
-        .language(Optional.of(language))
-        .build();
+    return aacBuilder(language).build();
+  }
+
+  private static StreamInfo.StreamInfoBuilder aacBuilder(String language) {
+    return audioStreamBuilder("aac").channels(OptionalInt.of(2)).language(Optional.of(language));
   }
 
   // Profile 8.1 at Dolby Vision level 6, with its RPUs placed as given.

@@ -5230,7 +5230,64 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(3);
   }
 
+  // ADR 0045: a player that cannot select an audio track in a directly played file plays a file
+  // with several audio tracks over HLS from the start.
+  @Test
+  @DisplayName(
+      "Should start HLS when the file has several audio tracks and the player cannot select one")
+  void shouldStartHlsWhenTheFileHasSeveralAudioTracksAndThePlayerCannotSelectOne() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra"));
+    var file = seedMediaFile();
+    var declaration = directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(false).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId()).capabilityDeclaration(declaration).build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.HLS);
+  }
+
+  // ADR 0045: a player that selects audio tracks direct-plays a file with several, and selects the
+  // audio track that the stream decision names: the track that HLS plays for the same file.
+  @Test
+  @DisplayName(
+      "Should direct-play and name the first audio track when the player selects an audio track")
+  void shouldDirectPlayAndNameTheFirstAudioTrackWhenThePlayerSelectsAnAudioTrack() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra"));
+    var file = seedMediaFile();
+    var declaration = directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(true).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId()).capabilityDeclaration(declaration).build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
+    assertThat(session.getDirectPlayAudioTrackPosition()).hasValue(0);
+  }
+
+  // One stereo AAC track for each language, in stream order after the video stream.
+  private static MediaProbe directPlayableProbeWithAudioIn(String... languages) {
+    var streams = new ArrayList<StreamInfo>();
+    streams.add(ProbeFixture.videoStreamBuilder(directPlayableProbe()).build());
+    for (var language : languages) {
+      streams.add(
+          ProbeFixture.audioStreamBuilder("aac")
+              .index(streams.size())
+              .channels(OptionalInt.of(2))
+              .language(Optional.of(language))
+              .build());
+    }
+
+    return directPlayableProbeBuilder().streams(streams).build();
+  }
+
   private static MediaProbe directPlayableProbe() {
+    return directPlayableProbeBuilder().build();
+  }
+
+  private static MediaProbe.MediaProbeBuilder directPlayableProbeBuilder() {
     var facts =
         VideoPlaybackFactsFixture.sdrH264FactsBuilder()
             .streamIndex(0)
@@ -5240,19 +5297,22 @@ class HlsStreamingServiceTest {
     return defaultProbeBuilder()
         .containerFormat(Optional.of("matroska,webm"))
         .audioChannels(OptionalInt.of(2))
-        .videoPlaybackFacts(Optional.of(facts))
-        .build();
+        .videoPlaybackFacts(Optional.of(facts));
   }
 
   private static ClientCapabilityDeclaration directPlayDeclaration() {
+    return directPlayDeclarationBuilder().build();
+  }
+
+  private static ClientCapabilityDeclaration.ClientCapabilityDeclarationBuilder
+      directPlayDeclarationBuilder() {
     return ClientCapabilityDeclaration.builder()
         .video(
             List.of(
                 h264EntryBuilder().directPlayContainers(List.of(SourceContainer.MATROSKA)).build()))
         .audio(
             List.of(
-                aacEntryBuilder().directPlayContainers(List.of(SourceContainer.MATROSKA)).build()))
-        .build();
+                aacEntryBuilder().directPlayContainers(List.of(SourceContainer.MATROSKA)).build()));
   }
 
   private static CreateStreamSessionCommand.CreateStreamSessionCommandBuilder directPlayCommand(

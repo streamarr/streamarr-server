@@ -7,6 +7,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -36,6 +37,14 @@ public class StreamSession {
   /** The source container that a direct-play stream session serves. */
   @Getter(lombok.AccessLevel.NONE)
   private final SourceContainer sourceContainer;
+
+  /**
+   * The position, among the file's audio tracks in stream order, of the audio track that a
+   * direct-play stream session's player selects. Empty for an HLS stream session and for a file
+   * without audio.
+   */
+  @NonNull @Builder.Default
+  private final OptionalInt directPlayAudioTrackPosition = OptionalInt.empty();
 
   @Getter(lombok.AccessLevel.NONE)
   @Builder.Default

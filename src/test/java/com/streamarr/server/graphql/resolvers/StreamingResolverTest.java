@@ -89,6 +89,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
+import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
@@ -131,7 +132,7 @@ class StreamingResolverTest {
       {video: [{codecFamily: H264, codecProfiles: [{profile: H264_HIGH, maxLevel: 41}], \
       maxBitDepth: 8, maxWidth: 1920, maxHeight: 1080, maxFrameRate: 60, compatibleBases: [SDR], \
       dolbyVisionProfiles: [], hdr10Plus: false, hls: true}], \
-      audio: [{codec: AAC, maxChannels: 2, hls: true}]}""";
+      audio: [{codec: AAC, maxChannels: 2, hls: true}], selectsAudioTrackInDirectPlay: false}""";
   private static final String REPORTED_PLAYBACK =
       "data.reportPlaybackFormatFailure.playbackSession";
 
@@ -463,6 +464,56 @@ class StreamingResolverTest {
     var decoded = decodeToken(streamUrl.substring(streamUrl.indexOf("?t=") + 3));
     assertThat(Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt()))
         .isEqualTo(probe.duration().plus(streamingProperties.sessionRetention()));
+  }
+
+  // ADR 0045: a player that selects audio tracks selects the track that the stream decision names.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("directPlayAudioTrackPositions")
+  @DisplayName(
+      "Should expose the audio track that the decision names when the session direct-plays")
+  void shouldExposeTheAudioTrackThatTheDecisionNamesWhenTheSessionDirectPlays(
+      String scenario, OptionalInt position, Integer expected) {
+    STUB_SERVICE.setNextResult(
+        sessionBuilderLike(buildSession(UUID.randomUUID()))
+            .transcodeDecision(null)
+            .delivery(StreamDelivery.DIRECT_PLAY)
+            .sourceContainer(SourceContainer.MATROSKA)
+            .directPlayAudioTrackPosition(position)
+            .build());
+
+    var context =
+        dgsQueryExecutor.executeAndGetDocumentContext(
+            """
+            mutation {
+              createPlaybackSession(
+                input: {mediaFileId: "%s", options: {quality: ORIGINAL}, capabilities: %s}
+              ) {
+                playbackSession {
+                  currentFormatAttempt {
+                    ... on ReadyPlaybackFormatAttempt {
+                      streamSession {
+                        __typename
+                        ... on DirectPlayStreamSession { audioTrackPosition }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """
+                .formatted(UUID.randomUUID(), CAPABILITIES));
+
+    var streamSession = CREATED_PLAYBACK + ".currentFormatAttempt.streamSession";
+    assertThat(context.read(streamSession + ".__typename", String.class))
+        .isEqualTo("DirectPlayStreamSession");
+    assertThat(context.read(streamSession + ".audioTrackPosition", Integer.class))
+        .isEqualTo(expected);
+  }
+
+  static Stream<Arguments> directPlayAudioTrackPositions() {
+    return Stream.of(
+        Arguments.of("the second audio track", OptionalInt.of(1), 1),
+        Arguments.of("a file without audio", OptionalInt.empty(), null));
   }
 
   static Stream<Arguments> sourceRanges() {
@@ -1071,6 +1122,7 @@ class StreamingResolverTest {
                 {codec: AAC, maxChannels: 2, hls: true}
                 {codec: EAC3, maxChannels: 6, hls: false, directPlayContainers: [MOV]}
               ]
+              selectsAudioTrackInDirectPlay: true
             }
           }) {
             playbackSession {
@@ -1160,6 +1212,7 @@ class StreamingResolverTest {
                             .hls(false)
                             .directPlayContainers(List.of(SourceContainer.MOV))
                             .build()))
+                .selectsAudioTrackInDirectPlay(true)
                 .build());
   }
 
@@ -1613,6 +1666,7 @@ class StreamingResolverTest {
                     compatibleBases: [SDR], dolbyVisionProfiles: [], hdr10Plus: false, hls: true
                   }]
                   audio: [{codec: OPUS, maxChannels: 2, hls: true}]
+                  selectsAudioTrackInDirectPlay: false
                 }
               }) {
                 playbackSession { id }
@@ -1671,6 +1725,7 @@ class StreamingResolverTest {
                     compatibleBases: [SDR], dolbyVisionProfiles: [], hdr10Plus: false, hls: true
                   }]
                   audio: [{codec: AAC, maxChannels: 2, hls: true}]
+                  selectsAudioTrackInDirectPlay: false
                 }
               }) {
                 playbackSession { id }
@@ -1745,6 +1800,35 @@ class StreamingResolverTest {
             "codec family VP9",
             CAPABILITIES.replace("codecFamily: H264", "codecFamily: VP9"),
             "VP9"));
+  }
+
+  // A client states whether its direct-play player selects an audio track (ADR 0045), so the
+  // schema gives the fact no default.
+  @Test
+  @DisplayName(
+      "Should refuse the request when its declaration omits whether the player selects an audio"
+          + " track")
+  void shouldRefuseTheRequestWhenItsDeclarationOmitsWhetherThePlayerSelectsAnAudioTrack() {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+    var capabilities = CAPABILITIES.replace(", selectsAudioTrackInDirectPlay: false", "");
+    assertThat(capabilities).doesNotContain("selectsAudioTrackInDirectPlay");
+
+    var result =
+        dgsQueryExecutor.execute(
+            """
+            mutation {
+              createPlaybackSession(input: {mediaFileId: "%s", capabilities: %s}) {
+                playbackSession { id }
+              }
+            }
+            """
+                .formatted(UUID.randomUUID(), capabilities));
+
+    assertThat(result.getErrors())
+        .singleElement()
+        .satisfies(
+            error -> assertThat(error.getMessage()).contains("selectsAudioTrackInDirectPlay"));
+    assertThat(STUB_SERVICE.getAllSessions()).isEmpty();
   }
 
   @Test
@@ -1902,6 +1986,7 @@ class StreamingResolverTest {
               .transcodeDecision(nextResult.getTranscodeDecision())
               .delivery(nextResult.getDelivery())
               .sourceContainer(nextResult.getSourceContainer().orElse(null))
+              .directPlayAudioTrackPosition(nextResult.getDirectPlayAudioTrackPosition())
               .options(command.options())
               .createdAt(Instant.now())
               .build();
