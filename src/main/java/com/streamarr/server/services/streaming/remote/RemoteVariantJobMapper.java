@@ -65,8 +65,8 @@ final class RemoteVariantJobMapper {
     var video =
         switch (transcodeDecision.plannedVideoOutput()) {
           case PlannedVideoOutput.Encode planned -> encode(request, planned);
-          case PlannedVideoOutput.StreamCopy planned ->
-              copy(transcodeDecision, transcodeDecision.videoSource().orElseThrow(), planned);
+          case PlannedVideoOutput.StreamCopy _ ->
+              copy(transcodeDecision, transcodeDecision.videoSource().orElseThrow());
         };
     return decision(transcodeDecision).toBuilder().setVideo(video).build();
   }
@@ -136,14 +136,10 @@ final class RemoteVariantJobMapper {
     };
   }
 
-  // A copy forces no codec profile, tier or level. An SDR copy passes the source's range through,
-  // so it carries no planned range and still reaches a worker that predates the planned output
-  // (ADR 0013).
+  // A copy forces no codec profile, tier or level.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.transcode.v1.VideoDecision copy(
-      TranscodeDecision decision,
-      VideoPlaybackFacts source,
-      PlannedVideoOutput.StreamCopy planned) {
+      TranscodeDecision decision, VideoPlaybackFacts source) {
     var video =
         com.streamarr.transcode.v1.VideoDecision.newBuilder()
             .setMode(VideoMode.VIDEO_MODE_COPY)
@@ -154,24 +150,38 @@ final class RemoteVariantJobMapper {
             .setSourceCodecFamily(sourceCodecFamily(source))
             .setSourcePacketsCarryPresentationTimes(sourcePacketsCarryPresentationTimes(source))
             .setCopyKeepsPacketBytes(copyKeepsPacketBytes(source));
-    if (planned.dynamicRange().compatibleBase() != CompatibleBase.SDR) {
-      video.setOutputDynamicRange(RemoteDynamicRangeMapper.toProto(planned.dynamicRange()));
-    }
-
+    plannedCopyRange(decision.plannedVideoOutput()).ifPresent(video::setOutputDynamicRange);
     return video.build();
   }
 
+  // An SDR copy passes the source's range through, so it carries no planned range and still reaches
+  // a worker that predates the planned output (ADR 0013).
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static Optional<com.streamarr.transcode.v1.VideoDynamicRange> plannedCopyRange(
+      PlannedVideoOutput planned) {
+    if (planned instanceof PlannedVideoOutput.StreamCopy copy
+        && copy.dynamicRange().compatibleBase() != CompatibleBase.SDR) {
+      return Optional.of(RemoteDynamicRangeMapper.toProto(copy.dynamicRange()));
+    }
+
+    return Optional.empty();
+  }
+
+  // The projection that slot counts and execution targets read carries every video field that
+  // decides which workers can run the job.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   static com.streamarr.transcode.v1.TranscodeDecision decision(TranscodeDecision decision) {
+    var video =
+        com.streamarr.transcode.v1.VideoDecision.newBuilder()
+            .setMode(
+                decision.transcodeMode().copiesVideo()
+                    ? VideoMode.VIDEO_MODE_COPY
+                    : VideoMode.VIDEO_MODE_ENCODE)
+            .setCodecFamily(codecFamily(decision.videoCodecFamily()));
+    plannedCopyRange(decision.plannedVideoOutput()).ifPresent(video::setOutputDynamicRange);
     return com.streamarr.transcode.v1.TranscodeDecision.newBuilder()
         .setMode(mode(decision.transcodeMode()))
-        .setVideo(
-            com.streamarr.transcode.v1.VideoDecision.newBuilder()
-                .setMode(
-                    decision.transcodeMode().copiesVideo()
-                        ? VideoMode.VIDEO_MODE_COPY
-                        : VideoMode.VIDEO_MODE_ENCODE)
-                .setCodecFamily(codecFamily(decision.videoCodecFamily())))
+        .setVideo(video)
         .setAudio(audio(decision.audioDecision()))
         .setSubtitle(subtitle(decision.subtitleDecision()))
         // Every HLS variant is fMP4 (ADR 0037); the additive contract keeps the field.

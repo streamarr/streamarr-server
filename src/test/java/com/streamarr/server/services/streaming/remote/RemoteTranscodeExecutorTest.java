@@ -10,15 +10,21 @@ import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
+import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamSessionFixture;
+import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.transcode.v1.VideoCodecFamily;
+import com.streamarr.transcode.v1.VideoCopyFeature;
+import com.streamarr.transcode.v1.WorkerCapabilities;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
+import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -111,6 +117,57 @@ class RemoteTranscodeExecutorTest {
         hardwareChannel.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
       }
     }
+  }
+
+  // ADR 0036: a worker that does not list the planned output receives no copy that carries one.
+  // Admission and capacity reclamation count the same workers that dispatch would use.
+  @Test
+  @DisplayName(
+      "Should count slots and offer targets only on workers that list the planned output when a"
+          + " decision copies a PQ source")
+  void shouldCountSlotsAndOfferTargetsOnlyOnWorkersThatListThePlannedOutputWhenCopyingAPqSource()
+      throws Exception {
+    var plannedOutputWorkerId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    try (var server = server()) {
+      server.start();
+      var olderChannel = plaintextChannelBuilder(server.port(), WORKER_ID).build();
+      var plannedOutputChannel =
+          plaintextChannelBuilder(server.port(), plannedOutputWorkerId).build();
+      try (var olderWorker =
+              LoopbackWorker.register(olderChannel, WORKER_ID, WorkerCapabilities.newBuilder());
+          var plannedOutputWorker =
+              LoopbackWorker.register(
+                  plannedOutputChannel,
+                  plannedOutputWorkerId,
+                  WorkerCapabilities.newBuilder()
+                      .addVideoCopyFeatures(VideoCopyFeature.VIDEO_COPY_FEATURE_PLANNED_OUTPUT))) {
+        assertThat(olderWorker.nextResponse().hasSessionAccepted()).isTrue();
+        assertThat(plannedOutputWorker.nextResponse().hasSessionAccepted()).isTrue();
+        var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, SOURCE_ROOT);
+        var pqCopy = copyDecision(CompatibleBase.PQ);
+        var sdrCopy = copyDecision(CompatibleBase.SDR);
+
+        assertThat(executor.availableSlots(pqCopy)).isEqualTo(8);
+        assertThat(executor.executionTargets(pqCopy)).hasSize(1);
+        assertThat(executor.availableSlots(sdrCopy)).isEqualTo(16);
+        assertThat(executor.executionTargets(sdrCopy))
+            .hasSize(2)
+            .containsAll(executor.executionTargets(pqCopy));
+      } finally {
+        olderChannel.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
+        plannedOutputChannel.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
+      }
+    }
+  }
+
+  private static TranscodeDecision copyDecision(CompatibleBase base) {
+    return StreamSessionFixture.remuxDecisionBuilder()
+        .videoSource(
+            Optional.of(
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                    .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(base))
+                    .build()))
+        .build();
   }
 
   private static TranscodeRequest av1EncodeRequest() {
