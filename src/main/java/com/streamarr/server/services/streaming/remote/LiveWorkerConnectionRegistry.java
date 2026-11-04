@@ -39,6 +39,7 @@ import com.streamarr.transcode.v1.TranscodeDecision;
 import com.streamarr.transcode.v1.TranscodeMode;
 import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
+import com.streamarr.transcode.v1.VideoDecision;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerSessionAccepted;
@@ -752,6 +753,8 @@ final class LiveWorkerConnectionRegistry {
     private final Set<Uuid> sourceNamespaceIds;
     private final Set<Integer> probeVersions;
     private final Set<Integer> measurementVersions;
+    private final Set<Integer> bitstreamRewrites;
+    private final Set<Integer> videoCopyFeatures;
     // The worker-verified encoder that counts for each codec family, keyed by family name. A start
     // report that names another backend withdraws the family's entry for this worker session.
     private final Map<String, WorkerVerifiedEncoder> countedEncoders;
@@ -778,6 +781,10 @@ final class LiveWorkerConnectionRegistry {
       sourceNamespaceIds = Set.copyOf(registration.getCapabilities().getSourceNamespaceIdsList());
       probeVersions = Set.copyOf(registration.getCapabilities().getProbeVersionsList());
       measurementVersions = Set.copyOf(registration.getCapabilities().getMeasurementVersionsList());
+      bitstreamRewrites =
+          Set.copyOf(registration.getCapabilities().getBitstreamRewritesValueList());
+      videoCopyFeatures =
+          Set.copyOf(registration.getCapabilities().getVideoCopyFeaturesValueList());
       countedEncoders =
           new ConcurrentHashMap<>(
               registration.getCapabilities().getVideoEncodersList().stream()
@@ -1073,7 +1080,13 @@ final class LiveWorkerConnectionRegistry {
 
     private boolean canEncode(TranscodeDecision decision) {
       return (!encodesVideo(decision) || encoderFor(decision).isPresent())
-          && canEncodeAudioLayout(decision);
+          && canEncodeAudioLayout(decision)
+          && canDeliverVideoAsPlanned(decision.getVideo());
+    }
+
+    private boolean canDeliverVideoAsPlanned(VideoDecision video) {
+      return bitstreamRewrites.containsAll(video.getBitstreamRewritesValueList())
+          && videoCopyFeatures.containsAll(RemoteVideoCopyRequirements.features(video));
     }
 
     private boolean canEncodeAudioLayout(TranscodeDecision decision) {

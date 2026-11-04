@@ -18,9 +18,17 @@ import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.transcode.v1.AudioChannelLayout;
 import com.streamarr.transcode.v1.AudioDecision;
 import com.streamarr.transcode.v1.AudioMode;
+import com.streamarr.transcode.v1.BitstreamRewrite;
+import com.streamarr.transcode.v1.CompatibleBase;
+import com.streamarr.transcode.v1.ContentLightLevel;
+import com.streamarr.transcode.v1.DolbyVisionAbsent;
+import com.streamarr.transcode.v1.DolbyVisionOutput;
+import com.streamarr.transcode.v1.DolbyVisionSampleEntry;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptStarted;
+import com.streamarr.transcode.v1.MasteringDisplayColorVolume;
 import com.streamarr.transcode.v1.MediaSourceRef;
+import com.streamarr.transcode.v1.Presence;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.TranscodeDecision;
 import com.streamarr.transcode.v1.TranscodeMode;
@@ -28,7 +36,9 @@ import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
 import com.streamarr.transcode.v1.VideoCodecFamily;
+import com.streamarr.transcode.v1.VideoCopyFeature;
 import com.streamarr.transcode.v1.VideoDecision;
+import com.streamarr.transcode.v1.VideoDynamicRange;
 import com.streamarr.transcode.v1.VideoMode;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
@@ -39,6 +49,7 @@ import io.grpc.stub.StreamObserver;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -49,13 +60,16 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Live Worker Connection Registry Tests")
@@ -578,6 +592,207 @@ class LiveWorkerConnectionRegistryTest {
         .singleElement()
         .isIn(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, stereo));
     assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, stereo)).hasSize(2);
+  }
+
+  // A worker that predates a rewrite ignores the field and would deliver the copy unchanged, so
+  // the server sends the job only to a worker that lists the rewrite (ADR 0036).
+  @ParameterizedTest
+  @EnumSource(
+      value = BitstreamRewrite.class,
+      names = {"BITSTREAM_REWRITE_UNSPECIFIED", "UNRECOGNIZED"},
+      mode = EnumSource.Mode.EXCLUDE)
+  @DisplayName(
+      "Should dispatch a copy that lists a rewrite only to a worker that lists the rewrite")
+  void shouldDispatchACopyThatListsARewriteOnlyToAWorkerThatListsTheRewrite(
+      BitstreamRewrite rewrite) {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var otherRewritesResponses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    var listingResponses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    var listingWorkerId = UUID.randomUUID();
+    var otherRewrites =
+        plannedOutputSupport()
+            .addAllBitstreamRewrites(
+                EnumSet.complementOf(
+                    EnumSet.of(
+                        rewrite,
+                        BitstreamRewrite.BITSTREAM_REWRITE_UNSPECIFIED,
+                        BitstreamRewrite.UNRECOGNIZED)));
+    registry.register(
+        WORKER_ID,
+        registrationSupporting(WORKER_ID, otherRewrites),
+        collecting(otherRewritesResponses));
+    var job = copyJob(pqCopy().addBitstreamRewrites(rewrite));
+
+    assertThat(registry.dispatch(job)).isEmpty();
+
+    registry.register(
+        listingWorkerId,
+        registrationSupporting(
+            listingWorkerId, plannedOutputSupport().addBitstreamRewrites(rewrite)),
+        collecting(listingResponses));
+
+    assertThat(registry.dispatch(job)).isPresent();
+    assertThat(otherRewritesResponses).noneMatch(EstablishWorkerSessionResponse::hasStartVariant);
+    assertThat(listingResponses)
+        .filteredOn(EstablishWorkerSessionResponse::hasStartVariant)
+        .singleElement()
+        .extracting(response -> response.getStartVariant().getJob())
+        .isEqualTo(job);
+  }
+
+  // A worker that predates the planned output refuses a copy that sets output_dynamic_range, and
+  // it ignores the Dolby Vision output and the static HDR metadata (ADR 0013).
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("plannedOutputCopies")
+  @DisplayName(
+      "Should dispatch a copy that carries a planned output only to a worker that lists the planned"
+          + " output")
+  void shouldDispatchACopyThatCarriesAPlannedOutputOnlyToAWorkerThatListsThePlannedOutput(
+      String plannedOutput, VideoDecision.Builder video) {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var listingWorkerId = UUID.randomUUID();
+    var listingResponses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    var everyRewrite =
+        WorkerCapabilities.newBuilder()
+            .addAllBitstreamRewrites(
+                EnumSet.complementOf(
+                    EnumSet.of(
+                        BitstreamRewrite.BITSTREAM_REWRITE_UNSPECIFIED,
+                        BitstreamRewrite.UNRECOGNIZED)));
+    registry.register(
+        WORKER_ID, registrationSupporting(WORKER_ID, everyRewrite), new CancellableObserver());
+    var job = copyJob(video);
+
+    assertThat(registry.dispatch(job)).isEmpty();
+
+    registry.register(
+        listingWorkerId,
+        registrationSupporting(listingWorkerId, plannedOutputSupport()),
+        collecting(listingResponses));
+
+    assertThat(registry.dispatch(job)).isPresent();
+    assertThat(listingResponses).anyMatch(EstablishWorkerSessionResponse::hasStartVariant);
+  }
+
+  static Stream<Arguments> plannedOutputCopies() {
+    return Stream.of(
+        Arguments.of("a PQ range", pqCopy()),
+        Arguments.of(
+            "a Dolby Vision output alone",
+            copyVideo()
+                .setDolbyVisionOutput(
+                    dolbyVisionOutput(DolbyVisionSampleEntry.DOLBY_VISION_SAMPLE_ENTRY_HVC1))),
+        Arguments.of(
+            "a mastering display alone",
+            copyVideo().setMasteringDisplay(MasteringDisplayColorVolume.getDefaultInstance())),
+        Arguments.of(
+            "a content light level alone",
+            copyVideo().setContentLightLevel(ContentLightLevel.getDefaultInstance())));
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "DOLBY_VISION_SAMPLE_ENTRY_DVH1, VIDEO_COPY_FEATURE_DVH1_SAMPLE_ENTRY,"
+        + " VIDEO_COPY_FEATURE_DAV1_SAMPLE_ENTRY",
+    "DOLBY_VISION_SAMPLE_ENTRY_DAV1, VIDEO_COPY_FEATURE_DAV1_SAMPLE_ENTRY,"
+        + " VIDEO_COPY_FEATURE_DVH1_SAMPLE_ENTRY"
+  })
+  @DisplayName(
+      "Should dispatch a Dolby Vision copy in a dvh1 or dav1 sample entry only to a worker that"
+          + " lists that sample entry")
+  void shouldDispatchADolbyVisionCopyInADvh1OrDav1SampleEntryOnlyToAWorkerThatListsIt(
+      DolbyVisionSampleEntry sampleEntry, VideoCopyFeature needed, VideoCopyFeature other) {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var listingWorkerId = UUID.randomUUID();
+    var listingResponses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    registry.register(
+        WORKER_ID,
+        registrationSupporting(WORKER_ID, plannedOutputSupport().addVideoCopyFeatures(other)),
+        new CancellableObserver());
+    var job = copyJob(pqCopy().setDolbyVisionOutput(dolbyVisionOutput(sampleEntry)));
+
+    assertThat(registry.dispatch(job)).isEmpty();
+
+    registry.register(
+        listingWorkerId,
+        registrationSupporting(
+            listingWorkerId, plannedOutputSupport().addVideoCopyFeatures(needed)),
+        collecting(listingResponses));
+
+    assertThat(registry.dispatch(job)).isPresent();
+    assertThat(listingResponses).anyMatch(EstablishWorkerSessionResponse::hasStartVariant);
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = DolbyVisionSampleEntry.class,
+      names = {"DOLBY_VISION_SAMPLE_ENTRY_HVC1", "DOLBY_VISION_SAMPLE_ENTRY_AV01"})
+  @DisplayName(
+      "Should dispatch a Dolby Vision copy in an hvc1 or av01 sample entry to a worker that lists"
+          + " only the planned output")
+  void
+      shouldDispatchADolbyVisionCopyInAnHvc1OrAv01SampleEntryToAWorkerThatListsOnlyThePlannedOutput(
+          DolbyVisionSampleEntry sampleEntry) {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    registry.register(
+        WORKER_ID,
+        registrationSupporting(WORKER_ID, plannedOutputSupport()),
+        new CancellableObserver());
+
+    assertThat(
+            registry.dispatch(
+                copyJob(pqCopy().setDolbyVisionOutput(dolbyVisionOutput(sampleEntry)))))
+        .isPresent();
+  }
+
+  @Test
+  @DisplayName(
+      "Should dispatch an encode with its planned range and a copy without one to a worker that"
+          + " lists no rewrite and no copy feature")
+  void shouldDispatchAnEncodeWithItsPlannedRangeAndAPlainCopyToAWorkerThatListsNoCopyFeature() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var registration = registration(WORKER_ID, 2).toBuilder();
+    registration.getCapabilitiesBuilder().addVideoEncoders(libx264Encoder());
+    registry.register(WORKER_ID, registration.build(), new CancellableObserver());
+    var encode = encodeJob("h264").toBuilder();
+    encode.getDecisionBuilder().getVideoBuilder().setOutputDynamicRange(sdrRange());
+
+    assertThat(registry.dispatch(encode.build())).isPresent();
+    assertThat(registry.dispatch(copyJob(copyVideo()))).isPresent();
+  }
+
+  @Test
+  @DisplayName(
+      "Should count free slots and offer execution targets only on workers that list a copy's"
+          + " rewrite")
+  void shouldCountFreeSlotsAndOfferTargetsOnlyOnWorkersThatListACopysRewrite() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var listingWorkerId = UUID.randomUUID();
+    registry.register(
+        WORKER_ID,
+        registrationSupporting(WORKER_ID, plannedOutputSupport()),
+        new CancellableObserver());
+    var stripping =
+        copyJob(
+                pqCopy()
+                    .addBitstreamRewrites(BitstreamRewrite.BITSTREAM_REWRITE_STRIP_DOLBY_VISION))
+            .getDecision();
+
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, stripping)).isZero();
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, stripping)).isEmpty();
+
+    var listingSessionId =
+        registry.register(
+            listingWorkerId,
+            registrationSupporting(
+                listingWorkerId,
+                plannedOutputSupport()
+                    .addBitstreamRewrites(BitstreamRewrite.BITSTREAM_REWRITE_STRIP_DOLBY_VISION)),
+            new CancellableObserver());
+
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, stripping)).isOne();
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, stripping))
+        .containsExactly(new ExecutionTargetId(listingSessionId.toString()));
   }
 
   @Test
@@ -1648,6 +1863,59 @@ class LiveWorkerConnectionRegistryTest {
     var registration = registration(workerId, 1).toBuilder();
     registration.getCapabilitiesBuilder().addProbeVersions(probeVersion);
     return registration.build();
+  }
+
+  private static WorkerRegistration registrationSupporting(
+      UUID workerId, WorkerCapabilities.Builder copySupport) {
+    var registration = registration(workerId, 1).toBuilder();
+    registration.getCapabilitiesBuilder().mergeFrom(copySupport.build());
+    return registration.build();
+  }
+
+  private static WorkerCapabilities.Builder plannedOutputSupport() {
+    return WorkerCapabilities.newBuilder()
+        .addVideoCopyFeatures(VideoCopyFeature.VIDEO_COPY_FEATURE_PLANNED_OUTPUT);
+  }
+
+  private static VariantJob copyJob(VideoDecision.Builder video) {
+    return variantJob().toBuilder()
+        .setDecision(
+            TranscodeDecision.newBuilder()
+                .setMode(TranscodeMode.TRANSCODE_MODE_REMUX)
+                .setVideo(video))
+        .build();
+  }
+
+  private static VideoDecision.Builder copyVideo() {
+    return VideoDecision.newBuilder()
+        .setMode(VideoMode.VIDEO_MODE_COPY)
+        .setCodecFamily(VideoCodecFamily.VIDEO_CODEC_FAMILY_HEVC);
+  }
+
+  private static VideoDecision.Builder pqCopy() {
+    return copyVideo()
+        .setOutputDynamicRange(
+            VideoDynamicRange.newBuilder()
+                .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
+                .setHdr10Plus(Presence.PRESENCE_ABSENT)
+                .setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance()));
+  }
+
+  private static VideoDynamicRange sdrRange() {
+    return VideoDynamicRange.newBuilder()
+        .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_SDR)
+        .setHdr10Plus(Presence.PRESENCE_ABSENT)
+        .setDolbyVisionAbsent(DolbyVisionAbsent.getDefaultInstance())
+        .build();
+  }
+
+  private static DolbyVisionOutput dolbyVisionOutput(DolbyVisionSampleEntry sampleEntry) {
+    return DolbyVisionOutput.newBuilder()
+        .setProfile(8)
+        .setLevel(6)
+        .setBaseLayerCompatibilityId(1)
+        .setSampleEntry(sampleEntry)
+        .build();
   }
 
   // The video is copied, so the job needs no video encoder.
