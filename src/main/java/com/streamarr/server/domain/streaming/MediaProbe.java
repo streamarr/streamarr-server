@@ -1,6 +1,8 @@
 package com.streamarr.server.domain.streaming;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
@@ -19,7 +21,7 @@ import lombok.NonNull;
  * names one. {@code audioChannelLayout} is the first audio stream's channel layout as ffprobe names
  * it, and is empty when the probe stored none, which every version before 7 does.
  */
-@Builder
+@Builder(toBuilder = true)
 public record MediaProbe(
     Duration duration,
     @NonNull OptionalDouble framerate,
@@ -105,6 +107,45 @@ public record MediaProbe(
     var sessionTrack = tracks.getFirst().index();
     return OptionalInt.of(
         (int) tracks.stream().filter(track -> track.index() < sessionTrack).count());
+  }
+
+  /**
+   * This probe with the audio track at {@code position}, counting from 0 among the file's audio
+   * tracks in stream order, as the session's audio track: it takes the first audio stream's place,
+   * and the probe's audio facts come from it. {@code position} must name one of the file's audio
+   * tracks.
+   */
+  public MediaProbe withSessionAudioTrackAt(int position) {
+    var inStreamOrder =
+        audioStreams().stream().sorted(Comparator.comparingInt(StreamInfo::index)).toList();
+    return withAudioFirst(inStreamOrder.get(position));
+  }
+
+  // The chosen stream takes the first audio stream's place, so every other stream keeps its order.
+  private MediaProbe withAudioFirst(StreamInfo chosen) {
+    var firstAudio = audioStreams().getFirst();
+    if (chosen == firstAudio) {
+      return this;
+    }
+
+    var reordered = new ArrayList<StreamInfo>(streams.size());
+    for (var stream : streams) {
+      if (stream == firstAudio) {
+        reordered.add(chosen);
+      }
+
+      if (stream != chosen) {
+        reordered.add(stream);
+      }
+    }
+
+    return toBuilder()
+        .streams(List.copyOf(reordered))
+        .audioCodec(chosen.codec().orElse(null))
+        .audioChannels(chosen.channels())
+        .audioChannelLayout(chosen.audioProperties().flatMap(AudioStreamProperties::channelLayout))
+        .audioBitrate(chosen.bitrate())
+        .build();
   }
 
   /**

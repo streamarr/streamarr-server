@@ -74,7 +74,19 @@ public class HlsStreamingService implements StreamingService {
 
     return playbackProbeService
         .read(mediaFileId)
-        .fold(probe -> startSession(command, mediaFile.get(), probe), Outcome::rejected);
+        .fold(
+            probe -> startSession(command, mediaFile.get(), withChosenAudioTrack(probe, command)),
+            Outcome::rejected);
+  }
+
+  private static MediaProbe withChosenAudioTrack(
+      MediaProbe probe, CreateStreamSessionCommand command) {
+    var position = command.audioTrackPosition();
+    if (position.isEmpty()) {
+      return probe;
+    }
+
+    return probe.withSessionAudioTrackAt(position.getAsInt());
   }
 
   private Outcome<StreamSession, CreateStreamSessionRejection> startSession(

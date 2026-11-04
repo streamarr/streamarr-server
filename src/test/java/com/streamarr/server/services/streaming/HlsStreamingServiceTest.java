@@ -5459,6 +5459,49 @@ class HlsStreamingServiceTest {
     assertThat(session.getDirectPlayAudioTrackPosition()).hasValue(0);
   }
 
+  @Test
+  @DisplayName("Should play the audio track that the request names when the session plays over HLS")
+  void shouldPlayTheAudioTrackThatTheRequestNamesWhenTheSessionPlaysOverHls() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra", "deu"));
+    var file = seedMediaFile();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId())
+                    .videoFormatConstraint(VideoFormatConstraint.COPY_OR_ENCODE)
+                    .audioTrackPosition(OptionalInt.of(1))
+                    .build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.HLS);
+    assertThat(session.getMediaProbe().audioStreams())
+        .first()
+        .extracting(StreamInfo::language)
+        .isEqualTo(Optional.of("fra"));
+    assertThat(session.getMediaProbe().sessionAudioTrackPosition()).hasValue(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should direct-play and name the audio track that the request names when the player selects"
+          + " an audio track")
+  void shouldDirectPlayAndNameTheAudioTrackThatTheRequestNamesWhenThePlayerSelectsAnAudioTrack() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra", "deu"));
+    var file = seedMediaFile();
+    var declaration = directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(true).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId())
+                    .capabilityDeclaration(declaration)
+                    .audioTrackPosition(OptionalInt.of(2))
+                    .build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
+    assertThat(session.getDirectPlayAudioTrackPosition()).hasValue(2);
+  }
+
   // One stereo AAC track for each language, in stream order after the video stream.
   private static MediaProbe directPlayableProbeWithAudioIn(String... languages) {
     var streams = new ArrayList<StreamInfo>();
