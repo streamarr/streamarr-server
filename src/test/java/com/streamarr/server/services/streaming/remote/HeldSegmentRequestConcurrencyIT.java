@@ -485,6 +485,11 @@ class HeldSegmentRequestConcurrencyIT {
     }
 
     @Override
+    public Optional<ExecutionTargetId> refusedCopyStart(UUID jobAttemptId) {
+      return delegate.refusedCopyStart(jobAttemptId);
+    }
+
+    @Override
     public boolean isHealthy() {
       return delegate.isHealthy();
     }
