@@ -15,6 +15,7 @@ import com.streamarr.server.services.concurrency.AdmittedTaskReport;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.filepath.FilepathSoftLinks;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
@@ -147,20 +148,8 @@ public class LibraryFileWalk {
   // A scan never walks through a soft link, so the watcher skips the same files: the file itself
   // and every folder from the library folder down to it must not be soft links.
   private boolean hasSoftLinkOnPath(Library library, Path path) {
-    if (Files.isSymbolicLink(path)) {
-      return true;
-    }
-
     var libraryFolder = FilepathCodec.decode(fileSystem, library.getFilepathUri());
-    for (var folder = path.getParent();
-        folder != null && folder.startsWith(libraryFolder);
-        folder = folder.getParent()) {
-      if (Files.isSymbolicLink(folder)) {
-        return true;
-      }
-    }
-
-    return false;
+    return FilepathSoftLinks.hasSoftLinkFrom(libraryFolder, path);
   }
 
   // Reads the entry itself, never a soft link's target, and skips an entry whose attributes cannot
