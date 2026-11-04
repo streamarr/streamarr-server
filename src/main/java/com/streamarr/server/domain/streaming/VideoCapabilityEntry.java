@@ -226,7 +226,7 @@ public record VideoCapabilityEntry(
   }
 
   private boolean acceptsDolbyVision(VideoStreamCopy copy) {
-    return switch (CopiedDolbyVision.of(copy.codecFamily(), copy.dynamicRange())) {
+    return switch (CopiedDolbyVision.of(copy)) {
       case CopiedDolbyVision.None _, CopiedDolbyVision.KeptUnderSdrBase _ -> true;
       case CopiedDolbyVision.Declarable(var profile, var level) -> listsDolbyVision(profile, level);
       case CopiedDolbyVision.Undeclarable _, CopiedDolbyVision.NeedsDolbyVisionSampleEntry _ ->

@@ -36,10 +36,12 @@ sealed interface CopiedDolbyVision {
    */
   record NeedsDolbyVisionSampleEntry() implements CopiedDolbyVision {}
 
-  static CopiedDolbyVision of(ProbedCodecFamily codecFamily, VideoDynamicRange range) {
+  static CopiedDolbyVision of(VideoStreamCopy copy) {
+    var range = copy.dynamicRange();
     return switch (range.dolbyVision()) {
       case DolbyVision.Unspecified _, DolbyVision.Absent _ -> new None();
-      case DolbyVision.Present present -> ofPresent(codecFamily, range.compatibleBase(), present);
+      case DolbyVision.Present present ->
+          ofPresent(copy.codecFamily(), range.compatibleBase(), present);
     };
   }
 

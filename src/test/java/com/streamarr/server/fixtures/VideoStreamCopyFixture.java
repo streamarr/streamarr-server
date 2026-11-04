@@ -15,7 +15,10 @@ import lombok.experimental.UtilityClass;
 @UtilityClass
 public class VideoStreamCopyFixture {
 
-  /** An SDR HEVC Main 10 copy at Main tier level 4.1, 10 bits, 1920×1080 and 30 fps. */
+  /**
+   * An SDR HEVC Main 10 copy at Main tier level 4.1, 10 bits, 1920×1080 and 30 fps, with no stored
+   * maximum frame rate.
+   */
   public static VideoStreamCopy.VideoStreamCopyBuilder sdrHevcCopyBuilder() {
     return VideoStreamCopy.builder()
         .codecFamily(ProbedCodecFamily.HEVC)
@@ -30,6 +33,7 @@ public class VideoStreamCopyFixture {
         .bitDepth(OptionalInt.of(10))
         .decodedSize(Optional.of(new PictureSize(1920, 1080)))
         .frameRate(OptionalDouble.of(30))
+        .maximumFrameRate(Optional.empty())
         .dynamicRange(VideoPlaybackFactsFixture.SDR_WITHOUT_DOLBY_VISION);
   }
 }
