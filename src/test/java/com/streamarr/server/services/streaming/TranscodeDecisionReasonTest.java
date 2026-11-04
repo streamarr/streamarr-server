@@ -204,6 +204,72 @@ class TranscodeDecisionReasonTest {
             DecisionReason.HDR10_PLUS_NOT_DECLARED));
   }
 
+  @Test
+  @DisplayName(
+      "Should name only what the accepting entry refused when a later copy plan strips Dolby Vision")
+  void shouldNameOnlyWhatTheAcceptingEntryRefusedWhenALaterCopyPlanStripsDolbyVision() {
+    var source = hevcMain10().dynamicRange(profile81()).build().probe();
+    var pqBases = List.of(CompatibleBase.SDR, CompatibleBase.PQ);
+    var smallDolbyVision =
+        hevcEntryBuilder()
+            .maxWidth(1280)
+            .maxHeight(720)
+            .compatibleBases(pqBases)
+            .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+            .dolbyVisionProfiles(List.of(profile81Capability()))
+            .build();
+    var fullSizePq =
+        hevcEntryBuilder()
+            .compatibleBases(pqBases)
+            .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+            .build();
+
+    var decision = decide(source, client(smallDolbyVision, fullSizePq));
+
+    assertThat(decision.transcodeMode().copiesVideo()).isTrue();
+    assertThat(decision.reasons()).containsExactly(DecisionReason.DOLBY_VISION_NOT_DECLARED);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("encodeOnlyDecisions")
+  @DisplayName(
+      "Should name why the copy was refused, and count no refusal, when the decision may only encode")
+  void shouldNameWhyTheCopyWasRefusedAndCountNoRefusalWhenTheDecisionMayOnlyEncode(
+      MediaProbe source, List<DecisionReason> expected) {
+    var meters = new SimpleMeterRegistry();
+    var encodeOnly =
+        new TranscodeDecisionService(
+                StreamingProperties.builder().targetSegmentDuration(Duration.ofSeconds(6)).build(),
+                meters)
+            .decide(
+                request(source, defaultDeclarationBuilder().build())
+                    .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(encodeOnly.transcodeMode().copiesVideo()).isFalse();
+    assertThat(encodeOnly.reasons()).containsExactlyElementsOf(expected);
+    assertThat(meters.find("streamarr.streaming.stream_copy_refusals").counter()).isNull();
+  }
+
+  static Stream<Arguments> encodeOnlyDecisions() {
+    return Stream.of(
+        Arguments.of(Named.of("a copyable source", Source.builder().build().probe()), List.of()),
+        Arguments.of(
+            Named.of("an HEVC source to an H.264 client", hevcMain10().build().probe()),
+            List.of(DecisionReason.VIDEO_CODEC_NOT_DECLARED)),
+        Arguments.of(
+            Named.of(
+                "a source whose keyframes leave an interval empty",
+                Source.builder()
+                    .keyframes(
+                        ProbeFixture.keyframesEvery(
+                            Duration.ofMillis(10_010), Duration.ofMinutes(10)))
+                    .build()
+                    .probe()),
+            List.of(DecisionReason.KEYFRAMES_TOO_SPARSE)));
+  }
+
   @ParameterizedTest(name = "{0}")
   @MethodSource("sourcesThatTheCopyRulesRefuse")
   @DisplayName("Should name the source property that rules out a copy when the video is encoded")
@@ -471,15 +537,17 @@ class TranscodeDecisionReasonTest {
         hevcEntryBuilder()
             .compatibleBases(everyBase)
             .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
-            .dolbyVisionProfiles(
-                List.of(
-                    DolbyVisionProfileCapability.builder()
-                        .profile(DolbyVisionProfile.PROFILE_8_1)
-                        .maxLevel(13)
-                        .build()))
+            .dolbyVisionProfiles(List.of(profile81Capability()))
             .hdr10Plus(true)
             .build(),
         h264EntryBuilder().compatibleBases(everyBase).maxBitDepth(10).build());
+  }
+
+  private static DolbyVisionProfileCapability profile81Capability() {
+    return DolbyVisionProfileCapability.builder()
+        .profile(DolbyVisionProfile.PROFILE_8_1)
+        .maxLevel(13)
+        .build();
   }
 
   private static VideoCodecProfileCapability h264(VideoCodecProfile profile, int maxLevel) {
