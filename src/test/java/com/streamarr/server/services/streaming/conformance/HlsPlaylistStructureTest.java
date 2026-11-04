@@ -270,18 +270,37 @@ class HlsPlaylistStructureTest {
     // RFC 8216 §4.3.4.2 makes FRAME-RATE optional, but AVPlayer drops a VIDEO-RANGE=PQ or HLG
     // variant without it and fails the item with NSURLErrorDomain -1002 before it fetches the media
     // playlist. A variant with SUPPLEMENTAL-CODECS announces an enhancement layer and is held to
-    // the same rule. No variant announces PQ, HLG or a supplemental codec until #396 copies HDR;
-    // the HDR copies whose frame rate the rule refused then fail here until #396 decides what they
-    // announce.
+    // the same rule. ADR 0013 makes one exception: an HDR copy whose frame rate is unknown still
+    // announces its range, because no encode can replace it (#446).
     @ParameterizedTest(name = "{0}")
-    @MethodSource("sessionsOfEveryVideoShape")
+    @MethodSource("sessionsAtAKnownFrameRate")
     @DisplayName(
-        "Should give FRAME-RATE to every STREAM-INF when it announces HDR or a supplemental codec")
-    void shouldGiveFrameRateToEveryStreamInfWhenItAnnouncesHdrOrASupplementalCodec(
-        String videoShape, StreamSession session) {
+        "Should give FRAME-RATE to every STREAM-INF that announces HDR or a supplemental codec when"
+            + " the frame rate is known")
+    void
+        shouldGiveFrameRateToEveryStreamInfThatAnnouncesHdrOrASupplementalCodecWhenTheFrameRateIsKnown(
+            String videoShape, StreamSession session) {
       var playlist = service.generateMultivariantPlaylist(session, TOKEN);
 
       assertFrameRateWhereAvPlayerRequiresIt(playlist);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("hdrCopiesWhoseFrameRateTheRuleRefused")
+    @DisplayName(
+        "Should announce the HDR range without FRAME-RATE when the copy's frame rate is unknown")
+    void shouldAnnounceTheHdrRangeWithoutFrameRateWhenTheCopysFrameRateIsUnknown(
+        String videoShape, StreamSession session) {
+      var playlist =
+          MultivariantPlaylist.parse(service.generateMultivariantPlaylist(session, TOKEN));
+
+      assertThat(playlist.streamInfs())
+          .singleElement()
+          .satisfies(
+              streamInf -> {
+                assertThat(streamInf.announcesHdrOrSupplementalCodec()).isTrue();
+                assertThat(streamInf.hasFrameRate()).isFalse();
+              });
     }
 
     @ParameterizedTest
@@ -320,15 +339,14 @@ class HlsPlaylistStructureTest {
       return Stream.concat(Stream.of(Arguments.of("encoded ladder", abrSession())), copies);
     }
 
-    static Stream<Arguments> sessionsOfEveryVideoShape() {
-      var refusedCopies =
-          copiedRanges()
-              .map(
-                  copied ->
-                      Arguments.of(
-                          copied.name() + " copy whose frame rate the rule refused",
-                          copySession(copied.range(), VideoPlaybackFactsFixture.refusedRule())));
-      return Stream.concat(sessionsAtAKnownFrameRate(), refusedCopies);
+    static Stream<Arguments> hdrCopiesWhoseFrameRateTheRuleRefused() {
+      return copiedRanges()
+          .filter(copied -> copied.range().compatibleBase() != CompatibleBase.SDR)
+          .map(
+              copied ->
+                  Arguments.of(
+                      copied.name() + " copy whose frame rate the rule refused",
+                      copySession(copied.range(), VideoPlaybackFactsFixture.refusedRule())));
     }
 
     private static Stream<CopiedRange> copiedRanges() {
