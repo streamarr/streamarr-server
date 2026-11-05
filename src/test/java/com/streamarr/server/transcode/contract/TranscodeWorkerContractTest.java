@@ -58,6 +58,7 @@ import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.VideoDecision;
 import com.streamarr.transcode.v1.VideoDynamicRange;
 import com.streamarr.transcode.v1.VideoEncoderBackend;
+import com.streamarr.transcode.v1.VideoEncodersChanged;
 import com.streamarr.transcode.v1.VideoMode;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
@@ -1525,6 +1526,93 @@ class TranscodeWorkerContractTest {
             tuple("target", 1, false, WorkerIdentity.getDescriptor().getFullName()),
             tuple("job_attempt_ids", 2, true, Uuid.getDescriptor().getFullName()),
             tuple("hold_limit", 3, false, Duration.getDescriptor().getFullName()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should replace the offered encoders and keep a software encoder beside a hardware one when a worker's hardware encoder fails")
+  void shouldReplaceTheOfferedEncodersAndKeepTheSoftwareEncoderWhenWorkersHardwareEncoderFails()
+      throws Exception {
+    var nvenc =
+        WorkerVerifiedVideoEncoder.newBuilder()
+            .setBackend(
+                encoderBackend(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc")
+                    .setKind(EncoderKind.ENCODER_KIND_HARDWARE))
+            .setKeyframeVerified(true)
+            .build();
+    var libx264 =
+        WorkerVerifiedVideoEncoder.newBuilder()
+            .setBackend(
+                encoderBackend(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264")
+                    .setKind(EncoderKind.ENCODER_KIND_SOFTWARE))
+            .setKeyframeVerified(true)
+            .build();
+    var registered =
+        WorkerCapabilities.newBuilder()
+            .addVideoEncoders(nvenc)
+            .addSoftwareVideoEncoders(libx264)
+            .build();
+    var withdrawn =
+        EstablishWorkerSessionRequest.newBuilder()
+            .setVideoEncodersChanged(VideoEncodersChanged.newBuilder().addVideoEncoders(libx264))
+            .build();
+    var failed =
+        JobAttemptFailed.newBuilder()
+            .setJobAttemptId(uuid(UUID.randomUUID()))
+            .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_HARDWARE_ENCODER_FAILED)
+            .build();
+
+    var parsedRegistration = WorkerCapabilities.parseFrom(registered.toByteArray());
+    var parsedChange = EstablishWorkerSessionRequest.parseFrom(withdrawn.toByteArray());
+    var parsedFailure = JobAttemptFailed.parseFrom(failed.toByteArray());
+
+    assertThat(parsedRegistration.getVideoEncodersList()).containsExactly(nvenc);
+    assertThat(parsedRegistration.getSoftwareVideoEncodersList()).containsExactly(libx264);
+    assertThat(parsedChange.getVideoEncodersChanged().getVideoEncodersList())
+        .containsExactly(libx264);
+    assertThat(parsedFailure.getFailure())
+        .isEqualTo(JobAttemptFailure.JOB_ATTEMPT_FAILURE_HARDWARE_ENCODER_FAILED);
+  }
+
+  @Test
+  @DisplayName("Should encode with the offered encoder when a job does not ask for software")
+  void shouldEncodeWithTheOfferedEncoderWhenJobDoesNotAskForSoftware() throws Exception {
+    var offered =
+        VideoDecision.newBuilder().setCodecFamily(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264);
+    var software = offered.clone().setSoftwareEncoder(true);
+
+    var parsedOffered = VideoDecision.parseFrom(offered.build().toByteArray());
+    var parsedSoftware = VideoDecision.parseFrom(software.build().toByteArray());
+
+    assertThat(parsedOffered.getSoftwareEncoder()).isFalse();
+    assertThat(parsedSoftware.getSoftwareEncoder()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the field numbers and types that workers build against when publishing the hardware encoder failure")
+  void shouldKeepTheFieldNumbersAndTypesThatWorkersBuildAgainstWhenPublishingHardwareFailure() {
+    var softwareEncoders =
+        WorkerCapabilities.getDescriptor().findFieldByName("software_video_encoders");
+    var softwareEncoder = VideoDecision.getDescriptor().findFieldByName("software_encoder");
+    var changed =
+        EstablishWorkerSessionRequest.getDescriptor().findFieldByName("video_encoders_changed");
+    var changedEncoders = VideoEncodersChanged.getDescriptor().findFieldByName("video_encoders");
+
+    assertThat(softwareEncoders.getNumber()).isEqualTo(7);
+    assertThat(softwareEncoders.isRepeated()).isTrue();
+    assertThat(softwareEncoders.getMessageType())
+        .isEqualTo(WorkerVerifiedVideoEncoder.getDescriptor());
+    assertThat(softwareEncoder.getNumber()).isEqualTo(19);
+    assertThat(softwareEncoder.getType()).isEqualTo(Type.BOOL);
+    assertThat(changed.getNumber()).isEqualTo(11);
+    assertThat(changed.getMessageType()).isEqualTo(VideoEncodersChanged.getDescriptor());
+    assertThat(changedEncoders.getNumber()).isEqualTo(1);
+    assertThat(changedEncoders.isRepeated()).isTrue();
+    assertThat(changedEncoders.getMessageType())
+        .isEqualTo(WorkerVerifiedVideoEncoder.getDescriptor());
+    assertThat(JobAttemptFailure.JOB_ATTEMPT_FAILURE_HARDWARE_ENCODER_FAILED.getNumber())
+        .isEqualTo(9);
   }
 
   private AudioDecision.Builder audioEncode() {
