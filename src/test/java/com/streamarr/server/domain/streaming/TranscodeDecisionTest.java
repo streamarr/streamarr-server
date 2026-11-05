@@ -27,6 +27,15 @@ class TranscodeDecisionTest {
   private static final VideoPlaybackFacts FACTS_WITHOUT_CODEC_STRING =
       VideoPlaybackFactsFixture.sdrH264FactsBuilder().codecString(Optional.empty()).build();
 
+  private static final AudioDecision COPIED_STEREO_AAC =
+      AudioDecision.builder()
+          .mode(AudioMode.COPY)
+          .codec("aac")
+          .channels(2)
+          .bitrate(128_000L)
+          .sourceCodecString(Optional.of("mp4a.40.2"))
+          .build();
+
   @ParameterizedTest
   @EnumSource(
       value = TranscodeMode.class,
@@ -112,6 +121,7 @@ class TranscodeDecisionTest {
       AudioChange change) {
     var decision =
         decisionBuilder(change.mode())
+            .audioDecision(change.startingAudio())
             .videoSource(Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()))
             .build();
     var audio = change.audio();
@@ -128,35 +138,36 @@ class TranscodeDecisionTest {
     return Stream.of(
         AudioChange.builder()
             .mode(TranscodeMode.REMUX)
+            .startingAudio(COPIED_STEREO_AAC)
             .audio(AudioDecision.stereoAac())
             .modeWithAudio(TranscodeMode.AUDIO_TRANSCODE)
             .build(),
         AudioChange.builder()
             .mode(TranscodeMode.AUDIO_TRANSCODE)
-            .audio(
-                AudioDecision.builder()
-                    .mode(AudioMode.COPY)
-                    .codec("aac")
-                    .channels(2)
-                    .bitrate(128_000L)
-                    .sourceCodecString(Optional.of("mp4a.40.2"))
-                    .build())
+            .startingAudio(AudioDecision.stereoAac())
+            .audio(COPIED_STEREO_AAC)
             .modeWithAudio(TranscodeMode.REMUX)
             .build(),
         AudioChange.builder()
             .mode(TranscodeMode.VIDEO_TRANSCODE)
+            .startingAudio(COPIED_STEREO_AAC)
             .audio(AudioDecision.stereoAac())
             .modeWithAudio(TranscodeMode.FULL_TRANSCODE)
             .build(),
         AudioChange.builder()
             .mode(TranscodeMode.FULL_TRANSCODE)
+            .startingAudio(AudioDecision.stereoAac())
             .audio(AudioDecision.none())
             .modeWithAudio(TranscodeMode.VIDEO_TRANSCODE)
             .build());
   }
 
   @Builder
-  record AudioChange(TranscodeMode mode, AudioDecision audio, TranscodeMode modeWithAudio) {}
+  record AudioChange(
+      TranscodeMode mode,
+      AudioDecision startingAudio,
+      AudioDecision audio,
+      TranscodeMode modeWithAudio) {}
 
   @ParameterizedTest
   @EnumSource(

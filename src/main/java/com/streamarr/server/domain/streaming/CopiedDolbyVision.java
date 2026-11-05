@@ -12,10 +12,11 @@ sealed interface CopiedDolbyVision {
   record None() implements CopiedDolbyVision {}
 
   /**
-   * Profile 8.2 or 9: the copy keeps its RPUs under the sample entry of its SDR base (ADR 0036), so
-   * it fits an entry that accepts the base codec and SDR.
+   * Profile 8.2 or 9: the copy keeps its RPUs under the sample entry of its SDR base (ADR 0036),
+   * hvc1 for profile 8.2 and avc1 for profile 9, so it fits an entry that accepts the base codec
+   * and SDR.
    */
-  record KeptUnderSdrBase() implements CopiedDolbyVision {}
+  record KeptUnderSdrBase(@NonNull VideoSampleEntry baseSampleEntry) implements CopiedDolbyVision {}
 
   /**
    * A profile that an entry can list, at the level that the configuration record names. Without a
@@ -25,12 +26,19 @@ sealed interface CopiedDolbyVision {
   record Declarable(@NonNull DolbyVisionProfile profile, int level) implements CopiedDolbyVision {}
 
   /**
-   * Dolby Vision that no entry accepts: profile 6 or 7, an unknown profile, a profile that the
-   * contract does not name, or a stream whose level neither its record nor the level table gives.
-   * Until streamarr/streamarr-server#652 stores a maximum frame rate, the table gives no level. A
-   * copy on a PQ or HLG base can still play with the Dolby Vision stripped (ADR 0013).
+   * Dolby Vision that no entry accepts: profile 6 or 7, or a profile that the contract does not
+   * name. A copy on a PQ or HLG base can still play with the Dolby Vision stripped (ADR 0013).
    */
   record Undeclarable() implements CopiedDolbyVision {}
+
+  /**
+   * Dolby Vision that no entry accepts because the probe's facts leave it unknown: neither the
+   * record nor the first RPU header names a profile, or neither the record nor the level table
+   * gives a level. Until streamarr/streamarr-server#652 stores a maximum frame rate, the table
+   * gives no level. A copy on a PQ or HLG base can still play with the Dolby Vision stripped (ADR
+   * 0013).
+   */
+  record Unknown() implements CopiedDolbyVision {}
 
   /**
    * Profile 5 or 10.0, which no entry accepts until the worker can write the Dolby Vision sample
@@ -57,11 +65,12 @@ sealed interface CopiedDolbyVision {
     var base = copy.dynamicRange().compatibleBase();
     var profileNumber = profileNumberFromRecordOrRpuHeader(codecFamily, present);
     if (profileNumber.isEmpty()) {
-      return new Undeclarable();
+      return new Unknown();
     }
 
-    if (base == CompatibleBase.SDR && isSdrBaseProfile(codecFamily, profileNumber.getAsInt())) {
-      return new KeptUnderSdrBase();
+    var sdrBaseSampleEntry = sdrBaseSampleEntry(codecFamily, profileNumber.getAsInt());
+    if (base == CompatibleBase.SDR && sdrBaseSampleEntry.isPresent()) {
+      return new KeptUnderSdrBase(sdrBaseSampleEntry.get());
     }
 
     // Profile 5 has no compatible base whatever the signaled transfer claims, so a PQ transfer
@@ -72,9 +81,13 @@ sealed interface CopiedDolbyVision {
     }
 
     var profile = namedProfile(codecFamily, profileNumber.getAsInt(), base);
-    var level = levelFromRecordOrTable(copy, present);
-    if (profile.isEmpty() || level.isEmpty()) {
+    if (profile.isEmpty()) {
       return new Undeclarable();
+    }
+
+    var level = levelFromRecordOrTable(copy, present);
+    if (level.isEmpty()) {
+      return new Unknown();
     }
 
     if (profile.get().compatibleBase() == CompatibleBase.NONE) {
@@ -143,11 +156,14 @@ sealed interface CopiedDolbyVision {
     return OptionalInt.of(8);
   }
 
-  private static boolean isSdrBaseProfile(ProbedCodecFamily codecFamily, int profileNumber) {
+  // The sample entry of the SDR base under which a profile 8.2 or 9 copy keeps its RPUs, or empty
+  // for a profile without an SDR base.
+  private static Optional<VideoSampleEntry> sdrBaseSampleEntry(
+      ProbedCodecFamily codecFamily, int profileNumber) {
     return switch (codecFamily) {
-      case HEVC -> profileNumber == 8;
-      case H264 -> profileNumber == 9;
-      case AV1, OTHER -> false;
+      case HEVC -> Optional.of(VideoSampleEntry.HVC1).filter(_ -> profileNumber == 8);
+      case H264 -> Optional.of(VideoSampleEntry.AVC1).filter(_ -> profileNumber == 9);
+      case AV1, OTHER -> Optional.empty();
     };
   }
 

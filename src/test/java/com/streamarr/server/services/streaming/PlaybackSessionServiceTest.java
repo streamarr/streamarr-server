@@ -11,19 +11,23 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.defaultVariantBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.directPlaySessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
-import static com.streamarr.server.fixtures.StreamSessionFixture.remuxDecision;
+import static com.streamarr.server.fixtures.StreamSessionFixture.remuxDecisionBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
+import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
+import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.ShortCopy;
 import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -50,6 +54,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -107,6 +112,243 @@ class PlaybackSessionServiceTest {
               assertThat(ready.streamSessionId()).isNotEqualTo(snapshot.playbackSessionId());
               assertThat(streams.getAllSessions()).containsExactly(ready.session());
             });
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the stream decision's reasons, source and output when playback starts with an"
+          + " encode")
+  void shouldKeepTheStreamDecisionsReasonsSourceAndOutputWhenPlaybackStartsWithAnEncode() {
+    streams.copiesTheSource = false;
+    streams.encodeReasons = List.of(DecisionReason.VIDEO_CODEC_PROFILE_NOT_DECLARED);
+
+    var snapshot = accepted(service.start(startCommand().build()));
+
+    assertThat(snapshot.decisions())
+        .singleElement()
+        .satisfies(
+            decision -> {
+              assertThat(decision.formatAttempt()).isEqualTo(1);
+              assertThat(decision.streamSessionId())
+                  .isEqualTo(snapshot.currentFormatAttempt().streamSessionId());
+              assertThat(decision.reasons())
+                  .containsExactly(DecisionReason.VIDEO_CODEC_PROFILE_NOT_DECLARED);
+              assertThat(decision.video().delivery()).isEqualTo(PlaybackDelivery.ENCODE);
+              assertThat(decision.video().source())
+                  .extracting(VideoFormat::codec, VideoFormat::width, VideoFormat::height)
+                  .containsExactly("h264", 1920, 1080);
+              assertThat(decision.video().output())
+                  .extracting(
+                      VideoFormat::codec,
+                      VideoFormat::width,
+                      VideoFormat::height,
+                      VideoFormat::bitrate)
+                  .containsExactly("h264", 1280, 720, OptionalLong.of(3_000_000L));
+              assertThat(decision.audio())
+                  .hasValueSatisfying(
+                      audio -> {
+                        assertThat(audio.delivery()).isEqualTo(PlaybackDelivery.ENCODE);
+                        assertThat(audio.source().codec()).isEqualTo("aac");
+                        assertThat(audio.output())
+                            .extracting(AudioFormat::codec, AudioFormat::channels)
+                            .containsExactly("aac", OptionalInt.of(2));
+                      });
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should report the measured source rate when the frame-rate rule's output rate is lower")
+  void shouldReportTheMeasuredSourceRateWhenTheFrameRateRulesOutputRateIsLower() {
+    var facts =
+        VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+            .frameRateRule(
+                VideoPlaybackFactsFixture.packetScanRule(119.88, new Fraction(60_000, 1_001)))
+            .build();
+    streams.sourceProbe = defaultProbeBuilder().videoPlaybackFacts(Optional.of(facts)).build();
+
+    var snapshot = accepted(service.start(startCommand().build()));
+
+    assertThat(snapshot.decisions())
+        .singleElement()
+        .satisfies(
+            decision -> {
+              assertThat(decision.video().delivery()).isEqualTo(PlaybackDelivery.COPY);
+              assertThat(decision.video().source().frameRate()).hasValue(119.88);
+              assertThat(decision.video().output().frameRate()).hasValue(119.88);
+            });
+  }
+
+  @Test
+  @DisplayName("Should start playback and name the codec unknown when the probe named no codec")
+  void shouldStartPlaybackAndNameTheCodecUnknownWhenTheProbeNamedNoCodec() {
+    streams.copiesTheSource = false;
+    streams.sourceProbe = defaultProbeBuilder().videoCodec(null).build();
+
+    var snapshot = accepted(service.start(startCommand().build()));
+
+    assertThat(snapshot.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+    assertThat(snapshot.decisions())
+        .singleElement()
+        .satisfies(
+            decision -> {
+              assertThat(decision.video().source().codec()).isEqualTo("unknown");
+              assertThat(decision.video().output().codec()).isEqualTo("h264");
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the copy's reasons and add the copy failure to the encode's when a copy falls"
+          + " back to an encode")
+  void shouldKeepTheCopysReasonsAndAddTheCopyFailureToTheEncodesWhenACopyFallsBackToAnEncode() {
+    streams.copyReasons = List.of(DecisionReason.DOLBY_VISION_NOT_DECLARED);
+    streams.encodeReasons = List.of(DecisionReason.AUDIO_CODEC_NOT_DECLARED);
+    var command = startCommand().build();
+    var initial = accepted(service.start(command));
+
+    var recovered = service.reportFormatFailure(report(initial, command).build()).orElseThrow();
+
+    assertThat(recovered.decisions())
+        .extracting(
+            PlaybackDecision::formatAttempt,
+            decision -> decision.video().delivery(),
+            PlaybackDecision::reasons)
+        .containsExactly(
+            tuple(1, PlaybackDelivery.COPY, List.of(DecisionReason.DOLBY_VISION_NOT_DECLARED)),
+            tuple(
+                2,
+                PlaybackDelivery.ENCODE,
+                List.of(DecisionReason.COPY_FAILED, DecisionReason.AUDIO_CODEC_NOT_DECLARED)));
+    assertThat(recovered.decisions().getFirst().video().output())
+        .isEqualTo(recovered.decisions().getFirst().video().source());
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the source as the direct play's output and name the direct-play failure when"
+          + " direct play falls back to HLS")
+  void shouldKeepTheSourceAsTheDirectPlaysOutputAndNameTheDirectPlayFailureWhenItFallsBack() {
+    streams.sourceProbe = defaultProbeBuilder().audioChannels(OptionalInt.of(6)).build();
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlay(service, command);
+
+    var recovered = service.reportFormatFailure(report(directPlay, command).build()).orElseThrow();
+
+    assertThat(recovered.decisions())
+        .extracting(decision -> decision.video().delivery(), PlaybackDecision::reasons)
+        .containsExactly(
+            tuple(PlaybackDelivery.DIRECT_PLAY, List.of()),
+            tuple(PlaybackDelivery.COPY, List.of(DecisionReason.DIRECT_PLAY_FAILED)));
+    var direct = recovered.decisions().getFirst();
+    assertThat(direct.video().output()).isEqualTo(direct.video().source());
+    assertThat(direct.audio())
+        .hasValueSatisfying(
+            audio -> {
+              assertThat(audio.delivery()).isEqualTo(PlaybackDelivery.DIRECT_PLAY);
+              assertThat(audio.source().channels()).hasValue(6);
+              assertThat(audio.output()).isEqualTo(audio.source());
+            });
+  }
+
+  // Decision 131: an unknown source channel count stays unknown; it never borrows the output's.
+  // A count of zero says no more than a missing one.
+  @ParameterizedTest
+  @MethodSource("unknownChannelCounts")
+  @DisplayName(
+      "Should leave the source's channel count unknown when the probe reported none and the audio"
+          + " encodes")
+  void shouldLeaveTheSourcesChannelCountUnknownWhenTheProbeReportedNoneAndTheAudioEncodes(
+      OptionalInt reported) {
+    streams.copiesTheSource = false;
+    streams.sourceProbe = defaultProbeBuilder().audioChannels(reported).build();
+
+    var snapshot = accepted(service.start(startCommand().build()));
+
+    assertThat(snapshot.decisions().getFirst().audio())
+        .hasValueSatisfying(
+            audio -> {
+              assertThat(audio.source().channels()).isEmpty();
+              assertThat(audio.output().channels()).hasValue(2);
+            });
+  }
+
+  @ParameterizedTest
+  @MethodSource("unknownChannelCounts")
+  @DisplayName(
+      "Should show the direct play's audio with an unknown channel count when the probe reported"
+          + " none")
+  void shouldShowTheDirectPlaysAudioWithAnUnknownChannelCountWhenTheProbeReportedNone(
+      OptionalInt reported) {
+    streams.sourceProbe = defaultProbeBuilder().audioChannels(reported).build();
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+
+    var directPlay = startDirectPlay(service, command);
+
+    assertThat(directPlay.decisions().getFirst().audio())
+        .hasValueSatisfying(
+            audio -> {
+              assertThat(audio.delivery()).isEqualTo(PlaybackDelivery.DIRECT_PLAY);
+              assertThat(audio.source().codec()).isEqualTo("aac");
+              assertThat(audio.source().channels()).isEmpty();
+              assertThat(audio.output()).isEqualTo(audio.source());
+            });
+  }
+
+  // A copy delivers the source's audio as it is, so its output repeats the source's channel count
+  // and bitrate, known or not, instead of the planning defaults.
+  @ParameterizedTest
+  @MethodSource("copiedAudioSources")
+  @DisplayName("Should describe the copied audio as its source when the audio copies")
+  void shouldDescribeTheCopiedAudioAsItsSourceWhenTheAudioCopies(MediaProbe source) {
+    streams.sourceProbe = source;
+
+    var snapshot = accepted(service.start(startCommand().build()));
+
+    assertThat(snapshot.decisions().getFirst().audio())
+        .hasValueSatisfying(
+            audio -> {
+              assertThat(audio.delivery()).isEqualTo(PlaybackDelivery.COPY);
+              assertThat(audio.source().channels()).isEqualTo(source.audioChannels());
+              assertThat(audio.source().bitrate()).isEqualTo(source.audioBitrate());
+              assertThat(audio.output()).isEqualTo(audio.source());
+            });
+  }
+
+  static Stream<Named<MediaProbe>> copiedAudioSources() {
+    return Stream.of(
+        Named.of(
+            "no channel count or bitrate",
+            defaultProbeBuilder()
+                .audioChannels(OptionalInt.empty())
+                .audioBitrate(OptionalLong.empty())
+                .build()),
+        Named.of(
+            "six channels at 640 kb/s",
+            defaultProbeBuilder()
+                .audioChannels(OptionalInt.of(6))
+                .audioBitrate(OptionalLong.of(640_000L))
+                .build()));
+  }
+
+  static Stream<Named<OptionalInt>> unknownChannelCounts() {
+    return Stream.of(
+        Named.of("no channel count", OptionalInt.empty()),
+        Named.of("a channel count of zero", OptionalInt.of(0)));
+  }
+
+  @Test
+  @DisplayName("Should name the encode failure when an encode falls back to another encode")
+  void shouldNameTheEncodeFailureWhenAnEncodeFallsBackToAnotherEncode() {
+    streams.copiesTheSource = false;
+    var command = startCommand().build();
+    var initial = accepted(service.start(command));
+
+    var recovered = service.reportFormatFailure(report(initial, command).build()).orElseThrow();
+
+    assertThat(recovered.decisions())
+        .extracting(PlaybackDecision::reasons)
+        .containsExactly(List.of(), List.of(DecisionReason.ENCODE_FAILED));
   }
 
   // ADR 0052: an encode that Original reaches plays in Auto, and the playback session says so.
@@ -2020,6 +2262,14 @@ class PlaybackSessionServiceTest {
         });
   }
 
+  private static final QualityVariant ENCODED_720P =
+      defaultVariantBuilder()
+          .width(1280)
+          .height(720)
+          .videoBitrate(3_000_000L)
+          .label("720p")
+          .build();
+
   private static class ChildStreams implements StreamingService {
     private final ConcurrentHashMap<UUID, StreamSession> sessions = new ConcurrentHashMap<>();
     private final List<CreateStreamSessionCommand> createdCommands = new CopyOnWriteArrayList<>();
@@ -2033,6 +2283,8 @@ class PlaybackSessionServiceTest {
     private boolean copiesTheSource = true;
     // Whether the declaration covers the source for direct play, as the transcode decision finds.
     private boolean coversTheSourceForDirectPlay;
+    private List<DecisionReason> copyReasons = List.of();
+    private List<DecisionReason> encodeReasons = List.of();
     private MediaProbe sourceProbe = defaultProbeBuilder().build();
 
     @Override
@@ -2077,10 +2329,15 @@ class PlaybackSessionServiceTest {
       }
 
       if (constraint == VideoFormatConstraint.ENCODE_ONLY || !copiesTheSource) {
-        return defaultSessionBuilder().transcodeDecision(fullTranscodeDecision("h264"));
+        return defaultSessionBuilder()
+            .transcodeDecision(
+                fullTranscodeDecision("h264").toBuilder().reasons(encodeReasons).build())
+            .variants(List.of(ENCODED_720P));
       }
 
-      return defaultSessionBuilder().transcodeDecision(remuxDecision());
+      return defaultSessionBuilder()
+          .transcodeDecision(remuxDecisionBuilder().reasons(copyReasons).build())
+          .variants(List.of());
     }
 
     @Override

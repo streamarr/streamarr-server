@@ -27,12 +27,17 @@ public record AudioCapabilityEntry(
    * A stream whose channel count is unknown is not accepted.
    */
   public boolean acceptsDirectPlay(@NonNull StreamInfo stream, @NonNull SourceContainer container) {
-    if (!directPlayContainers.contains(container) || !namesCodecOf(stream)) {
+    if (!listsDirectPlayContainer(container) || !namesCodecOf(stream)) {
       return false;
     }
 
     var channels = stream.channels();
     return channels.isPresent() && channels.getAsInt() > 0 && channels.getAsInt() <= maxChannels;
+  }
+
+  /** Whether this entry lists the source container for direct play. */
+  public boolean listsDirectPlayContainer(@NonNull SourceContainer container) {
+    return directPlayContainers.contains(container);
   }
 
   // An AAC stream also needs a codec string that names an AAC profile that the declaration covers.
