@@ -43,7 +43,8 @@ when {
 };
 
 // ADR 0043: a viewer sets the language preferences of the Profile it watches as, and that
-// Profile's overrides of titles, while the Profile is still available in the context Household.
+// Profile's overrides of titles, while the Account is enabled and the Profile is still available
+// in the context Household.
 @id("set-language-preferences-of-the-selected-available-profile")
 permit (
   principal,
@@ -51,6 +52,7 @@ permit (
   resource
 )
 when {
+  principal has enabled && principal.enabled &&
   principal has contextHouseholdUsable && principal.contextHouseholdUsable &&
   principal has selectedProfile && principal.selectedProfile == resource &&
   resource has availableInContext && resource.availableInContext

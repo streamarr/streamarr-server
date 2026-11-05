@@ -336,6 +336,18 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
+    @DisplayName("Should deny language preferences when the Account is disabled")
+    void shouldDenyLanguagePreferencesWhenTheAccountIsDisabled() {
+      var identity =
+          identityBuilder().scope(TokenScope.PROFILE).profileId(personal.getId()).build();
+      account.setEnabled(false);
+      accounts.save(account);
+
+      assertThat(decide(identity, new Intent.SetLanguagePreferences(personal.getId())))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
     @DisplayName("Should deny language preferences when the selected Profile is unknown")
     void shouldDenyLanguagePreferencesWhenTheSelectedProfileIsUnknown() {
       var missing = UUID.randomUUID();
