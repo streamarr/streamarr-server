@@ -19,8 +19,11 @@ final class PeakSegmentBitRate {
 
   private PeakSegmentBitRate() {}
 
-  /** The bytes that a media segment delivers for one track, and its EXTINF duration. */
-  record SegmentSize(BigDecimal bytes, BigDecimal extinfSeconds) {}
+  /**
+   * The bytes that a media segment delivers for one track, its EXTINF duration, and the samples of
+   * the track that it holds.
+   */
+  record SegmentSize(BigDecimal bytes, BigDecimal extinfSeconds, BigInteger samples) {}
 
   /**
    * The peak in bits per second, rounded up and at most {@link Long#MAX_VALUE}, of segments whose

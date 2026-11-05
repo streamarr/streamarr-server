@@ -210,6 +210,9 @@ final class WorkerSessionGrpcService
         case PROBE_STREAM_MEASUREMENT_PART ->
             acceptStreamMeasurementPart(request.getProbeStreamMeasurementPart());
         case PROBE_CAPACITY_CHANGED -> changeProbeCapacity(request.getProbeCapacityChanged());
+        case JOB_ATTEMPT_PROGRESS ->
+            workerConnections.reportProgress(
+                authenticatedWorkerId, workerSessionId, request.getJobAttemptProgress());
         default ->
             log.warn(
                 "Ignoring unexpected {} event on established session of worker {}",

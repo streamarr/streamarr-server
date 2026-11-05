@@ -2637,8 +2637,8 @@ class HlsStreamingServiceTest {
   }
 
   // ADR 0052: Original encodes a source that it cannot copy, and that encode plays Auto's ladder
-  // within the viewer's limits. Keyframes 10.01 s apart leave the 6 s interval [12 s, 18 s)
-  // without one, so no copy carries this progressive source. A maximum of 0 is no maximum.
+  // within the viewer's limits. The probe reported no keyframes, so no copy carries this
+  // progressive source. A maximum of 0 is no maximum.
   @ParameterizedTest
   @CsvSource({"0, 0", "2000000, 0", "0, 720"})
   @DisplayName(
@@ -2647,10 +2647,7 @@ class HlsStreamingServiceTest {
   void shouldOfferAutosLadderWithinTheViewersLimitsWhenOriginalEncodesAProgressiveSource(
       int maxBitrate, int maxHeight) {
     probeResults.setDefaultProbe(
-        defaultProbeBuilder()
-            .keyframes(
-                ProbeFixture.keyframesEvery(Duration.ofMillis(10_010), Duration.ofMinutes(120)))
-            .build());
+        defaultProbeBuilder().keyframes(new KeyframeKnowledge.NotReported()).build());
     var autoOptions =
         StreamingOptions.builder()
             .quality(VideoQuality.AUTO)
@@ -2760,24 +2757,32 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should encode the video when a segment interval of the source holds no keyframe")
-  void shouldEncodeTheVideoWhenASegmentIntervalOfTheSourceHoldsNoKeyframe() {
-    // At the 6 s period, keyframes 10.01 s apart leave the interval [12 s, 18 s) without one.
+  @DisplayName(
+      "Should copy the video on a merged segment list when the source's keyframes lie 10 s apart")
+  void shouldCopyTheVideoOnAMergedSegmentListWhenTheSourcesKeyframesLieTenSecondsApart() {
+    // At the 6 s period, the keyframes at 0, 10, 20 and 30 s leave the slots [12 s, 18 s) and
+    // [24 s, 30 s) without one, so each joins the segment before it.
     probeResults.setDefaultProbe(
         defaultProbeBuilder()
-            .keyframes(
-                ProbeFixture.keyframesEvery(Duration.ofMillis(10_010), Duration.ofMinutes(120)))
+            .duration(Duration.ofSeconds(36))
+            .keyframes(ProbeFixture.keyframesEvery(Duration.ofSeconds(10), Duration.ofSeconds(36)))
             .build());
     var file = seedMediaFile();
 
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var playlist = mediaPlaylist(session);
 
-    assertThat(session.getTranscodeDecision().transcodeMode())
-        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(extinfDurations(playlist))
+        .containsExactly("10.000000", "10.000000", "10.000000", "6.000000");
+    assertThat(playlist).contains("#EXT-X-TARGETDURATION:10\n");
     assertThat(transcodeExecutor.getStartedRequests())
-        .isNotEmpty()
-        .extracting(request -> request.transcodeDecision().transcodeMode())
-        .containsOnly(TranscodeMode.VIDEO_TRANSCODE);
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.segmentStartSlots()).containsExactly(0, 1, 3, 5);
+              assertThat(request.mediaSegmentCount()).isEqualTo(4);
+            });
   }
 
   @Test
@@ -2807,10 +2812,11 @@ class HlsStreamingServiceTest {
         .isEqualTo(3);
   }
 
+  // No duration bound limits a merged segment (ADR 0037): the segment that the keyframe at 6 s
+  // opens takes every later slot and runs to the end of the 2 h source.
   @Test
-  @DisplayName("Should encode the video when the source's keyframes stop long before the media end")
-  void shouldEncodeTheVideoWhenTheSourcesKeyframesStopLongBeforeTheMediaEnd() {
-    // A copy would advertise one final segment from 6 s to the end of the 2 h source.
+  @DisplayName("Should copy the video when the source's keyframes stop long before the media end")
+  void shouldCopyTheVideoWhenTheSourcesKeyframesStopLongBeforeTheMediaEnd() {
     probeResults.setDefaultProbe(
         defaultProbeBuilder()
             .duration(Duration.ofMinutes(120))
@@ -2820,8 +2826,12 @@ class HlsStreamingServiceTest {
 
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
-    assertThat(session.getTranscodeDecision().transcodeMode())
-        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(extinfDurations(mediaPlaylist(session))).containsExactly("6.000000", "7194.000000");
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(TranscodeRequest::segmentStartSlots)
+        .isEqualTo(List.of(0, 1));
   }
 
   @ParameterizedTest(name = "{0}")

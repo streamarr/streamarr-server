@@ -307,13 +307,8 @@ class TranscodeDecisionReasonTest {
             List.of(DecisionReason.VIDEO_CODEC_NOT_DECLARED)),
         Arguments.of(
             Named.of(
-                "a source whose keyframes leave an interval empty",
-                Source.builder()
-                    .keyframes(
-                        ProbeFixture.keyframesEvery(
-                            Duration.ofMillis(10_010), Duration.ofMinutes(10)))
-                    .build()
-                    .probe()),
+                "a source whose keyframes open no segment",
+                Source.builder().keyframes(ProbeFixture.keyframesBeforeTheStart()).build().probe()),
             List.of(DecisionReason.KEYFRAMES_TOO_SPARSE)));
   }
 
@@ -410,13 +405,8 @@ class TranscodeDecisionReasonTest {
             DecisionReason.KEYFRAMES_UNKNOWN),
         Arguments.of(
             Named.of(
-                "a source whose keyframes leave an interval empty",
-                Source.builder()
-                    .keyframes(
-                        ProbeFixture.keyframesEvery(
-                            Duration.ofMillis(10_010), Duration.ofMinutes(10)))
-                    .build()
-                    .probe()),
+                "a source whose keyframes open no segment",
+                Source.builder().keyframes(ProbeFixture.keyframesBeforeTheStart()).build().probe()),
             DecisionReason.KEYFRAMES_TOO_SPARSE));
   }
 

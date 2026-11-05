@@ -17,6 +17,7 @@ import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
+import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
 import com.streamarr.transcode.v1.AudioChannelLayout;
 import com.streamarr.transcode.v1.AudioDecision;
 import com.streamarr.transcode.v1.AudioMode;
@@ -27,6 +28,7 @@ import com.streamarr.transcode.v1.DolbyVisionAbsent;
 import com.streamarr.transcode.v1.DolbyVisionOutput;
 import com.streamarr.transcode.v1.DolbyVisionSampleEntry;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
+import com.streamarr.transcode.v1.JobAttemptProgress;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.MasteringDisplayColorVolume;
 import com.streamarr.transcode.v1.MediaSourceRef;
@@ -51,6 +53,7 @@ import io.grpc.stub.StreamObserver;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
@@ -175,6 +178,66 @@ class LiveWorkerConnectionRegistryTest {
 
     assertThat(held.wake().await(Duration.ZERO)).isTrue();
     assertThat(held.isRunning()).isFalse();
+  }
+
+  // A held request re-checks its stall deadline and its stream session's access on each pass, so
+  // progress on a long merged segment must start a pass before the deadline or idle timeout.
+  @Test
+  @DisplayName("Should wake the requests held on a variant when its job attempt reports progress")
+  void shouldWakeRequestsHeldOnVariantWhenItsJobAttemptReportsProgress() throws Exception {
+    var held = HeldVariant.dispatch();
+
+    held.registry()
+        .reportProgress(
+            WORKER_ID,
+            held.workerSessionId(),
+            JobAttemptProgress.newBuilder().setJobAttemptId(held.job().getJobAttemptId()).build());
+
+    assertThat(held.wake().await(Duration.ZERO)).isTrue();
+  }
+
+  // A woken request takes the session lock and measures the stall deadline at once, so the
+  // progress must reach the stall clock before the wake releases the request.
+  @Test
+  @DisplayName(
+      "Should publish a job attempt's progress before it wakes the requests held on its variant")
+  void shouldPublishAJobAttemptsProgressBeforeItWakesTheRequestsHeldOnItsVariant() {
+    var heldRequests = new HeldSegmentRequests(new SimpleMeterRegistry());
+    var job = variantJob();
+    var wake =
+        heldRequests.nextWake(
+            fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel());
+    var wokenAtPublish = new ArrayList<Boolean>();
+    var registry =
+        LiveWorkerConnectionRegistry.builder()
+            .eventPublisher(
+                event -> {
+                  if (event instanceof JobAttemptProgressedEvent) {
+                    wokenAtPublish.add(hasFired(wake));
+                  }
+                })
+            .configuration(WorkerSessionServerConfiguration.builder().build())
+            .meterRegistry(new SimpleMeterRegistry())
+            .heldRequests(heldRequests)
+            .build();
+    var workerSessionId = registry.register(WORKER_ID, registration(), new CancellableObserver());
+    assertThat(registry.dispatch(job)).isPresent();
+
+    registry.reportProgress(
+        WORKER_ID,
+        workerSessionId,
+        JobAttemptProgress.newBuilder().setJobAttemptId(job.getJobAttemptId()).build());
+
+    assertThat(wokenAtPublish).containsExactly(false);
+  }
+
+  private static boolean hasFired(HeldSegmentRequests.Wake wake) {
+    try {
+      return wake.await(Duration.ZERO);
+    } catch (InterruptedException _) {
+      Thread.currentThread().interrupt();
+      return false;
+    }
   }
 
   @Test

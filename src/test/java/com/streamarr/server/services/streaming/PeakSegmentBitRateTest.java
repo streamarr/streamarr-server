@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.services.streaming.PeakSegmentBitRate.SegmentSize;
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -81,12 +82,14 @@ class PeakSegmentBitRateTest {
   @Test
   @DisplayName("Should advertise at most the largest bit rate when the bytes exceed what it counts")
   void shouldAdvertiseAtMostTheLargestBitRateWhenTheBytesExceedWhatItCounts() {
-    var segment = new SegmentSize(new BigDecimal(Long.MAX_VALUE), new BigDecimal("6.000000"));
+    var segment =
+        new SegmentSize(new BigDecimal(Long.MAX_VALUE), new BigDecimal("6.000000"), BigInteger.ONE);
 
     assertThat(PeakSegmentBitRate.of(List.of(segment), 6)).isEqualTo(Long.MAX_VALUE);
   }
 
   private static SegmentSize size(long bytes, String extinfSeconds) {
-    return new SegmentSize(BigDecimal.valueOf(bytes), new BigDecimal(extinfSeconds));
+    return new SegmentSize(
+        BigDecimal.valueOf(bytes), new BigDecimal(extinfSeconds), BigInteger.ONE);
   }
 }

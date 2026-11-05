@@ -17,6 +17,7 @@ import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
+import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.transcode.v1.BackgroundProbeCapacityControl;
@@ -24,6 +25,7 @@ import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
+import com.streamarr.transcode.v1.JobAttemptProgress;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeCancelReason;
@@ -623,7 +625,7 @@ final class LiveWorkerConnectionRegistry {
   }
 
   private void publishTerminalFailure(VariantJob job, JobAttemptFailed failed) {
-    var failure = WorkerConnection.terminalFailure(failed);
+    var failure = WorkerConnection.terminalFailure(job, failed);
     if (failure.isEmpty()) {
       return;
     }
@@ -697,6 +699,44 @@ final class LiveWorkerConnectionRegistry {
         .flatMap(connection -> connection.activeJob(jobAttemptId))
         .ifPresent(this::publishCompletion);
     return endReportedJobAttempt(workerId, workerSessionId, jobAttemptId);
+  }
+
+  /**
+   * Publishes a running job attempt's progress, which the worker sends only when the attempt's
+   * output has advanced. A report for an attempt that the current session does not run is ignored.
+   */
+  void reportProgress(UUID workerId, UUID workerSessionId, JobAttemptProgress progress) {
+    currentConnection(workerId, workerSessionId)
+        .flatMap(connection -> connection.activeJob(fromProto(progress.getJobAttemptId())))
+        .ifPresent(
+            job ->
+                publishProgress(
+                    job.getStreamSessionId(),
+                    job.getJobAttemptId(),
+                    job.getVariant().getVariantLabel()));
+  }
+
+  /** ADR 0037: data accepted for an authorized media segment upload is job attempt progress. */
+  void reportUploadProgress(UUID authenticatedWorkerId, SegmentUploadMetadata metadata) {
+    if (!authorizesUpload(authenticatedWorkerId, metadata)) {
+      return;
+    }
+
+    publishProgress(
+        metadata.getStreamSessionId(), metadata.getJobAttemptId(), metadata.getVariantLabel());
+  }
+
+  // A held request's pass re-measures its stall deadline and counts as an access of the stream
+  // session, so progress on a long merged segment wakes the requests held on the variant. The
+  // synchronous event restarts the stall clock first, so a woken pass never sees the old deadline.
+  private void publishProgress(Uuid streamSessionId, Uuid jobAttemptId, String variantLabel) {
+    eventPublisher.publishEvent(
+        JobAttemptProgressedEvent.builder()
+            .streamSessionId(fromProto(streamSessionId))
+            .jobAttemptId(fromProto(jobAttemptId))
+            .variantLabel(variantLabel)
+            .build());
+    heldRequests.wakeVariant(fromProto(streamSessionId), variantLabel);
   }
 
   private void publishCompletion(VariantJob job) {
@@ -1202,7 +1242,7 @@ final class LiveWorkerConnectionRegistry {
       var attemptId = fromProto(failed.getJobAttemptId());
       var job = activeVariants.get(attemptId);
       if (job != null) {
-        terminalFailure(failed)
+        terminalFailure(job, failed)
             .ifPresent(
                 failure -> terminalFailures.put(fromProto(job.getStreamSessionId()), failure));
       }
@@ -1211,21 +1251,33 @@ final class LiveWorkerConnectionRegistry {
     }
 
     // The worker contract says that a replacement attempt with the same decision repeats an output
-    // mismatch on the same encoder backend, and an invalid specification on every worker.
-    private static Optional<TranscodeFailure> terminalFailure(JobAttemptFailed failed) {
+    // mismatch on the same encoder backend, and an invalid specification on every worker. Every
+    // attempt on the same segment list cuts the same segments, so it repeats a segment over the cap
+    // too (ADR 0037).
+    private static Optional<TranscodeFailure> terminalFailure(
+        VariantJob job, JobAttemptFailed failed) {
       return switch (failed.getFailure()) {
         case JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH -> Optional.of(TranscodeFailure.OUTPUT_MISMATCH);
         case JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION ->
             Optional.of(TranscodeFailure.INVALID_SPECIFICATION);
+        case JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED -> segmentCapFailure(job);
         case JOB_ATTEMPT_FAILURE_UNSPECIFIED,
             JOB_ATTEMPT_FAILURE_SOURCE_UNAVAILABLE,
             JOB_ATTEMPT_FAILURE_STARTUP_FAILED,
             JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED,
-            JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED,
             JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES,
             UNRECOGNIZED ->
             Optional.empty();
       };
+    }
+
+    // A job on the plain grid keeps ordinary recovery for a segment over the cap.
+    private static Optional<TranscodeFailure> segmentCapFailure(VariantJob job) {
+      if (job.getExecution().getSegmentStartSlotsCount() == 0) {
+        return Optional.empty();
+      }
+
+      return Optional.of(TranscodeFailure.SEGMENT_CAP_EXCEEDED);
     }
 
     private static boolean isCopyOutputMismatch(VariantJob job, JobAttemptFailed failed) {
