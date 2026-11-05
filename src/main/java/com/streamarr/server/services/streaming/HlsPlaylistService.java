@@ -1,6 +1,5 @@
 package com.streamarr.server.services.streaming;
 
-import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.DecimalSeconds;
 import com.streamarr.server.domain.streaming.DolbyVision;
@@ -57,7 +56,12 @@ public class HlsPlaylistService {
       var size = probe.displayedSize();
       var codecs = codecs(session, copiedVideoCodecString(session));
       appendStreamInf(
-          sb, copyBandwidth(probe, audio), size.width(), size.height(), codecs, hasAudio);
+          sb,
+          VariantBandwidth.ofCopy(probe, audio, properties),
+          size.width(),
+          size.height(),
+          codecs,
+          hasAudio);
       appendCopiedFrameRate(sb, probe);
       appendVideoRange(sb, session);
       appendSupplementalCodecs(sb, session);
@@ -67,7 +71,7 @@ public class HlsPlaylistService {
     }
 
     for (var variant : session.getVariants()) {
-      var bandwidth = Bandwidth.withHeadroom(variant.averageBandwidth(audio.bitrate()));
+      var bandwidth = VariantBandwidth.ofEncoded(variant, audio);
       var codecs = codecs(session, encodedVideoCodecString(session, variant));
       appendStreamInf(sb, bandwidth, variant.width(), variant.height(), codecs, hasAudio);
       appendFrameRate(sb, variant);
@@ -90,19 +94,6 @@ public class HlsPlaylistService {
                 sb.append("#EXT-X-START:TIME-OFFSET=")
                     .append(DecimalSeconds.of(start).stripTrailingZeros().toPlainString())
                     .append(",PRECISE=YES\n"));
-  }
-
-  // A measured copy advertises its measured peak. An unmeasured copy, like an encoded variant, adds
-  // headroom to its average (ADR 0054).
-  private Bandwidth copyBandwidth(MediaProbe probe, AudioDecision audio) {
-    var playlist = CopyMediaPlaylist.of(probe, properties);
-    var average = VideoCopyBandwidth.averageBandwidth(probe, audio, playlist);
-    var peak = VideoCopyBandwidth.peakBandwidth(probe, audio, playlist);
-    if (peak.isEmpty()) {
-      return Bandwidth.withHeadroom(average);
-    }
-
-    return new Bandwidth(peak.getAsLong(), average);
   }
 
   private static String codecs(StreamSession session, String videoCodecString) {
@@ -163,23 +154,9 @@ public class HlsPlaylistService {
     sb.append("\n");
   }
 
-  /** A variant's BANDWIDTH and AVERAGE-BANDWIDTH (RFC 8216 §4.3.4.2). */
-  private record Bandwidth(long peak, long average) {
-
-    // RFC 8216 §4.3.4.2 defines BANDWIDTH as the peak segment bit rate and AVERAGE-BANDWIDTH as
-    // the average. An encoded variant and an unmeasured copy know only an average, so their
-    // BANDWIDTH adds headroom for container overhead and rate variation (ADR 0044). Encoded
-    // variants are capped with -maxrate. Probed source rates remain estimates.
-    private static final int PEAK_HEADROOM_PERCENT = 20;
-
-    static Bandwidth withHeadroom(long average) {
-      return new Bandwidth(average + average * PEAK_HEADROOM_PERCENT / 100, average);
-    }
-  }
-
   private void appendStreamInf(
       StringBuilder sb,
-      Bandwidth bandwidth,
+      VariantBandwidth bandwidth,
       int width,
       int height,
       String codecs,
