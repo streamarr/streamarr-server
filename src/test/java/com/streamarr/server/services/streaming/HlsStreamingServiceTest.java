@@ -3198,6 +3198,45 @@ class HlsStreamingServiceTest {
       assertThat(session.getMediaProbe().audioChannels()).hasValue(6);
     }
 
+    // ADR 0050: AAC encodes a 7.0 track in 5.0, so the encode must read the chosen track's layout.
+    @Test
+    @DisplayName(
+        "Should encode the chosen track's layout when the chosen track is not the first audio"
+            + " track")
+    void shouldEncodeTheChosenTracksLayoutWhenTheChosenTrackIsNotTheFirstAudioTrack() {
+      useAudioTracks(
+          audioTrack(1, "jpn")
+              .audioProperties(
+                  Optional.of(
+                      AudioStreamProperties.builder().channelLayout(Optional.of("stereo")).build()))
+              .build(),
+          ProbeFixture.audioStreamBuilder("dts")
+              .index(2)
+              .language(Optional.of("eng"))
+              .channels(OptionalInt.of(7))
+              .audioProperties(
+                  Optional.of(
+                      AudioStreamProperties.builder().channelLayout(Optional.of("7.0")).build()))
+              .build());
+      var declaration =
+          defaultDeclarationBuilder()
+              .audio(List.of(aacEntryBuilder().maxChannels(8).build()))
+              .build();
+
+      var session =
+          createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO), declaration);
+
+      assertThat(session.getTranscodeDecision().audioDecision())
+          .isEqualTo(
+              AudioDecision.builder()
+                  .mode(AudioMode.TRANSCODE)
+                  .codec("aac")
+                  .channels(5)
+                  .channelLayout(Optional.of(ChannelLayout.FIVE_POINT_ZERO))
+                  .bitrate(384_000L)
+                  .build());
+    }
+
     private void overrideAudio(UUID titleId, Language language) {
       languages.setLanguageOverride(
           viewer,
@@ -3233,6 +3272,11 @@ class HlsStreamingServiceTest {
     }
 
     private StreamSession createEpisodeSession(StreamingOptions.StreamingOptionsBuilder options) {
+      return createEpisodeSession(options, defaultDeclarationBuilder().build());
+    }
+
+    private StreamSession createEpisodeSession(
+        StreamingOptions.StreamingOptionsBuilder options, ClientCapabilityDeclaration declaration) {
       var file =
           mediaFileRepository.save(
               MediaFile.builder()
@@ -3246,6 +3290,7 @@ class HlsStreamingServiceTest {
           service.createSession(
               createStreamSessionCommandBuilder(file.getId(), profileId)
                   .options(options.build())
+                  .capabilityDeclaration(declaration)
                   .build()));
     }
   }
