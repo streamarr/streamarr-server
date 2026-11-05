@@ -27,6 +27,7 @@ import com.streamarr.server.services.pagination.Position;
 import com.streamarr.server.services.pagination.SortValue;
 import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
+import jakarta.persistence.EntityManagerFactory;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
@@ -35,6 +36,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.hibernate.SessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -60,6 +62,7 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
   @Autowired private EpisodeRepository episodeRepository;
   @Autowired private SessionProgressRepository sessionProgressRepository;
   @Autowired private AuditColumnFixtures auditColumns;
+  @Autowired private EntityManagerFactory entityManagerFactory;
 
   private static final String SEASONS_AND_SERIES_QUERY =
       "{ continueWatching(first: 12) { edges { node { ... on Episode { id season"
@@ -170,6 +173,26 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
                             + " "
                             + node.at("/season/seasonNumber").asInt()));
     assertThat(resolved).isEqualTo(expected);
+  }
+
+  @Test
+  @DisplayName(
+      "Should read seasons and series in the same number of statements when the list spans more"
+          + " seasons and series")
+  void shouldReadSeasonsAndSeriesInTheSameNumberOfStatementsWhenTheListSpansMoreSeasonsAndSeries()
+      throws Exception {
+    identity = authTestSupport.createIdentity();
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+    var drama = createSeries(library, "Drama");
+    createEpisodeWithProgress(createSeason(drama, 1));
+    // The first request fills caches that later requests skip.
+    execute(SEASONS_AND_SERIES_QUERY);
+    var forOneEpisode = statementsPreparedBy(SEASONS_AND_SERIES_QUERY);
+
+    createEpisodeWithProgress(createSeason(drama, 2));
+    createEpisodeWithProgress(createSeason(createSeries(library, "Comedy"), 1));
+
+    assertThat(statementsPreparedBy(SEASONS_AND_SERIES_QUERY)).isEqualTo(forOneEpisode);
   }
 
   @Test
@@ -329,6 +352,22 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
                 .with(bearer(authTestSupport.profileBearer(identity))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
+  }
+
+  // Hibernate statistics are global, so the count holds only while no other test uses the context.
+  private long statementsPreparedBy(String query) throws Exception {
+    var statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+    var previouslyEnabled = statistics.isStatisticsEnabled();
+    statistics.setStatisticsEnabled(true);
+    statistics.clear();
+
+    try {
+      execute(query);
+      return statistics.getPrepareStatementCount();
+    } finally {
+      statistics.clear();
+      statistics.setStatisticsEnabled(previouslyEnabled);
+    }
   }
 
   private JsonNode execute(String query) throws Exception {
