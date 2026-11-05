@@ -2,6 +2,7 @@ package com.streamarr.server.domain.streaming;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
@@ -76,13 +77,22 @@ public record VideoCapabilityEntry(
    * 5 outcome is stored (ADR 0032): it needs only an HLS entry of its codec family.
    */
   public boolean acceptsHlsCopy(@NonNull VideoStreamCopy copy) {
-    if (!hls || copy.codecFamily() != codecFamily) {
-      return false;
-    }
+    return appliesToHlsCopyOf(copy) && hlsCopyRefusals(copy).isEmpty();
+  }
 
+  /** Whether this entry applies to HLS delivery and names the copy's codec family. */
+  public boolean appliesToHlsCopyOf(@NonNull VideoStreamCopy copy) {
+    return hls && copy.codecFamily() == codecFamily;
+  }
+
+  /**
+   * Each property of the stream copy that this entry refuses, in the order the entry checks them,
+   * for an entry that {@linkplain #appliesToHlsCopyOf applies to the copy}.
+   */
+  public List<DecisionReason> hlsCopyRefusals(@NonNull VideoStreamCopy copy) {
     return copy.videoProperties()
-        .map(properties -> acceptsEveryProperty(copy, properties))
-        .orElse(true);
+        .map(properties -> refusedProperties(copy, properties))
+        .orElseGet(List::of);
   }
 
   /**
@@ -94,11 +104,8 @@ public record VideoCapabilityEntry(
    */
   public boolean acceptsDirectPlay(
       @NonNull VideoStreamCopy video, @NonNull SourceContainer container) {
-    if (!directPlayContainers.contains(container) || video.codecFamily() != codecFamily) {
-      return false;
-    }
-
-    if (container.storesSampleEntries() && !listsSampleEntry(video.sampleEntry())) {
+    if (!listsDirectPlayContainerOf(video, container)
+        || !listsDirectPlaySampleEntryOf(video, container)) {
       return false;
     }
 
@@ -107,6 +114,21 @@ public record VideoCapabilityEntry(
         .filter(properties -> acceptsCodingAndPicture(video, properties))
         .filter(_ -> acceptsDirectPlayDynamicRange(video, container))
         .isPresent();
+  }
+
+  /** Whether this entry names the video stream's codec family and lists the source container. */
+  public boolean listsDirectPlayContainerOf(
+      @NonNull VideoStreamCopy video, @NonNull SourceContainer container) {
+    return directPlayContainers.contains(container) && video.codecFamily() == codecFamily;
+  }
+
+  /**
+   * Whether this entry lists the video stream's sample entry where the source container stores one,
+   * as MP4 and MOV do. A stream without a reported sample entry has none to match.
+   */
+  public boolean listsDirectPlaySampleEntryOf(
+      @NonNull VideoStreamCopy video, @NonNull SourceContainer container) {
+    return !container.storesSampleEntries() || listsSampleEntry(video.sampleEntry());
   }
 
   private boolean listsSampleEntry(Optional<String> sampleEntry) {
@@ -220,8 +242,44 @@ public record VideoCapabilityEntry(
 
   // An unknown codec level or tier fits wherever the known picture size and frame rate fit, so it
   // passes its own check and leaves the decision to those maximums.
-  private boolean acceptsEveryProperty(VideoStreamCopy copy, VideoStreamProperties properties) {
-    return acceptsCodingAndPicture(copy, properties) && acceptsDynamicRange(copy);
+  private List<DecisionReason> refusedProperties(
+      VideoStreamCopy copy, VideoStreamProperties properties) {
+    var refusals = new ArrayList<DecisionReason>();
+    codecProfileRefusal(properties).ifPresent(refusals::add);
+    bitDepthRefusal(copy.bitDepth()).ifPresent(refusals::add);
+
+    if (!acceptsPictureSize(copy.decodedSize())) {
+      refusals.add(DecisionReason.VIDEO_PICTURE_SIZE_NOT_DECLARED);
+    }
+
+    if (!acceptsFrameRate(copy.frameRate())) {
+      refusals.add(DecisionReason.VIDEO_FRAME_RATE_NOT_DECLARED);
+    }
+
+    refusals.addAll(dynamicRangeRefusals(copy));
+    return List.copyOf(refusals);
+  }
+
+  private Optional<DecisionReason> codecProfileRefusal(VideoStreamProperties properties) {
+    if (properties.codecProfile().isEmpty()) {
+      return Optional.of(DecisionReason.VIDEO_CODEC_PROFILE_NOT_DECLARED);
+    }
+
+    var profile = properties.codecProfile().get();
+    var listed =
+        codecProfiles.stream().filter(capability -> capability.profile() == profile).toList();
+    if (listed.isEmpty()) {
+      return Optional.of(DecisionReason.VIDEO_CODEC_PROFILE_NOT_DECLARED);
+    }
+
+    if (listed.stream()
+        .noneMatch(
+            capability ->
+                capability.acceptsLevelAndTier(properties.codecLevel(), properties.codecTier()))) {
+      return Optional.of(DecisionReason.VIDEO_CODEC_LEVEL_NOT_DECLARED);
+    }
+
+    return Optional.empty();
   }
 
   private boolean acceptsCodingAndPicture(VideoStreamCopy copy, VideoStreamProperties properties) {
@@ -232,20 +290,23 @@ public record VideoCapabilityEntry(
   }
 
   private boolean acceptsCodecProfile(VideoStreamProperties properties) {
-    if (properties.codecProfile().isEmpty()) {
-      return false;
+    return codecProfileRefusal(properties).isEmpty();
+  }
+
+  private Optional<DecisionReason> bitDepthRefusal(OptionalInt bitDepth) {
+    if (bitDepth.isEmpty()) {
+      return Optional.of(DecisionReason.VIDEO_BIT_DEPTH_UNKNOWN);
     }
 
-    var profile = properties.codecProfile().get();
-    return codecProfiles.stream()
-        .filter(capability -> capability.profile() == profile)
-        .anyMatch(
-            capability ->
-                capability.acceptsLevelAndTier(properties.codecLevel(), properties.codecTier()));
+    if (bitDepth.getAsInt() > maxBitDepth) {
+      return Optional.of(DecisionReason.VIDEO_BIT_DEPTH_NOT_DECLARED);
+    }
+
+    return Optional.empty();
   }
 
   private boolean acceptsBitDepth(OptionalInt bitDepth) {
-    return bitDepth.isPresent() && bitDepth.getAsInt() <= maxBitDepth;
+    return bitDepthRefusal(bitDepth).isEmpty();
   }
 
   // The maximums bound a picture in either orientation, so a portrait phone video fits an entry
@@ -269,8 +330,22 @@ public record VideoCapabilityEntry(
   }
 
   // Declaring a compatible base declares neither Dolby Vision nor HDR10+ (ADR 0049).
-  private boolean acceptsDynamicRange(VideoStreamCopy copy) {
-    return acceptsDolbyVision(copy) && acceptsBaseAndHdr10Plus(copy.dynamicRange());
+  private List<DecisionReason> dynamicRangeRefusals(VideoStreamCopy copy) {
+    var range = copy.dynamicRange();
+    var refusals = new ArrayList<DecisionReason>();
+    if (!acceptsDolbyVision(copy)) {
+      refusals.add(dolbyVisionRefusal(copy));
+    }
+
+    if (!acceptsCompatibleBase(range.compatibleBase())) {
+      refusals.add(DecisionReason.DYNAMIC_RANGE_NOT_DECLARED);
+    }
+
+    if (!acceptsHdr10Plus(range.hdr10Plus())) {
+      refusals.add(DecisionReason.HDR10_PLUS_NOT_DECLARED);
+    }
+
+    return refusals;
   }
 
   private boolean acceptsDirectPlayDynamicRange(VideoStreamCopy video, SourceContainer container) {
@@ -293,15 +368,25 @@ public record VideoCapabilityEntry(
       case CopiedDolbyVision.Declarable(var profile, var level) -> listsDolbyVision(profile, level);
       case CopiedDolbyVision.NeedsDolbyVisionSampleEntry(var profile, var level) ->
           level.isPresent() && listsDolbyVision(profile, level.getAsInt());
-      case CopiedDolbyVision.Undeclarable _ -> false;
+      case CopiedDolbyVision.Undeclarable _, CopiedDolbyVision.Unknown _ -> false;
     };
+  }
+
+  private static DecisionReason dolbyVisionRefusal(VideoStreamCopy copy) {
+    if (CopiedDolbyVision.of(copy) instanceof CopiedDolbyVision.Unknown) {
+      return DecisionReason.DOLBY_VISION_PROFILE_OR_LEVEL_UNKNOWN;
+    }
+
+    return DecisionReason.DOLBY_VISION_NOT_DECLARED;
   }
 
   private boolean acceptsDolbyVision(VideoStreamCopy copy) {
     return switch (CopiedDolbyVision.of(copy)) {
       case CopiedDolbyVision.None _, CopiedDolbyVision.KeptUnderSdrBase _ -> true;
       case CopiedDolbyVision.Declarable(var profile, var level) -> listsDolbyVision(profile, level);
-      case CopiedDolbyVision.Undeclarable _, CopiedDolbyVision.NeedsDolbyVisionSampleEntry _ ->
+      case CopiedDolbyVision.Undeclarable _,
+          CopiedDolbyVision.Unknown _,
+          CopiedDolbyVision.NeedsDolbyVisionSampleEntry _ ->
           false;
     };
   }

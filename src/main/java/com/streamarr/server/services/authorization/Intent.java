@@ -56,6 +56,12 @@ public sealed interface Intent {
   /** The live playback decision for the selected Profile in the context Household (ADR 0018). */
   record Playback() implements UnitIntent {}
 
+  /**
+   * Set the language preferences of the Profile the session watches as, and its language overrides
+   * of titles (ADR 0043).
+   */
+  record SetLanguagePreferences(UUID profileId) implements UnitIntent {}
+
   record GrantServerAdmin(UUID accountId) implements UnitIntent {}
 
   record RevokeServerAdmin(UUID accountId) implements UnitIntent {}

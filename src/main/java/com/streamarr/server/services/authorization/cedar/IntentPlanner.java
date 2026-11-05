@@ -46,6 +46,8 @@ final class IntentPlanner {
           unitPlan(
               AuthorizationCheck.onProfile(
                   Action.PLAYBACK, identity.playbackAuthority().profileId()));
+      case Intent.SetLanguagePreferences(var profileId) ->
+          unitPlan(AuthorizationCheck.onProfile(Action.SET_LANGUAGE_PREFERENCES, profileId));
       case Intent.ViewProfileActivity(var profileId) ->
           unitPlan(AuthorizationCheck.onProfile(Action.VIEW_PROFILE_ACTIVITY, profileId));
       case Intent.ViewHouseholdAdministration(var householdId) ->

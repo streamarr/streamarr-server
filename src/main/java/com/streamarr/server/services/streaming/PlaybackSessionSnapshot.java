@@ -10,7 +10,8 @@ import lombok.NonNull;
 /**
  * {@code playbackChoice} is the playback choice that plays now: {@code requestedChoice}, or Auto
  * once Original reaches an encode (ADR 0052). {@code formatChange} says why the output differs from
- * the output that {@code requestedChoice} asked for.
+ * the output that {@code requestedChoice} asked for. {@code decisions} holds the decision of each
+ * format attempt that started, the initial format first (#751).
  */
 @Builder
 public record PlaybackSessionSnapshot(
@@ -21,4 +22,5 @@ public record PlaybackSessionSnapshot(
     @NonNull VideoQuality playbackChoice,
     @NonNull Optional<PlaybackFormatChange> formatChange,
     @NonNull List<VideoQuality> offeredChoices,
-    @NonNull PlaybackFormatAttempt currentFormatAttempt) {}
+    @NonNull PlaybackFormatAttempt currentFormatAttempt,
+    @NonNull List<PlaybackDecision> decisions) {}
