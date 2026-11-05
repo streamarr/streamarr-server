@@ -115,6 +115,7 @@ import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeSeriesRepository;
+import com.streamarr.server.fakes.FakeServerSettingsRepository;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.HardwareEncodedFamiliesAndExpectedEncode;
@@ -133,6 +134,7 @@ import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.URI;
 import java.nio.file.Path;
@@ -7557,22 +7559,10 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should report the internet upload speed and the streams' share as gauges")
-  void shouldReportTheInternetUploadSpeedAndTheStreamsShareAsGauges() {
-    assertThat(uploadBudgetGauge("internet_upload")).isZero();
-    assertThat(uploadBudgetGauge("stream_share")).isZero();
-
-    setInternetUploadMegabitsPerSecond(20);
-
-    assertThat(uploadBudgetGauge("internet_upload")).isEqualTo(20_000_000);
-    assertThat(uploadBudgetGauge("stream_share")).isEqualTo(16_000_000);
-  }
-
-  @Test
   @DisplayName(
-      "Should report the counted total and the active streams counted and not counted as gauges")
-  void shouldReportTheCountedTotalAndTheActiveStreamsCountedAndNotCountedAsGauges() {
-    setInternetUploadMegabitsPerSecond(20);
+      "Should report the active stream sessions by network route and the internet streams' total"
+          + " average bitrate whether the upload budget is on or off")
+  void shouldReportActiveStreamsByNetworkRouteAndTheInternetBitrateWhetherTheBudgetIsOnOrOff() {
     createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
     accepted(
         service.createSession(
@@ -7582,11 +7572,43 @@ class HlsStreamingServiceTest {
     var suspended = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
     producerLifecycle.suspend(suspended.getSessionId());
 
-    // Only the active copy over the internet counts, at its 5 Mb/s average. The suspended stream
-    // session is not active, so neither active-stream gauge counts it.
-    assertThat(uploadBudgetGauge("counted")).isEqualTo(5_000_000);
-    assertThat(activeStreams("true")).isOne();
-    assertThat(activeStreams("false")).isOne();
+    // Only the active copy over the internet sends over the internet upload, at its 5 Mb/s
+    // average. The suspended stream session is not active, so no gauge counts it.
+    assertThat(internetStreamsBitrate()).isEqualTo(5_000_000);
+    assertThat(activeStreams("internet")).isOne();
+    assertThat(activeStreams("local_network")).isOne();
+
+    setInternetUploadMegabitsPerSecond(20);
+
+    assertThat(internetStreamsBitrate()).isEqualTo(5_000_000);
+    assertThat(activeStreams("internet")).isOne();
+    assertThat(activeStreams("local_network")).isOne();
+  }
+
+  @Test
+  @DisplayName("Should report every upload budget gauge without reading the server settings")
+  void shouldReportEveryUploadBudgetGaugeWithoutReadingTheServerSettings() {
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    var withoutStoredSettings = new FakeServerSettingsRepository();
+    withoutStoredSettings.deleteAll();
+    var isolatedMeters = new SimpleMeterRegistry();
+    new ServerUploadBudget(
+        new ServerSettingsService(
+            new FakeAuthorizationService(
+                AuthenticatedIdentityFixture.accountScopedBuilder().build()),
+            withoutStoredSettings),
+        runtimeRegistry,
+        producerLifecycle,
+        streamingProperties(),
+        isolatedMeters);
+
+    // A gauge whose read fails reports NaN, as one that read the missing settings row would. The
+    // three gauges are the active streams over the internet and over the local network, and the
+    // internet streams' total average bitrate; no gauge repeats the setting.
+    assertThat(isolatedMeters.getMeters())
+        .filteredOn(Gauge.class::isInstance)
+        .extracting(meter -> ((Gauge) meter).value())
+        .containsExactlyInAnyOrder(1.0, 0.0, 5_000_000.0);
   }
 
   @Test
@@ -8007,14 +8029,14 @@ class HlsStreamingServiceTest {
         });
   }
 
-  private double uploadBudgetGauge(String name) {
-    return meters.get("streamarr.streaming.upload_budget_" + name).gauge().value();
+  private double internetStreamsBitrate() {
+    return meters.get("streamarr.streaming.internet_streams_bitrate").gauge().value();
   }
 
-  private double activeStreams(String counted) {
+  private double activeStreams(String networkRoute) {
     return meters
-        .get("streamarr.streaming.upload_budget_active_streams")
-        .tag("counted", counted)
+        .get("streamarr.streaming.active_streams")
+        .tag("network_route", networkRoute)
         .gauge()
         .value();
   }
