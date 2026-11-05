@@ -1,20 +1,27 @@
 package com.streamarr.server.graphql.subscriptions;
 
 import com.streamarr.server.graphql.dto.ActiveStreamDto;
-import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.ActiveStreamService;
 import com.streamarr.server.services.streaming.events.PlaybackSessionChangedEvent;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.RejectedExecutionException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
+import reactor.core.scheduler.Scheduler;
 
 /**
  * Turns playback session changes into activeStreamsChanged payloads. Each change reads the stream
- * once, for every subscriber, and not at all while nobody subscribes. Publication never fails the
- * playback that triggered it: a failure is counted on {@value
+ * once, for every subscriber, and not at all while nobody subscribes. A change inside a transaction
+ * is read after commit; a change without one is read at once. The read runs on a thread of {@code
+ * publicationScheduler}, so the transaction that published the change neither waits for the read
+ * nor holds its connection while the read runs.
+ *
+ * <p>Publication never fails the playback that triggered it: a failure is counted on {@value
  * LibraryEventListener#PUBLICATION_FAILURES_METRIC} instead, and subscribers recover current state
  * through the activeStreams query.
  */
@@ -26,31 +33,70 @@ public class ActiveStreamEventListener {
   private final ActiveStreamService activeStreams;
   private final ActiveStreamBroadcaster broadcaster;
   private final MeterRegistry meterRegistry;
-  private final MutexFactory<UUID> publicationLocks = new MutexFactory<>();
+  private final Scheduler publicationScheduler;
+  private final ConcurrentHashMap<UUID, Publication> publications = new ConcurrentHashMap<>();
 
-  // Changes of one playback session can come from several threads at once. Reading and
-  // broadcasting under the playback session's lock keeps broadcasts in read order, so the last
-  // broadcast carries the latest state.
-  @EventListener
+  // One reader at a time per playback session, so broadcasts follow read order. A change that
+  // arrives during a read asks for one more read, so the last broadcast carries the latest state.
+  private enum Publication {
+    READING,
+    READ_AGAIN
+  }
+
+  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
   public void onPlaybackSessionChanged(PlaybackSessionChangedEvent event) {
-    var changes = broadcaster.getChanges();
-    if (!changes.hasRegistrations()) {
+    if (!broadcaster.getChanges().hasRegistrations()) {
       return;
     }
 
-    var lock = publicationLocks.getMutex(event.playbackSessionId());
-    lock.lock();
-    try {
-      var stream = activeStreams.activeStream(event.playbackSessionId()).map(ActiveStreamDto::from);
-      changes.broadcast(
-          new ActiveStreamDto.ChangeDto(event.playbackSessionId().toString(), stream.orElse(null)));
-    } catch (RuntimeException e) {
-      meterRegistry
-          .counter(LibraryEventListener.PUBLICATION_FAILURES_METRIC, "field", changes.field())
-          .increment();
-      log.warn("Could not publish a {} subscription payload.", changes.field(), e);
-    } finally {
-      lock.unlock();
+    var playbackSessionId = event.playbackSessionId();
+    var publication =
+        publications.merge(
+            playbackSessionId, Publication.READING, (_, _) -> Publication.READ_AGAIN);
+    if (publication == Publication.READ_AGAIN) {
+      return;
     }
+
+    try {
+      publicationScheduler.schedule(() -> publishUntilCurrent(playbackSessionId));
+    } catch (RejectedExecutionException e) {
+      publications.remove(playbackSessionId);
+      countFailure(e);
+    }
+  }
+
+  private void publishUntilCurrent(UUID playbackSessionId) {
+    do {
+      publish(playbackSessionId);
+    } while (publications.compute(playbackSessionId, (_, publication) -> afterRead(publication))
+        != null);
+  }
+
+  // Removing the entry ends the reader; a change that arrived during the read keeps it reading.
+  private static Publication afterRead(Publication publication) {
+    if (publication == Publication.READ_AGAIN) {
+      return Publication.READING;
+    }
+
+    return null;
+  }
+
+  private void publish(UUID playbackSessionId) {
+    var changes = broadcaster.getChanges();
+    try {
+      var stream = activeStreams.activeStream(playbackSessionId).map(ActiveStreamDto::from);
+      changes.broadcast(
+          new ActiveStreamDto.ChangeDto(playbackSessionId.toString(), stream.orElse(null)));
+    } catch (RuntimeException e) {
+      countFailure(e);
+    }
+  }
+
+  private void countFailure(RuntimeException failure) {
+    var field = broadcaster.getChanges().field();
+    meterRegistry
+        .counter(LibraryEventListener.PUBLICATION_FAILURES_METRIC, "field", field)
+        .increment();
+    log.warn("Could not publish a {} subscription payload.", field, failure);
   }
 }
