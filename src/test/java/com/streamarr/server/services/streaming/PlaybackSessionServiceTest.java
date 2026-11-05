@@ -1628,6 +1628,31 @@ class PlaybackSessionServiceTest {
     assertThat(streams.createdCommands.getLast().audioTrackPosition()).hasValue(1);
   }
 
+  // Once the switch has ended, a second report of the same direct-play failure recovers before the
+  // held-back one does, and must play the chosen track too.
+  @Test
+  @DisplayName(
+      "Should recover with the chosen audio track when direct play fails again as a failed audio"
+          + " switch ends")
+  void shouldRecoverWithTheChosenAudioTrackWhenDirectPlayFailsAgainAsAFailedAudioSwitchEnds() {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlayOfTwoAudioTracks(service, command);
+    streams.duringNextCreation =
+        next -> {
+          service.reportFormatFailure(report(directPlay, command).build());
+          service.onTerminalTranscodeFailure(
+              terminalFailure(next.streamSessionId(), TranscodeFailure.INVALID_SPECIFICATION));
+          streams.afterNextDestroy =
+              () -> service.reportFormatFailure(report(directPlay, command).build());
+        };
+
+    var recovered = accepted(service.switchAudioTrack(audioSwitch(directPlay, command, 1)));
+
+    assertThat(recovered.formatAttemptCount()).isEqualTo(2);
+    assertThat(streams.createdCommands).hasSize(3);
+    assertThat(streams.createdCommands.getLast().audioTrackPosition()).hasValue(1);
+  }
+
   // The reaper ends a playback session whose direct play went quiet, even during a switch.
   @Test
   @DisplayName(

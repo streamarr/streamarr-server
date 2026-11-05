@@ -362,7 +362,8 @@ public class PlaybackSessionService implements AutoCloseable {
     return currentSnapshot(playback);
   }
 
-  // The switch ends here unless the playback session was discarded meanwhile.
+  // The switch ends here unless the playback session was discarded meanwhile. When direct play
+  // failed during the switch, every recovery from now on plays the chosen track.
   private Optional<PendingAudioTrackSwitch> takeAudioTrackSwitch(
       PlaybackSession playback, UUID streamId) {
     var pending = playback.audioTrackSwitch.filter(current -> current.streamId().equals(streamId));
@@ -371,6 +372,10 @@ public class PlaybackSessionService implements AutoCloseable {
     }
 
     playback.audioTrackSwitch = Optional.empty();
+    if (pending.get().directPlayFailure().isPresent()) {
+      playback.audioTrackPosition = OptionalInt.of(pending.get().position());
+    }
+
     return pending;
   }
 
@@ -417,18 +422,9 @@ public class PlaybackSessionService implements AutoCloseable {
 
   private void recoverDeferredDirectPlayFailure(
       PlaybackSession playback, StreamSession directPlay, PendingAudioTrackSwitch ended) {
-    var failure = ended.directPlayFailure();
-    if (failure.isEmpty()) {
-      return;
-    }
-
-    locked(
-        playback,
-        () -> {
-          playback.audioTrackPosition = OptionalInt.of(ended.position());
-          return true;
-        });
-    recover(playback, directPlay.getSessionId(), failure.get());
+    ended
+        .directPlayFailure()
+        .ifPresent(failure -> recover(playback, directPlay.getSessionId(), failure));
   }
 
   private boolean forgetStream(PlaybackSession playback, UUID streamId) {
