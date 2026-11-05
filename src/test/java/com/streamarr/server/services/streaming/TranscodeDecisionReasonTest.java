@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioCodec;
+import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
@@ -583,6 +584,31 @@ class TranscodeDecisionReasonTest {
             DecisionReason.AUDIO_CODEC_STRING_UNKNOWN));
   }
 
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("audioChannelCountsNotKnown")
+  @DisplayName(
+      "Should name an unknown channel count when the probe reports none and the entry accepts one"
+          + " channel")
+  void shouldNameAnUnknownChannelCountWhenTheProbeReportsNoneAndTheEntryAcceptsOneChannel(
+      MediaProbe source) {
+    var monoClient =
+        defaultDeclarationBuilder()
+            .audio(List.of(audioEntryBuilder(AudioCodec.AAC).maxChannels(1).build()))
+            .build();
+
+    var decision = decide(source, monoClient);
+
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
+    assertThat(decision.reasons()).containsExactly(DecisionReason.AUDIO_CHANNELS_UNKNOWN);
+  }
+
+  static Stream<Named<MediaProbe>> audioChannelCountsNotKnown() {
+    return Stream.of(
+        Named.of(
+            "no channel count", Source.builder().audioChannelsUnreported(true).build().probe()),
+        Named.of("a channel count of zero", Source.builder().audioChannels(0).build().probe()));
+  }
+
   @Test
   @DisplayName(
       "Should name the viewer's bitrate limit for the audio when a lower audio step brings the copy"
@@ -810,8 +836,17 @@ class TranscodeDecisionReasonTest {
       String audioCodecString,
       boolean audioCodecStringUnreported,
       Integer audioChannels,
+      boolean audioChannelsUnreported,
       Integer audioBitrate,
       Long videoBitrate) {
+
+    private OptionalInt reportedAudioChannels() {
+      if (audioChannelsUnreported) {
+        return OptionalInt.empty();
+      }
+
+      return OptionalInt.of(audioChannels == null ? 2 : audioChannels);
+    }
 
     private Optional<String> reportedCodecString() {
       if (codecStringUnreported) {
@@ -862,7 +897,7 @@ class TranscodeDecisionReasonTest {
               .videoCodec(videoCodec)
               .audioCodec(audio)
               .bitrate(5_000_000)
-              .audioChannels(OptionalInt.of(audioChannels == null ? 2 : audioChannels))
+              .audioChannels(reportedAudioChannels())
               .audioBitrate(OptionalLong.of(audioBitrate == null ? 128_000 : audioBitrate))
               .keyframes(keyframes == null ? KEYFRAMES_EVERY_TWO_SECONDS : keyframes)
               .videoPlaybackFacts(Optional.of(facts.build()));

@@ -616,7 +616,7 @@ public class TranscodeDecisionService {
         source.audioStreams().stream().findFirst().flatMap(StreamInfo::codecString);
     var copyChannelMaximum = HlsAudioEncodes.channelMaximum(declaration, source.audioCodec());
     var encodeReason =
-        audioEncodeReason(copyChannelMaximum, sourceChannels)
+        audioEncodeReason(copyChannelMaximum, source)
             .or(() -> audioCodecStringRefusal(source.audioCodec(), sourceCodecString));
     if (encodeReason.isPresent()) {
       return new SessionAudio(HlsAudioEncodes.forTrack(declaration, track), encodeReason);
@@ -637,16 +637,20 @@ public class TranscodeDecisionService {
   }
 
   private static Optional<DecisionReason> audioEncodeReason(
-      OptionalInt copyChannelMaximum, int sourceChannels) {
+      OptionalInt copyChannelMaximum, MediaProbe source) {
     if (copyChannelMaximum.isEmpty()) {
       return Optional.of(DecisionReason.AUDIO_CODEC_NOT_DECLARED);
     }
 
-    if (sourceChannels > copyChannelMaximum.getAsInt()) {
-      return Optional.of(DecisionReason.AUDIO_CHANNELS_NOT_DECLARED);
+    if (AudioTrackChannels.of(source).count() <= copyChannelMaximum.getAsInt()) {
+      return Optional.empty();
     }
 
-    return Optional.empty();
+    if (source.audioChannels().orElse(0) <= 0) {
+      return Optional.of(DecisionReason.AUDIO_CHANNELS_UNKNOWN);
+    }
+
+    return Optional.of(DecisionReason.AUDIO_CHANNELS_NOT_DECLARED);
   }
 
   private static Optional<DecisionReason> audioCodecStringRefusal(
