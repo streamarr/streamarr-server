@@ -62,9 +62,9 @@ public record TranscodeDecision(
   }
 
   /**
-   * This decision with a lower audio step that keeps the output within the viewer's maximum bitrate
-   * (ADR 0050), which the reasons name. Audio that no longer passes through moves the mode to the
-   * one that encodes the audio, and the reverse. The decision's own audio leaves it unchanged.
+   * This decision with a lower audio step that the viewer's maximum bitrate takes (ADR 0050), which
+   * the reasons name. Audio that no longer passes through moves the mode to the one that encodes
+   * the audio, and the reverse. The decision's own audio leaves it unchanged.
    */
   public TranscodeDecision withAudioDecision(@NonNull AudioDecision audio) {
     if (audio.equals(audioDecision)) {
