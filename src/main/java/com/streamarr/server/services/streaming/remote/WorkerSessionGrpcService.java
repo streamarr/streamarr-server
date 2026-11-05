@@ -26,9 +26,6 @@ import lombok.extern.slf4j.Slf4j;
 final class WorkerSessionGrpcService
     extends TranscodeWorkerServiceGrpc.TranscodeWorkerServiceImplBase {
 
-  private static final int MAXIMUM_CONCURRENT_SEGMENT_UPLOADS = 32;
-  private static final long MAXIMUM_BUFFERED_SEGMENT_BYTES = 512L * 1024 * 1024;
-
   /** Receives frames after the service has already rejected an upload call. */
   private static final StreamObserver<UploadSegmentRequest> IGNORED_UPLOAD_OBSERVER =
       new StreamObserver<>() {
@@ -48,10 +45,6 @@ final class WorkerSessionGrpcService
         }
       };
 
-  // A ladder's variants upload in parallel, so the allowance has to clear a full ladder; it is a
-  // blast-radius bound on one worker's wedged streams, not a throughput limit.
-  private static final int MAXIMUM_SEGMENT_UPLOADS_PER_WORKER = 8;
-
   private final LiveWorkerConnectionRegistry workerConnections;
   private final SegmentStore segmentStore;
   private final SegmentUploadAdmission segmentUploadAdmission;
@@ -62,9 +55,9 @@ final class WorkerSessionGrpcService
     this.segmentStore = segmentStore;
     segmentUploadAdmission =
         new SegmentUploadAdmission(
-            MAXIMUM_CONCURRENT_SEGMENT_UPLOADS,
-            MAXIMUM_BUFFERED_SEGMENT_BYTES,
-            MAXIMUM_SEGMENT_UPLOADS_PER_WORKER);
+            SegmentUploadLimits.MAXIMUM_CONCURRENT_SEGMENT_UPLOADS,
+            SegmentUploadLimits.MAXIMUM_BUFFERED_SEGMENT_BYTES,
+            SegmentUploadLimits.MAXIMUM_SEGMENT_UPLOADS_PER_WORKER);
   }
 
   @Override
