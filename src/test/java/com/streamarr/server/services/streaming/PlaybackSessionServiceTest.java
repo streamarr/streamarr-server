@@ -251,13 +251,16 @@ class PlaybackSessionServiceTest {
   }
 
   // Decision 131: an unknown source channel count stays unknown; it never borrows the output's.
-  @Test
+  // A count of zero says no more than a missing one.
+  @ParameterizedTest
+  @MethodSource("unknownChannelCounts")
   @DisplayName(
       "Should leave the source's channel count unknown when the probe reported none and the audio"
           + " encodes")
-  void shouldLeaveTheSourcesChannelCountUnknownWhenTheProbeReportedNoneAndTheAudioEncodes() {
+  void shouldLeaveTheSourcesChannelCountUnknownWhenTheProbeReportedNoneAndTheAudioEncodes(
+      OptionalInt reported) {
     streams.copiesTheSource = false;
-    streams.sourceProbe = defaultProbeBuilder().audioChannels(OptionalInt.empty()).build();
+    streams.sourceProbe = defaultProbeBuilder().audioChannels(reported).build();
 
     var snapshot = accepted(service.start(startCommand().build()));
 
@@ -269,12 +272,14 @@ class PlaybackSessionServiceTest {
             });
   }
 
-  @Test
+  @ParameterizedTest
+  @MethodSource("unknownChannelCounts")
   @DisplayName(
       "Should show the direct play's audio with an unknown channel count when the probe reported"
           + " none")
-  void shouldShowTheDirectPlaysAudioWithAnUnknownChannelCountWhenTheProbeReportedNone() {
-    streams.sourceProbe = defaultProbeBuilder().audioChannels(OptionalInt.empty()).build();
+  void shouldShowTheDirectPlaysAudioWithAnUnknownChannelCountWhenTheProbeReportedNone(
+      OptionalInt reported) {
+    streams.sourceProbe = defaultProbeBuilder().audioChannels(reported).build();
     var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
 
     var directPlay = startDirectPlay(service, command);
@@ -287,6 +292,12 @@ class PlaybackSessionServiceTest {
               assertThat(audio.source().channels()).isEmpty();
               assertThat(audio.output()).isEqualTo(audio.source());
             });
+  }
+
+  static Stream<Named<OptionalInt>> unknownChannelCounts() {
+    return Stream.of(
+        Named.of("no channel count", OptionalInt.empty()),
+        Named.of("a channel count of zero", OptionalInt.of(0)));
   }
 
   @Test
