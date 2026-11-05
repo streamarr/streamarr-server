@@ -1,6 +1,7 @@
 package com.streamarr.server.graphql.subscriptions;
 
 import static com.streamarr.server.support.GraphQlResults.firstErrorCode;
+import static java.util.function.Predicate.not;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
@@ -25,7 +26,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CompletableFuture;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,6 +54,7 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
   private static final String STATUS_SUBSCRIPTION =
       "subscription { libraryStatusChanged { id administration { status } } }";
   private static final String FAIL_CLOSED_METRIC = "streamarr.authorization.fail_closed";
+  private static final String ALLOWED = "allowed";
 
   @LocalServerPort private int port;
 
@@ -96,20 +98,28 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
         "counts",
         "subscription { libraryCountsChanged(libraryId: \"%s\") { id } }"
             .formatted(library.getId()));
-    activeSubscriptions.awaitCount(COUNTS_FIELD, 1);
+    awaitFirstCountsDelivery(socket);
     int readerPid;
     try (var held = lockLibraryTable();
         var observer = dataSource.getConnection()) {
       contentsBroadcasters.getCounts().broadcast(library.getId(), library.getId());
       readerPid = PostgresLockTestSupport.awaitBlockedBackendPid(observer, held.backendPid(), null);
+      assertThat(PostgresLockTestSupport.waitersBehind(observer, held.backendPid(), "%"))
+          .as("only the delivery's read waits on the library lock")
+          .isEqualTo(1);
 
       socket.close();
       activeSubscriptions.awaitCount(COUNTS_FIELD, 0);
     }
 
-    awaitBackendIdleOrGone(readerPid);
+    var settledState = awaitBackendIdleOrGone(readerPid);
 
-    assertThat(backendState(readerPid)).contains("idle");
+    assertThat(settledState)
+        .as("the delivery's pooled connection survives the disconnect, idle")
+        .contains("idle");
+    assertThat(backendState(readerPid))
+        .as("the delivery's pooled connection is still open after it settled")
+        .isPresent();
   }
 
   @Test
@@ -118,7 +128,7 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
   void shouldCountNoAuthorizationFailureWhenDeliverysOperationCancelsWhileDeliveryReadsAuthority()
       throws SQLException {
     var identity = authTestSupport.identityOf(admin);
-    var decided = new CountDownLatch(1);
+    var decision = new CompletableFuture<String>();
     var failuresBefore = failClosedCount();
     var broadcaster = authorityCheckedBroadcaster();
     try (var held = lockAdminAccountRow();
@@ -126,7 +136,7 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
       var operation =
           broadcaster
               .register()
-              .doOnNext(_ -> requireViewLibraryAdministration(identity, decided))
+              .doOnNext(_ -> decision.complete(viewLibraryAdministrationDecision(identity)))
               .subscribe();
       broadcaster.broadcast("SCANNING");
       PostgresLockTestSupport.awaitBlockedBackendPid(observer, held.backendPid(), null);
@@ -134,19 +144,23 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
       operation.dispose();
     }
 
-    PostgresLockTestSupport.awaitLatch(decided);
+    assertThat(decision)
+        .as("the authority read finished with a real answer")
+        .succeedsWithin(Duration.ofSeconds(10))
+        .isEqualTo(ALLOWED);
     assertThat(failClosedCount()).isEqualTo(failuresBefore);
   }
 
   @Test
   @DisplayName(
-      "Should count an engine failure when a delivery's authority read fails while the operation stays open")
-  void shouldCountEngineFailureWhenDeliverysAuthorityReadFailsWhileOperationStaysOpen()
-      throws SQLException {
+      "Should deliver AUTHORIZATION_UNAVAILABLE and count an engine failure when a delivery's authority read fails while the operation stays open")
+  void
+      shouldDeliverAuthorizationUnavailableAndCountEngineFailureWhenDeliverysAuthorityReadFailsWhileOperationStaysOpen()
+          throws SQLException {
     var socket = connect();
     socket.subscribe("status", STATUS_SUBSCRIPTION);
     activeSubscriptions.awaitCount(STATUS_FIELD, 1);
-    var failuresBefore = failClosedCount();
+    var engineFailuresBefore = engineFailureCount();
     try (var held = lockAdminAccountRow();
         var observer = dataSource.getConnection()) {
       libraryBroadcasters.getStatusChanges().broadcast(library);
@@ -159,7 +173,7 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
     var delivery = socket.nextMessageFor("status").path("payload");
 
     assertThat(firstErrorCode(delivery)).isEqualTo("AUTHORIZATION_UNAVAILABLE");
-    assertThat(failClosedCount()).isEqualTo(failuresBefore + 1);
+    assertThat(engineFailureCount()).isEqualTo(engineFailuresBefore + 1);
   }
 
   private GraphQlTransportWsTestClient connect() {
@@ -169,8 +183,8 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
     return socket;
   }
 
-  // A delivery that checks live authority on the delivery thread, like a subscription that ends
-  // an operation whose subscriber has lost the authority to receive it.
+  // A delivery that reads live authority on the delivery thread, as the administration field does
+  // for every libraryStatusChanged value.
   private SubscriptionBroadcaster<String> authorityCheckedBroadcaster() {
     return SubscriptionBroadcaster.<String>builder()
         .field(STATUS_FIELD)
@@ -180,12 +194,20 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
         .build();
   }
 
-  private void requireViewLibraryAdministration(
-      AuthenticatedIdentity identity, CountDownLatch decided) {
+  private void awaitFirstCountsDelivery(GraphQlTransportWsTestClient socket) {
+    activeSubscriptions.awaitCount(COUNTS_FIELD, 1);
+    contentsBroadcasters.getCounts().broadcast(library.getId(), library.getId());
+    // The registration's own library read runs before this delivery reaches the socket, so it
+    // cannot wait on the lock taken next.
+    assertThat(socket.nextMessageFor("counts").path("type").asString()).isEqualTo("next");
+  }
+
+  private String viewLibraryAdministrationDecision(AuthenticatedIdentity identity) {
     try {
       libraryAdministration.requireViewLibraryAdministration(identity);
-    } finally {
-      decided.countDown();
+      return ALLOWED;
+    } catch (RuntimeException refusal) {
+      return refusal.getClass().getSimpleName();
     }
   }
 
@@ -212,6 +234,15 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
     return new HeldTableLock(connection, PostgresLockTestSupport.backendPid(connection));
   }
 
+  private double engineFailureCount() {
+    var counter = meterRegistry.find(FAIL_CLOSED_METRIC).tag("cause", "ENGINE_FAILURE").counter();
+    if (counter == null) {
+      return 0;
+    }
+
+    return counter.count();
+  }
+
   private double failClosedCount() {
     return meterRegistry.find(FAIL_CLOSED_METRIC).counters().stream()
         .mapToDouble(Counter::count)
@@ -219,11 +250,13 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
   }
 
   // A cancelled delivery sends the subscriber nothing, so only its backend shows that the read
-  // ended: the backend is idle again, or gone with the connection.
-  private void awaitBackendIdleOrGone(int backendPid) {
-    await()
+  // ended: the backend is idle again, or gone with the connection. The state is returned from the
+  // wait, because the pool may lend the connection out again before a second read.
+  private Optional<String> awaitBackendIdleOrGone(int backendPid) {
+    return await()
         .atMost(Duration.ofSeconds(10))
-        .until(() -> backendState(backendPid).filter(state -> !"idle".equals(state)).isEmpty());
+        .until(
+            () -> backendState(backendPid), state -> state.filter(not("idle"::equals)).isEmpty());
   }
 
   private Optional<String> backendState(int backendPid) {
