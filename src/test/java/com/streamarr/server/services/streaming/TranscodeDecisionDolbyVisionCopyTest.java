@@ -371,6 +371,12 @@ class TranscodeDecisionDolbyVisionCopyTest {
             dvh1Worker,
             keepingDolbyVision(DolbyVisionProfile.PROFILE_5, VideoRange.PQ)),
         Arguments.of(
+            "Profile 5 from a probe version 4 outcome, which names no codec profile to check",
+            hevcFromProbeVersion4(dolbyVisionRecord(CompatibleBase.NONE, 5, 0)),
+            Clients.baseless(13),
+            dvh1Worker,
+            ENCODE),
+        Arguments.of(
             "Profile 5 above the client's maximum level",
             profile5,
             Clients.baseless(SOURCE_LEVEL - 1),
