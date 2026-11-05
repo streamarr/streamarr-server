@@ -245,28 +245,30 @@ public class PlaybackSessionService implements AutoCloseable {
     return switch (locked(playback, () -> reserveAudioTrackSwitch(playback, command))) {
       case AudioTrackSwitch.Unchanged() -> currentSnapshot(playback);
       case AudioTrackSwitch.Refused(var rejection) -> Outcome.rejected(rejection);
-      case AudioTrackSwitch.Reserved(var directPlay, var pending) ->
-          startAudioTrackSwitch(playback, directPlay, pending);
+      case AudioTrackSwitch.Reserved(var pending) -> startAudioTrackSwitch(playback, pending);
     };
   }
 
   /**
    * The HLS stream session {@code streamId} that an audio switch starts for the track at {@code
-   * position}. {@code startFailed} records a worker failure of that stream session, and {@code
-   * directPlayFailure} a format failure of direct play, before the switch completes.
+   * position}, to replace the direct-play stream session {@code directPlayId}. {@code startFailed}
+   * records a worker failure of that stream session, and {@code directPlayFailure} a format failure
+   * of direct play, before the switch completes.
    */
+  @Builder(toBuilder = true)
   private record PendingAudioTrackSwitch(
       UUID streamId,
+      UUID directPlayId,
       int position,
       boolean startFailed,
       Optional<PlaybackSessionFailure> directPlayFailure) {
 
     PendingAudioTrackSwitch withStartFailed() {
-      return new PendingAudioTrackSwitch(streamId, position, true, directPlayFailure);
+      return toBuilder().startFailed(true).build();
     }
 
     PendingAudioTrackSwitch withDirectPlayFailure(PlaybackSessionFailure failure) {
-      return new PendingAudioTrackSwitch(streamId, position, startFailed, Optional.of(failure));
+      return toBuilder().directPlayFailure(Optional.of(failure)).build();
     }
   }
 
@@ -276,8 +278,7 @@ public class PlaybackSessionService implements AutoCloseable {
 
     record Refused(AudioTrackSwitchRejection rejection) implements AudioTrackSwitch {}
 
-    record Reserved(StreamSession directPlay, PendingAudioTrackSwitch pending)
-        implements AudioTrackSwitch {}
+    record Reserved(PendingAudioTrackSwitch pending) implements AudioTrackSwitch {}
   }
 
   // Direct play stays the current format attempt until the switch completes, so the reaper and a
@@ -303,48 +304,60 @@ public class PlaybackSessionService implements AutoCloseable {
       return new AudioTrackSwitch.Refused(new AudioTrackSwitchRejection.FormatAttemptsExhausted());
     }
 
-    var pending = new PendingAudioTrackSwitch(UUID.randomUUID(), position, false, Optional.empty());
+    var pending =
+        PendingAudioTrackSwitch.builder()
+            .streamId(UUID.randomUUID())
+            .directPlayId(session.getSessionId())
+            .position(position)
+            .directPlayFailure(Optional.empty())
+            .build();
     playback.audioTrackSwitch = Optional.of(pending);
     playback.streamIds.add(pending.streamId());
     streamOwners.put(pending.streamId(), playback);
-    return new AudioTrackSwitch.Reserved(session, pending);
+    return new AudioTrackSwitch.Reserved(pending);
   }
 
   private Outcome<PlaybackSessionSnapshot, AudioTrackSwitchRejection> startAudioTrackSwitch(
-      PlaybackSession playback, StreamSession directPlay, PendingAudioTrackSwitch pending) {
-    Outcome<StreamSession, CreateStreamSessionRejection> outcome;
+      PlaybackSession playback, PendingAudioTrackSwitch pending) {
+    var outcome =
+        abandoningTheSwitchIfItThrows(
+            playback,
+            pending,
+            () ->
+                streamingService.createSession(
+                    childCommand(playback, pending.streamId())
+                        .videoFormatConstraint(VideoFormatConstraint.COPY_OR_ENCODE)
+                        .audioTrackPosition(OptionalInt.of(pending.position()))
+                        .build()));
+    return switch (outcome) {
+      case Outcome.Accepted(var session) -> completeAudioTrackSwitch(playback, session);
+      case Outcome.Rejected(var rejections) ->
+          afterFailedAudioTrackSwitch(
+              playback,
+              abandonAudioTrackSwitch(playback, pending.streamId()),
+              new AudioTrackSwitchRejection.StreamSessionRefused(rejections.getFirst()));
+    };
+  }
+
+  private <T> T abandoningTheSwitchIfItThrows(
+      PlaybackSession playback, PendingAudioTrackSwitch pending, Supplier<T> start) {
     try {
-      outcome =
-          streamingService.createSession(
-              childCommand(playback, pending.streamId())
-                  .videoFormatConstraint(VideoFormatConstraint.COPY_OR_ENCODE)
-                  .audioTrackPosition(OptionalInt.of(pending.position()))
-                  .build());
+      return start.get();
     } catch (RuntimeException failure) {
       try {
         abandonAudioTrackSwitch(playback, pending.streamId())
-            .ifPresent(ended -> recoverDeferredDirectPlayFailure(playback, directPlay, ended));
+            .ifPresent(ended -> recoverDeferredDirectPlayFailure(playback, ended));
       } catch (RuntimeException cleanupFailure) {
         suppress(failure, cleanupFailure);
       }
 
       throw failure;
     }
-
-    return switch (outcome) {
-      case Outcome.Accepted(var session) -> completeAudioTrackSwitch(playback, directPlay, session);
-      case Outcome.Rejected(var rejections) ->
-          afterFailedAudioTrackSwitch(
-              playback,
-              directPlay,
-              abandonAudioTrackSwitch(playback, pending.streamId()),
-              new AudioTrackSwitchRejection.StreamSessionRefused(rejections.getFirst()));
-    };
   }
 
   private Outcome<PlaybackSessionSnapshot, AudioTrackSwitchRejection> completeAudioTrackSwitch(
-      PlaybackSession playback, StreamSession directPlay, StreamSession session) {
-    var ended = locked(playback, () -> endAudioTrackSwitch(playback, directPlay, session));
+      PlaybackSession playback, StreamSession session) {
+    var ended = locked(playback, () -> endAudioTrackSwitch(playback, session));
     if (ended.isEmpty()) {
       streamingService.destroySession(session.getSessionId());
       return currentSnapshot(playback);
@@ -353,17 +366,17 @@ public class PlaybackSessionService implements AutoCloseable {
     if (ended.get().startFailed()) {
       streamingService.destroySession(session.getSessionId());
       return afterFailedAudioTrackSwitch(
-          playback, directPlay, ended, new AudioTrackSwitchRejection.StreamSessionFailed());
+          playback, ended, new AudioTrackSwitchRejection.StreamSessionFailed());
     }
 
-    streamingService.destroySession(directPlay.getSessionId());
+    streamingService.destroySession(ended.get().directPlayId());
     return currentSnapshot(playback);
   }
 
   // Ending the switch and adopting its stream session share one critical section, so no worker
   // failure or second switch can fall between them.
   private Optional<PendingAudioTrackSwitch> endAudioTrackSwitch(
-      PlaybackSession playback, StreamSession directPlay, StreamSession session) {
+      PlaybackSession playback, StreamSession session) {
     var ended = takeAudioTrackSwitch(playback, session.getSessionId());
     if (ended.isEmpty()) {
       return ended;
@@ -374,7 +387,11 @@ public class PlaybackSessionService implements AutoCloseable {
       return ended;
     }
 
-    adoptAudioTrackSwitch(playback, directPlay, session, ended.get());
+    playback.audioTrackPosition = OptionalInt.of(ended.get().position());
+    playback.formatAttemptCount++;
+    playback.lastAccessedAt = clock.instant();
+    streamOwners.remove(ended.get().directPlayId(), playback);
+    adopt(playback, session, AUTO_AFTER_AN_AUDIO_TRACK_SWITCH);
     return ended;
   }
 
@@ -395,18 +412,6 @@ public class PlaybackSessionService implements AutoCloseable {
     return pending;
   }
 
-  private void adoptAudioTrackSwitch(
-      PlaybackSession playback,
-      StreamSession directPlay,
-      StreamSession session,
-      PendingAudioTrackSwitch ended) {
-    playback.audioTrackPosition = OptionalInt.of(ended.position());
-    playback.formatAttemptCount++;
-    playback.lastAccessedAt = clock.instant();
-    streamOwners.remove(directPlay.getSessionId(), playback);
-    adopt(playback, session, AUTO_AFTER_AN_AUDIO_TRACK_SWITCH);
-  }
-
   private Optional<PendingAudioTrackSwitch> abandonAudioTrackSwitch(
       PlaybackSession playback, UUID streamId) {
     var ended =
@@ -424,22 +429,21 @@ public class PlaybackSessionService implements AutoCloseable {
   // switch held back now recovers as it would have, with the chosen track.
   private Outcome<PlaybackSessionSnapshot, AudioTrackSwitchRejection> afterFailedAudioTrackSwitch(
       PlaybackSession playback,
-      StreamSession directPlay,
       Optional<PendingAudioTrackSwitch> ended,
       AudioTrackSwitchRejection rejection) {
     if (ended.flatMap(PendingAudioTrackSwitch::directPlayFailure).isEmpty()) {
       return Outcome.rejected(rejection);
     }
 
-    recoverDeferredDirectPlayFailure(playback, directPlay, ended.get());
+    recoverDeferredDirectPlayFailure(playback, ended.get());
     return currentSnapshot(playback);
   }
 
   private void recoverDeferredDirectPlayFailure(
-      PlaybackSession playback, StreamSession directPlay, PendingAudioTrackSwitch ended) {
+      PlaybackSession playback, PendingAudioTrackSwitch ended) {
     ended
         .directPlayFailure()
-        .ifPresent(failure -> recover(playback, directPlay.getSessionId(), failure));
+        .ifPresent(failure -> recover(playback, ended.directPlayId(), failure));
   }
 
   private void forgetStream(PlaybackSession playback, UUID streamId) {
