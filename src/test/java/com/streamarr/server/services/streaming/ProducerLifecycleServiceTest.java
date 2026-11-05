@@ -1835,6 +1835,16 @@ class ProducerLifecycleServiceTest {
             .keyframes(knownKeyframes(keyframes)));
   }
 
+  // Keyframes 10 s apart over 2 h open segments in the 6 s slots 0, 1, 3, 5, 6, 8 and so on: every
+  // slot without a keyframe merges into the segment before it.
+  private StreamSession startedMergedCopySession() {
+    var keyframes =
+        LongStream.iterate(0, time -> time <= 7_200_000, time -> time + 10_000)
+            .mapToObj(time -> new KeyframePosition(time, time))
+            .toList();
+    return startedCopySession(defaultProbeBuilder().keyframes(knownKeyframes(keyframes)));
+  }
+
   private StreamSession startedCopySession(MediaProbe.MediaProbeBuilder probe) {
     var session = defaultSessionBuilder().mediaProbe(probe.build()).build();
     runtimeRegistry.save(session);
@@ -1875,6 +1885,25 @@ class ProducerLifecycleServiceTest {
     var request = transcodeExecutor.getStartedRequests().getLast();
     assertThat(request.startSequenceNumber()).isEqualTo(100);
     assertThat(request.keyframeSeekPosition()).hasValue(Duration.ofMillis(600_600));
+  }
+
+  @Test
+  @DisplayName(
+      "Should start a relocated copy attempt at its merged segment's listed slot with the session's"
+          + " segment list")
+  void shouldStartARelocatedCopyAttemptAtItsMergedSegmentsListedSlotWithTheSessionsSegmentList() {
+    var session = startedMergedCopySession();
+
+    lifecycle.ensurePositioned(
+        session.getSessionId(), StreamSession.defaultVariant(), "segment3.m4s");
+
+    var first = transcodeExecutor.getStartedRequests().getFirst();
+    var relocated = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(first.segmentStartSlots()).startsWith(0, 1, 3, 5).hasSize(720);
+    assertThat(relocated.startSequenceNumber()).isEqualTo(3);
+    assertThat(relocated.seekPosition()).isEqualTo(30);
+    assertThat(relocated.keyframeSeekPosition()).hasValue(Duration.ofSeconds(30));
+    assertThat(relocated.segmentStartSlots()).isEqualTo(first.segmentStartSlots());
   }
 
   @Test

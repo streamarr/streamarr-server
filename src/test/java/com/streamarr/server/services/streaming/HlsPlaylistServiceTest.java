@@ -346,8 +346,8 @@ class HlsPlaylistServiceTest {
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("keyframesThatOpenNoStreamCopy")
-  @DisplayName("Should refuse a stream copy playlist when the keyframes cannot open every segment")
-  void shouldRefuseAStreamCopyPlaylistWhenTheKeyframesCannotOpenEverySegment(
+  @DisplayName("Should refuse a stream copy playlist when the keyframes cannot open its segments")
+  void shouldRefuseAStreamCopyPlaylistWhenTheKeyframesCannotOpenItsSegments(
       String description, KeyframeKnowledge keyframes) {
     var session =
         StreamSessionFixture.defaultSessionBuilder()
@@ -365,8 +365,16 @@ class HlsPlaylistServiceTest {
     return Stream.of(
         Arguments.of("not reported", new KeyframeKnowledge.NotReported()),
         Arguments.of(
-            "a keyframe every 10.01 s",
-            ProbeFixture.keyframesEvery(Duration.ofMillis(10_010), Duration.ofMinutes(120))));
+            "a keyframe that presents before the keyframe decoded before it",
+            new KeyframeKnowledge.Known(
+                KeyframePositions.builder()
+                    .streamIndex(0)
+                    .timeBaseNumerator(1)
+                    .timeBaseDenominator(1_000)
+                    .source(KeyframePositionSource.PACKET_SCAN)
+                    .keyframes(
+                        List.of(new KeyframePosition(6_000, 0), new KeyframePosition(3_000, 1_000)))
+                    .build())));
   }
 
   @Test

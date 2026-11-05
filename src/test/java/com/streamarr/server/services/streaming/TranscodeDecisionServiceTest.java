@@ -78,8 +78,8 @@ class TranscodeDecisionServiceTest {
   private static final KeyframeKnowledge KEYFRAMES_EVERY_TWO_SECONDS =
       ProbeFixture.keyframesEvery(Duration.ofSeconds(2), Duration.ofMinutes(120));
 
-  // At the 6 s period, keyframes 10.01 s apart leave the interval [12 s, 18 s) without one.
-  private static final KeyframeKnowledge KEYFRAMES_LEAVING_AN_INTERVAL_EMPTY =
+  // At the 6 s period, keyframes 10.01 s apart leave the slot [12 s, 18 s) without one.
+  private static final KeyframeKnowledge KEYFRAMES_LEAVING_A_SLOT_EMPTY =
       ProbeFixture.keyframesEvery(Duration.ofMillis(10_010), Duration.ofMinutes(120));
 
   private static final Set<String> EVERY_VIDEO_CODEC_FAMILY = Set.of("h264", "hevc", "av1");
@@ -281,8 +281,7 @@ class TranscodeDecisionServiceTest {
         Arguments.of(
             new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.NO_KEYFRAMES),
             "keyframes_unavailable"),
-        Arguments.of(millisecondKeyframes(0, 13_000, 18_000), "interval_without_keyframe"),
-        Arguments.of(millisecondKeyframes(0, 6_000), "interval_without_keyframe"),
+        Arguments.of(millisecondKeyframes(-4_000, -2_000), "no_opening_keyframe"),
         Arguments.of(
             millisecondKeyframes(0, 7_000, 6_500, 12_000, 18_000), "presentation_time_regressed"),
         Arguments.of(
@@ -349,13 +348,18 @@ class TranscodeDecisionServiceTest {
     assertThat(meterRegistry.find(STREAM_COPY_REFUSALS).counters()).isEmpty();
   }
 
-  @Test
-  @DisplayName("Should encode the video when a segment interval of the source holds no keyframe")
-  void shouldEncodeTheVideoWhenASegmentIntervalOfTheSourceHoldsNoKeyframe() {
-    var source = h264Probe(KEYFRAMES_LEAVING_AN_INTERVAL_EMPTY, "aac");
+  @ParameterizedTest
+  @ValueSource(ints = {6, 3})
+  @DisplayName("Should copy the video when a slot of the source holds no keyframe")
+  void shouldCopyTheVideoWhenASlotOfTheSourceHoldsNoKeyframe(int segmentSeconds) {
+    var properties =
+        StreamingProperties.builder()
+            .targetSegmentDuration(Duration.ofSeconds(segmentSeconds))
+            .build();
+    var source = h264Probe(KEYFRAMES_LEAVING_A_SLOT_EMPTY, "aac");
 
     var decision =
-        service
+        new TranscodeDecisionService(properties, meterRegistry)
             .decide(
                 TranscodeDecisionRequest.builder()
                     .source(source)
@@ -364,16 +368,15 @@ class TranscodeDecisionServiceTest {
                     .build())
             .orElseThrow();
 
-    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
-    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
-    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(meterRegistry.find(STREAM_COPY_REFUSALS).counters()).isEmpty();
   }
 
   @Test
   @DisplayName(
-      "Should encode both streams when the audio needs encoding and an interval holds no keyframe")
-  void shouldEncodeBothStreamsWhenTheAudioNeedsEncodingAndAnIntervalHoldsNoKeyframe() {
-    var source = h264Probe(KEYFRAMES_LEAVING_AN_INTERVAL_EMPTY, "flac");
+      "Should encode both streams when the audio needs encoding and the keyframes are not reported")
+  void shouldEncodeBothStreamsWhenTheAudioNeedsEncodingAndTheKeyframesAreNotReported() {
+    var source = h264Probe(new KeyframeKnowledge.NotReported(), "flac");
 
     var decision =
         service
@@ -393,7 +396,7 @@ class TranscodeDecisionServiceTest {
   @DisplayName(
       "Should encode with the preferred codec when the source's keyframes rule out a stream copy")
   void shouldEncodeWithThePreferredCodecWhenTheSourcesKeyframesRuleOutAStreamCopy() {
-    var source = h264Probe(KEYFRAMES_LEAVING_AN_INTERVAL_EMPTY, "aac");
+    var source = h264Probe(new KeyframeKnowledge.NotReported(), "aac");
 
     var decision =
         service
@@ -435,10 +438,10 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("Should encode the video when the two final grid intervals hold no keyframe")
-  void shouldEncodeTheVideoWhenTheTwoFinalGridIntervalsHoldNoKeyframe() {
-    // Over 20 s, neither [12 s, 18 s) nor [18 s, 20 s) holds a keyframe. A copy segment opened at
-    // 6 s would run 14 s, more than twice the 6 s period.
+  @DisplayName("Should copy the video when the two final slots hold no keyframe")
+  void shouldCopyTheVideoWhenTheTwoFinalSlotsHoldNoKeyframe() {
+    // Over 20 s, neither [12 s, 18 s) nor [18 s, 20 s) holds a keyframe. Both merge into the
+    // segment that the keyframe at 6 s opens, which runs 14 s: no duration bound limits it.
     var source =
         probeBuilder("h264", "aac")
             .duration(Duration.ofSeconds(20))
@@ -455,7 +458,7 @@ class TranscodeDecisionServiceTest {
                     .build())
             .orElseThrow();
 
-    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
   }
 
   @Test
@@ -481,7 +484,7 @@ class TranscodeDecisionServiceTest {
     assertThat(
             meterRegistry
                 .get(STREAM_COPY_REFUSALS)
-                .tag("reason", "interval_without_keyframe")
+                .tag("reason", "no_opening_keyframe")
                 .counter()
                 .count())
         .isEqualTo(1.0);

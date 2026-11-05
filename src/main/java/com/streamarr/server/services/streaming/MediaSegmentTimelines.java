@@ -22,10 +22,10 @@ final class MediaSegmentTimelines {
   }
 
   /**
-   * A stream copy's segments open at the source keyframes. The transcode decision copies the video
-   * only when the keyframes are known and open every grid interval except possibly the last, so a
-   * copy session always has them. An encode's attempts seek to the source keyframes when they are
-   * known.
+   * A stream copy's segments open at the source keyframes, on the segment list that they build. The
+   * transcode decision copies the video only when the keyframes are known and open at least one
+   * segment, so a copy session always has them. An encode's attempts seek to the source keyframes
+   * when they are known.
    */
   static MediaSegmentTimeline of(StreamSession session, StreamingProperties properties) {
     var probe = session.getMediaProbe();
@@ -35,10 +35,7 @@ final class MediaSegmentTimelines {
 
     return streamCopyOf(probe, properties)
         .orElseThrow(
-            () ->
-                new IllegalStateException(
-                    "A stream copy session needs the source's keyframes and a keyframe in every"
-                        + " segment"));
+            () -> new IllegalStateException("A stream copy session needs the source's keyframes"));
   }
 
   // Without the keyframes, the worker reads from one period before the attempt's first segment.
@@ -54,7 +51,7 @@ final class MediaSegmentTimelines {
 
   /**
    * The segments of a stream copy of the source, which open at its keyframes, or empty when the
-   * keyframes are not known or a grid interval holds none.
+   * keyframes are not known or the server cannot place them.
    */
   static Optional<MediaSegmentTimeline.StreamCopy> streamCopyOf(
       MediaProbe probe, StreamingProperties properties) {

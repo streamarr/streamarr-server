@@ -75,7 +75,7 @@ public enum DecisionReason {
   VIDEO_SOURCE_NOT_COPYABLE,
   /** The source's keyframe positions are not known yet. */
   KEYFRAMES_UNKNOWN,
-  /** The source's keyframes leave a segment interval before the last one without a keyframe. */
+  /** No source keyframe presents from zero up to the media end, so no copied segment opens. */
   KEYFRAMES_TOO_SPARSE,
   /** The source's keyframe timestamps go backwards or out of range. */
   KEYFRAME_TIMESTAMPS_INVALID,

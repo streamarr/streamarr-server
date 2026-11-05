@@ -9,9 +9,11 @@ import java.util.stream.IntStream;
 import lombok.NonNull;
 
 /**
- * The media segments a variant's playlist advertises, numbered from zero on the grid of the target
- * segment duration: segment {@code N}'s interval starts at {@code N × target}, where the target
- * counts in whole seconds.
+ * The media segments a variant's playlist advertises, numbered from zero on slots of the target
+ * segment duration, which counts in whole seconds. Slot {@code k} covers {@code [k × target, (k +
+ * 1) × target)} of media time. On the plain grid, segment {@code N}'s interval is slot {@code N}. A
+ * stream copy's segment list starts each segment at a slot of its own and can merge several slots
+ * into one segment (ADR 0037).
  */
 public sealed interface MediaSegmentTimeline {
 
@@ -35,8 +37,21 @@ public sealed interface MediaSegmentTimeline {
     return index >= 0 && index < mediaSegmentCount();
   }
 
+  /**
+   * Each media segment's start slot, which every job attempt carries, or nothing on the plain grid
+   * (ADR 0037).
+   */
+  default List<Integer> segmentStartSlots() {
+    return List.of();
+  }
+
+  /** The slot where the media segment's interval starts. */
+  default int mediaSegmentStartSlot(int index) {
+    return index;
+  }
+
   default int mediaSegmentStartSeconds(int index) {
-    return index * targetSegmentDurationSeconds();
+    return mediaSegmentStartSlot(index) * targetSegmentDurationSeconds();
   }
 
   /**
@@ -196,8 +211,9 @@ public sealed interface MediaSegmentTimeline {
    * A stream copy's segments, which open at source keyframes under ADR 0037's boundary rule.
    * Segment {@code N} opens at the presentation time of its keyframe and runs until the next
    * segment opens. Segment 0 opens at zero instead, because it also holds the media that presents
-   * before its keyframe. The last segment runs to the media duration. Each segment's start stays on
-   * the grid.
+   * before its keyframe. The last segment runs to the media duration. Segment {@code N}'s interval
+   * starts at the slot that holds its keyframe, and segment 0's at slot 0, so a slot that holds no
+   * opening keyframe merges into the segment before it.
    */
   record StreamCopy(
       @NonNull Duration mediaDuration,
@@ -212,6 +228,67 @@ public sealed interface MediaSegmentTimeline {
     @Override
     public int mediaSegmentCount() {
       return openingKeyframes.size();
+    }
+
+    @Override
+    public List<Integer> segmentStartSlots() {
+      return IntStream.range(0, mediaSegmentCount())
+          .map(this::mediaSegmentStartSlot)
+          .boxed()
+          .toList();
+    }
+
+    @Override
+    public int mediaSegmentStartSlot(int index) {
+      if (index == 0) {
+        return 0;
+      }
+
+      return slotAt(openingKeyframes.get(index).presentationTime());
+    }
+
+    /**
+     * The media segment whose interval holds the slot the given distance before segment {@code
+     * index}'s start slot, counted in whole target segment durations and at least one segment back.
+     * The index falls below zero when the distance reaches past the first slot.
+     */
+    @Override
+    public int mediaSegmentIndexBefore(int index, @NonNull Duration distance) {
+      var slot =
+          mediaSegmentStartSlot(index) - distance.toSeconds() / targetSegmentDurationSeconds();
+      if (slot < 0) {
+        return -1;
+      }
+
+      var holder = index;
+      while (holder > 0 && mediaSegmentStartSlot(holder) > slot) {
+        holder--;
+      }
+
+      return Math.min(holder, index - 1);
+    }
+
+    /**
+     * How long the grid slots are that these consecutive media segments, from segment {@code
+     * firstIndex} on, span: from the first one's start slot up to the next segment's, or for the
+     * last segment up to the slot that holds the media end.
+     */
+    @Override
+    public Duration slotSpan(int firstIndex, int segmentCount) {
+      var slots = slotEnd(firstIndex + segmentCount - 1) - mediaSegmentStartSlot(firstIndex);
+      return targetSegmentDuration().multipliedBy(slots);
+    }
+
+    private int slotEnd(int index) {
+      if (index + 1 < mediaSegmentCount()) {
+        return mediaSegmentStartSlot(index + 1);
+      }
+
+      return new PlainGrid(mediaDuration, targetSegmentDuration).mediaSegmentCount();
+    }
+
+    private int slotAt(Duration time) {
+      return Math.toIntExact(time.dividedBy(Duration.ofSeconds(targetSegmentDurationSeconds())));
     }
 
     @Override

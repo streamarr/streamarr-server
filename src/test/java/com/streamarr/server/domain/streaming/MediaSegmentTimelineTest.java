@@ -153,6 +153,68 @@ class MediaSegmentTimelineTest {
     assertThat(timeline.targetSegmentDurationSeconds()).isEqualTo(6);
   }
 
+  // At 6 s slots, keyframes at 0, 10, 20 and 30 s open segments in slots 0, 1, 3 and 5. The slots
+  // [12 s, 18 s) and [24 s, 30 s) hold no keyframe and merge into the segment before each.
+  @Test
+  @DisplayName("Should start each merged stream copy segment at its listed slot")
+  void shouldStartEachMergedStreamCopySegmentAtItsListedSlot() {
+    var timeline = streamCopyOver(Duration.ofSeconds(36), 0, 10_000, 20_000, 30_000);
+
+    assertThat(timeline.segmentStartSlots()).containsExactly(0, 1, 3, 5);
+    assertThat(IntStream.range(0, 4).map(timeline::mediaSegmentStartSeconds))
+        .containsExactly(0, 6, 18, 30);
+    assertThat(durations(timeline))
+        .containsExactly(
+            Duration.ofSeconds(10),
+            Duration.ofSeconds(10),
+            Duration.ofSeconds(10),
+            Duration.ofSeconds(6));
+  }
+
+  @Test
+  @DisplayName("Should start the first stream copy segment at slot 0 when its keyframe lies later")
+  void shouldStartTheFirstStreamCopySegmentAtSlotZeroWhenItsKeyframeLiesLater() {
+    var timeline = streamCopyOver(Duration.ofSeconds(24), 13_000, 19_000);
+
+    assertThat(timeline.segmentStartSlots()).containsExactly(0, 3);
+    assertThat(durations(timeline)).containsExactly(Duration.ofSeconds(19), Duration.ofSeconds(5));
+  }
+
+  // The 37 s media holds seven 6 s slots. The last segment opens in slot 5 and spans slots 5 and 6.
+  @ParameterizedTest
+  @CsvSource({"0, 1, PT6S", "1, 1, PT12S", "0, 2, PT18S", "2, 2, PT24S", "3, 1, PT12S"})
+  @DisplayName("Should span every slot of each merged segment when measuring their grid slots")
+  void shouldSpanEverySlotOfEachMergedSegmentWhenMeasuringTheirGridSlots(
+      int firstIndex, int segmentCount, Duration expectedSpan) {
+    var timeline = streamCopyOver(Duration.ofSeconds(37), 0, 10_000, 20_000, 30_000);
+
+    assertThat(timeline.slotSpan(firstIndex, segmentCount)).isEqualTo(expectedSpan);
+  }
+
+  // Keyframes every 10 s open segments in slots 0, 1, 3, 5, 6, 8, 10 and 11 of 6 s. From segment
+  // 6's slot 10, 24 s reach back to slot 6, which segment 4 opens, and 12 s to slot 8.
+  @ParameterizedTest
+  @CsvSource({"6, PT24S, 4", "6, PT12S, 5", "6, PT0S, 5", "7, PT6S, 6", "1, PT12S, -1"})
+  @DisplayName(
+      "Should count slots back, and at least one segment, when finding a merged segment before"
+          + " another")
+  void shouldCountSlotsBackWhenFindingAMergedSegmentBeforeAnother(
+      int index, Duration distance, int expectedIndex) {
+    var timeline =
+        streamCopyOver(
+            Duration.ofSeconds(72), 0, 10_000, 20_000, 30_000, 40_000, 50_000, 60_000, 70_000);
+
+    assertThat(timeline.mediaSegmentIndexBefore(index, distance)).isEqualTo(expectedIndex);
+  }
+
+  @Test
+  @DisplayName("Should list no segment start on the plain grid")
+  void shouldListNoSegmentStartOnThePlainGrid() {
+    var timeline = new MediaSegmentTimeline.PlainGrid(Duration.ofSeconds(60), SIX_SECONDS);
+
+    assertThat(timeline.segmentStartSlots()).isEmpty();
+  }
+
   @Test
   @DisplayName("Should open no stream copy segment at a keyframe at or after the media end")
   void shouldOpenNoStreamCopySegmentAtAKeyframeAtOrAfterTheMediaEnd() {

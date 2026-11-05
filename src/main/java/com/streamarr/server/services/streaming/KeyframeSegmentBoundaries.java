@@ -7,8 +7,10 @@ import lombok.NonNull;
 
 /**
  * Applies ADR 0037's boundary rule to a source's keyframe positions, as the worker's producer
- * applies it to a stream copy that starts at segment 0. Segment N covers {@code [N × period, (N +
- * 1) × period)} and opens at the first keyframe whose presentation time lies inside that interval.
+ * applies it to a stream copy on the stream session's segment list. Slot {@code k} covers {@code [k
+ * × period, (k + 1) × period)} of media time. The first keyframe that presents at or after zero
+ * opens segment 0, and each later slot's first keyframe opens the next segment. A slot without a
+ * keyframe merges into the segment before it.
  */
 final class KeyframeSegmentBoundaries {
 
@@ -21,6 +23,7 @@ final class KeyframeSegmentBoundaries {
 
     var keyframes = positions.keyframes();
     var openingKeyframes = new ArrayList<Integer>();
+    var openSlot = -1L;
     for (var index = 0; index < keyframes.size(); index++) {
       var presentationTime = keyframes.get(index).presentationTime();
       if (index > 0 && presentationTime < keyframes.get(index - 1).presentationTime()) {
@@ -31,13 +34,9 @@ final class KeyframeSegmentBoundaries {
         return new StreamCopySegments.PresentationTimeOutOfRange(index);
       }
 
-      var segmentNumber = segmentNumberOf(presentationTime, positions, periodSeconds);
-      if (segmentNumber > openingKeyframes.size()) {
-        return new StreamCopySegments.IntervalWithoutKeyframe(openingKeyframes.size());
-      }
-
-      // A lower number joins the open segment, or lies before zero, where no segment opens.
-      if (segmentNumber < openingKeyframes.size()) {
+      // A keyframe in the open segment's slot joins that segment, and one before zero opens none.
+      var slot = slotOf(presentationTime, positions, periodSeconds);
+      if (slot <= openSlot || slot < 0) {
         continue;
       }
 
@@ -46,10 +45,7 @@ final class KeyframeSegmentBoundaries {
       }
 
       openingKeyframes.add(index);
-    }
-
-    if (openingKeyframes.isEmpty()) {
-      return new StreamCopySegments.IntervalWithoutKeyframe(0);
+      openSlot = slot;
     }
 
     return new StreamCopySegments.Starts(openingKeyframes);
@@ -59,7 +55,7 @@ final class KeyframeSegmentBoundaries {
     return ticks > Long.MAX_VALUE / timeBaseNumerator || ticks < Long.MIN_VALUE / timeBaseNumerator;
   }
 
-  private static long segmentNumberOf(
+  private static long slotOf(
       long presentationTime, KeyframePositions positions, int periodSeconds) {
     return Math.floorDiv(
         Math.multiplyExact(presentationTime, positions.timeBaseNumerator()),
