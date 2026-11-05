@@ -6,10 +6,9 @@ import static com.streamarr.server.fixtures.PlaybackSessionFixture.playbackServi
 import static com.streamarr.server.fixtures.PlaybackSessionFixture.startPlaybackBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.awaitility.Awaitility.await;
-import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
 
 import com.streamarr.server.domain.media.MediaFileTitle;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
@@ -114,7 +113,18 @@ class ActiveStreamEventListenerTest {
     var mediaFiles = new ParkingMediaFileRepository();
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var listener = listenerReading(mediaFiles, Schedulers.fromExecutorService(executor));
-      var delivered = subscribe();
+      var delivered = new CopyOnWriteArrayList<ActiveStreamDto.ChangeDto>();
+      var ended = new CountDownLatch(1);
+      broadcaster
+          .getChanges()
+          .register()
+          .subscribe(
+              change -> {
+                delivered.add(change);
+                if (change.activeStream() == null) {
+                  ended.countDown();
+                }
+              });
       var command = startPlaybackBuilder().build();
       var playback = acceptedPlayback(playbackSessions.start(command));
       var event = new PlaybackSessionChangedEvent(playback.playbackSessionId());
@@ -125,15 +135,12 @@ class ActiveStreamEventListenerTest {
       BoundedTask.runWithin(BOUND, () -> listener.onPlaybackSessionChanged(event));
       mediaFiles.release.countDown();
 
+      awaitLatch(ended);
+
       var playbackId = playback.playbackSessionId().toString();
-      await()
-          .atMost(BOUND)
-          .untilAsserted(
-              () ->
-                  assertThat(delivered)
-                      .last()
-                      .isEqualTo(new ActiveStreamDto.ChangeDto(playbackId, null)));
+      assertThat(delivered).hasSize(2);
       assertThat(delivered.getFirst().activeStream().playbackSessionId()).isEqualTo(playbackId);
+      assertThat(delivered.getLast()).isEqualTo(new ActiveStreamDto.ChangeDto(playbackId, null));
     }
   }
 
