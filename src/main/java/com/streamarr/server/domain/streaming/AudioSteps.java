@@ -38,9 +38,10 @@ public record AudioSteps(@NonNull List<AudioDecision> highestFirst) {
    * track). Multichannel steps keep the codec and channels of the encode that the server would
    * choose for the track, which a capability entry already accepts, and exist only when that encode
    * has more than two channels. A copy in a codec that the server encodes also steps through that
-   * codec's multichannel steps: the steps of both codecs come highest bitrate first, the copied
-   * codec first at an equal bitrate. Then come AAC stereo steps, or one AAC mono step for a mono
-   * track; every declaration carries an AAC entry for HLS (ADR 0049).
+   * codec's multichannel steps, and a copy of 3 or 4 channels keeps them in its own layout there
+   * only when the codec carries that layout exactly: the steps of both codecs come highest bitrate
+   * first, the copied codec first at an equal bitrate. Then come AAC stereo steps, or one AAC mono
+   * step for a mono track; every declaration carries an AAC entry for HLS (ADR 0049).
    */
   public static AudioSteps below(
       @NonNull AudioDecision sessionAudio,

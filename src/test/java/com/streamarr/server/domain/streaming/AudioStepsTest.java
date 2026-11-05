@@ -22,6 +22,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 class AudioStepsTest {
 
   private static final String STEREO_STEPS = "aac 2 128000, aac 2 96000";
+  private static final String STEREO_STEPS_WITH_LAYOUT = "aac 2 128000 stereo, aac 2 96000 stereo";
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("surroundEncodes")
@@ -142,6 +143,102 @@ class AudioStepsTest {
                     "eac3 6 448000",
                     "eac3 6 384000",
                     STEREO_STEPS))
+            .build());
+  }
+
+  // ADR 0050: a copy of 3 or 4 channels keeps them in its own codec's steps only in a layout that
+  // the codec carries exactly, and each step names the copy's layout. AAC carries 3.0 and 4.0 at 64
+  // kb/s per full-band channel; AC-3 and E-AC-3 carry 2.1, 3.0, 4.0, quad and quad(side) at their
+  // multichannel bitrates. The server's own encode of such a track stays stereo.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("copiesOfThreeOrFourChannelsInALayoutTheirCodecCarries")
+  @DisplayName(
+      "Should step a copy of 3 or 4 channels through its own codec in the copy's layout before"
+          + " stereo when the codec carries that layout exactly")
+  void
+      shouldStepACopyOf3Or4ChannelsThroughItsOwnCodecInTheCopysLayoutBeforeStereoWhenTheCodecCarriesThatLayoutExactly(
+          LayoutStepsCase stepsCase) {
+    assertLayoutSteps(stepsCase);
+  }
+
+  static Stream<LayoutStepsCase> copiesOfThreeOrFourChannelsInALayoutTheirCodecCarries() {
+    return Stream.of(
+        LayoutStepsCase.builder()
+            .sessionAudio(copy("aac").channels(4).bitrate(384_000L).build())
+            .trackLayout("4.0")
+            .entries(entries(AudioCodec.AAC, 6))
+            .steps(List.of("aac 4 384000 copy", "aac 4 256000 4.0", STEREO_STEPS_WITH_LAYOUT))
+            .build(),
+        LayoutStepsCase.builder()
+            .sessionAudio(copy("aac").channels(3).bitrate(320_000L).build())
+            .trackLayout("3.0")
+            .entries(entries(AudioCodec.AAC, 6))
+            .steps(List.of("aac 3 320000 copy", "aac 3 192000 3.0", STEREO_STEPS_WITH_LAYOUT))
+            .build(),
+        LayoutStepsCase.builder()
+            .sessionAudio(copy("aac").channels(4).bitrate(384_000L).build())
+            .trackLayout("4.0")
+            .entries(aac51AndEac351())
+            .steps(List.of("aac 4 384000 copy", "aac 4 256000 4.0", STEREO_STEPS_WITH_LAYOUT))
+            .build(),
+        ac3Copy("2.1", 3),
+        ac3Copy("3.0", 3),
+        ac3Copy("4.0", 4),
+        ac3Copy("quad", 4),
+        ac3Copy("quad(side)", 4),
+        LayoutStepsCase.builder()
+            .sessionAudio(copy("eac3").channels(4).bitrate(768_000L).build())
+            .trackLayout("quad")
+            .entries(entries(AudioCodec.EAC3, 6))
+            .steps(
+                List.of(
+                    "eac3 4 768000 copy",
+                    "eac3 4 640000 quad",
+                    "eac3 4 448000 quad",
+                    "eac3 4 384000 quad",
+                    STEREO_STEPS_WITH_LAYOUT))
+            .build());
+  }
+
+  // AAC writes 2.1 and quad as channel configuration 0, which Chromium refuses, and AC-3 and
+  // E-AC-3 misplace 3.0(back) and 3.1 on AVFoundation (ADR 0050). A layout that the probe did not
+  // store, or that ffprobe names only by its channels, is unknown.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("copiesOfThreeOrFourChannelsInALayoutTheirCodecDoesNotCarry")
+  @DisplayName(
+      "Should step a copy of 3 or 4 channels straight to stereo when its codec does not carry the"
+          + " copy's layout exactly")
+  void shouldStepACopyOf3Or4ChannelsStraightToStereoWhenItsCodecDoesNotCarryTheCopysLayoutExactly(
+      LayoutStepsCase stepsCase) {
+    assertLayoutSteps(stepsCase);
+  }
+
+  static Stream<LayoutStepsCase> copiesOfThreeOrFourChannelsInALayoutTheirCodecDoesNotCarry() {
+    return Stream.of(
+        stereoOnlyCopy(AudioCodec.AAC, 4, "quad"),
+        stereoOnlyCopy(AudioCodec.AAC, 4, "quad(side)"),
+        stereoOnlyCopy(AudioCodec.AAC, 3, "2.1"),
+        stereoOnlyCopy(AudioCodec.AAC, 3, "3.0(back)"),
+        stereoOnlyCopy(AudioCodec.AAC, 4, null),
+        stereoOnlyCopy(AudioCodec.AC3, 3, "3.0(back)"),
+        stereoOnlyCopy(AudioCodec.AC3, 4, "3.1"),
+        stereoOnlyCopy(AudioCodec.EAC3, 4, "4 channels (FL+FR+LFE+BC)"),
+        stereoOnlyCopy(AudioCodec.EAC3, 3, null));
+  }
+
+  // A copy of 3 or 4 channels never steps above the channels that the codec's entry accepts.
+  @Test
+  @DisplayName(
+      "Should step a copy of 4 channels straight to stereo when its codec's entry accepts fewer"
+          + " channels than the copy")
+  void
+      shouldStepACopyOf4ChannelsStraightToStereoWhenItsCodecsEntryAcceptsFewerChannelsThanTheCopy() {
+    assertLayoutSteps(
+        LayoutStepsCase.builder()
+            .sessionAudio(copy("ac3").channels(4).bitrate(640_000L).build())
+            .trackLayout("4.0")
+            .entries(entries(AudioCodec.AC3, 3))
+            .steps(List.of("ac3 4 640000 copy", STEREO_STEPS_WITH_LAYOUT))
             .build());
   }
 
@@ -415,6 +512,59 @@ class AudioStepsTest {
         .sourceCodecString(Optional.of("copied"));
   }
 
+  // A copied AC-3 track at 640 kb/s, whose steps keep its layout at 448 and 384 kb/s.
+  private static LayoutStepsCase ac3Copy(String layout, int channels) {
+    return LayoutStepsCase.builder()
+        .sessionAudio(copy("ac3").channels(channels).bitrate(640_000L).build())
+        .trackLayout(layout)
+        .entries(entries(AudioCodec.AC3, 6))
+        .steps(
+            List.of(
+                "ac3 %d 640000 copy".formatted(channels),
+                "ac3 %d 448000 %s".formatted(channels, layout),
+                "ac3 %d 384000 %s".formatted(channels, layout),
+                STEREO_STEPS_WITH_LAYOUT))
+        .build();
+  }
+
+  // A copy at 640 kb/s beside a surround entry for its codec, whose only lower steps are stereo.
+  private static LayoutStepsCase stereoOnlyCopy(AudioCodec codec, int channels, String layout) {
+    var name = codec.probedName();
+    return LayoutStepsCase.builder()
+        .sessionAudio(copy(name).channels(channels).bitrate(640_000L).build())
+        .trackLayout(layout)
+        .entries(entries(codec, 6))
+        .steps(List.of("%s %d 640000 copy".formatted(name, channels), STEREO_STEPS_WITH_LAYOUT))
+        .build();
+  }
+
+  private static void assertLayoutSteps(LayoutStepsCase stepsCase) {
+    var declaration = defaultDeclarationBuilder().audio(stepsCase.entries()).build();
+    var sessionAudio = stepsCase.sessionAudio();
+    var track =
+        new AudioTrackChannels(
+            sessionAudio.channels(), Optional.ofNullable(stepsCase.trackLayout()));
+
+    var steps = AudioSteps.below(sessionAudio, track, declaration);
+
+    assertThat(
+            String.join(
+                ", ",
+                steps.highestFirst().stream()
+                    .map(
+                        step ->
+                            "%s %d %d %s"
+                                .formatted(
+                                    step.codec(),
+                                    step.channels(),
+                                    step.bitrate(),
+                                    step.channelLayout()
+                                        .map(ChannelLayout::getFfmpegName)
+                                        .orElse("copy")))
+                    .toList()))
+        .isEqualTo(String.join(", ", stepsCase.steps()));
+  }
+
   // A track whose layout the probe did not store.
   private static AudioTrackChannels trackOf(int channels) {
     return new AudioTrackChannels(channels, Optional.empty());
@@ -436,6 +586,16 @@ class AudioStepsTest {
             .map(step -> step.codec() + " " + step.channels() + " " + step.bitrate())
             .toList());
   }
+
+  // Each step as "codec channels bitrate layout", such as "aac 4 256000 4.0", highest first; the
+  // copy names no layout. trackLayout is ffprobe's name for the track's layout, or null when the
+  // probe stored none.
+  @Builder
+  record LayoutStepsCase(
+      AudioDecision sessionAudio,
+      String trackLayout,
+      List<AudioCapabilityEntry> entries,
+      List<String> steps) {}
 
   // Each step as "codec channels bitrate", such as "eac3 6 768000", highest first.
   @Builder
