@@ -196,8 +196,9 @@ class VideoCapabilityEntryDynamicRangeTest {
   @DisplayName(
       "Should accept a Dolby Vision copy without a compatible base only when the entry lists its"
           + " profile at or above its level")
-  void shouldAcceptADolbyVisionCopyWithoutACompatibleBaseOnlyWhenTheEntryListsItsProfile(
-      String scenario, VideoCapabilityEntry entry, VideoStreamCopy copy, boolean accepted) {
+  void
+      shouldAcceptADolbyVisionCopyWithoutACompatibleBaseOnlyWhenTheEntryListsItsProfileAtOrAboveItsLevel(
+          String scenario, VideoCapabilityEntry entry, VideoStreamCopy copy, boolean accepted) {
     assertThat(entry.acceptsHlsCopy(copy)).isEqualTo(accepted);
   }
 

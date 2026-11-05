@@ -326,9 +326,9 @@ class TranscodeDecisionDolbyVisionCopyTest {
   @ParameterizedTest(name = "{0}")
   @MethodSource("baselessDolbyVisionDecisions")
   @DisplayName(
-      "Should copy Dolby Vision without a compatible base only to a client that declares its"
-          + " profile when a connected worker writes its Dolby Vision sample entry")
-  void shouldCopyDolbyVisionWithoutACompatibleBaseOnlyWhenAConnectedWorkerWritesItsSampleEntry(
+      "Should copy Dolby Vision without a compatible base only when the client declares its profile"
+          + " and a worker writes its sample entry")
+  void shouldCopyDolbyVisionWithoutABaseOnlyWhenTheClientDeclaresItAndAWorkerWritesItsSampleEntry(
       String scenario,
       MediaProbe source,
       ClientCapabilityDeclaration client,

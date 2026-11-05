@@ -116,9 +116,9 @@ class DolbyVisionWithoutACompatibleBaseTest {
   @ParameterizedTest(name = "{0} in {1}")
   @MethodSource("copiesUnderADolbyVisionSampleEntry")
   @DisplayName(
-      "Should copy under the Dolby Vision sample entry and announce PQ when the client declares the"
-          + " profile and a connected worker writes the entry")
-  void shouldCopyUnderTheDolbyVisionSampleEntryWhenTheClientDeclaresTheProfile(
+      "Should copy under the Dolby Vision sample entry when the client declares the profile and a"
+          + " worker writes the entry")
+  void shouldCopyUnderTheDolbyVisionSampleEntryWhenTheClientDeclaresTheProfileAndAWorkerWritesIt(
       DolbyVisionProfile profile, VideoQuality quality, String codecs) {
     probes.setDefaultProbe(baselessSource(profile));
 
