@@ -617,15 +617,15 @@ public class ProducerLifecycleService {
   }
 
   /**
-   * Starts the variant that the multivariant playlist lists first, at the stream session's current
-   * segment. No other variant starts until the player requests one of its segments (ADR 0019). When
-   * no slot is free, another stream session's left variant stops first. Throws {@link
+   * Starts a variant that the multivariant playlist lists, at the stream session's current segment.
+   * No other variant starts until the player requests one of its segments (ADR 0019). When no slot
+   * is free, another stream session's left variant stops first. Throws {@link
    * TranscodeLimitReachedException} and starts nothing when the transcode limit still leaves no
    * place for a stream session that transcodes.
    */
-  public StreamSession startFirstListedVariant(StreamSession session) {
+  public StreamSession startListedVariant(StreamSession session, String variantLabel) {
     var sessionId = session.getSessionId();
-    var shortage = slotShortage(session, session.firstListedVariant());
+    var shortage = slotShortage(session, variantLabel);
     if (shortage.any()) {
       stopLeftVariantOfAnotherStreamSession(sessionId, shortage);
     }
@@ -641,7 +641,7 @@ public class ProducerLifecycleService {
               transcodeLimit
                   .tryReserve(current)
                   .orElseThrow(() -> new TranscodeLimitReachedException(sessionId))) {
-            startVariant(current, current.firstListedVariant(), current.getCurrentSegment());
+            startVariant(current, variantLabel, current.getCurrentSegment());
             if (runtimeRegistry.findById(sessionId).isEmpty()) {
               throw new SessionNotFoundException(sessionId);
             }
