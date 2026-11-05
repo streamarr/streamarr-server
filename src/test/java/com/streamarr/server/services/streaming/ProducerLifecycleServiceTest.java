@@ -255,6 +255,19 @@ class ProducerLifecycleServiceTest {
                     UUID.randomUUID(), StreamSession.defaultVariant(), "segment0.m4s"));
   }
 
+  // A held request is the viewer's access, so the reaper never suspends a producer that a viewer
+  // still waits on, however long a merged segment takes.
+  @Test
+  @DisplayName("Should keep the stream session from going idle while a held request waits on it")
+  void shouldKeepTheStreamSessionFromGoingIdleWhileAHeldRequestWaitsOnIt() {
+    var session = startedSession();
+    session.setLastAccessedAt(clock.instant().minusSeconds(200));
+
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
+
+    assertThat(session.getLastAccessedAt()).isEqualTo(clock.instant());
+  }
+
   @Test
   @DisplayName("Should update last accessed time when resuming suspended session")
   void shouldUpdateLastAccessedTimeWhenResumingSuspendedSession() {

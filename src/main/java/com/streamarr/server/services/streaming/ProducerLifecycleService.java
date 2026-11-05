@@ -261,6 +261,9 @@ public class ProducerLifecycleService {
       return RecoveryResult.SESSION_GONE;
     }
 
+    // A held request is the viewer's access: a long merged segment must not let the reaper
+    // suspend the producer the viewer waits on.
+    runtimeRegistry.touch(sessionId, clock.instant());
     if (!session.offersVariant(variantLabel)) {
       return RecoveryResult.SESSION_GONE;
     }
