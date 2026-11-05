@@ -1,9 +1,10 @@
 package com.streamarr.server.domain.streaming;
 
 /**
- * Why a format attempt's output differs from its source: why the server encodes the video or the
- * audio, or what a copy leaves out. The stream decision names each reason as it decides, so the
- * reasons always agree with the output (streamarr/streamarr-server#751).
+ * Why a format attempt's output differs from its source: why the source file does not play
+ * directly, why the server encodes the video or the audio, or what a copy leaves out. The stream
+ * decision names each reason as it decides, so the reasons always agree with the output
+ * (streamarr/streamarr-server#751).
  */
 public enum DecisionReason {
   /** No video capability entry for HLS names the source's codec family. */
@@ -28,7 +29,10 @@ public enum DecisionReason {
   PICTURE_ABOVE_VIEWER_LIMIT,
   /** A copy costs more than the viewer's maximum bitrate beside every audio step. */
   BITRATE_ABOVE_VIEWER_LIMIT,
-  /** The source is interlaced, and HLS delivery needs progressive video. */
+  /**
+   * The source is interlaced. HLS delivery needs progressive video, and no player's direct play of
+   * an interlaced file was measured.
+   */
   SOURCE_INTERLACED,
   /** The source is Dolby Vision without a compatible base, which no client copy plays. */
   DOLBY_VISION_WITHOUT_COMPATIBLE_BASE,
@@ -62,6 +66,34 @@ public enum DecisionReason {
   AUDIO_SOURCE_NOT_COPYABLE,
   /** A lower audio step keeps the output within the viewer's maximum bitrate. */
   AUDIO_LOWERED_FOR_BITRATE_LIMIT,
+  /** The probe's facts name no single source container that a declaration can list. */
+  SOURCE_CONTAINER_UNKNOWN,
+  /**
+   * No video capability entry of the source's codec family lists the file's source container, or,
+   * for a file with audio, no audio capability entry lists it.
+   */
+  DIRECT_PLAY_CONTAINER_NOT_DECLARED,
+  /**
+   * No video capability entry that lists the MP4 or MOV container lists the video stream's sample
+   * entry, or the probe stored no sample entry.
+   */
+  DIRECT_PLAY_SAMPLE_ENTRY_NOT_DECLARED,
+  /**
+   * No video capability entry that lists the file's source container, and its sample entry in MP4
+   * or MOV, accepts every property of the video stream as it is, or the probe stored no codec
+   * profile to check.
+   */
+  DIRECT_PLAY_VIDEO_NOT_DECLARED,
+  /**
+   * An audio track of the file is one that no audio capability entry listing the file's source
+   * container accepts. Every track counts, because the player may start any of them.
+   */
+  DIRECT_PLAY_AUDIO_NOT_DECLARED,
+  /**
+   * A forced image subtitle track, PGS, VobSub or DVB, is in the language of an audio track
+   * (streamarr/streamarr-server#506).
+   */
+  FORCED_IMAGE_SUBTITLE_IN_AUDIO_LANGUAGE,
   /** An earlier format attempt's direct play failed, so this format attempt plays over HLS. */
   DIRECT_PLAY_FAILED,
   /** An earlier format attempt's copy failed, so this format attempt encodes the video. */

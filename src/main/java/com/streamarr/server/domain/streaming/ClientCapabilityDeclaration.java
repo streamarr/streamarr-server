@@ -3,6 +3,7 @@ package com.streamarr.server.domain.streaming;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.NonNull;
 
@@ -45,23 +46,79 @@ public record ClientCapabilityDeclaration(
   }
 
   /**
-   * Whether the declaration covers direct play of the source from its source container (ADR 0049):
-   * one video entry accepts the video stream and lists the container, and an audio entry that lists
-   * the container accepts each audio track of the file. Every track counts, because a player may
-   * start any track and the viewer can switch tracks inside the file.
+   * Why the declaration does not cover direct play of the source from its source container (ADR
+   * 0049), video before audio; empty when it covers the file. One video entry must accept the video
+   * stream and list the container, and an audio entry that lists the container must accept each
+   * audio track of the file. Every track counts, because a player may start any track and the
+   * viewer can switch tracks inside the file. The video refusal names the furthest check that an
+   * entry of the source's codec family passes: the container, then in MP4 or MOV the sample entry,
+   * then the stream's properties. A file with audio whose container no audio entry lists names the
+   * container, once.
    */
-  public boolean acceptsDirectPlay(@NonNull MediaProbe source, @NonNull SourceContainer container) {
-    var videoCovered =
-        VideoStreamCopy.of(source)
-            .filter(
-                stream ->
-                    video.stream().anyMatch(entry -> entry.acceptsDirectPlay(stream, container)))
-            .isPresent();
-    return videoCovered
-        && source.audioStreams().stream()
+  public List<DecisionReason> directPlayRefusals(
+      @NonNull MediaProbe source, @NonNull SourceContainer container) {
+    return Stream.of(
+            videoDirectPlayRefusal(source, container), audioDirectPlayRefusal(source, container))
+        .flatMap(Optional::stream)
+        .distinct()
+        .toList();
+  }
+
+  private Optional<DecisionReason> videoDirectPlayRefusal(
+      MediaProbe source, SourceContainer container) {
+    var stream = VideoStreamCopy.of(source);
+    if (stream.isEmpty()) {
+      return Optional.of(DecisionReason.DIRECT_PLAY_VIDEO_NOT_DECLARED);
+    }
+
+    var listingContainer =
+        video.stream()
+            .filter(entry -> entry.listsDirectPlayContainerOf(stream.get(), container))
+            .toList();
+    if (listingContainer.isEmpty()) {
+      return Optional.of(DecisionReason.DIRECT_PLAY_CONTAINER_NOT_DECLARED);
+    }
+
+    var listingSampleEntry =
+        listingContainer.stream()
+            .filter(entry -> entry.listsDirectPlaySampleEntryOf(stream.get(), container))
+            .toList();
+    if (listingSampleEntry.isEmpty()) {
+      return Optional.of(DecisionReason.DIRECT_PLAY_SAMPLE_ENTRY_NOT_DECLARED);
+    }
+
+    if (listingSampleEntry.stream()
+        .noneMatch(entry -> entry.acceptsDirectPlay(stream.get(), container))) {
+      return Optional.of(DecisionReason.DIRECT_PLAY_VIDEO_NOT_DECLARED);
+    }
+
+    return Optional.empty();
+  }
+
+  private Optional<DecisionReason> audioDirectPlayRefusal(
+      MediaProbe source, SourceContainer container) {
+    var tracks = source.audioStreams();
+    if (tracks.isEmpty()) {
+      return Optional.empty();
+    }
+
+    var listingContainer =
+        audio.stream().filter(entry -> entry.listsDirectPlayContainer(container)).toList();
+    if (listingContainer.isEmpty()) {
+      return Optional.of(DecisionReason.DIRECT_PLAY_CONTAINER_NOT_DECLARED);
+    }
+
+    var everyTrackAccepted =
+        tracks.stream()
             .allMatch(
                 track ->
-                    audio.stream().anyMatch(entry -> entry.acceptsDirectPlay(track, container)));
+                    listingContainer.stream()
+                        .anyMatch(entry -> entry.acceptsDirectPlay(track, container)));
+    if (!everyTrackAccepted) {
+      return Optional.of(DecisionReason.DIRECT_PLAY_AUDIO_NOT_DECLARED);
+    }
+
+    return Optional.empty();
   }
 
   /**

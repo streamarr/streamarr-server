@@ -104,11 +104,8 @@ public record VideoCapabilityEntry(
    */
   public boolean acceptsDirectPlay(
       @NonNull VideoStreamCopy video, @NonNull SourceContainer container) {
-    if (!directPlayContainers.contains(container) || video.codecFamily() != codecFamily) {
-      return false;
-    }
-
-    if (container.storesSampleEntries() && !listsSampleEntry(video.sampleEntry())) {
+    if (!listsDirectPlayContainerOf(video, container)
+        || !listsDirectPlaySampleEntryOf(video, container)) {
       return false;
     }
 
@@ -117,6 +114,21 @@ public record VideoCapabilityEntry(
         .filter(properties -> acceptsCodingAndPicture(video, properties))
         .filter(_ -> acceptsDirectPlayDynamicRange(video, container))
         .isPresent();
+  }
+
+  /** Whether this entry names the video stream's codec family and lists the source container. */
+  public boolean listsDirectPlayContainerOf(
+      @NonNull VideoStreamCopy video, @NonNull SourceContainer container) {
+    return directPlayContainers.contains(container) && video.codecFamily() == codecFamily;
+  }
+
+  /**
+   * Whether this entry lists the video stream's sample entry where the source container stores one,
+   * as MP4 and MOV do. A stream without a reported sample entry has none to match.
+   */
+  public boolean listsDirectPlaySampleEntryOf(
+      @NonNull VideoStreamCopy video, @NonNull SourceContainer container) {
+    return !container.storesSampleEntries() || listsSampleEntry(video.sampleEntry());
   }
 
   private boolean listsSampleEntry(Optional<String> sampleEntry) {

@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
+import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
@@ -57,6 +58,8 @@ class TranscodeDecisionDirectPlayTest {
 
   private static final String MATROSKA_DEMUXER = "matroska,webm";
   private static final String MOV_DEMUXER = "mov,mp4,m4a,3gp,3g2,mj2";
+  private static final DirectPlayChoice MATROSKA_DIRECT_PLAY =
+      new DirectPlayChoice.Accepted(SourceContainer.MATROSKA);
 
   private final TranscodeDecisionService service =
       new TranscodeDecisionService(
@@ -66,7 +69,7 @@ class TranscodeDecisionDirectPlayTest {
   @Test
   @DisplayName("Should direct-play the source in Original when the declaration covers the file")
   void shouldDirectPlayTheSourceInOriginalWhenTheDeclarationCoversTheFile() {
-    assertThat(service.decideDirectPlay(request().build())).contains(SourceContainer.MATROSKA);
+    assertThat(service.decideDirectPlay(request().build())).isEqualTo(MATROSKA_DIRECT_PLAY);
   }
 
   @ParameterizedTest
@@ -74,11 +77,11 @@ class TranscodeDecisionDirectPlayTest {
       value = VideoQuality.class,
       names = {"ORIGINAL"},
       mode = EnumSource.Mode.EXCLUDE)
-  @DisplayName("Should play over HLS when the playback choice is not Original")
-  void shouldPlayOverHlsWhenThePlaybackChoiceIsNotOriginal(VideoQuality quality) {
+  @DisplayName("Should play over HLS and name no refusal when the playback choice is not Original")
+  void shouldPlayOverHlsAndNameNoRefusalWhenThePlaybackChoiceIsNotOriginal(VideoQuality quality) {
     var request = request().viewerLimits(ViewerLimits.builder().quality(quality).build()).build();
 
-    assertThat(service.decideDirectPlay(request)).isEmpty();
+    assertThat(service.decideDirectPlay(request)).isEqualTo(refused());
   }
 
   @ParameterizedTest
@@ -86,30 +89,34 @@ class TranscodeDecisionDirectPlayTest {
       value = VideoFormatConstraint.class,
       names = {"DIRECT_PLAY_OR_COPY_OR_ENCODE"},
       mode = EnumSource.Mode.EXCLUDE)
-  @DisplayName("Should play over HLS when the format attempt may not direct-play")
-  void shouldPlayOverHlsWhenTheFormatAttemptMayNotDirectPlay(VideoFormatConstraint constraint) {
+  @DisplayName(
+      "Should play over HLS and name no refusal when the format attempt may not direct-play")
+  void shouldPlayOverHlsAndNameNoRefusalWhenTheFormatAttemptMayNotDirectPlay(
+      VideoFormatConstraint constraint) {
     assertThat(service.decideDirectPlay(request().videoFormatConstraint(constraint).build()))
-        .isEmpty();
+        .isEqualTo(refused());
   }
 
   @Test
-  @DisplayName("Should play over HLS when the declaration does not cover the file's container")
-  void shouldPlayOverHlsWhenTheDeclarationDoesNotCoverTheFilesContainer() {
+  @DisplayName("Should name the container when the declaration does not list the file's container")
+  void shouldNameTheContainerWhenTheDeclarationDoesNotListTheFilesContainer() {
     var request = request().source(h264Source().containerFormat(Optional.of("mpegts")).build());
 
-    assertThat(service.decideDirectPlay(request.build())).isEmpty();
+    assertThat(service.decideDirectPlay(request.build()))
+        .isEqualTo(refused(DecisionReason.DIRECT_PLAY_CONTAINER_NOT_DECLARED));
   }
 
   @Test
-  @DisplayName("Should play over HLS when the probe's demuxer names no video container")
-  void shouldPlayOverHlsWhenTheProbesDemuxerNamesNoVideoContainer() {
+  @DisplayName("Should name an unknown container when the probe's demuxer names no video container")
+  void shouldNameAnUnknownContainerWhenTheProbesDemuxerNamesNoVideoContainer() {
     var everyContainer = declarationListing(List.of(SourceContainer.values()));
     var request =
         request()
             .capabilityDeclaration(everyContainer)
             .source(h264Source().containerFormat(Optional.of("wav")).build());
 
-    assertThat(service.decideDirectPlay(request.build())).isEmpty();
+    assertThat(service.decideDirectPlay(request.build()))
+        .isEqualTo(refused(DecisionReason.SOURCE_CONTAINER_UNKNOWN));
   }
 
   // The major brand tells MP4 from MOV: QuickTime's brand makes MOV, every other brand makes MP4,
@@ -119,7 +126,7 @@ class TranscodeDecisionDirectPlayTest {
   @DisplayName(
       "Should direct-play an MP4 or MOV file only when its entry lists the brand's container")
   void shouldDirectPlayAnMp4OrMovFileOnlyWhenItsEntryListsTheBrandsContainer(
-      Optional<String> majorBrand, SourceContainer listed, Optional<SourceContainer> expected) {
+      Optional<String> majorBrand, SourceContainer listed, DirectPlayChoice expected) {
     var request =
         request()
             .capabilityDeclaration(isoDeclarationListing(listed))
@@ -129,8 +136,9 @@ class TranscodeDecisionDirectPlayTest {
   }
 
   static Stream<Arguments> majorBrands() {
-    var mp4 = Optional.of(SourceContainer.MP4);
-    var mov = Optional.of(SourceContainer.MOV);
+    var mp4 = new DirectPlayChoice.Accepted(SourceContainer.MP4);
+    var mov = new DirectPlayChoice.Accepted(SourceContainer.MOV);
+    var otherContainer = refused(DecisionReason.DIRECT_PLAY_CONTAINER_NOT_DECLARED);
     return Stream.of(
         Arguments.of(Optional.of("isom"), SourceContainer.MP4, mp4),
         Arguments.of(Optional.of("mp42"), SourceContainer.MP4, mp4),
@@ -138,17 +146,17 @@ class TranscodeDecisionDirectPlayTest {
         Arguments.of(Optional.of("3gp4"), SourceContainer.MP4, mp4),
         Arguments.of(Optional.empty(), SourceContainer.MP4, mp4),
         Arguments.of(Optional.of("qt  "), SourceContainer.MOV, mov),
-        Arguments.of(Optional.of("qt  "), SourceContainer.MP4, Optional.empty()),
-        Arguments.of(Optional.of("isom"), SourceContainer.MOV, Optional.empty()),
-        Arguments.of(Optional.empty(), SourceContainer.MOV, Optional.empty()));
+        Arguments.of(Optional.of("qt  "), SourceContainer.MP4, otherContainer),
+        Arguments.of(Optional.of("isom"), SourceContainer.MOV, otherContainer),
+        Arguments.of(Optional.empty(), SourceContainer.MOV, otherContainer));
   }
 
   // An MP4 or MOV file is covered only under a sample entry that the entry lists, and a file probed
   // before version 7 has no stored sample entry (ADR 0045).
   @ParameterizedTest(name = "{0}")
   @MethodSource("sampleEntries")
-  @DisplayName("Should play an MP4 file over HLS when its entry does not list its sample entry")
-  void shouldPlayAnMp4FileOverHlsWhenItsEntryDoesNotListItsSampleEntry(
+  @DisplayName("Should name the sample entry when an MP4 file's entry does not list it")
+  void shouldNameTheSampleEntryWhenAnMp4FilesEntryDoesNotListIt(
       String scenario, Optional<String> storedSampleEntry) {
     var facts = h264Facts().sampleEntry(storedSampleEntry).build();
     var request =
@@ -156,7 +164,8 @@ class TranscodeDecisionDirectPlayTest {
             .capabilityDeclaration(isoDeclarationListing(SourceContainer.MP4))
             .source(isoSource(Optional.of("isom")).videoPlaybackFacts(Optional.of(facts)).build());
 
-    assertThat(service.decideDirectPlay(request.build())).isEmpty();
+    assertThat(service.decideDirectPlay(request.build()))
+        .isEqualTo(refused(DecisionReason.DIRECT_PLAY_SAMPLE_ENTRY_NOT_DECLARED));
   }
 
   static Stream<Arguments> sampleEntries() {
@@ -166,16 +175,17 @@ class TranscodeDecisionDirectPlayTest {
   }
 
   @Test
-  @DisplayName("Should play over HLS when the probe reports no container")
-  void shouldPlayOverHlsWhenTheProbeReportsNoContainer() {
+  @DisplayName("Should name an unknown container when the probe reports no container")
+  void shouldNameAnUnknownContainerWhenTheProbeReportsNoContainer() {
     var request = request().source(h264Source().containerFormat(Optional.empty()).build());
 
-    assertThat(service.decideDirectPlay(request.build())).isEmpty();
+    assertThat(service.decideDirectPlay(request.build()))
+        .isEqualTo(refused(DecisionReason.SOURCE_CONTAINER_UNKNOWN));
   }
 
   @Test
-  @DisplayName("Should play over HLS when the video is interlaced")
-  void shouldPlayOverHlsWhenTheVideoIsInterlaced() {
+  @DisplayName("Should name the interlaced source when the video is interlaced")
+  void shouldNameTheInterlacedSourceWhenTheVideoIsInterlaced() {
     var interlaced =
         h264Facts()
             .frameRateRule(
@@ -184,12 +194,13 @@ class TranscodeDecisionDirectPlayTest {
     var request =
         request().source(h264Source().videoPlaybackFacts(Optional.of(interlaced)).build());
 
-    assertThat(service.decideDirectPlay(request.build())).isEmpty();
+    assertThat(service.decideDirectPlay(request.build()))
+        .isEqualTo(refused(DecisionReason.SOURCE_INTERLACED));
   }
 
   @Test
-  @DisplayName("Should play over HLS when a property issue rules out a copy of the video")
-  void shouldPlayOverHlsWhenAPropertyIssueRulesOutACopyOfTheVideo() {
+  @DisplayName("Should name the property issue when it rules out a copy of the video")
+  void shouldNameThePropertyIssueWhenItRulesOutACopyOfTheVideo() {
     var profile81Entry =
         hevcEntryBuilder()
             .compatibleBases(List.of(CompatibleBase.PQ))
@@ -211,14 +222,14 @@ class TranscodeDecisionDirectPlayTest {
                     .capabilityDeclaration(declaration)
                     .source(hevcSource(placedAfter))
                     .build()))
-        .contains(SourceContainer.MATROSKA);
+        .isEqualTo(MATROSKA_DIRECT_PLAY);
     assertThat(
             service.decideDirectPlay(
                 request()
                     .capabilityDeclaration(declaration)
                     .source(hevcSource(startingSample))
                     .build()))
-        .isEmpty();
+        .isEqualTo(refused(DecisionReason.DOLBY_VISION_RPU_STARTS_SAMPLE));
   }
 
   // A native player may start any audio track, and the viewer can switch tracks inside the file,
@@ -226,9 +237,9 @@ class TranscodeDecisionDirectPlayTest {
   @ParameterizedTest(name = "{0}")
   @MethodSource("forcedImageSubtitles")
   @DisplayName(
-      "Should play over HLS only when a forced image subtitle matches an audio track's language")
-  void shouldPlayOverHlsOnlyWhenAForcedImageSubtitleMatchesAnAudioTracksLanguage(
-      String scenario, String subtitleLanguage, boolean directPlays) {
+      "Should name the forced image subtitle only when it matches an audio track's language")
+  void shouldNameTheForcedImageSubtitleOnlyWhenItMatchesAnAudioTracksLanguage(
+      String scenario, String subtitleLanguage, DirectPlayChoice expected) {
     var forced =
         StreamInfo.builder()
             .codecType("subtitle")
@@ -238,16 +249,17 @@ class TranscodeDecisionDirectPlayTest {
             .build();
     var source = h264Source().streams(List.of(aac("eng"), aac("fra"), forced)).build();
 
-    assertThat(service.decideDirectPlay(request().source(source).build()).isPresent())
-        .isEqualTo(directPlays);
+    assertThat(service.decideDirectPlay(request().source(source).build())).isEqualTo(expected);
   }
 
   static Stream<Arguments> forcedImageSubtitles() {
+    var forcedSubtitle = refused(DecisionReason.FORCED_IMAGE_SUBTITLE_IN_AUDIO_LANGUAGE);
     return Stream.of(
-        Arguments.of("forced track in the first audio track's language", "eng", false),
-        Arguments.of("forced track in the second audio track's language", "fra", false),
-        Arguments.of("forced track in an alias of the second audio track's code", "fre", false),
-        Arguments.of("forced track in no audio track's language", "deu", true));
+        Arguments.of("forced track in the first audio track's language", "eng", forcedSubtitle),
+        Arguments.of("forced track in the second audio track's language", "fra", forcedSubtitle),
+        Arguments.of(
+            "forced track in an alias of the second audio track's code", "fre", forcedSubtitle),
+        Arguments.of("forced track in no audio track's language", "deu", MATROSKA_DIRECT_PLAY));
   }
 
   // The keyframe grid, the interim HDR rule and the codec string bind only HLS copies.
@@ -267,7 +279,7 @@ class TranscodeDecisionDirectPlayTest {
     assertThat(
             service.decideDirectPlay(
                 request().capabilityDeclaration(declarationWith(pqEntry)).source(source).build()))
-        .contains(SourceContainer.MATROSKA);
+        .isEqualTo(MATROSKA_DIRECT_PLAY);
   }
 
   // A copy in Original ignores the viewer's limits (ADR 0050), and so does direct play.
@@ -283,12 +295,12 @@ class TranscodeDecisionDirectPlayTest {
             .build();
 
     assertThat(service.decideDirectPlay(request().viewerLimits(limits).build()))
-        .contains(SourceContainer.MATROSKA);
+        .isEqualTo(MATROSKA_DIRECT_PLAY);
   }
 
   @Test
-  @DisplayName("Should play over HLS when the declaration does not cover the audio")
-  void shouldPlayOverHlsWhenTheDeclarationDoesNotCoverTheAudio() {
+  @DisplayName("Should name the audio when the declaration does not cover an audio track")
+  void shouldNameTheAudioWhenTheDeclarationDoesNotCoverAnAudioTrack() {
     var source =
         h264Source()
             .streams(
@@ -296,7 +308,74 @@ class TranscodeDecisionDirectPlayTest {
                     englishAac(), audioStreamBuilder("ac3").channels(OptionalInt.of(6)).build()))
             .build();
 
-    assertThat(service.decideDirectPlay(request().source(source).build())).isEmpty();
+    assertThat(service.decideDirectPlay(request().source(source).build()))
+        .isEqualTo(refused(DecisionReason.DIRECT_PLAY_AUDIO_NOT_DECLARED));
+  }
+
+  @Test
+  @DisplayName("Should name the video when the entry that lists the container refuses the video")
+  void shouldNameTheVideoWhenTheEntryThatListsTheContainerRefusesTheVideo() {
+    var smallerPicture =
+        h264EntryBuilder()
+            .maxWidth(1280)
+            .maxHeight(720)
+            .directPlayContainers(List.of(SourceContainer.MATROSKA))
+            .build();
+
+    assertThat(
+            service.decideDirectPlay(
+                request().capabilityDeclaration(declarationWith(smallerPicture)).build()))
+        .isEqualTo(refused(DecisionReason.DIRECT_PLAY_VIDEO_NOT_DECLARED));
+  }
+
+  @Test
+  @DisplayName("Should name every refusal in check order when the file fails several checks")
+  void shouldNameEveryRefusalInCheckOrderWhenTheFileFailsSeveralChecks() {
+    var interlaced =
+        h264Facts()
+            .frameRateRule(
+                VideoPlaybackFactsFixture.interlacedRateRule(new Fraction(25, 1), FieldOrder.TT))
+            .build();
+    var source =
+        h264Source()
+            .videoPlaybackFacts(Optional.of(interlaced))
+            .streams(
+                List.of(
+                    englishAac(), audioStreamBuilder("ac3").channels(OptionalInt.of(6)).build()))
+            .build();
+    var smallerPicture =
+        h264EntryBuilder()
+            .maxWidth(1280)
+            .maxHeight(720)
+            .directPlayContainers(List.of(SourceContainer.MATROSKA))
+            .build();
+    var request = request().capabilityDeclaration(declarationWith(smallerPicture)).source(source);
+
+    assertThat(service.decideDirectPlay(request.build()))
+        .isEqualTo(
+            refused(
+                DecisionReason.SOURCE_INTERLACED,
+                DecisionReason.DIRECT_PLAY_VIDEO_NOT_DECLARED,
+                DecisionReason.DIRECT_PLAY_AUDIO_NOT_DECLARED));
+  }
+
+  @Test
+  @DisplayName("Should name the container once when neither video nor audio entries list it")
+  void shouldNameTheContainerOnceWhenNeitherVideoNorAudioEntriesListIt() {
+    var source =
+        h264Source()
+            .containerFormat(Optional.of("mpegts"))
+            .streams(
+                List.of(
+                    englishAac(), audioStreamBuilder("ac3").channels(OptionalInt.of(6)).build()))
+            .build();
+
+    assertThat(service.decideDirectPlay(request().source(source).build()))
+        .isEqualTo(refused(DecisionReason.DIRECT_PLAY_CONTAINER_NOT_DECLARED));
+  }
+
+  private static DirectPlayChoice refused(DecisionReason... reasons) {
+    return new DirectPlayChoice.Refused(List.of(reasons));
   }
 
   private static DirectPlayRequest.DirectPlayRequestBuilder request() {

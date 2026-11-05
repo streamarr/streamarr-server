@@ -491,6 +491,50 @@ class TranscodeDecisionReasonTest {
         .containsExactly(DecisionReason.AUDIO_CODEC_NOT_DECLARED);
   }
 
+  @Test
+  @DisplayName(
+      "Should name the direct-play refusals before the copy's reasons when the file plays over HLS")
+  void shouldNameTheDirectPlayRefusalsBeforeTheCopysReasonsWhenTheFilePlaysOverHls() {
+    var source = Source.builder().audioCodec("flac").build().probe();
+    var request =
+        request(source, defaultDeclarationBuilder().build())
+            .directPlayRefusals(List.of(DecisionReason.DIRECT_PLAY_CONTAINER_NOT_DECLARED))
+            .build();
+
+    var decision = decide(request);
+
+    assertThat(decision.transcodeMode().copiesVideo()).isTrue();
+    assertThat(decision.reasons())
+        .containsExactly(
+            DecisionReason.DIRECT_PLAY_CONTAINER_NOT_DECLARED,
+            DecisionReason.AUDIO_CODEC_NOT_DECLARED);
+  }
+
+  @Test
+  @DisplayName("Should name a reason once when direct play and the copy both refuse for it")
+  void shouldNameAReasonOnceWhenDirectPlayAndTheCopyBothRefuseForIt() {
+    var interlaced =
+        Source.builder()
+            .frameRateRule(
+                VideoPlaybackFactsFixture.interlacedRateRule(new Fraction(25, 1), FieldOrder.TT))
+            .build()
+            .probe();
+    var request =
+        request(interlaced, everyRangeClient())
+            .directPlayRefusals(
+                List.of(
+                    DecisionReason.SOURCE_INTERLACED,
+                    DecisionReason.DIRECT_PLAY_CONTAINER_NOT_DECLARED))
+            .build();
+
+    var decision = decide(request);
+
+    assertThat(decision.transcodeMode().copiesVideo()).isFalse();
+    assertThat(decision.reasons())
+        .containsExactly(
+            DecisionReason.SOURCE_INTERLACED, DecisionReason.DIRECT_PLAY_CONTAINER_NOT_DECLARED);
+  }
+
   private TranscodeDecision decide(MediaProbe source, ClientCapabilityDeclaration client) {
     return decide(request(source, client).build());
   }

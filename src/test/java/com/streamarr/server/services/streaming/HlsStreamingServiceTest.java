@@ -44,6 +44,7 @@ import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.ContainerCropping;
+import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.Deinterlace;
 import com.streamarr.server.domain.streaming.DeinterlaceOutput;
 import com.streamarr.server.domain.streaming.DolbyVision;
@@ -5305,7 +5306,7 @@ class HlsStreamingServiceTest {
   @Test
   @DisplayName("Should start direct play without a connected worker when Original covers the file")
   void shouldStartDirectPlayWithoutAConnectedWorkerWhenOriginalCoversTheFile() {
-    probeResults.setDefaultProbe(directPlayableProbe());
+    probeResults.setDefaultProbe(directPlayableProbeBuilder().build());
     transcodeExecutor.setHealthy(false);
     var file = seedMediaFile();
 
@@ -5322,7 +5323,7 @@ class HlsStreamingServiceTest {
   @Test
   @DisplayName("Should start HLS when the format attempt may not direct-play")
   void shouldStartHlsWhenTheFormatAttemptMayNotDirectPlay() {
-    probeResults.setDefaultProbe(directPlayableProbe());
+    probeResults.setDefaultProbe(directPlayableProbeBuilder().build());
     var file = seedMediaFile();
 
     var session =
@@ -5337,9 +5338,42 @@ class HlsStreamingServiceTest {
   }
 
   @Test
+  @DisplayName("Should name why Original plays over HLS when the declaration omits the container")
+  void shouldNameWhyOriginalPlaysOverHlsWhenTheDeclarationOmitsTheContainer() {
+    probeResults.setDefaultProbe(
+        directPlayableProbeBuilder().containerFormat(Optional.of("mpegts")).build());
+    var file = seedMediaFile();
+
+    var session = accepted(service.createSession(directPlayCommand(file.getId()).build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.HLS);
+    assertThat(session.getTranscodeDecision().reasons())
+        .first()
+        .isEqualTo(DecisionReason.DIRECT_PLAY_CONTAINER_NOT_DECLARED);
+  }
+
+  @Test
+  @DisplayName("Should name no direct-play refusal when the format attempt may not direct-play")
+  void shouldNameNoDirectPlayRefusalWhenTheFormatAttemptMayNotDirectPlay() {
+    probeResults.setDefaultProbe(
+        directPlayableProbeBuilder().containerFormat(Optional.of("mpegts")).build());
+    var file = seedMediaFile();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId())
+                    .videoFormatConstraint(VideoFormatConstraint.COPY_OR_ENCODE)
+                    .build()));
+
+    assertThat(session.getTranscodeDecision().reasons())
+        .doesNotContain(DecisionReason.DIRECT_PLAY_CONTAINER_NOT_DECLARED);
+  }
+
+  @Test
   @DisplayName("Should take no transcode place for an open direct-play session")
   void shouldTakeNoTranscodePlaceForAnOpenDirectPlaySession() {
-    probeResults.setDefaultProbe(directPlayableProbe());
+    probeResults.setDefaultProbe(directPlayableProbeBuilder().build());
     accepted(service.createSession(directPlayCommand(seedMediaFile().getId()).build()));
 
     for (int i = 0; i < streamingProperties().maxConcurrentTranscodes(); i++) {
@@ -5354,7 +5388,7 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(3);
   }
 
-  private static MediaProbe directPlayableProbe() {
+  private static MediaProbe.MediaProbeBuilder directPlayableProbeBuilder() {
     var facts =
         VideoPlaybackFactsFixture.sdrH264FactsBuilder()
             .streamIndex(0)
@@ -5364,8 +5398,7 @@ class HlsStreamingServiceTest {
     return defaultProbeBuilder()
         .containerFormat(Optional.of("matroska,webm"))
         .audioChannels(OptionalInt.of(2))
-        .videoPlaybackFacts(Optional.of(facts))
-        .build();
+        .videoPlaybackFacts(Optional.of(facts));
   }
 
   private static ClientCapabilityDeclaration directPlayDeclaration() {
@@ -5492,7 +5525,7 @@ class HlsStreamingServiceTest {
   @Test
   @DisplayName("Should carry the start position in a direct-play session")
   void shouldCarryTheStartPositionInADirectPlaySession() {
-    probeResults.setDefaultProbe(directPlayableProbe());
+    probeResults.setDefaultProbe(directPlayableProbeBuilder().build());
     var command =
         directPlayCommand(seedMediaFile().getId())
             .startPosition(Optional.of(Duration.ofMillis(5_381_500)))

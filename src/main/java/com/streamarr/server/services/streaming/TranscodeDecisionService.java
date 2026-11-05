@@ -21,7 +21,6 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.PlannedVideoOutput;
 import com.streamarr.server.domain.streaming.Presence;
-import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.StreamCopySegments;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -75,42 +74,54 @@ public class TranscodeDecisionService {
   private final MeterRegistry meterRegistry;
 
   /**
-   * The source container from which the stream session direct-plays the source file (ADR 0045), or
-   * empty when it plays over HLS. Only a format attempt that may direct-play does, and only in
-   * Original. The declaration must cover the video and every audio track from the file's source
-   * container (ADR 0049). An interlaced source, a property issue that rules out a copy (ADR 0049)
-   * and a forced image subtitle in the language of any audio track (#506) keep the file on HLS. The
+   * Whether the stream session direct-plays the source file from its source container (ADR 0045),
+   * or plays over HLS and why. Only a format attempt that may direct-play does, and only in
+   * Original; any other format attempt names no refusal. The declaration must cover the video and
+   * every audio track from the file's source container (ADR 0049). An interlaced source, a property
+   * issue that rules out a copy (ADR 0049) and a forced image subtitle in the language of any audio
+   * track (#506) keep the file on HLS. The refusals name every check that the file fails. The
    * keyframe grid, the interim HDR copy rule and the codec string bind only HLS copies. A copy in
    * Original ignores the viewer's limits (ADR 0050), and so does direct play.
    */
-  public Optional<SourceContainer> decideDirectPlay(@NonNull DirectPlayRequest request) {
+  public DirectPlayChoice decideDirectPlay(@NonNull DirectPlayRequest request) {
     if (request.videoFormatConstraint() != VideoFormatConstraint.DIRECT_PLAY_OR_COPY_OR_ENCODE
         || request.viewerLimits().quality() != VideoQuality.ORIGINAL) {
-      return Optional.empty();
+      return new DirectPlayChoice.Refused(List.of());
     }
 
     var source = request.source();
-    if (!permitsDirectPlay(source)) {
-      return Optional.empty();
+    var refusals = new ArrayList<>(sourceDirectPlayRefusals(source));
+    var container = source.sourceContainer();
+    if (container.isEmpty()) {
+      refusals.add(DecisionReason.SOURCE_CONTAINER_UNKNOWN);
+      return new DirectPlayChoice.Refused(refusals);
     }
 
-    return source
-        .sourceContainer()
-        .filter(container -> request.capabilityDeclaration().acceptsDirectPlay(source, container));
+    refusals.addAll(request.capabilityDeclaration().directPlayRefusals(source, container.get()));
+    if (!refusals.isEmpty()) {
+      return new DirectPlayChoice.Refused(refusals);
+    }
+
+    return new DirectPlayChoice.Accepted(container.get());
   }
 
-  // The worker deinterlaces an interlaced source for HLS, and no player's handling of an
-  // interlaced file was measured.
-  private static boolean permitsDirectPlay(MediaProbe source) {
-    return !source.isInterlaced()
-        && !hasPropertyIssueThatRulesOutACopy(source)
-        && !source.hasForcedImageSubtitleInAnAudioLanguage();
-  }
+  // No player's direct play of an interlaced file was measured.
+  private static List<DecisionReason> sourceDirectPlayRefusals(MediaProbe source) {
+    var refusals = new ArrayList<DecisionReason>();
+    if (source.isInterlaced()) {
+      refusals.add(DecisionReason.SOURCE_INTERLACED);
+    }
 
-  private static boolean hasPropertyIssueThatRulesOutACopy(MediaProbe source) {
-    return source.videoPlaybackFacts().stream()
+    source.videoPlaybackFacts().stream()
         .flatMap(facts -> MediaFileProbePropertyIssue.foundIn(facts.dynamicRange()).stream())
-        .anyMatch(MediaFileProbePropertyIssue::rulesOutCopy);
+        .filter(MediaFileProbePropertyIssue::rulesOutCopy)
+        .map(InterimVideoCopyRule::reasonFor)
+        .forEach(refusals::add);
+    if (source.hasForcedImageSubtitleInAnAudioLanguage()) {
+      refusals.add(DecisionReason.FORCED_IMAGE_SUBTITLE_IN_AUDIO_LANGUAGE);
+    }
+
+    return refusals;
   }
 
   /**
@@ -161,7 +172,8 @@ public class TranscodeDecisionService {
             .videoSource(source.videoPlaybackFacts())
             .videoBitstreamRewrites(copyPlan.map(CopyPlan::bitstreamRewrites).orElseGet(List::of))
             .videoDolbyVisionOutput(copyPlan.flatMap(CopyPlan::dolbyVisionOutput))
-            .reasons(reasons(videoCopy, sessionAudio, audioDecision))
+            .reasons(
+                afterDirectPlayRefusals(request, reasons(videoCopy, sessionAudio, audioDecision)))
             .build());
   }
 
@@ -176,6 +188,15 @@ public class TranscodeDecisionService {
     }
 
     return reasons;
+  }
+
+  // Direct play and a copy can refuse for the same fact, such as an interlaced source, which the
+  // decision names once.
+  private static List<DecisionReason> afterDirectPlayRefusals(
+      TranscodeDecisionRequest request, List<DecisionReason> decisionReasons) {
+    return Stream.concat(request.directPlayRefusals().stream(), decisionReasons.stream())
+        .distinct()
+        .toList();
   }
 
   // Whether the decision copies the video, with the audio beside the copy and its plan, and why the
