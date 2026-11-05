@@ -399,7 +399,7 @@ public class PlaybackSessionService implements AutoCloseable {
       case NextFormatAttempt.CopyWithDolbyVisionStrippedOrEncode(
               var whenCopying,
               var whenEncoding) -> {
-        playback.pendingAttemptCause = Optional.of(causeOf(failed));
+        playback.pendingAttemptCause = Optional.of(DecisionReason.DOLBY_VISION_COPY_FAILED);
         yield Optional.of(
             reserveNextFormatAttempt(
                 playback,

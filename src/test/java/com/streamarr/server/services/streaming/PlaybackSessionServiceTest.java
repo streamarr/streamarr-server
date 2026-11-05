@@ -1578,6 +1578,30 @@ class PlaybackSessionServiceTest {
     assertThat(encode.formatChange()).isEqualTo(Optional.ofNullable(expectedChange));
   }
 
+  // The format attempt after a rejected Dolby Vision copy copies with Dolby Vision stripped, or
+  // encodes when that copy is not eligible; either way the failed Dolby Vision copy is its cause.
+  @ParameterizedTest
+  @CsvSource({"true, COPY", "false, ENCODE"})
+  @DisplayName(
+      "Should name the failed Dolby Vision copy as the cause when the format attempt after it"
+          + " strips Dolby Vision or encodes")
+  void shouldNameTheFailedDolbyVisionCopyAsTheCauseWhenTheNextFormatAttemptStripsOrEncodes(
+      boolean strippedCopyEligible, PlaybackDelivery expectedDelivery) {
+    streams.copiedDolbyVision = Optional.of(DolbyVisionProfile.PROFILE_8_1);
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(4).build();
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var dolbyVisionCopy = accepted(playback.start(command));
+    streams.copiesTheSource = strippedCopyEligible;
+
+    var next = playback.reportFormatFailure(report(dolbyVisionCopy, command).build()).orElseThrow();
+
+    assertThat(next.decisions())
+        .extracting(decision -> decision.video().delivery(), PlaybackDecision::reasons)
+        .containsExactly(
+            tuple(PlaybackDelivery.COPY, List.of()),
+            tuple(expectedDelivery, List.of(DecisionReason.DOLBY_VISION_COPY_FAILED)));
+  }
+
   // ADR 0052: four format attempts hold Original's direct play, Dolby Vision copy, stripped copy
   // and encode.
   @Test
