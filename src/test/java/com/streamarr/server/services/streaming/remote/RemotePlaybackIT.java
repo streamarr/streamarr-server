@@ -848,7 +848,7 @@ class RemotePlaybackIT {
         .as("fragmented MP4 on standard output for %s", decision)
         .containsSubsequence("-f", "mp4")
         .containsSubsequence("-movflags", "cmaf+delay_moov+skip_trailer+frag_keyframe+frag_discont")
-        .endsWith("pipe:1")
+        .containsSubsequence("-f", "mp4", "pipe:1")
         .doesNotContain("-hls_time", "-hls_segment_type");
     assertAudioPreservesDecision(command, decision);
     var seek = Double.parseDouble(argument(command, "-ss"));
@@ -862,11 +862,12 @@ class RemotePlaybackIT {
     assertThat(seek)
         .as("encode seek at or before the first advertised boundary for %s", decision)
         .isLessThanOrEqualTo(12);
+    assertThat(argument(command, "-vf"))
+        .as("video filters for %s", decision)
+        .startsWith(
+            "scale=-2:720:out_color_matrix=bt709:out_range=tv:out_primaries=bt709:out_transfer=bt709,format=yuv420p,fps=24000/1001:");
     assertThat(command)
         .as("video encoding settings for %s", decision)
-        .containsSubsequence(
-            "-vf",
-            "scale=-2:720:out_color_matrix=bt709:out_range=tv:out_primaries=bt709:out_transfer=bt709,format=yuv420p")
         .containsSubsequence("-r:v:0", "24000/1001")
         .containsSubsequence("-b:v", "2500000")
         .containsSubsequence("-maxrate", "2500000")
