@@ -28,6 +28,7 @@ import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.graphql.dataloaders.SeasonDataLoader;
+import com.streamarr.server.graphql.dataloaders.SeriesDataLoader;
 import com.streamarr.server.graphql.dataloaders.WatchProgressDataLoader;
 import com.streamarr.server.graphql.dataloaders.WatchStatusDataLoader;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -68,6 +69,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       SeasonFieldResolver.class,
       EpisodeFieldResolver.class,
       SeasonDataLoader.class,
+      SeriesDataLoader.class,
       WatchProgressFieldResolverTest.TestConfig.class,
       SecurityContextAuthorizationService.class,
       FakeAuthorizationDecider.class
@@ -575,6 +577,7 @@ class WatchProgressFieldResolverTest {
 
       when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
       when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
+      when(seriesService.findSeriesByIds(Set.of(seriesId))).thenReturn(List.of(series));
 
       String seriesTitle =
           dgsQueryExecutor.executeAndExtractJsonPath(

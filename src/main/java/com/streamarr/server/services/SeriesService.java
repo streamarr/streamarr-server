@@ -281,6 +281,12 @@ public class SeriesService {
     return seriesRepository.findById(id);
   }
 
+  /** Returns the series with the given ids; an id without a series is left out. */
+  @Transactional(readOnly = true)
+  public List<Series> findSeriesByIds(Collection<UUID> seriesIds) {
+    return seriesRepository.findAllById(seriesIds);
+  }
+
   /** Returns the episodes with the given ids; an id without an episode is left out. */
   @Transactional(readOnly = true)
   public List<Episode> findEpisodesByIds(Collection<UUID> episodeIds) {

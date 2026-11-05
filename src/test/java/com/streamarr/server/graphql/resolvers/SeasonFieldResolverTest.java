@@ -1,6 +1,7 @@
 package com.streamarr.server.graphql.resolvers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
@@ -10,12 +11,16 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
+import com.streamarr.server.graphql.dataloaders.SeriesDataLoader;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.support.security.WithProfileContext;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -30,6 +35,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @SpringBootTest(
     classes = {
       SeasonFieldResolver.class,
+      SeriesDataLoader.class,
       EpisodeFieldResolver.class,
       SeriesFieldResolver.class,
       SeriesResolver.class,
@@ -110,6 +116,36 @@ class SeasonFieldResolverTest {
   }
 
   @Test
+  @DisplayName(
+      "Should resolve each season's own series from the series batch when seasons span series")
+  void shouldResolveEachSeasonsOwnSeriesFromTheSeriesBatchWhenSeasonsSpanSeries() {
+    var drama = seriesTitled("Drama");
+    var comedy = seriesTitled("Comedy");
+    var dramaSeason = seasonOf(drama);
+    var comedySeason = seasonOf(comedy);
+    when(seriesService.findSeriesByIds(anyCollection()))
+        .thenAnswer(read -> named(read.getArgument(0), List.of(drama, comedy)));
+
+    Map<String, Object> data =
+        dgsQueryExecutor
+            .execute(
+                """
+                {
+                  drama: season(id: "%s") { series { title } }
+                  comedy: season(id: "%s") { series { title } }
+                }
+                """
+                    .formatted(dramaSeason.getId(), comedySeason.getId()))
+            .getData();
+
+    assertThat(data)
+        .isEqualTo(
+            Map.of(
+                "drama", Map.of("series", Map.of("title", "Drama")),
+                "comedy", Map.of("series", Map.of("title", "Comedy"))));
+  }
+
+  @Test
   @DisplayName("Should return series not found error when season references missing series")
   void shouldReturnSeriesNotFoundErrorWhenSeasonReferencesMissingSeries() {
     var seriesId = UUID.randomUUID();
@@ -121,7 +157,7 @@ class SeasonFieldResolverTest {
     season.setId(seasonId);
 
     when(seriesService.findSeasonById(seasonId)).thenReturn(Optional.of(season));
-    when(seriesService.findById(seriesId)).thenReturn(Optional.empty());
+    when(seriesService.findSeriesByIds(Set.of(seriesId))).thenReturn(List.of());
 
     var result =
         dgsQueryExecutor.execute(
@@ -134,5 +170,22 @@ class SeasonFieldResolverTest {
                 assertThat(error.getMessage())
                     .contains("Series not found: " + seriesId)
                     .contains(seasonId.toString()));
+  }
+
+  private static Series seriesTitled(String title) {
+    var series = Series.builder().title(title).build();
+    series.setId(UUID.randomUUID());
+    return series;
+  }
+
+  private static List<Series> named(Collection<UUID> seriesIds, List<Series> series) {
+    return series.stream().filter(item -> seriesIds.contains(item.getId())).toList();
+  }
+
+  private Season seasonOf(Series series) {
+    var season = Season.builder().title("Season 1").seasonNumber(1).series(series).build();
+    season.setId(UUID.randomUUID());
+    when(seriesService.findSeasonById(season.getId())).thenReturn(Optional.of(season));
+    return season;
   }
 }

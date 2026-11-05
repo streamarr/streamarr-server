@@ -192,6 +192,19 @@ class SeriesServiceTest {
     }
 
     @Test
+    @DisplayName("Should return only the named series when an id names no series")
+    void shouldReturnOnlyTheNamedSeriesWhenAnIdNamesNoSeries() {
+      var drama = seriesRepository.save(Series.builder().title("Drama").build());
+      var comedy = seriesRepository.save(Series.builder().title("Comedy").build());
+      seriesRepository.save(Series.builder().title("Western").build());
+
+      assertThat(
+              seriesService.findSeriesByIds(
+                  List.of(drama.getId(), comedy.getId(), UUID.randomUUID())))
+          .containsExactlyInAnyOrder(drama, comedy);
+    }
+
+    @Test
     @DisplayName("Should return no season and no series when the ids name no episode")
     void shouldReturnNoSeasonAndNoSeriesWhenIdsNameNoEpisode() {
       var movieId = List.of(UUID.randomUUID());
