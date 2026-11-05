@@ -13,7 +13,6 @@ import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
-import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.TranscodeLimitReachedException;
@@ -584,7 +583,7 @@ public class HlsStreamingService implements StreamingService {
     var request =
         QualityLadderRequest.builder()
             .probe(decisionRequest.source())
-            .viewerLimits(ladderLimits(decisionRequest))
+            .viewerLimits(decisionRequest.viewerLimits().forEncodedLadder())
             .capabilityDeclaration(declaration)
             .codecProfile(codecProfile)
             .encodeFormat(decision.videoEncodeFormat())
@@ -600,15 +599,6 @@ public class HlsStreamingService implements StreamingService {
     var ladder = qualityLadderService.generateVariants(request);
     return new QualityLadder(
         MultivariantPlaylistOrder.of(ladder.variants(), ladder.audio().bitrate()), ladder.audio());
-  }
-
-  // An encode that Original reaches plays Auto's ladder (ADR 0052).
-  private static ViewerLimits ladderLimits(TranscodeDecisionRequest request) {
-    if (request.viewerLimits().quality() == VideoQuality.ORIGINAL) {
-      return request.viewerLimits().inAuto();
-    }
-
-    return request.viewerLimits();
   }
 
   // Creating a stream session starts one job attempt, so a session needs one free slot whatever

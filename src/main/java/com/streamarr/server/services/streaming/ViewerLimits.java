@@ -80,6 +80,18 @@ public record ViewerLimits(
         .build();
   }
 
+  /**
+   * The limits that an encode's ladder fits. An encode that Original reaches plays Auto's ladder
+   * (ADR 0052).
+   */
+  ViewerLimits forEncodedLadder() {
+    if (quality == VideoQuality.ORIGINAL) {
+      return inAuto();
+    }
+
+    return this;
+  }
+
   /** The tier of the fixed quality that the viewer picked, or empty for Auto and Original. */
   Optional<QualityTier> fixedTier() {
     return QualityTier.ofFixedQuality(quality);
