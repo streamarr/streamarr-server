@@ -545,7 +545,7 @@ class LiveWorkerConnectionRegistryTest {
         .filteredOn(EstablishWorkerSessionResponse::hasStartVariant)
         .singleElement()
         .extracting(response -> response.getStartVariant().getJob())
-        .isEqualTo(job);
+        .isEqualTo(softwareEncoderAskedFor(job));
   }
 
   @Test
@@ -2332,5 +2332,13 @@ class LiveWorkerConnectionRegistryTest {
     public void onCompleted() {
       throw new AssertionError("Replaced worker should fail instead of completing");
     }
+  }
+
+  // A job on a worker's software encoder asks for it, so the worker runs it whichever encoder it
+  // prefers (ADR 0044).
+  private static VariantJob softwareEncoderAskedFor(VariantJob job) {
+    var asked = job.toBuilder();
+    asked.getDecisionBuilder().getVideoBuilder().setSoftwareEncoder(true);
+    return asked.build();
   }
 }

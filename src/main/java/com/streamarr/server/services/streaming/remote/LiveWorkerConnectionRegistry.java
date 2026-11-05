@@ -1011,16 +1011,13 @@ final class LiveWorkerConnectionRegistry {
       return encoder.map(chosen -> new VariantDispatch(Optional.of(chosen)));
     }
 
-    // A worker runs the encoder that it counts for the family unless the job asks for its software
-    // encoder.
-    private VariantJob withSoftwareEncoderFlag(
+    // A job on a software encoder asks for it even where the worker counts it: the worker may offer
+    // its hardware encoder again before it reads the job, and would then run that instead.
+    private static VariantJob withSoftwareEncoderFlag(
         VariantJob job, Optional<WorkerVerifiedEncoder> encoder) {
-      var needsFlag =
-          encoder
-              .filter(chosen -> chosen.backend().kind() == EncoderBackend.Kind.SOFTWARE)
-              .filter(chosen -> !chosen.equals(countedEncoders.get(chosen.backend().codecFamily())))
-              .isPresent();
-      if (!needsFlag || job.getDecision().getVideo().getSoftwareEncoder()) {
+      var software =
+          encoder.filter(chosen -> chosen.backend().kind() == EncoderBackend.Kind.SOFTWARE);
+      if (software.isEmpty() || job.getDecision().getVideo().getSoftwareEncoder()) {
         return job;
       }
 

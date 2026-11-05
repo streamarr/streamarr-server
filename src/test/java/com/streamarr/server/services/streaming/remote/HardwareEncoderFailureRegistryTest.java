@@ -282,6 +282,30 @@ class HardwareEncoderFailureRegistryTest {
 
   @Test
   @DisplayName(
+      "Should ask for the software encoder when the worker counts it, so a hardware encoder that"
+          + " returns before the worker reads the job does not run it")
+  void shouldAskForTheSoftwareEncoderWhenTheWorkerCountsIt() {
+    var workerId = UUID.randomUUID();
+    var responses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    var workerSessionId =
+        registry.register(workerId, nvencWorker(workerId, 1), collecting(responses));
+    registry.changeVideoEncoders(
+        workerId,
+        workerSessionId,
+        VideoEncodersChanged.newBuilder().addVideoEncoders(LIBX264).build());
+    responses.clear();
+
+    registry.dispatch(h264Encode(false));
+
+    assertThat(responses)
+        .singleElement()
+        .extracting(response -> response.getStartVariant().getJob().getDecision().getVideo())
+        .extracting(VideoDecision::getSoftwareEncoder)
+        .isEqualTo(true);
+  }
+
+  @Test
+  @DisplayName(
       "Should name the encoder that the start command was sent for when the worker's encoders"
           + " change once it is sent")
   void shouldNameTheEncoderThatTheStartCommandWasSentForWhenTheEncodersChangeOnceItIsSent() {
