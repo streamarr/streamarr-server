@@ -104,6 +104,7 @@ class DolbyVisionWithoutACompatibleBaseTest {
         List.of(workerWriting(VideoSampleEntry.DVH1, VideoSampleEntry.DAV1)));
     playback =
         PlaybackSessionService.builder()
+            .eventPublisher(_ -> {})
             .streamingService(streaming())
             .authorityGate(new FakePlaybackAuthorityGate())
             .executor(Runnable::run)
