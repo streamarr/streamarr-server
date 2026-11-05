@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -64,6 +65,17 @@ class HardwareEncoderFailureRegistryTest {
           .keyframeVerified(true)
           .build();
 
+  private static final WorkerVerifiedEncoder PINNED_NVENC =
+      WorkerVerifiedEncoder.builder()
+          .backend(
+              EncoderBackend.builder()
+                  .codecFamily("h264")
+                  .encoder("h264_nvenc")
+                  .kind(EncoderBackend.Kind.HARDWARE)
+                  .build())
+          .keyframeVerified(true)
+          .build();
+
   private final CapturingEventPublisher events = new CapturingEventPublisher();
   private final LiveWorkerConnectionRegistry registry =
       LiveWorkerConnectionRegistry.builder()
@@ -89,7 +101,6 @@ class HardwareEncoderFailureRegistryTest {
             registry.availableSlots(
                 SOURCE_NAMESPACE_ID, h264Encode(true).getDecision(), PINNED_LIBX264))
         .isOne();
-    assertThat(registry.dispatch(h264Encode(false), PINNED_LIBX264)).isEmpty();
   }
 
   @Test
@@ -236,6 +247,58 @@ class HardwareEncoderFailureRegistryTest {
         .containsExactly("h264");
   }
 
+  @Test
+  @DisplayName(
+      "Should keep a variant pinned to the software encoder on the worker once its hardware"
+          + " encoder is offered again")
+  void shouldKeepAVariantPinnedToTheSoftwareEncoderOnceTheHardwareEncoderIsOfferedAgain() {
+    var workerId = UUID.randomUUID();
+    var responses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    var workerSessionId =
+        registry.register(workerId, nvencWorker(workerId, 2), collecting(responses));
+    registry.changeVideoEncoders(
+        workerId,
+        workerSessionId,
+        VideoEncodersChanged.newBuilder().addVideoEncoders(LIBX264).build());
+    var admitted = registry.dispatch(h264Encode(false));
+    registry.changeVideoEncoders(
+        workerId,
+        workerSessionId,
+        VideoEncodersChanged.newBuilder().addVideoEncoders(H264_NVENC).build());
+    responses.clear();
+
+    var seek = registry.dispatch(h264Encode(false), PINNED_LIBX264);
+
+    assertThat(admitted).map(VariantDispatch::encoder).contains(Optional.of(PINNED_LIBX264));
+    assertThat(seek).map(VariantDispatch::encoder).contains(Optional.of(PINNED_LIBX264));
+    assertThat(responses)
+        .singleElement()
+        .extracting(response -> response.getStartVariant().getJob().getDecision().getVideo())
+        .extracting(VideoDecision::getSoftwareEncoder)
+        .isEqualTo(true);
+  }
+
+  @Test
+  @DisplayName(
+      "Should name the encoder that the start command was sent for when the worker's encoders"
+          + " change once it is sent")
+  void shouldNameTheEncoderThatTheStartCommandWasSentForWhenTheEncodersChangeOnceItIsSent() {
+    var workerId = UUID.randomUUID();
+    var onStart = new AtomicReference<Runnable>(() -> {});
+    var workerSessionId =
+        registry.register(workerId, nvencWorker(workerId, 1), runningOnStart(onStart));
+    onStart.set(
+        () ->
+            registry.changeVideoEncoders(
+                workerId,
+                workerSessionId,
+                VideoEncodersChanged.newBuilder().addVideoEncoders(LIBX264).build()));
+
+    var dispatched = registry.dispatch(h264Encode(false));
+
+    assertThat(dispatched).map(VariantDispatch::encoder).contains(Optional.of(PINNED_NVENC));
+  }
+
   private static WorkerRegistration nvencWorker(UUID workerId, int slots) {
     return WorkerRegistration.newBuilder()
         .setWorker(
@@ -277,6 +340,29 @@ class HardwareEncoderFailureRegistryTest {
         .setJobAttemptId(job.getJobAttemptId())
         .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_HARDWARE_ENCODER_FAILED)
         .build();
+  }
+
+  // Runs the action as the start command reaches the worker, before the dispatch returns.
+  private static StreamObserver<EstablishWorkerSessionResponse> runningOnStart(
+      AtomicReference<Runnable> action) {
+    return new StreamObserver<>() {
+      @Override
+      public void onNext(EstablishWorkerSessionResponse value) {
+        if (value.hasStartVariant()) {
+          action.get().run();
+        }
+      }
+
+      @Override
+      public void onError(Throwable throwable) {
+        throw new AssertionError("The worker should remain connected", throwable);
+      }
+
+      @Override
+      public void onCompleted() {
+        throw new AssertionError("The worker should remain connected");
+      }
+    };
   }
 
   private static StreamObserver<EstablishWorkerSessionResponse> collecting(
