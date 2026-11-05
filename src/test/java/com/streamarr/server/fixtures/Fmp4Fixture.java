@@ -22,7 +22,6 @@ public final class Fmp4Fixture {
   private static final int VISUAL_SAMPLE_ENTRY_FIELDS = 78;
   private static final int HVCC_ARRAY_COUNT_OFFSET = 22;
   private static final int PREFIX_SEI = 39;
-  private static final int SUFFIX_SEI = 40;
 
   private Fmp4Fixture() {}
 
@@ -84,12 +83,14 @@ public final class Fmp4Fixture {
   }
 
   /**
-   * The messages of each prefix or suffix SEI NAL unit in the video sample entry's hvcC, in order,
-   * each with its payload as an SEI message carries it (ITU-T H.265 7.3.5).
+   * The messages of each prefix SEI NAL unit in the video sample entry's hvcC, in order, each with
+   * its payload as an SEI message carries it (ITU-T H.265 7.3.5). The mastering display and content
+   * light level messages are prefix SEI messages (D.3.28, D.3.35). Each unit's header must name the
+   * base layer and a temporal identifier, as a decoder requires (7.4.2.2).
    */
   public static List<List<SeiMessage>> hvccSeiMessages(byte[] initialization) {
     return hvccNalUnits(initialization).stream()
-        .filter(unit -> isSei(nalUnitType(unit)))
+        .filter(unit -> nalUnitType(unit) == PREFIX_SEI)
         .map(Fmp4Fixture::seiMessagesOf)
         .toList();
   }
@@ -115,28 +116,39 @@ public final class Fmp4Fixture {
     var hvcC = videoSampleEntry(initialization).visualChild("hvcC").payload();
     var lengthSize = (hvcC.get(21) & 0x03) + 1;
     var samples = new ArrayList<List<Integer>>();
-    var sampleSizes = List.<Integer>of();
+    var run = new TrackRun(-1, List.of());
+    var boxStart = 0L;
     for (var box : boxes(ByteBuffer.wrap(media))) {
       if (box.type().equals("moof")) {
-        sampleSizes = sampleSizes(box);
+        run = trackRun(box, boxStart);
       }
 
       if (box.type().equals("mdat")) {
         var data = box.payload();
-        assertThat(sampleSizes.stream().mapToInt(Integer::intValue).sum())
+        assertThat(run.dataStart())
+            .as("the data offset of the run that precedes the mdat")
+            .isEqualTo(boxStart + 8);
+        assertThat(run.sampleSizes().stream().mapToInt(Integer::intValue).sum())
             .as("the sample sizes of the run that precedes the mdat")
             .isEqualTo(data.remaining());
-        for (var size : sampleSizes) {
+        for (var size : run.sampleSizes()) {
           samples.add(nalUnitTypesOf(data.slice(data.position(), size), lengthSize));
           data.position(data.position() + size);
         }
       }
+
+      boxStart += 8 + box.payload().remaining();
     }
 
     return samples;
   }
 
-  private static List<Integer> sampleSizes(Box fragment) {
+  // Where a track run's first sample starts in the media, and the size of each of its samples.
+  private record TrackRun(long dataStart, List<Integer> sampleSizes) {}
+
+  // The run's data offset counts from the tfhd's base data offset, or else from the moof's first
+  // byte, as default-base-is-moof and the first track fragment of a moof both give.
+  private static TrackRun trackRun(Box fragment, long fragmentStart) {
     var trackFragments = fragment.children("traf");
     assertThat(trackFragments).as("the track fragments of a moof").hasSize(1);
     var header = trackFragments.getFirst().child("tfhd").payload();
@@ -147,6 +159,9 @@ public final class Fmp4Fixture {
     var run = trackFragments.getFirst().child("trun").payload();
     var runFlags = run.getInt(0) & 0x00FF_FFFF;
     var count = run.getInt(4);
+    assertThat(runFlags & 0x01).as("the run's data offset").isNotZero();
+    var base = (headerFlags & 0x01) == 0 ? fragmentStart : header.getLong(8);
+    var dataStart = base + run.getInt(8);
     // The data offset and first-sample flags precede the per-sample fields.
     var position = 8 + Integer.bitCount(runFlags & 0x005) * 4;
     var fieldsPerSample = Integer.bitCount(runFlags & 0xF00);
@@ -162,7 +177,7 @@ public final class Fmp4Fixture {
       sizes.add(run.getInt(fields + ((runFlags & 0x100) == 0 ? 0 : 4)));
     }
 
-    return sizes;
+    return new TrackRun(dataStart, sizes);
   }
 
   private static List<Integer> nalUnitTypesOf(ByteBuffer sample, int lengthSize) {
@@ -245,13 +260,14 @@ public final class Fmp4Fixture {
     return (firstHeaderByte >> 1) & 0x3F;
   }
 
-  private static boolean isSei(int nalUnitType) {
-    return nalUnitType == PREFIX_SEI || nalUnitType == SUFFIX_SEI;
-  }
-
   // The SEI messages of the NAL unit's RBSP, after its 2-byte header, with each emulation
   // prevention byte removed (ITU-T H.265 7.3.5 and 7.4.2).
   private static List<SeiMessage> seiMessagesOf(byte[] unit) {
+    assertThat(unit[0] & 0x80).as("forbidden_zero_bit").isZero();
+    assertThat(((unit[0] & 0x01) << 5) | (Byte.toUnsignedInt(unit[1]) >> 3))
+        .as("nuh_layer_id")
+        .isZero();
+    assertThat(unit[1] & 0x07).as("nuh_temporal_id_plus1").isPositive();
     var rbsp = new ByteArrayOutputStream();
     var zeros = 0;
     for (var index = 2; index < unit.length; index++) {

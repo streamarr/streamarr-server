@@ -1,6 +1,7 @@
 package com.streamarr.server.fixtures;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
@@ -16,6 +17,11 @@ import org.junit.jupiter.params.provider.CsvSource;
 @Tag("UnitTest")
 @DisplayName("Fragmented MP4 Fixture Tests")
 class Fmp4FixtureTest {
+
+  // An IDR slice, an RPU and a trailing slice, each behind a 4-byte length.
+  private static final byte[] IDR_UNIT = HexFormat.of().parseHex("000000032601AF");
+  private static final byte[] RPU_UNIT = HexFormat.of().parseHex("000000027C01");
+  private static final byte[] TRAILING_UNIT = HexFormat.of().parseHex("000000030201AF");
 
   // Main 10 (profile 2) with compatibility flag 2 and the progressive and frame-only constraints.
   private static final byte[] MAIN_10_FIELDS = HexFormat.of().parseHex("0220000000900000000000");
@@ -87,19 +93,49 @@ class Fmp4FixtureTest {
   void shouldReadEachSeiMessageWithoutEmulationPreventionBytesWhenTheHvccHoldsAnSeiNalUnit() {
     // A content light level message of MaxCLL 0 and MaxFALL 1 whose payload needs an emulation
     // prevention byte, then a second message of payload type 300, coded as 255 and 45.
-    var sei = HexFormat.of().parseHex("4E01" + "90040000030001" + "FF2D01AB" + "80");
-    var array = ByteBuffer.allocate(5 + sei.length).put((byte) 39).putShort((short) 1);
-    array.putShort((short) sei.length).put(sei);
-
     var messages =
         Fmp4Fixture.hvccSeiMessages(
-            hevcInitialization("hvc1", box("hvcC", hvcc(MAIN_10_FIELDS, 30, array.array()))));
+            initializationWithSei("4E01" + "90040000030001" + "FF2D01AB" + "80"));
 
     assertThat(messages)
         .containsExactly(
             List.of(
                 new Fmp4Fixture.SeiMessage(144, "00000001"),
                 new Fmp4Fixture.SeiMessage(300, "AB")));
+  }
+
+  // A suffix SEI unit (type 40) carries no mastering display or content light level message.
+  @Test
+  @DisplayName("Should read no message from a suffix SEI unit when the hvcC holds only that unit")
+  void shouldReadNoMessageFromASuffixSeiUnitWhenTheHvccHoldsOnlyThatUnit() {
+    assertThat(Fmp4Fixture.hvccSeiMessages(initializationWithSei("5001" + "900403E80190" + "80")))
+        .isEmpty();
+  }
+
+  // ITU-T H.265 7.4.2.2: forbidden_zero_bit is 0, the base layer has nuh_layer_id 0, and
+  // nuh_temporal_id_plus1 is never 0.
+  @ParameterizedTest
+  @CsvSource({"CE01, forbidden_zero_bit", "4F01, nuh_layer_id", "4E00, nuh_temporal_id_plus1"})
+  @DisplayName("Should refuse an SEI unit when its NAL unit header is one that decoders discard")
+  void shouldRefuseAnSeiUnitWhenItsNalUnitHeaderIsOneThatDecodersDiscard(
+      String header, String field) {
+    var initialization = initializationWithSei(header + "900403E80190" + "80");
+
+    assertThatThrownBy(() -> Fmp4Fixture.hvccSeiMessages(initialization))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining(field);
+  }
+
+  // A Main 10 initialization segment whose hvcC holds one array with the one SEI unit.
+  private static byte[] initializationWithSei(String unitHex) {
+    var unit = HexFormat.of().parseHex(unitHex);
+    var array =
+        ByteBuffer.allocate(5 + unit.length)
+            .put((byte) ((Byte.toUnsignedInt(unit[0]) >> 1) & 0x3F))
+            .putShort((short) 1)
+            .putShort((short) unit.length)
+            .put(unit);
+    return hevcInitialization("hvc1", box("hvcC", hvcc(MAIN_10_FIELDS, 30, array.array())));
   }
 
   // Dolby's ISO base media file format specification: profile 8.1 at level 1 with an RPU and a
@@ -135,25 +171,47 @@ class Fmp4FixtureTest {
       "Should group each sample's NAL unit types by the track run's sample sizes when an RPU starts"
           + " the next sample")
   void shouldGroupEachSamplesNalUnitTypesByTheTrackRunsSampleSizesWhenAnRpuStartsTheNextSample() {
-    var initialization =
-        hevcInitialization("hvc1", box("hvcC", hvcc(MAIN_10_FIELDS, 30, new byte[0])));
-    var idr = HexFormat.of().parseHex("000000032601AF");
-    var rpu = HexFormat.of().parseHex("000000027C01");
-    var trailing = HexFormat.of().parseHex("000000030201AF");
     var media = new ByteArrayOutputStream();
     // trun flags 0x301: a data offset, then a duration and a size for each sample.
+    media.writeBytes(moofAheadOfItsMdat(words(0, 1), 0x301, 2, 0, 1, 7, 1, 13));
+    media.writeBytes(box("mdat", IDR_UNIT, RPU_UNIT, TRAILING_UNIT));
+    // tfhd flags 0x10: every sample of the run takes the default size of 7 bytes.
+    media.writeBytes(moofAheadOfItsMdat(words(0x10, 1, 7), 0x001, 1, 0));
+    media.writeBytes(box("mdat", IDR_UNIT));
+
+    assertThat(Fmp4Fixture.sampleNalUnitTypes(main10Initialization(), media.toByteArray()))
+        .containsExactly(List.of(19), List.of(62, 1), List.of(19));
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse to read the samples when the track run's data offset points past the mdat")
+  void shouldRefuseToReadTheSamplesWhenTheTrackRunsDataOffsetPointsPastTheMdat() {
+    var media = new ByteArrayOutputStream();
     media.writeBytes(
         box(
             "moof",
-            box("traf", box("tfhd", words(0, 1)), box("trun", words(0x301, 2, 0, 1, 7, 1, 13)))));
-    media.writeBytes(box("mdat", idr, rpu, trailing));
-    // tfhd flags 0x10: every sample of the run takes the default size of 7 bytes.
-    media.writeBytes(
-        box("moof", box("traf", box("tfhd", words(0x10, 1, 7)), box("trun", words(0, 1)))));
-    media.writeBytes(box("mdat", idr));
+            box("traf", box("tfhd", words(0, 1)), box("trun", words(0x201, 1, 1_000_000, 7)))));
+    media.writeBytes(box("mdat", IDR_UNIT));
 
-    assertThat(Fmp4Fixture.sampleNalUnitTypes(initialization, media.toByteArray()))
-        .containsExactly(List.of(19), List.of(62, 1), List.of(19));
+    assertThatThrownBy(
+            () -> Fmp4Fixture.sampleNalUnitTypes(main10Initialization(), media.toByteArray()))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("data offset");
+  }
+
+  // The moof of one track run whose data offset, the third run word, points at the first byte of
+  // the mdat that follows.
+  private static byte[] moofAheadOfItsMdat(byte[] trackFragmentHeader, int... runWords) {
+    var size =
+        box("moof", box("traf", box("tfhd", trackFragmentHeader), box("trun", words(runWords))))
+            .length;
+    runWords[2] = size + 8;
+    return box("moof", box("traf", box("tfhd", trackFragmentHeader), box("trun", words(runWords))));
+  }
+
+  private static byte[] main10Initialization() {
+    return hevcInitialization("hvc1", box("hvcC", hvcc(MAIN_10_FIELDS, 30, new byte[0])));
   }
 
   // The hvcC fields (ISO/IEC 14496-15 8.3.3.1.2) with 4-byte NAL unit lengths and the arrays.
