@@ -21,7 +21,7 @@ public enum DecisionReason {
   VIDEO_PICTURE_SIZE_NOT_DECLARED,
   /** The source's frame rate is above the closest entry's maximum. */
   VIDEO_FRAME_RATE_NOT_DECLARED,
-  /** The closest entry does not declare the source's compatible base, such as PQ or HLG. */
+  /** The closest entry does not declare the source's compatible base: SDR, PQ or HLG. */
   DYNAMIC_RANGE_NOT_DECLARED,
   /** The closest entry does not declare the source's Dolby Vision profile and level. */
   DOLBY_VISION_NOT_DECLARED,
