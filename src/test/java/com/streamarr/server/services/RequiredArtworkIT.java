@@ -47,6 +47,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
@@ -268,14 +269,13 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
                     .withHeader("Content-Type", "image/jpeg")
                     .withBody(createTestImage(600, 900))));
     var backlog = List.of(savePerson(), savePerson());
+    var completions = new CopyOnWriteArrayList<String>();
     var releases = new ArrayList<CountDownLatch>();
     var holders = new ArrayList<BoundedTask<Void>>();
     artworkPrioritySchedulers.stop();
     var starter = ArtworkSchedulerStarter.fromContext(applicationContext);
-    var primaryScheduler =
-        starter.start(ArtworkPriority.PRIMARY, new AbstractSchedulerListener() {});
-    var backgroundScheduler =
-        starter.start(ArtworkPriority.BACKGROUND, new AbstractSchedulerListener() {});
+    var primaryScheduler = starter.start(ArtworkPriority.PRIMARY, completedInto(completions));
+    var backgroundScheduler = starter.start(ArtworkPriority.BACKGROUND, completedInto(completions));
     try {
       for (var index = 0; index < Runtime.getRuntime().availableProcessors(); index++) {
         var release = new CountDownLatch(1);
@@ -309,13 +309,21 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
           .isEqualTo(FinishedImageCounts.builder().saved(1).unavailable(1).build());
     } finally {
       releases.forEach(CountDownLatch::countDown);
-      for (var holder : holders) {
-        holder.await(Duration.ofSeconds(BOUND_SECONDS));
-      }
+      try {
+        for (var holder : holders) {
+          holder.await(Duration.ofSeconds(BOUND_SECONDS));
+        }
 
-      primaryScheduler.stop();
-      backgroundScheduler.stop();
-      artworkPrioritySchedulers.start();
+        // Stopping a scheduler waits only briefly for running steps, so every step finishes first
+        // rather than running on into the shared schedulers and the next test's rows.
+        await()
+            .atMost(Duration.ofSeconds(BOUND_SECONDS))
+            .until(() -> completions.size() >= backlog.size() + 1);
+      } finally {
+        primaryScheduler.stop();
+        backgroundScheduler.stop();
+        artworkPrioritySchedulers.start();
+      }
     }
   }
 
@@ -376,6 +384,15 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
       @Override
       public void onExecutionComplete(ExecutionComplete complete) {
         completed.complete(complete);
+      }
+    };
+  }
+
+  private static AbstractSchedulerListener completedInto(List<String> completedInstanceIds) {
+    return new AbstractSchedulerListener() {
+      @Override
+      public void onExecutionComplete(ExecutionComplete complete) {
+        completedInstanceIds.add(complete.getExecution().taskInstance.getId());
       }
     };
   }
