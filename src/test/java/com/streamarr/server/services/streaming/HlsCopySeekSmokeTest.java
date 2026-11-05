@@ -48,11 +48,12 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Real-FFmpeg proof that a stream copy seeks to the keyframe that opens the requested segment. A
- * replacement attempt at segment 2 must deliver the same video samples as the attempt that copied
- * the source from its start.
+ * replacement attempt must deliver the same video samples as the attempt that copied the source
+ * from its start, also when its segment merges slots without a keyframe (ADR 0037).
  */
 @Tag("SmokeTest")
 @DisplayName("HLS Stream Copy Seek Smoke Tests")
@@ -78,6 +79,12 @@ class HlsCopySeekSmokeTest {
           "rate=4",
           List.of("-bf", "2", "-force_key_frames", "0,6,12,19,25,30"),
           List.of("-f", "mpegts"));
+
+  // 24 fps with a keyframe every 10 s, as a long-GOP encode places them: the 6 s slots [12 s, 18 s)
+  // and [24 s, 30 s) hold no keyframe, so the segment list starts its segments in slots 0, 1, 3
+  // and 5, and the AAC tail past 36 s joins the last segment.
+  private static final List<String> LONG_GOP_MATROSKA =
+      source("rate=24", List.of("-force_key_frames", "0,10,20,30"), List.of("-f", "matroska"));
 
   private FakeMediaFileRepository mediaFileRepository;
   private FakeMediaFileContainerInfoRepository probeRepository;
@@ -232,6 +239,56 @@ class HlsCopySeekSmokeTest {
             List.of(6.0, 6.0, 7.0, 6.0, 5.0, 6.0)));
   }
 
+  @ParameterizedTest(name = "seek to segment {0}")
+  @ValueSource(ints = {1, 3})
+  @DisplayName(
+      "Should copy a source whose keyframes lie 10 s apart on a merged segment list and seek into"
+          + " and past a merged segment")
+  void shouldCopyASourceWhoseKeyframesLieTenSecondsApartOnAMergedSegmentListAndSeekIntoAndPastIt(
+      int seekSegment) throws Exception {
+    var source =
+        workerFixture.worker().generateMedia(sourceRoot.resolve("long-gop.mkv"), LONG_GOP_MATROSKA);
+    storeProbeWithKeyframes(source);
+    var session = createSession(source);
+    var sessionId = session.getSessionId();
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(
+            extinfSeconds(
+                playlistService.generateMediaPlaylist(
+                    session, StreamSession.defaultVariant(), "smoke-token")))
+        .zipSatisfy(
+            List.of(10.0, 10.0, 10.0, 6.0),
+            (advertised, expected) -> assertThat(advertised).isCloseTo(expected, within(0.1)));
+    await()
+        .atMost(Duration.ofSeconds(60))
+        .until(() -> segmentStore.segmentExists(sessionId, SegmentNames.mediaSegmentName(3)));
+    var firstPresentations = new ArrayList<Double>();
+    for (var index = 0; index < 4; index++) {
+      var name = SegmentNames.mediaSegmentName(index);
+      assertThat(coordinator.deliver(sessionId, StreamSession.defaultVariant(), name))
+          .isInstanceOf(SegmentDelivery.Ready.class);
+      firstPresentations.add(
+          videoPresentationTimes(sessionId, name).stream().min(Double::compare).orElseThrow());
+    }
+
+    assertThat(firstPresentations)
+        .as("each segment opens at the keyframe that its listed slot holds")
+        .zipSatisfy(
+            List.of(0.0, 10.0, 20.0, 30.0),
+            (opening, expected) -> assertThat(opening).isCloseTo(expected, within(0.1)));
+    var seekSegmentName = SegmentNames.mediaSegmentName(seekSegment);
+    var fromStart = videoPresentationTimes(sessionId, seekSegmentName);
+
+    killProducerAndDropSegmentsFrom(session, seekSegment, 4);
+    var delivery = coordinator.deliver(sessionId, StreamSession.defaultVariant(), seekSegmentName);
+
+    assertThat(delivery).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(videoPresentationTimes(sessionId, seekSegmentName))
+        .as("the replacement's segment holds the same video as the copy from the start")
+        .isEqualTo(fromStart);
+  }
+
   // The AAC encoder's priming samples make each container about 23 ms longer than its 36 s video.
   // That tail forms a seventh grid interval without a keyframe, which joins the last copy segment.
   private static List<String> source(
@@ -316,10 +373,14 @@ class HlsCopySeekSmokeTest {
   }
 
   private List<Double> videoPresentationTimes(UUID sessionId) throws Exception {
+    return videoPresentationTimes(sessionId, SEEK_SEGMENT_NAME);
+  }
+
+  private List<Double> videoPresentationTimes(UUID sessionId, String segmentName) throws Exception {
     var media =
         Files.write(
             Files.createTempFile(temporaryDirectory, "segment", ".mp4"),
-            Fmp4Fixture.withInitializationSegment(segmentStore, sessionId, SEEK_SEGMENT_NAME));
+            Fmp4Fixture.withInitializationSegment(segmentStore, sessionId, segmentName));
     return workerFixture.worker().packetTimestamps(media);
   }
 
