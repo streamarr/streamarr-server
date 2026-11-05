@@ -334,7 +334,7 @@ public record VideoCapabilityEntry(
     var range = copy.dynamicRange();
     var refusals = new ArrayList<DecisionReason>();
     if (!acceptsDolbyVision(copy)) {
-      refusals.add(DecisionReason.DOLBY_VISION_NOT_DECLARED);
+      refusals.add(dolbyVisionRefusal(copy));
     }
 
     if (!acceptsCompatibleBase(range.compatibleBase())) {
@@ -370,6 +370,14 @@ public record VideoCapabilityEntry(
           level.isPresent() && listsDolbyVision(profile, level.getAsInt());
       case CopiedDolbyVision.Undeclarable _, CopiedDolbyVision.Unknown _ -> false;
     };
+  }
+
+  private static DecisionReason dolbyVisionRefusal(VideoStreamCopy copy) {
+    if (CopiedDolbyVision.of(copy) instanceof CopiedDolbyVision.Unknown) {
+      return DecisionReason.DOLBY_VISION_PROFILE_OR_LEVEL_UNKNOWN;
+    }
+
+    return DecisionReason.DOLBY_VISION_NOT_DECLARED;
   }
 
   private boolean acceptsDolbyVision(VideoStreamCopy copy) {

@@ -330,6 +330,11 @@ class TranscodeDecisionReasonTest {
             DecisionReason.H264_NOT_8_BIT_4_2_0),
         Arguments.of(
             Named.of(
+                "an HEVC source whose codec string the probe did not report",
+                hevcMain10().codecStringUnreported(true).build().probe()),
+            DecisionReason.VIDEO_CODEC_STRING_UNKNOWN),
+        Arguments.of(
+            Named.of(
                 "an H.264 source whose bit depth the probe did not report",
                 Source.builder().bitDepthUnreported(true).build().probe()),
             DecisionReason.VIDEO_BIT_DEPTH_UNKNOWN),
@@ -431,6 +436,60 @@ class TranscodeDecisionReasonTest {
     assertThat(decision.reasons())
         .containsExactly(
             DecisionReason.PICTURE_ABOVE_VIEWER_LIMIT, DecisionReason.BITRATE_ABOVE_VIEWER_LIMIT);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("dolbyVisionThatTheProbeLeavesUnknown")
+  @DisplayName(
+      "Should name the unknown Dolby Vision when a copy strips it for a client that declares it")
+  void shouldNameTheUnknownDolbyVisionWhenACopyStripsItForAClientThatDeclaresIt(
+      VideoDynamicRange range) {
+    var decision = decide(hevcMain10().dynamicRange(range).build().probe(), everyRangeClient());
+
+    assertThat(decision.transcodeMode().copiesVideo()).isTrue();
+    assertThat(decision.videoBitstreamRewrites()).contains(BitstreamRewrite.STRIP_DOLBY_VISION);
+    assertThat(decision.reasons())
+        .containsExactly(DecisionReason.DOLBY_VISION_PROFILE_OR_LEVEL_UNKNOWN);
+  }
+
+  static Stream<Named<VideoDynamicRange>> dolbyVisionThatTheProbeLeavesUnknown() {
+    var withoutLevel =
+        DolbyVisionConfiguration.builder()
+            .profile(OptionalInt.of(8))
+            .baseLayerCompatibilityId(OptionalInt.of(1))
+            .baseLayer(true)
+            .rpu(true)
+            .build();
+    return Stream.of(
+        Named.of(
+            "profile 8.1 whose level neither the record nor the level table gives",
+            new VideoDynamicRange(
+                CompatibleBase.PQ,
+                Presence.ABSENT,
+                new DolbyVision.Present(Optional.of(withoutLevel), Presence.PRESENT))),
+        Named.of(
+            "Dolby Vision whose profile neither a record nor an RPU header names",
+            new VideoDynamicRange(
+                CompatibleBase.PQ,
+                Presence.ABSENT,
+                new DolbyVision.Present(Optional.empty(), Presence.UNSPECIFIED))));
+  }
+
+  @Test
+  @DisplayName("Should name the undeclared codec beside the picture limit when both refuse a copy")
+  void shouldNameTheUndeclaredCodecBesideThePictureLimitWhenBothRefuseACopy() {
+    var decision =
+        decide(
+            request(hevcMain10().build().probe(), defaultDeclarationBuilder().build())
+                .viewerLimits(
+                    ViewerLimits.of(
+                        StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build()))
+                .build());
+
+    assertThat(decision.transcodeMode().copiesVideo()).isFalse();
+    assertThat(decision.reasons())
+        .containsExactly(
+            DecisionReason.VIDEO_CODEC_NOT_DECLARED, DecisionReason.PICTURE_ABOVE_VIEWER_LIMIT);
   }
 
   @Test
@@ -723,6 +782,7 @@ class TranscodeDecisionReasonTest {
   record Source(
       String codec,
       String codecString,
+      boolean codecStringUnreported,
       Integer bitDepth,
       boolean bitDepthUnreported,
       Optional<ChromaSubsampling> chromaSubsampling,
@@ -735,6 +795,14 @@ class TranscodeDecisionReasonTest {
       Integer audioChannels,
       Integer audioBitrate,
       Long videoBitrate) {
+
+    private Optional<String> reportedCodecString() {
+      if (codecStringUnreported) {
+        return Optional.empty();
+      }
+
+      return Optional.of(codecString == null ? "avc1.640028" : codecString);
+    }
 
     private OptionalInt reportedBitDepth() {
       if (bitDepthUnreported) {
@@ -755,7 +823,7 @@ class TranscodeDecisionReasonTest {
                   chromaSubsampling == null
                       ? Optional.of(ChromaSubsampling.CHROMA_420)
                       : chromaSubsampling)
-              .codecString(Optional.of(codecString == null ? "avc1.640028" : codecString))
+              .codecString(reportedCodecString())
               .videoProperties(
                   videoProperties == null
                       ? Optional.of(VideoPlaybackFactsFixture.h264HighPropertiesBuilder().build())
