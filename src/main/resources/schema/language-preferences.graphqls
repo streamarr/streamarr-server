@@ -86,8 +86,9 @@ type RepeatedAudioLanguageError implements InputMutationError & MutationError {
 """
 Each language field that the input leaves out keeps the stored value. A field set to null
 inherits from the next wider level: the season, then the series, then the Profile. An override
-whose every field inherits is removed. A switch during playback sets the series' override, or
-the movie's.
+whose every field inherits is removed. A switch in the player sets the override of that episode
+or movie only, and never the season's or the series', so the next episode starts from the wider
+levels again. A settings screen sets the override of its own level.
 """
 input SetLanguageOverrideInput {
     "The ID of a series, a season, an episode or a movie."
