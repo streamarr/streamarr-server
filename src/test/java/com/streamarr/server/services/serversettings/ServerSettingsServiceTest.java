@@ -14,10 +14,12 @@ import com.streamarr.server.fakes.FakeServerSettingsRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.Intent;
 import java.time.Duration;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.access.AccessDeniedException;
 
@@ -207,6 +209,79 @@ class ServerSettingsServiceTest {
 
     assertThatThrownBy(() -> serverSettingsService.readIdleSegmentRetentionSetting(identity))
         .isInstanceOf(AccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should keep the upload budget off when no ServerAdmin has set it")
+  void shouldKeepTheUploadBudgetOffWhenNoServerAdminHasSetIt() {
+    var setting = serverSettingsService.readUploadBudgetSetting(identity);
+
+    assertThat(setting.internetUploadMegabitsPerSecond()).isEmpty();
+    assertThat(setting.streamShareMegabitsPerSecond()).isEmpty();
+    assertThat(setting.streamSharePercent()).isEqualTo(80);
+    assertThat(setting.minimumInternetUploadMegabitsPerSecond()).isEqualTo(1);
+    assertThat(setting.maximumInternetUploadMegabitsPerSecond()).isEqualTo(10_000);
+    assertThat(serverSettingsService.uploadBudget().streamShareBitsPerSecond()).isEmpty();
+    assertThat(authorizationService.recordedIntents())
+        .containsExactly(new Intent.ViewUploadBudget());
+  }
+
+  @ParameterizedTest
+  @CsvSource({"1, 0.8, 800000", "20, 16.0, 16000000", "10000, 8000.0, 8000000000"})
+  @DisplayName(
+      "Should store the internet upload speed and give streams 80% of it when a ServerAdmin sets"
+          + " one within the range")
+  void shouldStoreTheUploadSpeedAndGiveStreams80PercentWhenAServerAdminSetsOneWithinTheRange(
+      int megabitsPerSecond, double streamShareMegabits, long streamShareBits) {
+    var setting =
+        accepted(
+            serverSettingsService.changeUploadBudget(identity, Optional.of(megabitsPerSecond)));
+
+    assertThat(setting.internetUploadMegabitsPerSecond()).contains(megabitsPerSecond);
+    assertThat(setting.streamShareMegabitsPerSecond()).contains(streamShareMegabits);
+    var stored = serverSettingsService.readUploadBudgetSetting(identity);
+    assertThat(stored.internetUploadMegabitsPerSecond()).contains(megabitsPerSecond);
+    assertThat(serverSettingsService.uploadBudget().streamShareBitsPerSecond())
+        .hasValue(streamShareBits);
+    assertThat(authorizationService.recordedIntents()).startsWith(new Intent.ChangeUploadBudget());
+  }
+
+  @Test
+  @DisplayName("Should turn the upload budget off when a ServerAdmin clears it")
+  void shouldTurnTheUploadBudgetOffWhenAServerAdminClearsIt() {
+    accepted(serverSettingsService.changeUploadBudget(identity, Optional.of(20)));
+
+    var setting = accepted(serverSettingsService.changeUploadBudget(identity, Optional.empty()));
+
+    assertThat(setting.internetUploadMegabitsPerSecond()).isEmpty();
+    assertThat(serverSettingsService.uploadBudget().streamShareBitsPerSecond()).isEmpty();
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {Integer.MIN_VALUE, -1, 0, 10_001, Integer.MAX_VALUE})
+  @DisplayName(
+      "Should reject the upload speed and keep the budget off when it lies outside the range")
+  void shouldRejectTheUploadSpeedAndKeepTheBudgetOffWhenItLiesOutsideTheRange(
+      int megabitsPerSecond) {
+    var outcome =
+        serverSettingsService.changeUploadBudget(identity, Optional.of(megabitsPerSecond));
+
+    assertThat(rejectionOf(outcome)).isEqualTo(new ChangeUploadBudgetRejection.OutOfRange());
+    assertThat(serverSettingsService.uploadBudget().streamShareBitsPerSecond()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse a caller who is not a ServerAdmin before checking the upload speed's range")
+  void shouldRefuseACallerWhoIsNotAServerAdminBeforeCheckingTheUploadSpeedsRange() {
+    authorizationService.denyAll();
+    var outOfRange = Optional.of(0);
+
+    assertThatThrownBy(() -> serverSettingsService.changeUploadBudget(identity, outOfRange))
+        .isInstanceOf(AccessDeniedException.class);
+    assertThatThrownBy(() -> serverSettingsService.readUploadBudgetSetting(identity))
+        .isInstanceOf(AccessDeniedException.class);
+    assertThat(serverSettingsService.uploadBudget().streamShareBitsPerSecond()).isEmpty();
   }
 
   @Test
