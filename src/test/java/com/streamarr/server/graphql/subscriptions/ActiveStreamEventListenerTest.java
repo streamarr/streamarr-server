@@ -145,6 +145,46 @@ class ActiveStreamEventListenerTest {
   }
 
   @Test
+  @DisplayName(
+      "Should broadcast the stream's end to a new subscriber when the last subscriber left while"
+          + " a read was in flight")
+  void shouldBroadcastTheStreamsEndToANewSubscriberWhenTheLastSubscriberLeftDuringARead()
+      throws Exception {
+    var mediaFiles = new ParkingMediaFileRepository();
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var listener = listenerReading(mediaFiles, Schedulers.fromExecutorService(executor));
+      var leaving = broadcaster.getChanges().register().subscribe();
+      var command = startPlaybackBuilder().build();
+      var playback = acceptedPlayback(playbackSessions.start(command));
+      var event = new PlaybackSessionChangedEvent(playback.playbackSessionId());
+
+      BoundedTask.runWithin(BOUND, () -> listener.onPlaybackSessionChanged(event));
+      awaitLatch(mediaFiles.reading);
+      leaving.dispose();
+      playbackSessions.close(playbackRequest(playback, command));
+      listener.onPlaybackSessionChanged(event);
+      var ended = new CountDownLatch(1);
+      var delivered = new CopyOnWriteArrayList<ActiveStreamDto.ChangeDto>();
+      broadcaster
+          .getChanges()
+          .register()
+          .subscribe(
+              change -> {
+                delivered.add(change);
+                if (change.activeStream() == null) {
+                  ended.countDown();
+                }
+              });
+      mediaFiles.release.countDown();
+      awaitLatch(ended);
+
+      assertThat(delivered.getLast())
+          .isEqualTo(
+              new ActiveStreamDto.ChangeDto(playback.playbackSessionId().toString(), null));
+    }
+  }
+
+  @Test
   @DisplayName("Should count a publication failure without throwing when no thread can read")
   void shouldCountAPublicationFailureWithoutThrowingWhenNoThreadCanRead() {
     var scheduler = Schedulers.fromExecutorService(Executors.newVirtualThreadPerTaskExecutor());
