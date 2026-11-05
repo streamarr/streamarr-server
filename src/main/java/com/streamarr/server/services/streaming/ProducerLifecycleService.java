@@ -196,19 +196,25 @@ public class ProducerLifecycleService {
   }
 
   /**
-   * Restarts the stall clock of the variant's tracked job attempt when its worker reports that the
-   * attempt's output advanced (ADR 0037). Progress of an attempt that recovery does not track
-   * changes nothing.
+   * Restarts the stall clock of the variant's running job attempt when its worker reports that the
+   * attempt's output advanced (ADR 0037), even before any request has needed recovery. Progress of
+   * any other job attempt changes nothing.
    */
   public void restartStallClock(UUID sessionId, String variantLabel, UUID attemptId) {
     withSessionLock(
         sessionId,
-        () -> {
-          var state = recoveryStates.get(new VariantKey(sessionId, variantLabel));
-          if (state != null) {
-            state.restartStallClock(attemptId, clock.instant());
-          }
-        });
+        () ->
+            runtimeRegistry
+                .findById(sessionId)
+                .flatMap(session -> session.getVariantHandle(variantLabel))
+                .filter(handle -> handle.attemptId().equals(attemptId))
+                .ifPresent(
+                    handle ->
+                        recoveryStates
+                            .computeIfAbsent(
+                                new VariantKey(sessionId, variantLabel),
+                                _ -> new VariantDeliveryState())
+                            .restartStallClock(handle, clock.instant())));
   }
 
   /**

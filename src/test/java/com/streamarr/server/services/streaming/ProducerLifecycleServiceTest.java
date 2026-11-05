@@ -932,6 +932,21 @@ class ProducerLifecycleServiceTest {
 
   @Test
   @DisplayName(
+      "Should use the stall threshold when the running job attempt reports progress before any"
+          + " recovery pass")
+  void shouldUseTheStallThresholdWhenTheRunningJobAttemptReportsProgressBeforeAnyRecoveryPass() {
+    var session = startedSession();
+
+    new JobAttemptProgressListener(lifecycle)
+        .onJobAttemptProgressed(progressOf(session, session.getHandle().orElseThrow().attemptId()));
+    clock.advance(Duration.ofSeconds(4));
+    recover(session);
+
+    assertThat(timeUntilStall(session)).isEqualTo(Duration.ofSeconds(6));
+  }
+
+  @Test
+  @DisplayName(
       "Should keep the stall deadline when progress names a job attempt that recovery does not"
           + " track")
   void shouldKeepTheStallDeadlineWhenProgressNamesAJobAttemptThatRecoveryDoesNotTrack() {

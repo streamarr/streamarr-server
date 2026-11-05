@@ -20,10 +20,7 @@ final class VariantDeliveryState {
   private final Set<ExecutionTargetId> attemptedSinceProgress = new LinkedHashSet<>();
 
   void syncProgress(TranscodeHandle handle, IntPredicate frontierSegmentExists, Instant now) {
-    if (!handle.attemptId().equals(trackedAttemptId)) {
-      attemptedSinceProgress.clear();
-      trackAttempt(handle, now);
-    }
+    followAttempt(handle, now);
 
     var advanced = false;
     // Scan the run's output even for init or first-segment requests, which can observe progress
@@ -39,11 +36,17 @@ final class VariantDeliveryState {
     }
   }
 
-  /** The tracked job attempt's output advanced; any other attempt's progress changes nothing. */
-  void restartStallClock(UUID attemptId, Instant now) {
-    if (attemptId.equals(trackedAttemptId)) {
-      lastProgressAt = now;
-      reportedProgress = true;
+  /** The running job attempt's output advanced, so it has started and its stall clock restarts. */
+  void restartStallClock(TranscodeHandle handle, Instant now) {
+    followAttempt(handle, now);
+    lastProgressAt = now;
+    reportedProgress = true;
+  }
+
+  private void followAttempt(TranscodeHandle handle, Instant now) {
+    if (!handle.attemptId().equals(trackedAttemptId)) {
+      attemptedSinceProgress.clear();
+      trackAttempt(handle, now);
     }
   }
 
