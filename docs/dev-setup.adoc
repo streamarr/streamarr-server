@@ -41,6 +41,7 @@ Playback and media probing also require a connected transcode worker.
 The worker listener defaults to loopback in every profile.
 See link:distributed-transcoding.adoc[Distributed Transcoding] for worker setup and source namespace mappings.
 When running the server on the host, set `STREAMING_REMOTE_SOURCE_ROOT` to its media directory and map the same content on the worker.
+`addLibrary` accepts only a library folder inside that media root, so add libraries below it.
 
 The `dev` profile enables GraphiQL at `http://localhost:8080/graphiql` and auto-populates the database with sample data via `DevDataInitializer`.
 

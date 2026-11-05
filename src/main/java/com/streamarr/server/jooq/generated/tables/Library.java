@@ -16,6 +16,7 @@ import com.streamarr.server.jooq.generated.tables.FileProcessingTask.FileProcess
 import com.streamarr.server.jooq.generated.tables.LibraryMetadata.LibraryMetadataPath;
 import com.streamarr.server.jooq.generated.tables.LibraryOperation.LibraryOperationPath;
 import com.streamarr.server.jooq.generated.tables.MediaFile.MediaFilePath;
+import com.streamarr.server.jooq.generated.tables.SkippedFile.SkippedFilePath;
 import com.streamarr.server.jooq.generated.tables.records.LibraryRecord;
 
 import java.time.OffsetDateTime;
@@ -274,6 +275,19 @@ public class Library extends TableImpl<LibraryRecord> {
             _libraryOperation = new LibraryOperationPath(this, null, Keys.LIBRARY_OPERATION__LIBRARY_OPERATION_LIBRARY_ID_FKEY.getInverseKey());
 
         return _libraryOperation;
+    }
+
+    private transient SkippedFilePath _skippedFile;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.skipped_file</code> table
+     */
+    public SkippedFilePath skippedFile() {
+        if (_skippedFile == null)
+            _skippedFile = new SkippedFilePath(this, null, Keys.SKIPPED_FILE__SKIPPED_FILE_LIBRARY_ID_FKEY.getInverseKey());
+
+        return _skippedFile;
     }
 
     @Override

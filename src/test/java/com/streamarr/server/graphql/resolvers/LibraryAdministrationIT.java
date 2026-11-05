@@ -53,6 +53,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.event.EventListener;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.event.TransactionPhase;
@@ -68,6 +69,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Tag("IntegrationTest")
 @DisplayName("Library Administration Integration Tests")
 @Import(LibraryAdministrationIT.LibraryEventListenerConfig.class)
+// addLibrary accepts only folders in the media root; @TempDir folders sit in java.io.tmpdir.
+@TestPropertySource(properties = "streaming.remote.source-root=${java.io.tmpdir}")
 class LibraryAdministrationIT extends AbstractIntegrationTest {
 
   private static final long BOUND_SECONDS = 10;

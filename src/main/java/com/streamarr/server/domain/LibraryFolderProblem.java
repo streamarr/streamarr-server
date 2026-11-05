@@ -6,7 +6,8 @@ import java.util.Locale;
 public enum LibraryFolderProblem {
   MISSING,
   UNREADABLE,
-  EMPTY;
+  EMPTY,
+  SOFT_LINK;
 
   public String metricTag() {
     return name().toLowerCase(Locale.ROOT);

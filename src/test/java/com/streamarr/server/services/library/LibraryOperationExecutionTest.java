@@ -12,11 +12,14 @@ import static org.awaitility.Awaitility.await;
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.config.LibraryScanProperties;
+import com.streamarr.server.config.RemoteTranscodeProperties;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.SkippedFile;
+import com.streamarr.server.domain.SkippedFileReason;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
@@ -40,6 +43,7 @@ import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeProbeTaskRequests;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
+import com.streamarr.server.fakes.FakeSkippedFileRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.FixedLimitAdmissions;
@@ -96,6 +100,7 @@ import java.io.UncheckedIOException;
 import java.net.http.HttpTimeoutException;
 import java.nio.file.DirectoryIteratorException;
 import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.SQLTransientConnectionException;
@@ -112,15 +117,18 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -244,6 +252,8 @@ class LibraryOperationExecutionTest {
 
   private final FakeLibraryOperationRepository libraryOperations =
       new FakeLibraryOperationRepository(fakeLibraryRepository);
+  private final FakeSkippedFileRepository skippedFiles =
+      new FakeSkippedFileRepository(id -> libraryOperations.findLibraryOperation(id).isPresent());
   private final OperationRunner operations = serviceBuilder().build();
 
   private UUID savedLibraryId;
@@ -442,7 +452,8 @@ class LibraryOperationExecutionTest {
 
   @Test
   @DisplayName(
-      "Should set library status to unhealthy when file walk throws UncheckedIOException during iteration")
+      "Should set library status to unhealthy when file walk throws UncheckedIOException during"
+          + " iteration")
   void shouldSetLibraryStatusToUnhealthyWhenFileWalkThrowsUncheckedIOException()
       throws IOException {
     var rootPath = createRootLibraryDirectory();
@@ -461,7 +472,8 @@ class LibraryOperationExecutionTest {
 
   @Test
   @DisplayName(
-      "Should set library status to unhealthy when file walk throws SecurityException during iteration")
+      "Should set library status to unhealthy when file walk throws SecurityException during"
+          + " iteration")
   void shouldSetLibraryStatusToUnhealthyWhenFileWalkThrowsSecurityException() throws IOException {
     var rootPath = createRootLibraryDirectory();
     createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
@@ -592,7 +604,8 @@ class LibraryOperationExecutionTest {
 
   @Test
   @DisplayName(
-      "Should skip creating a media file when provided a library containing an unsupported file extension")
+      "Should skip creating a media file when provided a library containing an unsupported file"
+          + " extension")
   void shouldSkipCreatingMediaFileWhenProvidedLibraryContainingUnsupportedMovie()
       throws IOException {
     var rootPath = createRootLibraryDirectory();
@@ -899,7 +912,8 @@ class LibraryOperationExecutionTest {
 
     @Test
     @DisplayName(
-        "Should finish the scan healthy when a retried artwork step stores the result that failed to save")
+        "Should finish the scan healthy when a retried artwork step stores the result that failed"
+            + " to save")
     void shouldFinishTheScanHealthyWhenARetriedArtworkStepStoresTheResultThatFailedToSave()
         throws Exception {
       createMovieFile(createRootLibraryDirectory(), "About Time", "About Time (2013).mkv");
@@ -1008,7 +1022,12 @@ class LibraryOperationExecutionTest {
           serviceBuilder()
               .executionLibraryOperations(emptyingBeforeTheFinishingStep(path.getParent()))
               .libraryFolderCheck(
-                  new LibraryFolderCheck(fileSystem, unreadableRecordedFiles, meterRegistry))
+                  LibraryFolderCheck.builder()
+                      .fileSystem(fileSystem)
+                      .mediaFileRepository(unreadableRecordedFiles)
+                      .meterRegistry(meterRegistry)
+                      .mediaRoot(mediaRootOn(fileSystem))
+                      .build())
               .build();
 
       var result = runs.scanLibrary(savedLibraryId);
@@ -1071,7 +1090,8 @@ class LibraryOperationExecutionTest {
 
     @Test
     @DisplayName(
-        "Should return every admission when file tasks match, skip a matched file, record a failure, time out and throw")
+        "Should return every admission when file tasks match, skip a matched file, record a"
+            + " failure, time out and throw")
     void shouldReturnEveryAdmissionWhenFileTasksMatchSkipAMatchedFileRecordAFailureTimeOutAndThrow()
         throws Exception {
       var root = createRootLibraryDirectory();
@@ -1190,7 +1210,8 @@ class LibraryOperationExecutionTest {
 
     @Test
     @DisplayName(
-        "Should report one ignored file without side effects when a scan finds another library's file")
+        "Should report one ignored file without side effects when a scan finds another library's"
+            + " file")
     void shouldReportOneIgnoredFileWithoutSideEffectsWhenScanFindsAnotherLibrarysFile()
         throws Exception {
       var path = createMovieFile(createRootLibraryDirectory(), "Foreign", "Foreign (2001).mkv");
@@ -1260,7 +1281,8 @@ class LibraryOperationExecutionTest {
 
     @Test
     @DisplayName(
-        "Should match every file and finish healthy when a file task cannot read its artwork results")
+        "Should match every file and finish healthy when a file task cannot read its artwork"
+            + " results")
     void shouldMatchEveryFileAndFinishHealthyWhenAFileTaskCannotReadItsArtworkResults()
         throws Exception {
       var root = createRootLibraryDirectory();
@@ -1320,6 +1342,273 @@ class LibraryOperationExecutionTest {
               .entity(Movie.builder().title(title).titleSort(title).build())
               .build());
     }
+  }
+
+  // Jimfs lists a folder's entries in name order, so the walk meets the soft link before the
+  // movie, which the real file system does not promise.
+  @Test
+  @DisplayName(
+      "Should create no media file after a skipped file save finds the scan's library operation"
+          + " ended")
+  void shouldCreateNoMediaFileAfterASkippedFileSaveFindsTheScansLibraryOperationEnded()
+      throws Exception {
+    var rootPath = createRootLibraryDirectory();
+    Files.createSymbolicLink(
+        rootPath.resolve("A (2002).mkv"), fileSystem.getPath("/elsewhere/A (2002).mkv"));
+    createMovieFile(rootPath, "B (2003)", "B (2003).mkv");
+    skippedFiles.runBeforeEachSave(this::endTheRunningScan);
+
+    BoundedTask.runWithin(SCAN_BOUND, () -> operations.scanLibrary(savedLibraryId));
+
+    assertThat(fakeMediaFileRepository.findByLibraryId(savedLibraryId)).isEmpty();
+  }
+
+  @Nested
+  @DisplayName("Soft Link Tests")
+  class SoftLinkTests {
+
+    // Jimfs diverges from the JDK's path semantics, so these tests use the real file system.
+    @TempDir Path media;
+
+    private Path libraryFolder;
+    private Path elsewhere;
+    private OperationRunner runner;
+
+    @BeforeEach
+    void placeTheLibraryInARealFolder() throws IOException {
+      libraryFolder = Files.createDirectory(media.resolve("library"));
+      elsewhere = Files.createDirectory(media.resolve("elsewhere"));
+      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      library.setFilepathUri(FilepathCodec.encode(libraryFolder));
+      fakeLibraryRepository.save(library);
+      runner = serviceBuilder().libraryFileSystem(FileSystems.getDefault()).build();
+    }
+
+    @Test
+    @DisplayName("Should create no media file for a soft link when a scan finds one")
+    void shouldCreateNoMediaFileForASoftLinkWhenAScanFindsOne() throws Exception {
+      var real = createMovieFile(libraryFolder, "Real (2001)", "Real (2001).mkv");
+      var target = Files.createFile(elsewhere.resolve("Linked (2002).mkv"));
+      var movieFolder = Files.createDirectory(libraryFolder.resolve("Linked (2002)"));
+      Files.createSymbolicLink(movieFolder.resolve("Linked (2002).mkv"), target);
+
+      scan();
+
+      assertThat(fakeMediaFileRepository.findByLibraryId(savedLibraryId))
+          .extracting(MediaFile::getFilepathUri)
+          .containsExactly(FilepathCodec.encode(real));
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+    }
+
+    @Test
+    @DisplayName("Should create a media file for a hard link when a scan finds one")
+    void shouldCreateAMediaFileForAHardLinkWhenAScanFindsOne() throws Exception {
+      var target = Files.createFile(elsewhere.resolve("Hard (2003).mkv"));
+      var movieFolder = Files.createDirectory(libraryFolder.resolve("Hard (2003)"));
+      var hardLink = Files.createLink(movieFolder.resolve("Hard (2003).mkv"), target);
+
+      scan();
+
+      assertThat(fakeMediaFileRepository.findByLibraryId(savedLibraryId))
+          .extracting(MediaFile::getFilepathUri)
+          .containsExactly(FilepathCodec.encode(hardLink));
+    }
+
+    @Test
+    @DisplayName("Should save a skipped file for each soft link when a scan finds soft links")
+    void shouldSaveASkippedFileForEachSoftLinkWhenAScanFindsSoftLinks() throws Exception {
+      var fileTarget = Files.createFile(elsewhere.resolve("File (2002).mkv"));
+      var fileLink =
+          Files.createSymbolicLink(
+              Files.createDirectory(libraryFolder.resolve("File (2002)"))
+                  .resolve("File (2002).mkv"),
+              fileTarget);
+      var folderTarget = Files.createDirectory(elsewhere.resolve("Folder (2003)"));
+      Files.createFile(folderTarget.resolve("Folder (2003).mkv"));
+      var folderLink =
+          Files.createSymbolicLink(libraryFolder.resolve("Folder (2003)"), folderTarget);
+      var brokenLink =
+          Files.createSymbolicLink(
+              libraryFolder.resolve("Broken (2004).mkv"), elsewhere.resolve("missing.mkv"));
+
+      scan();
+
+      var scanId = runner.scheduling().scheduledExecutions().getLast();
+      assertThat(skippedFiles.skippedFilesOf(savedLibraryId))
+          .containsExactlyInAnyOrder(
+              softLink(scanId, brokenLink),
+              softLink(scanId, fileLink),
+              softLink(scanId, folderLink));
+      assertThat(fakeMediaFileRepository.findByLibraryId(savedLibraryId)).isEmpty();
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.HEALTHY);
+    }
+
+    @Test
+    @DisplayName(
+        "Should save a skipped file for a soft link with an ignored name when a scan finds one")
+    void shouldSaveASkippedFileForASoftLinkWithAnIgnoredNameWhenAScanFindsOne() throws Exception {
+      var subtitles = Files.createFile(elsewhere.resolve("Real (2001).srt"));
+      var movie = createMovieFile(libraryFolder, "Real (2001)", "Real (2001).mkv");
+      var link = Files.createSymbolicLink(movie.resolveSibling("Real (2001).srt"), subtitles);
+
+      scan();
+
+      var scanId = runner.scheduling().scheduledExecutions().getLast();
+      assertThat(skippedFiles.skippedFilesOf(savedLibraryId))
+          .containsExactly(softLink(scanId, link));
+      assertThat(fakeMediaFileRepository.findByLibraryId(savedLibraryId))
+          .extracting(MediaFile::getFilepathUri)
+          .containsExactly(FilepathCodec.encode(movie));
+    }
+
+    @Test
+    @DisplayName(
+        "Should keep only the latest scan's skipped files when the library is scanned again")
+    void shouldKeepOnlyTheLatestScansSkippedFilesWhenTheLibraryIsScannedAgain() throws Exception {
+      var target = Files.createFile(elsewhere.resolve("Linked (2002).mkv"));
+      var firstLink = Files.createSymbolicLink(libraryFolder.resolve("First (2002).mkv"), target);
+      scan();
+      Files.delete(firstLink);
+      var secondLink = Files.createSymbolicLink(libraryFolder.resolve("Second (2002).mkv"), target);
+
+      scan();
+
+      var secondScanId = runner.scheduling().scheduledExecutions().getLast();
+      assertThat(skippedFiles.skippedFilesOf(savedLibraryId))
+          .containsExactly(softLink(secondScanId, secondLink));
+    }
+
+    @Test
+    @DisplayName(
+        "Should end the scan unhealthy and walk nothing when the library folder is a soft link")
+    void shouldEndTheScanUnhealthyAndWalkNothingWhenTheLibraryFolderIsASoftLink() throws Exception {
+      createMovieFile(elsewhere, "Real (2001)", "Real (2001).mkv");
+      var linkedFolder = Files.createSymbolicLink(media.resolve("linked-library"), elsewhere);
+      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      library.setFilepathUri(FilepathCodec.encode(linkedFolder));
+      fakeLibraryRepository.save(library);
+
+      scan();
+
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+      assertThat(folderCheckFailures("soft_link")).isEqualTo(1);
+      assertThat(skippedFiles.skippedFilesOf(savedLibraryId)).isEmpty();
+      assertThat(fakeMediaFileRepository.findByLibraryId(savedLibraryId)).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+        "Should keep a soft link's filepath when the folder it points at disappears between scans")
+    void shouldKeepASoftLinksFilepathWhenTheFolderItPointsAtDisappearsBetweenScans()
+        throws Exception {
+      var target = Files.createDirectory(elsewhere.resolve("Folder (2003)"));
+      Files.createSymbolicLink(libraryFolder.resolve("Folder (2003)"), target);
+      scan();
+      var firstScan = skippedFiles.skippedFilesOf(savedLibraryId);
+      Files.delete(target);
+
+      scan();
+
+      assertThat(skippedFiles.skippedFilesOf(savedLibraryId))
+          .extracting(SkippedFile::filepathUri)
+          .containsExactlyElementsOf(firstScan.stream().map(SkippedFile::filepathUri).toList())
+          .singleElement(InstanceOfAssertFactories.STRING)
+          .doesNotEndWith("/");
+    }
+
+    @Test
+    @DisplayName("Should save no further skipped file when a stop is stored while one is saved")
+    void shouldSaveNoFurtherSkippedFileWhenAStopIsStoredWhileOneIsSaved() throws Exception {
+      var target = Files.createFile(elsewhere.resolve("Linked (2002).mkv"));
+      for (var name : List.of("A (2002).mkv", "B (2002).mkv", "C (2002).mkv")) {
+        Files.createSymbolicLink(libraryFolder.resolve(name), target);
+      }
+
+      var stopped = new AtomicBoolean();
+      skippedFiles.runBeforeEachSave(
+          () -> {
+            if (stopped.compareAndSet(false, true)) {
+              assertThat(runner.service().stopLibraryScan(identity, savedLibraryId))
+                  .isInstanceOf(Outcome.Accepted.class);
+            }
+          });
+
+      scan();
+
+      assertThat(skippedFiles.skippedFilesOf(savedLibraryId)).hasSize(1);
+      assertThat(
+              meterRegistry
+                  .get("streamarr.library.operations.duration")
+                  .tag("kind", LibraryOperationKind.SCAN.tagValue())
+                  .tag("conclusion", "stopped")
+                  .timer()
+                  .count())
+          .isOne();
+    }
+
+    @Test
+    @DisplayName(
+        "Should save no further skipped file when another execution ends the scan's library"
+            + " operation while one is saved")
+    void shouldSaveNoFurtherSkippedFileWhenAnotherExecutionEndsTheScansLibraryOperation()
+        throws Exception {
+      var target = Files.createFile(elsewhere.resolve("Linked (2002).mkv"));
+      for (var name : List.of("A (2002).mkv", "B (2002).mkv", "C (2002).mkv")) {
+        Files.createSymbolicLink(libraryFolder.resolve(name), target);
+      }
+
+      var saveAttempts = new AtomicInteger();
+      skippedFiles.runBeforeEachSave(
+          () -> {
+            if (saveAttempts.getAndIncrement() == 0) {
+              endTheRunningScan();
+            }
+          });
+
+      scan();
+
+      assertThat(saveAttempts).hasValue(1);
+      assertThat(skippedFiles.skippedFilesOf(savedLibraryId)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should end the scan unhealthy when a skipped file cannot be saved")
+    void shouldEndTheScanUnhealthyWhenASkippedFileCannotBeSaved() throws Exception {
+      var target = Files.createFile(elsewhere.resolve("Linked (2002).mkv"));
+      Files.createSymbolicLink(libraryFolder.resolve("Linked (2002).mkv"), target);
+      skippedFiles.failSavesWith(new IllegalStateException("Simulated database outage"));
+
+      scan();
+
+      assertThat(libraryStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+      assertThat(capturingEventPublisher.getEventsOfType(ScanEndedEvent.class)).hasSize(1);
+    }
+
+    private SkippedFile softLink(UUID scanId, Path link) {
+      return SkippedFile.builder()
+          .libraryId(savedLibraryId)
+          .libraryOperationId(scanId)
+          .filepathUri(FilepathCodec.encodeEntry(link))
+          .reason(SkippedFileReason.SOFT_LINK)
+          .build();
+    }
+
+    private void scan() throws Exception {
+      BoundedTask.runWithin(SCAN_BOUND, () -> runner.scanLibrary(savedLibraryId));
+    }
+  }
+
+  // Another execution of the running scan ends the scan's library operation.
+  private void endTheRunningScan() {
+    var runningScan = libraryOperations.operationFor(savedLibraryId).orElseThrow();
+    assertThat(
+            libraryOperations.tryEndLibraryOperation(
+                LibraryOperationEnd.builder()
+                    .libraryOperationId(runningScan.id())
+                    .conclusion(LibraryOperationConclusion.FINISHED)
+                    .endedAt(Instant.now())
+                    .build()))
+        .isPresent();
   }
 
   private void matchMovieWithPoster(String title) {
@@ -1399,7 +1688,8 @@ class LibraryOperationExecutionTest {
 
   @Test
   @DisplayName(
-      "Should match media file when provided a library containing a file with a supported extension")
+      "Should match media file when provided a library containing a file with a supported"
+          + " extension")
   void shouldMatchMediaFileWhenProvidedLibraryContainingSupportedMovie() throws IOException {
     var movieFolder = "About Time";
     var movieFilename = "About Time (2013).mkv";
@@ -1502,7 +1792,8 @@ class LibraryOperationExecutionTest {
 
   @Test
   @DisplayName(
-      "Should skip processing when provided a library containing a system file with a valid extension")
+      "Should skip processing when provided a library containing a system file with a valid"
+          + " extension")
   void shouldSkipProcessingWhenGivenLibraryContainingSystemFile() throws IOException {
     var rootPath = createRootLibraryDirectory();
     var systemFilePath = createMovieFile(rootPath, "About Time", "._About Time (2013).mkv");
@@ -2271,12 +2562,17 @@ class LibraryOperationExecutionTest {
   }
 
   private FileDiscoveryRuns fileDiscoveryRunsWith(ArtworkFixture artwork) {
+    return fileDiscoveryRunsWith(artwork, fileSystem);
+  }
+
+  private FileDiscoveryRuns fileDiscoveryRunsWith(
+      ArtworkFixture artwork, FileSystem libraryFileSystem) {
     return FileDiscoveryRunsFixture.fileDiscoveryRunsBuilder()
         .artwork(artwork)
         .mediaFiles(fakeMediaFileRepository)
         .outcomes(probeOutcomes)
         .probeTaskRequests(probeTaskRequests)
-        .fileSystem(fileSystem)
+        .fileSystem(libraryFileSystem)
         .sleeper(probeCheckSleeper)
         .build();
   }
@@ -2306,6 +2602,7 @@ class LibraryOperationExecutionTest {
     private LibraryRefreshService refreshService = libraryRefreshService;
     private ApplicationEventPublisher publisher = capturingEventPublisher;
     private LibraryOperationRepository executionLibraryOperations = libraryOperations;
+    private FileSystem cleanupFileSystem = fileSystem;
 
     private RunnerBuilder executionLibraryOperations(LibraryOperationRepository repository) {
       this.executionLibraryOperations = repository;
@@ -2337,6 +2634,16 @@ class LibraryOperationExecutionTest {
       return this;
     }
 
+    /** Reads the library folder through {@code libraryFileSystem} in every collaborator. */
+    private RunnerBuilder libraryFileSystem(FileSystem libraryFileSystem) {
+      this.runs = fileDiscoveryRunsWith(artwork, libraryFileSystem);
+      this.libraryFileWalk =
+          fileWalkBuilder().fileSystem(libraryFileSystem).fileDiscoveryRuns(runs).build();
+      this.folderCheck = libraryFolderCheckWith(libraryFileSystem);
+      this.cleanupFileSystem = libraryFileSystem;
+      return this;
+    }
+
     private OperationRunner build() {
       var metrics = new LibraryOperationMetrics(meterRegistry);
       var scheduling = new FakeLibraryOperationScheduling();
@@ -2364,7 +2671,7 @@ class LibraryOperationExecutionTest {
                       .libraryFolderCheck(folderCheck)
                       .orphanedMediaFileCleanupService(
                           new OrphanedMediaFileCleanupService(
-                              fakeMediaFileRepository, movieService, fileSystem, _ -> {}))
+                              fakeMediaFileRepository, movieService, cleanupFileSystem, _ -> {}))
                       .transactionManager(transactionManager)
                       .build())
               .eventPublisher(publisher)
@@ -2412,6 +2719,7 @@ class LibraryOperationExecutionTest {
         .mediaFileRepository(fakeMediaFileRepository)
         .fileSystem(fileSystem)
         .fileDiscoveryRuns(fileDiscoveryRuns)
+        .skippedFileRepository(skippedFiles)
         .mutexFactoryProvider(new MutexFactoryProvider())
         .libraryOperationAdmissions(admissionsWith(new AdaptiveAdmissions()))
         .artworkRunWaiter(artwork.artworkRunWaiter());
@@ -2463,7 +2771,17 @@ class LibraryOperationExecutionTest {
   }
 
   private LibraryFolderCheck libraryFolderCheckWith(FileSystem libraryFileSystem) {
-    return new LibraryFolderCheck(libraryFileSystem, fakeMediaFileRepository, meterRegistry);
+    return LibraryFolderCheck.builder()
+        .fileSystem(libraryFileSystem)
+        .mediaFileRepository(fakeMediaFileRepository)
+        .meterRegistry(meterRegistry)
+        .mediaRoot(mediaRootOn(libraryFileSystem))
+        .build();
+  }
+
+  private static MediaRoot mediaRootOn(FileSystem mediaFileSystem) {
+    return new MediaRoot(
+        mediaFileSystem, new RemoteTranscodeProperties(UUID.randomUUID(), "/media"));
   }
 
   private double folderCheckFailures(String reason) {

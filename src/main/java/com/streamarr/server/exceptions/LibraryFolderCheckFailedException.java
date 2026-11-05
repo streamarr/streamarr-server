@@ -20,6 +20,10 @@ public class LibraryFolderCheckFailedException extends LibraryScanFailedExceptio
       case EMPTY ->
           "The folder of library %s is empty, but Streamarr still records files for the library."
               .formatted(libraryName);
+      case SOFT_LINK ->
+          ("The folder of library %s is reached through a soft link, and Streamarr never follows"
+                  + " soft links.")
+              .formatted(libraryName);
     };
   }
 }

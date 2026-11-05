@@ -15,6 +15,8 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.SkippedFile;
+import com.streamarr.server.domain.SkippedFileReason;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
@@ -24,11 +26,13 @@ import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
+import com.streamarr.server.fakes.FakeSkippedFileRepository;
 import com.streamarr.server.graphql.StreamarrDataFetcherExceptionHandler;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dataloaders.LibraryItemCountDataLoader;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.SkippedFileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
@@ -48,6 +52,7 @@ import com.streamarr.server.services.library.LibraryOperationService;
 import com.streamarr.server.services.library.LibraryOperationStopRejection;
 import com.streamarr.server.services.library.LibraryPathOverlap;
 import com.streamarr.server.services.library.LibraryQueryService;
+import com.streamarr.server.services.library.LibrarySkippedFilesList;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.pagination.ListPage;
@@ -98,6 +103,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       LibraryQueryService.class,
       LibraryItemCountDataLoader.class,
       LibraryAdministrationService.class,
+      LibrarySkippedFilesList.class,
       PaginationService.class,
       RelayConnectionAdapter.class,
       PositionCursorCodec.class,
@@ -118,7 +124,16 @@ class LibraryResolverTest {
   private static final FakeLibraryMetadataRepository FAKE_COUNTS =
       new FakeLibraryMetadataRepository();
 
+  private static final FakeSkippedFileRepository FAKE_SKIPPED_FILES =
+      new FakeSkippedFileRepository();
+
   @TestBean private LibraryCountsService libraryCountsService;
+
+  @TestBean private SkippedFileRepository skippedFileRepository;
+
+  static SkippedFileRepository skippedFileRepository() {
+    return FAKE_SKIPPED_FILES;
+  }
 
   static LibraryCountsService libraryCountsService() {
     return new LibraryCountsService(FAKE_COUNTS);
@@ -232,6 +247,49 @@ class LibraryResolverTest {
     }
 
     @Test
+    @DisplayName(
+        "Should page the library's skipped files with their reasons when a ServerAdmin selects"
+            + " them")
+    void shouldPageTheLibrarysSkippedFilesWithTheirReasonsWhenAServerAdminSelectsThem() {
+      var libraryId = UUID.randomUUID();
+      when(libraryRepository.findById(libraryId))
+          .thenReturn(Optional.of(buildMovieLibrary(libraryId)));
+      var scanId = UUID.randomUUID();
+      FAKE_SKIPPED_FILES.trySave(softLink(libraryId, scanId, "file:///media/movies/B.mkv"));
+      FAKE_SKIPPED_FILES.trySave(softLink(libraryId, scanId, "file:///media/movies/A.mkv"));
+      var query =
+          """
+          query($id: ID!, $after: String) {
+            library(id: $id) {
+              administration {
+                skippedFiles(first: 1, after: $after) {
+                  edges { node { filepathUri reason } }
+                  pageInfo { hasNextPage endCursor }
+                }
+              }
+            }
+          }
+          """;
+      var skippedFiles = "data.library.administration.skippedFiles";
+
+      var firstPage =
+          dgsQueryExecutor.executeAndGetDocumentContext(query, Map.of("id", libraryId.toString()));
+      var endCursor = firstPage.<String>read("$." + skippedFiles + ".pageInfo.endCursor");
+      var secondPage =
+          dgsQueryExecutor.executeAndGetDocumentContext(
+              query, Map.of("id", libraryId.toString(), "after", endCursor));
+
+      assertThat(firstPage.<List<Map<String, Object>>>read("$." + skippedFiles + ".edges[*].node"))
+          .containsExactly(
+              Map.of("filepathUri", "file:///media/movies/A.mkv", "reason", "SOFT_LINK"));
+      assertThat(firstPage.<Boolean>read("$." + skippedFiles + ".pageInfo.hasNextPage")).isTrue();
+      assertThat(secondPage.<List<Map<String, Object>>>read("$." + skippedFiles + ".edges[*].node"))
+          .containsExactly(
+              Map.of("filepathUri", "file:///media/movies/B.mkv", "reason", "SOFT_LINK"));
+      assertThat(secondPage.<Boolean>read("$." + skippedFiles + ".pageInfo.hasNextPage")).isFalse();
+    }
+
+    @Test
     @DisplayName("Should reject the query when it selects a library's modification time directly")
     void shouldRejectQueryWhenItSelectsLibrarysModificationTimeDirectly() {
       var result =
@@ -301,7 +359,8 @@ class LibraryResolverTest {
 
     @Test
     @DisplayName(
-        "Should return the library SCANNING with no userErrors when startLibraryScan starts an idle library")
+        "Should return the library SCANNING with no userErrors when startLibraryScan starts an idle"
+            + " library")
     void shouldReturnLibraryScanningWithNoUserErrorsWhenStartLibraryScanStartsIdleLibrary() {
       var libraryId = UUID.randomUUID();
 
@@ -319,7 +378,8 @@ class LibraryResolverTest {
 
     @Test
     @DisplayName(
-        "Should return the library REFRESHING with no userErrors when startLibraryRefresh starts an idle library")
+        "Should return the library REFRESHING with no userErrors when startLibraryRefresh starts an"
+            + " idle library")
     void shouldReturnLibraryRefreshingWithNoUserErrorsWhenStartLibraryRefreshStartsIdleLibrary() {
       var libraryId = UUID.randomUUID();
 
@@ -362,7 +422,8 @@ class LibraryResolverTest {
 
     @Test
     @DisplayName(
-        "Should reject the request when the startLibraryRefresh input sets imageRefreshMode to null")
+        "Should reject the request when the startLibraryRefresh input sets imageRefreshMode to"
+            + " null")
     void shouldRejectRequestWhenStartLibraryRefreshInputSetsImageRefreshModeToNull() {
       var result =
           dgsQueryExecutor.execute(
@@ -383,7 +444,8 @@ class LibraryResolverTest {
 
     @Test
     @DisplayName(
-        "Should return the removed library's id with no userErrors when removeLibrary removes an idle library")
+        "Should return the removed library's id with no userErrors when removeLibrary removes an"
+            + " idle library")
     void shouldReturnRemovedLibraryIdWithNoUserErrorsWhenRemoveLibraryRemovesIdleLibrary() {
       var libraryId = UUID.randomUUID();
 
@@ -477,7 +539,8 @@ class LibraryResolverTest {
         name = "Should return LibraryBusyError with {2} and no result when {0} meets a running {1}")
     @MethodSource("com.streamarr.server.graphql.resolvers.LibraryResolverTest#libraryBusyRefusals")
     @DisplayName(
-        "Should return LibraryBusyError naming the running kind and no result when the library is busy")
+        "Should return LibraryBusyError naming the running kind and no result when the library is"
+            + " busy")
     @SuppressWarnings("checkstyle:fullyQualifiedName")
     void shouldReturnLibraryBusyErrorNamingRunningKindAndNoResultWhenLibraryIsBusy(
         LibraryOperationMutation mutation,
@@ -500,7 +563,8 @@ class LibraryResolverTest {
         name = "Should return InvalidIdError and no result when {0} receives a malformed id")
     @EnumSource(LibraryOperationMutation.class)
     @DisplayName(
-        "Should return InvalidIdError at libraryId and start nothing when the libraryId is malformed")
+        "Should return InvalidIdError at libraryId and start nothing when the libraryId is"
+            + " malformed")
     void shouldReturnInvalidIdErrorAndStartNothingWhenLibraryIdIsMalformed(
         LibraryOperationMutation mutation) {
       var payload = payloadOf(mutation, "not-a-uuid");
@@ -542,7 +606,8 @@ class LibraryResolverTest {
         value = LibraryOperationMutation.class,
         names = {"START_LIBRARY_SCAN", "START_LIBRARY_REFRESH"})
     @DisplayName(
-        "Should return LIBRARY_OPERATION_NOT_STARTED and a null payload when the start transaction fails")
+        "Should return LIBRARY_OPERATION_NOT_STARTED and a null payload when the start transaction"
+            + " fails")
     void shouldReturnLibraryOperationNotStartedAndNullPayloadWhenStartTransactionFails(
         LibraryOperationMutation mutation) {
       FAKE_LIBRARY_OPERATION_SERVICE.throwWhenStarted(
@@ -735,6 +800,22 @@ class LibraryResolverTest {
     }
 
     @Test
+    @DisplayName(
+        "Should name the media root when addLibrary is refused for a folder outside the media root")
+    void shouldNameTheMediaRootWhenAddLibraryIsRefusedForAFolderOutsideTheMediaRoot() {
+      FAKE_LIBRARY_MANAGEMENT_SERVICE.returnOutcomeWhenAdded(
+          Outcome.rejected(new AddLibraryRejection.PathOutsideMediaRoot(Path.of("/srv/media"))));
+
+      String message =
+          dgsQueryExecutor.executeAndExtractJsonPath(
+              ADD_LIBRARY_MUTATION, "data.addLibrary.userErrors[0].message");
+
+      assertThat(message)
+          .isEqualTo(
+              "That folder is outside the media root (/srv/media). Choose a folder inside it.");
+    }
+
+    @Test
     @DisplayName("Should report every rejection when addLibrary is rejected for several reasons")
     void shouldReportEveryRejectionWhenAddLibraryIsRejectedForSeveralReasons() {
       FAKE_LIBRARY_MANAGEMENT_SERVICE.returnOutcomeWhenAdded(
@@ -816,6 +897,14 @@ class LibraryResolverTest {
             new AddLibraryRejection.PathNotDirectory(), "LibraryPathNotDirectoryError", "filepath"),
         Arguments.of(
             new AddLibraryRejection.PathNotReadable(), "LibraryPathNotReadableError", "filepath"),
+        Arguments.of(
+            new AddLibraryRejection.PathThroughSoftLink(),
+            "LibraryPathThroughSoftLinkError",
+            "filepath"),
+        Arguments.of(
+            new AddLibraryRejection.PathOutsideMediaRoot(Path.of("/media")),
+            "LibraryPathOutsideMediaRootError",
+            "filepath"),
         Arguments.of(
             new AddLibraryRejection.PathAlreadyRegistered(
                 conflictingLibrary(MediaType.OTHER), CONFLICTING_PATH),
@@ -972,18 +1061,18 @@ class LibraryResolverTest {
 
     String document(String libraryId) {
       return """
-          mutation {
-            %s(input: { libraryId: "%s" }) {
-              %s
-              userErrors {
-                __typename
-                ... on MutationError { message }
-                ... on InputMutationError { inputPath }
-                ... on %s { status }
-              }
-            }
+      mutation {
+        %s(input: { libraryId: "%s" }) {
+          %s
+          userErrors {
+            __typename
+            ... on MutationError { message }
+            ... on InputMutationError { inputPath }
+            ... on %s { status }
           }
-          """
+        }
+      }
+      """
           .formatted(fieldName, libraryId, resultSelection, errorWithStatus);
     }
 
@@ -1419,7 +1508,7 @@ class LibraryResolverTest {
     private LibraryOperationRejection removalRejection;
 
     private FakeLibraryManagementService() {
-      super(null, null, null, null, null, null, null, null, null, null, null, null);
+      super(null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Override
@@ -1598,6 +1687,15 @@ class LibraryResolverTest {
   private record RefreshRequest(UUID libraryId, ImageRefreshMode imageRefreshMode) {}
 
   private record StopRequest(UUID libraryId, LibraryOperationKind kind) {}
+
+  private static SkippedFile softLink(UUID libraryId, UUID scanId, String filepathUri) {
+    return SkippedFile.builder()
+        .libraryId(libraryId)
+        .libraryOperationId(scanId)
+        .filepathUri(filepathUri)
+        .reason(SkippedFileReason.SOFT_LINK)
+        .build();
+  }
 
   private Library buildMovieLibrary(UUID libraryId) {
     var library =

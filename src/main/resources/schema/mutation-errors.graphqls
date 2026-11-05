@@ -105,6 +105,18 @@ type LibraryPathNotReadableError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
+"The path, or a folder between the media root and the path, is a soft link, which scans and playback never follow."
+type LibraryPathThroughSoftLinkError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"The path is outside the media root, the folder that every library folder sits in. The server is configured with the media root."
+type LibraryPathOutsideMediaRootError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
 "Another library already uses the path."
 type LibraryPathAlreadyRegisteredError implements InputMutationError & MutationError {
     message: String!

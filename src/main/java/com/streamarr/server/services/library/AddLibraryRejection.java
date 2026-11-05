@@ -17,6 +17,12 @@ public sealed interface AddLibraryRejection {
 
   record PathNotReadable() implements AddLibraryRejection {}
 
+  /** The path, or a folder between the media root and the path, is a soft link. */
+  record PathThroughSoftLink() implements AddLibraryRejection {}
+
+  /** The path is outside {@code mediaRoot}, the folder that every library folder sits in. */
+  record PathOutsideMediaRoot(@NonNull Path mediaRoot) implements AddLibraryRejection {}
+
   /** Another library already uses the path; {@code conflictingPath} is that library's path. */
   record PathAlreadyRegistered(@NonNull Library conflictingLibrary, @NonNull Path conflictingPath)
       implements AddLibraryRejection {}
