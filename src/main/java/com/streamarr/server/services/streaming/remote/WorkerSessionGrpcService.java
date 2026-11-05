@@ -82,24 +82,26 @@ final class WorkerSessionGrpcService
       return IGNORED_UPLOAD_OBSERVER;
     }
 
-    var ticket = segmentUploadAdmission.tryAdmit(authenticatedWorkerId);
-    if (ticket.isEmpty()) {
-      log.warn(
-          "Rejecting segment upload from worker {}: concurrent upload limit reached",
-          authenticatedWorkerId);
-      responseObserver.onError(
-          Status.RESOURCE_EXHAUSTED
-              .withDescription("Concurrent segment upload limit reached")
-              .asRuntimeException());
-      return IGNORED_UPLOAD_OBSERVER;
-    }
-    return SegmentUploadObserver.builder()
-        .authenticatedWorkerId(authenticatedWorkerId)
-        .workerConnections(workerConnections)
-        .segmentStore(segmentStore)
-        .responseObserver(responseObserver)
-        .uploadTicket(ticket.get())
-        .build();
+    return switch (segmentUploadAdmission.tryAdmit(authenticatedWorkerId)) {
+      case SegmentUploadAdmission.Admitted(var ticket) ->
+          SegmentUploadObserver.builder()
+              .authenticatedWorkerId(authenticatedWorkerId)
+              .workerConnections(workerConnections)
+              .segmentStore(segmentStore)
+              .responseObserver(responseObserver)
+              .uploadTicket(ticket)
+              .build();
+      case SegmentUploadAdmission.Refused _ -> {
+        log.warn(
+            "Rejecting segment upload from worker {}: concurrent upload limit reached",
+            authenticatedWorkerId);
+        responseObserver.onError(
+            Status.RESOURCE_EXHAUSTED
+                .withDescription("Concurrent segment upload limit reached")
+                .asRuntimeException());
+        yield IGNORED_UPLOAD_OBSERVER;
+      }
+    };
   }
 
   private static final class RegistrationObserver

@@ -4,7 +4,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -61,24 +60,30 @@ final class SegmentUploadAdmission {
   }
 
   /**
-   * One admitted upload for {@code workerId}, or empty when either that worker's allowance or the
-   * fleet-wide concurrent-upload limit is reached.
+   * One admitted upload for {@code workerId}, or a refusal when either that worker's allowance or
+   * the fleet-wide concurrent-upload limit is reached.
    */
-  Optional<Ticket> tryAdmit(UUID workerId) {
+  Admission tryAdmit(UUID workerId) {
     reclaimExpired();
 
     if (!tryClaimWorkerAllowance(workerId)) {
-      return Optional.empty();
+      return new Refused();
     }
     if (!uploadSlots.tryAcquire()) {
       releaseWorkerAllowance(workerId);
-      return Optional.empty();
+      return new Refused();
     }
 
     var ticket = new Ticket(workerId, clock.instant());
     liveTickets.add(ticket);
-    return Optional.of(ticket);
+    return new Admitted(ticket);
   }
+
+  sealed interface Admission permits Admitted, Refused {}
+
+  record Admitted(Ticket ticket) implements Admission {}
+
+  record Refused() implements Admission {}
 
   private void reclaimExpired() {
     var cutoff = clock.instant().minus(maximumUploadAge);

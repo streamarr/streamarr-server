@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.server.services.streaming.remote.SegmentUploadTickets.admitted;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -54,7 +55,7 @@ class SegmentUploadReclaimTest {
             .workerConnections(workerConnections)
             .segmentStore(new FakeSegmentStore())
             .responseObserver(errorCapturingResponseObserver(error))
-            .uploadTicket(admission.tryAdmit(workerId).orElseThrow())
+            .uploadTicket(admitted(admission.tryAdmit(workerId)))
             .build();
     var partialData = ByteString.copyFromUtf8("partial");
     observer.onNext(
@@ -67,7 +68,7 @@ class SegmentUploadReclaimTest {
     assertThat(error.get()).isNull();
 
     clock.advance(Duration.ofSeconds(31));
-    try (var successor = admission.tryAdmit(UUID.randomUUID()).orElseThrow()) {
+    try (var successor = admitted(admission.tryAdmit(UUID.randomUUID()))) {
       assertThat(successor.tryReserve(partialData.size() + 1L)).isTrue();
     }
 
