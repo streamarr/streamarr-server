@@ -166,26 +166,4 @@ class StreamingPropertiesTest {
 
     assertThat(properties.segmentBasePath()).isEqualTo("/custom/segments");
   }
-
-  @ParameterizedTest
-  @ValueSource(longs = {0, -1})
-  @DisplayName("Should reject session retention when not positive")
-  void shouldRejectSessionRetentionWhenNotPositive(long retentionSeconds) {
-    CONTEXT_RUNNER
-        .withPropertyValues("streaming.session-retention=" + Duration.ofSeconds(retentionSeconds))
-        .run(context -> assertThat(context).hasFailed());
-  }
-
-  @Test
-  @DisplayName("Should accept positive session retention")
-  void shouldAcceptPositiveSessionRetention() {
-    CONTEXT_RUNNER
-        .withPropertyValues("streaming.session-retention=PT1H")
-        .run(
-            context -> {
-              assertThat(context).hasNotFailed();
-              assertThat(context.getBean(StreamingProperties.class).sessionRetention())
-                  .isEqualTo(Duration.ofHours(1));
-            });
-  }
 }

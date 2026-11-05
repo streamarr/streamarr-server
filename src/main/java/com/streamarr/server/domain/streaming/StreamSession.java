@@ -25,7 +25,7 @@ public class StreamSession {
   @NonNull private final UUID sessionId;
   @NonNull private final UUID mediaFileId;
   @NonNull private final PlaybackAuthority authority;
-  private final Path sourcePath;
+  @NonNull private final Path sourcePath;
   private final MediaProbe mediaProbe;
   // Null for a direct-play stream session, which starts no job attempt.
   private final TranscodeDecision transcodeDecision;

@@ -52,7 +52,7 @@ public class SessionProgressService {
       throw new SessionNotFoundException(sessionId);
     }
 
-    session.updatePlaybackState(positionSeconds, state);
+    runtimeRegistry.updatePlaybackState(sessionId, positionSeconds, state);
 
     var durationSeconds = (int) session.getMediaProbe().duration().toSeconds();
     if (durationSeconds <= 0) {

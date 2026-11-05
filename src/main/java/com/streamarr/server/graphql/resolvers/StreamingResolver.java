@@ -5,7 +5,6 @@ import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.DgsTypeResolver;
 import com.netflix.graphql.dgs.InputArgument;
-import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
@@ -42,6 +41,7 @@ import com.streamarr.server.graphql.mutation.watchprogress.MarkWatchedInput;
 import com.streamarr.server.graphql.mutation.watchprogress.MarkWatchedPayload;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection;
 import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
 import com.streamarr.server.services.streaming.PlaybackFormatAttempt;
@@ -73,7 +73,7 @@ public class StreamingResolver {
   private final PlaybackSessionService playbackSessions;
   private final AuthorizationService authorizationService;
   private final PlaybackTokenIssuer playbackTokenIssuer;
-  private final StreamingProperties streamingProperties;
+  private final ServerSettingsService serverSettingsService;
   private final SessionProgressService sessionProgressService;
   private final WatchStatusService watchStatusService;
 
@@ -417,7 +417,7 @@ public class StreamingResolver {
   }
 
   private Duration playbackTokenValidity(StreamSession session) {
-    return session.getMediaProbe().duration().plus(streamingProperties.sessionRetention());
+    return session.getMediaProbe().duration().plus(serverSettingsService.idleSegmentRetention());
   }
 
   private UUID parseUuid(String id) {
