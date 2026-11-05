@@ -62,7 +62,7 @@ class ActiveStreamEventListenerTest {
   private final FakeRuntimeStreamSessionRegistry registry = new FakeRuntimeStreamSessionRegistry();
   private final FakeCreatingStreamingService streams = new FakeCreatingStreamingService(registry);
   private final FakeTranscodeExecutor executor = new FakeTranscodeExecutor();
-  private final FailingSegmentStore segments = new FailingSegmentStore();
+  private final ControllableSegmentStore segments = new ControllableSegmentStore();
   private final MutableClock clock = new MutableClock();
   private final RejectingTaskScheduler taskScheduler = new RejectingTaskScheduler();
   private final ProducerLifecycleService producerLifecycle =
@@ -514,7 +514,7 @@ class ActiveStreamEventListenerTest {
     return counter.count();
   }
 
-  private static final class FailingSegmentStore extends FakeSegmentStore {
+  private static final class ControllableSegmentStore extends FakeSegmentStore {
 
     private volatile boolean failing;
 
