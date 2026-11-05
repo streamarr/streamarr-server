@@ -9,6 +9,7 @@ import lombok.NonNull;
 /**
  * The format of a video track: the source's as the probe found it, or the output's as the format
  * attempt delivers it. {@code bitrate} is in bits per second, and empty when it is not known.
+ * {@code codec} is {@value #UNKNOWN_CODEC} for a source whose probe named no codec.
  */
 @Builder(toBuilder = true)
 public record VideoFormat(
@@ -18,4 +19,7 @@ public record VideoFormat(
     @NonNull OptionalDouble frameRate,
     @NonNull OptionalLong bitrate,
     @NonNull VideoRange videoRange,
-    boolean dolbyVision) {}
+    boolean dolbyVision) {
+
+  public static final String UNKNOWN_CODEC = "unknown";
+}

@@ -51,6 +51,8 @@ public enum DecisionReason {
   DOLBY_VISION_RPU_STARTS_SAMPLE,
   /** The source is H.264 at another bit depth or chroma subsampling than 8-bit 4:2:0. */
   H264_NOT_8_BIT_4_2_0,
+  /** The probe reported no chroma subsampling for the source's H.264 video. */
+  VIDEO_CHROMA_SUBSAMPLING_UNKNOWN,
   /** The source's sample entry is not one under which a playlist describes a copy. */
   SAMPLE_ENTRY_NOT_COPYABLE,
   /** The probe could not name the source's codec profile. */

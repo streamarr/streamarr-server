@@ -10,6 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.BitstreamRewrite;
+import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecisionReason;
@@ -326,6 +327,24 @@ class TranscodeDecisionReasonTest {
             DecisionReason.VIDEO_PROPERTIES_NOT_PROBED),
         Arguments.of(
             Named.of("a 10-bit H.264 source", Source.builder().bitDepth(10).build().probe()),
+            DecisionReason.H264_NOT_8_BIT_4_2_0),
+        Arguments.of(
+            Named.of(
+                "an H.264 source whose bit depth the probe did not report",
+                Source.builder().bitDepthUnreported(true).build().probe()),
+            DecisionReason.VIDEO_BIT_DEPTH_UNKNOWN),
+        Arguments.of(
+            Named.of(
+                "an H.264 source whose chroma subsampling the probe did not report",
+                Source.builder().chromaSubsampling(Optional.empty()).build().probe()),
+            DecisionReason.VIDEO_CHROMA_SUBSAMPLING_UNKNOWN),
+        Arguments.of(
+            Named.of(
+                "a 4:2:2 H.264 source",
+                Source.builder()
+                    .chromaSubsampling(Optional.of(ChromaSubsampling.CHROMA_422))
+                    .build()
+                    .probe()),
             DecisionReason.H264_NOT_8_BIT_4_2_0),
         Arguments.of(
             Named.of(
@@ -706,6 +725,7 @@ class TranscodeDecisionReasonTest {
       String codecString,
       Integer bitDepth,
       boolean bitDepthUnreported,
+      Optional<ChromaSubsampling> chromaSubsampling,
       VideoDynamicRange dynamicRange,
       Optional<VideoStreamProperties> videoProperties,
       FrameRateRule frameRateRule,
@@ -731,6 +751,10 @@ class TranscodeDecisionReasonTest {
           VideoPlaybackFactsFixture.sdrH264FactsBuilder()
               .codecFamily(Optional.of(ProbedCodecFamily.fromProbedName(videoCodec)))
               .bitDepth(reportedBitDepth())
+              .chromaSubsampling(
+                  chromaSubsampling == null
+                      ? Optional.of(ChromaSubsampling.CHROMA_420)
+                      : chromaSubsampling)
               .codecString(Optional.of(codecString == null ? "avc1.640028" : codecString))
               .videoProperties(
                   videoProperties == null

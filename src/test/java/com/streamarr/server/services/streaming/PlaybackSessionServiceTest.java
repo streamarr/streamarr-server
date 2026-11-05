@@ -180,6 +180,24 @@ class PlaybackSessionServiceTest {
   }
 
   @Test
+  @DisplayName("Should start playback and name the codec unknown when the probe named no codec")
+  void shouldStartPlaybackAndNameTheCodecUnknownWhenTheProbeNamedNoCodec() {
+    streams.copiesTheSource = false;
+    streams.sourceProbe = defaultProbeBuilder().videoCodec(null).build();
+
+    var snapshot = accepted(service.start(startCommand().build()));
+
+    assertThat(snapshot.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+    assertThat(snapshot.decisions())
+        .singleElement()
+        .satisfies(
+            decision -> {
+              assertThat(decision.video().source().codec()).isEqualTo("unknown");
+              assertThat(decision.video().output().codec()).isEqualTo("h264");
+            });
+  }
+
+  @Test
   @DisplayName(
       "Should keep the copy's reasons and add the copy failure to the encode's when a copy falls"
           + " back to an encode")
