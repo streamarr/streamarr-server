@@ -9,6 +9,7 @@ import com.streamarr.server.domain.streaming.ChromaticityCoordinates;
 import com.streamarr.server.domain.streaming.ContentLightLevel;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.MasteringDisplayColorVolume;
 import com.streamarr.server.domain.streaming.PlannedVideoOutput;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
@@ -318,14 +319,15 @@ final class RemoteVariantJobMapper {
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static Optional<com.streamarr.transcode.v1.Fraction> outputFrameRate(
       TranscodeRequest request) {
-    return request
-        .outputFrameRate()
-        .map(
-            rate ->
-                com.streamarr.transcode.v1.Fraction.newBuilder()
-                    .setNumerator(rate.numerator())
-                    .setDenominator(rate.denominator())
-                    .build());
+    return request.outputFrameRate().map(RemoteVariantJobMapper::fraction);
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static com.streamarr.transcode.v1.Fraction fraction(Fraction fraction) {
+    return com.streamarr.transcode.v1.Fraction.newBuilder()
+        .setNumerator(fraction.numerator())
+        .setDenominator(fraction.denominator())
+        .build();
   }
 
   // The keyframe seek position is never negative, so its seconds and nanoseconds share a sign as
