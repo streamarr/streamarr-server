@@ -289,6 +289,7 @@ class PlaybackReportServiceTest {
       while (!pendingWork.isEmpty()) {
         pendingWork.poll().run();
       }
+
       var encode = deferredPlayback.access(playbackRequest(copy, start)).orElseThrow();
       var encodeStream = encode.currentFormatAttempt().streamSessionId();
       var whileReady =
