@@ -5,7 +5,6 @@ import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.media.MediaFile;
-import com.streamarr.server.domain.media.MediaFileTitle;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -83,12 +82,9 @@ public class ActiveStreamService {
         byId(
             authSessionRepository.findAllById(
                 ids(activities, activity -> activity.authority().authSessionId())));
-    var titles =
-        mediaFileRepository.findTitlesByMediaFileIds(
-            ids(activities, PlaybackSessionActivity::mediaFileId));
     var media = mediaByMediaFileId(ids(activities, PlaybackSessionActivity::mediaFileId));
     return activities.stream()
-        .map(activity -> describe(activity, profiles, authSessions, titles, media))
+        .map(activity -> describe(activity, profiles, authSessions, media))
         .toList();
   }
 
@@ -96,7 +92,6 @@ public class ActiveStreamService {
       PlaybackSessionActivity activity,
       Map<UUID, Profile> profiles,
       Map<UUID, AuthSession> authSessions,
-      Map<UUID, MediaFileTitle> titles,
       Map<UUID, BaseCollectable<?>> media) {
     var authority = activity.authority();
     var ready = readySession(activity);
@@ -108,7 +103,6 @@ public class ActiveStreamService {
             Optional.ofNullable(authSessions.get(authority.authSessionId()))
                 .map(AuthSession::getDeviceName))
         .mediaFileId(activity.mediaFileId())
-        .title(Optional.ofNullable(titles.get(activity.mediaFileId())))
         .media(Optional.ofNullable(media.get(activity.mediaFileId())))
         .timeline(ready.map(StreamSession::getPlaybackSnapshot))
         .decision(activity.decision())

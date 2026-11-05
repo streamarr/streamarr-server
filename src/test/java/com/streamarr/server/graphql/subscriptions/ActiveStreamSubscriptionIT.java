@@ -75,7 +75,7 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
         activeStreamsChanged {
           playbackSessionId
           activeStream {
-            profile { id name } title positionSeconds state workers
+            profile { id name } media { ... on Movie { title } } positionSeconds state workers
             decision { formatAttempt video { delivery } reasons }
           }
         }
@@ -230,7 +230,7 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
         .isEqualTo(viewer.profile().getId().toString());
     assertThat(started.path("profile").path("name").asString())
         .isEqualTo(viewer.profile().getName());
-    assertThat(started.path("title").asString()).isEqualTo("Streamed Movie");
+    assertThat(started.path("media").path("title").asString()).isEqualTo("Streamed Movie");
     assertThat(started.path("decision").path("formatAttempt").asInt()).isEqualTo(1);
     assertThat(started.path("decision").path("video").path("delivery").asString())
         .isEqualTo("COPY");

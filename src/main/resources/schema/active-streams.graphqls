@@ -41,14 +41,6 @@ type ActiveStream {
     not the viewer's, and fail when the caller has no selected Profile.
     """
     media: ActiveStreamMedia
-    "The movie or episode title. Null for a media file without a matched movie or episode."
-    title: String
-    "The series of an episode. Null for a movie."
-    seriesTitle: String
-    "The season number of an episode. Null for a movie."
-    seasonNumber: Int
-    "The episode number of an episode. Null for a movie."
-    episodeNumber: Int
     "Seconds into the media title, as the client last reported. Null while the format attempt prepares."
     positionSeconds: Int
     "Whether the client last reported playing or paused. Null while the format attempt prepares."

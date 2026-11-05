@@ -13,7 +13,6 @@ import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
-import com.streamarr.server.domain.media.MediaFileTitle;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.PlaybackState;
@@ -32,8 +31,6 @@ import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import java.util.List;
-import java.util.Optional;
-import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.stream.Collectors;
@@ -74,10 +71,10 @@ class ActiveStreamServiceTest {
 
   @Test
   @DisplayName(
-      "Should describe the viewer, device, title, timeline, decision and worker of each stream when"
+      "Should describe the viewer, device, media, timeline, decision and worker of each stream when"
           + " a ServerAdmin asks")
   void
-      shouldDescribeTheViewerDeviceTitleTimelineDecisionAndWorkerOfEachStreamWhenAServerAdminAsks() {
+      shouldDescribeTheViewerDeviceMediaTimelineDecisionAndWorkerOfEachStreamWhenAServerAdminAsks() {
     var profile = profiles.save(ProfileFixture.defaultProfileBuilder().name("Ava").build());
     var authSession =
         authSessions.save(
@@ -87,15 +84,12 @@ class ActiveStreamServiceTest {
             .profileId(profile.getId())
             .authSessionId(authSession.getId())
             .build();
-    var command = startPlaybackBuilder().identity(identityFor(authority)).build();
-    var episode =
-        MediaFileTitle.builder()
-            .title(Optional.of("Pilot"))
-            .seriesTitle(Optional.of("A Series"))
-            .seasonNumber(OptionalInt.of(1))
-            .episodeNumber(OptionalInt.of(2))
+    var episode = episodes.save(Episode.builder().title("Pilot").episodeNumber(2).build());
+    var command =
+        startPlaybackBuilder()
+            .identity(identityFor(authority))
+            .mediaFileId(matchedFile(episode.getId()))
             .build();
-    mediaFiles.storeTitle(command.mediaFileId(), episode);
     var snapshot = acceptedPlayback(playbackSessions.start(command));
     var session = readySession(snapshot);
     session.updatePlaybackState(42, PlaybackState.PAUSED);
@@ -112,7 +106,7 @@ class ActiveStreamServiceTest {
               assertThat(stream.profileName()).contains("Ava");
               assertThat(stream.deviceName()).contains("Living Room");
               assertThat(stream.mediaFileId()).isEqualTo(command.mediaFileId());
-              assertThat(stream.title()).contains(episode);
+              assertThat(stream.media()).containsSame(episode);
               assertThat(stream.timeline())
                   .hasValueSatisfying(
                       timeline -> {
@@ -179,7 +173,6 @@ class ActiveStreamServiceTest {
             preparing -> {
               assertThat(preparing.profileName()).isEmpty();
               assertThat(preparing.deviceName()).isEmpty();
-              assertThat(preparing.title()).isEmpty();
               assertThat(preparing.media()).isEmpty();
               assertThat(preparing.timeline()).isEmpty();
               assertThat(preparing.decision()).isEmpty();

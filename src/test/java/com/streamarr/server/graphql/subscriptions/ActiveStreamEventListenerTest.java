@@ -10,7 +10,7 @@ import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
-import com.streamarr.server.domain.media.MediaFileTitle;
+import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeCreatingStreamingService;
@@ -26,9 +26,7 @@ import com.streamarr.server.services.streaming.events.PlaybackSessionChangedEven
 import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
-import java.util.Collection;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -243,28 +241,28 @@ class ActiveStreamEventListenerTest {
     return counter.count();
   }
 
-  // The first title read parks until the test releases it.
+  // The first media file read parks until the test releases it.
   private static final class ParkingMediaFileRepository extends FakeMediaFileRepository {
 
     private final CountDownLatch reading = new CountDownLatch(1);
     private final CountDownLatch release = new CountDownLatch(1);
 
     @Override
-    public Map<UUID, MediaFileTitle> findTitlesByMediaFileIds(Collection<UUID> mediaFileIds) {
+    public List<MediaFile> findAllById(Iterable<UUID> mediaFileIds) {
       if (reading.getCount() > 0) {
         reading.countDown();
         awaitLatch(release);
       }
 
-      return super.findTitlesByMediaFileIds(mediaFileIds);
+      return super.findAllById(mediaFileIds);
     }
   }
 
   private static final class UnavailableMediaFileRepository extends FakeMediaFileRepository {
 
     @Override
-    public Map<UUID, MediaFileTitle> findTitlesByMediaFileIds(Collection<UUID> mediaFileIds) {
-      throw new IllegalStateException("The media file titles are unavailable.");
+    public List<MediaFile> findAllById(Iterable<UUID> mediaFileIds) {
+      throw new IllegalStateException("The media files are unavailable.");
     }
   }
 }
