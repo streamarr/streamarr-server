@@ -50,8 +50,7 @@ public class ActiveStreamEventListener {
   public void onPlaybackSessionChanged(PlaybackSessionChangedEvent event) {
     var playbackSessionId = event.playbackSessionId();
     // Only a newly started reader maps to READING here; a reader in flight maps to READ_AGAIN.
-    var publication =
-        publications.compute(playbackSessionId, (_, current) -> onChange(current));
+    var publication = publications.compute(playbackSessionId, (_, current) -> onChange(current));
     if (publication != Publication.READING) {
       return;
     }
