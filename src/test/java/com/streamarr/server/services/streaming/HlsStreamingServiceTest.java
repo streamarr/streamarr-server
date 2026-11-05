@@ -90,6 +90,7 @@ import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.streaming.VideoSampleEntry;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
@@ -5977,15 +5978,16 @@ class HlsStreamingServiceTest {
     assertThat(session.getMediaProbe().sessionAudioTrackPosition()).hasValue(1);
   }
 
-  // A player that cannot select an audio track starts on the container's default audio track, as an
-  // MP4 track's enabled flag marks it. When that is not the first, the chosen first track plays
-  // over HLS.
+  // Chromium and Firefox start on a Matroska file's first audio track whatever its default flags
+  // say, so the chosen first track direct-plays although a later track has the default flag.
   @Test
   @DisplayName(
-      "Should start HLS when the player cannot select an audio track and the first is not the"
-          + " default")
-  void shouldStartHlsWhenThePlayerCannotSelectAnAudioTrackAndTheFirstIsNotTheDefault() {
-    probeResults.setDefaultProbe(directPlayableProbeWhoseDefaultAudioTrackIsTheSecond());
+      "Should direct-play a Matroska file's first audio track when the player cannot select one and"
+          + " a later track has the default flag")
+  void
+      shouldDirectPlayAMatroskaFilesFirstAudioTrackWhenThePlayerCannotSelectOneAndALaterTrackHasTheDefaultFlag() {
+    probeResults.setDefaultProbe(
+        directPlayableProbeWhoseSecondAudioTrackIsTheDefault(directPlayableProbeBuilder()));
     var file = seedMediaFile();
     var declaration = directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(false).build();
 
@@ -5993,16 +5995,69 @@ class HlsStreamingServiceTest {
         accepted(
             service.createSession(
                 directPlayCommand(file.getId())
-                    .options(
-                        StreamingOptions.builder()
-                            .quality(VideoQuality.ORIGINAL)
-                            .audioLanguage(Language.EN)
-                            .build())
+                    .options(englishInOriginal())
+                    .capabilityDeclaration(declaration)
+                    .build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
+    assertThat(session.getDirectPlayAudioTrackPosition()).hasValue(0);
+  }
+
+  // In an MP4 file, Chromium starts on the first audio track whose enabled flag is set, which the
+  // probe reports as the default flag, and Firefox on the first audio track. When only a later
+  // track is enabled, they start on different tracks, so the chosen first track plays over HLS.
+  @Test
+  @DisplayName(
+      "Should start HLS when the player cannot select an audio track and an MP4 file enables only a"
+          + " later one")
+  void shouldStartHlsWhenThePlayerCannotSelectAnAudioTrackAndAnMp4FileEnablesOnlyALaterOne() {
+    probeResults.setDefaultProbe(
+        directPlayableProbeWhoseSecondAudioTrackIsTheDefault(directPlayableMp4ProbeBuilder()));
+    var file = seedMediaFile();
+    var declaration =
+        directPlayMp4DeclarationBuilder().selectsAudioTrackInDirectPlay(false).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId())
+                    .options(englishInOriginal())
                     .capabilityDeclaration(declaration)
                     .build()));
 
     assertThat(session.getDelivery()).isEqualTo(StreamDelivery.HLS);
     assertThat(session.getMediaProbe().sessionAudioTrackPosition()).hasValue(0);
+    assertThat(session.getTranscodeDecision().reasons())
+        .containsExactly(DecisionReason.DIRECT_PLAY_AUDIO_TRACK_NOT_SELECTABLE);
+  }
+
+  // Chromium plays no audio from an MP4 file whose only enabled track is the video, so the file
+  // plays over HLS.
+  @Test
+  @DisplayName(
+      "Should start HLS when the player cannot select an audio track and an MP4 file enables only"
+          + " its video track")
+  void shouldStartHlsWhenThePlayerCannotSelectAnAudioTrackAndAnMp4FileEnablesOnlyItsVideoTrack() {
+    var file = directPlayableMp4ProbeBuilder();
+    var video = ProbeFixture.videoStreamBuilder(file.build()).isDefault(true).build();
+    var stereo = ProbeFixture.audioStreamBuilder("aac").channels(OptionalInt.of(2));
+    var english = stereo.index(1).language(Optional.of("eng")).build();
+    var french = stereo.index(2).language(Optional.of("fra")).build();
+    probeResults.setDefaultProbe(file.streams(List.of(video, english, french)).build());
+    var declaration =
+        directPlayMp4DeclarationBuilder().selectsAudioTrackInDirectPlay(false).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(seedMediaFile().getId())
+                    .options(englishInOriginal())
+                    .capabilityDeclaration(declaration)
+                    .build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.HLS);
+    assertThat(session.getTranscodeDecision().reasons())
+        .containsExactly(DecisionReason.DIRECT_PLAY_AUDIO_TRACK_NOT_SELECTABLE);
   }
 
   // The HLS format attempt names why it does not direct-play first among its stream decision's
@@ -6038,8 +6093,8 @@ class HlsStreamingServiceTest {
             directPlayableProbeWithAudioIn("eng", "fra"),
             OptionalInt.of(1)),
         Arguments.of(
-            "the first track is not the default",
-            directPlayableProbeWhoseDefaultAudioTrackIsTheSecond(),
+            "no language is preferred and the second track is the default",
+            directPlayableProbeWhoseSecondAudioTrackIsTheDefault(directPlayableProbeBuilder()),
             OptionalInt.empty()));
   }
 
@@ -6176,8 +6231,9 @@ class HlsStreamingServiceTest {
     return directPlayableProbeBuilder().streams(streams).build();
   }
 
-  private static MediaProbe directPlayableProbeWhoseDefaultAudioTrackIsTheSecond() {
-    var video = ProbeFixture.videoStreamBuilder(directPlayableProbe()).build();
+  private static MediaProbe directPlayableProbeWhoseSecondAudioTrackIsTheDefault(
+      MediaProbe.MediaProbeBuilder file) {
+    var video = ProbeFixture.videoStreamBuilder(file.build()).build();
     var first =
         ProbeFixture.audioStreamBuilder("aac")
             .index(1)
@@ -6191,7 +6247,14 @@ class HlsStreamingServiceTest {
             .language(Optional.of("fra"))
             .isDefault(true)
             .build();
-    return directPlayableProbeBuilder().streams(List.of(video, first, second)).build();
+    return file.streams(List.of(video, first, second)).build();
+  }
+
+  private static StreamingOptions englishInOriginal() {
+    return StreamingOptions.builder()
+        .quality(VideoQuality.ORIGINAL)
+        .audioLanguage(Language.EN)
+        .build();
   }
 
   private static MediaProbe directPlayableProbe() {
@@ -6211,6 +6274,22 @@ class HlsStreamingServiceTest {
         .videoPlaybackFacts(Optional.of(facts));
   }
 
+  // An H.264 MP4 file stored under the avc1 sample entry, as probe version 7 reports it.
+  private static MediaProbe.MediaProbeBuilder directPlayableMp4ProbeBuilder() {
+    var facts =
+        VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+            .streamIndex(0)
+            .sampleEntry(Optional.of("avc1"))
+            .videoProperties(
+                Optional.of(VideoPlaybackFactsFixture.h264HighPropertiesBuilder().build()))
+            .build();
+    return defaultProbeBuilder()
+        .containerFormat(Optional.of("mov,mp4,m4a,3gp,3g2,mj2"))
+        .majorBrand(Optional.of("isom"))
+        .audioChannels(OptionalInt.of(2))
+        .videoPlaybackFacts(Optional.of(facts));
+  }
+
   private static ClientCapabilityDeclaration directPlayDeclaration() {
     return directPlayDeclarationBuilder().build();
   }
@@ -6224,6 +6303,19 @@ class HlsStreamingServiceTest {
         .audio(
             List.of(
                 aacEntryBuilder().directPlayContainers(List.of(SourceContainer.MATROSKA)).build()));
+  }
+
+  private static ClientCapabilityDeclaration.ClientCapabilityDeclarationBuilder
+      directPlayMp4DeclarationBuilder() {
+    var mp4 = List.of(SourceContainer.MP4);
+    return ClientCapabilityDeclaration.builder()
+        .video(
+            List.of(
+                h264EntryBuilder()
+                    .directPlayContainers(mp4)
+                    .directPlaySampleEntries(List.of(VideoSampleEntry.AVC1))
+                    .build()))
+        .audio(List.of(aacEntryBuilder().directPlayContainers(mp4).build()));
   }
 
   private static CreateStreamSessionCommand.CreateStreamSessionCommandBuilder directPlayCommand(

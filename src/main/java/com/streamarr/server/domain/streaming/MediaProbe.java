@@ -119,18 +119,33 @@ public record MediaProbe(
   }
 
   /**
-   * Whether a player that cannot select an audio track starts on the file's first audio track in
-   * stream order. Such a player starts on the first default audio track, as an MP4 track's enabled
-   * flag or a Matroska track's default flag marks it, or on the first audio track when none is
-   * marked. True when the file has no audio track.
+   * Whether every player that cannot select an audio track starts on the file's first audio track
+   * in stream order (ADR 0045). Chromium and Firefox start on the first audio track, whatever a
+   * Matroska track's default flag says. In an MP4 or MOV file, Chromium skips every audio track
+   * whose enabled flag, which the probe reports as the default flag, is clear, unless no audio or
+   * video track has the flag set; it plays no audio when only a video track has it. True when the
+   * file has no audio track.
    */
   public boolean startsOnTheFirstAudioTrack() {
     var inStreamOrder = audioStreamsInStreamOrder();
-    return inStreamOrder.stream()
-        .filter(StreamInfo::isDefault)
-        .findFirst()
-        .map(track -> track == inStreamOrder.getFirst())
-        .orElse(true);
+    if (inStreamOrder.isEmpty() || !marksEnabledTracks()) {
+      return true;
+    }
+
+    return inStreamOrder.getFirst().isDefault() || noAudioOrVideoTrackIsEnabled();
+  }
+
+  private boolean noAudioOrVideoTrackIsEnabled() {
+    return streams.stream()
+        .filter(stream -> "audio".equals(stream.codecType()) || "video".equals(stream.codecType()))
+        .noneMatch(StreamInfo::isDefault);
+  }
+
+  // Chromium reads the enabled flag only in the files that FFmpeg's MP4 and MOV demuxer reads.
+  private boolean marksEnabledTracks() {
+    return sourceContainer()
+        .filter(container -> container == SourceContainer.MP4 || container == SourceContainer.MOV)
+        .isPresent();
   }
 
   /**

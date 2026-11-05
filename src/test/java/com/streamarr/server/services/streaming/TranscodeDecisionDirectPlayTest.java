@@ -343,11 +343,11 @@ class TranscodeDecisionDirectPlayTest {
         .isEqualTo(refused(DecisionReason.DIRECT_PLAY_AUDIO_NOT_DECLARED));
   }
 
-  // ADR 0045: a player that cannot select an audio track in a directly played file, such as
-  // Chromium's, starts on the file's default audio track, or on its first when none is marked. It
-  // direct-plays the file when the stream session's chosen audio track is the first and the player
-  // starts on it, and plays over HLS from the start otherwise, naming why. The probe lists the
-  // chosen track first, so a later track listed first is a later choice.
+  // ADR 0045: a player that cannot select an audio track in a directly played Matroska file, such
+  // as Chromium's or Firefox's, starts on the file's first audio track whatever its default flags
+  // say. It direct-plays the file when the stream session's chosen audio track is the first, and
+  // plays over HLS from the start otherwise, naming why. The probe lists the chosen track first, so
+  // a later track listed first is a later choice.
   @ParameterizedTest(name = "{0}")
   @MethodSource("chosenAudioTracksForAPlayerThatCannotSelectOne")
   @DisplayName(
@@ -375,9 +375,28 @@ class TranscodeDecisionDirectPlayTest {
         Arguments.of(
             "the second of two tracks", List.of(frenchSecond, englishFirst), notSelectable),
         Arguments.of(
-            "the first of two tracks when the second is the default",
+            "the first of two tracks when the second has the default flag",
             List.of(englishFirst, frenchSecondAsDefault),
-            notSelectable));
+            MATROSKA_DIRECT_PLAY));
+  }
+
+  // In an MP4 file, Chromium starts on the first audio track whose enabled flag is set, which the
+  // probe reports as the default flag, and Firefox on the first audio track. When only a later
+  // track is enabled, they start on different tracks, so the chosen first track plays over HLS.
+  @Test
+  @DisplayName(
+      "Should name the unselectable audio track when an MP4 file enables only a later audio track")
+  void shouldNameTheUnselectableAudioTrackWhenAnMp4FileEnablesOnlyALaterAudioTrack() {
+    var streams =
+        List.of(
+            aacBuilder("eng").index(1).build(), aacBuilder("fra").index(2).isDefault(true).build());
+    var request =
+        request()
+            .capabilityDeclaration(isoDeclarationListing(SourceContainer.MP4))
+            .source(isoSource(Optional.of("isom")).streams(streams).build());
+
+    assertThat(service.decideDirectPlay(request.build()))
+        .isEqualTo(refused(DecisionReason.DIRECT_PLAY_AUDIO_TRACK_NOT_SELECTABLE));
   }
 
   @Test
