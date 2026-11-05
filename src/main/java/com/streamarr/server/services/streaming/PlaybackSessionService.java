@@ -344,22 +344,38 @@ public class PlaybackSessionService implements AutoCloseable {
 
   private Outcome<PlaybackSessionSnapshot, AudioTrackSwitchRejection> completeAudioTrackSwitch(
       PlaybackSession playback, StreamSession directPlay, StreamSession session) {
-    var ended = locked(playback, () -> takeAudioTrackSwitch(playback, session.getSessionId()));
+    var ended = locked(playback, () -> endAudioTrackSwitch(playback, directPlay, session));
     if (ended.isEmpty()) {
       streamingService.destroySession(session.getSessionId());
       return currentSnapshot(playback);
     }
 
     if (ended.get().startFailed()) {
-      locked(playback, () -> forgetStream(playback, session.getSessionId()));
       streamingService.destroySession(session.getSessionId());
       return afterFailedAudioTrackSwitch(
           playback, directPlay, ended, new AudioTrackSwitchRejection.StreamSessionFailed());
     }
 
-    locked(playback, () -> adoptAudioTrackSwitch(playback, directPlay, session, ended.get()));
     streamingService.destroySession(directPlay.getSessionId());
     return currentSnapshot(playback);
+  }
+
+  // Ending the switch and adopting its stream session share one critical section, so no worker
+  // failure or second switch can fall between them.
+  private Optional<PendingAudioTrackSwitch> endAudioTrackSwitch(
+      PlaybackSession playback, StreamSession directPlay, StreamSession session) {
+    var ended = takeAudioTrackSwitch(playback, session.getSessionId());
+    if (ended.isEmpty()) {
+      return ended;
+    }
+
+    if (ended.get().startFailed()) {
+      forgetStream(playback, session.getSessionId());
+      return ended;
+    }
+
+    adoptAudioTrackSwitch(playback, directPlay, session, ended.get());
+    return ended;
   }
 
   // The switch ends here unless the playback session was discarded meanwhile. When direct play
@@ -379,7 +395,7 @@ public class PlaybackSessionService implements AutoCloseable {
     return pending;
   }
 
-  private boolean adoptAudioTrackSwitch(
+  private void adoptAudioTrackSwitch(
       PlaybackSession playback,
       StreamSession directPlay,
       StreamSession session,
@@ -389,7 +405,6 @@ public class PlaybackSessionService implements AutoCloseable {
     playback.lastAccessedAt = clock.instant();
     streamOwners.remove(directPlay.getSessionId(), playback);
     adopt(playback, session, AUTO_AFTER_AN_AUDIO_TRACK_SWITCH);
-    return true;
   }
 
   private Optional<PendingAudioTrackSwitch> abandonAudioTrackSwitch(
@@ -427,9 +442,9 @@ public class PlaybackSessionService implements AutoCloseable {
         .ifPresent(failure -> recover(playback, directPlay.getSessionId(), failure));
   }
 
-  private boolean forgetStream(PlaybackSession playback, UUID streamId) {
+  private void forgetStream(PlaybackSession playback, UUID streamId) {
     playback.streamIds.remove(streamId);
-    return streamOwners.remove(streamId, playback);
+    streamOwners.remove(streamId, playback);
   }
 
   // A worker failure of the stream session that an audio switch starts fails only the switch,
