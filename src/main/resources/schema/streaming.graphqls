@@ -39,6 +39,21 @@ type DirectPlayStreamSession implements StreamSession {
     file has no audio track.
     """
     audioTrackPosition: Int
+    """
+    The file's audio tracks in stream order, so that a player that cannot list them offers them (ADR 0045).
+    Empty when the file has no audio track.
+    """
+    audioTracks: [AudioTrack!]!
+}
+
+"One audio track of a source file, as the probe found it."
+type AudioTrack {
+    "Its position, counting from 0, among the file's audio tracks in stream order, as audioTrackPosition counts."
+    position: Int!
+    "The language that the file tags the track with, as the file spells it, such as eng. Null when the file tags none."
+    language: String
+    "The title that the file gives the track. Null when the file gives none."
+    title: String
 }
 
 "A stream session that sends HLS, from job attempts that copy or encode the source."
