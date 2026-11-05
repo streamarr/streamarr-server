@@ -1492,6 +1492,7 @@ class PlaybackSessionServiceTest {
     assertThatAnEncodeIsTheFormatAttempt(encode, 2);
     assertThat(encode.playbackChoice()).isEqualTo(expectedChoice);
     assertThat(encode.formatChange()).isEqualTo(expectedChange);
+    assertThat(encode.decisions().getLast().reasons()).containsExactly(DecisionReason.COPY_FAILED);
   }
 
   static Stream<Arguments> dolbyVisionCopyWorkerFailures() {
