@@ -170,7 +170,7 @@ class LanguagePreferenceResolverTest {
             Map.of(
                 "audioLanguages", List.of("JA", "PT_BR"),
                 "subtitleLanguage", "EN",
-                "subtitleMode", "FOREIGN_AUDIO"));
+                "subtitleMode", "ALWAYS"));
 
     assertThat(payload.path("userErrors").size()).isZero();
     assertThat(payload.path("languagePreferences"))
@@ -179,11 +179,31 @@ class LanguagePreferenceResolverTest {
                 Map.of(
                     "audioLanguages", List.of("JA", "PT_BR"),
                     "subtitleLanguage", "EN",
-                    "subtitleMode", "FOREIGN_AUDIO")));
+                    "subtitleMode", "ALWAYS")));
     assertThat(
             execute("query { me { languagePreferences { audioLanguages } } }")
                 .at("/data/me/languagePreferences/audioLanguages"))
         .isEqualTo(mapper.valueToTree(List.of("JA", "PT_BR")));
+  }
+
+  @Test
+  @DisplayName("Should refuse the subtitle mode when it is none of OFF, FORCED and ALWAYS")
+  void shouldRefuseTheSubtitleModeWhenItIsNoneOfOffForcedAndAlways() {
+    var response =
+        execute(
+            """
+            mutation {
+              setLanguagePreferences(input: {audioLanguages: [JA], subtitleMode: FOREIGN_AUDIO}) {
+                languagePreferences { subtitleMode } } }
+            """);
+
+    assertThat(response.at("/errors/0/extensions/classification").asString())
+        .isEqualTo("ValidationError");
+    assertThat(
+            execute("query { me { languagePreferences { audioLanguages subtitleMode } } }")
+                .at("/data/me/languagePreferences"))
+        .isEqualTo(
+            mapper.valueToTree(Map.of("audioLanguages", List.of(), "subtitleMode", "FORCED")));
   }
 
   @Test

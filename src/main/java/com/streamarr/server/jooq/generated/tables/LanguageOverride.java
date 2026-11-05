@@ -277,7 +277,7 @@ public class LanguageOverride extends TableImpl<LanguageOverrideRecord> {
     public List<Check<LanguageOverrideRecord>> getChecks() {
         return Arrays.asList(
             Internal.createCheck(this, DSL.name("language_override_names_one_title"), "((num_nonnulls(movie_id, series_id, season_id, episode_id) = 1))", true),
-            Internal.createCheck(this, DSL.name("language_override_subtitle_mode_check"), "((subtitle_mode = ANY (ARRAY['OFF'::text, 'FORCED'::text, 'ALWAYS'::text, 'FOREIGN_AUDIO'::text])))", true)
+            Internal.createCheck(this, DSL.name("language_override_subtitle_mode_check"), "((subtitle_mode = ANY (ARRAY['OFF'::text, 'FORCED'::text, 'ALWAYS'::text])))", true)
         );
     }
 

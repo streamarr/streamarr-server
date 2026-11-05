@@ -2,10 +2,10 @@ package com.streamarr.server.domain.language;
 
 /** When a Profile wants subtitles shown (ADR 0043). */
 public enum SubtitlePreferenceMode {
+  /** No subtitle track, not even a forced track. */
   OFF,
-  /** Only forced subtitles, the default. */
+  /** Only a forced track in the audio's language, the default. */
   FORCED,
-  ALWAYS,
-  /** Subtitles whenever the audio is in none of the Profile's audio languages. */
-  FOREIGN_AUDIO
+  /** The track in the subtitle language, whatever the audio. */
+  ALWAYS
 }

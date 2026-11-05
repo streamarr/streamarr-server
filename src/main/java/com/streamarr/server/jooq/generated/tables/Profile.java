@@ -363,7 +363,7 @@ public class Profile extends TableImpl<ProfileRecord> {
             Internal.createCheck(this, DSL.name("chk_profile_name_not_blank"), "((btrim(name) <> ''::text))", true),
             Internal.createCheck(this, DSL.name("chk_profile_pin_hash_not_blank"), "(((pin_hash IS NULL) OR (btrim(pin_hash) <> ''::text)))", true),
             Internal.createCheck(this, DSL.name("profile_audio_languages_at_most_five"), "(((cardinality(audio_languages) <= 5) AND (array_position(audio_languages, NULL::text) IS NULL)))", true),
-            Internal.createCheck(this, DSL.name("profile_subtitle_mode_check"), "((subtitle_mode = ANY (ARRAY['OFF'::text, 'FORCED'::text, 'ALWAYS'::text, 'FOREIGN_AUDIO'::text])))", true)
+            Internal.createCheck(this, DSL.name("profile_subtitle_mode_check"), "((subtitle_mode = ANY (ARRAY['OFF'::text, 'FORCED'::text, 'ALWAYS'::text])))", true)
         );
     }
 

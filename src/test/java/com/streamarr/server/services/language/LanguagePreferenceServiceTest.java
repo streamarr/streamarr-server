@@ -100,7 +100,7 @@ class LanguagePreferenceServiceTest {
           ProfileLanguagePreferences.builder()
               .audioLanguages(List.of(Language.JA, Language.EN, Language.FR))
               .subtitleLanguage(Optional.of(Language.EN))
-              .subtitleMode(SubtitlePreferenceMode.FOREIGN_AUDIO)
+              .subtitleMode(SubtitlePreferenceMode.ALWAYS)
               .build();
 
       var outcome = service.setProfilePreferences(viewer, wanted);

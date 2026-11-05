@@ -115,7 +115,7 @@ class LanguagePreferenceRepositoryIT extends AbstractIntegrationTest {
         ProfileLanguagePreferences.builder()
             .audioLanguages(List.of(Language.PT_BR, Language.JA, Language.EN))
             .subtitleLanguage(Optional.of(Language.ZH_HANT))
-            .subtitleMode(SubtitlePreferenceMode.FOREIGN_AUDIO)
+            .subtitleMode(SubtitlePreferenceMode.ALWAYS)
             .build();
 
     var stored =

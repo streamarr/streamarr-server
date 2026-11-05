@@ -1,16 +1,14 @@
 # A Profile's language preferences and its overrides of them for one series, season, episode or
 # movie (ADR 0043). Each override belongs to one Profile and names a language, never a track.
 
-"When subtitles show."
+"When a subtitle track starts on."
 enum SubtitleMode {
-    "Never."
+    "No subtitle track, not even a forced track."
     OFF
-    "Only forced subtitles, which translate the lines in a language other than the audio's. The default."
+    "Only a forced track whose language matches the selected audio. The default."
     FORCED
-    "Always, in the subtitle language."
+    "The track in the subtitle language, whatever the audio."
     ALWAYS
-    "Whenever the audio is in none of the audio languages of the Profile's preferences."
-    FOREIGN_AUDIO
 }
 
 "The level that a language preference comes from."

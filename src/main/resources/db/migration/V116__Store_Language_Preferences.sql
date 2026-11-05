@@ -12,7 +12,7 @@ ALTER TABLE profile
     ADD CONSTRAINT profile_audio_languages_at_most_five CHECK (
         cardinality(audio_languages) <= 5 AND array_position(audio_languages, NULL) IS NULL),
     ADD CONSTRAINT profile_subtitle_mode_check CHECK (
-        subtitle_mode IN ('OFF', 'FORCED', 'ALWAYS', 'FOREIGN_AUDIO'));
+        subtitle_mode IN ('OFF', 'FORCED', 'ALWAYS'));
 
 -- One row per Profile and title: a series, a season, an episode or a movie, named by exactly one
 -- of the four title columns. A NULL field inherits from the next wider level, and the server
@@ -37,7 +37,7 @@ CREATE TABLE language_override
     CONSTRAINT language_override_names_one_title CHECK (
         num_nonnulls(movie_id, series_id, season_id, episode_id) = 1),
     CONSTRAINT language_override_subtitle_mode_check CHECK (
-        subtitle_mode IN ('OFF', 'FORCED', 'ALWAYS', 'FOREIGN_AUDIO'))
+        subtitle_mode IN ('OFF', 'FORCED', 'ALWAYS'))
 );
 
 -- Each index is the conflict target of its title's upsert and serves the cascade from its title.
