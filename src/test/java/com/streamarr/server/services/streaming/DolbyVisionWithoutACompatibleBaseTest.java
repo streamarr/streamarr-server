@@ -228,6 +228,8 @@ class DolbyVisionWithoutACompatibleBaseTest {
   // #401 and ADR 0052: profiles 5 and 10.0 have no compatible base that a stripped copy could
   // play, so with the default budget of four an encode replaces a rejected Dolby Vision copy as the
   // second format attempt. Original's encode plays in Auto, and a fixed quality keeps its choice.
+  // That encode names COPY_FAILED, not DOLBY_VISION_COPY_FAILED, because no stripped copy was
+  // possible.
   @ParameterizedTest(name = "{0} in {1}")
   @MethodSource("rejectedDolbyVisionCopies")
   @DisplayName(
@@ -249,6 +251,7 @@ class DolbyVisionWithoutACompatibleBaseTest {
     assertThat(encode.formatAttemptCount()).isEqualTo(2);
     assertThat(encode.playbackChoice()).isEqualTo(expectedChoice);
     assertThat(encode.formatChange()).isEqualTo(expectedChange);
+    assertThat(encode.decisions().getLast().reasons()).containsExactly(DecisionReason.COPY_FAILED);
     assertThatAnSdrEncodePlays(encode);
   }
 
