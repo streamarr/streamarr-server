@@ -10,7 +10,8 @@ import subprocess
 import sys
 
 MIGRATION_DIRECTORIES = ("src/main/resources/db/migration", "src/main/java/db/migration")
-VERSION = re.compile(r"\d+(?:[._]\d+)*")
+# Flyway parses each version part as a BigInteger, which accepts a leading sign.
+VERSION = re.compile(r"[+-]?\d+(?:[._][+-]?\d+)*")
 
 
 def git(*arguments):
@@ -32,7 +33,7 @@ def fetch(branch):
 
 def version(path):
     stem, _, suffix = path.rsplit("/", 1)[-1].rpartition(".")
-    if suffix not in ("sql", "java") or not stem.startswith("V"):
+    if suffix.lower() not in ("sql", "java") or not stem.startswith("V"):
         return None
     # Flyway accepts a missing or empty description: V117.java and V117__.sql are version 117.
     raw = stem[1:].split("__", 1)[0]

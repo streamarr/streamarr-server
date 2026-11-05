@@ -231,6 +231,27 @@ class FlywayMigrationOrderTests(unittest.TestCase):
         self.assertRejected(result, f"{SQL}/V116__.sql", "V118")
         self.assertRejected(result, f"{JAVA}/V117.java", "V118")
 
+    def test_shouldRejectAddedMigrationWhenFlywayAcceptsItsUppercaseSuffixOrSignedVersion(self):
+        self.publish_main(f"{SQL}/V118__Store_Skipped_File_Reasons.sql")
+        self.start_pull_request()
+        self.commit(f"{SQL}/V116__Store_Language_Preferences.SQL", f"{SQL}/V+117__Backfill.sql")
+
+        result = self.check()
+
+        self.assertRejected(result, f"{SQL}/V116__Store_Language_Preferences.SQL", "V118")
+        self.assertRejected(result, f"{SQL}/V+117__Backfill.sql", "V118")
+
+    def test_shouldRejectAddedMigrationWhenTheBaseBranchHighestHasAnUppercaseSuffix(self):
+        self.publish_main(f"{SQL}/V118__Store_Skipped_File_Reasons.sql",
+            f"{SQL}/V120__Store_Subtitle_Preferences.SQL")
+        self.start_pull_request()
+        self.commit(f"{SQL}/V119__Store_Language_Preferences.sql")
+
+        result = self.check()
+
+        self.assertRejected(result, f"{SQL}/V119__Store_Language_Preferences.sql",
+            f"{SQL}/V120__Store_Subtitle_Preferences.SQL")
+
     def test_shouldIgnoreMigrationWhenItReachedThePullRequestByMergingTheBaseBranch(self):
         self.publish_main(f"{SQL}/V116__Store_Language_Preferences.sql")
         self.start_pull_request()
