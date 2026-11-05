@@ -49,6 +49,7 @@ import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
+import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -252,6 +253,19 @@ class ProducerLifecycleServiceTest {
             () ->
                 lifecycle.ensurePositioned(
                     UUID.randomUUID(), StreamSession.defaultVariant(), "segment0.m4s"));
+  }
+
+  // A held request is the viewer's access, so the reaper never suspends a producer that a viewer
+  // still waits on, however long a merged segment takes.
+  @Test
+  @DisplayName("Should keep the stream session from going idle while a held request waits on it")
+  void shouldKeepTheStreamSessionFromGoingIdleWhileAHeldRequestWaitsOnIt() {
+    var session = startedSession();
+    session.setLastAccessedAt(clock.instant().minusSeconds(200));
+
+    assertThat(recover(session)).isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
+
+    assertThat(session.getLastAccessedAt()).isEqualTo(clock.instant());
   }
 
   @Test
@@ -879,6 +893,81 @@ class ProducerLifecycleServiceTest {
 
     // Segment 0 took the attempt out of startup, so the 10 s stall threshold applies.
     assertThat(timeUntilStall(session)).isEqualTo(Duration.ofSeconds(6));
+  }
+
+  // ADR 0037: each progress report that advances the output restarts the stall clock, so a long
+  // merged segment keeps its producer while FFmpeg's output advances.
+  @Test
+  @DisplayName("Should push back the stall deadline when the tracked job attempt reports progress")
+  void shouldPushBackTheStallDeadlineWhenTheTrackedJobAttemptReportsProgress() {
+    var session = startedSession();
+    segmentStore.addSegment(session.getSessionId(), "segment0.m4s", new byte[] {1});
+    recover(session);
+    clock.advance(Duration.ofSeconds(8));
+
+    new JobAttemptProgressListener(lifecycle)
+        .onJobAttemptProgressed(progressOf(session, session.getHandle().orElseThrow().attemptId()));
+    clock.advance(Duration.ofSeconds(8));
+
+    assertThat(timeUntilStall(session)).isEqualTo(Duration.ofSeconds(2));
+  }
+
+  // The startup allowance covers the first merged segment's whole span. Once the attempt reports
+  // progress it has started, so silence after that is measured against the stall threshold.
+  @Test
+  @DisplayName(
+      "Should use the stall threshold when the job attempt reports progress before its first"
+          + " segment")
+  void shouldUseTheStallThresholdWhenTheJobAttemptReportsProgressBeforeItsFirstSegment() {
+    var session = startedSession();
+    recover(session);
+    clock.advance(Duration.ofSeconds(3));
+
+    new JobAttemptProgressListener(lifecycle)
+        .onJobAttemptProgressed(progressOf(session, session.getHandle().orElseThrow().attemptId()));
+    clock.advance(Duration.ofSeconds(4));
+
+    assertThat(timeUntilStall(session)).isEqualTo(Duration.ofSeconds(6));
+  }
+
+  @Test
+  @DisplayName(
+      "Should use the stall threshold when the running job attempt reports progress before any"
+          + " recovery pass")
+  void shouldUseTheStallThresholdWhenTheRunningJobAttemptReportsProgressBeforeAnyRecoveryPass() {
+    var session = startedSession();
+
+    new JobAttemptProgressListener(lifecycle)
+        .onJobAttemptProgressed(progressOf(session, session.getHandle().orElseThrow().attemptId()));
+    clock.advance(Duration.ofSeconds(4));
+    recover(session);
+
+    assertThat(timeUntilStall(session)).isEqualTo(Duration.ofSeconds(6));
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the stall deadline when progress names a job attempt that recovery does not"
+          + " track")
+  void shouldKeepTheStallDeadlineWhenProgressNamesAJobAttemptThatRecoveryDoesNotTrack() {
+    var session = startedSession();
+    segmentStore.addSegment(session.getSessionId(), "segment0.m4s", new byte[] {1});
+    recover(session);
+    clock.advance(Duration.ofSeconds(8));
+
+    new JobAttemptProgressListener(lifecycle)
+        .onJobAttemptProgressed(progressOf(session, UUID.randomUUID()));
+    clock.advance(Duration.ofSeconds(8));
+
+    assertThat(timeUntilStall(session)).isZero();
+  }
+
+  private static JobAttemptProgressedEvent progressOf(StreamSession session, UUID jobAttemptId) {
+    return JobAttemptProgressedEvent.builder()
+        .streamSessionId(session.getSessionId())
+        .jobAttemptId(jobAttemptId)
+        .variantLabel(StreamSession.defaultVariant())
+        .build();
   }
 
   @Test
@@ -1835,6 +1924,16 @@ class ProducerLifecycleServiceTest {
             .keyframes(knownKeyframes(keyframes)));
   }
 
+  // Keyframes 10 s apart over 2 h open segments in the 6 s slots 0, 1, 3, 5, 6, 8 and so on: every
+  // slot without a keyframe merges into the segment before it.
+  private StreamSession startedMergedCopySession() {
+    var keyframes =
+        LongStream.iterate(0, time -> time <= 7_200_000, time -> time + 10_000)
+            .mapToObj(time -> new KeyframePosition(time, time))
+            .toList();
+    return startedCopySession(defaultProbeBuilder().keyframes(knownKeyframes(keyframes)));
+  }
+
   private StreamSession startedCopySession(MediaProbe.MediaProbeBuilder probe) {
     var session = defaultSessionBuilder().mediaProbe(probe.build()).build();
     runtimeRegistry.save(session);
@@ -1875,6 +1974,46 @@ class ProducerLifecycleServiceTest {
     var request = transcodeExecutor.getStartedRequests().getLast();
     assertThat(request.startSequenceNumber()).isEqualTo(100);
     assertThat(request.keyframeSeekPosition()).hasValue(Duration.ofMillis(600_600));
+  }
+
+  @Test
+  @DisplayName(
+      "Should start a relocated copy attempt at its merged segment's listed slot with the session's"
+          + " segment list")
+  void shouldStartARelocatedCopyAttemptAtItsMergedSegmentsListedSlotWithTheSessionsSegmentList() {
+    var session = startedMergedCopySession();
+
+    lifecycle.ensurePositioned(
+        session.getSessionId(), StreamSession.defaultVariant(), "segment3.m4s");
+
+    var first = transcodeExecutor.getStartedRequests().getFirst();
+    var relocated = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(first.segmentStartSlots()).startsWith(0, 1, 3, 5).hasSize(720);
+    assertThat(relocated.startSequenceNumber()).isEqualTo(3);
+    assertThat(relocated.seekPosition()).isEqualTo(30);
+    assertThat(relocated.keyframeSeekPosition()).hasValue(Duration.ofSeconds(30));
+    assertThat(relocated.segmentStartSlots()).isEqualTo(first.segmentStartSlots());
+  }
+
+  // Keyframes 30 s apart over 2 h open segments in the 6 s slots 0, 5, 10 and so on. Segment 0
+  // runs 30 s, so a request for segment 1 while the copy produces segment 0 is the next segment,
+  // not a seek past the relocation gap.
+  @Test
+  @DisplayName(
+      "Should keep the copy running when the next segment is requested while a long merged segment"
+          + " is produced")
+  void shouldKeepTheCopyRunningWhenTheNextSegmentIsRequestedWhileALongMergedSegmentIsProduced() {
+    var keyframes =
+        LongStream.iterate(0, time -> time <= 7_200_000, time -> time + 30_000)
+            .mapToObj(time -> new KeyframePosition(time, time))
+            .toList();
+    var session = startedCopySession(defaultProbeBuilder().keyframes(knownKeyframes(keyframes)));
+
+    lifecycle.ensurePositioned(
+        session.getSessionId(), StreamSession.defaultVariant(), "segment1.m4s");
+
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(1);
+    assertThat(transcodeExecutor.getStoppedVariants()).isEmpty();
   }
 
   @Test

@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * How a client capability declaration covers a file for direct play (ADR 0049): one video entry
@@ -119,6 +120,26 @@ class ClientCapabilityDeclarationDirectPlayTest {
             directPlayAac().directPlayContainers(List.of(SourceContainer.AVI)).build()));
   }
 
+  // Which audio track plays is the stream decision's concern (ADR 0045), so coverage reads every
+  // track whether or not the player selects one.
+  @ParameterizedTest(name = "selects an audio track: {0}")
+  @ValueSource(booleans = {true, false})
+  @DisplayName(
+      "Should cover a file with several audio tracks whether or not the player selects an audio"
+          + " track")
+  void shouldCoverAFileWithSeveralAudioTracksWhetherOrNotThePlayerSelectsAnAudioTrack(
+      boolean selectsAudioTrack) {
+    var declaration =
+        declarationBuilder(List.of(directPlayAac().build()))
+            .selectsAudioTrackInDirectPlay(selectsAudioTrack)
+            .build();
+
+    assertThat(
+            declaration.directPlayRefusals(
+                source(stereoAac().build(), stereoAac().build()), CONTAINER))
+        .isEmpty();
+  }
+
   @Test
   @DisplayName("Should name the video when the entry that accepts it lists no container")
   void shouldNameTheVideoWhenTheEntryThatAcceptsItListsNoContainer() {
@@ -209,10 +230,14 @@ class ClientCapabilityDeclarationDirectPlayTest {
   }
 
   private static ClientCapabilityDeclaration declaration(List<AudioCapabilityEntry> audio) {
+    return declarationBuilder(audio).build();
+  }
+
+  private static ClientCapabilityDeclaration.ClientCapabilityDeclarationBuilder declarationBuilder(
+      List<AudioCapabilityEntry> audio) {
     return ClientCapabilityDeclaration.builder()
         .video(List.of(h264EntryBuilder().directPlayContainers(List.of(CONTAINER)).build()))
-        .audio(audio)
-        .build();
+        .audio(audio);
   }
 
   private static AudioCapabilityEntry.AudioCapabilityEntryBuilder directPlayAac() {

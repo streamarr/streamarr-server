@@ -2637,8 +2637,8 @@ class HlsStreamingServiceTest {
   }
 
   // ADR 0052: Original encodes a source that it cannot copy, and that encode plays Auto's ladder
-  // within the viewer's limits. Keyframes 10.01 s apart leave the 6 s interval [12 s, 18 s)
-  // without one, so no copy carries this progressive source. A maximum of 0 is no maximum.
+  // within the viewer's limits. The probe reported no keyframes, so no copy carries this
+  // progressive source. A maximum of 0 is no maximum.
   @ParameterizedTest
   @CsvSource({"0, 0", "2000000, 0", "0, 720"})
   @DisplayName(
@@ -2647,10 +2647,7 @@ class HlsStreamingServiceTest {
   void shouldOfferAutosLadderWithinTheViewersLimitsWhenOriginalEncodesAProgressiveSource(
       int maxBitrate, int maxHeight) {
     probeResults.setDefaultProbe(
-        defaultProbeBuilder()
-            .keyframes(
-                ProbeFixture.keyframesEvery(Duration.ofMillis(10_010), Duration.ofMinutes(120)))
-            .build());
+        defaultProbeBuilder().keyframes(new KeyframeKnowledge.NotReported()).build());
     var autoOptions =
         StreamingOptions.builder()
             .quality(VideoQuality.AUTO)
@@ -2760,24 +2757,32 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should encode the video when a segment interval of the source holds no keyframe")
-  void shouldEncodeTheVideoWhenASegmentIntervalOfTheSourceHoldsNoKeyframe() {
-    // At the 6 s period, keyframes 10.01 s apart leave the interval [12 s, 18 s) without one.
+  @DisplayName(
+      "Should copy the video on a merged segment list when the source's keyframes lie 10 s apart")
+  void shouldCopyTheVideoOnAMergedSegmentListWhenTheSourcesKeyframesLieTenSecondsApart() {
+    // At the 6 s period, the keyframes at 0, 10, 20 and 30 s leave the slots [12 s, 18 s) and
+    // [24 s, 30 s) without one, so each joins the segment before it.
     probeResults.setDefaultProbe(
         defaultProbeBuilder()
-            .keyframes(
-                ProbeFixture.keyframesEvery(Duration.ofMillis(10_010), Duration.ofMinutes(120)))
+            .duration(Duration.ofSeconds(36))
+            .keyframes(ProbeFixture.keyframesEvery(Duration.ofSeconds(10), Duration.ofSeconds(36)))
             .build());
     var file = seedMediaFile();
 
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var playlist = mediaPlaylist(session);
 
-    assertThat(session.getTranscodeDecision().transcodeMode())
-        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(extinfDurations(playlist))
+        .containsExactly("10.000000", "10.000000", "10.000000", "6.000000");
+    assertThat(playlist).contains("#EXT-X-TARGETDURATION:10\n");
     assertThat(transcodeExecutor.getStartedRequests())
-        .isNotEmpty()
-        .extracting(request -> request.transcodeDecision().transcodeMode())
-        .containsOnly(TranscodeMode.VIDEO_TRANSCODE);
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.segmentStartSlots()).containsExactly(0, 1, 3, 5);
+              assertThat(request.mediaSegmentCount()).isEqualTo(4);
+            });
   }
 
   @Test
@@ -2807,10 +2812,11 @@ class HlsStreamingServiceTest {
         .isEqualTo(3);
   }
 
+  // No duration bound limits a merged segment (ADR 0037): the segment that the keyframe at 6 s
+  // opens takes every later slot and runs to the end of the 2 h source.
   @Test
-  @DisplayName("Should encode the video when the source's keyframes stop long before the media end")
-  void shouldEncodeTheVideoWhenTheSourcesKeyframesStopLongBeforeTheMediaEnd() {
-    // A copy would advertise one final segment from 6 s to the end of the 2 h source.
+  @DisplayName("Should copy the video when the source's keyframes stop long before the media end")
+  void shouldCopyTheVideoWhenTheSourcesKeyframesStopLongBeforeTheMediaEnd() {
     probeResults.setDefaultProbe(
         defaultProbeBuilder()
             .duration(Duration.ofMinutes(120))
@@ -2820,8 +2826,12 @@ class HlsStreamingServiceTest {
 
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
-    assertThat(session.getTranscodeDecision().transcodeMode())
-        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(extinfDurations(mediaPlaylist(session))).containsExactly("6.000000", "7194.000000");
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(TranscodeRequest::segmentStartSlots)
+        .isEqualTo(List.of(0, 1));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -4497,6 +4507,98 @@ class HlsStreamingServiceTest {
                     .isEqualTo("av1"));
   }
 
+  // ADR 0045: a player that cannot select an audio track direct-plays the file's first track, and
+  // the viewer's switch to another track moves it to HLS, which plays the chosen track.
+  @Test
+  @DisplayName(
+      "Should play the chosen audio track over HLS when the viewer switches tracks during direct"
+          + " play")
+  void shouldPlayTheChosenAudioTrackOverHlsWhenTheViewerSwitchesTracksDuringDirectPlay() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra"));
+    var playback = logicalPlayback();
+    var command =
+        logicalStart()
+            .options(StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build())
+            .capabilityDeclaration(
+                directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(false).build())
+            .build();
+    var directPlay = accepted(playback.start(command));
+    assertThat(directPlay.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready ->
+                assertThat(ready.session().getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY));
+
+    var switched =
+        accepted(
+            playback.switchAudioTrack(
+                SwitchPlaybackAudioTrackCommand.builder()
+                    .playbackSessionId(directPlay.playbackSessionId())
+                    .streamSessionId(directPlay.currentFormatAttempt().streamSessionId())
+                    .identity(command.identity())
+                    .audioTrackPosition(1)
+                    .build()));
+
+    assertThat(switched.playbackChoice()).isEqualTo(VideoQuality.ORIGINAL);
+    assertThat(switched.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready -> {
+              assertThat(ready.session().getDelivery()).isEqualTo(StreamDelivery.HLS);
+              assertThat(ready.session().getMediaProbe().sessionAudioTrackPosition()).hasValue(1);
+              assertThat(service.getAllSessions()).containsExactly(ready.session());
+            });
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(request -> request.transcodeDecision().audioStreamIndex())
+        .isEqualTo(OptionalInt.of(2));
+  }
+
+  // ADR 0045: direct play needs no connected worker, so a switch that HLS cannot serve leaves the
+  // viewer on the track that direct play plays.
+  @Test
+  @DisplayName("Should keep direct play when the viewer switches tracks and no worker is connected")
+  void shouldKeepDirectPlayWhenTheViewerSwitchesTracksAndNoWorkerIsConnected() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra"));
+    transcodeExecutor.setHealthy(false);
+    var playback = logicalPlayback();
+    var command =
+        logicalStart()
+            .options(StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build())
+            .capabilityDeclaration(
+                directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(false).build())
+            .build();
+    var directPlay = accepted(playback.start(command));
+
+    var outcome =
+        playback.switchAudioTrack(
+            SwitchPlaybackAudioTrackCommand.builder()
+                .playbackSessionId(directPlay.playbackSessionId())
+                .streamSessionId(directPlay.currentFormatAttempt().streamSessionId())
+                .identity(command.identity())
+                .audioTrackPosition(1)
+                .build());
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            Outcome.Rejected.class,
+            rejected ->
+                assertThat(rejected.rejections())
+                    .singleElement()
+                    .isInstanceOf(AudioTrackSwitchRejection.StreamSessionRefused.class));
+    assertThat(
+            playback.access(
+                PlaybackSessionRequest.builder()
+                    .playbackSessionId(directPlay.playbackSessionId())
+                    .identity(command.identity())
+                    .build()))
+        .contains(directPlay);
+    assertThat(service.getAllSessions())
+        .singleElement()
+        .extracting(StreamSession::getDelivery)
+        .isEqualTo(StreamDelivery.DIRECT_PLAY);
+  }
+
   private PlaybackSessionService logicalPlayback() {
     return PlaybackSessionService.builder()
         .streamingService(service)
@@ -5422,6 +5524,206 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(3);
   }
 
+  // ADR 0045: a player that cannot select an audio track in a directly played file plays the
+  // file's first audio track, so it direct-plays a file whose chosen audio track is the first.
+  @Test
+  @DisplayName(
+      "Should direct-play several audio tracks when the player cannot select one and the first is"
+          + " chosen")
+  void shouldDirectPlaySeveralAudioTracksWhenThePlayerCannotSelectOneAndTheFirstIsChosen() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra"));
+    var file = seedMediaFile();
+    var declaration = directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(false).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId()).capabilityDeclaration(declaration).build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
+    assertThat(session.getDirectPlayAudioTrackPosition()).hasValue(0);
+  }
+
+  // ADR 0045: such a player would play the file's first audio track instead of the chosen one, so
+  // it plays over HLS from the start.
+  @Test
+  @DisplayName(
+      "Should start HLS with the chosen audio track when the player cannot select one and a later"
+          + " track is chosen")
+  void shouldStartHlsWithTheChosenAudioTrackWhenThePlayerCannotSelectOneAndALaterTrackIsChosen() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra"));
+    var file = seedMediaFile();
+    var declaration = directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(false).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId())
+                    .capabilityDeclaration(declaration)
+                    .audioTrackPosition(OptionalInt.of(1))
+                    .build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.HLS);
+    assertThat(session.getMediaProbe().sessionAudioTrackPosition()).hasValue(1);
+  }
+
+  // A player that cannot select an audio track starts on the container's default audio track, as an
+  // MP4 track's enabled flag marks it. When that is not the first, the chosen first track plays
+  // over HLS.
+  @Test
+  @DisplayName(
+      "Should start HLS when the player cannot select an audio track and the first is not the"
+          + " default")
+  void shouldStartHlsWhenThePlayerCannotSelectAnAudioTrackAndTheFirstIsNotTheDefault() {
+    probeResults.setDefaultProbe(directPlayableProbeWhoseDefaultAudioTrackIsTheSecond());
+    var file = seedMediaFile();
+    var declaration = directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(false).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId()).capabilityDeclaration(declaration).build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.HLS);
+    assertThat(session.getMediaProbe().sessionAudioTrackPosition()).hasValue(0);
+  }
+
+  // The HLS format attempt names why it does not direct-play first among its stream decision's
+  // reasons, so a playback-data overlay shows that the player cannot select the chosen track.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("audioTracksThatANonSelectingPlayerWouldNotStartOn")
+  @DisplayName(
+      "Should name the unselectable audio track when a player that cannot select one starts HLS")
+  void shouldNameTheUnselectableAudioTrackWhenAPlayerThatCannotSelectOneStartsHls(
+      String scenario, MediaProbe probe, OptionalInt chosenAudioTrack) {
+    probeResults.setDefaultProbe(probe);
+    var file = seedMediaFile();
+    var declaration = directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(false).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId())
+                    .capabilityDeclaration(declaration)
+                    .audioTrackPosition(chosenAudioTrack)
+                    .build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.HLS);
+    assertThat(session.getTranscodeDecision().reasons())
+        .first()
+        .isEqualTo(DecisionReason.DIRECT_PLAY_AUDIO_TRACK_NOT_SELECTABLE);
+  }
+
+  static Stream<Arguments> audioTracksThatANonSelectingPlayerWouldNotStartOn() {
+    return Stream.of(
+        Arguments.of(
+            "a later track is chosen",
+            directPlayableProbeWithAudioIn("eng", "fra"),
+            OptionalInt.of(1)),
+        Arguments.of(
+            "the first track is not the default",
+            directPlayableProbeWhoseDefaultAudioTrackIsTheSecond(),
+            OptionalInt.empty()));
+  }
+
+  // ADR 0045: a player that selects audio tracks direct-plays a file with several, and selects the
+  // audio track that the stream decision names: the track that HLS plays for the same file.
+  @Test
+  @DisplayName(
+      "Should direct-play and name the first audio track when the player selects an audio track")
+  void shouldDirectPlayAndNameTheFirstAudioTrackWhenThePlayerSelectsAnAudioTrack() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra"));
+    var file = seedMediaFile();
+    var declaration = directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(true).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId()).capabilityDeclaration(declaration).build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
+    assertThat(session.getDirectPlayAudioTrackPosition()).hasValue(0);
+  }
+
+  @Test
+  @DisplayName("Should play the audio track that the request names when the session plays over HLS")
+  void shouldPlayTheAudioTrackThatTheRequestNamesWhenTheSessionPlaysOverHls() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra", "deu"));
+    var file = seedMediaFile();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId())
+                    .videoFormatConstraint(VideoFormatConstraint.COPY_OR_ENCODE)
+                    .audioTrackPosition(OptionalInt.of(1))
+                    .build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.HLS);
+    assertThat(session.getMediaProbe().audioStreams())
+        .first()
+        .extracting(StreamInfo::language)
+        .isEqualTo(Optional.of("fra"));
+    assertThat(session.getMediaProbe().sessionAudioTrackPosition()).hasValue(1);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(request -> request.transcodeDecision().audioStreamIndex())
+        .isEqualTo(OptionalInt.of(2));
+  }
+
+  @Test
+  @DisplayName(
+      "Should direct-play and name the audio track that the request names when the player selects"
+          + " an audio track")
+  void shouldDirectPlayAndNameTheAudioTrackThatTheRequestNamesWhenThePlayerSelectsAnAudioTrack() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra", "deu"));
+    var file = seedMediaFile();
+    var declaration = directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(true).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId())
+                    .capabilityDeclaration(declaration)
+                    .audioTrackPosition(OptionalInt.of(2))
+                    .build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
+    assertThat(session.getDirectPlayAudioTrackPosition()).hasValue(2);
+  }
+
+  // One stereo AAC track for each language, in stream order after the video stream.
+  private static MediaProbe directPlayableProbeWithAudioIn(String... languages) {
+    var streams = new ArrayList<StreamInfo>();
+    streams.add(ProbeFixture.videoStreamBuilder(directPlayableProbe()).build());
+    for (var language : languages) {
+      streams.add(
+          ProbeFixture.audioStreamBuilder("aac")
+              .index(streams.size())
+              .channels(OptionalInt.of(2))
+              .language(Optional.of(language))
+              .build());
+    }
+
+    return directPlayableProbeBuilder().streams(streams).build();
+  }
+
+  private static MediaProbe directPlayableProbeWhoseDefaultAudioTrackIsTheSecond() {
+    var video = ProbeFixture.videoStreamBuilder(directPlayableProbe()).build();
+    var first = ProbeFixture.audioStreamBuilder("aac").index(1).channels(OptionalInt.of(2)).build();
+    var second =
+        ProbeFixture.audioStreamBuilder("aac")
+            .index(2)
+            .channels(OptionalInt.of(2))
+            .isDefault(true)
+            .build();
+    return directPlayableProbeBuilder().streams(List.of(video, first, second)).build();
+  }
+
+  private static MediaProbe directPlayableProbe() {
+    return directPlayableProbeBuilder().build();
+  }
+
   private static MediaProbe.MediaProbeBuilder directPlayableProbeBuilder() {
     var facts =
         VideoPlaybackFactsFixture.sdrH264FactsBuilder()
@@ -5436,14 +5738,18 @@ class HlsStreamingServiceTest {
   }
 
   private static ClientCapabilityDeclaration directPlayDeclaration() {
+    return directPlayDeclarationBuilder().build();
+  }
+
+  private static ClientCapabilityDeclaration.ClientCapabilityDeclarationBuilder
+      directPlayDeclarationBuilder() {
     return ClientCapabilityDeclaration.builder()
         .video(
             List.of(
                 h264EntryBuilder().directPlayContainers(List.of(SourceContainer.MATROSKA)).build()))
         .audio(
             List.of(
-                aacEntryBuilder().directPlayContainers(List.of(SourceContainer.MATROSKA)).build()))
-        .build();
+                aacEntryBuilder().directPlayContainers(List.of(SourceContainer.MATROSKA)).build()));
   }
 
   private static CreateStreamSessionCommand.CreateStreamSessionCommandBuilder directPlayCommand(

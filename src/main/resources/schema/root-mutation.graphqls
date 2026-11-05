@@ -8,6 +8,19 @@ type Mutation {
     stopLibraryRefresh(input: StopLibraryRefreshInput!): StopLibraryRefreshPayload
     createPlaybackSession(input: CreatePlaybackSessionInput!): CreatePlaybackSessionPayload
     reportPlaybackFormatFailure(input: ReportPlaybackFormatFailureInput!): ReportPlaybackFormatFailurePayload
+    """
+    Moves a playback session that direct-plays the file to HLS for the audio track that the viewer chose. A
+    client whose player cannot select an audio track inside a directly played file calls it when the viewer
+    switches audio tracks (ADR 0045). The new format attempt is the one that follows a failed direct play: an
+    HLS copy keeps Original, and an encode plays in Auto with AUDIO_TRACK_SWITCHED. It counts against the
+    format-attempt budget, and every later format attempt plays the chosen track. The mutation returns once
+    the new stream session has started, and the direct-play stream session ends then; the client seeks the new
+    stream session to its current position. When the new stream session does not start, or no format attempt
+    is left, direct play goes on and the payload holds the error. The playback session stays as it is when
+    streamSessionId is not its current direct-play stream session, or when that stream session already plays
+    the chosen track.
+    """
+    switchPlaybackAudioTrack(input: SwitchPlaybackAudioTrackInput!): SwitchPlaybackAudioTrackPayload
     destroyPlaybackSession(input: DestroyPlaybackSessionInput!): DestroyPlaybackSessionPayload
     reportStreamSessionTimeline(sessionId: ID!, positionSeconds: Int!, state: PlaybackState!): Boolean!
     "Marks an item watched for the selected Profile. A season or a series marks each of its episodes."

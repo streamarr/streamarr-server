@@ -24,6 +24,7 @@ import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ChannelLayout;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
+import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
@@ -47,6 +48,7 @@ import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fixtures.HardwareEncodedFamiliesAndExpectedEncode;
 import com.streamarr.server.fixtures.ProbeFixture;
+import com.streamarr.server.fixtures.StreamMeasurementFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
@@ -78,8 +80,8 @@ class TranscodeDecisionServiceTest {
   private static final KeyframeKnowledge KEYFRAMES_EVERY_TWO_SECONDS =
       ProbeFixture.keyframesEvery(Duration.ofSeconds(2), Duration.ofMinutes(120));
 
-  // At the 6 s period, keyframes 10.01 s apart leave the interval [12 s, 18 s) without one.
-  private static final KeyframeKnowledge KEYFRAMES_LEAVING_AN_INTERVAL_EMPTY =
+  // At the 6 s period, keyframes 10.01 s apart leave the slot [12 s, 18 s) without one.
+  private static final KeyframeKnowledge KEYFRAMES_LEAVING_A_SLOT_EMPTY =
       ProbeFixture.keyframesEvery(Duration.ofMillis(10_010), Duration.ofMinutes(120));
 
   private static final Set<String> EVERY_VIDEO_CODEC_FAMILY = Set.of("h264", "hevc", "av1");
@@ -281,8 +283,7 @@ class TranscodeDecisionServiceTest {
         Arguments.of(
             new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.NO_KEYFRAMES),
             "keyframes_unavailable"),
-        Arguments.of(millisecondKeyframes(0, 13_000, 18_000), "interval_without_keyframe"),
-        Arguments.of(millisecondKeyframes(0, 6_000), "interval_without_keyframe"),
+        Arguments.of(millisecondKeyframes(-4_000, -2_000), "no_opening_keyframe"),
         Arguments.of(
             millisecondKeyframes(0, 7_000, 6_500, 12_000, 18_000), "presentation_time_regressed"),
         Arguments.of(
@@ -349,10 +350,47 @@ class TranscodeDecisionServiceTest {
     assertThat(meterRegistry.find(STREAM_COPY_REFUSALS).counters()).isEmpty();
   }
 
-  @Test
-  @DisplayName("Should encode the video when a segment interval of the source holds no keyframe")
-  void shouldEncodeTheVideoWhenASegmentIntervalOfTheSourceHoldsNoKeyframe() {
-    var source = h264Probe(KEYFRAMES_LEAVING_AN_INTERVAL_EMPTY, "aac");
+  @ParameterizedTest
+  @ValueSource(ints = {6, 3})
+  @DisplayName("Should copy the video when a slot of the source holds no keyframe")
+  void shouldCopyTheVideoWhenASlotOfTheSourceHoldsNoKeyframe(int segmentSeconds) {
+    var properties =
+        StreamingProperties.builder()
+            .targetSegmentDuration(Duration.ofSeconds(segmentSeconds))
+            .build();
+    var source = h264Probe(KEYFRAMES_LEAVING_A_SLOT_EMPTY, "aac");
+
+    var decision =
+        new TranscodeDecisionService(properties, meterRegistry)
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaring(H264))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(meterRegistry.find(STREAM_COPY_REFUSALS).counters()).isEmpty();
+  }
+
+  // Keyframes at 0, 10, 11 and 20 s put the keyframes at 10 and 11 s in one 6 s slot, so segment 1
+  // holds their two intervals: 48 video samples, whose framing (864 bytes) and heap cost (6,144
+  // bytes) leave 134,210,720 bytes of the 128 MiB segment cap for their samples.
+  @ParameterizedTest
+  @CsvSource({"67105360, REMUX, 0", "67105361, VIDEO_TRANSCODE, 1"})
+  @DisplayName(
+      "Should encode the video from the start when a measured merged segment would exceed the"
+          + " segment cap")
+  void shouldEncodeTheVideoFromTheStartWhenAMeasuredMergedSegmentWouldExceedTheSegmentCap(
+      long secondIntervalBytes, TranscodeMode expectedMode, double expectedRefusals) {
+    var source =
+        StreamMeasurementFixture.CopySource.builder()
+            .duration(Duration.ofSeconds(26))
+            .keyframeMillis(List.of(0L, 10_000L, 11_000L, 20_000L))
+            .videoBytes(List.of(1_000L, 67_105_360L, secondIntervalBytes, 1_000L))
+            .build()
+            .probeFrom(probeBuilder("h264", null));
 
     var decision =
         service
@@ -364,16 +402,106 @@ class TranscodeDecisionServiceTest {
                     .build())
             .orElseThrow();
 
+    assertThat(decision.transcodeMode()).isEqualTo(expectedMode);
+    assertThat(meterRegistry.counter(STREAM_COPY_REFUSALS, "reason", "exceeds_segment_cap").count())
+        .isEqualTo(expectedRefusals);
+  }
+
+  // The copied AC-3 track's frames join each segment's video: segment 0's 200 audio frames add
+  // 1,000,000 bytes, their framing and their heap cost to a video segment that fits alone.
+  @Test
+  @DisplayName(
+      "Should count the copied audio with the video when a measured segment would exceed the"
+          + " segment cap")
+  void shouldCountTheCopiedAudioWithTheVideoWhenAMeasuredSegmentWouldExceedTheSegmentCap() {
+    var source =
+        StreamMeasurementFixture.CopySource.builder()
+            .duration(Duration.ofSeconds(12))
+            .keyframeMillis(List.of(0L, 6_000L))
+            .videoBytes(List.of(133_500_000L, 1_000L))
+            .audioBytes(List.of(1_000_000L, 1_000L))
+            .audioPackets(List.of(200L, 10L))
+            .build()
+            .probeFrom(probeBuilder("h264", "ac3"));
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaringAudio(audio(AAC, 6), audio(AC3, 6)))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
-    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
+    assertThat(decision.reasons()).containsExactly(DecisionReason.SEGMENT_EXCEEDS_CAP);
+  }
+
+  // Segment 0's video fits the cap alone with 50,000 bytes to spare. The FLAC track is encoded to
+  // AAC, and 6 s of its frames at 1.2 times their bitrate, with their framing and heap cost, take
+  // more than that (ADR 0054).
+  @Test
+  @DisplayName(
+      "Should count the encoded audio with the video when a measured segment would exceed the"
+          + " segment cap")
+  void shouldCountTheEncodedAudioWithTheVideoWhenAMeasuredSegmentWouldExceedTheSegmentCap() {
+    var source =
+        StreamMeasurementFixture.CopySource.builder()
+            .duration(Duration.ofSeconds(12))
+            .keyframeMillis(List.of(0L, 6_000L))
+            .videoBytes(List.of(134_164_176L, 1_000L))
+            .build()
+            .probeFrom(probeBuilder("h264", "flac"));
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaring(H264))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.FULL_TRANSCODE);
+    assertThat(meterRegistry.counter(STREAM_COPY_REFUSALS, "reason", "exceeds_segment_cap").count())
+        .isEqualTo(1.0);
+  }
+
+  // One measured interval does not follow the source's two keyframes, so the server cannot size
+  // the copy's segments. The worker's own check then bounds them (ADR 0037).
+  @Test
+  @DisplayName(
+      "Should copy the video when the measured video's intervals do not follow the keyframes")
+  void shouldCopyTheVideoWhenTheMeasuredVideosIntervalsDoNotFollowTheKeyframes() {
+    var source =
+        StreamMeasurementFixture.CopySource.builder()
+            .duration(Duration.ofSeconds(12))
+            .keyframeMillis(List.of(0L, 6_000L))
+            .videoBytes(List.of(200_000_000L))
+            .build()
+            .probeFrom(probeBuilder("h264", null));
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaring(H264))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
   }
 
   @Test
   @DisplayName(
-      "Should encode both streams when the audio needs encoding and an interval holds no keyframe")
-  void shouldEncodeBothStreamsWhenTheAudioNeedsEncodingAndAnIntervalHoldsNoKeyframe() {
-    var source = h264Probe(KEYFRAMES_LEAVING_AN_INTERVAL_EMPTY, "flac");
+      "Should encode both streams when the audio needs encoding and the keyframes are not reported")
+  void shouldEncodeBothStreamsWhenTheAudioNeedsEncodingAndTheKeyframesAreNotReported() {
+    var source = h264Probe(new KeyframeKnowledge.NotReported(), "flac");
 
     var decision =
         service
@@ -393,7 +521,7 @@ class TranscodeDecisionServiceTest {
   @DisplayName(
       "Should encode with the preferred codec when the source's keyframes rule out a stream copy")
   void shouldEncodeWithThePreferredCodecWhenTheSourcesKeyframesRuleOutAStreamCopy() {
-    var source = h264Probe(KEYFRAMES_LEAVING_AN_INTERVAL_EMPTY, "aac");
+    var source = h264Probe(new KeyframeKnowledge.NotReported(), "aac");
 
     var decision =
         service
@@ -435,10 +563,10 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("Should encode the video when the two final grid intervals hold no keyframe")
-  void shouldEncodeTheVideoWhenTheTwoFinalGridIntervalsHoldNoKeyframe() {
-    // Over 20 s, neither [12 s, 18 s) nor [18 s, 20 s) holds a keyframe. A copy segment opened at
-    // 6 s would run 14 s, more than twice the 6 s period.
+  @DisplayName("Should copy the video when the two final slots hold no keyframe")
+  void shouldCopyTheVideoWhenTheTwoFinalSlotsHoldNoKeyframe() {
+    // Over 20 s, neither [12 s, 18 s) nor [18 s, 20 s) holds a keyframe. Both merge into the
+    // segment that the keyframe at 6 s opens, which runs 14 s: no duration bound limits it.
     var source =
         probeBuilder("h264", "aac")
             .duration(Duration.ofSeconds(20))
@@ -455,7 +583,7 @@ class TranscodeDecisionServiceTest {
                     .build())
             .orElseThrow();
 
-    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
   }
 
   @Test
@@ -481,7 +609,7 @@ class TranscodeDecisionServiceTest {
     assertThat(
             meterRegistry
                 .get(STREAM_COPY_REFUSALS)
-                .tag("reason", "interval_without_keyframe")
+                .tag("reason", "no_opening_keyframe")
                 .counter()
                 .count())
         .isEqualTo(1.0);

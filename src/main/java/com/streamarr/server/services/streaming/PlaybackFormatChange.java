@@ -15,5 +15,10 @@ public enum PlaybackFormatChange {
    * A Dolby Vision copy failed, so the same copy with Dolby Vision stripped plays on the source's
    * PQ or HLG base, and the playback choice stays.
    */
-  DOLBY_VISION_STRIPPED
+  DOLBY_VISION_STRIPPED,
+  /**
+   * The viewer switched audio tracks during direct play, and the server rules out the HLS copy, so
+   * an encode plays.
+   */
+  AUDIO_TRACK_SWITCHED
 }

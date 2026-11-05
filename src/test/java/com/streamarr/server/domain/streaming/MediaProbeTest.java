@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
+import java.util.OptionalLong;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -111,12 +113,81 @@ class MediaProbeTest {
     assertThat(probe.hasForcedImageSubtitleInAnAudioLanguage()).isFalse();
   }
 
+  // The session plays the first audio stream that the probe lists, and every audio decision reads
+  // the probe's audio facts.
+  @Test
+  @DisplayName(
+      "Should list the named audio track first and take the audio facts from it when a session"
+          + " names a later track")
+  void shouldListTheNamedAudioTrackFirstAndTakeTheAudioFactsFromItWhenASessionNamesALaterTrack() {
+    var video = StreamInfo.builder().index(0).codecType("video").build();
+    var english = audioIn("eng").index(1).build();
+    var french =
+        audioStreamBuilder("ac3")
+            .index(2)
+            .language(Optional.of("fra"))
+            .channels(OptionalInt.of(6))
+            .bitrate(OptionalLong.of(448_000))
+            .audioProperties(
+                Optional.of(
+                    AudioStreamProperties.builder()
+                        .channelLayout(Optional.of("5.1(side)"))
+                        .build()))
+            .build();
+    var subtitle = subtitle("subrip", "eng").index(3).build();
+
+    var named = probe(video, english, french, subtitle).withSessionAudioTrackAt(1);
+
+    assertThat(named.streams()).containsExactly(video, french, english, subtitle);
+    assertThat(named.audioCodec()).isEqualTo("ac3");
+    assertThat(named.audioChannels()).hasValue(6);
+    assertThat(named.audioBitrate()).hasValue(448_000);
+    assertThat(named.audioChannelLayout()).contains("5.1(side)");
+    assertThat(named.sessionAudioTrackPosition()).hasValue(1);
+  }
+
+  @Test
+  @DisplayName("Should keep the probe when a session names its first audio track")
+  void shouldKeepTheProbeWhenASessionNamesItsFirstAudioTrack() {
+    var probe = probe(audioIn("eng").index(1).build(), audioIn("fra").index(2).build());
+
+    assertThat(probe.withSessionAudioTrackAt(0)).isEqualTo(probe);
+  }
+
+  // The streams are listed second track first, as for a session that names the second track, so
+  // the answer must come from stream order.
+  @ParameterizedTest(name = "first default {0}, second default {1}")
+  @CsvSource({"false, false, true", "true, false, true", "true, true, true", "false, true, false"})
+  @DisplayName(
+      "Should start a non-selecting player on the first audio track unless only a later one is the"
+          + " default")
+  void shouldStartANonSelectingPlayerOnTheFirstAudioTrackUnlessOnlyALaterOneIsTheDefault(
+      boolean firstIsDefault, boolean secondIsDefault, boolean startsOnTheFirst) {
+    var probe =
+        probe(
+            audioIn("fra").index(2).isDefault(secondIsDefault).build(),
+            audioIn("eng").index(1).isDefault(firstIsDefault).build());
+
+    assertThat(probe.startsOnTheFirstAudioTrack()).isEqualTo(startsOnTheFirst);
+  }
+
+  @Test
+  @DisplayName("Should start a non-selecting player on the first audio track when there is none")
+  void shouldStartANonSelectingPlayerOnTheFirstAudioTrackWhenThereIsNone() {
+    assertThat(probe(subtitle("subrip", "eng").index(1).build()).startsOnTheFirstAudioTrack())
+        .isTrue();
+  }
+
   private static MediaProbe probe(StreamInfo... streams) {
     return StreamSessionFixture.defaultProbeBuilder().streams(List.of(streams)).build();
   }
 
   private static StreamInfo audio(String language) {
-    return audioStreamBuilder("aac").language(Optional.of(language)).build();
+    return audioIn(language).build();
+  }
+
+  private static StreamInfo.StreamInfoBuilder audioIn(String language) {
+    return audioStreamBuilder("aac").language(Optional.of(language));
   }
 
   private static StreamInfo.StreamInfoBuilder subtitle(String codec, String language) {

@@ -5,6 +5,7 @@ import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 import lombok.Builder;
@@ -13,6 +14,9 @@ import lombok.NonNull;
 /**
  * The caller reserves the session identifier before a worker can report a startup failure. The
  * stream session starts at {@code startPosition}, at the beginning of the media when it is empty.
+ * {@code audioTrackPosition} names the audio track that the viewer chose, by its position, counting
+ * from 0, among the file's audio tracks in stream order. When it is empty, the stream session plays
+ * its own choice of track.
  */
 @Builder
 public record CreateStreamSessionCommand(
@@ -23,7 +27,8 @@ public record CreateStreamSessionCommand(
     @NonNull ClientCapabilityDeclaration capabilityDeclaration,
     @NonNull VideoFormatConstraint videoFormatConstraint,
     @NonNull Set<String> excludedEncodeCodecFamilies,
-    @NonNull Optional<Duration> startPosition) {
+    @NonNull Optional<Duration> startPosition,
+    @NonNull OptionalInt audioTrackPosition) {
   public CreateStreamSessionCommand {
     excludedEncodeCodecFamilies = Set.copyOf(excludedEncodeCodecFamilies);
   }
@@ -34,6 +39,7 @@ public record CreateStreamSessionCommand(
     private VideoFormatConstraint videoFormatConstraint = VideoFormatConstraint.COPY_OR_ENCODE;
     private Set<String> excludedEncodeCodecFamilies = Set.of();
     private Optional<Duration> startPosition = Optional.empty();
+    private OptionalInt audioTrackPosition = OptionalInt.empty();
 
     public CreateStreamSessionCommand build() {
       return new CreateStreamSessionCommand(
@@ -44,7 +50,8 @@ public record CreateStreamSessionCommand(
           capabilityDeclaration,
           videoFormatConstraint,
           excludedEncodeCodecFamilies,
-          startPosition);
+          startPosition,
+          audioTrackPosition);
     }
   }
 }

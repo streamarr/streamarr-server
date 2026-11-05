@@ -6,6 +6,7 @@ import com.streamarr.server.services.concurrency.NanoClock;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.HlsStreamingService;
+import com.streamarr.server.services.streaming.JobAttemptProgressListener;
 import com.streamarr.server.services.streaming.PlaybackAuthorityGate;
 import com.streamarr.server.services.streaming.PlaybackProbeService;
 import com.streamarr.server.services.streaming.PlaybackSessionService;
@@ -91,6 +92,12 @@ public class StreamingConfig {
         .producerLifecycle(producerLifecycleService)
         .heldRequests(heldSegmentRequests)
         .build();
+  }
+
+  @Bean
+  public JobAttemptProgressListener jobAttemptProgressListener(
+      ProducerLifecycleService producerLifecycleService) {
+    return new JobAttemptProgressListener(producerLifecycleService);
   }
 
   @Bean

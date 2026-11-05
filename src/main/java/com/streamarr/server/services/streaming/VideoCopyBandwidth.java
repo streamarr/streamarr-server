@@ -8,6 +8,7 @@ import com.streamarr.server.domain.streaming.MeasuredStream;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
+import com.streamarr.server.services.streaming.PeakSegmentBitRate.SegmentSize;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
@@ -21,7 +22,8 @@ import lombok.NonNull;
 /**
  * What a video copy costs beside the stream session's audio: the AVERAGE-BANDWIDTH that the
  * multivariant playlist advertises for the copy and the cost that the viewer's maximum bitrate
- * bounds (ADR 0050, ADR 0054), and the BANDWIDTH that a measured copy advertises.
+ * bounds (ADR 0050, ADR 0054), the BANDWIDTH that a measured copy advertises, and whether a
+ * measured copy's media segments fit the segment cap (ADR 0037).
  */
 final class VideoCopyBandwidth {
 
@@ -94,6 +96,49 @@ final class VideoCopyBandwidth {
     // A peak over runs that miss the densest segment can fall below the average, which RFC 8216
     // never lets BANDWIDTH do.
     return OptionalLong.of(Math.max(saturatedSum(videoPeak, audioPeak.get()), average.get()));
+  }
+
+  /**
+   * Whether a measured segment of the copy, with the stream session's audio for the same interval,
+   * exceeds the segment cap (ADR 0037). Copied audio without a measurement counts nothing, so the
+   * measured video alone bounds the segment. False when the server did not measure the copied video
+   * over the source's keyframe positions: the worker's own cap check then fails the attempt.
+   */
+  static boolean exceedsSegmentCap(
+      @NonNull MediaProbe source,
+      @NonNull AudioDecision audio,
+      @NonNull CopyMediaPlaylist playlist) {
+    var positions = keyframePositions(source);
+    var video = measuredVideo(source);
+    if (positions.isEmpty()
+        || video.isEmpty()
+        || !playlist.isKnown()
+        || !followsKeyframes(video.get(), positions.get())) {
+      return false;
+    }
+
+    return SegmentCap.isExceededBy(
+        CopySegmentSizes.video(video.get(), playlist),
+        audioSegmentSizes(source, audio, positions.get(), playlist));
+  }
+
+  private static List<SegmentSize> audioSegmentSizes(
+      MediaProbe source,
+      AudioDecision audio,
+      KeyframePositions positions,
+      CopyMediaPlaylist playlist) {
+    return switch (audio.mode()) {
+      case NONE -> List.of();
+      case COPY ->
+          copiedAudio(source)
+              .filter(copied -> followsKeyframes(copied, positions))
+              .map(copied -> CopySegmentSizes.copiedAudio(copied, positions, playlist))
+              .orElseGet(List::of);
+      case TRANSCODE ->
+          encodedAudioFrames(source, audio)
+              .map(encoded -> CopySegmentSizes.encodedAudio(encoded, audio.bitrate(), playlist))
+              .orElseGet(List::of);
+    };
   }
 
   /** The largest peak among the session's audio renditions: today its one audio decision. */

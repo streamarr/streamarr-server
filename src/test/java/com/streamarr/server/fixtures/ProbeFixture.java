@@ -141,6 +141,19 @@ public class ProbeFixture {
             .build());
   }
 
+  /** Keyframes that all present before zero, so none opens a segment of the media. */
+  public static KeyframeKnowledge keyframesBeforeTheStart() {
+    return new KeyframeKnowledge.Known(
+        KeyframePositions.builder()
+            .streamIndex(0)
+            .timeBaseNumerator(1)
+            .timeBaseDenominator(1000)
+            .source(KeyframePositionSource.CONTAINER_INDEX)
+            .keyframes(
+                List.of(new KeyframePosition(-4_000, -4_000), new KeyframePosition(-2_000, -2_000)))
+            .build());
+  }
+
   /** One value of each keyframe knowledge that does not hold the source's keyframe positions. */
   public static Stream<KeyframeKnowledge> keyframesThatAreNotKnown() {
     return Stream.of(
