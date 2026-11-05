@@ -16,8 +16,8 @@ public final class UploadBudgetFixture {
         }
 
         @Override
-        public boolean isWithheldFromPlaylist(StreamSession session, String variantLabel) {
-          return false;
+        public String topKeptVariant(StreamSession session) {
+          return session.firstListedVariant();
         }
 
         @Override
