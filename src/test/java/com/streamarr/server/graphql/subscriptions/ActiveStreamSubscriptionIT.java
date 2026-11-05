@@ -35,6 +35,7 @@ import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
+import com.streamarr.server.services.streaming.events.MediaSegmentStoredEvent;
 import com.streamarr.server.support.ActiveSubscriptions;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.BoundedTask;
@@ -63,6 +64,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
@@ -130,6 +132,7 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
   @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private DataSource dataSource;
   @Autowired private SegmentStore segmentStore;
+  @Autowired private ApplicationEventPublisher eventPublisher;
 
   private final List<AuthTestSupport.TestIdentity> identities = new ArrayList<>();
   private final List<GraphQlTransportWsTestClient> sockets = new ArrayList<>();
@@ -296,6 +299,31 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
             .findFirst()
             .orElseThrow(() -> new AssertionError("activeStreams does not list " + playbackId));
     assertProducedRange("query", listedStream.path("producedRange"), 24, 48);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver a stream when a stored media segment moves its produced range and a"
+          + " ServerAdmin subscribes")
+  void shouldDeliverAStreamWhenAStoredMediaSegmentMovesItsProducedRange() {
+    var socket = connect(adminBearer());
+    socket.subscribe("streams", PRODUCED_RANGE_SUBSCRIPTION);
+    activeSubscriptions.awaitCount(FIELD, 1);
+    var created =
+        http.execute(authTestSupport.profileBearer(viewer), createMutation(savedMovieFile()));
+    var playback = created.path("data").path("createPlaybackSession").path("playbackSession");
+    var playbackId = playback.path("id").asString();
+    openPlaybacks.add(playbackId);
+    nextChange(socket, playbackId);
+    var streamId =
+        UUID.fromString(
+            playback.path("currentFormatAttempt").path("streamSession").path("id").asString());
+
+    storeMediaSegments(streamId, 0);
+    eventPublisher.publishEvent(new MediaSegmentStoredEvent(streamId));
+
+    var produced = nextChange(socket, playbackId).path("activeStream");
+    assertProducedRange("subscription", produced.path("producedRange"), 0, 6);
   }
 
   private static void assertProducedRange(

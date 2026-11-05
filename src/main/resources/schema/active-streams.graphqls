@@ -16,6 +16,10 @@ extend type Subscription {
     To build current state, subscribe first, then query activeStreams, and apply each change by
     playbackSessionId. One stream's changes arrive in the order they happened. A client may miss an
     intermediate state, but the last change it receives for a stream carries that stream's latest state.
+
+    A change in a stream's producedRange alone fires a change for that stream at most once every 5 seconds, and
+    only when the range differs by at least one media segment from the range that the stream's last change
+    carried. Every other change carries the stream's current producedRange.
     """
     activeStreamsChanged: ActiveStreamChange
 }

@@ -21,24 +21,33 @@ import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fakes.FakeTaskScheduler;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
+import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.graphql.dto.ActiveStreamDto;
+import com.streamarr.server.graphql.dto.MediaTimeRangeDto;
 import com.streamarr.server.services.streaming.ActiveStreamService;
 import com.streamarr.server.services.streaming.PlaybackSessionService;
+import com.streamarr.server.services.streaming.PlaybackSessionSnapshot;
 import com.streamarr.server.services.streaming.ProducerLifecycleService;
+import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.events.PlaybackSessionChangedEvent;
+import com.streamarr.server.services.streaming.events.PlaybackSessionSegmentStoredEvent;
 import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledFuture;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.util.unit.DataSize;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -53,10 +62,13 @@ class ActiveStreamEventListenerTest {
   private final FakeRuntimeStreamSessionRegistry registry = new FakeRuntimeStreamSessionRegistry();
   private final FakeCreatingStreamingService streams = new FakeCreatingStreamingService(registry);
   private final FakeTranscodeExecutor executor = new FakeTranscodeExecutor();
+  private final FailingSegmentStore segments = new FailingSegmentStore();
+  private final MutableClock clock = new MutableClock();
+  private final RejectingTaskScheduler taskScheduler = new RejectingTaskScheduler();
   private final ProducerLifecycleService producerLifecycle =
       StreamingRigFixture.streamingRigBuilder()
           .transcodeExecutor(executor)
-          .segmentStore(new FakeSegmentStore())
+          .segmentStore(segments)
           .properties(StreamingProperties.builder().build())
           .runtimeRegistry(registry)
           .build()
@@ -215,6 +227,151 @@ class ActiveStreamEventListenerTest {
     assertThat(publicationFailures()).isEqualTo(2);
   }
 
+  // The default probe's keyframes open every 6 s slot, so media segment N covers [6N, 6N + 6) s.
+  @Test
+  @DisplayName(
+      "Should deliver the stream at once when a stored segment moves its produced range and no"
+          + " range change fired in the last 5 seconds")
+  void shouldDeliverTheStreamAtOnceWhenAStoredSegmentMovesItsProducedRange() {
+    var listener = listenerReading(new FakeMediaFileRepository());
+    var delivered = subscribe();
+    var playback = acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
+
+    storeSegment(listener, playback, 0);
+    taskScheduler.runTasksDueAt(clock.instant());
+
+    assertThat(delivered).extracting(this::producedRangeOf).containsExactly(rangeOf(0, 6));
+  }
+
+  @Test
+  @DisplayName(
+      "Should coalesce the stored segments of 5 seconds into one delivery of the latest produced"
+          + " range when the range changed less than 5 seconds ago")
+  void shouldCoalesceTheStoredSegmentsOf5SecondsIntoOneDeliveryOfTheLatestProducedRange() {
+    var listener = listenerReading(new FakeMediaFileRepository());
+    var delivered = subscribe();
+    var playback = acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
+    var firstFiredAt = clock.instant();
+    storeSegment(listener, playback, 0);
+    taskScheduler.runTasksDueAt(firstFiredAt);
+
+    clock.advance(Duration.ofSeconds(1));
+    storeSegment(listener, playback, 1);
+    clock.advance(Duration.ofSeconds(1));
+    storeSegment(listener, playback, 2);
+    var waiting = taskScheduler.pendingTaskCount();
+    taskScheduler.runTasksDueAt(firstFiredAt.plus(Duration.ofMillis(4_999)));
+    var withinTheInterval = delivered.size();
+    taskScheduler.runTasksDueAt(firstFiredAt.plus(Duration.ofSeconds(5)));
+
+    assertThat(waiting).isEqualTo(1);
+    assertThat(withinTheInterval).isEqualTo(1);
+    assertThat(delivered)
+        .extracting(this::producedRangeOf)
+        .containsExactly(rangeOf(0, 6), rangeOf(0, 18));
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver nothing for a stored segment when the last delivered change already carries"
+          + " the produced range")
+  void shouldDeliverNothingForAStoredSegmentWhenTheLastDeliveredChangeCarriesTheProducedRange() {
+    var listener = listenerReading(new FakeMediaFileRepository());
+    var delivered = subscribe();
+    var playback = acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
+    store(playback, 0);
+    listener.onPlaybackSessionChanged(
+        new PlaybackSessionChangedEvent(playback.playbackSessionId()));
+
+    storeSegment(listener, playback, 5);
+    taskScheduler.runTasksDueAt(clock.instant().plus(Duration.ofSeconds(5)));
+
+    assertThat(delivered).extracting(this::producedRangeOf).containsExactly(rangeOf(0, 6));
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver nothing for a stored segment when no produced segment holds the stream's"
+          + " position")
+  void shouldDeliverNothingForAStoredSegmentWhenNoProducedSegmentHoldsTheStreamsPosition() {
+    var listener = listenerReading(new FakeMediaFileRepository());
+    var delivered = subscribe();
+    var playback = acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
+
+    storeSegment(listener, playback, 5);
+    taskScheduler.runTasksDueAt(clock.instant());
+
+    assertThat(delivered).isEmpty();
+    assertThat(publicationFailures()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should count a publication failure without throwing when the produced range cannot be read")
+  void shouldCountAPublicationFailureWithoutThrowingWhenTheProducedRangeCannotBeRead() {
+    var listener = listenerReading(new FakeMediaFileRepository());
+    var delivered = subscribe();
+    var playback = acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
+    storeSegment(listener, playback, 0);
+    segments.failLookups();
+
+    assertThatCode(() -> taskScheduler.runTasksDueAt(clock.instant())).doesNotThrowAnyException();
+
+    assertThat(delivered).isEmpty();
+    assertThat(publicationFailures()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should count a publication failure without throwing and check again on the next segment"
+          + " when no thread can check the produced range")
+  void shouldCountAPublicationFailureAndCheckAgainOnTheNextSegmentWhenNoThreadCanCheck() {
+    var listener = listenerReading(new FakeMediaFileRepository());
+    var delivered = subscribe();
+    var playback = acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
+    taskScheduler.rejectNextTask();
+
+    assertThatCode(() -> storeSegment(listener, playback, 0)).doesNotThrowAnyException();
+    storeSegment(listener, playback, 1);
+    taskScheduler.runTasksDueAt(clock.instant());
+
+    assertThat(publicationFailures()).isEqualTo(1);
+    assertThat(delivered).extracting(this::producedRangeOf).containsExactly(rangeOf(0, 12));
+  }
+
+  @Test
+  @DisplayName("Should wait for no produced range change when nobody subscribes")
+  void shouldWaitForNoProducedRangeChangeWhenNobodySubscribes() {
+    var listener = listenerReading(new FakeMediaFileRepository());
+    var playback = acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
+
+    storeSegment(listener, playback, 0);
+
+    assertThat(taskScheduler.pendingTaskCount()).isZero();
+  }
+
+  private void storeSegment(
+      ActiveStreamEventListener listener, PlaybackSessionSnapshot playback, int index) {
+    store(playback, index);
+    listener.onPlaybackSessionSegmentStored(
+        new PlaybackSessionSegmentStoredEvent(playback.playbackSessionId()));
+  }
+
+  private void store(PlaybackSessionSnapshot playback, int index) {
+    segments.storeSegment(
+        playback.currentFormatAttempt().streamSessionId(),
+        SegmentNames.mediaSegmentName(index),
+        new byte[] {1});
+  }
+
+  private MediaTimeRangeDto producedRangeOf(ActiveStreamDto.ChangeDto change) {
+    return change.activeStream().producedRange();
+  }
+
+  private static MediaTimeRangeDto rangeOf(double startSeconds, double endSeconds) {
+    return new MediaTimeRangeDto(startSeconds, endSeconds);
+  }
+
   private ActiveStreamEventListener listenerReading(FakeMediaFileRepository mediaFiles) {
     return listenerReading(mediaFiles, Schedulers.immediate());
   }
@@ -240,6 +397,8 @@ class ActiveStreamEventListenerTest {
         .broadcaster(broadcaster)
         .meterRegistry(meterRegistry)
         .publicationScheduler(publicationScheduler)
+        .taskScheduler(taskScheduler)
+        .clock(clock)
         .build();
   }
 
@@ -260,6 +419,43 @@ class ActiveStreamEventListenerTest {
     }
 
     return counter.count();
+  }
+
+  private static final class FailingSegmentStore extends FakeSegmentStore {
+
+    private volatile boolean failing;
+
+    void failLookups() {
+      failing = true;
+    }
+
+    @Override
+    public boolean segmentExists(UUID sessionId, String segmentName) {
+      if (failing) {
+        throw new IllegalStateException("The segment store is unavailable.");
+      }
+
+      return super.segmentExists(sessionId, segmentName);
+    }
+  }
+
+  private static final class RejectingTaskScheduler extends FakeTaskScheduler {
+
+    private boolean rejectNext;
+
+    void rejectNextTask() {
+      rejectNext = true;
+    }
+
+    @Override
+    public ScheduledFuture<?> schedule(Runnable task, Instant startTime) {
+      if (rejectNext) {
+        rejectNext = false;
+        throw new TaskRejectedException("The task scheduler is shut down.");
+      }
+
+      return super.schedule(task, startTime);
+    }
   }
 
   // The first media file read parks until the test releases it.

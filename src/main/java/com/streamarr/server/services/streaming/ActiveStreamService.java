@@ -71,6 +71,18 @@ public class ActiveStreamService {
         .map(activity -> describe(List.of(activity)).getFirst());
   }
 
+  /**
+   * The produced range of the playback session's active stream, or empty when it has none or the
+   * stream ended or failed. The caller has already required a ServerAdmin.
+   */
+  public Optional<MediaTimeRange> producedRange(@NonNull UUID playbackSessionId) {
+    return playbackSessions
+        .activity(playbackSessionId)
+        .filter(ActiveStreamService::isActive)
+        .flatMap(ActiveStreamService::readySession)
+        .flatMap(this::producedRangeOf);
+  }
+
   // A failed playback session plays nothing, though its client has not closed it yet.
   private static boolean isActive(PlaybackSessionActivity activity) {
     return !(activity.currentFormatAttempt() instanceof PlaybackFormatAttempt.Failed);
