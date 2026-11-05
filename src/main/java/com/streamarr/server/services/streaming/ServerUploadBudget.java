@@ -100,8 +100,12 @@ public class ServerUploadBudget implements UploadBudget {
   }
 
   @Override
-  public boolean isWithheldFromPlaylist(StreamSession session, String variantLabel) {
-    return variantsWithheldFrom(session).contains(variantLabel);
+  public String topKeptVariant(StreamSession session) {
+    var withheld = variantsWithheldFrom(session);
+    return listedVariantAverages(session).keySet().stream()
+        .filter(variant -> !withheld.contains(variant))
+        .findFirst()
+        .orElseThrow();
   }
 
   /**

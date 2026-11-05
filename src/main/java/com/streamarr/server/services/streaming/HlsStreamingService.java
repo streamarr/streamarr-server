@@ -220,7 +220,10 @@ public class HlsStreamingService implements StreamingService {
 
     try {
       runtimeRegistry.save(session);
-      session = startUnlessWithheld(session);
+      // When the upload budget leaves out the first-listed variant, the top variant that it keeps
+      // starts instead, so the stream session holds the transcode place that admission found
+      // until the player reads its playlist (ADR 0050).
+      session = producerLifecycle.startListedVariant(session, uploadBudget.topKeptVariant(session));
     } catch (TranscodeLimitReachedException _) {
       // Another start took the last place under the transcode limit after this admission, so no
       // job attempt of this stream session was dispatched.
@@ -251,16 +254,6 @@ public class HlsStreamingService implements StreamingService {
 
     var timeline = MediaSegmentTimelines.of(session, properties);
     session.setCurrentSegment(timeline.mediaSegmentIndexAt(startPosition.get()));
-  }
-
-  // A variant that the upload budget leaves out of the playlist would run for no player, so the top
-  // variant that stays starts when the server serves the playlist instead (ADR 0050).
-  private StreamSession startUnlessWithheld(StreamSession session) {
-    if (uploadBudget.isWithheldFromPlaylist(session, session.firstListedVariant())) {
-      return session;
-    }
-
-    return producerLifecycle.startListedVariant(session, session.firstListedVariant());
   }
 
   // A direct-play stream session starts no job attempt, so it has no transcode decision, producer
