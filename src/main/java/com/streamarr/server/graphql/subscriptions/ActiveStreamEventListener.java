@@ -45,11 +45,14 @@ public class ActiveStreamEventListener {
 
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
   public void onPlaybackSessionChanged(PlaybackSessionChangedEvent event) {
+    var playbackSessionId = event.playbackSessionId();
+    // A read in flight may broadcast to a subscriber that registers after this change, so it must
+    // read again even while nobody subscribes; only a new read waits for a subscriber.
     if (!broadcaster.getChanges().hasRegistrations()) {
+      publications.computeIfPresent(playbackSessionId, (_, _) -> Publication.READ_AGAIN);
       return;
     }
 
-    var playbackSessionId = event.playbackSessionId();
     var publication =
         publications.merge(
             playbackSessionId, Publication.READING, (_, _) -> Publication.READ_AGAIN);
