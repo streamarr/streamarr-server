@@ -34,7 +34,8 @@ final class CopySegmentSizes {
       var bytes =
           SegmentFraming.segmentBytes(BigInteger.ONE)
               .add(trackBytes(video, intervals.first(), intervals.end()));
-      sizes.add(sizeOf(bytes, playlist, segment));
+      sizes.add(
+          sizeOf(bytes, samples(video, intervals.first(), intervals.end()), playlist, segment));
     }
 
     return sizes;
@@ -66,7 +67,8 @@ final class CopySegmentSizes {
               ? positions.keyframes().size()
               : intervals.endStartingBefore(slotEdge(positions, playlist, segment + 1), end);
 
-      sizes.add(sizeOf(trackBytes(audio, first, end), playlist, segment));
+      sizes.add(
+          sizeOf(trackBytes(audio, first, end), samples(audio, first, end), playlist, segment));
     }
 
     return sizes;
@@ -92,7 +94,7 @@ final class CopySegmentSizes {
       var framing = SegmentFraming.trackBytes(BigInteger.ONE, frames);
       var payload = peakBytesPerSecond.multiply(encoded.secondsOf(frames));
       var bytes = payload.add(new BigDecimal(framing));
-      sizes.add(new SegmentSize(bytes, playlist.segments().get(segment).extinfSeconds()));
+      sizes.add(new SegmentSize(bytes, playlist.segments().get(segment).extinfSeconds(), frames));
     }
 
     return sizes;
@@ -210,18 +212,28 @@ final class CopySegmentSizes {
   /** A track's measured bytes in intervals {@code [first, end)} and its framing in one segment. */
   private static BigInteger trackBytes(MeasuredStream stream, int first, int end) {
     var bytes = 0L;
-    var samples = 0L;
     for (var interval = first; interval < end; interval++) {
       bytes += stream.keyframeIntervalBytes().countOf(interval);
-      samples += stream.keyframeIntervalPacketCounts().countOf(interval);
     }
 
     return BigInteger.valueOf(bytes)
-        .add(SegmentFraming.trackBytes(BigInteger.ONE, BigInteger.valueOf(samples)));
+        .add(SegmentFraming.trackBytes(BigInteger.ONE, samples(stream, first, end)));
   }
 
-  private static SegmentSize sizeOf(BigInteger bytes, CopyMediaPlaylist playlist, int segment) {
-    return new SegmentSize(new BigDecimal(bytes), playlist.segments().get(segment).extinfSeconds());
+  /** A track's measured samples in intervals {@code [first, end)}. */
+  private static BigInteger samples(MeasuredStream stream, int first, int end) {
+    var samples = 0L;
+    for (var interval = first; interval < end; interval++) {
+      samples += stream.keyframeIntervalPacketCounts().countOf(interval);
+    }
+
+    return BigInteger.valueOf(samples);
+  }
+
+  private static SegmentSize sizeOf(
+      BigInteger bytes, BigInteger samples, CopyMediaPlaylist playlist, int segment) {
+    return new SegmentSize(
+        new BigDecimal(bytes), playlist.segments().get(segment).extinfSeconds(), samples);
   }
 
   private record Intervals(int first, int end) {}

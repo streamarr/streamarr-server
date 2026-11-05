@@ -175,6 +175,8 @@ enum DecisionReason {
     KEYFRAMES_TOO_SPARSE
     "The source's keyframe timestamps go backwards or out of range."
     KEYFRAME_TIMESTAMPS_INVALID
+    "A copied segment, with the audio beside it, would be larger than a segment may be."
+    SEGMENT_EXCEEDS_CAP
     "No connected worker can make the copy's planned output."
     NO_WORKER_DELIVERS_COPY
     "No audio capability entry for HLS names the source's audio codec."

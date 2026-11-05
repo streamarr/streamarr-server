@@ -158,7 +158,12 @@ public class StreamMeasurementFixture {
     private static final long AC3_FRAME_SAMPLES = 1_536;
 
     public MediaProbe probe() {
-      var probe = StreamSessionFixture.defaultProbeBuilder().duration(duration);
+      return probeFrom(StreamSessionFixture.defaultProbeBuilder());
+    }
+
+    /** This source's duration, streams, keyframes and measurement on the given probe. */
+    public MediaProbe probeFrom(MediaProbe.MediaProbeBuilder base) {
+      var probe = base.duration(duration);
       var video = ProbeFixture.videoStreamBuilder(probe.build()).build();
       var streams = new ArrayList<StreamInfo>(List.of(video));
       var measured = new ArrayList<MeasuredStream>(List.of(measuredVideo(video.index())));

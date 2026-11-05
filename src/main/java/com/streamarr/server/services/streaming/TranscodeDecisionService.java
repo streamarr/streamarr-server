@@ -249,20 +249,32 @@ public class TranscodeDecisionService {
     var declaration = request.capabilityDeclaration();
     var limits = request.viewerLimits();
     var steps = AudioSteps.below(sessionAudio, AudioTrackChannels.of(source), declaration);
-    var stepWithinMaximum =
-        limits.audioStepBesideCopyOf(source, steps, CopyMediaPlaylist.of(source, properties));
+    var playlist = CopyMediaPlaylist.of(source, properties);
+    var stepWithinMaximum = limits.audioStepBesideCopyOf(source, steps, playlist);
     var limitRefusals = viewerLimitRefusals(limits.allowsCopyPictureOf(source), stepWithinMaximum);
     if (!limitRefusals.isEmpty() && hasVerifiedEncodeThatTheClientPlays(request)) {
       return new VideoCopyChoice.Refused(beforeViewerLimits(request, limitRefusals));
     }
 
+    var audio = stepWithinMaximum.orElse(sessionAudio);
     return switch (acceptedVideoCopyPlan(request, countsRefusals)) {
       case PlanChoice.Refused(var reasons) -> new VideoCopyChoice.Refused(reasons);
       case PlanChoice.Accepted(var plan, _) when !hasWorkerThatDeliversTheCopy(request, plan) ->
           new VideoCopyChoice.Refused(List.of(DecisionReason.NO_WORKER_DELIVERS_COPY));
+      case PlanChoice.Accepted _
+          when VideoCopyBandwidth.exceedsSegmentCap(source, audio, playlist) ->
+          segmentCapRefusal(countsRefusals);
       case PlanChoice.Accepted(var plan, var reasons) ->
-          new VideoCopyChoice.Copied(stepWithinMaximum.orElse(sessionAudio), plan, reasons);
+          new VideoCopyChoice.Copied(audio, plan, reasons);
     };
+  }
+
+  private VideoCopyChoice segmentCapRefusal(boolean countsRefusals) {
+    if (countsRefusals) {
+      countStreamCopyRefusal(StreamCopyRefusal.EXCEEDS_SEGMENT_CAP);
+    }
+
+    return new VideoCopyChoice.Refused(List.of(StreamCopyRefusal.EXCEEDS_SEGMENT_CAP.reason()));
   }
 
   // A copy that the viewer's limits refuse may also be one that the source or the declaration
@@ -582,7 +594,8 @@ public class TranscodeDecisionService {
     Counter.builder(STREAM_COPY_REFUSALS_METRIC)
         .description(
             "Stream copies of a video codec the client plays, refused because the source's"
-                + " keyframes are not known or open no segment list")
+                + " keyframes are not known or open no segment list, or a measured segment would"
+                + " exceed the segment cap")
         .tag("reason", refusal.name().toLowerCase(Locale.ROOT))
         .register(meterRegistry)
         .increment();
@@ -596,7 +609,9 @@ public class TranscodeDecisionService {
     NO_OPENING_KEYFRAME(DecisionReason.KEYFRAMES_TOO_SPARSE),
     PRESENTATION_TIME_REGRESSED(DecisionReason.KEYFRAME_TIMESTAMPS_INVALID),
     PRESENTATION_TIME_OUT_OF_RANGE(DecisionReason.KEYFRAME_TIMESTAMPS_INVALID),
-    DECODE_TIME_OUT_OF_RANGE(DecisionReason.KEYFRAME_TIMESTAMPS_INVALID);
+    DECODE_TIME_OUT_OF_RANGE(DecisionReason.KEYFRAME_TIMESTAMPS_INVALID),
+    // A measured segment of the copy, with its audio, would exceed the segment cap (ADR 0037).
+    EXCEEDS_SEGMENT_CAP(DecisionReason.SEGMENT_EXCEEDS_CAP);
 
     private final DecisionReason reason;
 

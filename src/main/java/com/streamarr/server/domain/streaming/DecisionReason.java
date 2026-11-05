@@ -80,6 +80,11 @@ public enum DecisionReason {
   /** The source's keyframe timestamps go backwards or out of range. */
   KEYFRAME_TIMESTAMPS_INVALID,
   /**
+   * A measured segment of the copy, with the audio beside it, would exceed the segment cap (ADR
+   * 0037).
+   */
+  SEGMENT_EXCEEDS_CAP,
+  /**
    * No connected worker delivers the copy's bitstream rewrites, or the Dolby Vision sample entry of
    * a profile 5 or 10.0 copy.
    */

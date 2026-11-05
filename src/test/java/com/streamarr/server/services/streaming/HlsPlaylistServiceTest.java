@@ -1970,6 +1970,27 @@ class HlsPlaylistServiceTest {
       assertThat(playlist).contains("BANDWIDTH=917578,AVERAGE-BANDWIDTH=500515,");
     }
 
+    // Keyframes 10 s apart leave the 6 s slots [12 s, 18 s) and [24 s, 30 s) without one, so the
+    // list holds segments of 10, 10, 10 and 6 s under a 10 s target. A run lasts 5 to 15 s, so each
+    // segment is a run of its own: segment 1 holds 400,000 bytes and 480 bytes of framing over 10
+    // s, 320,384 b/s.
+    @Test
+    @DisplayName(
+        "Should take each merged segment's size from the segment list when it measures the peak")
+    void shouldTakeEachMergedSegmentsSizeFromTheSegmentListWhenItMeasuresThePeak() {
+      var source =
+          StreamMeasurementFixture.CopySource.builder()
+              .duration(Duration.ofSeconds(36))
+              .keyframeMillis(List.of(0L, 10_000L, 20_000L, 30_000L))
+              .videoBytes(List.of(100_000L, 400_000L, 100_000L, 60_000L))
+              .build();
+
+      var playlist =
+          service.generateMultivariantPlaylist(copySession(source, AudioDecision.none()), "t");
+
+      assertThat(playlist).contains("BANDWIDTH=320384,AVERAGE-BANDWIDTH=147094,");
+    }
+
     // The keyframe at -2 s opens no segment, so segment 0 holds its interval of 600,000 bytes with
     // the three that follow: 901,632 bytes with framing, 1,202,176 b/s.
     @Test
