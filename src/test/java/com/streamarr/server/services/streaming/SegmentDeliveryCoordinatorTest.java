@@ -28,6 +28,7 @@ import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture.StreamingRig;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.events.RequestedVariantHardwareEncoderFailedEvent;
@@ -157,6 +158,7 @@ class SegmentDeliveryCoordinatorTest {
   private void destroy(UUID sessionId) {
     HlsStreamingService.builder()
         .languagePreferences(noLanguagePreferences())
+        .uploadBudget(UploadBudgetFixture.OFF)
         .meterRegistry(new SimpleMeterRegistry())
         .segmentStore(segmentStore)
         .runtimeRegistry(runtimeRegistry)
@@ -1253,6 +1255,7 @@ class SegmentDeliveryCoordinatorTest {
     var streamingService =
         HlsStreamingService.builder()
             .languagePreferences(noLanguagePreferences())
+            .uploadBudget(UploadBudgetFixture.OFF)
             .meterRegistry(new SimpleMeterRegistry())
             .transcodeExecutor(gatingExecutor)
             .segmentStore(segmentStore)

@@ -24,6 +24,7 @@ import com.streamarr.server.services.streaming.ShortCopyListener;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
+import com.streamarr.server.services.streaming.UploadBudget;
 import com.streamarr.server.services.streaming.local.FileStoreSegmentFolderSpace;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
@@ -159,6 +160,7 @@ public class StreamingConfig {
       RuntimeStreamSessionRegistry runtimeRegistry,
       ProducerLifecycleService producerLifecycleService,
       SegmentDeliveryCoordinator segmentDeliveryCoordinator,
+      UploadBudget uploadBudget,
       MeterRegistry meterRegistry,
       PlaybackLanguagePreferences languagePreferences) {
     return HlsStreamingService.builder()
@@ -173,6 +175,7 @@ public class StreamingConfig {
         .runtimeRegistry(runtimeRegistry)
         .producerLifecycle(producerLifecycleService)
         .deliveryCoordinator(segmentDeliveryCoordinator)
+        .uploadBudget(uploadBudget)
         .meterRegistry(meterRegistry)
         .languagePreferences(languagePreferences)
         .build();

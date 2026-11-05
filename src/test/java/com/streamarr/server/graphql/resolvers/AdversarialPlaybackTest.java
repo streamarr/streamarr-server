@@ -30,6 +30,7 @@ import com.streamarr.server.fakes.FakeProbeTaskRequests;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.graphql.StreamarrDataFetcherExceptionHandler;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
@@ -42,6 +43,7 @@ import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.PlaybackSessionService;
 import com.streamarr.server.services.streaming.QualityLadderService;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
+import com.streamarr.server.services.streaming.UploadBudget;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
@@ -214,6 +216,7 @@ class AdversarialPlaybackTest {
           createPlaybackSession(
             input: {
               mediaFileId: $id
+              networkRoute: INTERNET
               capabilities: {
                 video: [{
                   codecFamily: H264
@@ -256,6 +259,11 @@ class AdversarialPlaybackTest {
           .executor(Runnable::run)
           .maximumFormatAttempts(2)
           .build();
+    }
+
+    @Bean
+    UploadBudget uploadBudget() {
+      return UploadBudgetFixture.OFF;
     }
 
     @Bean
@@ -338,6 +346,7 @@ class AdversarialPlaybackTest {
               .build();
       return HlsStreamingService.builder()
           .languagePreferences(noLanguagePreferences())
+          .uploadBudget(UploadBudgetFixture.OFF)
           .meterRegistry(new SimpleMeterRegistry())
           .mediaFileRepository(files)
           .transcodeExecutor(executor)

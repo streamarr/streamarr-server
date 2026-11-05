@@ -30,6 +30,7 @@ import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.SegmentDelivery;
 import com.streamarr.server.services.streaming.events.DolbyVisionConversionFailedEvent;
@@ -150,6 +151,7 @@ class RemoteFormatFailureIT {
       var service =
           HlsStreamingService.builder()
               .languagePreferences(noLanguagePreferences())
+              .uploadBudget(UploadBudgetFixture.OFF)
               .meterRegistry(new SimpleMeterRegistry())
               .runtimeRegistry(rig.registry)
               .producerLifecycle(rig.streaming.lifecycle())

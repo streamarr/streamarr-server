@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
+import com.streamarr.server.domain.streaming.NetworkRoute;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import java.time.Duration;
@@ -10,8 +11,8 @@ import lombok.Builder;
 import lombok.NonNull;
 
 /**
- * Every format attempt of the playback session replays the options and capability declaration. A
- * format attempt starts at {@code startPosition} until playback moves from it.
+ * Every format attempt of the playback session replays the options, the capability declaration and
+ * the network route. A format attempt starts at {@code startPosition} until playback moves from it.
  */
 @Builder
 public record StartPlaybackSessionCommand(
@@ -19,7 +20,8 @@ public record StartPlaybackSessionCommand(
     @NonNull AuthenticatedIdentity identity,
     @NonNull StreamingOptions options,
     @NonNull ClientCapabilityDeclaration capabilityDeclaration,
-    @NonNull Optional<Duration> startPosition) {
+    @NonNull Optional<Duration> startPosition,
+    @NonNull NetworkRoute networkRoute) {
 
   // Lombok builder default — its generated setter assigns it
   @SuppressWarnings({"java:S1068", "java:S9438"})

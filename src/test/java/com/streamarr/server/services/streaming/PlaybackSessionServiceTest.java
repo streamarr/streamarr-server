@@ -31,6 +31,7 @@ import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.NetworkRoute;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.QualityVariant;
@@ -3046,6 +3047,21 @@ class PlaybackSessionServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should replay the network route that the client attests when a replacement format attempt"
+          + " starts")
+  void shouldReplayTheAttestedNetworkRouteWhenAReplacementFormatAttemptStarts() {
+    var command = startCommand().networkRoute(NetworkRoute.LOCAL_NETWORK).build();
+    var initial = accepted(service.start(command));
+
+    service.reportFormatFailure(report(initial, command).build()).orElseThrow();
+
+    assertThat(streams.createdCommands)
+        .extracting(CreateStreamSessionCommand::networkRoute)
+        .containsExactly(NetworkRoute.LOCAL_NETWORK, NetworkRoute.LOCAL_NETWORK);
+  }
+
+  @Test
   @DisplayName("Should close owned streams when queued recovery cannot check authority")
   void shouldCloseOwnedStreamsWhenQueuedRecoveryCannotCheckAuthority() {
     var work = new ConcurrentLinkedQueue<Runnable>();
@@ -3486,7 +3502,8 @@ class PlaybackSessionServiceTest {
         .mediaFileId(UUID.randomUUID())
         .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
         .options(StreamingOptions.builder().quality(VideoQuality.AUTO).build())
-        .capabilityDeclaration(declarationBuilderFor(H264, HEVC).build());
+        .capabilityDeclaration(declarationBuilderFor(H264, HEVC).build())
+        .networkRoute(NetworkRoute.INTERNET);
   }
 
   private static <R> PlaybackSessionSnapshot accepted(Outcome<PlaybackSessionSnapshot, R> outcome) {

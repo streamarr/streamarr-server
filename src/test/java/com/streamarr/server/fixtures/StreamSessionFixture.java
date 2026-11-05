@@ -5,6 +5,7 @@ import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.NetworkRoute;
 import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.SourceContainer;
@@ -156,7 +157,8 @@ public final class StreamSessionFixture {
         .identity(identityFor(authority))
         .options(StreamingOptions.builder().quality(VideoQuality.AUTO).build())
         .capabilityDeclaration(
-            ClientCapabilityDeclarationFixture.defaultDeclarationBuilder().build());
+            ClientCapabilityDeclarationFixture.defaultDeclarationBuilder().build())
+        .networkRoute(NetworkRoute.INTERNET);
   }
 
   public static PlaybackRequest playbackRequest(StreamSession session) {
