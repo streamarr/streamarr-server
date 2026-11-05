@@ -27,6 +27,7 @@ import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.ServerSettingsFixture;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
@@ -39,11 +40,13 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -53,7 +56,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 /**
  * Real-FFmpeg proof that a stream copy seeks to the keyframe that opens the requested segment. A
  * replacement attempt must deliver the same video samples as the attempt that copied the source
- * from its start, also when its segment merges slots without a keyframe (ADR 0037).
+ * from its start, also when its segment merges slots without a keyframe (ADR 0037). A copy whose
+ * audio runs on long after its video keeps its producer while it copies that audio.
  */
 @Tag("SmokeTest")
 @DisplayName("HLS Stream Copy Seek Smoke Tests")
@@ -86,6 +90,68 @@ class HlsCopySeekSmokeTest {
   private static final List<String> LONG_GOP_MATROSKA =
       source("rate=24", List.of("-force_key_frames", "0,10,20,30"), List.of("-f", "matroska"));
 
+  // 10 s of a still picture with a keyframe every 2 s, and 70 s of stereo AAC at 256 kb/s: the 6 s
+  // slots from 12 s on hold no keyframe, so segment 1 runs from 6 s to the media end, and the 60 s
+  // of audio after the video's end join it. The muxer interleaves strictly by time: by default it
+  // writes the encoder's last video packets up to 10 s of audio later.
+  private static final List<String> VIDEO_ENDS_LONG_BEFORE_AUDIO_MATROSKA =
+      List.of(
+          "-f",
+          "lavfi",
+          "-i",
+          "color=c=gray:size=160x90:rate=24:duration=10",
+          "-f",
+          "lavfi",
+          "-i",
+          "anoisesrc=color=pink:sample_rate=48000:amplitude=0.5:duration=70",
+          "-c:v",
+          "libx264",
+          "-pix_fmt",
+          "yuv420p",
+          "-g",
+          "48",
+          "-keyint_min",
+          "48",
+          "-sc_threshold",
+          "0",
+          "-c:a",
+          "aac",
+          "-ac",
+          "2",
+          "-b:a",
+          "256k",
+          "-max_interleave_delta",
+          "0",
+          "-f",
+          "matroska");
+
+  // A job attempt's FFmpeg reads a source named paced-* through a named pipe that a writer fills
+  // at 96 KiB a second, about three times the real-time rate of the source above, as a slow mount
+  // would serve it.
+  private static final String PACED_SOURCE_READS =
+      """
+      if [[ $argument == /media/paced-* ]]; then
+        pipe=/tmp/paced-source-$attempt
+        mkfifo "$pipe"
+        size=$(stat -c %s "$argument")
+        (
+          exec > "$pipe"
+          for ((block = 0; block * 24576 < size; block++)); do
+            dd if="$argument" bs=24576 skip=$block count=1 status=none
+            sleep 0.25
+          done
+        ) &
+        paced=()
+        for value in "$@"; do
+          if [[ $value == "$argument" ]]; then
+            value=$pipe
+          fi
+          paced+=("$value")
+        done
+        exec ffmpeg "${paced[@]}"
+      fi
+      """;
+
   private FakeMediaFileRepository mediaFileRepository;
   private FakeMediaFileContainerInfoRepository probeRepository;
   private LocalSegmentStore segmentStore;
@@ -95,6 +161,7 @@ class HlsCopySeekSmokeTest {
   private RemoteFfprobeService probes;
   private RemoteTranscodeExecutor transcodeExecutor;
   private WorkerStreamingSmokeFixture workerFixture;
+  private volatile JobAttemptProgressListener progressListener;
   private Path sourceRoot;
   @TempDir private Path temporaryDirectory;
 
@@ -107,6 +174,8 @@ class HlsCopySeekSmokeTest {
         WorkerStreamingSmokeFixture.builder()
             .sourceRoot(sourceRoot)
             .segmentStore(segmentStore)
+            .ffmpegScript(PACED_SOURCE_READS)
+            .eventPublisher(this::restartStallClockOnProgress)
             .build();
     workerFixture.start();
     probes =
@@ -132,6 +201,7 @@ class HlsCopySeekSmokeTest {
             .sessionMutex(new MutexFactory<>())
             .serverSettings(ServerSettingsFixture.defaultServerSettings())
             .build();
+    progressListener = new JobAttemptProgressListener(producerLifecycle);
     coordinator =
         SegmentDeliveryCoordinator.builder()
             .segmentStore(segmentStore)
@@ -157,6 +227,14 @@ class HlsCopySeekSmokeTest {
             .deliveryCoordinator(coordinator)
             .build();
     playlistService = new HlsPlaylistService(properties);
+  }
+
+  // The worker's progress reports, and the segment data it uploads, restart the job attempt's stall
+  // clock, as the application's listener does (ADR 0037).
+  private void restartStallClockOnProgress(Object event) {
+    if (event instanceof JobAttemptProgressedEvent progressed && progressListener != null) {
+      progressListener.onJobAttemptProgressed(progressed);
+    }
   }
 
   @AfterEach
@@ -287,6 +365,67 @@ class HlsCopySeekSmokeTest {
     assertThat(videoPresentationTimes(sessionId, seekSegmentName))
         .as("the replacement's segment holds the same video as the copy from the start")
         .isEqualTo(fromStart);
+  }
+
+  // The worker reads the source at about three times real time, so copying the 60 s of audio after
+  // the video's end takes about 20 s, twice the 10 s stall threshold, while segment 1 stays open.
+  @Test
+  @DisplayName(
+      "Should deliver every segment from the first job attempt when a copy's audio runs on long"
+          + " after its video ends")
+  void shouldDeliverEverySegmentFromTheFirstJobAttemptWhenACopysAudioRunsOnLongAfterItsVideoEnds()
+      throws Exception {
+    var source =
+        workerFixture
+            .worker()
+            .generateMedia(
+                sourceRoot.resolve("paced-audio-tail.mkv"), VIDEO_ENDS_LONG_BEFORE_AUDIO_MATROSKA);
+    storeProbeWithKeyframes(source);
+    var session = createSession(source);
+    var sessionId = session.getSessionId();
+    var firstAttempt = session.getHandle().orElseThrow().attemptId();
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(
+            extinfSeconds(
+                playlistService.generateMediaPlaylist(
+                    session, StreamSession.defaultVariant(), "smoke-token")))
+        .zipSatisfy(
+            List.of(6.0, 64.0),
+            (advertised, expected) -> assertThat(advertised).isCloseTo(expected, within(0.1)));
+    var lastSegment = SegmentNames.mediaSegmentName(1);
+    var delivery =
+        CompletableFuture.supplyAsync(
+            () -> coordinator.deliver(sessionId, StreamSession.defaultVariant(), lastSegment));
+
+    assertThat(delivery)
+        .succeedsWithin(Duration.ofSeconds(90))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(session.getHandle().orElseThrow().attemptId())
+        .as("no stall replaced the producer while it copied the audio after the video's end")
+        .isEqualTo(firstAttempt);
+    assertThat(audioPacketHashes(sessionId, List.of(SegmentNames.mediaSegmentName(0), lastSegment)))
+        .as("the two segments carry every source audio packet once, in order")
+        .isEqualTo(hashesOnly(workerFixture.worker().audioPacketHashes(source)));
+  }
+
+  private List<String> audioPacketHashes(UUID sessionId, List<String> segmentNames)
+      throws Exception {
+    var hashes = new ArrayList<String>();
+    for (var segmentName : segmentNames) {
+      var media =
+          Files.write(
+              Files.createTempFile(temporaryDirectory, "segment", ".mp4"),
+              Fmp4Fixture.withInitializationSegment(segmentStore, sessionId, segmentName));
+      hashes.addAll(hashesOnly(workerFixture.worker().audioPacketHashes(media)));
+    }
+
+    return hashes;
+  }
+
+  // ffprobe's CSV ends a packet's line with a separator for each side data entry it carries.
+  private static List<String> hashesOnly(List<String> packetLines) {
+    return packetLines.stream().map(line -> line.replace(",", "")).toList();
   }
 
   // The AAC encoder's priming samples make each container about 23 ms longer than its 36 s video.
