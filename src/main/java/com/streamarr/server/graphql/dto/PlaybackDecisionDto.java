@@ -5,6 +5,7 @@ import com.streamarr.server.services.streaming.PlaybackDecision;
 import com.streamarr.server.services.streaming.VideoFormat;
 import java.util.List;
 import java.util.OptionalDouble;
+import java.util.OptionalInt;
 import java.util.OptionalLong;
 import lombok.Builder;
 
@@ -30,8 +31,8 @@ public record PlaybackDecisionDto(
       String videoRange,
       boolean dolbyVision) {}
 
-  /** {@code bitrate} is null when the probe found none. */
-  public record AudioFormatDto(String codec, int channels, Integer bitrate) {}
+  /** {@code channels} and {@code bitrate} are null when the probe found none. */
+  public record AudioFormatDto(String codec, Integer channels, Integer bitrate) {}
 
   public static PlaybackDecisionDto from(PlaybackDecision decision) {
     var video = decision.video();
@@ -66,7 +67,8 @@ public record PlaybackDecisionDto(
   }
 
   private static AudioFormatDto audio(AudioFormat format) {
-    return new AudioFormatDto(format.codec(), format.channels(), graphqlInt(format.bitrate()));
+    return new AudioFormatDto(
+        format.codec(), nullable(format.channels()), graphqlInt(format.bitrate()));
   }
 
   private static Double nullable(OptionalDouble value) {
@@ -75,6 +77,14 @@ public record PlaybackDecisionDto(
     }
 
     return value.getAsDouble();
+  }
+
+  private static Integer nullable(OptionalInt value) {
+    if (value.isEmpty()) {
+      return null;
+    }
+
+    return value.getAsInt();
   }
 
   // GraphQL Int holds 32 bits, so a bitrate beyond it saturates instead of failing the field.

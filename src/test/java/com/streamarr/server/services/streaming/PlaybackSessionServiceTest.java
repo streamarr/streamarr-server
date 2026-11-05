@@ -150,7 +150,7 @@ class PlaybackSessionServiceTest {
                         assertThat(audio.source().codec()).isEqualTo("aac");
                         assertThat(audio.output())
                             .extracting(AudioFormat::codec, AudioFormat::channels)
-                            .containsExactly("aac", 2);
+                            .containsExactly("aac", OptionalInt.of(2));
                       });
             });
   }
@@ -245,7 +245,7 @@ class PlaybackSessionServiceTest {
         .hasValueSatisfying(
             audio -> {
               assertThat(audio.delivery()).isEqualTo(PlaybackDelivery.DIRECT_PLAY);
-              assertThat(audio.source().channels()).isEqualTo(6);
+              assertThat(audio.source().channels()).hasValue(6);
               assertThat(audio.output()).isEqualTo(audio.source());
             });
   }
