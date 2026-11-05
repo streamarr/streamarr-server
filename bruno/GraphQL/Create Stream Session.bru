@@ -36,6 +36,11 @@ body:graphql {
               ... on DirectPlayStreamSession {
                 sourceContainer
                 audioTrackPosition
+                audioTracks {
+                  position
+                  language
+                  title
+                }
               }
             }
           }

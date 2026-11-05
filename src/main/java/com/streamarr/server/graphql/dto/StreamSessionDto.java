@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.dto;
 
+import java.util.List;
 import lombok.Builder;
 
 /** A stream session as the schema's {@code StreamSession} interface spells it. */
@@ -27,6 +28,11 @@ public sealed interface StreamSessionDto {
       String sourceContainer,
       String videoRange,
       Double startPositionSeconds,
-      Integer audioTrackPosition)
+      Integer audioTrackPosition,
+      List<AudioTrack> audioTracks)
       implements StreamSessionDto {}
+
+  /** {@code language} and {@code title} are null when the file gives none. */
+  @Builder
+  record AudioTrack(int position, String language, String title) {}
 }

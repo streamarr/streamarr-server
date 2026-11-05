@@ -517,6 +517,71 @@ class StreamingResolverTest {
         .isEqualTo(expected);
   }
 
+  // ADR 0045: a player that cannot list a file's audio tracks offers the ones the server lists, and
+  // names the chosen one by its position in stream order. The session's probe puts the session's
+  // track first, as a stream session for the third track holds it.
+  @Test
+  @DisplayName("Should list the file's audio tracks in stream order when the session direct-plays")
+  void shouldListTheFilesAudioTracksInStreamOrderWhenTheSessionDirectPlays() {
+    var session = buildDirectPlaySession(UUID.randomUUID());
+    var english =
+        audioStreamBuilder("aac")
+            .index(1)
+            .language(Optional.of("eng"))
+            .title(Optional.of("Stereo"))
+            .isDefault(true)
+            .build();
+    var french = audioStreamBuilder("ac3").index(2).language(Optional.of("fre")).build();
+    var untagged = audioStreamBuilder("aac").index(4).build();
+    STUB_SERVICE.setNextResult(
+        sessionBuilderLike(session)
+            .delivery(StreamDelivery.DIRECT_PLAY)
+            .sourceContainer(SourceContainer.MATROSKA)
+            .mediaProbe(
+                session.getMediaProbe().toBuilder()
+                    .streams(List.of(untagged, english, french))
+                    .build())
+            .directPlayAudioTrackPosition(OptionalInt.of(2))
+            .build());
+
+    var context =
+        dgsQueryExecutor.executeAndGetDocumentContext(
+            """
+            mutation {
+              createPlaybackSession(
+                input: {mediaFileId: "%s", options: {quality: ORIGINAL}, capabilities: %s}
+              ) {
+                playbackSession {
+                  currentFormatAttempt {
+                    ... on ReadyPlaybackFormatAttempt {
+                      streamSession {
+                        ... on DirectPlayStreamSession {
+                          audioTracks { position language title }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """
+                .formatted(UUID.randomUUID(), CAPABILITIES));
+
+    List<Map<String, Object>> tracks =
+        context.read(CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.audioTracks");
+    assertThat(tracks)
+        .containsExactly(
+            audioTrack(0, "eng", "Stereo"), audioTrack(1, "fre", null), audioTrack(2, null, null));
+  }
+
+  private static Map<String, Object> audioTrack(int position, String language, String title) {
+    var track = new HashMap<String, Object>();
+    track.put("position", position);
+    track.put("language", language);
+    track.put("title", title);
+    return track;
+  }
+
   static Stream<Arguments> directPlayAudioTrackPositions() {
     return Stream.of(
         Arguments.of("the second audio track", OptionalInt.of(1), 1),
