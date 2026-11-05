@@ -7660,6 +7660,7 @@ class HlsStreamingServiceTest {
     for (var encode = 0; encode < 2; encode++) {
       accepted(service.createSession(localNetworkEncode()));
     }
+
     service.destroySession(copy.getSessionId());
 
     assertThat(listedVariants(session)).first().isEqualTo("480p/stream.m3u8?t=t");
@@ -7683,6 +7684,7 @@ class HlsStreamingServiceTest {
     for (var encode = 0; encode < 2; encode++) {
       accepted(service.createSession(localNetworkEncode()));
     }
+
     setInternetUploadMegabitsPerSecond(8);
 
     assertThat(producerLifecycle.freeConfiguredTranscodeSlots()).isZero();
