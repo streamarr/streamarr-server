@@ -11,6 +11,14 @@ input ClientCapabilityDeclarationInput {
     video: [VideoCapabilityEntryInput!]!
     "The audio capability entries. The declaration needs at least one, including an AAC entry that applies to HLS."
     audio: [AudioCapabilityEntryInput!]!
+    """
+    Whether the player selects an audio track inside a file that it direct-plays, as AVPlayer and Safari's
+    player do (ADR 0045). A player that cannot, such as Chromium's, starts on the file's default audio track,
+    or on its first audio track when none is marked default. It direct-plays a file only when the stream
+    session's audio track is the file's first audio track and the player starts on it, and otherwise plays
+    over HLS from the start.
+    """
+    selectsAudioTrackInDirectPlay: Boolean!
 }
 
 """
