@@ -84,6 +84,9 @@ class HdrStreamCopySmokeTest {
   private static final int RPU_TYPE = 62;
   private static final int ENHANCEMENT_LAYER_TYPE = 63;
   private static final int DOLBY_VISION_LEVEL = 1;
+  // libx265 writes one slice for each 128x72 picture.
+  private static final int SOURCE_FRAMES =
+      SyntheticHdrSource.SOURCE_SECONDS * SyntheticHdrSource.FRAME_RATE;
   private static final Duration DELIVERY_LIMIT = Duration.ofSeconds(60);
 
   private FakeMediaFileRepository mediaFileRepository;
@@ -261,10 +264,19 @@ class HdrStreamCopySmokeTest {
     assertThat(attribute(streamInf, "SUPPLEMENTAL-CODECS"))
         .contains(supplementalCodecsOf(records.getFirst()));
     assertThat(attribute(streamInf, "VIDEO-RANGE")).contains(copy.base().name());
-    assertThat(mediaNalUnitTypes(session, 0))
+    var delivered =
+        IntStream.range(0, mediaSegmentCount(session))
+            .boxed()
+            .flatMap(segment -> mediaNalUnitTypes(session, segment).stream())
+            .toList();
+    assertThat(delivered)
+        .as("a picture for each source frame")
+        .filteredOn(type -> type < FIRST_NON_PICTURE_TYPE)
+        .hasSize(SOURCE_FRAMES);
+    assertThat(delivered)
         .as("one RPU behind each picture, as the source holds them")
         .filteredOn(type -> type == RPU_TYPE)
-        .hasSize(pictureCount(mediaNalUnitTypes(session, 0)));
+        .hasSize(SOURCE_FRAMES);
   }
 
   static Stream<DolbyVisionCopy> dolbyVisionCopies() {
@@ -454,10 +466,6 @@ class HdrStreamCopySmokeTest {
     return Fmp4Fixture.nalUnitTypes(
         segmentStore.readSegment(sessionId, SegmentNames.INITIALIZATION_SEGMENT_NAME),
         segmentStore.readSegment(sessionId, SegmentNames.mediaSegmentName(segment)));
-  }
-
-  private static int pictureCount(List<Integer> nalUnitTypes) {
-    return (int) nalUnitTypes.stream().filter(type -> type < FIRST_NON_PICTURE_TYPE).count();
   }
 
   private int mediaSegmentCount(StreamSession session) {

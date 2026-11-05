@@ -51,6 +51,7 @@ public record SyntheticHdrSource(
 
   public static final int SOURCE_SECONDS = 12;
   public static final int KEYFRAME_SECONDS = 2;
+  public static final int FRAME_RATE = 24;
 
   /** The BT.2020 primaries and D65 white point of a 1,000 cd/m² mastering display. */
   public static final MasteringDisplayColorVolume MASTERING_DISPLAY =
@@ -65,7 +66,6 @@ public record SyntheticHdrSource(
 
   public static final ContentLightLevel CONTENT_LIGHT_LEVEL = new ContentLightLevel(1000, 400);
 
-  private static final int FRAME_RATE = 24;
   private static final int FIRST_NON_PICTURE_TYPE = 32;
   // ITU-T H.265 table 7-1: the IRAP pictures, which start a keyframe's sample.
   private static final int FIRST_KEYFRAME_TYPE = 16;
