@@ -164,6 +164,8 @@ enum DecisionReason {
     VIDEO_CODEC_STRING_UNKNOWN
     "The probe could not name the source's codec profile."
     VIDEO_CODEC_PROFILE_UNKNOWN
+    "The probe reported no codec name for the source's video."
+    VIDEO_CODEC_UNKNOWN
     "The probe stored no video facts for a copy."
     VIDEO_SOURCE_NOT_COPYABLE
     "The source's keyframe positions are not known yet."
