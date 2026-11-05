@@ -224,6 +224,32 @@ class PlaybackSessionServiceTest {
             });
   }
 
+  // A report can still reach a format attempt after its replacement is reserved and before the
+  // retired stream session is destroyed.
+  @Test
+  @DisplayName(
+      "Should start a later replacement without the start position when a retired format attempt"
+          + " reports a move")
+  void shouldStartALaterReplacementWithoutTheStartPositionWhenARetiredFormatAttemptReportsAMove() {
+    var work = new ConcurrentLinkedQueue<Runnable>();
+    var playback = serviceRunning(work::add).maximumFormatAttempts(3).build();
+    var command = startCommand().startPosition(Optional.of(Duration.ofMillis(600_500))).build();
+    var first = accepted(playback.start(command));
+    var second = playback.reportFormatFailure(report(first, command).build()).orElseThrow();
+    readySession(first).updatePlaybackState(610, PlaybackState.PLAYING);
+    drain(work);
+
+    playback.reportFormatFailure(report(second, command).build());
+    drain(work);
+
+    assertThat(streams.createdCommands)
+        .extracting(CreateStreamSessionCommand::startPosition)
+        .containsExactly(
+            Optional.of(Duration.ofMillis(600_500)),
+            Optional.of(Duration.ofMillis(600_500)),
+            Optional.empty());
+  }
+
   // A seek back to the start second does not undo the earlier move.
   @Test
   @DisplayName(

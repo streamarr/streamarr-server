@@ -15,6 +15,7 @@ import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEve
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -84,6 +85,8 @@ public class PlaybackSessionService implements AutoCloseable {
     @Builder.Default private int formatAttemptCount = 1;
     private final Set<String> excludedEncodeCodecFamilies = new HashSet<>();
     private final Set<UUID> streamIds = new HashSet<>();
+    // A retired format attempt can still take a timeline report until its stream session ends.
+    private final List<StreamSession> readyAttempts = new ArrayList<>();
   }
 
   @Builder
@@ -387,11 +390,11 @@ public class PlaybackSessionService implements AutoCloseable {
     };
   }
 
-  // Once the player reports that playback moved from the start position, the client seeks the
-  // replacement itself, so the replacement starts at the beginning of the media.
+  // Once the player reports that playback moved from the start position in any format attempt, the
+  // client seeks the replacement itself, so the replacement starts at the beginning of the media.
   private static void forgetTheStartPositionOncePlaybackMoved(PlaybackSession playback) {
-    if (playback.current instanceof PlaybackFormatAttempt.Ready(var session)
-        && session.hasPlaybackMovedFromTheStartPosition()) {
+    if (playback.readyAttempts.stream()
+        .anyMatch(StreamSession::hasPlaybackMovedFromTheStartPosition)) {
       playback.startPosition = Optional.empty();
     }
   }
@@ -669,6 +672,7 @@ public class PlaybackSessionService implements AutoCloseable {
   private static void adopt(
       PlaybackSession playback, StreamSession session, PlayingChoice choiceWhenEncoding) {
     playback.current = new PlaybackFormatAttempt.Ready(session);
+    playback.readyAttempts.add(session);
     // A direct-play stream session sends the source as it is and holds no transcode decision.
     if (session.getDelivery() == StreamDelivery.HLS
         && !session.getTranscodeDecision().transcodeMode().copiesVideo()) {
