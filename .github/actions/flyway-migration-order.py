@@ -15,6 +15,10 @@ MIGRATION_DIRECTORIES = ("src/main/resources/db/migration", "src/main/java/db/mi
 MIGRATION_NAME = re.compile(r"V(?P<version>\d{1,18}(?:[._]\d{1,18})*)__[^/]*\.(?:sql|java)", re.ASCII)
 
 
+class MissingBaseBranch(Exception):
+    pass
+
+
 def git(*arguments):
     return subprocess.run(["git", *arguments], capture_output=True, text=True, check=True).stdout
 
@@ -23,13 +27,21 @@ def paths(output):
     return [path for path in output.split("\0") if path]
 
 
-def fetch(branch):
+def fetch(requested):
+    """Fetch the base branch and return its name as origin lists it, with its local ref."""
+    heads = git("ls-remote", "--heads", "origin").splitlines()
+    # Only a name origin lists reaches git's command line, never the raw argument.
+    listed = (head.split("\t", 1)[1].removeprefix("refs/heads/") for head in heads)
+    branch = next((name for name in listed if name == requested), None)
+    if branch is None:
+        raise MissingBaseBranch(requested)
+
     command = ["fetch", "--quiet", "--no-tags"]
     # The merge base is unreachable from a shallow checkout.
     if git("rev-parse", "--is-shallow-repository").strip() == "true":
         command.append("--unshallow")
     git(*command, "origin", f"+refs/heads/{branch}:refs/remotes/origin/{branch}")
-    return f"refs/remotes/origin/{branch}"
+    return branch, f"refs/remotes/origin/{branch}"
 
 
 def is_migration(path):
@@ -80,8 +92,7 @@ def main(arguments):
     if len(arguments) != 1:
         print(f"Usage: {sys.argv[0]} <base-branch>", file=sys.stderr)
         return 2
-    branch = arguments[0]
-    base = fetch(branch)
+    branch, base = fetch(arguments[0])
     merge_base = git("merge-base", base, "HEAD").strip()
     listing = git("ls-tree", "-r", "-z", "--name-only", base, "--", *MIGRATION_DIRECTORIES)
     existing = {path: version(path) for path in paths(listing) if is_migration(path)}
@@ -130,6 +141,10 @@ def main(arguments):
 if __name__ == "__main__":
     try:
         sys.exit(main(sys.argv[1:]))
+    except MissingBaseBranch as failure:
+        print(f"::error title=Flyway migration order check::origin has no branch named "
+              f"{escape(str(failure))}")
+        sys.exit(2)
     except subprocess.CalledProcessError as failure:
         print(f"::error title=Flyway migration order check::git {' '.join(failure.cmd[1:])} "
               f"failed: {escape(failure.stderr.strip())}")

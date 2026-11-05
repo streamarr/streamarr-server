@@ -305,14 +305,23 @@ class FlywayMigrationOrderTests(unittest.TestCase):
         self.assertRejected(result, f"{SQL}/V116__Store_Language_Preferences.sql", "V118")
 
 
-    def test_shouldFailWithAnAnnotationWhenTheBaseBranchCannotBeFetched(self):
+    def test_shouldFailWithAnAnnotationWhenOriginHasNoSuchBaseBranch(self):
         self.start_pull_request()
         self.commit(f"{SQL}/V119__Store_Language_Preferences.sql")
 
-        result = self.check(arguments=("release",))
+        result = self.check(arguments=("--upload-pack=touch injected",))
 
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
-        self.assertIn("::error title=Flyway migration order check::git fetch", result.stdout)
+        self.assertIn("::error title=Flyway migration order check::origin has no branch named "
+            "--upload-pack=touch injected", result.stdout)
+
+    def test_shouldFailWithAnAnnotationWhenGitFails(self):
+        self.git(self.checkout, "remote", "set-url", "origin", str(self.checkout / "missing.git"))
+
+        result = self.check()
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("::error title=Flyway migration order check::git ls-remote", result.stdout)
 
     def test_shouldFailWhenTheBaseBranchIsNotNamed(self):
         result = self.check(arguments=())
