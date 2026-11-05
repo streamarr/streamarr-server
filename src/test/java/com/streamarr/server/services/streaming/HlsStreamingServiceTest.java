@@ -2586,7 +2586,7 @@ class HlsStreamingServiceTest {
       "Should encode and deinterlace an interlaced H.264 source when the client plays H.264 in any quality")
   void shouldEncodeAndDeinterlaceAnInterlacedH264SourceWhenTheClientPlaysH264InAnyQuality(
       VideoQuality quality) {
-    probeResults.setDefaultOutcome(interlacedOutcome(FieldOrder.TT));
+    probeResults.setDefaultOutcome(outcomeWithFieldOrder(FieldOrder.TT));
 
     var session = accepted(service.createSession(interlacedSourceCommand(quality)));
     var started = transcodeExecutor.getStartedRequests().getFirst();
@@ -2599,6 +2599,41 @@ class HlsStreamingServiceTest {
         .extracting(QualityVariant::frameRate)
         .containsOnly(new Fraction(60_000, 1_001));
     assertThat(started.framerate()).isEqualTo(OptionalDouble.of(60_000.0 / 1_001));
+  }
+
+  // Deinterlaced one frame per field, as item 1.15 of the HLS Authoring Specification for Apple
+  // Devices recommends, a 30i source runs at 60000/1001. A progressive 29.97 source encoded at 720p
+  // keeps its stored rate. RFC 8216 section 4.3.4.2 gives FRAME-RATE to three decimals.
+  @ParameterizedTest(name = "{0} source in {1} says FRAME-RATE={2}")
+  @CsvSource({
+    "TT, AUTO, 59.940",
+    "TT, HIGH_720P, 59.940",
+    "TT, ORIGINAL, 59.940",
+    "BB, AUTO, 59.940",
+    "BB, HIGH_720P, 59.940",
+    "BB, ORIGINAL, 59.940",
+    "PROGRESSIVE, HIGH_720P, 29.970"
+  })
+  @DisplayName(
+      "Should give every encoded variant the encode's output frame rate as FRAME-RATE when the"
+          + " source is 30i or progressive 29.97")
+  void
+      shouldGiveEveryEncodedVariantTheEncodesOutputFrameRateAsFrameRateWhenTheSourceIs30iOrProgressive2997(
+          FieldOrder fieldOrder, VideoQuality quality, String frameRate) {
+    probeResults.setDefaultOutcome(outcomeWithFieldOrder(fieldOrder));
+
+    var session = accepted(service.createSession(interlacedSourceCommand(quality)));
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
+    assertThat(playlist.lines().filter(line -> line.startsWith("#EXT-X-STREAM-INF:")))
+        .hasSize(session.getVariants().size())
+        .isNotEmpty()
+        .allSatisfy(
+            line ->
+                assertThat(line)
+                    .containsPattern(",FRAME-RATE=" + Pattern.quote(frameRate) + "(,|$)"));
   }
 
   // ADR 0052: Original encodes a source that it cannot copy, and that encode plays Auto's ladder
@@ -2649,7 +2684,7 @@ class HlsStreamingServiceTest {
   void
       shouldReportMissingCapacityInsteadOfNoEligibleFormatWhenAutoOrOriginalMustEncodeAnInterlacedSourceAndEveryEncoderIsBusy(
           VideoQuality quality) {
-    probeResults.setDefaultOutcome(interlacedOutcome(FieldOrder.TT));
+    probeResults.setDefaultOutcome(outcomeWithFieldOrder(FieldOrder.TT));
     transcodeExecutor.setEncodeSlots(Map.of("h264", 0));
 
     var outcome = service.createSession(interlacedSourceCommand(quality));
@@ -2690,7 +2725,7 @@ class HlsStreamingServiceTest {
       "Should encode an interlaced source in the codec whose entry keeps the field rate when another"
           + " entry caps it")
   void shouldEncodeAnInterlacedSourceInTheCodecWhoseEntryKeepsTheFieldRateWhenAnotherEntryCapsIt() {
-    probeResults.setDefaultOutcome(interlacedOutcome(FieldOrder.TT));
+    probeResults.setDefaultOutcome(outcomeWithFieldOrder(FieldOrder.TT));
     transcodeExecutor.setHardwareEncodableVideoCodecFamilies(Set.of("av1"));
     var declaration =
         defaultDeclarationBuilder()
@@ -4519,7 +4554,7 @@ class HlsStreamingServiceTest {
   }
 
   // A 29.97 fps H.264 outcome that meets the copy rule apart from its field order.
-  private static ProbeOutcome.Success interlacedOutcome(FieldOrder fieldOrder) {
+  private static ProbeOutcome.Success outcomeWithFieldOrder(FieldOrder fieldOrder) {
     return outcomeWithFrameRateRule(
         VideoPlaybackFactsFixture.interlacedRateRule(new Fraction(30_000, 1_001), fieldOrder));
   }
