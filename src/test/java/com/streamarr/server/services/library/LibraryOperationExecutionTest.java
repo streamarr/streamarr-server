@@ -123,6 +123,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.CannotGetJdbcConnectionException;
@@ -602,6 +603,39 @@ class LibraryOperationExecutionTest {
     var mediaFile = fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
 
     assertThat(mediaFile).isEmpty();
+  }
+
+  @ParameterizedTest(name = "Should create a media file when scanning an MPEG-TS file named {0}")
+  @ValueSource(
+      strings = {
+        "About Time (2013).ts",
+        "About Time (2013).mts",
+        "About Time (2013).m2t",
+        "About Time (2013).MTS"
+      })
+  @DisplayName("Should create a media file when scanning an MPEG-TS file")
+  void shouldCreateAMediaFileWhenScanningAnMpegTsFile(String filename) throws IOException {
+    var moviePath = createMovieFile(createRootLibraryDirectory(), "About Time", filename);
+
+    operations.scanLibrary(savedLibraryId);
+
+    assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath)))
+        .isPresent();
+  }
+
+  @ParameterizedTest(name = "Should skip creating a media file when scanning a file named {0}")
+  @ValueSource(strings = {"About Time (2013).ts.part", "About Time (2013).tsv"})
+  @DisplayName(
+      "Should skip creating a media file when a file's extension only resembles a transport"
+          + " stream's")
+  void shouldSkipCreatingAMediaFileWhenAFileExtensionOnlyResemblesATransportStreams(String filename)
+      throws IOException {
+    var path = createMovieFile(createRootLibraryDirectory(), "About Time", filename);
+
+    operations.scanLibrary(savedLibraryId);
+
+    assertThat(fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path)))
+        .isEmpty();
   }
 
   @Test
