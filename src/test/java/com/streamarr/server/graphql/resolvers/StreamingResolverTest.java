@@ -692,9 +692,13 @@ class StreamingResolverTest {
         .isEqualTo(2);
   }
 
-  @Test
+  // A replacement can meet a start position that the media no longer holds once the file is
+  // probed again shorter.
+  @ParameterizedTest
+  @MethodSource("replacementRejections")
   @DisplayName("Should expose a typed creation rejection when the replacement cannot start")
-  void shouldExposeATypedCreationRejectionWhenTheReplacementCannotStart() {
+  void shouldExposeATypedCreationRejectionWhenTheReplacementCannotStart(
+      CreateStreamSessionRejection rejection, String errorType) {
     STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
     var created = startPlayback(VideoQuality.AUTO);
     var playbackId = created.read(CREATED_PLAYBACK + ".id", String.class);
@@ -702,7 +706,7 @@ class StreamingResolverTest {
         playbackId,
         created.read(CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.id", String.class),
         "DECODE_ERROR");
-    STUB_SERVICE.setRejection(new CreateStreamSessionRejection.ProbeNotReady());
+    STUB_SERVICE.setRejection(rejection);
 
     REPLACEMENT_TASKS.remove().run();
 
@@ -710,7 +714,16 @@ class StreamingResolverTest {
             playbackStatus(playbackId)
                 .read(
                     "data.playbackSession.currentFormatAttempt.error['__typename']", String.class))
-        .isEqualTo("MediaFileProbeNotReadyError");
+        .isEqualTo(errorType);
+  }
+
+  static Stream<Arguments> replacementRejections() {
+    return Stream.of(
+        Arguments.of(
+            new CreateStreamSessionRejection.ProbeNotReady(), "MediaFileProbeNotReadyError"),
+        Arguments.of(
+            new CreateStreamSessionRejection.StartPositionOutOfRange(),
+            "StartPositionOutOfRangeError"));
   }
 
   @Test

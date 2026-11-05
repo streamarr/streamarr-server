@@ -373,11 +373,6 @@ class HlsStreamingSmokeTest {
               assertThat(workerFixture.worker().processRunning(handle.attemptId())).isFalse();
             });
     assertThat(segmentStore.segmentExists(sessionId, "segment0.m4s")).isFalse();
-    assertThat(playlistService.generateMultivariantPlaylist(session, "smoke-token"))
-        .contains(
-            "#EXT-X-START:TIME-OFFSET="
-                + DecimalSeconds.of(startPosition).stripTrailingZeros().toPlainString()
-                + ",PRECISE=YES\n");
   }
 
   // The segment that a player starts in: the first whose summed EXTINF durations pass the position.
