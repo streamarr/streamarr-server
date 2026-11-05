@@ -5,6 +5,11 @@ package com.streamarr.server.domain.streaming;
  * directly, why the server encodes the video or the audio, or what a copy leaves out. The stream
  * decision names each reason as it decides, so the reasons always agree with the output
  * (streamarr/streamarr-server#751).
+ *
+ * <p>When no entry accepts a copy, "the closest entry" is the video capability entry for HLS of the
+ * source's codec family that refuses the fewest properties. When an entry accepts a copy only after
+ * the copy leaves out Dolby Vision or HDR10+, it is that accepting entry, and the reasons name what
+ * it refused in the copies that kept more.
  */
 public enum DecisionReason {
   /** No video capability entry for HLS names the source's codec family. */

@@ -110,8 +110,10 @@ type AudioFormat {
 """
 Why a format attempt's output differs from its source: why the source file does not play directly, why the
 server encodes the video or the audio, or what a copy leaves out. The stream decision names each reason as it
-decides, so the reasons agree with the output. "The closest entry" is the client's video capability entry for HLS of the
-source's codec family that refuses the fewest properties.
+decides, so the reasons agree with the output. When no entry accepts a copy, "the closest entry" is the client's video
+capability entry for HLS of the source's codec family that refuses the fewest properties. When an entry accepts a copy
+only after the copy leaves out Dolby Vision or HDR10+, "the closest entry" is that accepting entry, and the reasons name
+what it refused in the copies that kept more.
 """
 enum DecisionReason {
     "No video capability entry for HLS names the source's codec family."
