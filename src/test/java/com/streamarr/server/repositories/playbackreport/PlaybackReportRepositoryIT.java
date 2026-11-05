@@ -41,6 +41,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
+import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -269,8 +270,8 @@ class PlaybackReportRepositoryIT extends AbstractIntegrationTest {
             Optional.of(
                 new TrackDelivery<>(
                     PlaybackDelivery.ENCODE,
-                    new AudioFormat("truehd", 8, OptionalLong.empty()),
-                    new AudioFormat("eac3", 6, OptionalLong.of(640_000)))))
+                    new AudioFormat("truehd", OptionalInt.of(8), OptionalLong.empty()),
+                    new AudioFormat("eac3", OptionalInt.of(6), OptionalLong.of(640_000)))))
         .reasons(List.of(DecisionReason.AUDIO_CODEC_NOT_DECLARED))
         .build();
   }

@@ -334,10 +334,10 @@ public class PlaybackReportRepositoryImpl implements PlaybackReportRepository {
   private static void setAudio(PlaybackReportDecisionRecord row, TrackDelivery<AudioFormat> audio) {
     row.setAudioDelivery(audio.delivery().name());
     row.setAudioSourceCodec(audio.source().codec());
-    row.setAudioSourceChannels(audio.source().channels());
+    row.setAudioSourceChannels(boxed(audio.source().channels()));
     row.setAudioSourceBitrate(boxed(audio.source().bitrate()));
     row.setAudioOutputCodec(audio.output().codec());
-    row.setAudioOutputChannels(audio.output().channels());
+    row.setAudioOutputChannels(boxed(audio.output().channels()));
     row.setAudioOutputBitrate(boxed(audio.output().bitrate()));
   }
 
@@ -378,12 +378,12 @@ public class PlaybackReportRepositoryImpl implements PlaybackReportRepository {
         PlaybackDelivery.valueOf(delivery),
         AudioFormat.builder()
             .codec(row.getAudioSourceCodec())
-            .channels(row.getAudioSourceChannels())
+            .channels(optionalInt(row.getAudioSourceChannels()))
             .bitrate(optionalLong(row.getAudioSourceBitrate()))
             .build(),
         AudioFormat.builder()
             .codec(row.getAudioOutputCodec())
-            .channels(row.getAudioOutputChannels())
+            .channels(optionalInt(row.getAudioOutputChannels()))
             .bitrate(optionalLong(row.getAudioOutputBitrate()))
             .build());
   }
