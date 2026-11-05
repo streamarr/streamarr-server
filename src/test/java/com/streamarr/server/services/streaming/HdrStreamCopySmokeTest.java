@@ -40,6 +40,7 @@ import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.Fmp4Fixture.SeiMessage;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.SyntheticHdrSource;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
@@ -144,6 +145,7 @@ class HdrStreamCopySmokeTest {
     probeRepository = new FakeMediaFileContainerInfoRepository();
     streamingService =
         HlsStreamingService.builder()
+            .uploadBudget(UploadBudgetFixture.OFF)
             .meterRegistry(new SimpleMeterRegistry())
             .mediaFileRepository(mediaFileRepository)
             .transcodeExecutor(transcodeExecutor)
@@ -159,7 +161,7 @@ class HdrStreamCopySmokeTest {
             .deliveryCoordinator(coordinator)
             .languagePreferences(noLanguagePreferences())
             .build();
-    playlistService = new HlsPlaylistService(properties);
+    playlistService = new HlsPlaylistService(properties, UploadBudgetFixture.OFF);
   }
 
   @AfterEach

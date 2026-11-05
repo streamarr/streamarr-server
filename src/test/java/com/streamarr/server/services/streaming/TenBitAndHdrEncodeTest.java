@@ -29,6 +29,7 @@ import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.MasteringDisplayColorVolume;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.NetworkRoute;
 import com.streamarr.server.domain.streaming.PlannedVideoOutput;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
@@ -51,6 +52,7 @@ import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.services.streaming.events.RequestedVariantHardwareEncoderFailedEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -659,7 +661,7 @@ class TenBitAndHdrEncodeTest {
   }
 
   private static String multivariantPlaylist(PlaybackSessionSnapshot snapshot) {
-    return new HlsPlaylistService(PROPERTIES)
+    return new HlsPlaylistService(PROPERTIES, UploadBudgetFixture.OFF)
         .generateMultivariantPlaylist(sessionOf(snapshot), "t");
   }
 
@@ -682,6 +684,7 @@ class TenBitAndHdrEncodeTest {
         .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
         .options(options)
         .capabilityDeclaration(client)
+        .networkRoute(NetworkRoute.INTERNET)
         .build();
   }
 
@@ -710,6 +713,7 @@ class TenBitAndHdrEncodeTest {
         .runtimeRegistry(registry)
         .producerLifecycle(rig.lifecycle())
         .deliveryCoordinator(rig.coordinator())
+        .uploadBudget(UploadBudgetFixture.OFF)
         .meterRegistry(meters)
         .build();
   }

@@ -71,6 +71,7 @@ import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.NetworkRoute;
 import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.PlannedVideoOutput;
 import com.streamarr.server.domain.streaming.Presence;
@@ -119,14 +120,17 @@ import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.HardwareEncodedFamiliesAndExpectedEncode;
 import com.streamarr.server.fixtures.MediaEntityFixture;
 import com.streamarr.server.fixtures.ProbeFixture;
+import com.streamarr.server.fixtures.ServerSettingsFixture;
 import com.streamarr.server.fixtures.StreamMeasurementFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.language.LanguagePreferenceService;
 import com.streamarr.server.services.language.SetLanguageOverrideCommand;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -189,6 +193,9 @@ class HlsStreamingServiceTest {
   private FakeRuntimeStreamSessionRegistry runtimeRegistry;
   private HlsStreamingService service;
   private SegmentDeliveryCoordinator coordinator;
+  private ProducerLifecycleService producerLifecycle;
+  private ServerSettingsService serverSettings;
+  private ServerUploadBudget uploadBudget;
   private SimpleMeterRegistry meters;
   private PlaybackLanguagePreferences languagePreferences = (profileId, titleId) -> List.of();
   private final MutexFactory<UUID> sessionMutex = new MutexFactory<>();
@@ -646,7 +653,7 @@ class HlsStreamingServiceTest {
 
     var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
     var playlist =
-        new HlsPlaylistService(StreamingProperties.builder().build())
+        new HlsPlaylistService(StreamingProperties.builder().build(), UploadBudgetFixture.OFF)
             .generateMultivariantPlaylist(session, "test-token");
 
     assertThat(transcodeExecutor.getStartedRequests())
@@ -671,7 +678,7 @@ class HlsStreamingServiceTest {
 
     var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
     var playlist =
-        new HlsPlaylistService(StreamingProperties.builder().build())
+        new HlsPlaylistService(StreamingProperties.builder().build(), UploadBudgetFixture.OFF)
             .generateMultivariantPlaylist(session, "test-token");
 
     assertThat(transcodeExecutor.getStartedRequests())
@@ -823,7 +830,8 @@ class HlsStreamingServiceTest {
 
     var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), budget.options());
     var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
+            .generateMultivariantPlaylist(session, "t");
 
     var audioBitrate = session.getTranscodeDecision().audioDecision().bitrate();
     assertThat(transcodeExecutor.getStartedRequests())
@@ -1018,7 +1026,8 @@ class HlsStreamingServiceTest {
 
     var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), expected.options());
     var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
+            .generateMultivariantPlaylist(session, "t");
 
     assertThat(session.getTranscodeDecision().audioDecision().bitrate())
         .isEqualTo(expected.audioBitrate());
@@ -1059,7 +1068,8 @@ class HlsStreamingServiceTest {
 
     var session = createDtsSession(expected.sourceChannels(), options);
     var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
+            .generateMultivariantPlaylist(session, "t");
 
     assertThat(session.getTranscodeDecision().audioDecision().bitrate())
         .isEqualTo(expected.audioBitrate());
@@ -1100,7 +1110,7 @@ class HlsStreamingServiceTest {
     var session = createDtsSession(sourceChannels, options);
     var peakBandwidths =
         peakBandwidthsByVariant(
-            new HlsPlaylistService(streamingProperties())
+            new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
                 .generateMultivariantPlaylist(session, "t"));
 
     assertThat(session.getTranscodeDecision().audioDecision().bitrate()).isEqualTo(audioBitrate);
@@ -1140,7 +1150,8 @@ class HlsStreamingServiceTest {
                     .capabilityDeclaration(declaration)
                     .build()));
     var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
+            .generateMultivariantPlaylist(session, "t");
 
     assertThat(transcodeExecutor.getStartedRequests())
         .singleElement()
@@ -1175,7 +1186,8 @@ class HlsStreamingServiceTest {
 
     var session = createDtsSession(8, options);
     var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
+            .generateMultivariantPlaylist(session, "t");
 
     var audio = session.getTranscodeDecision().audioDecision();
     assertThat(audio)
@@ -1243,7 +1255,8 @@ class HlsStreamingServiceTest {
 
     var session = createDtsSession(8, options);
     var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
+            .generateMultivariantPlaylist(session, "t");
 
     assertThat(session.getTranscodeDecision().audioDecision())
         .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
@@ -1284,7 +1297,8 @@ class HlsStreamingServiceTest {
 
     var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
     var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
+            .generateMultivariantPlaylist(session, "t");
 
     assertThat(session.getTranscodeDecision().audioDecision().bitrate()).isEqualTo(96_000L);
     assertThat(transcodeExecutor.getStartedRequests())
@@ -1353,7 +1367,8 @@ class HlsStreamingServiceTest {
 
     var session = createDtsSession(8, options);
     var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
+            .generateMultivariantPlaylist(session, "t");
 
     assertThat(session.getTranscodeDecision().audioDecision())
         .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
@@ -1887,7 +1902,8 @@ class HlsStreamingServiceTest {
           VideoQuality quality) {
     var session = createCopySessionWithSurroundOpus(quality, OptionalLong.of(4_500_000L));
     var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
+            .generateMultivariantPlaylist(session, "t");
 
     assertThat(session.getTranscodeDecision().transcodeMode())
         .isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
@@ -1909,7 +1925,8 @@ class HlsStreamingServiceTest {
           VideoQuality quality) {
     var session = createCopySessionWithSurroundOpus(quality, OptionalLong.empty());
     var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
+            .generateMultivariantPlaylist(session, "t");
 
     assertThat(session.getTranscodeDecision().transcodeMode())
         .isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
@@ -1950,7 +1967,8 @@ class HlsStreamingServiceTest {
                     .capabilityDeclaration(declaration)
                     .build()));
     var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
+            .generateMultivariantPlaylist(session, "t");
 
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(session.getTranscodeDecision().audioDecision().bitrate()).isEqualTo(128_000L);
@@ -2011,7 +2029,7 @@ class HlsStreamingServiceTest {
         .extracting(AudioDecision::codec, AudioDecision::channels, AudioDecision::bitrate)
         .containsExactly("eac3", 6, 768_000L);
     assertThat(
-            new HlsPlaylistService(streamingProperties())
+            new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
                 .generateMultivariantPlaylist(session, "t"))
         .contains("AVERAGE-BANDWIDTH=3775286,");
   }
@@ -2104,7 +2122,8 @@ class HlsStreamingServiceTest {
   private void assertDeliversTheSessionsAudioWithinTheMaximumBitrate(
       StreamSession session, int maxBitrate) {
     var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
+            .generateMultivariantPlaylist(session, "t");
 
     assertThat(transcodeExecutor.getStartedRequests())
         .isNotEmpty()
@@ -2249,7 +2268,8 @@ class HlsStreamingServiceTest {
         createCopySessionWithCopiedStereoAac(
             StreamingOptions.builder().quality(copied.quality()).build(), copied.audioBitrate());
     var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
+            .generateMultivariantPlaylist(session, "t");
 
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(playlist).contains("BANDWIDTH=6000000,AVERAGE-BANDWIDTH=5000000,");
@@ -2498,7 +2518,7 @@ class HlsStreamingServiceTest {
 
     var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
     var playlist =
-        new HlsPlaylistService(StreamingProperties.builder().build())
+        new HlsPlaylistService(StreamingProperties.builder().build(), UploadBudgetFixture.OFF)
             .generateMultivariantPlaylist(session, "test-token");
 
     assertThat(transcodeExecutor.getStartedRequests())
@@ -2517,7 +2537,7 @@ class HlsStreamingServiceTest {
     probeResults.setDefaultProbe(oddCroppedProbe(ChromaSubsampling.CHROMA_444).build());
     var session = createSession(seedMediaFile().getId(), declarationBuilderFor(HEVC).build());
     var playlist =
-        new HlsPlaylistService(StreamingProperties.builder().build())
+        new HlsPlaylistService(StreamingProperties.builder().build(), UploadBudgetFixture.OFF)
             .generateMultivariantPlaylist(session, "test-token");
 
     assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
@@ -2540,7 +2560,8 @@ class HlsStreamingServiceTest {
 
     var session = accepted(service.createSession(command));
     var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
+            .generateMultivariantPlaylist(session, "t");
 
     assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
     assertThat(playlist.lines().filter(line -> line.startsWith("#EXT-X-STREAM-INF:")))
@@ -2649,7 +2670,8 @@ class HlsStreamingServiceTest {
 
     var session = accepted(service.createSession(interlacedSourceCommand(quality)));
     var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
+            .generateMultivariantPlaylist(session, "t");
 
     assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
     assertThat(playlist.lines().filter(line -> line.startsWith("#EXT-X-STREAM-INF:")))
@@ -3054,7 +3076,7 @@ class HlsStreamingServiceTest {
   }
 
   private static String mediaPlaylist(StreamSession session) {
-    return new HlsPlaylistService(streamingProperties())
+    return new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
         .generateMediaPlaylist(session, StreamSession.defaultVariant(), "token");
   }
 
@@ -3468,6 +3490,7 @@ class HlsStreamingServiceTest {
     authorityGate = new FakePlaybackAuthorityGate();
     runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
     meters = new SimpleMeterRegistry();
+    serverSettings = ServerSettingsFixture.defaultServerSettings();
     service = serviceWith(transcodeExecutor, runtimeRegistry);
   }
 
@@ -3490,9 +3513,14 @@ class HlsStreamingServiceTest {
             .runtimeRegistry(registry)
             .heldRequests(executor.heldSegmentRequests())
             .sessionMutex(sessionMutex)
+            .serverSettings(serverSettings)
             .build();
     coordinator = rig.coordinator();
+    producerLifecycle = rig.lifecycle();
+    uploadBudget =
+        new ServerUploadBudget(serverSettings, registry, rig.lifecycle(), properties, meters);
     return HlsStreamingService.builder()
+        .uploadBudget(uploadBudget)
         .mediaFileRepository(mediaFileRepository)
         .transcodeExecutor(executor)
         .segmentStore(segmentStore)
@@ -4397,7 +4425,7 @@ class HlsStreamingServiceTest {
                   .contains(VideoPlaybackFactsFixture.CONTENT_LIGHT_LEVEL);
             });
     assertThat(
-            new HlsPlaylistService(streamingProperties())
+            new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
                 .generateMultivariantPlaylist(session, "t"))
         .contains(",VIDEO-RANGE=PQ");
   }
@@ -4414,7 +4442,7 @@ class HlsStreamingServiceTest {
 
     assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
     assertThat(
-            new HlsPlaylistService(streamingProperties())
+            new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
                 .generateMultivariantPlaylist(session, "t"))
         .doesNotContain("VIDEO-RANGE");
   }
@@ -4493,7 +4521,7 @@ class HlsStreamingServiceTest {
                   .contains(new DolbyVisionOutput(DolbyVisionProfile.PROFILE_8_1, 6));
             });
     assertThat(
-            new HlsPlaylistService(streamingProperties())
+            new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
                 .generateMultivariantPlaylist(session, "t"))
         .contains("CODECS=\"hvc1.2.4.L150.90,")
         .contains(",VIDEO-RANGE=PQ")
@@ -4711,7 +4739,8 @@ class HlsStreamingServiceTest {
 
     var session = accepted(service.createSession(command));
     var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
+            .generateMultivariantPlaylist(session, "t");
 
     assertThat(transcodeExecutor.getStartedRequests())
         .singleElement()
@@ -4732,7 +4761,8 @@ class HlsStreamingServiceTest {
 
     var session = createSession(seedMediaFile().getId(), hdAt30Declaration());
     var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
+            .generateMultivariantPlaylist(session, "t");
 
     assertThat(session.getVariants())
         .extracting(QualityVariant::frameRate)
@@ -4815,7 +4845,8 @@ class HlsStreamingServiceTest {
 
     var session = accepted(service.createSession(command));
     var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
+            .generateMultivariantPlaylist(session, "t");
 
     assertThat(transcodeExecutor.getStartedRequests())
         .singleElement()
@@ -5144,7 +5175,8 @@ class HlsStreamingServiceTest {
         .mediaFileId(seedMediaFile().getId())
         .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
         .options(defaultOptions())
-        .capabilityDeclaration(defaultDeclarationBuilder().build());
+        .capabilityDeclaration(defaultDeclarationBuilder().build())
+        .networkRoute(NetworkRoute.INTERNET);
   }
 
   private StreamingOptions defaultOptions() {
@@ -5531,7 +5563,7 @@ class HlsStreamingServiceTest {
 
     var session = createSession(file.getId(), declaration);
     var playlist =
-        new HlsPlaylistService(StreamingProperties.builder().build())
+        new HlsPlaylistService(StreamingProperties.builder().build(), UploadBudgetFixture.OFF)
             .generateMultivariantPlaylist(session, "token");
 
     var decision = session.getTranscodeDecision().audioDecision();
@@ -5556,7 +5588,7 @@ class HlsStreamingServiceTest {
     var file = seedMediaFile();
     var session = createSession(file.getId(), defaultDeclarationBuilder().build());
     var playlist =
-        new HlsPlaylistService(StreamingProperties.builder().build())
+        new HlsPlaylistService(StreamingProperties.builder().build(), UploadBudgetFixture.OFF)
             .generateMultivariantPlaylist(session, "token");
 
     var decision = session.getTranscodeDecision().audioDecision();
@@ -5578,7 +5610,7 @@ class HlsStreamingServiceTest {
     var file = seedMediaFile();
     var session = createSession(file.getId(), defaultDeclarationBuilder().build());
     var playlist =
-        new HlsPlaylistService(StreamingProperties.builder().build())
+        new HlsPlaylistService(StreamingProperties.builder().build(), UploadBudgetFixture.OFF)
             .generateMultivariantPlaylist(session, "token");
 
     var decision = session.getTranscodeDecision().audioDecision();
@@ -5628,7 +5660,7 @@ class HlsStreamingServiceTest {
 
     var session = createSession(file.getId(), declaration);
     var playlist =
-        new HlsPlaylistService(StreamingProperties.builder().build())
+        new HlsPlaylistService(StreamingProperties.builder().build(), UploadBudgetFixture.OFF)
             .generateMultivariantPlaylist(session, "token");
 
     assertThat(session.getTranscodeDecision().audioDecision().mode()).isEqualTo(AudioMode.COPY);
@@ -5696,7 +5728,7 @@ class HlsStreamingServiceTest {
 
     var session = createSession(file.getId(), UUID.randomUUID(), options);
     var playlist =
-        new HlsPlaylistService(StreamingProperties.builder().build())
+        new HlsPlaylistService(StreamingProperties.builder().build(), UploadBudgetFixture.OFF)
             .generateMultivariantPlaylist(session, "token");
 
     var decision = session.getTranscodeDecision().audioDecision();
@@ -5750,7 +5782,7 @@ class HlsStreamingServiceTest {
 
     var session = createSession(file.getId(), declaration);
     var playlist =
-        new HlsPlaylistService(StreamingProperties.builder().build())
+        new HlsPlaylistService(StreamingProperties.builder().build(), UploadBudgetFixture.OFF)
             .generateMultivariantPlaylist(session, "token");
 
     assertThat(session.getTranscodeDecision().transcodeMode())
@@ -5775,7 +5807,7 @@ class HlsStreamingServiceTest {
 
     var session = createSession(file.getId(), declaration);
     var playlist =
-        new HlsPlaylistService(StreamingProperties.builder().build())
+        new HlsPlaylistService(StreamingProperties.builder().build(), UploadBudgetFixture.OFF)
             .generateMultivariantPlaylist(session, "token")
             .lines()
             .toList();
@@ -5813,7 +5845,7 @@ class HlsStreamingServiceTest {
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     var playlist =
-        new HlsPlaylistService(streamingProperties())
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
             .generateMediaPlaylist(session, StreamSession.defaultVariant(), "token");
     assertThat(playlist.lines().filter(line -> line.startsWith("#EXTINF:"))).hasSize(expectedCount);
     assertThat(transcodeExecutor.getStartedRequests())
@@ -6548,7 +6580,7 @@ class HlsStreamingServiceTest {
               assertThat(request.seekPosition()).isEqualTo(5_376);
             });
     assertThat(
-            new HlsPlaylistService(streamingProperties())
+            new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
                 .generateMultivariantPlaylist(session, "token"))
         .contains("#EXT-X-START:TIME-OFFSET=5381.5,PRECISE=YES\n");
   }
@@ -6564,7 +6596,7 @@ class HlsStreamingServiceTest {
         .extracting(TranscodeRequest::startSequenceNumber)
         .isEqualTo(0);
     assertThat(
-            new HlsPlaylistService(streamingProperties())
+            new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
                 .generateMultivariantPlaylist(session, "token"))
         .doesNotContain("#EXT-X-START");
   }
@@ -6777,6 +6809,7 @@ class HlsStreamingServiceTest {
             .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
             .options(StreamingOptions.builder().build())
             .capabilityDeclaration(defaultDeclarationBuilder().build())
+            .networkRoute(NetworkRoute.INTERNET)
             .build();
 
     assertThat(service.createSession(command))
@@ -6828,7 +6861,7 @@ class HlsStreamingServiceTest {
 
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     var playlist =
-        new HlsPlaylistService(streamingProperties())
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
             .generateMultivariantPlaylist(session, "t")
             .lines()
             .toList();
@@ -6872,7 +6905,8 @@ class HlsStreamingServiceTest {
 
     var session = accepted(service.createSession(createCommandDeclaring(declaration)));
     var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
+            .generateMultivariantPlaylist(session, "t");
 
     assertThat(session.getVariants())
         .extracting(QualityVariant::label, QualityVariant::width, QualityVariant::height)
@@ -7037,7 +7071,8 @@ class HlsStreamingServiceTest {
 
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
+            .generateMultivariantPlaylist(session, "t");
 
     assertThat(playlist.lines().filter(line -> line.endsWith("/stream.m3u8?t=t")))
         .containsExactly("480p/stream.m3u8?t=t", "720p/stream.m3u8?t=t", "360p/stream.m3u8?t=t");
@@ -7215,6 +7250,806 @@ class HlsStreamingServiceTest {
   }
 
   @Test
+  @DisplayName("Should list every variant when the upload budget is off")
+  void shouldListEveryVariantWhenTheUploadBudgetIsOff() {
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    var session = createEncodeSession();
+
+    assertThat(listedVariants(session))
+        .containsExactly(
+            "480p/stream.m3u8?t=t",
+            "1080p/stream.m3u8?t=t",
+            "720p/stream.m3u8?t=t",
+            "360p/stream.m3u8?t=t");
+  }
+
+  @Test
+  @DisplayName(
+      "Should list only the variants below the first-listed variant that fit when the first-listed"
+          + " variant would take the active streams over the upload budget")
+  void shouldListOnlyTheVariantsThatFitWhenTheFirstListedVariantWouldTakeStreamsOverTheBudget() {
+    // Streams get 80% of 8 Mb/s, 6.4 Mb/s. The active copy counts at its 5 Mb/s average, which
+    // leaves 1.4 Mb/s: the encode's first-listed 480p (1.625 Mb/s average) does not fit, and 360p
+    // (0.925 Mb/s) does.
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(8);
+
+    var session = createEncodeSession();
+
+    assertThat(listedVariants(session)).containsExactly("360p/stream.m3u8?t=t");
+  }
+
+  @Test
+  @DisplayName(
+      "Should leave out every variant that would take the active streams over the upload budget")
+  void shouldLeaveOutEveryVariantThatWouldTakeTheActiveStreamsOverTheUploadBudget() {
+    // 80% of 10 Mb/s leaves 3 Mb/s beside the active copy's 5 Mb/s average: 480p (1.625 Mb/s
+    // average) fits, and 720p (3.125 Mb/s) and 1080p (5.125 Mb/s) do not.
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(10);
+
+    var session = createEncodeSession();
+
+    assertThat(listedVariants(session))
+        .containsExactly("480p/stream.m3u8?t=t", "360p/stream.m3u8?t=t");
+  }
+
+  @Test
+  @DisplayName("Should keep the lowest variant when no variant fits the upload budget")
+  void shouldKeepTheLowestVariantWhenNoVariantFitsTheUploadBudget() {
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(1);
+
+    var session = createEncodeSession();
+
+    assertThat(listedVariants(session)).containsExactly("360p/stream.m3u8?t=t");
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"AUTO", "ORIGINAL"})
+  @DisplayName(
+      "Should list the copy, its only variant, when the copy does not fit the upload budget")
+  void shouldListTheCopyItsOnlyVariantWhenTheCopyDoesNotFitTheUploadBudget(VideoQuality quality) {
+    // 80% of 1 Mb/s leaves nothing beside the active copy's 5 Mb/s average, but a copy lists no
+    // other variant, so it is the lowest variant and stays.
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(1);
+
+    var session =
+        createSession(
+            seedMediaFile().getId(),
+            UUID.randomUUID(),
+            StreamingOptions.builder().quality(quality).build());
+
+    assertThat(listedVariants(session)).containsExactly("stream.m3u8?t=t");
+    assertThat(withheldVariants()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should count the variant that another stream session's player requests against the upload"
+          + " budget")
+  void shouldCountTheVariantThatAnotherStreamSessionsPlayerRequestsAgainstTheUploadBudget() {
+    // The other player downloads 360p at a 0.925 Mb/s average, so 80% of 4 Mb/s leaves 2.275 Mb/s,
+    // room for 480p's 1.625 Mb/s average. Counted at its first-listed 480p, the other stream
+    // session would leave 1.575 Mb/s, and only 360p would stay.
+    var other = createEncodeSession();
+    requestAndDeliver(other.getSessionId(), "360p", "360p/segment0.m4s");
+    setInternetUploadMegabitsPerSecond(4);
+
+    var session = createEncodeSession();
+
+    assertThat(listedVariants(session)).first().isEqualTo("480p/stream.m3u8?t=t");
+  }
+
+  @Test
+  @DisplayName(
+      "Should count a direct-play stream session at its probed average bitrate when the bitrate"
+          + " scan has not run")
+  void shouldCountADirectPlayAtItsProbedAverageBitrateWhenTheBitrateScanHasNotRun() {
+    // Direct play sends the source file at its probed 5 Mb/s average, with no headroom, so 80% of
+    // 9 Mb/s leaves 2.2 Mb/s: 720p (3.125 Mb/s) does not fit, and 480p (1.625 Mb/s) does. With
+    // headroom, the direct play would count at 6 Mb/s and leave no room for 480p.
+    probeResults.setDefaultProbe(directPlayableProbe());
+    accepted(service.createSession(directPlayCommand(seedMediaFile().getId()).build()));
+    setInternetUploadMegabitsPerSecond(9);
+
+    var session = createEncodeSession();
+
+    assertThat(listedVariants(session))
+        .containsExactly("480p/stream.m3u8?t=t", "360p/stream.m3u8?t=t");
+  }
+
+  @Test
+  @DisplayName("Should not count a suspended stream session against the upload budget")
+  void shouldNotCountASuspendedStreamSessionAgainstTheUploadBudget() {
+    var suspended = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    // 80% of 7 Mb/s is 5.6 Mb/s, room for 480p's 1.625 Mb/s average only while the suspended
+    // copy's 5 Mb/s counts nothing.
+    producerLifecycle.suspend(suspended.getSessionId());
+    setInternetUploadMegabitsPerSecond(7);
+
+    var session = createEncodeSession();
+
+    assertThat(listedVariants(session)).first().isEqualTo("480p/stream.m3u8?t=t");
+  }
+
+  @Test
+  @DisplayName(
+      "Should list every variant for a stream session that its client reached over the local"
+          + " network when the upload budget leaves less than its lowest variant")
+  void shouldListEveryVariantForALocalNetworkStreamSessionWhenTheBudgetLeavesLessThanItsLowest() {
+    // 80% of 1 Mb/s leaves nothing beside the active copy's 5 Mb/s average, which would leave only
+    // 360p for a stream session counted against the budget.
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(1);
+    probeResults.setDefaultProbe(encodedSourceProbe());
+
+    var session =
+        accepted(
+            service.createSession(
+                createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                    .networkRoute(NetworkRoute.LOCAL_NETWORK)
+                    .build()));
+
+    assertThat(listedVariants(session))
+        .containsExactly(
+            "480p/stream.m3u8?t=t",
+            "1080p/stream.m3u8?t=t",
+            "720p/stream.m3u8?t=t",
+            "360p/stream.m3u8?t=t");
+  }
+
+  @Test
+  @DisplayName(
+      "Should not count a stream session that its client reached over the local network against"
+          + " the upload budget")
+  void shouldNotCountALocalNetworkStreamSessionAgainstTheUploadBudget() {
+    // 80% of 7 Mb/s is 5.6 Mb/s, room for 480p's 1.625 Mb/s average only while the other copy's
+    // 5 Mb/s counts nothing.
+    accepted(
+        service.createSession(
+            createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                .networkRoute(NetworkRoute.LOCAL_NETWORK)
+                .build()));
+    setInternetUploadMegabitsPerSecond(7);
+
+    var session = createEncodeSession();
+
+    assertThat(listedVariants(session)).first().isEqualTo("480p/stream.m3u8?t=t");
+  }
+
+  @Test
+  @DisplayName(
+      "Should not count a direct-play stream session that its client reached over the local"
+          + " network against the upload budget")
+  void shouldNotCountALocalNetworkDirectPlayStreamSessionAgainstTheUploadBudget() {
+    // The direct play's 5 Mb/s source would leave 0.6 Mb/s of the 5.6 Mb/s share if it counted,
+    // less than 480p's 1.625 Mb/s average.
+    probeResults.setDefaultProbe(directPlayableProbe());
+    accepted(
+        service.createSession(
+            directPlayCommand(seedMediaFile().getId())
+                .networkRoute(NetworkRoute.LOCAL_NETWORK)
+                .build()));
+    setInternetUploadMegabitsPerSecond(7);
+
+    var session = createEncodeSession();
+
+    assertThat(listedVariants(session)).first().isEqualTo("480p/stream.m3u8?t=t");
+  }
+
+  @Test
+  @DisplayName(
+      "Should start no job up front when the upload budget leaves the first-listed variant out of"
+          + " the playlist")
+  void shouldStartNoJobUpFrontWhenTheUploadBudgetLeavesTheFirstListedVariantOutOfThePlaylist() {
+    // 80% of 8 Mb/s leaves 1.4 Mb/s beside the active copy's 5 Mb/s average, so the encode's
+    // playlist leaves out its first-listed 480p and starts at 360p.
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(8);
+
+    var session = createEncodeSession();
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::sessionId)
+        .doesNotContain(session.getSessionId());
+    requestAndDeliver(session.getSessionId(), "360p", "360p/segment0.m4s");
+    assertThat(transcodeExecutor.getStartedRequests().getLast())
+        .satisfies(
+            started -> {
+              assertThat(started.sessionId()).isEqualTo(session.getSessionId());
+              assertThat(started.variantLabel()).isEqualTo("360p");
+            });
+  }
+
+  @Test
+  @DisplayName("Should start the first-listed variant up front when it fits the upload budget")
+  void shouldStartTheFirstListedVariantUpFrontWhenItFitsTheUploadBudget() {
+    setInternetUploadMegabitsPerSecond(7);
+
+    var session = createEncodeSession();
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            started -> {
+              assertThat(started.sessionId()).isEqualTo(session.getSessionId());
+              assertThat(started.variantLabel()).isEqualTo("480p");
+            });
+  }
+
+  @Test
+  @DisplayName("Should direct-play when the upload budget leaves no room for the source")
+  void shouldDirectPlayWhenTheUploadBudgetLeavesNoRoomForTheSource() {
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(1);
+    probeResults.setDefaultProbe(directPlayableProbe());
+
+    var session =
+        accepted(service.createSession(directPlayCommand(seedMediaFile().getId()).build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"AUTO", "ORIGINAL"})
+  @DisplayName("Should still copy the video when the upload budget leaves no room for the copy")
+  void shouldStillCopyTheVideoWhenTheUploadBudgetLeavesNoRoomForTheCopy(VideoQuality quality) {
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(1);
+
+    var session =
+        createSession(
+            seedMediaFile().getId(),
+            UUID.randomUUID(),
+            StreamingOptions.builder().quality(quality).build());
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+  }
+
+  @Test
+  @DisplayName("Should report that no stream session counts while the upload budget is off")
+  void shouldReportThatNoStreamSessionCountsWhileTheUploadBudgetIsOff() {
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(uploadBudget.useOf(session)).isEqualTo(UploadBudgetUse.BUDGET_OFF);
+  }
+
+  @Test
+  @DisplayName("Should report that an active stream session over the internet counts")
+  void shouldReportThatAnActiveStreamSessionOverTheInternetCounts() {
+    setInternetUploadMegabitsPerSecond(20);
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(uploadBudget.useOf(session)).isEqualTo(UploadBudgetUse.COUNTED);
+  }
+
+  @Test
+  @DisplayName(
+      "Should report that a stream session reached over the local network does not count, even"
+          + " while the upload budget is off")
+  void shouldReportThatALocalNetworkStreamSessionDoesNotCountEvenWhileTheBudgetIsOff() {
+    var session =
+        accepted(
+            service.createSession(
+                createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                    .networkRoute(NetworkRoute.LOCAL_NETWORK)
+                    .build()));
+
+    assertThat(uploadBudget.useOf(session)).isEqualTo(UploadBudgetUse.LOCAL_NETWORK_ATTESTED);
+  }
+
+  @Test
+  @DisplayName("Should report that a suspended stream session does not count")
+  void shouldReportThatASuspendedStreamSessionDoesNotCount() {
+    setInternetUploadMegabitsPerSecond(20);
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    producerLifecycle.suspend(session.getSessionId());
+
+    assertThat(uploadBudget.useOf(session)).isEqualTo(UploadBudgetUse.SUSPENDED);
+  }
+
+  @Test
+  @DisplayName("Should report the internet upload speed and the streams' share as gauges")
+  void shouldReportTheInternetUploadSpeedAndTheStreamsShareAsGauges() {
+    assertThat(uploadBudgetGauge("internet_upload")).isZero();
+    assertThat(uploadBudgetGauge("stream_share")).isZero();
+
+    setInternetUploadMegabitsPerSecond(20);
+
+    assertThat(uploadBudgetGauge("internet_upload")).isEqualTo(20_000_000);
+    assertThat(uploadBudgetGauge("stream_share")).isEqualTo(16_000_000);
+  }
+
+  @Test
+  @DisplayName(
+      "Should report the counted total and the active streams counted and not counted as gauges")
+  void shouldReportTheCountedTotalAndTheActiveStreamsCountedAndNotCountedAsGauges() {
+    setInternetUploadMegabitsPerSecond(20);
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    accepted(
+        service.createSession(
+            createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                .networkRoute(NetworkRoute.LOCAL_NETWORK)
+                .build()));
+    var suspended = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    producerLifecycle.suspend(suspended.getSessionId());
+
+    // Only the active copy over the internet counts, at its 5 Mb/s average. The suspended stream
+    // session is not active, so neither active-stream gauge counts it.
+    assertThat(uploadBudgetGauge("counted")).isEqualTo(5_000_000);
+    assertThat(activeStreams("true")).isOne();
+    assertThat(activeStreams("false")).isOne();
+  }
+
+  @Test
+  @DisplayName("Should count each variant that the upload budget leaves out of a served playlist")
+  void shouldCountEachVariantThatTheUploadBudgetLeavesOutOfAServedPlaylist() {
+    // 80% of 10 Mb/s leaves 3 Mb/s beside the active copy, which leaves out 1080p and 720p.
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(10);
+    var session = createEncodeSession();
+    assertThat(withheldVariants()).isZero();
+
+    listedVariants(session);
+
+    assertThat(withheldVariants()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the playlist whole when the transcode limit leaves no place for the variants"
+          + " that the upload budget keeps")
+  void shouldKeepThePlaylistWholeWhenTheTranscodeLimitLeavesNoPlaceForTheKeptVariants() {
+    // 80% of 8 Mb/s leaves 1.4 Mb/s beside the active copy, which would leave out the encode's
+    // first-listed 480p, so creating the encode starts nothing. Three encodes over the local
+    // network then take every place under the transcode limit of 3, so 360p could not start, and
+    // leaving 480p out would leave the player only a variant that cannot start.
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(8);
+    var session = createEncodeSession();
+    for (var encode = 0; encode < 3; encode++) {
+      accepted(service.createSession(localNetworkEncode()));
+    }
+
+    assertThat(producerLifecycle.freeConfiguredTranscodeSlots()).isZero();
+
+    assertThat(listedVariants(session)).first().isEqualTo("480p/stream.m3u8?t=t");
+    assertThat(withheldVariants()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the top kept variant's first segment when another stream session takes the"
+          + " last transcode place after the playlist that leaves the first-listed variant out")
+  void shouldDeliverTheTopKeptVariantWhenAnotherSessionTakesTheLastPlaceAfterThePlaylist() {
+    storeFirstSegmentsAsEachLadderVariantStarts();
+    // 80% of 8 Mb/s leaves 1.4 Mb/s beside the active copy's 5 Mb/s average, so the encode's
+    // playlist starts at 360p. Two encodes over the local network leave one place under the
+    // transcode limit of 3, and a third encode asks for it after the playlist is served.
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(8);
+    var session = createEncodeSession();
+    var sessionId = session.getSessionId();
+    for (var encode = 0; encode < 2; encode++) {
+      accepted(service.createSession(localNetworkEncode()));
+    }
+
+    assertThat(listedVariants(session)).first().isEqualTo("360p/stream.m3u8?t=t");
+
+    service.createSession(localNetworkEncode());
+
+    assertThat(coordinator.deliver(sessionId, "360p", "360p/segment0.m4s"))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the top kept variant when another stream session takes the last transcode"
+          + " place after a playlist served again leaves out the variant that the player plays")
+  void shouldDeliverTheTopKeptVariantWhenAPlaylistServedAgainLeavesOutThePlayedVariant() {
+    storeFirstSegmentsAsEachLadderVariantStarts();
+    // The player plays 480p before the budget is on. Then 80% of 8 Mb/s leaves 1.4 Mb/s beside
+    // the active copy's 5 Mb/s average, so the playlist served again starts 360p, which takes the
+    // last place beside 480p and an encode over the local network under the transcode limit of 3
+    // before another encode asks for it.
+    var session = playFirstListedEncodeBesideAnActiveCopy();
+    var sessionId = session.getSessionId();
+    accepted(service.createSession(localNetworkEncode()));
+
+    setInternetUploadMegabitsPerSecond(8);
+    assertThat(listedVariants(session)).first().isEqualTo("360p/stream.m3u8?t=t");
+
+    service.createSession(localNetworkEncode());
+
+    assertThat(coordinator.deliver(sessionId, "360p", "360p/segment1.m4s"))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the variant that a playlist served again started when a request for the played"
+          + " variant arrives after it")
+  void shouldKeepThePlaylistsStartedVariantWhenARequestForThePlayedVariantArrivesAfterIt() {
+    // As in the test of a playlist served again, 360p takes the last place under the transcode
+    // limit of 3 while the player plays 480p. A request for 480p's next segment, sent before the
+    // player read the new playlist, must not give 360p's place to another encode.
+    var session = playFirstListedEncodeBesideAnActiveCopy();
+    var sessionId = session.getSessionId();
+    accepted(service.createSession(localNetworkEncode()));
+
+    setInternetUploadMegabitsPerSecond(8);
+    assertThat(listedVariants(session)).first().isEqualTo("360p/stream.m3u8?t=t");
+    segmentStore.addSegment(sessionId, "480p/segment1.m4s", new byte[] {1});
+    assertThat(coordinator.deliver(sessionId, "480p", "480p/segment1.m4s"))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+
+    var competingEncode = service.createSession(localNetworkEncode());
+
+    assertThat(competingEncode)
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(transcodeExecutor.isRunning(sessionId, "360p")).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a running variant that a playlist served again lists first when a request for"
+          + " the played variant arrives after it")
+  void shouldKeepTheRunningTopKeptVariantWhenARequestForThePlayedVariantArrivesAfterThePlaylist() {
+    // The player plays 480p and requests 360p's initialization segment, which starts 360p in the
+    // last place under the transcode limit of 3. A playlist served again lists 360p first and
+    // starts nothing, as 360p already runs. A request for 480p's next segment, sent before the
+    // player read that playlist, must not give 360p's place to another encode.
+    var session = playFirstListedEncodeBesideAnActiveCopy();
+    var sessionId = session.getSessionId();
+    accepted(service.createSession(localNetworkEncode()));
+
+    producerLifecycle.prepareRequestedVariant(sessionId, "360p", "360p/init.mp4");
+    setInternetUploadMegabitsPerSecond(8);
+    assertThat(listedVariants(session)).first().isEqualTo("360p/stream.m3u8?t=t");
+    segmentStore.addSegment(sessionId, "480p/segment1.m4s", new byte[] {1});
+    assertThat(coordinator.deliver(sessionId, "480p", "480p/segment1.m4s"))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+
+    var competingEncode = service.createSession(localNetworkEncode());
+
+    assertThat(competingEncode)
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(transcodeExecutor.isRunning(sessionId, "360p")).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the variant that a playlist served again started when the player's first segment,"
+          + " requested before that playlist, is delivered after it")
+  void shouldKeepThePlaylistsStartedVariantWhenTheFirstSegmentRequestedBeforeItIsDelivered() {
+    // The player requests 480p's first segment, and while it waits, a playlist served again
+    // starts 360p in the last place under the transcode limit of 3. Delivering that first segment
+    // must not give 360p's place to another encode.
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    var session = createEncodeSession();
+    var sessionId = session.getSessionId();
+    var firstRequest =
+        producerLifecycle.prepareRequestedVariant(sessionId, "480p", "480p/segment0.m4s");
+    accepted(service.createSession(localNetworkEncode()));
+
+    setInternetUploadMegabitsPerSecond(8);
+    assertThat(listedVariants(session)).first().isEqualTo("360p/stream.m3u8?t=t");
+    producerLifecycle.completeVariantSwitch(firstRequest);
+
+    var competingEncode = service.createSession(localNetworkEncode());
+
+    assertThat(competingEncode)
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(transcodeExecutor.isRunning(sessionId, "360p")).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should replace a variant's dead job attempt in the place of the variant that a playlist"
+          + " served again started when the player asks for its initialization segment again")
+  void shouldReplaceADeadJobAttemptInThePlaceOfThePlaylistsVariantWhenThePlayerRetriesInit() {
+    // The workers have 3 job slots, and the active copy and the played 480p take two. From the
+    // playlist it read before the budget was on, the player asks for 720p, whose job attempt ends
+    // before writing its initialization segment. The playlist served again starts 360p in the
+    // free slot, so 720p's replacement can run only in 360p's place.
+    transcodeExecutor.limitJobSlots(3);
+    var session = playFirstListedEncodeBesideAnActiveCopy();
+    var sessionId = session.getSessionId();
+    producerLifecycle.prepareRequestedVariant(sessionId, "720p", "720p/init.mp4");
+    transcodeExecutor.stopVariant(sessionId, "720p");
+    setInternetUploadMegabitsPerSecond(8);
+    assertThat(listedVariants(session)).first().isEqualTo("360p/stream.m3u8?t=t");
+    storeFirstSegmentsAsEachLadderVariantStarts();
+
+    assertThat(coordinator.deliver(sessionId, "720p", "720p/init.mp4"))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should start the variant whose initialization segment the player requests in the place of"
+          + " the variant that a playlist served again started")
+  void shouldStartTheRequestedInitializationVariantInThePlaceOfARefetchedPlaylistsVariant() {
+    storeFirstSegmentsAsEachLadderVariantStarts();
+    // As in the test of a playlist served again, 360p takes the last place under the transcode
+    // limit of 3 after the player played 480p. From the playlist it read before the budget was
+    // on, the player picks 720p instead.
+    var session = playFirstListedEncodeBesideAnActiveCopy();
+    var sessionId = session.getSessionId();
+    accepted(service.createSession(localNetworkEncode()));
+
+    setInternetUploadMegabitsPerSecond(8);
+    assertThat(listedVariants(session)).first().isEqualTo("360p/stream.m3u8?t=t");
+
+    assertThat(coordinator.deliver(sessionId, "720p", "720p/init.mp4"))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the variant that took the place of a playlist's variant when a request for the"
+          + " played variant arrives after it")
+  void shouldKeepTheVariantThatTookThePlaylistsPlaceWhenARequestForThePlayedVariantArrivesAfter() {
+    storeFirstSegmentsAsEachLadderVariantStarts();
+    // As in the test above, 720p takes the place of the 360p that a playlist served again started.
+    // A request for 480p's next segment, sent before the player read that playlist, must not give
+    // 720p's place to another encode.
+    var session = playFirstListedEncodeBesideAnActiveCopy();
+    var sessionId = session.getSessionId();
+    accepted(service.createSession(localNetworkEncode()));
+
+    setInternetUploadMegabitsPerSecond(8);
+    assertThat(listedVariants(session)).first().isEqualTo("360p/stream.m3u8?t=t");
+    assertThat(coordinator.deliver(sessionId, "720p", "720p/init.mp4"))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+    segmentStore.addSegment(sessionId, "480p/segment1.m4s", new byte[] {1});
+    assertThat(coordinator.deliver(sessionId, "480p", "480p/segment1.m4s"))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+
+    var competingEncode = service.createSession(localNetworkEncode());
+
+    assertThat(competingEncode)
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(transcodeExecutor.isRunning(sessionId, "720p")).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should list the first-listed variant when the top kept variant has a job attempt that does"
+          + " not run as the playlist is served")
+  void shouldListTheFirstListedVariantWhenTheTopKeptVariantHasAJobAttemptThatDoesNotRun() {
+    // The first playlist starts 360p. Once the stream session is suspended, 360p's job attempt
+    // no longer runs or holds a place, so the playlist served again lists every variant, and
+    // recovery rather than a start replaces the job attempt.
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(8);
+    var session = createEncodeSession();
+    assertThat(listedVariants(session)).first().isEqualTo("360p/stream.m3u8?t=t");
+
+    producerLifecycle.suspend(session.getSessionId());
+
+    assertThat(listedVariants(session)).first().isEqualTo("480p/stream.m3u8?t=t");
+  }
+
+  @Test
+  @DisplayName(
+      "Should start no variant when it serves a playlist that the upload budget leaves whole")
+  void shouldStartNoVariantWhenItServesAPlaylistThatTheUploadBudgetLeavesWhole() {
+    // 80% of 20 Mb/s leaves room for every variant, so the playlist lists every variant and only
+    // 480p, started with the stream session, runs.
+    setInternetUploadMegabitsPerSecond(20);
+    var session = createEncodeSession();
+
+    assertThat(listedVariants(session)).first().isEqualTo("480p/stream.m3u8?t=t");
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::variantLabel)
+        .containsExactly("480p");
+  }
+
+  @Test
+  @DisplayName(
+      "Should list the first-listed variant when the top kept variant cannot start as the playlist"
+          + " is served")
+  void shouldListTheFirstListedVariantWhenTheTopKeptVariantCannotStartAsThePlaylistIsServed() {
+    // 80% of 8 Mb/s leaves 1.4 Mb/s beside the active copy, which would leave out the encode's
+    // first-listed 480p, but no worker takes the 360p job, so the playlist stays whole.
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(8);
+    var session = createEncodeSession();
+    transcodeExecutor.failUntargetedStarts();
+
+    assertThat(listedVariants(session)).first().isEqualTo("480p/stream.m3u8?t=t");
+    assertThat(withheldVariants()).isZero();
+  }
+
+  @ParameterizedTest(name = "container bitrate {0} b/s")
+  @ValueSource(longs = {0, 10_000_000})
+  @DisplayName(
+      "Should count a direct-play stream session at its measured average when the bitrate scan has"
+          + " run")
+  void shouldCountADirectPlayAtItsMeasuredAverageWhenTheBitrateScanHasRun(long containerBitrate) {
+    // The bitrate scan measured 4,050,000,000 video bytes and 450,000,000 audio bytes over the
+    // 2-hour source, 4,500,000,000 bytes that the direct play sends at a 5 Mb/s average, so
+    // 80% of 9 Mb/s leaves 2.2 Mb/s: 720p (3.125 Mb/s) does not fit, and 480p (1.625 Mb/s) does.
+    // Counted at an unknown container bitrate, the direct play would leave room for every variant;
+    // counted at a 10 Mb/s container bitrate, it would leave room only for the lowest variant.
+    var source = directPlayableProbeBuilder().bitrate(containerBitrate).build();
+    probeResults.setDefaultOutcome(
+        ProbeFixture.completeProbeBuilder(source)
+            .streamMeasurements(
+                Optional.of(
+                    new StreamMeasurements(
+                        StreamMeasurementSource.SAMPLE_TABLE,
+                        List.of(
+                            StreamMeasurementFixture.measuredStreamBuilder(0, 4_050_000_000L)
+                                .measuredDuration(7_200_000)
+                                .build(),
+                            StreamMeasurementFixture.measuredStreamBuilder(1, 450_000_000L)
+                                .measuredDuration(7_200_000)
+                                .build()))))
+            .build());
+    accepted(service.createSession(directPlayCommand(seedMediaFile().getId()).build()));
+    setInternetUploadMegabitsPerSecond(9);
+
+    var session = createEncodeSession();
+
+    assertThat(listedVariants(session))
+        .containsExactly("480p/stream.m3u8?t=t", "360p/stream.m3u8?t=t");
+  }
+
+  // A fixed-quality encode that its client reached over the local network: it takes a place under
+  // the transcode limit and does not count against the upload budget.
+  private CreateStreamSessionCommand localNetworkEncode() {
+    return createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+        .options(StreamingOptions.builder().quality(VideoQuality.HIGH_720P).build())
+        .networkRoute(NetworkRoute.LOCAL_NETWORK)
+        .build();
+  }
+
+  @Test
+  @DisplayName(
+      "Should count a direct-play stream session at its container bitrate when the bitrate scan did"
+          + " not measure every video stream")
+  void shouldCountADirectPlayAtItsContainerBitrateWhenTheScanDidNotMeasureEveryVideoStream() {
+    // The scan measured 5 Mb/s over the chosen video stream and the audio, but not the second
+    // video stream that direct play also sends, so the direct play counts at its 10 Mb/s container
+    // bitrate. 80% of 11 Mb/s then leaves nothing beside it, and only the lowest variant stays.
+    // Counted at the measured 5 Mb/s, it would leave room for 720p.
+    var source =
+        directPlayableProbeBuilder()
+            .bitrate(10_000_000L)
+            .streams(
+                List.of(
+                    ProbeFixture.videoStreamBuilder(directPlayableProbe()).build(),
+                    ProbeFixture.audioStreamBuilder("aac")
+                        .index(1)
+                        .channels(OptionalInt.of(2))
+                        .build(),
+                    ProbeFixture.videoStreamBuilder(directPlayableProbe()).index(2).build()))
+            .build();
+    probeResults.setDefaultOutcome(
+        ProbeFixture.completeProbeBuilder(source)
+            .streamMeasurements(
+                Optional.of(
+                    new StreamMeasurements(
+                        StreamMeasurementSource.SAMPLE_TABLE,
+                        List.of(
+                            StreamMeasurementFixture.measuredStreamBuilder(0, 4_050_000_000L)
+                                .measuredDuration(7_200_000)
+                                .build(),
+                            StreamMeasurementFixture.measuredStreamBuilder(1, 450_000_000L)
+                                .measuredDuration(7_200_000)
+                                .build()))))
+            .build());
+    var directPlay =
+        accepted(service.createSession(directPlayCommand(seedMediaFile().getId()).build()));
+    setInternetUploadMegabitsPerSecond(11);
+
+    var session = createEncodeSession();
+
+    assertThat(directPlay.getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
+    assertThat(listedVariants(session)).containsExactly("360p/stream.m3u8?t=t");
+  }
+
+  // A 1080p HEVC source that the H.264 client cannot play, so Auto encodes it. Each rung of its
+  // ladder costs its video bitrate plus the 125 kb/s audio, and the playlist lists 480p
+  // (1.625 Mb/s) first, the rung nearest 2000 kb/s, then 1080p (5.125 Mb/s), 720p (3.125 Mb/s) and
+  // 360p (0.925 Mb/s) (ADR 0008).
+  private static MediaProbe encodedSourceProbe() {
+    return defaultProbeBuilder().videoCodec("hevc").build();
+  }
+
+  private StreamSession createEncodeSession() {
+    probeResults.setDefaultProbe(encodedSourceProbe());
+    return createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+  }
+
+  // A copy that counts at its 5 Mb/s average once the upload budget is on, and an Auto encode whose
+  // player plays its first-listed 480p.
+  private StreamSession playFirstListedEncodeBesideAnActiveCopy() {
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    var session = createEncodeSession();
+    segmentStore.addSegment(session.getSessionId(), "480p/segment0.m4s", new byte[] {1});
+    assertThat(coordinator.deliver(session.getSessionId(), "480p", "480p/segment0.m4s"))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+    return session;
+  }
+
+  // Each ladder variant's job attempt stores its initialization segment and its first media segment
+  // as it starts, so a request of a running ladder variant answers at once and a request of one
+  // that
+  // did not start answers as unrecoverable.
+  private void storeFirstSegmentsAsEachLadderVariantStarts() {
+    transcodeExecutor.afterEachStart(
+        request -> {
+          if (request.variantLabel().equals(StreamSession.defaultVariant())) {
+            return;
+          }
+
+          var variant = request.variantLabel() + "/";
+          segmentStore.addSegment(request.sessionId(), variant + "init.mp4", new byte[] {1});
+          segmentStore.addSegment(
+              request.sessionId(),
+              variant + "segment" + request.startSequenceNumber() + ".m4s",
+              new byte[] {1});
+        });
+  }
+
+  private double uploadBudgetGauge(String name) {
+    return meters.get("streamarr.streaming.upload_budget_" + name).gauge().value();
+  }
+
+  private double activeStreams(String counted) {
+    return meters
+        .get("streamarr.streaming.upload_budget_active_streams")
+        .tag("counted", counted)
+        .gauge()
+        .value();
+  }
+
+  private double withheldVariants() {
+    return meters.get("streamarr.streaming.upload_budget_withheld_variants").counter().count();
+  }
+
+  private void setInternetUploadMegabitsPerSecond(int megabitsPerSecond) {
+    accepted(
+        serverSettings.changeUploadBudget(
+            AuthenticatedIdentityFixture.accountScopedBuilder().build(),
+            Optional.of(megabitsPerSecond)));
+  }
+
+  private List<String> listedVariants(StreamSession session) {
+    return new HlsPlaylistService(streamingProperties(), uploadBudget)
+        .generateMultivariantPlaylist(session, "t")
+        .lines()
+        .filter(line -> !line.startsWith("#"))
+        .toList();
+  }
+
+  private void requestAndDeliver(UUID sessionId, String variantLabel, String segmentName) {
+    var delivery =
+        CompletableFuture.supplyAsync(
+            () -> coordinator.deliver(sessionId, variantLabel, segmentName));
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .until(() -> transcodeExecutor.isRunning(sessionId, variantLabel));
+    upload(sessionId, variantLabel, segmentName);
+    assertThat(delivery.join()).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  @Test
   @DisplayName("Should use single variant when explicit quality is specified")
   void shouldUseSingleVariantWhenExplicitQualityIsSpecified() {
     probeResults.setDefaultProbe(
@@ -7296,7 +8131,8 @@ class HlsStreamingServiceTest {
 
     var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), options);
     var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
+            .generateMultivariantPlaylist(session, "t");
 
     assertThat(transcodeExecutor.getStartedRequests())
         .singleElement()

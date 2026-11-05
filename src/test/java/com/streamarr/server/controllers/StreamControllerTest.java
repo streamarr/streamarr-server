@@ -27,6 +27,7 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeStreamingService;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.streaming.DirectPlayMetrics;
 import com.streamarr.server.services.streaming.DirectPlaySourceService;
@@ -93,7 +94,7 @@ class StreamControllerTest {
             .sessionTimeout(Duration.ofSeconds(60))
             .producerStallThreshold(Duration.ofMillis(200))
             .build();
-    playlistService = new HlsPlaylistService(properties);
+    playlistService = new HlsPlaylistService(properties, UploadBudgetFixture.OFF);
     boundStreamSession.set(SESSION_ID);
     meterRegistry = new SimpleMeterRegistry();
     directPlayMetrics = new DirectPlayMetrics(meterRegistry);

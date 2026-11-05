@@ -14,6 +14,7 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.domain.streaming.NetworkRoute;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
@@ -24,6 +25,7 @@ import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
@@ -362,6 +364,7 @@ class WorkerPlaybackRecoveryIT {
       streams =
           HlsStreamingService.builder()
               .languagePreferences(noLanguagePreferences())
+              .uploadBudget(UploadBudgetFixture.OFF)
               .meterRegistry(new SimpleMeterRegistry())
               .mediaFileRepository(files)
               .transcodeExecutor(executor)
@@ -387,13 +390,14 @@ class WorkerPlaybackRecoveryIT {
       var shortCopies = new ShortCopyListener(lifecycle.lifecycle(), events);
       events.listen(JobAttemptCompletedEvent.class, shortCopies::onJobAttemptCompleted);
       events.listen(CopiedVariantRanShortEvent.class, sessions::onCopiedVariantRanShort);
-      playlists = new HlsPlaylistService(properties);
+      playlists = new HlsPlaylistService(properties, UploadBudgetFixture.OFF);
       command =
           StartPlaybackSessionCommand.builder()
               .mediaFileId(file.getId())
               .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
               .options(StreamingOptions.builder().quality(played.quality()).build())
               .capabilityDeclaration(defaultDeclarationBuilder().build())
+              .networkRoute(NetworkRoute.INTERNET)
               .build();
     }
 

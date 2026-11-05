@@ -26,6 +26,7 @@ import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.ServerSettingsFixture;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
@@ -216,6 +217,7 @@ class HlsCopySeekSmokeTest {
     streamingService =
         HlsStreamingService.builder()
             .languagePreferences(noLanguagePreferences())
+            .uploadBudget(UploadBudgetFixture.OFF)
             .meterRegistry(new SimpleMeterRegistry())
             .mediaFileRepository(mediaFileRepository)
             .transcodeExecutor(transcodeExecutor)
@@ -230,7 +232,7 @@ class HlsCopySeekSmokeTest {
             .producerLifecycle(producerLifecycle)
             .deliveryCoordinator(coordinator)
             .build();
-    playlistService = new HlsPlaylistService(properties);
+    playlistService = new HlsPlaylistService(properties, UploadBudgetFixture.OFF);
   }
 
   // The worker's progress reports, and the segment data it uploads, restart the job attempt's stall

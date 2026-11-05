@@ -39,6 +39,9 @@ public class StreamSession {
   @Getter(lombok.AccessLevel.NONE)
   private final Duration startPosition;
 
+  /** How the client attested it reached the server; the default counts against the budget. */
+  @NonNull @Builder.Default private final NetworkRoute networkRoute = NetworkRoute.INTERNET;
+
   /** The source container that a direct-play stream session serves. */
   @Getter(lombok.AccessLevel.NONE)
   private final SourceContainer sourceContainer;
@@ -176,6 +179,18 @@ public class StreamSession {
     }
 
     return variants.stream().anyMatch(variant -> variant.label().equals(variantLabel));
+  }
+
+  /**
+   * The variant that the multivariant playlist lists first: the default variant of a stream session
+   * without a ladder, and the first variant of its ladder otherwise.
+   */
+  public String firstListedVariant() {
+    if (variants.isEmpty()) {
+      return DEFAULT_VARIANT;
+    }
+
+    return variants.getFirst().label();
   }
 
   /**
