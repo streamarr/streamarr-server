@@ -700,9 +700,10 @@ message JobAttemptStopped {
 // worker sends none after the attempt ends (ADR 0037, segment list).
 message JobAttemptProgress {
   Uuid job_attempt_id = 1;
-  // This field holds the end of the latest video sample that the worker read
-  // from FFmpeg's output, on seek_position's timeline. The worker leaves it out
-  // until it reads the first video sample.
+  // This field holds the end of the latest video or audio sample that the
+  // worker read from FFmpeg's output, on seek_position's timeline, so it keeps
+  // growing while FFmpeg writes audio alone after the video's end. The worker
+  // leaves it out until it reads the first sample.
   google.protobuf.Duration output_end = 2;
   // When the job holds the last frame, the worker searches the source for the
   // video's last keyframe. This field counts the source bytes that the search
