@@ -179,8 +179,7 @@ class ActiveStreamEventListenerTest {
       awaitLatch(ended);
 
       assertThat(delivered.getLast())
-          .isEqualTo(
-              new ActiveStreamDto.ChangeDto(playback.playbackSessionId().toString(), null));
+          .isEqualTo(new ActiveStreamDto.ChangeDto(playback.playbackSessionId().toString(), null));
     }
   }
 
