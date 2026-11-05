@@ -58,7 +58,7 @@ import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.events.CopiedVariantRanShortEvent;
 import com.streamarr.server.services.streaming.events.MediaSegmentStoredEvent;
 import com.streamarr.server.services.streaming.events.PlaybackSessionChangedEvent;
-import com.streamarr.server.services.streaming.events.PlaybackSessionSegmentStoredEvent;
+import com.streamarr.server.services.streaming.events.ProducedRangeMayHaveMovedEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import java.time.Duration;
@@ -426,8 +426,8 @@ class PlaybackSessionServiceTest {
     service.onMediaSegmentStored(new MediaSegmentStoredEvent(replacement));
     service.onMediaSegmentStored(new MediaSegmentStoredEvent(UUID.randomUUID()));
 
-    var stored = new PlaybackSessionSegmentStoredEvent(initial.playbackSessionId());
-    assertThat(events.getEventsOfType(PlaybackSessionSegmentStoredEvent.class))
+    var stored = new ProducedRangeMayHaveMovedEvent(initial.playbackSessionId());
+    assertThat(events.getEventsOfType(ProducedRangeMayHaveMovedEvent.class))
         .containsExactly(stored, stored);
   }
 

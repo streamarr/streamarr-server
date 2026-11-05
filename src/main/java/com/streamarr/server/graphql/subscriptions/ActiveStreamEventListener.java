@@ -5,7 +5,7 @@ import com.streamarr.server.graphql.dto.ActiveStreamDto;
 import com.streamarr.server.services.streaming.ActiveStream;
 import com.streamarr.server.services.streaming.ActiveStreamService;
 import com.streamarr.server.services.streaming.events.PlaybackSessionChangedEvent;
-import com.streamarr.server.services.streaming.events.PlaybackSessionSegmentStoredEvent;
+import com.streamarr.server.services.streaming.events.ProducedRangeMayHaveMovedEvent;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.time.Duration;
@@ -96,7 +96,7 @@ public class ActiveStreamEventListener {
   }
 
   @EventListener
-  public void onPlaybackSessionSegmentStored(PlaybackSessionSegmentStoredEvent event) {
+  public void onProducedRangeMayHaveMoved(ProducedRangeMayHaveMovedEvent event) {
     var playbackSessionId = event.playbackSessionId();
     // A read in flight may still broadcast to a subscriber that registers later, so its stream
     // keeps its check while nobody subscribes.

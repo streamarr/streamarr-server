@@ -33,7 +33,7 @@ import com.streamarr.server.services.streaming.PlaybackSessionSnapshot;
 import com.streamarr.server.services.streaming.ProducerLifecycleService;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.events.PlaybackSessionChangedEvent;
-import com.streamarr.server.services.streaming.events.PlaybackSessionSegmentStoredEvent;
+import com.streamarr.server.services.streaming.events.ProducedRangeMayHaveMovedEvent;
 import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
@@ -476,8 +476,8 @@ class ActiveStreamEventListenerTest {
   private void storeSegment(
       ActiveStreamEventListener listener, PlaybackSessionSnapshot playback, int index) {
     store(playback, index);
-    listener.onPlaybackSessionSegmentStored(
-        new PlaybackSessionSegmentStoredEvent(playback.playbackSessionId()));
+    listener.onProducedRangeMayHaveMoved(
+        new ProducedRangeMayHaveMovedEvent(playback.playbackSessionId()));
   }
 
   private void store(PlaybackSessionSnapshot playback, int index) {
