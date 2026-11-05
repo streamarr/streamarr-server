@@ -532,8 +532,8 @@ public class ProducerLifecycleService {
         || requestsRoomForRefusedCopy(session, handle, pending);
   }
 
-  // A worker that refused the variant's copy at startup may run another stream session's left copy,
-  // whose stop frees the place that the copy lacks (ADR 0019).
+  // A worker that refused the variant's copy because its copy cap was full may run another stream
+  // session's left copy, whose stop frees the place that the copy lacks (ADR 0019).
   private boolean requestsRoomForRefusedCopy(
       StreamSession session, TranscodeHandle handle, PendingSegment pending) {
     if (!makesRoomForRefusedCopy(session, pending.request())) {

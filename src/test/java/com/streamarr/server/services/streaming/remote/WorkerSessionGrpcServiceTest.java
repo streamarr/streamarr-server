@@ -8,6 +8,7 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.streamCopyDecis
 import static com.streamarr.server.services.streaming.remote.SegmentUploadRefusals.statusDetails;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
+import static com.streamarr.transcode.v1.JobAttemptFailure.JOB_ATTEMPT_FAILURE_COPY_CAP_REACHED;
 import static com.streamarr.transcode.v1.JobAttemptFailure.JOB_ATTEMPT_FAILURE_STARTUP_FAILED;
 import static com.streamarr.transcode.v1.JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -982,25 +983,38 @@ class WorkerSessionGrpcServiceTest {
 
   @Test
   @DisplayName(
-      "Should name the worker that refused a copy when the worker reports that it failed to start")
-  void shouldNameTheWorkerThatRefusedACopyWhenTheWorkerReportsThatItFailedToStart()
+      "Should name the worker that refused a copy when the worker reports that its copy cap is"
+          + " reached")
+  void shouldNameTheWorkerThatRefusedACopyWhenTheWorkerReportsThatItsCopyCapIsReached()
       throws Exception {
     var started = startedJob(streamCopyDecision());
     var attemptId = started.job().getJobAttemptId();
 
-    started.session().onNext(failureReport(attemptId, JOB_ATTEMPT_FAILURE_STARTUP_FAILED));
+    started.session().onNext(failureReport(attemptId, JOB_ATTEMPT_FAILURE_COPY_CAP_REACHED));
 
     assertThat(started.registry().refusedCopyStart(fromProto(attemptId)))
         .contains(new ExecutionTargetId(started.workerSessionId().toString()));
   }
 
   @Test
-  @DisplayName("Should name no refusing worker when an encode fails to start")
-  void shouldNameNoRefusingWorkerWhenAnEncodeFailsToStart() throws Exception {
-    var started = startedEncode(new SimpleMeterRegistry());
+  @DisplayName("Should name no refusing worker when a copy fails to start below the copy cap")
+  void shouldNameNoRefusingWorkerWhenACopyFailsToStartBelowTheCopyCap() throws Exception {
+    var started = startedJob(streamCopyDecision());
     var attemptId = started.job().getJobAttemptId();
 
     started.session().onNext(failureReport(attemptId, JOB_ATTEMPT_FAILURE_STARTUP_FAILED));
+
+    assertThat(started.isRunning()).isFalse();
+    assertThat(started.registry().refusedCopyStart(fromProto(attemptId))).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should name no refusing worker when a worker reports a full copy cap for an encode")
+  void shouldNameNoRefusingWorkerWhenAWorkerReportsAFullCopyCapForAnEncode() throws Exception {
+    var started = startedEncode(new SimpleMeterRegistry());
+    var attemptId = started.job().getJobAttemptId();
+
+    started.session().onNext(failureReport(attemptId, JOB_ATTEMPT_FAILURE_COPY_CAP_REACHED));
 
     assertThat(started.isRunning()).isFalse();
     assertThat(started.registry().refusedCopyStart(fromProto(attemptId))).isEmpty();
@@ -1023,7 +1037,7 @@ class WorkerSessionGrpcServiceTest {
   void shouldForgetTheWorkerThatRefusedACopyWhenItsStreamSessionIsDestroyed() throws Exception {
     var started = startedJob(streamCopyDecision());
     var attemptId = started.job().getJobAttemptId();
-    started.session().onNext(failureReport(attemptId, JOB_ATTEMPT_FAILURE_STARTUP_FAILED));
+    started.session().onNext(failureReport(attemptId, JOB_ATTEMPT_FAILURE_COPY_CAP_REACHED));
     assertThat(started.registry().refusedCopyStart(fromProto(attemptId))).isPresent();
 
     started.registry().destroyStreamSession(fromProto(started.job().getStreamSessionId()));
