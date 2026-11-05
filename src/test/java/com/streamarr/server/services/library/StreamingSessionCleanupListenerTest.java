@@ -133,11 +133,7 @@ class StreamingSessionCleanupListenerTest {
   }
 
   private StreamSession buildSessionForMediaFile(UUID mediaFileId) {
-    return StreamSession.builder()
-        .sessionId(UUID.randomUUID())
-        .mediaFileId(mediaFileId)
-        .authority(StreamSessionFixture.playbackAuthorityFor(UUID.randomUUID()))
-        .build();
+    return StreamSessionFixture.defaultSessionBuilder().mediaFileId(mediaFileId).build();
   }
 
   private static class FakeStreamingService implements StreamingService {
