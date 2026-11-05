@@ -6,6 +6,11 @@ interface StreamSession {
     id: ID!
     "The URL that the player opens. It carries the playback token."
     streamUrl: String!
+    """
+    Where playback of this stream session starts, in seconds from the start of the media. Null when
+    playback starts at the beginning of the media.
+    """
+    startPositionSeconds: Float
 }
 
 """
@@ -21,6 +26,11 @@ type DirectPlayStreamSession implements StreamSession {
     sourceContainer: SourceContainer!
     "The dynamic range of the source's video."
     videoRange: VideoRange!
+    """
+    Where playback starts, in seconds from the start of the media. The client seeks the file there before
+    playback starts. Null when playback starts at the beginning of the media.
+    """
+    startPositionSeconds: Float
 }
 
 "A stream session that sends HLS, from job attempts that copy or encode the source."
@@ -40,6 +50,12 @@ type HlsStreamSession implements StreamSession {
     media ends before the advertised end.
     """
     mediaEndSeconds: Float
+    """
+    Where playback starts, in seconds from the start of the media. The multivariant playlist marks the
+    same position with EXT-X-START and PRECISE=YES. Null when playback starts at the beginning of the
+    media.
+    """
+    startPositionSeconds: Float
 }
 
 "The dynamic range of a stream session's video, as an HLS playlist's VIDEO-RANGE attribute names it."

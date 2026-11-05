@@ -15,6 +15,7 @@ import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEve
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -77,11 +78,15 @@ public class PlaybackSessionService implements AutoCloseable {
     // Every later format attempt follows the playback choice that plays now (ADR 0052).
     private PlayingChoice choice;
     private PlaybackFormatAttempt current;
+    // Every format attempt starts at the start position until playback moves from it.
+    private Optional<Duration> startPosition;
     private Instant lastAccessedAt;
     @Builder.Default private List<VideoQuality> offeredChoices = List.of();
     @Builder.Default private int formatAttemptCount = 1;
     private final Set<String> excludedEncodeCodecFamilies = new HashSet<>();
     private final Set<UUID> streamIds = new HashSet<>();
+    // A retired format attempt can still take a timeline report until its stream session ends.
+    private final List<StreamSession> readyAttempts = new ArrayList<>();
   }
 
   @Builder
@@ -174,6 +179,7 @@ public class PlaybackSessionService implements AutoCloseable {
               .requestedChoice(requested)
               .choice(PlayingChoice.requested(requested))
               .current(new PlaybackFormatAttempt.Pending(childId))
+              .startPosition(command.startPosition())
               .lastAccessedAt(clock.instant())
               .build();
       playback.streamIds.add(childId);
@@ -383,6 +389,15 @@ public class PlaybackSessionService implements AutoCloseable {
     };
   }
 
+  // Once the player reports that playback moved from the start position in any format attempt, the
+  // client seeks the replacement itself, so the replacement starts at the beginning of the media.
+  private static void forgetTheStartPositionOncePlaybackMoved(PlaybackSession playback) {
+    if (playback.readyAttempts.stream()
+        .anyMatch(StreamSession::hasPlaybackMovedFromTheStartPosition)) {
+      playback.startPosition = Optional.empty();
+    }
+  }
+
   // A format attempt fails before it is ready only through the worker's copy output mismatch,
   // which the worker reports only for a copy.
   private static FailedFormatAttempt failedAttempt(
@@ -532,17 +547,21 @@ public class PlaybackSessionService implements AutoCloseable {
       PlaybackSession playback, UUID streamId) {
     return locked(
         playback,
-        () ->
-            CreateStreamSessionCommand.builder()
-                .streamSessionId(streamId)
-                .mediaFileId(playback.command.mediaFileId())
-                .identity(playback.command.identity())
-                .options(
-                    playback.command.options().toBuilder()
-                        .quality(playback.choice.playbackChoice())
-                        .build())
-                .capabilityDeclaration(playback.command.capabilityDeclaration())
-                .excludedEncodeCodecFamilies(Set.copyOf(playback.excludedEncodeCodecFamilies)));
+        () -> {
+          // The retired format attempt can take a report until it is destroyed, just before this.
+          forgetTheStartPositionOncePlaybackMoved(playback);
+          return CreateStreamSessionCommand.builder()
+              .streamSessionId(streamId)
+              .mediaFileId(playback.command.mediaFileId())
+              .identity(playback.command.identity())
+              .options(
+                  playback.command.options().toBuilder()
+                      .quality(playback.choice.playbackChoice())
+                      .build())
+              .capabilityDeclaration(playback.command.capabilityDeclaration())
+              .excludedEncodeCodecFamilies(Set.copyOf(playback.excludedEncodeCodecFamilies))
+              .startPosition(playback.startPosition);
+        });
   }
 
   private void requireAuthority(AuthenticatedIdentity identity, PlaybackAuthority authority) {
@@ -655,6 +674,7 @@ public class PlaybackSessionService implements AutoCloseable {
   private static void adopt(
       PlaybackSession playback, StreamSession session, PlayingChoice choiceWhenEncoding) {
     playback.current = new PlaybackFormatAttempt.Ready(session);
+    playback.readyAttempts.add(session);
     // A direct-play stream session sends the source as it is and holds no transcode decision.
     if (session.getDelivery() == StreamDelivery.HLS
         && !session.getTranscodeDecision().transcodeMode().copiesVideo()) {

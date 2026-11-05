@@ -692,9 +692,13 @@ class StreamingResolverTest {
         .isEqualTo(2);
   }
 
-  @Test
+  // A replacement can meet a start position that the media no longer holds once the file is
+  // probed again shorter.
+  @ParameterizedTest
+  @MethodSource("replacementRejections")
   @DisplayName("Should expose a typed creation rejection when the replacement cannot start")
-  void shouldExposeATypedCreationRejectionWhenTheReplacementCannotStart() {
+  void shouldExposeATypedCreationRejectionWhenTheReplacementCannotStart(
+      CreateStreamSessionRejection rejection, String errorType) {
     STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
     var created = startPlayback(VideoQuality.AUTO);
     var playbackId = created.read(CREATED_PLAYBACK + ".id", String.class);
@@ -702,7 +706,7 @@ class StreamingResolverTest {
         playbackId,
         created.read(CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.id", String.class),
         "DECODE_ERROR");
-    STUB_SERVICE.setRejection(new CreateStreamSessionRejection.ProbeNotReady());
+    STUB_SERVICE.setRejection(rejection);
 
     REPLACEMENT_TASKS.remove().run();
 
@@ -710,7 +714,16 @@ class StreamingResolverTest {
             playbackStatus(playbackId)
                 .read(
                     "data.playbackSession.currentFormatAttempt.error['__typename']", String.class))
-        .isEqualTo("MediaFileProbeNotReadyError");
+        .isEqualTo(errorType);
+  }
+
+  static Stream<Arguments> replacementRejections() {
+    return Stream.of(
+        Arguments.of(
+            new CreateStreamSessionRejection.ProbeNotReady(), "MediaFileProbeNotReadyError"),
+        Arguments.of(
+            new CreateStreamSessionRejection.StartPositionOutOfRange(),
+            "StartPositionOutOfRangeError"));
   }
 
   @Test
@@ -858,6 +871,91 @@ class StreamingResolverTest {
             "This video's file is no longer on the server. Go back to your library. If the video is still there, open it again.");
     List<String> inputPath = context.read("data.createPlaybackSession.userErrors[0].inputPath");
     assertThat(inputPath).containsExactly("mediaFileId");
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  @DisplayName(
+      "Should pass the start position to the service and return it with the stream session")
+  void shouldPassTheStartPositionToTheServiceAndReturnItWithTheStreamSession(boolean directPlay) {
+    var session =
+        directPlay ? buildDirectPlaySession(UUID.randomUUID()) : buildSession(UUID.randomUUID());
+    STUB_SERVICE.setNextResult(session);
+
+    var context = startPlaybackAt(session.getMediaFileId().toString(), "5381.5");
+
+    assertThat(STUB_SERVICE.getLastReceivedStartPosition()).contains(Duration.ofMillis(5_381_500));
+    assertThat(
+            context.read(
+                CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.startPositionSeconds",
+                Double.class))
+        .isEqualTo(5381.5);
+  }
+
+  @Test
+  @DisplayName("Should return no start position when the input has none")
+  void shouldReturnNoStartPositionWhenTheInputHasNone() {
+    var session = buildSession(UUID.randomUUID());
+    STUB_SERVICE.setNextResult(session);
+
+    var context = startPlaybackAt(session.getMediaFileId().toString(), "null");
+
+    assertThat(STUB_SERVICE.getLastReceivedStartPosition()).isEmpty();
+    assertThat(
+            context.read(
+                CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.startPositionSeconds",
+                Object.class))
+        .isNull();
+  }
+
+  // A fraction of a nanosecond below zero still counts as before zero.
+  @Test
+  @DisplayName("Should keep a start position just below zero negative when the service reads it")
+  void shouldKeepAStartPositionJustBelowZeroNegativeWhenTheServiceReadsIt() {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+
+    startPlaybackAt(UUID.randomUUID().toString(), "-1e-10");
+
+    assertThat(STUB_SERVICE.getLastReceivedStartPosition()).contains(Duration.ofNanos(-1));
+  }
+
+  @Test
+  @DisplayName("Should return a typed input error when the start position lies outside the media")
+  void shouldReturnATypedInputErrorWhenTheStartPositionLiesOutsideTheMedia() {
+    STUB_SERVICE.setRejection(new CreateStreamSessionRejection.StartPositionOutOfRange());
+
+    var context = startPlaybackAt(UUID.randomUUID().toString(), "9000");
+
+    assertThat(context.read(CREATED_PLAYBACK, Object.class)).isNull();
+    assertThat(context.read("data.createPlaybackSession.userErrors[0].__typename", String.class))
+        .isEqualTo("StartPositionOutOfRangeError");
+    assertThat(context.read("data.createPlaybackSession.userErrors[0].message", String.class))
+        .isEqualTo("This video can't start at that point. Play it from the beginning instead.");
+    List<String> inputPath = context.read("data.createPlaybackSession.userErrors[0].inputPath");
+    assertThat(inputPath).containsExactly("startPositionSeconds");
+  }
+
+  private DocumentContext startPlaybackAt(String mediaFileId, String startPositionSeconds) {
+    return dgsQueryExecutor.executeAndGetDocumentContext(
+        """
+        mutation {
+          createPlaybackSession(input: {
+            mediaFileId: "%s", startPositionSeconds: %s, capabilities: %s
+          }) {
+            playbackSession {
+              currentFormatAttempt {
+                ... on ReadyPlaybackFormatAttempt { streamSession { startPositionSeconds } }
+              }
+            }
+            userErrors {
+              __typename
+              ... on MutationError { message }
+              ... on InputMutationError { inputPath }
+            }
+          }
+        }
+        """
+            .formatted(mediaFileId, startPositionSeconds, CAPABILITIES));
   }
 
   @Test
@@ -1778,6 +1876,7 @@ class StreamingResolverTest {
     private StreamingOptions lastReceivedOptions;
     private ClientCapabilityDeclaration lastReceivedDeclaration;
     private UUID lastCreateProfileId;
+    private Optional<Duration> lastReceivedStartPosition = Optional.empty();
     private final Map<UUID, StreamSession> sessions = new HashMap<>();
     private Consumer<CreateStreamSessionCommand> duringCreate = _ -> {};
 
@@ -1787,6 +1886,7 @@ class StreamingResolverTest {
       lastReceivedOptions = null;
       lastReceivedDeclaration = null;
       lastCreateProfileId = null;
+      lastReceivedStartPosition = Optional.empty();
       sessions.clear();
       duringCreate = _ -> {};
     }
@@ -1811,6 +1911,10 @@ class StreamingResolverTest {
       return lastCreateProfileId;
     }
 
+    Optional<Duration> getLastReceivedStartPosition() {
+      return lastReceivedStartPosition;
+    }
+
     void duringNextCreate(Consumer<CreateStreamSessionCommand> action) {
       duringCreate = action;
     }
@@ -1821,6 +1925,7 @@ class StreamingResolverTest {
       this.lastReceivedOptions = command.options();
       this.lastReceivedDeclaration = command.capabilityDeclaration();
       this.lastCreateProfileId = command.identity().profileId();
+      this.lastReceivedStartPosition = command.startPosition();
       if (rejection.isPresent()) {
         return Outcome.rejected(rejection.get());
       }
@@ -1836,6 +1941,7 @@ class StreamingResolverTest {
               .delivery(nextResult.getDelivery())
               .sourceContainer(nextResult.getSourceContainer().orElse(null))
               .options(command.options())
+              .startPosition(command.startPosition().orElse(null))
               .createdAt(Instant.now())
               .build();
       sessions.put(session.getSessionId(), session);

@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
+import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommandBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -10,6 +11,7 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.domain.streaming.DecimalSeconds;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
@@ -30,9 +32,12 @@ import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.support.OutcomeTestSupport;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -326,6 +331,62 @@ class HlsStreamingSmokeTest {
             .toList();
     assertThat(segmentLines).hasSizeGreaterThan(1);
     assertThat(segmentLines.getFirst()).isEqualTo("segment0.m4s?t=smoke-token");
+  }
+
+  @Test
+  @DisplayName(
+      "Should produce the first segment at the start position without a job attempt at segment 0"
+          + " when the session starts at a later position")
+  void
+      shouldProduceTheFirstSegmentAtTheStartPositionWithoutAJobAttemptAtSegment0WhenTheSessionStartsAtALaterPosition() {
+    var file = seedMediaFile();
+    var startPosition = Duration.ofMillis(9_500);
+
+    var session =
+        OutcomeTestSupport.accepted(
+            streamingService.createSession(
+                createStreamSessionCommandBuilder(file.getId(), UUID.randomUUID())
+                    .startPosition(Optional.of(startPosition))
+                    .build()));
+    var sessionId = session.getSessionId();
+    var extinfDurations =
+        playlistService
+            .generateMediaPlaylist(session, StreamSession.defaultVariant(), "smoke-token")
+            .lines()
+            .filter(line -> line.startsWith("#EXTINF:"))
+            .map(line -> new BigDecimal(line.substring("#EXTINF:".length(), line.indexOf(','))))
+            .toList();
+    var expectedFirstSegment = segmentHolding(extinfDurations, startPosition);
+    var handle = session.getHandle().orElseThrow();
+
+    assertThat(expectedFirstSegment).isPositive();
+    assertThat(session.getVariantHandles()).hasSize(1);
+    assertThat(handle.startSequenceNumber()).isEqualTo(expectedFirstSegment);
+    await()
+        .atMost(Duration.ofSeconds(30))
+        .untilAsserted(
+            () -> {
+              assertThat(
+                      segmentStore.segmentExists(
+                          sessionId, SegmentNames.mediaSegmentName(expectedFirstSegment)))
+                  .isTrue();
+              assertThat(workerFixture.worker().processRunning(handle.attemptId())).isFalse();
+            });
+    assertThat(segmentStore.segmentExists(sessionId, "segment0.m4s")).isFalse();
+  }
+
+  // The segment that a player starts in: the first whose summed EXTINF durations pass the position.
+  private static int segmentHolding(List<BigDecimal> extinfDurations, Duration position) {
+    var seconds = DecimalSeconds.of(position);
+    var end = BigDecimal.ZERO;
+    for (int index = 0; index < extinfDurations.size(); index++) {
+      end = end.add(extinfDurations.get(index));
+      if (seconds.compareTo(end) < 0) {
+        return index;
+      }
+    }
+
+    return extinfDurations.size() - 1;
   }
 
   @Test

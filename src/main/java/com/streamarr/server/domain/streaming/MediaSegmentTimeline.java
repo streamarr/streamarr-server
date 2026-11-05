@@ -40,6 +40,23 @@ public sealed interface MediaSegmentTimeline {
   }
 
   /**
+   * The media segment that holds the position: the last segment that starts at or before it. A
+   * position at or past the last segment's end lies in the last segment.
+   */
+  default int mediaSegmentIndexAt(@NonNull Duration position) {
+    var lastIndex = mediaSegmentCount() - 1;
+    var end = Duration.ZERO;
+    for (int index = 0; index < lastIndex; index++) {
+      end = end.plus(mediaSegmentDuration(index));
+      if (position.compareTo(end) < 0) {
+        return index;
+      }
+    }
+
+    return Math.max(lastIndex, 0);
+  }
+
+  /**
    * The media segment that starts the given distance before segment {@code index}, counted in whole
    * target segment durations and at least one segment back. The index falls below zero when the
    * distance reaches past the first media segment.
