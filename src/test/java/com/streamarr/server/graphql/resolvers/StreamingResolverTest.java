@@ -8,6 +8,7 @@ import static com.streamarr.server.fixtures.MediaEntityFixture.buildEpisode;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildMovie;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeason;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeries;
+import static com.streamarr.server.fixtures.ProbeFixture.audioStreamBuilder;
 import static com.streamarr.server.fixtures.ServerSettingsFixture.defaultServerSettings;
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
@@ -137,9 +138,10 @@ class StreamingResolverTest {
       {video: [{codecFamily: H264, codecProfiles: [{profile: H264_HIGH, maxLevel: 41}], \
       maxBitDepth: 8, maxWidth: 1920, maxHeight: 1080, maxFrameRate: 60, compatibleBases: [SDR], \
       dolbyVisionProfiles: [], hdr10Plus: false, hls: true}], \
-      audio: [{codec: AAC, maxChannels: 2, hls: true}]}""";
+      audio: [{codec: AAC, maxChannels: 2, hls: true}], selectsAudioTrackInDirectPlay: false}""";
   private static final String REPORTED_PLAYBACK =
       "data.reportPlaybackFormatFailure.playbackSession";
+  private static final String SWITCHED_PLAYBACK = "data.switchPlaybackAudioTrack.playbackSession";
 
   @Test
   @DisplayName("Should conceal playback status when another Profile owns the session")
@@ -471,6 +473,121 @@ class StreamingResolverTest {
         .isEqualTo(probe.duration().plus(Duration.ofHours(1)));
   }
 
+  // ADR 0045: a player that selects audio tracks selects the track that the stream decision names.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("directPlayAudioTrackPositions")
+  @DisplayName(
+      "Should expose the audio track that the decision names when the session direct-plays")
+  void shouldExposeTheAudioTrackThatTheDecisionNamesWhenTheSessionDirectPlays(
+      String scenario, OptionalInt position, Integer expected) {
+    STUB_SERVICE.setNextResult(
+        sessionBuilderLike(buildSession(UUID.randomUUID()))
+            .transcodeDecision(null)
+            .delivery(StreamDelivery.DIRECT_PLAY)
+            .sourceContainer(SourceContainer.MATROSKA)
+            .directPlayAudioTrackPosition(position)
+            .build());
+
+    var context =
+        dgsQueryExecutor.executeAndGetDocumentContext(
+            """
+            mutation {
+              createPlaybackSession(
+                input: {mediaFileId: "%s", options: {quality: ORIGINAL}, capabilities: %s}
+              ) {
+                playbackSession {
+                  currentFormatAttempt {
+                    ... on ReadyPlaybackFormatAttempt {
+                      streamSession {
+                        __typename
+                        ... on DirectPlayStreamSession { audioTrackPosition }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """
+                .formatted(UUID.randomUUID(), CAPABILITIES));
+
+    var streamSession = CREATED_PLAYBACK + ".currentFormatAttempt.streamSession";
+    assertThat(context.read(streamSession + ".__typename", String.class))
+        .isEqualTo("DirectPlayStreamSession");
+    assertThat(context.read(streamSession + ".audioTrackPosition", Integer.class))
+        .isEqualTo(expected);
+  }
+
+  // ADR 0045: a player that cannot list a file's audio tracks offers the ones the server lists, and
+  // names the chosen one by its position in stream order. The session's probe puts the session's
+  // track first, as a stream session for the third track holds it.
+  @Test
+  @DisplayName("Should list the file's audio tracks in stream order when the session direct-plays")
+  void shouldListTheFilesAudioTracksInStreamOrderWhenTheSessionDirectPlays() {
+    var session = buildDirectPlaySession(UUID.randomUUID());
+    var english =
+        audioStreamBuilder("aac")
+            .index(1)
+            .language(Optional.of("eng"))
+            .title(Optional.of("Stereo"))
+            .isDefault(true)
+            .build();
+    var french = audioStreamBuilder("ac3").index(2).language(Optional.of("fre")).build();
+    var untagged = audioStreamBuilder("aac").index(4).build();
+    STUB_SERVICE.setNextResult(
+        sessionBuilderLike(session)
+            .delivery(StreamDelivery.DIRECT_PLAY)
+            .sourceContainer(SourceContainer.MATROSKA)
+            .mediaProbe(
+                session.getMediaProbe().toBuilder()
+                    .streams(List.of(untagged, english, french))
+                    .build())
+            .directPlayAudioTrackPosition(OptionalInt.of(2))
+            .build());
+
+    var context =
+        dgsQueryExecutor.executeAndGetDocumentContext(
+            """
+            mutation {
+              createPlaybackSession(
+                input: {mediaFileId: "%s", options: {quality: ORIGINAL}, capabilities: %s}
+              ) {
+                playbackSession {
+                  currentFormatAttempt {
+                    ... on ReadyPlaybackFormatAttempt {
+                      streamSession {
+                        ... on DirectPlayStreamSession {
+                          audioTracks { position language title }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """
+                .formatted(UUID.randomUUID(), CAPABILITIES));
+
+    List<Map<String, Object>> tracks =
+        context.read(CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.audioTracks");
+    assertThat(tracks)
+        .containsExactly(
+            audioTrack(0, "eng", "Stereo"), audioTrack(1, "fre", null), audioTrack(2, null, null));
+  }
+
+  private static Map<String, Object> audioTrack(int position, String language, String title) {
+    var track = new HashMap<String, Object>();
+    track.put("position", position);
+    track.put("language", language);
+    track.put("title", title);
+    return track;
+  }
+
+  static Stream<Arguments> directPlayAudioTrackPositions() {
+    return Stream.of(
+        Arguments.of("the second audio track", OptionalInt.of(1), 1),
+        Arguments.of("a file without audio", OptionalInt.empty(), null));
+  }
+
   static Stream<Arguments> sourceRanges() {
     return Stream.of(
         Arguments.of(
@@ -511,6 +628,174 @@ class StreamingResolverTest {
     assertThat(ready.read("data.playbackSession.playbackChoice", String.class)).isEqualTo("AUTO");
     assertThat(ready.read("data.playbackSession.formatChange", String.class))
         .isEqualTo("DIRECT_PLAY_FAILED");
+  }
+
+  // ADR 0052: Original that reaches an encode after an audio switch plays it in Auto, with a
+  // notice that names the switch.
+  @Test
+  @DisplayName(
+      "Should expose the change to Auto when the viewer switches audio tracks and no copy is"
+          + " eligible")
+  void shouldExposeTheChangeToAutoWhenTheViewerSwitchesAudioTracksAndNoCopyIsEligible() {
+    STUB_SERVICE.setNextResult(buildDirectPlaySessionOfTwoAudioTracks());
+    var created = startPlaybackReadingChoices(VideoQuality.ORIGINAL);
+    var playbackId = created.read(CREATED_PLAYBACK + ".id", String.class);
+    var streamId =
+        created.read(CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.id", String.class);
+    STUB_SERVICE.setNextResult(
+        buildSessionDeciding(UUID.randomUUID(), fullTranscodeDecision("h264")));
+
+    var switched = switchAudioTrack(playbackId, streamId, 1);
+
+    assertThat(switched.read(SWITCHED_PLAYBACK + ".currentFormatAttempt.__typename", String.class))
+        .isEqualTo("ReadyPlaybackFormatAttempt");
+    assertThat(switched.read(SWITCHED_PLAYBACK + ".playbackChoice", String.class))
+        .isEqualTo("AUTO");
+    assertThat(switched.read(SWITCHED_PLAYBACK + ".formatChange", String.class))
+        .isEqualTo("AUDIO_TRACK_SWITCHED");
+  }
+
+  // The switch's stream session starts at the playback session's start position until playback
+  // moves from it, so a re-probe that shortens the file refuses that position too.
+  @ParameterizedTest(name = "{1}")
+  @MethodSource("audioSwitchRejections")
+  @DisplayName(
+      "Should return the typed creation error when the stream session for an audio switch is"
+          + " refused")
+  void shouldReturnTheTypedCreationErrorWhenTheStreamSessionForAnAudioSwitchIsRefused(
+      CreateStreamSessionRejection rejection, String errorType) {
+    STUB_SERVICE.setNextResult(buildDirectPlaySessionOfTwoAudioTracks());
+    var created = startPlaybackReadingChoices(VideoQuality.ORIGINAL);
+    STUB_SERVICE.setRejection(rejection);
+
+    var switched =
+        switchAudioTrack(
+            created.read(CREATED_PLAYBACK + ".id", String.class),
+            created.read(CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.id", String.class),
+            1);
+
+    assertThat(switched.read(SWITCHED_PLAYBACK, Object.class)).isNull();
+    assertThat(
+            switched.read("data.switchPlaybackAudioTrack.userErrors[0].__typename", String.class))
+        .isEqualTo(errorType);
+  }
+
+  static Stream<Arguments> audioSwitchRejections() {
+    return Stream.of(
+        Arguments.of(
+            new CreateStreamSessionRejection.TranscodeCapacityUnavailable(8),
+            "TranscodeCapacityUnavailableError"),
+        Arguments.of(
+            new CreateStreamSessionRejection.StartPositionOutOfRange(),
+            "StartPositionOutOfRangeError"));
+  }
+
+  @Test
+  @DisplayName("Should return a typed input error when the file has no audio track at the position")
+  void shouldReturnATypedInputErrorWhenTheFileHasNoAudioTrackAtThePosition() {
+    STUB_SERVICE.setNextResult(buildDirectPlaySessionOfTwoAudioTracks());
+    var created = startPlaybackReadingChoices(VideoQuality.ORIGINAL);
+
+    var switched =
+        switchAudioTrack(
+            created.read(CREATED_PLAYBACK + ".id", String.class),
+            created.read(CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.id", String.class),
+            2);
+
+    assertThat(switched.read(SWITCHED_PLAYBACK, Object.class)).isNull();
+    assertThat(
+            switched.read("data.switchPlaybackAudioTrack.userErrors[0].__typename", String.class))
+        .isEqualTo("AudioTrackNotInFileError");
+    List<String> inputPath = switched.read("data.switchPlaybackAudioTrack.userErrors[0].inputPath");
+    assertThat(inputPath).containsExactly("audioTrackPosition");
+  }
+
+  // The resolver's playback session allows two format attempts, and the stub streaming service
+  // direct-plays the second as well, so a second switch finds no format attempt left.
+  @Test
+  @DisplayName(
+      "Should return a typed attempts error when the viewer switches tracks with no attempt left")
+  void shouldReturnATypedAttemptsErrorWhenTheViewerSwitchesTracksWithNoAttemptLeft() {
+    STUB_SERVICE.setNextResult(buildDirectPlaySessionOfTwoAudioTracks());
+    var created = startPlaybackReadingChoices(VideoQuality.ORIGINAL);
+    var playbackId = created.read(CREATED_PLAYBACK + ".id", String.class);
+    var directPlayId =
+        created.read(CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.id", String.class);
+    STUB_SERVICE.setNextResult(buildDirectPlaySessionOfTwoAudioTracks());
+    switchAudioTrack(playbackId, directPlayId, 1);
+    var secondId =
+        playbackStatus(playbackId)
+            .read("data.playbackSession.currentFormatAttempt.streamSession.id", String.class);
+
+    var switched = switchAudioTrack(playbackId, secondId, 1);
+
+    assertThat(switched.read(SWITCHED_PLAYBACK, Object.class)).isNull();
+    assertThat(
+            switched.read("data.switchPlaybackAudioTrack.userErrors[0].__typename", String.class))
+        .isEqualTo("PlaybackFormatAttemptsExhaustedError");
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"playbackSessionId", "streamSessionId"})
+  @DisplayName("Should identify the malformed field when an audio track switch has an invalid ID")
+  void shouldIdentifyTheMalformedFieldWhenAnAudioTrackSwitchHasAnInvalidId(String field) {
+    var playbackId = "playbackSessionId".equals(field) ? "invalid" : UUID.randomUUID().toString();
+    var streamId = "streamSessionId".equals(field) ? "invalid" : UUID.randomUUID().toString();
+
+    var switched = switchAudioTrack(playbackId, streamId, 1);
+
+    assertThat(switched.read(SWITCHED_PLAYBACK, Object.class)).isNull();
+    assertThat(
+            switched.read("data.switchPlaybackAudioTrack.userErrors[0].__typename", String.class))
+        .isEqualTo("InvalidIdError");
+    List<String> inputPath = switched.read("data.switchPlaybackAudioTrack.userErrors[0].inputPath");
+    assertThat(inputPath).containsExactly(field);
+  }
+
+  @Test
+  @DisplayName("Should return a closed error when the viewer switches audio tracks after playback")
+  void shouldReturnAClosedErrorWhenTheViewerSwitchesAudioTracksAfterPlayback() {
+    var switched = switchAudioTrack(UUID.randomUUID().toString(), UUID.randomUUID().toString(), 1);
+
+    assertThat(switched.read(SWITCHED_PLAYBACK, Object.class)).isNull();
+    assertThat(
+            switched.read("data.switchPlaybackAudioTrack.userErrors[0].__typename", String.class))
+        .isEqualTo("PlaybackSessionClosedError");
+  }
+
+  private StreamSession buildDirectPlaySessionOfTwoAudioTracks() {
+    var session = buildDirectPlaySession(UUID.randomUUID());
+    var probe =
+        session.getMediaProbe().toBuilder()
+            .streams(
+                List.of(
+                    audioStreamBuilder("aac").index(1).build(),
+                    audioStreamBuilder("aac").index(2).build()))
+            .build();
+    return sessionBuilderLike(session)
+        .delivery(StreamDelivery.DIRECT_PLAY)
+        .sourceContainer(SourceContainer.MATROSKA)
+        .mediaProbe(probe)
+        .directPlayAudioTrackPosition(OptionalInt.of(0))
+        .build();
+  }
+
+  private DocumentContext switchAudioTrack(String playbackId, String streamId, int position) {
+    return dgsQueryExecutor.executeAndGetDocumentContext(
+        """
+        mutation {
+          switchPlaybackAudioTrack(
+            input: {playbackSessionId: "%s", streamSessionId: "%s", audioTrackPosition: %d}
+          ) {
+            playbackSession {
+              id playbackChoice formatChange
+              currentFormatAttempt { __typename }
+            }
+            userErrors { __typename ... on InputMutationError { inputPath } }
+          }
+        }
+        """
+            .formatted(playbackId, streamId, position));
   }
 
   // ADR 0052: the client ends playback at the real end of a copy that ran short after every source
@@ -1253,6 +1538,7 @@ class StreamingResolverTest {
                 {codec: AAC, maxChannels: 2, hls: true}
                 {codec: EAC3, maxChannels: 6, hls: false, directPlayContainers: [MOV]}
               ]
+              selectsAudioTrackInDirectPlay: true
             }
           }) {
             playbackSession {
@@ -1342,6 +1628,7 @@ class StreamingResolverTest {
                             .hls(false)
                             .directPlayContainers(List.of(SourceContainer.MOV))
                             .build()))
+                .selectsAudioTrackInDirectPlay(true)
                 .build());
   }
 
@@ -1790,6 +2077,7 @@ class StreamingResolverTest {
                     {codec: AAC, maxChannels: 2, hls: true}
                     {codec: FLAC, maxChannels: 8, hls: true, minBlockSize: 192}
                   ]
+                  selectsAudioTrackInDirectPlay: false
                 }
               }) {
                 playbackSession { id }
@@ -1828,6 +2116,7 @@ class StreamingResolverTest {
                     compatibleBases: [SDR], dolbyVisionProfiles: [], hdr10Plus: false, hls: true
                   }]
                   audio: [{codec: AAC, maxChannels: 2, hls: true, minBlockSize: 192}]
+                  selectsAudioTrackInDirectPlay: false
                 }
               }) {
                 playbackSession { id }
@@ -1871,6 +2160,7 @@ class StreamingResolverTest {
                     compatibleBases: [SDR], dolbyVisionProfiles: [], hdr10Plus: false, hls: true
                   }]
                   audio: [{codec: OPUS, maxChannels: 2, hls: true}]
+                  selectsAudioTrackInDirectPlay: false
                 }
               }) {
                 playbackSession { id }
@@ -1929,6 +2219,7 @@ class StreamingResolverTest {
                     compatibleBases: [SDR], dolbyVisionProfiles: [], hdr10Plus: false, hls: true
                   }]
                   audio: [{codec: AAC, maxChannels: 2, hls: true}]
+                  selectsAudioTrackInDirectPlay: false
                 }
               }) {
                 playbackSession { id }
@@ -2003,6 +2294,35 @@ class StreamingResolverTest {
             "codec family VP9",
             CAPABILITIES.replace("codecFamily: H264", "codecFamily: VP9"),
             "VP9"));
+  }
+
+  // A client states whether its direct-play player selects an audio track (ADR 0045), so the
+  // schema gives the fact no default.
+  @Test
+  @DisplayName(
+      "Should refuse the request when its declaration omits whether the player selects an audio"
+          + " track")
+  void shouldRefuseTheRequestWhenItsDeclarationOmitsWhetherThePlayerSelectsAnAudioTrack() {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+    var capabilities = CAPABILITIES.replace(", selectsAudioTrackInDirectPlay: false", "");
+    assertThat(capabilities).doesNotContain("selectsAudioTrackInDirectPlay");
+
+    var result =
+        dgsQueryExecutor.execute(
+            """
+            mutation {
+              createPlaybackSession(input: {mediaFileId: "%s", capabilities: %s}) {
+                playbackSession { id }
+              }
+            }
+            """
+                .formatted(UUID.randomUUID(), capabilities));
+
+    assertThat(result.getErrors())
+        .singleElement()
+        .satisfies(
+            error -> assertThat(error.getMessage()).contains("selectsAudioTrackInDirectPlay"));
+    assertThat(STUB_SERVICE.getAllSessions()).isEmpty();
   }
 
   @Test
@@ -2167,6 +2487,7 @@ class StreamingResolverTest {
               .transcodeDecision(nextResult.getTranscodeDecision())
               .delivery(nextResult.getDelivery())
               .sourceContainer(nextResult.getSourceContainer().orElse(null))
+              .directPlayAudioTrackPosition(nextResult.getDirectPlayAudioTrackPosition())
               .options(command.options())
               .startPosition(command.startPosition().orElse(null))
               .createdAt(Instant.now())

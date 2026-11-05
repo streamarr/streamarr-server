@@ -1,7 +1,9 @@
 package com.streamarr.server.graphql.mutation.streaming;
 
+import com.streamarr.server.graphql.mutation.InputMutationError;
 import com.streamarr.server.graphql.mutation.MutationError;
 import com.streamarr.server.services.streaming.PlaybackFormatFailure;
+import java.util.List;
 
 public sealed interface PlaybackSessionError extends MutationError {
 
@@ -17,4 +19,7 @@ public sealed interface PlaybackSessionError extends MutationError {
   record PlaybackFormatAttemptsExhaustedError(String message) implements PlaybackSessionError {}
 
   record PlaybackStartupFailedError(String message) implements PlaybackSessionError {}
+
+  record AudioTrackNotInFileError(String message, List<String> inputPath)
+      implements PlaybackSessionError, InputMutationError {}
 }

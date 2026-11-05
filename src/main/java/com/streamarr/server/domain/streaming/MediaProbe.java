@@ -1,6 +1,9 @@
 package com.streamarr.server.domain.streaming;
 
+import com.streamarr.server.domain.language.Language;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
@@ -19,7 +22,7 @@ import lombok.NonNull;
  * names one. {@code audioChannelLayout} is the first audio stream's channel layout as ffprobe names
  * it, and is empty when the probe stored none, which every version before 7 does.
  */
-@Builder
+@Builder(toBuilder = true)
 public record MediaProbe(
     Duration duration,
     @NonNull OptionalDouble framerate,
@@ -92,6 +95,83 @@ public record MediaProbe(
   }
 
   /**
+   * The file's audio streams in stream order. {@link #audioStreams} lists the session's audio track
+   * first instead, once {@link #withSessionAudioTrackAt} has chosen one.
+   */
+  public List<StreamInfo> audioStreamsInStreamOrder() {
+    return audioStreams().stream().sorted(Comparator.comparingInt(StreamInfo::index)).toList();
+  }
+
+  /**
+   * The position, counting from 0, of the stream session's audio track among the file's audio
+   * tracks in stream order, or empty when the file has no audio track. The stream session plays the
+   * first audio stream that the probe lists.
+   */
+  public OptionalInt sessionAudioTrackPosition() {
+    var tracks = audioStreams();
+    if (tracks.isEmpty()) {
+      return OptionalInt.empty();
+    }
+
+    var sessionTrack = tracks.getFirst().index();
+    return OptionalInt.of(
+        (int) tracks.stream().filter(track -> track.index() < sessionTrack).count());
+  }
+
+  /**
+   * Whether a player that cannot select an audio track starts on the file's first audio track in
+   * stream order. Such a player starts on the first default audio track, as an MP4 track's enabled
+   * flag or a Matroska track's default flag marks it, or on the first audio track when none is
+   * marked. True when the file has no audio track.
+   */
+  public boolean startsOnTheFirstAudioTrack() {
+    var inStreamOrder = audioStreamsInStreamOrder();
+    return inStreamOrder.stream()
+        .filter(StreamInfo::isDefault)
+        .findFirst()
+        .map(track -> track == inStreamOrder.getFirst())
+        .orElse(true);
+  }
+
+  /**
+   * This probe with the audio track at {@code position}, counting from 0 among the file's audio
+   * tracks in stream order, as the session's audio track: it takes the first audio stream's place,
+   * and the probe's audio facts come from it. {@code position} must name one of the file's audio
+   * tracks.
+   */
+  public MediaProbe withSessionAudioTrackAt(int position) {
+    var inStreamOrder = audioStreamsInStreamOrder();
+    return withAudioFirst(inStreamOrder.get(position));
+  }
+
+  // The chosen stream takes the first audio stream's place, so every other stream keeps its order.
+  private MediaProbe withAudioFirst(StreamInfo chosen) {
+    var firstAudio = audioStreams().getFirst();
+    if (chosen == firstAudio) {
+      return this;
+    }
+
+    var reordered = new ArrayList<StreamInfo>(streams.size());
+    for (var stream : streams) {
+      if (stream == firstAudio) {
+        reordered.add(chosen);
+      }
+
+      if (stream != chosen) {
+        reordered.add(stream);
+      }
+    }
+
+    return toBuilder()
+        .streams(List.copyOf(reordered))
+        .audioCodec(chosen.codec().orElse(null))
+        .audioChannels(chosen.channels())
+        .audioChannelLayout(chosen.audioProperties().flatMap(AudioStreamProperties::channelLayout))
+        .audioBitrate(chosen.bitrate())
+        .build();
+  }
+
+  /**
    * Whether a forced PGS, VobSub or DVB subtitle track is in the language of any audio track. The
    * player shows such a track while subtitles are off (streamarr/streamarr-server#506), whichever
    * audio track plays.
@@ -107,6 +187,76 @@ public record MediaProbe(
         .filter(stream -> stream.codec().filter(IMAGE_SUBTITLE_CODECS::contains).isPresent())
         .flatMap(stream -> stream.language().stream())
         .anyMatch(language -> languages.contains(LanguageCodes.canonical(language)));
+  }
+
+  /**
+   * This probe with the audio stream that the session plays first among the streams, and the audio
+   * facts taken from it, so every decision about the session's audio reads that stream (ADR 0043).
+   * The stream is the first eligible stream in the first of {@code languages}, in order, that the
+   * file holds: one in exactly that language before one that shares its base language. A
+   * commentary, an audio description, a clean-effects stream and a dependent stream are never
+   * eligible, whether a disposition or the stream's name marks them. When no language matches, the
+   * file's own default plays: the first eligible stream whose default flag is set, else the first
+   * eligible stream. When no stream is eligible, the same rule picks among the streams that are not
+   * dependent, and a file of dependent streams alone keeps its first audio stream.
+   */
+  public MediaProbe withSessionAudio(@NonNull List<Language> languages) {
+    var eligible = audioStreams().stream().filter(MediaProbe::isEligibleSessionAudio).toList();
+    var complete = audioStreams().stream().filter(stream -> !isDependent(stream)).toList();
+    return languages.stream()
+        .flatMap(language -> matchingAudio(eligible, language).stream())
+        .findFirst()
+        .or(() -> fileDefault(eligible))
+        .or(() -> fileDefault(complete))
+        .map(this::withAudioFirst)
+        .orElse(this);
+  }
+
+  private static Optional<StreamInfo> fileDefault(List<StreamInfo> candidates) {
+    return candidates.stream()
+        .filter(StreamInfo::isDefault)
+        .findFirst()
+        .or(() -> candidates.stream().findFirst());
+  }
+
+  private static boolean isDependent(StreamInfo stream) {
+    return stream.audioProperties().filter(AudioStreamProperties::dependent).isPresent();
+  }
+
+  private static Optional<StreamInfo> matchingAudio(List<StreamInfo> eligible, Language language) {
+    return eligible.stream()
+        .filter(stream -> languageOf(stream).filter(language::equals).isPresent())
+        .findFirst()
+        .or(
+            () ->
+                eligible.stream()
+                    .filter(
+                        stream ->
+                            languageOf(stream)
+                                .filter(tagged -> tagged.base() == language.base())
+                                .isPresent())
+                    .findFirst());
+  }
+
+  private static Optional<Language> languageOf(StreamInfo stream) {
+    return stream.language().flatMap(Language::ofFileCode);
+  }
+
+  private static boolean isEligibleSessionAudio(StreamInfo stream) {
+    if (stream.comment().orElse(false)
+        || AudioTrackMarks.isNamedCommentaryOrAudioDescription(stream)) {
+      return false;
+    }
+
+    return stream
+        .audioProperties()
+        .filter(
+            properties ->
+                properties.visualImpaired()
+                    || properties.descriptions()
+                    || properties.cleanEffects()
+                    || properties.dependent())
+        .isEmpty();
   }
 
   public List<StreamInfo> subtitleStreams() {

@@ -147,8 +147,6 @@ enum DecisionReason {
     BITRATE_ABOVE_VIEWER_LIMIT
     "The source is interlaced. HLS delivery needs progressive video, and direct play of an interlaced file is unmeasured."
     SOURCE_INTERLACED
-    "The source is Dolby Vision without a compatible base."
-    DOLBY_VISION_WITHOUT_COMPATIBLE_BASE
     "The source's HDR base was probed before the probe described its codec profile."
     VIDEO_PROPERTIES_NOT_PROBED
     "The source's Dolby Vision configuration claims another base than the source's transfer signals."
@@ -171,10 +169,12 @@ enum DecisionReason {
     VIDEO_SOURCE_NOT_COPYABLE
     "The source's keyframe positions are not known yet."
     KEYFRAMES_UNKNOWN
-    "The source's keyframes leave a segment without a keyframe."
+    "No source keyframe lies between the start and the end of the media, so no copied segment opens."
     KEYFRAMES_TOO_SPARSE
     "The source's keyframe timestamps go backwards or out of range."
     KEYFRAME_TIMESTAMPS_INVALID
+    "A copied segment, with the audio beside it, would be larger than a segment may be."
+    SEGMENT_EXCEEDS_CAP
     "No connected worker can make the copy's planned output."
     NO_WORKER_DELIVERS_COPY
     "No audio capability entry for HLS names the source's audio codec."
@@ -224,6 +224,12 @@ enum DecisionReason {
     DIRECT_PLAY_VIDEO_NOT_DECLARED
     "An audio track of the file is one that no audio capability entry listing the file's source container accepts."
     DIRECT_PLAY_AUDIO_NOT_DECLARED
+    """
+    The player cannot select an audio track inside a file that it direct-plays, and it would not start on the audio
+    track that the viewer chose: the viewer chose a later track, or the file marks another track as its default. The
+    format attempt that the viewer's audio switch moves from direct play to HLS names it too.
+    """
+    DIRECT_PLAY_AUDIO_TRACK_NOT_SELECTABLE
     "A forced image subtitle track, PGS, VobSub or DVB, is in the language of an audio track."
     FORCED_IMAGE_SUBTITLE_IN_AUDIO_LANGUAGE
     "The direct play of the format attempt before this one failed, so this one plays over HLS."
@@ -249,6 +255,8 @@ enum PlaybackFormatChange {
     STARTED_WITH_ENCODE
     "A Dolby Vision copy failed, so the same copy without Dolby Vision plays on the source's PQ or HLG base."
     DOLBY_VISION_STRIPPED
+    "The viewer switched audio tracks during direct play and the server rules out the HLS copy. An encode plays."
+    AUDIO_TRACK_SWITCHED
 }
 
 union PlaybackFormatAttempt = PendingPlaybackFormatAttempt | ReadyPlaybackFormatAttempt | FailedPlaybackFormatAttempt
@@ -310,6 +318,30 @@ type ReportPlaybackFormatFailurePayload {
 }
 
 union ReportPlaybackFormatFailureError = InvalidIdError | PlaybackSessionClosedError
+
+input SwitchPlaybackAudioTrackInput {
+    playbackSessionId: ID!
+    "The direct-play stream session that plays now."
+    streamSessionId: ID!
+    """
+    The audio track that the viewer chose: its position, counting from 0, among the file's audio tracks in
+    stream order, as DirectPlayStreamSession.audioTrackPosition counts.
+    """
+    audioTrackPosition: Int!
+}
+
+type SwitchPlaybackAudioTrackPayload {
+    playbackSession: PlaybackSession
+    userErrors: [SwitchPlaybackAudioTrackError!]!
+}
+
+union SwitchPlaybackAudioTrackError = InvalidIdError | PlaybackSessionClosedError | AudioTrackNotInFileError | PlaybackFormatAttemptsExhaustedError | PlaybackStartupFailedError | StartPositionOutOfRangeError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | MediaFileFrameRateUnknownError | TranscodeCapacityUnavailableError | NoEligibleVideoFormatError
+
+"The file has no audio track at the position that the input names."
+type AudioTrackNotInFileError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
 
 input DestroyPlaybackSessionInput {
     playbackSessionId: ID!

@@ -196,6 +196,28 @@ public class ProducerLifecycleService {
   }
 
   /**
+   * Restarts the stall clock of the variant's running job attempt when its worker reports that the
+   * attempt's output advanced (ADR 0037), even before any request has needed recovery. Progress of
+   * any other job attempt changes nothing.
+   */
+  public void restartStallClock(UUID sessionId, String variantLabel, UUID attemptId) {
+    withSessionLock(
+        sessionId,
+        () ->
+            runtimeRegistry
+                .findById(sessionId)
+                .flatMap(session -> session.getVariantHandle(variantLabel))
+                .filter(handle -> handle.attemptId().equals(attemptId))
+                .ifPresent(
+                    handle ->
+                        recoveryStates
+                            .computeIfAbsent(
+                                new VariantKey(sessionId, variantLabel),
+                                _ -> new VariantDeliveryState())
+                            .restartStallClock(handle, clock.instant())));
+  }
+
+  /**
    * How long a held segment request can wait for a wake before recovery must look at the variant
    * again: until the variant's tracked job attempt counts as stalled. Before recovery tracks a job
    * attempt of the variant, the startup stall threshold bounds the wait.
@@ -245,6 +267,9 @@ public class ProducerLifecycleService {
       return RecoveryResult.SESSION_GONE;
     }
 
+    // A held request is the viewer's access: a long merged segment must not let the reaper
+    // suspend the producer the viewer waits on.
+    runtimeRegistry.touch(sessionId, clock.instant());
     if (!session.offersVariant(variantLabel)) {
       return RecoveryResult.SESSION_GONE;
     }
@@ -1678,7 +1703,8 @@ public class ProducerLifecycleService {
                 .orElseGet(OptionalDouble::empty))
         .transcodeDecision(session.getTranscodeDecision())
         .startSequenceNumber(startSequenceNumber)
-        .mediaSegmentCount(timeline.mediaSegmentCount());
+        .mediaSegmentCount(timeline.mediaSegmentCount())
+        .segmentStartSlots(timeline.segmentStartSlots());
   }
 
   private EncoderPreset pinEncoderPreset(StreamSession session, String variantLabel) {

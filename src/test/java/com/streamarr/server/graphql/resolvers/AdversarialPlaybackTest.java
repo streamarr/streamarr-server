@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.noLanguagePreferences;
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static com.streamarr.server.fixtures.ProbeFixture.completeProbe;
 import static com.streamarr.server.fixtures.ServerSettingsFixture.defaultServerSettings;
@@ -221,6 +222,7 @@ class AdversarialPlaybackTest {
                   compatibleBases: [SDR], dolbyVisionProfiles: [], hdr10Plus: false, hls: true
                 }]
                 audio: [{codec: AAC, maxChannels: 2, hls: true}]
+                selectsAudioTrackInDirectPlay: false
               }
             }
           ) {
@@ -334,6 +336,7 @@ class AdversarialPlaybackTest {
               .heldRequests(sessions.heldSegmentRequests())
               .build();
       return HlsStreamingService.builder()
+          .languagePreferences(noLanguagePreferences())
           .meterRegistry(new SimpleMeterRegistry())
           .mediaFileRepository(files)
           .transcodeExecutor(executor)

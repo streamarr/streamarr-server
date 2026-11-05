@@ -35,6 +35,12 @@ body:graphql {
               }
               ... on DirectPlayStreamSession {
                 sourceContainer
+                audioTrackPosition
+                audioTracks {
+                  position
+                  language
+                  title
+                }
               }
             }
           }
@@ -83,7 +89,8 @@ body:graphql:vars {
       ],
       "audio": [
         { "codec": "AAC", "maxChannels": 2, "hls": true }
-      ]
+      ],
+      "selectsAudioTrackInDirectPlay": false
     }
   }
 }

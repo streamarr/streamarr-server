@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.noLanguagePreferences;
 import static com.streamarr.server.fixtures.SegmentRequestFixture.earliestArrivingSegmentRequestBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultLadderSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
@@ -152,6 +153,7 @@ class SegmentDeliveryCoordinatorTest {
   // replacement in flight cannot save the destroyed session back into the registry.
   private void destroy(UUID sessionId) {
     HlsStreamingService.builder()
+        .languagePreferences(noLanguagePreferences())
         .meterRegistry(new SimpleMeterRegistry())
         .segmentStore(segmentStore)
         .runtimeRegistry(runtimeRegistry)
@@ -1247,6 +1249,7 @@ class SegmentDeliveryCoordinatorTest {
     gatingExecutor.markDead(sessionId);
     var streamingService =
         HlsStreamingService.builder()
+            .languagePreferences(noLanguagePreferences())
             .meterRegistry(new SimpleMeterRegistry())
             .transcodeExecutor(gatingExecutor)
             .segmentStore(segmentStore)

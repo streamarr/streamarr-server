@@ -78,11 +78,15 @@ public class TranscodeDecisionService {
    * Whether the stream session direct-plays the source file from its source container (ADR 0045),
    * or plays over HLS and why. Only a format attempt that may direct-play does, and only in
    * Original; any other format attempt names no refusal. The declaration must cover the video and
-   * every audio track from the file's source container (ADR 0049). An interlaced source, a property
-   * issue that rules out a copy (ADR 0049) and a forced image subtitle in the language of any audio
-   * track (#506) keep the file on HLS. The refusals name every check that the file fails. The
-   * keyframe grid, the interim HDR copy rule and the codec string bind only HLS copies. A copy in
-   * Original ignores the viewer's limits (ADR 0050), and so does direct play.
+   * every audio track from the file's source container (ADR 0049). The decision names the stream
+   * session's audio track, which a player that selects audio tracks selects. A player that cannot
+   * select one starts on the file's default audio track, or on its first when none is marked, so it
+   * direct-plays only when the session's track is the first and the player starts on it (ADR 0045).
+   * An interlaced source, a property issue that rules out a copy (ADR 0049) and a forced image
+   * subtitle in the language of any audio track (#506) keep the file on HLS. The refusals name
+   * every check that the file fails. The keyframe grid, the interim HDR copy rule and the codec
+   * string bind only HLS copies. A copy in Original ignores the viewer's limits (ADR 0050), and so
+   * does direct play.
    */
   public DirectPlayChoice decideDirectPlay(@NonNull DirectPlayRequest request) {
     if (request.videoFormatConstraint() != VideoFormatConstraint.DIRECT_PLAY_OR_COPY_OR_ENCODE
@@ -98,12 +102,24 @@ public class TranscodeDecisionService {
       return new DirectPlayChoice.Refused(refusals);
     }
 
-    refusals.addAll(request.capabilityDeclaration().directPlayRefusals(source, container.get()));
+    var declaration = request.capabilityDeclaration();
+    refusals.addAll(declaration.directPlayRefusals(source, container.get()));
+    if (!canPlayTheSessionsAudioTrack(declaration, source)) {
+      refusals.add(DecisionReason.DIRECT_PLAY_AUDIO_TRACK_NOT_SELECTABLE);
+    }
+
     if (!refusals.isEmpty()) {
       return new DirectPlayChoice.Refused(refusals);
     }
 
-    return new DirectPlayChoice.Accepted(container.get());
+    return new DirectPlayChoice.Accepted(container.get(), source.sessionAudioTrackPosition());
+  }
+
+  private static boolean canPlayTheSessionsAudioTrack(
+      ClientCapabilityDeclaration declaration, MediaProbe source) {
+    return declaration.selectsAudioTrackInDirectPlay()
+        || (source.sessionAudioTrackPosition().orElse(0) == 0
+            && source.startsOnTheFirstAudioTrack());
   }
 
   // No player's direct play of an interlaced file was measured.
@@ -176,7 +192,17 @@ public class TranscodeDecisionService {
             .videoDolbyVisionOutput(copyPlan.flatMap(CopyPlan::dolbyVisionOutput))
             .reasons(
                 afterDirectPlayRefusals(request, reasons(videoCopy, sessionAudio, audioDecision)))
+            .audioStreamIndex(audioStreamIndex(source, audioDecision))
             .build());
+  }
+
+  // Every decision about the audio reads the source's first audio stream, the session's.
+  private static OptionalInt audioStreamIndex(MediaProbe source, AudioDecision audio) {
+    if (audio.mode() == AudioMode.NONE) {
+      return OptionalInt.empty();
+    }
+
+    return source.audioStreams().stream().mapToInt(StreamInfo::index).findFirst();
   }
 
   // Video reasons come first. Audio that a copy lowers below the session's audio for the viewer's
@@ -249,20 +275,32 @@ public class TranscodeDecisionService {
     var declaration = request.capabilityDeclaration();
     var limits = request.viewerLimits();
     var steps = AudioSteps.below(sessionAudio, AudioTrackChannels.of(source), declaration);
-    var stepWithinMaximum =
-        limits.audioStepBesideCopyOf(source, steps, CopyMediaPlaylist.of(source, properties));
+    var playlist = CopyMediaPlaylist.of(source, properties);
+    var stepWithinMaximum = limits.audioStepBesideCopyOf(source, steps, playlist);
     var limitRefusals = viewerLimitRefusals(limits.allowsCopyPictureOf(source), stepWithinMaximum);
     if (!limitRefusals.isEmpty() && hasVerifiedEncodeThatTheClientPlays(request)) {
       return new VideoCopyChoice.Refused(beforeViewerLimits(request, limitRefusals));
     }
 
+    var audio = stepWithinMaximum.orElse(sessionAudio);
     return switch (acceptedVideoCopyPlan(request, countsRefusals)) {
       case PlanChoice.Refused(var reasons) -> new VideoCopyChoice.Refused(reasons);
       case PlanChoice.Accepted(var plan, _) when !hasWorkerThatDeliversTheCopy(request, plan) ->
           new VideoCopyChoice.Refused(List.of(DecisionReason.NO_WORKER_DELIVERS_COPY));
+      case PlanChoice.Accepted _
+          when VideoCopyBandwidth.exceedsSegmentCap(source, audio, playlist) ->
+          segmentCapRefusal(countsRefusals);
       case PlanChoice.Accepted(var plan, var reasons) ->
-          new VideoCopyChoice.Copied(stepWithinMaximum.orElse(sessionAudio), plan, reasons);
+          new VideoCopyChoice.Copied(audio, plan, reasons);
     };
+  }
+
+  private VideoCopyChoice segmentCapRefusal(boolean countsRefusals) {
+    if (countsRefusals) {
+      countStreamCopyRefusal(StreamCopyRefusal.EXCEEDS_SEGMENT_CAP);
+    }
+
+    return new VideoCopyChoice.Refused(List.of(StreamCopyRefusal.EXCEEDS_SEGMENT_CAP.reason()));
   }
 
   // A copy that the viewer's limits refuse may also be one that the source or the declaration
@@ -355,7 +393,7 @@ public class TranscodeDecisionService {
 
   /**
    * Whether a video capability entry for HLS accepts a copy of the source and the copy rules allow
-   * it, before the keyframe check that refuses a copy whose keyframes leave an interval empty.
+   * it, before the keyframe check that refuses a copy whose keyframes open no segment list.
    */
   static boolean isCopyAcceptedBeforeTheKeyframeCheck(
       MediaProbe source, ClientCapabilityDeclaration declaration) {
@@ -548,8 +586,8 @@ public class TranscodeDecisionService {
   }
 
   // A stream copy's segments can start only at source keyframes (ADR 0037), so the video is copied
-  // only when the known keyframes open every interval of the grid except possibly the last. A last
-  // interval without a keyframe joins the copy segment before it, which then runs to the media end.
+  // only when the known keyframes open its segment list. A slot without a keyframe merges into the
+  // segment before it.
   private Optional<StreamCopyRefusal> streamCopyRefusal(MediaProbe source) {
     return switch (source.keyframes()) {
       case KeyframeKnowledge.Known(var positions) ->
@@ -566,11 +604,9 @@ public class TranscodeDecisionService {
     return switch (KeyframeSegmentBoundaries.forStreamCopy(
         positions, grid.targetSegmentDurationSeconds())) {
       case StreamCopySegments.Starts starts
-          when !opensEveryIntervalButTheLast(grid, positions, starts) ->
-          Optional.of(StreamCopyRefusal.INTERVAL_WITHOUT_KEYFRAME);
+          when grid.openedAt(positions, starts).mediaSegmentCount() == 0 ->
+          Optional.of(StreamCopyRefusal.NO_OPENING_KEYFRAME);
       case StreamCopySegments.Starts _ -> Optional.empty();
-      case StreamCopySegments.IntervalWithoutKeyframe _ ->
-          Optional.of(StreamCopyRefusal.INTERVAL_WITHOUT_KEYFRAME);
       case StreamCopySegments.PresentationTimeRegressed _ ->
           Optional.of(StreamCopyRefusal.PRESENTATION_TIME_REGRESSED);
       case StreamCopySegments.PresentationTimeOutOfRange _ ->
@@ -580,20 +616,12 @@ public class TranscodeDecisionService {
     };
   }
 
-  private static boolean opensEveryIntervalButTheLast(
-      MediaSegmentTimeline.PlainGrid grid,
-      KeyframePositions positions,
-      StreamCopySegments.Starts starts) {
-    var copySegmentCount = grid.openedAt(positions, starts).mediaSegmentCount();
-    return copySegmentCount > 0 && copySegmentCount >= grid.mediaSegmentCount() - 1;
-  }
-
   private void countStreamCopyRefusal(StreamCopyRefusal refusal) {
     Counter.builder(STREAM_COPY_REFUSALS_METRIC)
         .description(
             "Stream copies of a video codec the client plays, refused because the source's"
-                + " keyframes are not known or leave a grid interval before the last one"
-                + " without a keyframe")
+                + " keyframes are not known or open no segment list, or a measured segment would"
+                + " exceed the segment cap")
         .tag("reason", refusal.name().toLowerCase(Locale.ROOT))
         .register(meterRegistry)
         .increment();
@@ -603,10 +631,13 @@ public class TranscodeDecisionService {
     KEYFRAMES_NOT_REPORTED(DecisionReason.KEYFRAMES_UNKNOWN),
     PACKET_SCAN_REQUIRED(DecisionReason.KEYFRAMES_UNKNOWN),
     KEYFRAMES_UNAVAILABLE(DecisionReason.KEYFRAMES_UNKNOWN),
-    INTERVAL_WITHOUT_KEYFRAME(DecisionReason.KEYFRAMES_TOO_SPARSE),
+    // No keyframe presents from zero up to the media end, so no segment opens.
+    NO_OPENING_KEYFRAME(DecisionReason.KEYFRAMES_TOO_SPARSE),
     PRESENTATION_TIME_REGRESSED(DecisionReason.KEYFRAME_TIMESTAMPS_INVALID),
     PRESENTATION_TIME_OUT_OF_RANGE(DecisionReason.KEYFRAME_TIMESTAMPS_INVALID),
-    DECODE_TIME_OUT_OF_RANGE(DecisionReason.KEYFRAME_TIMESTAMPS_INVALID);
+    DECODE_TIME_OUT_OF_RANGE(DecisionReason.KEYFRAME_TIMESTAMPS_INVALID),
+    // A measured segment of the copy, with its audio, would exceed the segment cap (ADR 0037).
+    EXCEEDS_SEGMENT_CAP(DecisionReason.SEGMENT_EXCEEDS_CAP);
 
     private final DecisionReason reason;
 

@@ -1,0 +1,70 @@
+meta {
+  name: Switch Playback Audio Track
+  type: graphql
+  seq: 12
+}
+
+post {
+  url: {{BASE_URL}}/graphql
+  body: graphql
+  auth: inherit
+}
+
+body:graphql {
+  mutation SwitchPlaybackAudioTrack(
+    $playbackSessionId: ID!
+    $streamSessionId: ID!
+    $audioTrackPosition: Int!
+  ) {
+    switchPlaybackAudioTrack(
+      input: {
+        playbackSessionId: $playbackSessionId
+        streamSessionId: $streamSessionId
+        audioTrackPosition: $audioTrackPosition
+      }
+    ) {
+      playbackSession {
+        id
+        formatAttemptCount
+        playbackChoice
+        formatChange
+        currentFormatAttempt {
+          __typename
+          ... on PendingPlaybackFormatAttempt {
+            streamSessionId
+          }
+          ... on ReadyPlaybackFormatAttempt {
+            streamSession {
+              __typename
+              id
+              streamUrl
+            }
+          }
+        }
+      }
+      userErrors {
+        __typename
+        ... on MutationError {
+          message
+        }
+      }
+    }
+  }
+}
+
+body:graphql:vars {
+  {
+    "playbackSessionId": "{{PLAYBACK_SESSION_ID}}",
+    "streamSessionId": "{{STREAM_SESSION_ID}}",
+    "audioTrackPosition": 1
+  }
+}
+
+tests {
+  test("Should switch the audio track", function() {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.not.have.property("errors");
+    expect(res.body.data.switchPlaybackAudioTrack.userErrors).to.be.empty;
+    expect(res.body.data.switchPlaybackAudioTrack.playbackSession.id).to.be.a("string");
+  });
+}

@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.noLanguagePreferences;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChannelBuilder;
@@ -143,6 +144,7 @@ class RemoteFormatFailureIT {
       rig.awaitStopped();
       var service =
           HlsStreamingService.builder()
+              .languagePreferences(noLanguagePreferences())
               .meterRegistry(new SimpleMeterRegistry())
               .runtimeRegistry(rig.registry)
               .producerLifecycle(rig.streaming.lifecycle())
@@ -272,7 +274,11 @@ class RemoteFormatFailureIT {
   @ParameterizedTest
   @EnumSource(
       value = JobAttemptFailure.class,
-      names = {"JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED", "JOB_ATTEMPT_FAILURE_SOURCE_UNAVAILABLE"})
+      names = {
+        "JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED",
+        "JOB_ATTEMPT_FAILURE_SOURCE_UNAVAILABLE",
+        "JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED"
+      })
   @DisplayName("Should retain ordinary recovery when the worker reports an ordinary job failure")
   void shouldRetainOrdinaryRecoveryWhenWorkerReportsOrdinaryJobFailure(JobAttemptFailure failure)
       throws Exception {
@@ -323,6 +329,39 @@ class RemoteFormatFailureIT {
               copiesVideo
                   ? List.of()
                   : List.of(terminalEventFor(job, TranscodeFailure.OUTPUT_MISMATCH)));
+    }
+  }
+
+  // Every attempt on the same segment list cuts the same segments, so each would exceed the cap
+  // again; a new format attempt on the plain grid avoids it (ADR 0037, ADR 0052).
+  @ParameterizedTest
+  @EnumSource(
+      value = TranscodeMode.class,
+      names = {"REMUX", "AUDIO_TRANSCODE"})
+  @DisplayName(
+      "Should treat a segment over the cap as terminal when the job carries a segment list")
+  void shouldTreatASegmentOverTheCapAsTerminalWhenTheJobCarriesASegmentList(TranscodeMode mode)
+      throws Exception {
+    var events = new CapturingEventPublisher();
+    try (var rig = new FailureRig(events);
+        var worker = new TestWorker(rig.server)) {
+      var request =
+          rig.requestBuilder()
+              .transcodeDecision(rig.decision(mode))
+              .mediaSegmentCount(3)
+              .segmentStartSlots(List.of(0, 1, 3))
+              .build();
+      rig.session.setHandle(rig.executor.start(request));
+      var job = worker.nextJob();
+      worker.fail(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED);
+      rig.awaitStopped();
+
+      assertThat(rig.executor.terminalFailure(rig.session.getSessionId()))
+          .contains(TranscodeFailure.SEGMENT_CAP_EXCEEDED);
+      assertThat(events.getEventsOfType(TerminalTranscodeFailureEvent.class))
+          .containsExactly(terminalEventFor(job, TranscodeFailure.SEGMENT_CAP_EXCEEDED));
+      assertThat(rig.deliver()).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+      assertThat(worker.jobs).hasSize(1);
     }
   }
 

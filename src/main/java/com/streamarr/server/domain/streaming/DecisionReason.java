@@ -51,8 +51,6 @@ public enum DecisionReason {
    * an interlaced file was measured.
    */
   SOURCE_INTERLACED,
-  /** The source is Dolby Vision without a compatible base, which no client copy plays. */
-  DOLBY_VISION_WITHOUT_COMPATIBLE_BASE,
   /** The source's HDR base was probed before probe version 5, which reports no codec profile. */
   VIDEO_PROPERTIES_NOT_PROBED,
   /** {@link MediaFileProbePropertyIssue#DOLBY_VISION_COMPATIBILITY_DISAGREES_WITH_TRANSFER}. */
@@ -75,10 +73,15 @@ public enum DecisionReason {
   VIDEO_SOURCE_NOT_COPYABLE,
   /** The source's keyframe positions are not known yet. */
   KEYFRAMES_UNKNOWN,
-  /** The source's keyframes leave a segment interval before the last one without a keyframe. */
+  /** No source keyframe presents from zero up to the media end, so no copied segment opens. */
   KEYFRAMES_TOO_SPARSE,
   /** The source's keyframe timestamps go backwards or out of range. */
   KEYFRAME_TIMESTAMPS_INVALID,
+  /**
+   * A measured segment of the copy, with the audio beside it, would exceed the segment cap (ADR
+   * 0037).
+   */
+  SEGMENT_EXCEEDS_CAP,
   /**
    * No connected worker delivers the copy's bitstream rewrites, or the Dolby Vision sample entry of
    * a profile 5 or 10.0 copy.
@@ -135,6 +138,13 @@ public enum DecisionReason {
    * container accepts. Every track counts, because the player may start any of them.
    */
   DIRECT_PLAY_AUDIO_NOT_DECLARED,
+  /**
+   * The player cannot select an audio track inside a file that it direct-plays, and it would not
+   * start on the stream session's audio track: the session chose a later track, or the file marks
+   * another track as its default (ADR 0045). The format attempt that a viewer's audio switch moves
+   * from direct play to HLS names it too.
+   */
+  DIRECT_PLAY_AUDIO_TRACK_NOT_SELECTABLE,
   /**
    * A forced image subtitle track, PGS, VobSub or DVB, is in the language of an audio track
    * (streamarr/streamarr-server#506).

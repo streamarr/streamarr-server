@@ -10,11 +10,15 @@ import lombok.NonNull;
 /**
  * The client capability declaration that a stream session request carries (ADR 0049): the video and
  * audio capability entries of the player and display that the stream session uses. An output fits
- * only when one capability entry accepts every property of the output.
+ * only when one capability entry accepts every property of the output. {@code
+ * selectsAudioTrackInDirectPlay} states whether the player selects an audio track inside a file
+ * that it direct-plays (ADR 0045).
  */
 @Builder
 public record ClientCapabilityDeclaration(
-    @NonNull List<VideoCapabilityEntry> video, @NonNull List<AudioCapabilityEntry> audio) {
+    @NonNull List<VideoCapabilityEntry> video,
+    @NonNull List<AudioCapabilityEntry> audio,
+    boolean selectsAudioTrackInDirectPlay) {
 
   public ClientCapabilityDeclaration {
     video = List.copyOf(video);

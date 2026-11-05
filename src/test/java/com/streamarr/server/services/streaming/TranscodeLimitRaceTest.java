@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.noLanguagePreferences;
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
@@ -114,6 +115,7 @@ class TranscodeLimitRaceTest {
     probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("hevc").build());
     service =
         HlsStreamingService.builder()
+            .languagePreferences(noLanguagePreferences())
             .mediaFileRepository(mediaFileRepository)
             .transcodeExecutor(transcodeExecutor)
             .segmentStore(segmentStore)

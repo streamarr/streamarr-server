@@ -16,13 +16,11 @@ final class VariantDeliveryState {
   private int runStart;
   private int frontier;
   private Instant lastProgressAt = Instant.EPOCH;
+  private boolean reportedProgress;
   private final Set<ExecutionTargetId> attemptedSinceProgress = new LinkedHashSet<>();
 
   void syncProgress(TranscodeHandle handle, IntPredicate frontierSegmentExists, Instant now) {
-    if (!handle.attemptId().equals(trackedAttemptId)) {
-      attemptedSinceProgress.clear();
-      trackAttempt(handle, now);
-    }
+    followAttempt(handle, now);
 
     var advanced = false;
     // Scan the run's output even for init or first-segment requests, which can observe progress
@@ -38,13 +36,28 @@ final class VariantDeliveryState {
     }
   }
 
+  /** The running job attempt's output advanced, so it has started and its stall clock restarts. */
+  void restartStallClock(TranscodeHandle handle, Instant now) {
+    followAttempt(handle, now);
+    lastProgressAt = now;
+    reportedProgress = true;
+  }
+
+  private void followAttempt(TranscodeHandle handle, Instant now) {
+    if (!handle.attemptId().equals(trackedAttemptId)) {
+      attemptedSinceProgress.clear();
+      trackAttempt(handle, now);
+    }
+  }
+
   boolean hasStalled(Duration stallThreshold, Duration startupThreshold, Instant now) {
     return !now.isBefore(stallDeadline(stallThreshold, startupThreshold));
   }
 
   /** The moment the tracked job attempt counts as stalled unless it publishes again first. */
   Instant stallDeadline(Duration stallThreshold, Duration startupThreshold) {
-    var budget = frontier > runStart ? stallThreshold : startupThreshold;
+    // A job attempt that reports progress has started, even before it stores a segment.
+    var budget = frontier > runStart || reportedProgress ? stallThreshold : startupThreshold;
     return lastProgressAt.plus(budget);
   }
 
@@ -93,5 +106,6 @@ final class VariantDeliveryState {
     runStart = handle.startSequenceNumber();
     frontier = runStart;
     lastProgressAt = now;
+    reportedProgress = false;
   }
 }

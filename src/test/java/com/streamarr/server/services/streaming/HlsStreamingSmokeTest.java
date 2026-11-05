@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.noLanguagePreferences;
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommandBuilder;
@@ -15,6 +16,7 @@ import com.streamarr.server.domain.streaming.DecimalSeconds;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
+import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -38,6 +40,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -54,6 +57,7 @@ class HlsStreamingSmokeTest {
       Path.of("src/test/resources/BigBuckBunny_320x180_10s.mp4").toAbsolutePath();
 
   private FakeMediaFileRepository mediaFileRepository;
+  private FakeMediaFileContainerInfoRepository probeRepository;
   private LocalSegmentStore segmentStore;
   private HlsStreamingService streamingService;
   private HlsPlaylistService playlistService;
@@ -96,22 +100,8 @@ class HlsStreamingSmokeTest {
             workerFixture.sourceNamespaceId(),
             testVideo.getParent());
     workerFixture.start();
-    var outcome =
-        new RemoteFfprobeService(
-                workerFixture.workerSessions(),
-                workerFixture.sourceNamespaceId(),
-                testVideo.getParent())
-            .probe(
-                ProbeExecutionRequest.builder()
-                    .sourcePath(testVideo)
-                    .attemptId(UUID.randomUUID())
-                    .probeVersion(ProbeVersion.CURRENT)
-                    .priority(ProbePriority.BACKGROUND)
-                    .build());
-    assertThat(outcome).isInstanceOf(ProbeOutcome.Success.class);
-    var completeProbe = (ProbeOutcome.Success) outcome;
-    var probeRepository = new FakeMediaFileContainerInfoRepository();
-    probeRepository.setDefaultOutcome(completeProbe);
+    probeRepository = new FakeMediaFileContainerInfoRepository();
+    probeRepository.setDefaultOutcome(probe(testVideo));
 
     var qualityLadderService = new QualityLadderService();
     var properties =
@@ -135,6 +125,7 @@ class HlsStreamingSmokeTest {
             .build();
     streamingService =
         HlsStreamingService.builder()
+            .languagePreferences(noLanguagePreferences())
             .meterRegistry(new SimpleMeterRegistry())
             .mediaFileRepository(mediaFileRepository)
             .transcodeExecutor(transcodeExecutor)
@@ -176,13 +167,34 @@ class HlsStreamingSmokeTest {
     return StreamingOptions.builder().quality(VideoQuality.AUTO).build();
   }
 
+  private ProbeOutcome.Success probe(Path source) {
+    var outcome =
+        new RemoteFfprobeService(
+                workerFixture.workerSessions(),
+                workerFixture.sourceNamespaceId(),
+                source.getParent())
+            .probe(
+                ProbeExecutionRequest.builder()
+                    .sourcePath(source)
+                    .attemptId(UUID.randomUUID())
+                    .probeVersion(ProbeVersion.CURRENT)
+                    .priority(ProbePriority.BACKGROUND)
+                    .build());
+    assertThat(outcome).isInstanceOf(ProbeOutcome.Success.class);
+    return (ProbeOutcome.Success) outcome;
+  }
+
   private MediaFile seedMediaFile() {
+    return seedMediaFile(testVideo);
+  }
+
+  private MediaFile seedMediaFile(Path source) {
     var file =
         MediaFile.builder()
-            .filepathUri(FilepathCodec.encode(testVideo))
-            .filename("BigBuckBunny_320x180.mp4")
+            .filepathUri(FilepathCodec.encode(source))
+            .filename(source.getFileName().toString())
             .status(MediaFileStatus.MATCHED)
-            .size(testVideo.toFile().length())
+            .size(source.toFile().length())
             .build();
     return mediaFileRepository.save(file);
   }
@@ -452,5 +464,78 @@ class HlsStreamingSmokeTest {
                   .isTrue();
               assertThat(workerFixture.worker().processRunning(attemptId)).isFalse();
             });
+  }
+
+  @Test
+  @DisplayName(
+      "Should send the named audio track over HLS when the request names a later track of the file")
+  void shouldSendTheNamedAudioTrackOverHlsWhenTheRequestNamesALaterTrackOfTheFile()
+      throws Exception {
+    var source = generateStereoThenMonoAudioTracks();
+    probeRepository.setDefaultOutcome(probe(source));
+    var file = seedMediaFile(source);
+
+    var session =
+        OutcomeTestSupport.accepted(
+            streamingService.createSession(
+                createStreamSessionCommandBuilder(file.getId(), UUID.randomUUID())
+                    .audioTrackPosition(OptionalInt.of(1))
+                    .build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.HLS);
+    await()
+        .atMost(Duration.ofSeconds(30))
+        .until(() -> segmentStore.segmentExists(session.getSessionId(), "segment0.m4s"));
+    var sent =
+        Files.write(
+            temporaryDirectory.resolve("sent.mp4"),
+            Fmp4Fixture.withInitializationSegment(
+                segmentStore, session.getSessionId(), "segment0.m4s"));
+    assertThat(workerFixture.worker().decodedAudio(source).channelLayout())
+        .as("the file's first audio track")
+        .isEqualTo("stereo");
+    assertThat(workerFixture.worker().decodedAudio(sent).channelLayout())
+        .as("the audio track that the stream session sends")
+        .isEqualTo("mono");
+  }
+
+  // A stereo audio track first and a mono audio track second, beside an H.264 picture that the
+  // default declaration copies.
+  private Path generateStereoThenMonoAudioTracks() throws Exception {
+    return workerFixture
+        .worker()
+        .generateMedia(
+            testVideo.getParent().resolve("stereo-then-mono.mp4"),
+            List.of(
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=320x180:rate=24:duration=8",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=8",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=880:duration=8",
+                "-map",
+                "0:v",
+                "-map",
+                "1:a",
+                "-map",
+                "2:a",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-g",
+                "24",
+                "-c:a",
+                "aac",
+                "-ac:a:0",
+                "2",
+                "-ac:a:1",
+                "1"));
   }
 }

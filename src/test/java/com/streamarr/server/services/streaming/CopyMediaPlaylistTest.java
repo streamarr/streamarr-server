@@ -121,17 +121,26 @@ class CopyMediaPlaylistTest {
     assertThat(playlist.durationSeconds()).isEqualByComparingTo(new BigDecimal("17.999999"));
   }
 
-  // At the 6 s period, keyframes 10.01 s apart leave the interval [12 s, 18 s) without one.
+  // At the 6 s period, keyframes 10 s apart leave the slots [12 s, 18 s) and [24 s, 30 s) without
+  // one, so each joins the segment before it and takes its audio.
   @Test
-  @DisplayName("Should list no media playlist when a segment interval holds no keyframe")
-  void shouldListNoMediaPlaylistWhenASegmentIntervalHoldsNoKeyframe() {
+  @DisplayName("Should list each merged segment from its listed slot when a slot holds no keyframe")
+  void shouldListEachMergedSegmentFromItsListedSlotWhenASlotHoldsNoKeyframe() {
     var source =
         StreamSessionFixture.defaultProbeBuilder()
-            .keyframes(
-                ProbeFixture.keyframesEvery(Duration.ofMillis(10_010), Duration.ofMinutes(120)))
+            .duration(Duration.ofSeconds(36))
+            .keyframes(ProbeFixture.keyframesEvery(Duration.ofSeconds(10), Duration.ofSeconds(36)))
             .build();
 
-    assertThat(CopyMediaPlaylist.of(source, PROPERTIES)).isEqualTo(CopyMediaPlaylist.UNKNOWN);
+    var playlist = CopyMediaPlaylist.of(source, PROPERTIES);
+
+    assertThat(playlist.segments())
+        .extracting(CopyMediaPlaylist.Segment::slotStartSeconds)
+        .containsExactly(0, 6, 18, 30);
+    assertThat(playlist.segments())
+        .extracting(segment -> segment.extinfSeconds().toPlainString())
+        .containsExactly("10.000000", "10.000000", "10.000000", "6.000000");
+    assertThat(playlist.targetDurationSeconds()).isEqualTo(10);
   }
 
   @Test

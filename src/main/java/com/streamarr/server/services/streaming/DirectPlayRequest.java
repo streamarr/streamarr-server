@@ -11,4 +11,16 @@ public record DirectPlayRequest(
     @NonNull MediaProbe source,
     @NonNull ClientCapabilityDeclaration capabilityDeclaration,
     @NonNull VideoFormatConstraint videoFormatConstraint,
-    @NonNull ViewerLimits viewerLimits) {}
+    @NonNull ViewerLimits viewerLimits) {
+
+  /** The direct-play request of a stream session that starts on {@code probe}. */
+  public static DirectPlayRequest of(
+      @NonNull CreateStreamSessionCommand command, @NonNull MediaProbe probe) {
+    return DirectPlayRequest.builder()
+        .source(probe)
+        .capabilityDeclaration(command.capabilityDeclaration())
+        .videoFormatConstraint(command.videoFormatConstraint())
+        .viewerLimits(ViewerLimits.of(command.options()))
+        .build();
+  }
+}

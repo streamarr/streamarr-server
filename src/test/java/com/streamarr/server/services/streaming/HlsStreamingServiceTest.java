@@ -31,6 +31,11 @@ import static org.assertj.core.api.Assertions.tuple;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.language.Language;
+import com.streamarr.server.domain.language.LanguageOverrideChange;
+import com.streamarr.server.domain.language.OverrideFieldChange;
+import com.streamarr.server.domain.language.ProfileLanguagePreferences;
+import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.AudioCodec;
@@ -91,18 +96,29 @@ import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeAuthorizationService;
+import com.streamarr.server.fakes.FakeEpisodeRepository;
+import com.streamarr.server.fakes.FakeLanguagePreferenceRepository;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
+import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
+import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.HardwareEncodedFamiliesAndExpectedEncode;
+import com.streamarr.server.fixtures.MediaEntityFixture;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamMeasurementFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.services.language.LanguagePreferenceService;
+import com.streamarr.server.services.language.SetLanguageOverrideCommand;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import io.micrometer.core.instrument.Counter;
@@ -130,6 +146,7 @@ import java.util.stream.Stream;
 import lombok.Builder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -165,6 +182,7 @@ class HlsStreamingServiceTest {
   private HlsStreamingService service;
   private SegmentDeliveryCoordinator coordinator;
   private SimpleMeterRegistry meters;
+  private PlaybackLanguagePreferences languagePreferences = (profileId, titleId) -> List.of();
   private final MutexFactory<UUID> sessionMutex = new MutexFactory<>();
 
   @Test
@@ -2637,8 +2655,8 @@ class HlsStreamingServiceTest {
   }
 
   // ADR 0052: Original encodes a source that it cannot copy, and that encode plays Auto's ladder
-  // within the viewer's limits. Keyframes 10.01 s apart leave the 6 s interval [12 s, 18 s)
-  // without one, so no copy carries this progressive source. A maximum of 0 is no maximum.
+  // within the viewer's limits. The probe reported no keyframes, so no copy carries this
+  // progressive source. A maximum of 0 is no maximum.
   @ParameterizedTest
   @CsvSource({"0, 0", "2000000, 0", "0, 720"})
   @DisplayName(
@@ -2647,10 +2665,7 @@ class HlsStreamingServiceTest {
   void shouldOfferAutosLadderWithinTheViewersLimitsWhenOriginalEncodesAProgressiveSource(
       int maxBitrate, int maxHeight) {
     probeResults.setDefaultProbe(
-        defaultProbeBuilder()
-            .keyframes(
-                ProbeFixture.keyframesEvery(Duration.ofMillis(10_010), Duration.ofMinutes(120)))
-            .build());
+        defaultProbeBuilder().keyframes(new KeyframeKnowledge.NotReported()).build());
     var autoOptions =
         StreamingOptions.builder()
             .quality(VideoQuality.AUTO)
@@ -2760,24 +2775,32 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should encode the video when a segment interval of the source holds no keyframe")
-  void shouldEncodeTheVideoWhenASegmentIntervalOfTheSourceHoldsNoKeyframe() {
-    // At the 6 s period, keyframes 10.01 s apart leave the interval [12 s, 18 s) without one.
+  @DisplayName(
+      "Should copy the video on a merged segment list when the source's keyframes lie 10 s apart")
+  void shouldCopyTheVideoOnAMergedSegmentListWhenTheSourcesKeyframesLieTenSecondsApart() {
+    // At the 6 s period, the keyframes at 0, 10, 20 and 30 s leave the slots [12 s, 18 s) and
+    // [24 s, 30 s) without one, so each joins the segment before it.
     probeResults.setDefaultProbe(
         defaultProbeBuilder()
-            .keyframes(
-                ProbeFixture.keyframesEvery(Duration.ofMillis(10_010), Duration.ofMinutes(120)))
+            .duration(Duration.ofSeconds(36))
+            .keyframes(ProbeFixture.keyframesEvery(Duration.ofSeconds(10), Duration.ofSeconds(36)))
             .build());
     var file = seedMediaFile();
 
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var playlist = mediaPlaylist(session);
 
-    assertThat(session.getTranscodeDecision().transcodeMode())
-        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(extinfDurations(playlist))
+        .containsExactly("10.000000", "10.000000", "10.000000", "6.000000");
+    assertThat(playlist).contains("#EXT-X-TARGETDURATION:10\n");
     assertThat(transcodeExecutor.getStartedRequests())
-        .isNotEmpty()
-        .extracting(request -> request.transcodeDecision().transcodeMode())
-        .containsOnly(TranscodeMode.VIDEO_TRANSCODE);
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.segmentStartSlots()).containsExactly(0, 1, 3, 5);
+              assertThat(request.mediaSegmentCount()).isEqualTo(4);
+            });
   }
 
   @Test
@@ -2807,10 +2830,11 @@ class HlsStreamingServiceTest {
         .isEqualTo(3);
   }
 
+  // No duration bound limits a merged segment (ADR 0037): the segment that the keyframe at 6 s
+  // opens takes every later slot and runs to the end of the 2 h source.
   @Test
-  @DisplayName("Should encode the video when the source's keyframes stop long before the media end")
-  void shouldEncodeTheVideoWhenTheSourcesKeyframesStopLongBeforeTheMediaEnd() {
-    // A copy would advertise one final segment from 6 s to the end of the 2 h source.
+  @DisplayName("Should copy the video when the source's keyframes stop long before the media end")
+  void shouldCopyTheVideoWhenTheSourcesKeyframesStopLongBeforeTheMediaEnd() {
     probeResults.setDefaultProbe(
         defaultProbeBuilder()
             .duration(Duration.ofMinutes(120))
@@ -2820,8 +2844,12 @@ class HlsStreamingServiceTest {
 
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
-    assertThat(session.getTranscodeDecision().transcodeMode())
-        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(extinfDurations(mediaPlaylist(session))).containsExactly("6.000000", "7194.000000");
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(TranscodeRequest::segmentStartSlots)
+        .isEqualTo(List.of(0, 1));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -2945,6 +2973,396 @@ class HlsStreamingServiceTest {
         .toList();
   }
 
+  @Nested
+  @DisplayName("Session audio language")
+  class SessionAudioLanguage {
+
+    private final FakeMovieRepository movies = new FakeMovieRepository();
+    private final FakeSeriesRepository seriesRepository = new FakeSeriesRepository();
+    private final FakeSeasonRepository seasons = new FakeSeasonRepository();
+    private final FakeEpisodeRepository episodes = new FakeEpisodeRepository();
+    private final UUID profileId = UUID.randomUUID();
+    private final AuthenticatedIdentity viewer =
+        AuthenticatedIdentityFixture.profileScopedBuilder().profileId(profileId).build();
+    private LanguagePreferenceService languages;
+    private Episode episode;
+
+    @BeforeEach
+    void preferEnglishThenGermanForAnEpisodeWithEnglishAndJapaneseTracks() {
+      languages =
+          new LanguagePreferenceService(
+              new FakeAuthorizationService(viewer),
+              new FakeLanguagePreferenceRepository(movies, seriesRepository, seasons, episodes),
+              movies,
+              seriesRepository,
+              seasons,
+              episodes);
+      languagePreferences = languages;
+      var series = seriesRepository.save(MediaEntityFixture.buildSeries("Series"));
+      var season = MediaEntityFixture.buildSeason("Season 1", 1);
+      season.setSeries(series);
+      seasons.save(season);
+      var unsavedEpisode = MediaEntityFixture.buildEpisode("Episode 1", 1);
+      unsavedEpisode.setSeason(season);
+      episode = episodes.save(unsavedEpisode);
+      languages.setProfilePreferences(
+          viewer,
+          ProfileLanguagePreferences.builder()
+              .audioLanguages(List.of(Language.EN, Language.DE))
+              .build());
+      useAudioTracks(
+          audioTrack(1, "eng").build(),
+          audioTrack(2, "jpn").build(),
+          audioTrack(3, "fre").comment(Optional.of(true)).build());
+    }
+
+    @Test
+    @DisplayName(
+        "Should play the Japanese track when the series overrides the audio although the Profile"
+            + " lists English first")
+    void shouldPlayTheJapaneseTrackWhenTheSeriesOverridesTheAudio() {
+      overrideAudio(episode.getSeason().getSeries().getId(), Language.JA);
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+    }
+
+    @Test
+    @DisplayName("Should play the Profile's first language when no override names one")
+    void shouldPlayTheProfilesFirstLanguageWhenNoOverrideNamesOne() {
+      useAudioTracks(audioTrack(1, "jpn").build(), audioTrack(2, "en").build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+    }
+
+    @Test
+    @DisplayName("Should try the next language when the file holds no track in the first")
+    void shouldTryTheNextLanguageWhenTheFileHoldsNoTrackInTheFirst() {
+      overrideAudio(episode.getId(), Language.KO);
+      useAudioTracks(audioTrack(1, "jpn").build(), audioTrack(2, "ger").build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+    }
+
+    @Test
+    @DisplayName(
+        "Should play the file's first audio track when the file holds none of the languages")
+    void shouldPlayTheFilesFirstAudioTrackWhenTheFileHoldsNoneOfTheLanguages() {
+      useAudioTracks(audioTrack(1, "jpn").build(), audioTrack(2, "kor").build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(1);
+    }
+
+    @Test
+    @DisplayName(
+        "Should play the file's default audio track when the file holds none of the languages")
+    void shouldPlayTheFilesDefaultAudioTrackWhenTheFileHoldsNoneOfTheLanguages() {
+      useAudioTracks(
+          audioTrack(1, "jpn").build(),
+          audioTrack(2, "kor").isDefault(true).build(),
+          audioTrack(3, "ita").build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+    }
+
+    @Test
+    @DisplayName(
+        "Should play the next track when the file's first track is a commentary and no language"
+            + " matches")
+    void shouldPlayTheNextTrackWhenTheFilesFirstTrackIsACommentaryAndNoLanguageMatches() {
+      useAudioTracks(
+          audioTrack(1, "jpn").comment(Optional.of(true)).isDefault(true).build(),
+          audioTrack(2, "kor").build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+    }
+
+    @Test
+    @DisplayName("Should play a regional track when the preferred language names its base language")
+    void shouldPlayARegionalTrackWhenThePreferredLanguageNamesItsBaseLanguage() {
+      overrideAudio(episode.getId(), Language.PT);
+      useAudioTracks(audioTrack(1, "eng").build(), audioTrack(2, "pt-BR").build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+    }
+
+    @Test
+    @DisplayName(
+        "Should play the exact regional track when a track of the base language comes first")
+    void shouldPlayTheExactRegionalTrackWhenATrackOfTheBaseLanguageComesFirst() {
+      overrideAudio(episode.getId(), Language.PT_BR);
+      useAudioTracks(audioTrack(1, "por").build(), audioTrack(2, "pt-BR").build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+    }
+
+    @Test
+    @DisplayName("Should play the session's own language when the file belongs to no title")
+    void shouldPlayTheSessionsOwnLanguageWhenTheFileBelongsToNoTitle() {
+      var file = seedMediaFile();
+
+      var session =
+          accepted(
+              service.createSession(
+                  createStreamSessionCommandBuilder(file.getId(), profileId)
+                      .options(
+                          StreamingOptions.builder()
+                              .quality(VideoQuality.AUTO)
+                              .audioLanguage(Language.JA)
+                              .build())
+                      .build()));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+    }
+
+    // ADR 0043: the Profile's preferences come before the file's default, with or without a title.
+    @Test
+    @DisplayName(
+        "Should play the Profile's first language when the file belongs to no title and the session"
+            + " names none")
+    void shouldPlayTheProfilesFirstLanguageWhenTheFileBelongsToNoTitleAndTheSessionNamesNone() {
+      useAudioTracks(audioTrack(1, "jpn").isDefault(true).build(), audioTrack(2, "eng").build());
+      var file = seedMediaFile();
+
+      var session =
+          accepted(
+              service.createSession(
+                  createStreamSessionCommandBuilder(file.getId(), profileId).build()));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+    }
+
+    @Test
+    @DisplayName("Should name no audio stream when the session carries no audio")
+    void shouldNameNoAudioStreamWhenTheSessionCarriesNoAudio() {
+      useAudioTracks(StreamInfo.builder().index(1).codecType("audio").build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioDecision().mode()).isEqualTo(AudioMode.NONE);
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+        "Should play the session's own language when it names one over an episode override")
+    void shouldPlayTheSessionsOwnLanguageWhenItNamesOneOverAnEpisodeOverride() {
+      overrideAudio(episode.getId(), Language.EN);
+
+      var session =
+          createEpisodeSession(
+              StreamingOptions.builder().quality(VideoQuality.AUTO).audioLanguage(Language.JA));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+    }
+
+    @Test
+    @DisplayName("Should pass over a commentary track when it is the only track in a language")
+    void shouldPassOverACommentaryTrackWhenItIsTheOnlyTrackInALanguage() {
+      overrideAudio(episode.getId(), Language.FR);
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(1);
+    }
+
+    @Test
+    @DisplayName("Should pass over an audio description track when it is in the preferred language")
+    void shouldPassOverAnAudioDescriptionTrackWhenItIsInThePreferredLanguage() {
+      useAudioTracks(
+          audioTrack(1, "jpn").build(),
+          audioTrack(2, "eng")
+              .audioProperties(
+                  Optional.of(AudioStreamProperties.builder().visualImpaired(true).build()))
+              .build(),
+          audioTrack(3, "eng").build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(3);
+    }
+
+    // ADR 0043: a track whose title marks a commentary counts as flagged for the default track.
+    @Test
+    @DisplayName(
+        "Should pass over a track whose title marks a commentary when it is in the preferred"
+            + " language")
+    void shouldPassOverATrackWhoseTitleMarksACommentaryWhenItIsInThePreferredLanguage() {
+      useAudioTracks(
+          audioTrack(1, "jpn").build(),
+          audioTrack(2, "eng").title(Optional.of("Director's Commentary")).build(),
+          audioTrack(3, "eng").build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(3);
+    }
+
+    // ADR 0043: without a title, a handler name that is not generic marks the track.
+    @Test
+    @DisplayName(
+        "Should pass over a track whose handler name marks an audio description when it has no"
+            + " title")
+    void shouldPassOverATrackWhoseHandlerNameMarksAnAudioDescriptionWhenItHasNoTitle() {
+      useAudioTracks(
+          audioTrack(1, "jpn").build(),
+          audioTrack(2, "eng").handlerName(Optional.of("Descriptive audio")).build(),
+          audioTrack(3, "eng").build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(3);
+    }
+
+    // ADR 0043: a dependent track played alone carries only what a receiver mixes in.
+    @Test
+    @DisplayName(
+        "Should play a complete audio description track when the only other track is dependent")
+    void shouldPlayACompleteAudioDescriptionTrackWhenTheOnlyOtherTrackIsDependent() {
+      useAudioTracks(
+          audioTrack(1, "eng")
+              .audioProperties(Optional.of(AudioStreamProperties.builder().dependent(true).build()))
+              .build(),
+          audioTrack(2, "eng")
+              .audioProperties(
+                  Optional.of(AudioStreamProperties.builder().descriptions(true).build()))
+              .build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+    }
+
+    @Test
+    @DisplayName("Should describe the chosen track's codec when the chosen track is not the first")
+    void shouldDescribeTheChosenTracksCodecWhenTheChosenTrackIsNotTheFirst() {
+      useAudioTracks(
+          audioTrack(1, "jpn").build(),
+          ProbeFixture.audioStreamBuilder("ac3")
+              .index(2)
+              .language(Optional.of("eng"))
+              .channels(OptionalInt.of(6))
+              .build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+      assertThat(session.getMediaProbe().audioCodec()).isEqualTo("ac3");
+      assertThat(session.getMediaProbe().audioChannels()).hasValue(6);
+    }
+
+    // ADR 0050: AAC encodes a 7.0 track in 5.0, so the encode must read the chosen track's layout.
+    @Test
+    @DisplayName(
+        "Should encode the chosen track's layout when the chosen track is not the first audio"
+            + " track")
+    void shouldEncodeTheChosenTracksLayoutWhenTheChosenTrackIsNotTheFirstAudioTrack() {
+      useAudioTracks(
+          audioTrack(1, "jpn")
+              .audioProperties(
+                  Optional.of(
+                      AudioStreamProperties.builder().channelLayout(Optional.of("stereo")).build()))
+              .build(),
+          ProbeFixture.audioStreamBuilder("dts")
+              .index(2)
+              .language(Optional.of("eng"))
+              .channels(OptionalInt.of(7))
+              .audioProperties(
+                  Optional.of(
+                      AudioStreamProperties.builder().channelLayout(Optional.of("7.0")).build()))
+              .build());
+      var declaration =
+          defaultDeclarationBuilder()
+              .audio(List.of(aacEntryBuilder().maxChannels(8).build()))
+              .build();
+
+      var session =
+          createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO), declaration);
+
+      assertThat(session.getTranscodeDecision().audioDecision())
+          .isEqualTo(
+              AudioDecision.builder()
+                  .mode(AudioMode.TRANSCODE)
+                  .codec("aac")
+                  .channels(5)
+                  .channelLayout(Optional.of(ChannelLayout.FIVE_POINT_ZERO))
+                  .bitrate(384_000L)
+                  .build());
+    }
+
+    private void overrideAudio(UUID titleId, Language language) {
+      languages.setLanguageOverride(
+          viewer,
+          SetLanguageOverrideCommand.builder()
+              .itemId(titleId)
+              .change(
+                  LanguageOverrideChange.builder()
+                      .audioLanguage(OverrideFieldChange.replaceWith(Optional.of(language)))
+                      .build())
+              .build());
+    }
+
+    private StreamInfo.StreamInfoBuilder audioTrack(int index, String language) {
+      return ProbeFixture.audioStreamBuilder("aac")
+          .index(index)
+          .language(Optional.of(language))
+          .channels(OptionalInt.of(2));
+    }
+
+    private void useAudioTracks(StreamInfo... audioTracks) {
+      var probe = ProbeFixture.completeProbe(defaultProbeBuilder().build());
+      var streams = new ArrayList<StreamInfo>();
+      streams.add(probe.streams().getFirst());
+      streams.addAll(List.of(audioTracks));
+      probeResults.setDefaultOutcome(
+          ProbeOutcome.Success.builder()
+              .container(probe.container())
+              .streams(streams)
+              .keyframes(probe.keyframes())
+              .chosenVideoStream(probe.chosenVideoStream())
+              .streamTitlesOmitted(probe.streamTitlesOmitted())
+              .build());
+    }
+
+    private StreamSession createEpisodeSession(StreamingOptions.StreamingOptionsBuilder options) {
+      return createEpisodeSession(options, defaultDeclarationBuilder().build());
+    }
+
+    private StreamSession createEpisodeSession(
+        StreamingOptions.StreamingOptionsBuilder options, ClientCapabilityDeclaration declaration) {
+      var file =
+          mediaFileRepository.save(
+              MediaFile.builder()
+                  .mediaId(episode.getId())
+                  .filepathUri("file:///media/series/episode.mkv")
+                  .filename("episode.mkv")
+                  .status(MediaFileStatus.MATCHED)
+                  .size(1_000_000L)
+                  .build());
+      return accepted(
+          service.createSession(
+              createStreamSessionCommandBuilder(file.getId(), profileId)
+                  .options(options.build())
+                  .capabilityDeclaration(declaration)
+                  .build()));
+    }
+  }
+
   @BeforeEach
   void setUp() {
     mediaFileRepository = new FakeMediaFileRepository();
@@ -2995,6 +3413,8 @@ class HlsStreamingServiceTest {
         .producerLifecycle(rig.lifecycle())
         .deliveryCoordinator(rig.coordinator())
         .meterRegistry(meters)
+        .languagePreferences(
+            (profileId, file) -> languagePreferences.audioLanguagesFor(profileId, file))
         .build();
   }
 
@@ -4497,6 +4917,98 @@ class HlsStreamingServiceTest {
                     .isEqualTo("av1"));
   }
 
+  // ADR 0045: a player that cannot select an audio track direct-plays the file's first track, and
+  // the viewer's switch to another track moves it to HLS, which plays the chosen track.
+  @Test
+  @DisplayName(
+      "Should play the chosen audio track over HLS when the viewer switches tracks during direct"
+          + " play")
+  void shouldPlayTheChosenAudioTrackOverHlsWhenTheViewerSwitchesTracksDuringDirectPlay() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra"));
+    var playback = logicalPlayback();
+    var command =
+        logicalStart()
+            .options(StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build())
+            .capabilityDeclaration(
+                directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(false).build())
+            .build();
+    var directPlay = accepted(playback.start(command));
+    assertThat(directPlay.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready ->
+                assertThat(ready.session().getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY));
+
+    var switched =
+        accepted(
+            playback.switchAudioTrack(
+                SwitchPlaybackAudioTrackCommand.builder()
+                    .playbackSessionId(directPlay.playbackSessionId())
+                    .streamSessionId(directPlay.currentFormatAttempt().streamSessionId())
+                    .identity(command.identity())
+                    .audioTrackPosition(1)
+                    .build()));
+
+    assertThat(switched.playbackChoice()).isEqualTo(VideoQuality.ORIGINAL);
+    assertThat(switched.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready -> {
+              assertThat(ready.session().getDelivery()).isEqualTo(StreamDelivery.HLS);
+              assertThat(ready.session().getMediaProbe().sessionAudioTrackPosition()).hasValue(1);
+              assertThat(service.getAllSessions()).containsExactly(ready.session());
+            });
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(request -> request.transcodeDecision().audioStreamIndex())
+        .isEqualTo(OptionalInt.of(2));
+  }
+
+  // ADR 0045: direct play needs no connected worker, so a switch that HLS cannot serve leaves the
+  // viewer on the track that direct play plays.
+  @Test
+  @DisplayName("Should keep direct play when the viewer switches tracks and no worker is connected")
+  void shouldKeepDirectPlayWhenTheViewerSwitchesTracksAndNoWorkerIsConnected() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra"));
+    transcodeExecutor.setHealthy(false);
+    var playback = logicalPlayback();
+    var command =
+        logicalStart()
+            .options(StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build())
+            .capabilityDeclaration(
+                directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(false).build())
+            .build();
+    var directPlay = accepted(playback.start(command));
+
+    var outcome =
+        playback.switchAudioTrack(
+            SwitchPlaybackAudioTrackCommand.builder()
+                .playbackSessionId(directPlay.playbackSessionId())
+                .streamSessionId(directPlay.currentFormatAttempt().streamSessionId())
+                .identity(command.identity())
+                .audioTrackPosition(1)
+                .build());
+
+    assertThat(outcome)
+        .isInstanceOfSatisfying(
+            Outcome.Rejected.class,
+            rejected ->
+                assertThat(rejected.rejections())
+                    .singleElement()
+                    .isInstanceOf(AudioTrackSwitchRejection.StreamSessionRefused.class));
+    assertThat(
+            playback.access(
+                PlaybackSessionRequest.builder()
+                    .playbackSessionId(directPlay.playbackSessionId())
+                    .identity(command.identity())
+                    .build()))
+        .contains(directPlay);
+    assertThat(service.getAllSessions())
+        .singleElement()
+        .extracting(StreamSession::getDelivery)
+        .isEqualTo(StreamDelivery.DIRECT_PLAY);
+  }
+
   private PlaybackSessionService logicalPlayback() {
     return PlaybackSessionService.builder()
         .streamingService(service)
@@ -4932,7 +5444,7 @@ class HlsStreamingServiceTest {
                 List.of(
                     probe.streams().getFirst(),
                     audio,
-                    ProbeFixture.audioStreamBuilder("aac").index(2).isDefault(true).build()))
+                    ProbeFixture.audioStreamBuilder("aac").index(2).build()))
             .keyframes(probe.keyframes())
             .chosenVideoStream(probe.chosenVideoStream())
             .streamTitlesOmitted(probe.streamTitlesOmitted())
@@ -5050,7 +5562,7 @@ class HlsStreamingServiceTest {
                 List.of(
                     probe.streams().getFirst(),
                     firstAudio,
-                    ProbeFixture.audioStreamBuilder("ac3").index(2).isDefault(true).build()))
+                    ProbeFixture.audioStreamBuilder("ac3").index(2).build()))
             .keyframes(probe.keyframes())
             .chosenVideoStream(probe.chosenVideoStream())
             .streamTitlesOmitted(probe.streamTitlesOmitted())
@@ -5422,6 +5934,270 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(3);
   }
 
+  // ADR 0045: a player that cannot select an audio track in a directly played file plays the
+  // file's first audio track, so it direct-plays a file whose chosen audio track is the first.
+  @Test
+  @DisplayName(
+      "Should direct-play several audio tracks when the player cannot select one and the first is"
+          + " chosen")
+  void shouldDirectPlaySeveralAudioTracksWhenThePlayerCannotSelectOneAndTheFirstIsChosen() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra"));
+    var file = seedMediaFile();
+    var declaration = directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(false).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId()).capabilityDeclaration(declaration).build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
+    assertThat(session.getDirectPlayAudioTrackPosition()).hasValue(0);
+  }
+
+  // ADR 0045: such a player would play the file's first audio track instead of the chosen one, so
+  // it plays over HLS from the start.
+  @Test
+  @DisplayName(
+      "Should start HLS with the chosen audio track when the player cannot select one and a later"
+          + " track is chosen")
+  void shouldStartHlsWithTheChosenAudioTrackWhenThePlayerCannotSelectOneAndALaterTrackIsChosen() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra"));
+    var file = seedMediaFile();
+    var declaration = directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(false).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId())
+                    .capabilityDeclaration(declaration)
+                    .audioTrackPosition(OptionalInt.of(1))
+                    .build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.HLS);
+    assertThat(session.getMediaProbe().sessionAudioTrackPosition()).hasValue(1);
+  }
+
+  // A player that cannot select an audio track starts on the container's default audio track, as an
+  // MP4 track's enabled flag marks it. When that is not the first, the chosen first track plays
+  // over HLS.
+  @Test
+  @DisplayName(
+      "Should start HLS when the player cannot select an audio track and the first is not the"
+          + " default")
+  void shouldStartHlsWhenThePlayerCannotSelectAnAudioTrackAndTheFirstIsNotTheDefault() {
+    probeResults.setDefaultProbe(directPlayableProbeWhoseDefaultAudioTrackIsTheSecond());
+    var file = seedMediaFile();
+    var declaration = directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(false).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId())
+                    .options(
+                        StreamingOptions.builder()
+                            .quality(VideoQuality.ORIGINAL)
+                            .audioLanguage(Language.EN)
+                            .build())
+                    .capabilityDeclaration(declaration)
+                    .build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.HLS);
+    assertThat(session.getMediaProbe().sessionAudioTrackPosition()).hasValue(0);
+  }
+
+  // The HLS format attempt names why it does not direct-play first among its stream decision's
+  // reasons, so a playback-data overlay shows that the player cannot select the chosen track.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("audioTracksThatANonSelectingPlayerWouldNotStartOn")
+  @DisplayName(
+      "Should name the unselectable audio track when a player that cannot select one starts HLS")
+  void shouldNameTheUnselectableAudioTrackWhenAPlayerThatCannotSelectOneStartsHls(
+      String scenario, MediaProbe probe, OptionalInt chosenAudioTrack) {
+    probeResults.setDefaultProbe(probe);
+    var file = seedMediaFile();
+    var declaration = directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(false).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId())
+                    .capabilityDeclaration(declaration)
+                    .audioTrackPosition(chosenAudioTrack)
+                    .build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.HLS);
+    assertThat(session.getTranscodeDecision().reasons())
+        .first()
+        .isEqualTo(DecisionReason.DIRECT_PLAY_AUDIO_TRACK_NOT_SELECTABLE);
+  }
+
+  static Stream<Arguments> audioTracksThatANonSelectingPlayerWouldNotStartOn() {
+    return Stream.of(
+        Arguments.of(
+            "a later track is chosen",
+            directPlayableProbeWithAudioIn("eng", "fra"),
+            OptionalInt.of(1)),
+        Arguments.of(
+            "the first track is not the default",
+            directPlayableProbeWhoseDefaultAudioTrackIsTheSecond(),
+            OptionalInt.empty()));
+  }
+
+  @ParameterizedTest(name = "selects audio track: {0}")
+  @CsvSource({"true, DIRECT_PLAY", "false, HLS"})
+  @DisplayName(
+      "Should decide direct play on the audio track that the session's language chooses when it is"
+          + " a later track")
+  void shouldDecideDirectPlayOnTheAudioTrackThatTheSessionsLanguageChoosesWhenItIsALaterTrack(
+      boolean selectsAudioTrack, StreamDelivery delivery) {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra"));
+    var file = seedMediaFile();
+    var declaration =
+        directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(selectsAudioTrack).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId())
+                    .options(
+                        StreamingOptions.builder()
+                            .quality(VideoQuality.ORIGINAL)
+                            .audioLanguage(Language.FR)
+                            .build())
+                    .capabilityDeclaration(declaration)
+                    .build()));
+
+    assertThat(session.getDelivery()).isEqualTo(delivery);
+    assertThat(session.getMediaProbe().sessionAudioTrackPosition()).hasValue(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should play the audio track the viewer switched to when the session prefers another"
+          + " language")
+  void shouldPlayTheAudioTrackTheViewerSwitchedToWhenTheSessionPrefersAnotherLanguage() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra"));
+    var file = seedMediaFile();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId())
+                    .options(
+                        StreamingOptions.builder()
+                            .quality(VideoQuality.ORIGINAL)
+                            .audioLanguage(Language.EN)
+                            .build())
+                    .audioTrackPosition(OptionalInt.of(1))
+                    .build()));
+
+    assertThat(session.getMediaProbe().sessionAudioTrackPosition()).hasValue(1);
+  }
+
+  // ADR 0045: a player that selects audio tracks direct-plays a file with several, and selects the
+  // audio track that the stream decision names: the track that HLS plays for the same file.
+  @Test
+  @DisplayName(
+      "Should direct-play and name the first audio track when the player selects an audio track")
+  void shouldDirectPlayAndNameTheFirstAudioTrackWhenThePlayerSelectsAnAudioTrack() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra"));
+    var file = seedMediaFile();
+    var declaration = directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(true).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId()).capabilityDeclaration(declaration).build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
+    assertThat(session.getDirectPlayAudioTrackPosition()).hasValue(0);
+  }
+
+  @Test
+  @DisplayName("Should play the audio track that the request names when the session plays over HLS")
+  void shouldPlayTheAudioTrackThatTheRequestNamesWhenTheSessionPlaysOverHls() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra", "deu"));
+    var file = seedMediaFile();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId())
+                    .videoFormatConstraint(VideoFormatConstraint.COPY_OR_ENCODE)
+                    .audioTrackPosition(OptionalInt.of(1))
+                    .build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.HLS);
+    assertThat(session.getMediaProbe().audioStreams())
+        .first()
+        .extracting(StreamInfo::language)
+        .isEqualTo(Optional.of("fra"));
+    assertThat(session.getMediaProbe().sessionAudioTrackPosition()).hasValue(1);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(request -> request.transcodeDecision().audioStreamIndex())
+        .isEqualTo(OptionalInt.of(2));
+  }
+
+  @Test
+  @DisplayName(
+      "Should direct-play and name the audio track that the request names when the player selects"
+          + " an audio track")
+  void shouldDirectPlayAndNameTheAudioTrackThatTheRequestNamesWhenThePlayerSelectsAnAudioTrack() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra", "deu"));
+    var file = seedMediaFile();
+    var declaration = directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(true).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId())
+                    .capabilityDeclaration(declaration)
+                    .audioTrackPosition(OptionalInt.of(2))
+                    .build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
+    assertThat(session.getDirectPlayAudioTrackPosition()).hasValue(2);
+  }
+
+  // One stereo AAC track for each language, in stream order after the video stream.
+  private static MediaProbe directPlayableProbeWithAudioIn(String... languages) {
+    var streams = new ArrayList<StreamInfo>();
+    streams.add(ProbeFixture.videoStreamBuilder(directPlayableProbe()).build());
+    for (var language : languages) {
+      streams.add(
+          ProbeFixture.audioStreamBuilder("aac")
+              .index(streams.size())
+              .channels(OptionalInt.of(2))
+              .language(Optional.of(language))
+              .build());
+    }
+
+    return directPlayableProbeBuilder().streams(streams).build();
+  }
+
+  private static MediaProbe directPlayableProbeWhoseDefaultAudioTrackIsTheSecond() {
+    var video = ProbeFixture.videoStreamBuilder(directPlayableProbe()).build();
+    var first =
+        ProbeFixture.audioStreamBuilder("aac")
+            .index(1)
+            .channels(OptionalInt.of(2))
+            .language(Optional.of("eng"))
+            .build();
+    var second =
+        ProbeFixture.audioStreamBuilder("aac")
+            .index(2)
+            .channels(OptionalInt.of(2))
+            .language(Optional.of("fra"))
+            .isDefault(true)
+            .build();
+    return directPlayableProbeBuilder().streams(List.of(video, first, second)).build();
+  }
+
+  private static MediaProbe directPlayableProbe() {
+    return directPlayableProbeBuilder().build();
+  }
+
   private static MediaProbe.MediaProbeBuilder directPlayableProbeBuilder() {
     var facts =
         VideoPlaybackFactsFixture.sdrH264FactsBuilder()
@@ -5436,14 +6212,18 @@ class HlsStreamingServiceTest {
   }
 
   private static ClientCapabilityDeclaration directPlayDeclaration() {
+    return directPlayDeclarationBuilder().build();
+  }
+
+  private static ClientCapabilityDeclaration.ClientCapabilityDeclarationBuilder
+      directPlayDeclarationBuilder() {
     return ClientCapabilityDeclaration.builder()
         .video(
             List.of(
                 h264EntryBuilder().directPlayContainers(List.of(SourceContainer.MATROSKA)).build()))
         .audio(
             List.of(
-                aacEntryBuilder().directPlayContainers(List.of(SourceContainer.MATROSKA)).build()))
-        .build();
+                aacEntryBuilder().directPlayContainers(List.of(SourceContainer.MATROSKA)).build()));
   }
 
   private static CreateStreamSessionCommand.CreateStreamSessionCommandBuilder directPlayCommand(

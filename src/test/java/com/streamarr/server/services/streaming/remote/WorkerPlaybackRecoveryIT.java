@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
+import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.noLanguagePreferences;
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
@@ -360,6 +361,7 @@ class WorkerPlaybackRecoveryIT {
       delivery = lifecycle.coordinator();
       streams =
           HlsStreamingService.builder()
+              .languagePreferences(noLanguagePreferences())
               .meterRegistry(new SimpleMeterRegistry())
               .mediaFileRepository(files)
               .transcodeExecutor(executor)

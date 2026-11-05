@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.noLanguagePreferences;
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
@@ -210,6 +211,7 @@ class LibraryScanProbeCapacityIT extends AbstractScanningIntegrationTest {
     probeResults.setDefaultProbe(defaultProbeBuilder().build());
     var streamingService =
         HlsStreamingService.builder()
+            .languagePreferences(noLanguagePreferences())
             .meterRegistry(new SimpleMeterRegistry())
             .mediaFileRepository(mediaFiles)
             .transcodeExecutor(transcodeExecutor)

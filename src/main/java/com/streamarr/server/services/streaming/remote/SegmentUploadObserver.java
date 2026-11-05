@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 
+import com.streamarr.server.services.streaming.SegmentCap;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
@@ -21,8 +22,6 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Builder
 final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest> {
-
-  private static final int MAXIMUM_SEGMENT_BYTES = 128 * 1024 * 1024;
 
   private final UUID authenticatedWorkerId;
   private final LiveWorkerConnectionRegistry workerConnections;
@@ -89,6 +88,7 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
       return;
     }
     data.writeBytes(request.getData().toByteArray());
+    workerConnections.reportUploadProgress(authenticatedWorkerId, metadata);
   }
 
   private boolean wouldExceedDeclaredLength(UploadSegmentRequest request) {
@@ -171,7 +171,7 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
   }
 
   private static boolean isValidLength(long contentLength) {
-    return contentLength > 0 && contentLength <= MAXIMUM_SEGMENT_BYTES;
+    return contentLength > 0 && contentLength <= SegmentCap.BYTES;
   }
 
   private static boolean isValidName(String value) {

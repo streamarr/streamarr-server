@@ -58,28 +58,58 @@ class KeyframeSegmentBoundariesTest {
         .isEqualTo(startsAt(fixture.keyframePresentationTimes(), fixture.segmentStarts()));
   }
 
+  // The producer that recorded this fixture predates the segment list and skipped segment 2. On
+  // the list, the slot [12 s, 18 s) joins the segment that the keyframe at 10.01 s opens.
   @Test
   @DisplayName(
-      "Should find the interval without a keyframe where the producer skipped a segment number")
-  void shouldFindTheIntervalWithoutAKeyframeWhereTheProducerSkippedASegmentNumber()
-      throws IOException {
+      "Should merge the slot without a keyframe into the segment before it where the producer"
+          + " skipped a segment number")
+  void
+      shouldMergeTheSlotWithoutAKeyframeIntoTheSegmentBeforeItWhereTheProducerSkippedASegmentNumber()
+          throws IOException {
     var fixture = recordedFixture("10-copy-gop-exceeds-period");
     var positions = positions(fixture.videoTimescale(), fixture.keyframePresentationTimes());
 
     var segments = KeyframeSegmentBoundaries.forStreamCopy(positions, fixture.periodSeconds());
 
     assertThat(fixture.skippedSegmentNumber()).isEqualTo(2);
-    assertThat(segments).isEqualTo(new StreamCopySegments.IntervalWithoutKeyframe(2));
+    assertThat(segments).isEqualTo(new StreamCopySegments.Starts(List.of(0, 1, 2)));
+  }
+
+  // Keyframes 10 s apart open a segment in slots 0, 1, 3 and 5 of 6 s, and in slots 0, 3, 6 and 10
+  // of 3 s: every keyframe still opens its own segment.
+  @ParameterizedTest
+  @ValueSource(ints = {6, 3})
+  @DisplayName(
+      "Should open a segment at every keyframe when the keyframes lie further apart than a slot")
+  void shouldOpenASegmentAtEveryKeyframeWhenTheKeyframesLieFurtherApartThanASlot(
+      int periodSeconds) {
+    var positions = positions(1_000, List.of(0L, 10_000L, 20_000L, 30_000L));
+
+    var segments = KeyframeSegmentBoundaries.forStreamCopy(positions, periodSeconds);
+
+    assertThat(segments).isEqualTo(new StreamCopySegments.Starts(List.of(0, 1, 2, 3)));
   }
 
   @Test
-  @DisplayName("Should find the first interval empty when the first keyframe lies in a later one")
-  void shouldFindTheFirstIntervalEmptyWhenTheFirstKeyframeLiesInALaterOne() {
-    var positions = positions(1_000, List.of(6_500L, 12_000L));
+  @DisplayName("Should open one segment for each slot's first keyframe when a merged slot follows")
+  void shouldOpenOneSegmentForEachSlotsFirstKeyframeWhenAMergedSlotFollows() {
+    var positions = positions(1_000, List.of(0L, 1_000L, 10_000L, 11_000L, 20_000L));
 
     var segments = KeyframeSegmentBoundaries.forStreamCopy(positions, 6);
 
-    assertThat(segments).isEqualTo(new StreamCopySegments.IntervalWithoutKeyframe(0));
+    assertThat(segments).isEqualTo(new StreamCopySegments.Starts(List.of(0, 2, 4)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should open the first segment at its keyframe when that keyframe lies in a later slot")
+  void shouldOpenTheFirstSegmentAtItsKeyframeWhenThatKeyframeLiesInALaterSlot() {
+    var positions = positions(1_000, List.of(6_500L, 9_000L, 12_000L));
+
+    var segments = KeyframeSegmentBoundaries.forStreamCopy(positions, 6);
+
+    assertThat(segments).isEqualTo(new StreamCopySegments.Starts(List.of(0, 2)));
   }
 
   @Test
@@ -93,13 +123,13 @@ class KeyframeSegmentBoundariesTest {
   }
 
   @Test
-  @DisplayName("Should find the first interval empty when every keyframe presents before zero")
-  void shouldFindTheFirstIntervalEmptyWhenEveryKeyframePresentsBeforeZero() {
+  @DisplayName("Should open no segment when every keyframe presents before zero")
+  void shouldOpenNoSegmentWhenEveryKeyframePresentsBeforeZero() {
     var positions = positions(1_000, List.of(-4_000L, -2_000L));
 
     var segments = KeyframeSegmentBoundaries.forStreamCopy(positions, 6);
 
-    assertThat(segments).isEqualTo(new StreamCopySegments.IntervalWithoutKeyframe(0));
+    assertThat(segments).isEqualTo(new StreamCopySegments.Starts(List.of()));
   }
 
   @Test

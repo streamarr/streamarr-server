@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.language.Language;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.streaming.AudioSteps;
 import com.streamarr.server.domain.streaming.AudioTrackChannels;
@@ -21,6 +22,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -52,6 +54,7 @@ public class HlsStreamingService implements StreamingService {
   private final ProducerLifecycleService producerLifecycle;
   private final SegmentDeliveryCoordinator deliveryCoordinator;
   private final MeterRegistry meterRegistry;
+  private final PlaybackLanguagePreferences languagePreferences;
 
   @Override
   public Outcome<StreamSession, CreateStreamSessionRejection> createSession(
@@ -74,7 +77,31 @@ public class HlsStreamingService implements StreamingService {
 
     return playbackProbeService
         .read(mediaFileId)
-        .fold(probe -> startSession(command, mediaFile.get(), probe), Outcome::rejected);
+        .fold(
+            probe ->
+                startSession(
+                    command, mediaFile.get(), withSessionAudio(probe, command, mediaFile.get())),
+            Outcome::rejected);
+  }
+
+  // A track the viewer switched to, else the session's own language, then the Profile's
+  // preferences for the file (ADR 0043).
+  private MediaProbe withSessionAudio(
+      MediaProbe probe, CreateStreamSessionCommand command, MediaFile mediaFile) {
+    var position = command.audioTrackPosition();
+    if (position.isPresent()) {
+      return probe.withSessionAudioTrackAt(position.getAsInt());
+    }
+
+    return probe.withSessionAudio(audioLanguages(command, mediaFile));
+  }
+
+  private List<Language> audioLanguages(CreateStreamSessionCommand command, MediaFile mediaFile) {
+    var languages = new ArrayList<Language>();
+    Optional.ofNullable(command.options().audioLanguage()).ifPresent(languages::add);
+    languages.addAll(
+        languagePreferences.audioLanguagesFor(command.identity().profileId(), mediaFile));
+    return languages;
   }
 
   private Outcome<StreamSession, CreateStreamSessionRejection> startSession(
@@ -96,9 +123,13 @@ public class HlsStreamingService implements StreamingService {
     }
 
     // Direct play uses no worker time, so it needs no connected worker (ADR 0045).
-    var directPlay = transcodeDecisionService.decideDirectPlay(directPlayRequest(command, probe));
-    if (directPlay instanceof DirectPlayChoice.Accepted(var container)) {
-      var session = directPlaySession(command, mediaFile, probe).sourceContainer(container).build();
+    var directPlay = transcodeDecisionService.decideDirectPlay(DirectPlayRequest.of(command, probe));
+    if (directPlay instanceof DirectPlayChoice.Accepted(var container, var audioTrackPosition)) {
+      var session =
+          directPlaySession(command, mediaFile, probe)
+              .sourceContainer(container)
+              .directPlayAudioTrackPosition(audioTrackPosition)
+              .build();
       runtimeRegistry.save(session);
       log.info(
           "Created direct-play streaming session {} for media file {}",
@@ -217,16 +248,6 @@ public class HlsStreamingService implements StreamingService {
 
   // A direct-play stream session starts no job attempt, so it has no transcode decision, producer
   // or segments.
-  private static DirectPlayRequest directPlayRequest(
-      CreateStreamSessionCommand command, MediaProbe probe) {
-    return DirectPlayRequest.builder()
-        .source(probe)
-        .capabilityDeclaration(command.capabilityDeclaration())
-        .videoFormatConstraint(command.videoFormatConstraint())
-        .viewerLimits(ViewerLimits.of(command.options()))
-        .build();
-  }
-
   private static StreamSession.StreamSessionBuilder directPlaySession(
       CreateStreamSessionCommand command, MediaFile mediaFile, MediaProbe probe) {
     return StreamSession.builder()

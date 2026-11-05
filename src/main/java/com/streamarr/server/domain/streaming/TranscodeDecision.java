@@ -2,6 +2,7 @@ package com.streamarr.server.domain.streaming;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.NonNull;
@@ -14,7 +15,9 @@ import lombok.NonNull;
  * lists every bitstream rewrite of the decision's copy, and a decision that encodes the video lists
  * none (ADR 0036). {@code videoDolbyVisionOutput} is the Dolby Vision of a copy that the playlist
  * describes as Dolby Vision, and a decision that encodes the video holds none (ADR 0013). {@code
- * reasons} names why the output differs from the source, video reasons before audio reasons.
+ * reasons} names why the output differs from the source, video reasons before audio reasons. {@code
+ * audioStreamIndex} is the index of the source audio stream that the session plays, and is empty
+ * when the decision carries no audio.
  */
 @Builder(toBuilder = true)
 public record TranscodeDecision(
@@ -26,7 +29,8 @@ public record TranscodeDecision(
     @NonNull Optional<VideoPlaybackFacts> videoSource,
     @NonNull List<BitstreamRewrite> videoBitstreamRewrites,
     @NonNull Optional<DolbyVisionOutput> videoDolbyVisionOutput,
-    @NonNull List<DecisionReason> reasons) {
+    @NonNull List<DecisionReason> reasons,
+    @NonNull OptionalInt audioStreamIndex) {
 
   public TranscodeDecision {
     var copiesVideo = transcodeMode != null && transcodeMode.copiesVideo();
@@ -148,5 +152,6 @@ public record TranscodeDecision(
     private List<BitstreamRewrite> videoBitstreamRewrites = List.of();
     private Optional<DolbyVisionOutput> videoDolbyVisionOutput = Optional.empty();
     private List<DecisionReason> reasons = List.of();
+    private OptionalInt audioStreamIndex = OptionalInt.empty();
   }
 }

@@ -9,6 +9,7 @@ import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.SourceContainer;
@@ -34,6 +35,8 @@ import com.streamarr.server.graphql.mutation.streaming.DestroyPlaybackSessionPay
 import com.streamarr.server.graphql.mutation.streaming.PlaybackSessionError;
 import com.streamarr.server.graphql.mutation.streaming.ReportPlaybackFormatFailureInput;
 import com.streamarr.server.graphql.mutation.streaming.ReportPlaybackFormatFailurePayload;
+import com.streamarr.server.graphql.mutation.streaming.SwitchPlaybackAudioTrackInput;
+import com.streamarr.server.graphql.mutation.streaming.SwitchPlaybackAudioTrackPayload;
 import com.streamarr.server.graphql.mutation.watchprogress.MarkUnwatchedError;
 import com.streamarr.server.graphql.mutation.watchprogress.MarkUnwatchedInput;
 import com.streamarr.server.graphql.mutation.watchprogress.MarkUnwatchedPayload;
@@ -43,6 +46,7 @@ import com.streamarr.server.graphql.mutation.watchprogress.MarkWatchedPayload;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
+import com.streamarr.server.services.streaming.AudioTrackSwitchRejection;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection;
 import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
 import com.streamarr.server.services.streaming.PlaybackFormatAttempt;
@@ -53,6 +57,7 @@ import com.streamarr.server.services.streaming.PlaybackSessionSnapshot;
 import com.streamarr.server.services.streaming.ReportPlaybackFormatFailureCommand;
 import com.streamarr.server.services.streaming.StartPlaybackSessionCommand;
 import com.streamarr.server.services.streaming.StartPlaybackSessionRejection;
+import com.streamarr.server.services.streaming.SwitchPlaybackAudioTrackCommand;
 import com.streamarr.server.services.watchprogress.MarkUnwatchedRejection;
 import com.streamarr.server.services.watchprogress.MarkWatchedRejection;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
@@ -61,6 +66,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
 
 @DgsComponent
@@ -68,6 +74,8 @@ import lombok.RequiredArgsConstructor;
 public class StreamingResolver {
 
   private static final String ITEM_ID = "itemId";
+  private static final String PLAYBACK_SESSION_ID = "playbackSessionId";
+  private static final String STREAM_SESSION_ID = "streamSessionId";
   private static final String INVALID_ITEM_ID = "Enter a valid item ID.";
   private static final String ITEM_NOT_FOUND = "This item no longer exists.";
   private static final double NANOSECONDS_PER_SECOND = 1_000_000_000d;
@@ -200,8 +208,8 @@ public class StreamingResolver {
             MutationPayloads.withUuid(
                 input.streamSessionId(),
                 streamId -> reportFailure(input, playbackId, streamId),
-                () -> invalidReportId("streamSessionId")),
-        () -> invalidReportId("playbackSessionId"));
+                () -> invalidReportId(STREAM_SESSION_ID)),
+        () -> invalidReportId(PLAYBACK_SESSION_ID));
   }
 
   private ReportPlaybackFormatFailurePayload reportFailure(
@@ -230,6 +238,60 @@ public class StreamingResolver {
   }
 
   @DgsMutation
+  public SwitchPlaybackAudioTrackPayload switchPlaybackAudioTrack(
+      @InputArgument SwitchPlaybackAudioTrackInput input) {
+    authorizationService.requireProfile();
+    return MutationPayloads.withUuid(
+        input.playbackSessionId(),
+        playbackId ->
+            MutationPayloads.withUuid(
+                input.streamSessionId(),
+                streamId -> switchAudioTrack(input, playbackId, streamId),
+                () -> invalidSwitchId(STREAM_SESSION_ID)),
+        () -> invalidSwitchId(PLAYBACK_SESSION_ID));
+  }
+
+  private SwitchPlaybackAudioTrackPayload switchAudioTrack(
+      SwitchPlaybackAudioTrackInput input, UUID playbackId, UUID streamId) {
+    var outcome =
+        playbackSessions.switchAudioTrack(
+            SwitchPlaybackAudioTrackCommand.builder()
+                .playbackSessionId(playbackId)
+                .streamSessionId(streamId)
+                .identity(authorizationService.currentIdentity())
+                .audioTrackPosition(input.audioTrackPosition())
+                .build());
+    return MutationPayloads.payload(
+        outcome.map(this::toPlaybackDto),
+        this::audioTrackSwitchError,
+        SwitchPlaybackAudioTrackPayload::new);
+  }
+
+  private MutationError audioTrackSwitchError(AudioTrackSwitchRejection rejection) {
+    return switch (rejection) {
+      case AudioTrackSwitchRejection.PlaybackSessionClosed() -> closedError();
+      case AudioTrackSwitchRejection.AudioTrackNotInFile() ->
+          new PlaybackSessionError.AudioTrackNotInFileError(
+              "This video has no audio track there. Choose another audio track.",
+              InputPath.of("audioTrackPosition"));
+      case AudioTrackSwitchRejection.FormatAttemptsExhausted() ->
+          new PlaybackSessionError.PlaybackFormatAttemptsExhaustedError(
+              "The audio track can't change now. Keep the current audio track, or start the video"
+                  + " again.");
+      case AudioTrackSwitchRejection.StreamSessionFailed() ->
+          new PlaybackSessionError.PlaybackStartupFailedError(
+              "The audio track can't change now. Keep the current audio track, or try again later.");
+      case AudioTrackSwitchRejection.StreamSessionRefused(var refusal) ->
+          createSessionError(refusal);
+    };
+  }
+
+  private SwitchPlaybackAudioTrackPayload invalidSwitchId(String field) {
+    return MutationPayloads.inputError(
+        invalidPlaybackId(field), SwitchPlaybackAudioTrackPayload::new);
+  }
+
+  @DgsMutation
   public DestroyPlaybackSessionPayload destroyPlaybackSession(
       @InputArgument DestroyPlaybackSessionInput input) {
     authorizationService.requireProfile();
@@ -241,7 +303,7 @@ public class StreamingResolver {
         },
         () ->
             MutationPayloads.inputError(
-                invalidPlaybackId("playbackSessionId"), DestroyPlaybackSessionPayload::new));
+                invalidPlaybackId(PLAYBACK_SESSION_ID), DestroyPlaybackSessionPayload::new));
   }
 
   private PlaybackSessionRequest playbackRequest(UUID id) {
@@ -421,6 +483,8 @@ public class StreamingResolver {
         .sourceContainer(container.name())
         .videoRange(session.getVideoRange().name())
         .startPositionSeconds(startPositionSeconds(session))
+        .audioTrackPosition(audioTrackPosition(session))
+        .audioTracks(audioTracks(session.getMediaProbe()))
         .build();
   }
 
@@ -429,6 +493,29 @@ public class StreamingResolver {
         .getStartPosition()
         .map(position -> position.toNanos() / NANOSECONDS_PER_SECOND)
         .orElse(null);
+  }
+
+  private static List<StreamSessionDto.AudioTrack> audioTracks(MediaProbe probe) {
+    var inStreamOrder = probe.audioStreamsInStreamOrder();
+    return IntStream.range(0, inStreamOrder.size())
+        .mapToObj(
+            position ->
+                StreamSessionDto.AudioTrack.builder()
+                    .position(position)
+                    .language(inStreamOrder.get(position).language().orElse(null))
+                    .title(inStreamOrder.get(position).title().orElse(null))
+                    .build())
+        .toList();
+  }
+
+  // GraphQL's null names a file without audio.
+  private static Integer audioTrackPosition(StreamSession session) {
+    var position = session.getDirectPlayAudioTrackPosition();
+    if (position.isEmpty()) {
+      return null;
+    }
+
+    return position.getAsInt();
   }
 
   // The issuer refuses to mint for sessions the caller does not own — every DTO carries a playback
