@@ -95,6 +95,16 @@ public enum DecisionReason {
   /** The probe stored no codec string for the source's audio, which a playlist needs for a copy. */
   AUDIO_CODEC_STRING_UNKNOWN,
   /**
+   * The source's FLAC minimum block size is below the minimum of each audio capability entry for
+   * HLS that accepts the rest of the copy (ADR 0049).
+   */
+  AUDIO_BLOCK_SIZE_NOT_DECLARED,
+  /**
+   * The probe stored no FLAC minimum block size for the source's audio, and each audio capability
+   * entry for HLS that accepts the rest of the copy gives a minimum (ADR 0049).
+   */
+  AUDIO_BLOCK_SIZE_UNKNOWN,
+  /**
    * The viewer's maximum bitrate takes a lower audio step. The output can still exceed a maximum
    * below the lowest audio and video rates that the ladder encodes.
    */

@@ -17,6 +17,7 @@ import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamSessionFixture;
@@ -36,6 +37,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * How a FLAC capability entry's minimum block size binds an HLS copy and direct play of a FLAC
@@ -86,15 +88,48 @@ class TranscodeDecisionFlacBlockSizeTest {
   void shouldCopyAFlacTrackWhenItsBlockSizeReachesTheEntrysMinimum(int blockSize) {
     var declaration = declaringFlac(flacEntry().minBlockSize(OptionalInt.of(APPLE_MIN_BLOCK_SIZE)));
 
-    var audio = decideAudio(flacTrack(OptionalInt.of(blockSize)), declaration);
+    var decision = decide(flacTrack(OptionalInt.of(blockSize)), declaration);
 
-    assertThat(audio.mode()).isEqualTo(AudioMode.COPY);
-    assertThat(audio.codec()).isEqualTo("flac");
-    assertThat(audio.channels()).isEqualTo(SURROUND);
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
+    assertThat(decision.audioDecision().codec()).isEqualTo("flac");
+    assertThat(decision.audioDecision().channels()).isEqualTo(SURROUND);
+    assertThat(decision.reasons()).isEmpty();
   }
 
   static Stream<Integer> blockSizesAtOrAboveTheMinimum() {
     return Stream.of(APPLE_MIN_BLOCK_SIZE, 4_608);
+  }
+
+  @ParameterizedTest(name = "a block size of {0}")
+  @ValueSource(ints = {144, 191})
+  @DisplayName(
+      "Should name the block size when a FLAC track's block size is below the entry's minimum")
+  void shouldNameTheBlockSizeWhenAFlacTracksBlockSizeIsBelowTheEntrysMinimum(int blockSize) {
+    var declaration = declaringFlac(flacEntry().minBlockSize(OptionalInt.of(APPLE_MIN_BLOCK_SIZE)));
+
+    var decision = decide(flacTrack(OptionalInt.of(blockSize)), declaration);
+
+    assertThat(decision.reasons()).containsExactly(DecisionReason.AUDIO_BLOCK_SIZE_NOT_DECLARED);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("blockSizesNotKnown")
+  @DisplayName(
+      "Should name an unknown block size when the probe stored none under an entry that gives a"
+          + " minimum")
+  void shouldNameAnUnknownBlockSizeWhenTheProbeStoredNoneUnderAnEntryThatGivesAMinimum(
+      String scenario, StreamInfo track) {
+    var declaration = declaringFlac(flacEntry().minBlockSize(OptionalInt.of(APPLE_MIN_BLOCK_SIZE)));
+
+    var decision = decide(track, declaration);
+
+    assertThat(decision.reasons()).containsExactly(DecisionReason.AUDIO_BLOCK_SIZE_UNKNOWN);
+  }
+
+  static Stream<Arguments> blockSizesNotKnown() {
+    return Stream.of(
+        Arguments.of("no STREAMINFO block size", flacTrack(OptionalInt.empty())),
+        Arguments.of("a probe version before 7", flacTrackWithoutAudioProperties()));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -161,10 +196,11 @@ class TranscodeDecisionFlacBlockSizeTest {
                     flacEntry().minBlockSize(OptionalInt.of(4_608)).build()))
             .build();
 
-    var audio = decideAudio(flacTrack(OptionalInt.of(144)), declaration);
+    var decision = decide(flacTrack(OptionalInt.of(144)), declaration);
 
-    assertThat(audio.mode()).isEqualTo(AudioMode.TRANSCODE);
-    assertThat(audio.codec()).isEqualTo("eac3");
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
+    assertThat(decision.audioDecision().codec()).isEqualTo("eac3");
+    assertThat(decision.reasons()).containsExactly(DecisionReason.AUDIO_BLOCK_SIZE_NOT_DECLARED);
   }
 
   @Test
@@ -226,6 +262,10 @@ class TranscodeDecisionFlacBlockSizeTest {
   }
 
   private AudioDecision decideAudio(StreamInfo track, ClientCapabilityDeclaration declaration) {
+    return decide(track, declaration).audioDecision();
+  }
+
+  private TranscodeDecision decide(StreamInfo track, ClientCapabilityDeclaration declaration) {
     var source =
         StreamSessionFixture.defaultProbeBuilder()
             .audioCodec("flac")
@@ -240,8 +280,7 @@ class TranscodeDecisionFlacBlockSizeTest {
                 .capabilityDeclaration(declaration)
                 .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                 .build())
-        .orElseThrow()
-        .audioDecision();
+        .orElseThrow();
   }
 
   private static ClientCapabilityDeclaration declaringFlac(
