@@ -413,23 +413,36 @@ class PlaybackSessionServiceTest {
 
   @Test
   @DisplayName(
-      "Should announce a stored media segment only when the current format attempt's stream session"
-          + " stored it")
-  void shouldAnnounceAStoredMediaSegmentOnlyWhenTheCurrentFormatAttemptsStreamSessionStoredIt() {
+      "Should announce that the produced range may have moved when the replacement format attempt's"
+          + " stream session stores a media segment")
+  void shouldAnnounceThatTheProducedRangeMayHaveMovedWhenTheReplacementStoresAMediaSegment() {
     var command = startCommand().build();
     var initial = accepted(service.start(command));
-    var initialStream = initial.currentFormatAttempt().streamSessionId();
-
-    service.onMediaSegmentStored(new MediaSegmentStoredEvent(initialStream));
     service.reportFormatFailure(report(initial, command).build()).orElseThrow();
     var replacement = streams.createdCommands.getLast().streamSessionId();
-    service.onMediaSegmentStored(new MediaSegmentStoredEvent(initialStream));
+    events.clear();
+
     service.onMediaSegmentStored(new MediaSegmentStoredEvent(replacement));
+
+    assertThat(events.getEventsOfType(ProducedRangeMayHaveMovedEvent.class))
+        .containsExactly(new ProducedRangeMayHaveMovedEvent(initial.playbackSessionId()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should announce nothing when a retired format attempt's or an unknown stream session stores a"
+          + " media segment")
+  void shouldAnnounceNothingWhenARetiredOrUnknownStreamSessionStoresAMediaSegment() {
+    var command = startCommand().build();
+    var initial = accepted(service.start(command));
+    var retired = initial.currentFormatAttempt().streamSessionId();
+    service.reportFormatFailure(report(initial, command).build()).orElseThrow();
+    events.clear();
+
+    service.onMediaSegmentStored(new MediaSegmentStoredEvent(retired));
     service.onMediaSegmentStored(new MediaSegmentStoredEvent(UUID.randomUUID()));
 
-    var stored = new ProducedRangeMayHaveMovedEvent(initial.playbackSessionId());
-    assertThat(events.getEventsOfType(ProducedRangeMayHaveMovedEvent.class))
-        .containsExactly(stored, stored);
+    assertThat(events.getEventsOfType(ProducedRangeMayHaveMovedEvent.class)).isEmpty();
   }
 
   @Test

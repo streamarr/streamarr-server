@@ -293,23 +293,42 @@ class ActiveStreamServiceTest {
 
   @Test
   @DisplayName(
+      "Should report the produced range of the first listed variant when the player has requested no"
+          + " media segment")
+  void
+      shouldReportTheProducedRangeOfTheFirstListedVariantWhenThePlayerHasRequestedNoMediaSegment() {
+    var session = playingLadderSessionWithStoredSegments();
+
+    var stream = service.activeStream(session.playbackSessionId()).orElseThrow();
+
+    assertThat(stream.producedRange()).contains(rangeOf(36, 42));
+  }
+
+  @Test
+  @DisplayName(
       "Should report the produced range of the variant whose media segment the player requested"
-          + " last, and of the first listed variant before any request")
+          + " last when it requested another variant's media segment")
   void shouldReportTheProducedRangeOfTheVariantWhoseMediaSegmentThePlayerRequestedLast() {
+    var session = playingLadderSessionWithStoredSegments();
+
+    producerLifecycle.prepareRequestedVariant(
+        session.streamSessionId(), "720p", SegmentNames.mediaSegmentName(6));
+    var stream = service.activeStream(session.playbackSessionId()).orElseThrow();
+
+    assertThat(stream.producedRange()).contains(rangeOf(24, 54));
+  }
+
+  private record PlayingSession(UUID playbackSessionId, UUID streamSessionId) {}
+
+  // 1080p, listed first, holds only media segment 6; 720p holds media segments 4 to 8.
+  private PlayingSession playingLadderSessionWithStoredSegments() {
     streams.shapeSessions(session -> session.variants(List.of(variant("1080p"), variant("720p"))));
     var snapshot = acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
     var session = readySession(snapshot);
     session.updatePlaybackState(40, PlaybackState.PLAYING);
     store(session, "1080p", 6);
     store(session, "720p", 4, 5, 6, 7, 8);
-
-    var beforeAnyRequest = service.activeStream(snapshot.playbackSessionId()).orElseThrow();
-    producerLifecycle.prepareRequestedVariant(
-        session.getSessionId(), "720p", SegmentNames.mediaSegmentName(6));
-    var afterTheRequest = service.activeStream(snapshot.playbackSessionId()).orElseThrow();
-
-    assertThat(beforeAnyRequest.producedRange()).contains(rangeOf(36, 42));
-    assertThat(afterTheRequest.producedRange()).contains(rangeOf(24, 54));
+    return new PlayingSession(snapshot.playbackSessionId(), session.getSessionId());
   }
 
   // A title that runs past its probed duration leaves media segments past the advertised end in

@@ -372,7 +372,8 @@ class ActiveStreamEventListenerTest {
     var mediaFiles = new ParkingMediaFileRepository();
     var delivered = new CopyOnWriteArrayList<ActiveStreamDto.ChangeDto>();
     var playback = acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
-    long waitingAfterTheCheck;
+    var checkedAt = clock.instant();
+    List<Instant> waitingAfterTheCheck;
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var listener = listenerReading(mediaFiles, Schedulers.fromExecutorService(executor));
       broadcaster.getChanges().register().subscribe(delivered::add);
@@ -385,12 +386,12 @@ class ActiveStreamEventListenerTest {
       awaitLatch(mediaFiles.reading);
 
       storeSegment(listener, playback, 1);
-      runTasksAt(clock.instant());
-      waitingAfterTheCheck = taskScheduler.pendingTaskCount();
+      runTasksAt(checkedAt);
+      waitingAfterTheCheck = taskScheduler.pendingStartTimes();
       mediaFiles.release.countDown();
     }
 
-    assertThat(waitingAfterTheCheck).isEqualTo(1);
+    assertThat(waitingAfterTheCheck).containsExactly(checkedAt.plus(Duration.ofSeconds(5)));
     assertThat(delivered).extracting(this::producedRangeOf).containsExactly(rangeOf(0, 12));
   }
 
@@ -401,7 +402,6 @@ class ActiveStreamEventListenerTest {
   void shouldKeepAStreamsProducedRangeCheckWhenItsLastSubscriberLeavesWhileAReadIsInFlight()
       throws Exception {
     var mediaFiles = new ParkingMediaFileRepository();
-    var delivered = new CopyOnWriteArrayList<ActiveStreamDto.ChangeDto>();
     var playback = acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
     long waitingWithoutSubscribers;
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -418,12 +418,10 @@ class ActiveStreamEventListenerTest {
 
       storeSegment(listener, playback, 1);
       waitingWithoutSubscribers = taskScheduler.pendingTaskCount();
-      broadcaster.getChanges().register().subscribe(delivered::add);
       mediaFiles.release.countDown();
     }
 
     assertThat(waitingWithoutSubscribers).isEqualTo(1);
-    assertThat(delivered).extracting(this::producedRangeOf).containsExactly(rangeOf(0, 12));
   }
 
   // The first check parks after it found segment 1 missing, so it holds the range [0, 6) while
@@ -453,6 +451,54 @@ class ActiveStreamEventListenerTest {
     runTasksAt(checkedAt.plus(Duration.ofSeconds(5)));
 
     assertThat(withinTheInterval).extracting(this::producedRangeOf).containsExactly(rangeOf(0, 12));
+    assertThat(delivered).extracting(this::producedRangeOf).containsExactly(rangeOf(0, 12));
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver a moved produced range at once when the last change that moved it is more than"
+          + " 5 seconds old, though a later change carried the same range")
+  void shouldDeliverAMovedRangeAtOnceWhenTheLastChangeThatMovedItIsMoreThan5SecondsOld() {
+    var listener = listenerReading(new FakeMediaFileRepository());
+    var delivered = subscribe();
+    var playback = acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
+    var movedAt = clock.instant();
+    storeSegment(listener, playback, 0);
+    runTasksAt(movedAt);
+    clock.advance(Duration.ofSeconds(10));
+    listener.onPlaybackSessionChanged(
+        new PlaybackSessionChangedEvent(playback.playbackSessionId()));
+
+    clock.advance(Duration.ofSeconds(1));
+    storeSegment(listener, playback, 1);
+    runTasksAt(clock.instant());
+
+    assertThat(delivered)
+        .extracting(this::producedRangeOf)
+        .containsExactly(rangeOf(0, 6), rangeOf(0, 6), rangeOf(0, 12));
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver a moved produced range at once to a returning subscriber when a change"
+          + " arrived while nobody subscribed")
+  void
+      shouldDeliverAMovedRangeAtOnceToAReturningSubscriberWhenAChangeArrivedWhileNobodySubscribed() {
+    var listener = listenerReading(new FakeMediaFileRepository());
+    var leaving = broadcaster.getChanges().register().subscribe();
+    var playback = acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
+    storeSegment(listener, playback, 0);
+    runTasksAt(clock.instant());
+    leaving.dispose();
+    clock.advance(Duration.ofSeconds(1));
+    listener.onPlaybackSessionChanged(
+        new PlaybackSessionChangedEvent(playback.playbackSessionId()));
+    var delivered = subscribe();
+
+    clock.advance(Duration.ofSeconds(1));
+    storeSegment(listener, playback, 1);
+    runTasksAt(clock.instant());
+
     assertThat(delivered).extracting(this::producedRangeOf).containsExactly(rangeOf(0, 12));
   }
 
