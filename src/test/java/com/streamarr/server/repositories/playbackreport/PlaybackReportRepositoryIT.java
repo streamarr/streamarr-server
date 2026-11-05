@@ -14,6 +14,7 @@ import static com.streamarr.server.jooq.generated.tables.PlaybackReportDecision.
 import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
 import static com.streamarr.server.support.PostgresLockTestSupport.awaitWaitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.media.MediaFile;
@@ -63,6 +64,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -195,6 +197,23 @@ class PlaybackReportRepositoryIT extends AbstractIntegrationTest {
     assertThat(repository.findById(id))
         .map(PlaybackReport::player)
         .contains(figures.toBuilder().display(Optional.empty()).build());
+  }
+
+  @Test
+  @DisplayName("Should refuse to store a display size when it has a width but no height")
+  void shouldRefuseToStoreDisplaySizeWhenItHasWidthButNoHeight() {
+    var report =
+        reportBuilder()
+            .player(
+                tvFiguresBuilder()
+                    .display(
+                        Optional.of(unknownDisplayBuilder().width(OptionalInt.of(3840)).build()))
+                    .build())
+            .build();
+
+    assertThatThrownBy(() -> save(report))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("chk_playback_report_display_size");
   }
 
   @Test
