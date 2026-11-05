@@ -172,6 +172,9 @@ Closing a worker connection cancels its probes and waits for their native proces
 The server publishes no segment of an encode until the worker's start report names the encoder backend that the worker advertised.
 `STREAMING_WORKER_SESSION_START_REPORT_TIMEOUT` bounds how long an upload waits for that report. It defaults to `10s`.
 When the report names another backend, or does not arrive in time, the server refuses the upload.
+When a worker reports that the hardware encoder of the requested variant failed, the playback session continues in a new format attempt that encodes the same codec family with the software encoder, on the failed worker first, and that format attempt does not count against the format-attempt budget (https://github.com/streamarr/streamarr-adr/blob/main/adr/0044-encoder-headroom-and-the-preset-scale.adoc[ADR 0044]).
+A left variant whose hardware encoder fails stops, and the stream session keeps playing.
+The worker reports which encoders it still offers; a worker that stops offering a hardware encoder takes new stream sessions on its software encoder until it offers the hardware encoder again.
 An unresponsive filesystem can delay worker shutdown.
 The server pings a worker after `STREAMING_WORKER_SESSION_KEEPALIVE_TIME` without hearing from it, and closes the connection when no acknowledgement arrives within `STREAMING_WORKER_SESSION_KEEPALIVE_TIMEOUT`.
 Closing a dead worker's connection releases its playback slots, its probe capacity, and its upload reservations.

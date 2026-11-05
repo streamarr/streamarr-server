@@ -4,6 +4,7 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.concurrency.NanoClock;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
+import com.streamarr.server.services.streaming.HardwareEncoderFailureListener;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.JobAttemptProgressListener;
@@ -109,6 +110,12 @@ public class StreamingConfig {
   public ShortCopyListener shortCopyListener(
       ProducerLifecycleService producerLifecycleService, ApplicationEventPublisher eventPublisher) {
     return new ShortCopyListener(producerLifecycleService, eventPublisher);
+  }
+
+  @Bean
+  public HardwareEncoderFailureListener hardwareEncoderFailureListener(
+      ProducerLifecycleService producerLifecycleService, ApplicationEventPublisher eventPublisher) {
+    return new HardwareEncoderFailureListener(producerLifecycleService, eventPublisher);
   }
 
   @Bean

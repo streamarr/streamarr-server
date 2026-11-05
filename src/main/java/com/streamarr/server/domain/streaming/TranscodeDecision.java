@@ -20,7 +20,9 @@ import lombok.NonNull;
  * codec family, what that entry refused of the best copy that the decision could plan (#396).
  * {@code audioStreamIndex} is the index of the source audio stream that the session plays, and is
  * empty when the decision carries no audio. {@code dynamicRangeChoice} is the viewer's HDR choice
- * in a fixed quality, and is empty in Auto and Original (ADR 0013).
+ * in a fixed quality, and is empty in Auto and Original (ADR 0013). {@code softwareEncoder} is true
+ * when the encode runs on the software encoder of its codec family after a hardware encoder failed
+ * (ADR 0044).
  */
 @Builder(toBuilder = true)
 public record TranscodeDecision(
@@ -35,7 +37,8 @@ public record TranscodeDecision(
     @NonNull List<DecisionReason> reasons,
     @NonNull List<VideoCapabilityEntryRefusal> videoCapabilityEntryRefusals,
     @NonNull OptionalInt audioStreamIndex,
-    @NonNull Optional<DynamicRangeChoice> dynamicRangeChoice) {
+    @NonNull Optional<DynamicRangeChoice> dynamicRangeChoice,
+    boolean softwareEncoder) {
 
   public TranscodeDecision {
     var copiesVideo = transcodeMode != null && transcodeMode.copiesVideo();
@@ -62,6 +65,11 @@ public record TranscodeDecision(
     videoBitstreamRewrites = List.copyOf(videoBitstreamRewrites);
     reasons = List.copyOf(reasons);
     videoCapabilityEntryRefusals = List.copyOf(videoCapabilityEntryRefusals);
+
+    if (softwareEncoder && encodeCodecProfile.isEmpty()) {
+      throw new IllegalArgumentException(
+          "Only a decision that encodes the video can run the software encoder");
+    }
 
     if (encodeCodecProfile
         .filter(profile -> !profile.codecFamilyName().equals(videoCodecFamily))

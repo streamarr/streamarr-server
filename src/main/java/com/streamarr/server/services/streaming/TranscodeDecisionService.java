@@ -201,6 +201,8 @@ public class TranscodeDecisionService {
             .videoCapabilityEntryRefusals(entryRefusals(request))
             .audioStreamIndex(audioStreamIndex(source, audioDecision))
             .dynamicRangeChoice(request.viewerLimits().dynamicRangeChoice())
+            .softwareEncoder(
+                encodeCodecProfile.isPresent() && request.softwareEncodeCodecFamily().isPresent())
             .build());
   }
 
@@ -811,6 +813,12 @@ public class TranscodeDecisionService {
             profile -> request.encodableVideoCodecFamilies().contains(profile.codecFamilyName()))
         .filter(
             profile -> !request.excludedEncodeCodecFamilies().contains(profile.codecFamilyName()))
+        .filter(
+            profile ->
+                request
+                    .softwareEncodeCodecFamily()
+                    .map(profile.codecFamilyName()::equals)
+                    .orElse(true))
         .flatMap(
             profile ->
                 encodedFrameRate(declaration, source, profile).stream()

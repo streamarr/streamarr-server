@@ -8,7 +8,8 @@ type PlaybackSession {
     id: ID!
     """
     The format attempts that count against maximumFormatAttempts. The HLS format attempt that an audio switch
-    starts from direct play counts none (ADR 0043), so this can be less than the number of decisions.
+    starts from direct play counts none (ADR 0043), and neither does a format attempt that continues an encode in
+    software after a hardware encoder failure (ADR 0044), so this can be less than the number of decisions.
     """
     formatAttemptCount: Int!
     "The playback session's format-attempt budget. The default is 4."
@@ -278,6 +279,11 @@ enum DecisionReason {
     Vision stripped, or encodes it when the client or the workers rule that copy out.
     """
     DOLBY_VISION_COPY_FAILED
+    """
+    The hardware encoder of the format attempt before this one failed, so this one encodes the same codec family with
+    the software encoder. That format attempt does not count against maximumFormatAttempts (ADR 0044).
+    """
+    HARDWARE_ENCODER_FAILED
 }
 
 "Why the output differs from the output that the requested playback choice asked for (ADR 0052)."

@@ -116,7 +116,8 @@ class TranscodeDecisionTest {
                         List.of(),
                         null,
                         OptionalInt.empty(),
-                        Optional.empty())),
+                        Optional.empty(),
+                        false)),
         Arguments.of(
             "audioStreamIndex",
             (ThrowingCallable)
@@ -133,7 +134,8 @@ class TranscodeDecisionTest {
                         List.of(),
                         List.of(),
                         null,
-                        Optional.empty())),
+                        Optional.empty(),
+                        false)),
         Arguments.of(
             "dynamicRangeChoice",
             (ThrowingCallable)
@@ -150,7 +152,8 @@ class TranscodeDecisionTest {
                         List.of(),
                         List.of(),
                         OptionalInt.empty(),
-                        null)));
+                        null,
+                        false)));
   }
 
   @Test

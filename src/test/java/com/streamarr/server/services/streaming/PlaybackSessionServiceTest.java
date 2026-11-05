@@ -60,6 +60,7 @@ import com.streamarr.server.services.streaming.events.MediaSegmentStoredEvent;
 import com.streamarr.server.services.streaming.events.PlaybackSessionChangedEvent;
 import com.streamarr.server.services.streaming.events.ProducedRangeMayHaveMovedEvent;
 import com.streamarr.server.services.streaming.events.RequestedVariantChangedEvent;
+import com.streamarr.server.services.streaming.events.RequestedVariantHardwareEncoderFailedEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import java.time.Duration;
@@ -1053,6 +1054,111 @@ class PlaybackSessionServiceTest {
     var current = service.access(request(snapshot, command)).orElseThrow();
     assertThat(current.formatAttemptCount()).isEqualTo(2);
     assertThat(current.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+  }
+
+  // ADR 0044: the requested variant whose hardware encoder fails continues on the software encoder
+  // of the same codec, and the client reopens it through format recovery (worker#56).
+  @ParameterizedTest
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"AUTO", "HIGH_720P"})
+  @DisplayName(
+      "Should continue the encode in software without spending a format attempt when the requested"
+          + " variant's hardware encoder fails")
+  void shouldContinueTheEncodeInSoftwareWhenTheRequestedVariantsHardwareEncoderFails(
+      VideoQuality quality) {
+    streams.copiesTheSource = false;
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(1).build();
+    var command = startCommand().options(qualityOptions(quality)).build();
+    var initial = accepted(playback.start(command));
+
+    playback.onRequestedVariantHardwareEncoderFailed(
+        hardwareEncoderFailure(initial.currentFormatAttempt().streamSessionId()));
+
+    var continued = playback.access(request(initial, command)).orElseThrow();
+    assertThat(continued.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+    assertThat(continued.formatAttemptCount()).isEqualTo(1);
+    assertThat(continued.playbackChoice()).isEqualTo(quality);
+    assertThat(continued.formatChange()).isEmpty();
+    assertThat(continued.decisions())
+        .extracting(PlaybackDecision::reasons)
+        .last()
+        .isEqualTo(List.of(DecisionReason.HARDWARE_ENCODER_FAILED));
+    assertThat(streams.createdCommands.getLast())
+        .satisfies(
+            software -> {
+              assertThat(software.softwareEncodeCodecFamily()).contains("h264");
+              assertThat(software.videoFormatConstraint())
+                  .isEqualTo(VideoFormatConstraint.ENCODE_ONLY);
+              assertThat(software.excludedEncodeCodecFamilies()).isEmpty();
+            });
+    assertThat(streams.getAllSessions()).hasSize(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the format-attempt budget for a later format failure when a hardware encoder"
+          + " failure continued the encode in software")
+  void shouldKeepTheFormatAttemptBudgetWhenAHardwareEncoderFailureContinuedInSoftware() {
+    streams.copiesTheSource = false;
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(2).build();
+    var command = startCommand().build();
+    var initial = accepted(playback.start(command));
+    playback.onRequestedVariantHardwareEncoderFailed(
+        hardwareEncoderFailure(initial.currentFormatAttempt().streamSessionId()));
+    var continued = playback.access(request(initial, command)).orElseThrow();
+
+    var recovered = playback.reportFormatFailure(report(continued, command).build()).orElseThrow();
+
+    assertThat(recovered.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+    assertThat(streams.createdCommands.getLast().excludedEncodeCodecFamilies())
+        .containsExactly("h264");
+    assertThat(streams.createdCommands.getLast().softwareEncodeCodecFamily()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should fail playback when no worker has room for the software encode")
+  void shouldFailPlaybackWhenNoWorkerHasRoomForTheSoftwareEncode() {
+    streams.copiesTheSource = false;
+    var command = startCommand().build();
+    var initial = accepted(service.start(command));
+    streams.rejection = new CreateStreamSessionRejection.NoEligibleVideoFormat();
+
+    service.onRequestedVariantHardwareEncoderFailed(
+        hardwareEncoderFailure(initial.currentFormatAttempt().streamSessionId()));
+
+    var failed = service.access(request(initial, command)).orElseThrow();
+    assertThat(failed.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Failed.class,
+            attempt ->
+                assertThat(attempt.reason())
+                    .isEqualTo(new PlaybackSessionFailure.CreationRejected(streams.rejection)));
+    assertThat(streams.getAllSessions()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should ignore a hardware encoder failure when the failed format attempt copies the video")
+  void shouldIgnoreAHardwareEncoderFailureWhenTheFailedFormatAttemptCopiesTheVideo() {
+    var command = startCommand().build();
+    var initial = accepted(service.start(command));
+
+    service.onRequestedVariantHardwareEncoderFailed(
+        hardwareEncoderFailure(initial.currentFormatAttempt().streamSessionId()));
+
+    var current = service.access(request(initial, command)).orElseThrow();
+    assertThat(current.formatAttemptCount()).isEqualTo(1);
+    assertThat(current.currentFormatAttempt()).isEqualTo(initial.currentFormatAttempt());
+  }
+
+  private static RequestedVariantHardwareEncoderFailedEvent hardwareEncoderFailure(
+      UUID streamSessionId) {
+    return RequestedVariantHardwareEncoderFailedEvent.builder()
+        .streamSessionId(streamSessionId)
+        .jobAttemptId(UUID.randomUUID())
+        .variantLabel("default")
+        .build();
   }
 
   @Test

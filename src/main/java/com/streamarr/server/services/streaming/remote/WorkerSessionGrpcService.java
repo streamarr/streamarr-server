@@ -16,6 +16,7 @@ import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.UploadSegmentResponse;
 import com.streamarr.transcode.v1.Uuid;
+import com.streamarr.transcode.v1.VideoEncodersChanged;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
@@ -166,10 +167,14 @@ final class WorkerSessionGrpcService
       registered = true;
     }
 
-    // The contract allows one encoder for each codec family: the one that runs every job of it.
+    // The contract allows one encoder for each codec family: the one that runs every job of it,
+    // and one software encoder beside it.
     private static boolean advertisesOneCodecFamilyTwice(WorkerRegistration registration) {
+      var capabilities = registration.getCapabilities();
       return LiveWorkerConnectionRegistry.listsOneCodecFamilyTwice(
-          registration.getCapabilities().getVideoEncodersList());
+              capabilities.getVideoEncodersList())
+          || LiveWorkerConnectionRegistry.listsOneCodecFamilyTwice(
+              capabilities.getSoftwareVideoEncodersList());
     }
 
     @Override
@@ -208,6 +213,7 @@ final class WorkerSessionGrpcService
         case PROBE_STREAM_MEASUREMENT_PART ->
             acceptStreamMeasurementPart(request.getProbeStreamMeasurementPart());
         case PROBE_CAPACITY_CHANGED -> changeProbeCapacity(request.getProbeCapacityChanged());
+        case VIDEO_ENCODERS_CHANGED -> changeVideoEncoders(request.getVideoEncodersChanged());
         case JOB_ATTEMPT_PROGRESS ->
             workerConnections.reportProgress(
                 authenticatedWorkerId, workerSessionId, request.getJobAttemptProgress());
@@ -217,6 +223,23 @@ final class WorkerSessionGrpcService
                 request.getEventCase(),
                 authenticatedWorkerId);
       }
+    }
+
+    private void changeVideoEncoders(VideoEncodersChanged changed) {
+      if (workerConnections.changeVideoEncoders(authenticatedWorkerId, workerSessionId, changed)) {
+        log.info(
+            "Worker {} now offers encoders {}",
+            authenticatedWorkerId,
+            changed.getVideoEncodersList().stream()
+                .map(encoder -> encoder.getBackend().getEncoder())
+                .toList());
+        return;
+      }
+
+      log.warn(
+          "Ignoring the encoders that worker {} reported: the change lists a codec family twice or"
+              + " names a session that is no longer current",
+          authenticatedWorkerId);
     }
 
     private void changeProbeCapacity(ProbeCapacityChanged changed) {

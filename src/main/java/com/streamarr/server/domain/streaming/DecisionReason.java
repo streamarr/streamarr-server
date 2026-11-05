@@ -166,5 +166,10 @@ public enum DecisionReason {
    * Dolby Vision stripped, or encodes it when the client or the workers rule that copy out (ADR
    * 0052).
    */
-  DOLBY_VISION_COPY_FAILED
+  DOLBY_VISION_COPY_FAILED,
+  /**
+   * The hardware encoder of an earlier format attempt failed, so this one encodes the same codec
+   * family with the software encoder (ADR 0044).
+   */
+  HARDWARE_ENCODER_FAILED
 }

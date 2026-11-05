@@ -96,7 +96,8 @@ final class RemoteVariantJobMapper {
             .setOutputDynamicRange(RemoteDynamicRangeMapper.toProto(planned.dynamicRange()))
             .setOutputBitDepth(planned.bitDepth())
             // A planned encode refuses every chroma subsampling but 4:2:0 (#397).
-            .setOutputChromaSubsampling(ChromaSubsampling.CHROMA_SUBSAMPLING_420);
+            .setOutputChromaSubsampling(ChromaSubsampling.CHROMA_SUBSAMPLING_420)
+            .setSoftwareEncoder(request.transcodeDecision().softwareEncoder());
     source.ifPresent(
         facts ->
             video
@@ -228,7 +229,8 @@ final class RemoteVariantJobMapper {
                 decision.transcodeMode().copiesVideo()
                     ? VideoMode.VIDEO_MODE_COPY
                     : VideoMode.VIDEO_MODE_ENCODE)
-            .setCodecFamily(codecFamily(decision.videoCodecFamily()));
+            .setCodecFamily(codecFamily(decision.videoCodecFamily()))
+            .setSoftwareEncoder(decision.softwareEncoder());
     plannedCopyOutput(video, decision.plannedVideoOutput());
     return com.streamarr.transcode.v1.TranscodeDecision.newBuilder()
         .setMode(mode(decision.transcodeMode()))

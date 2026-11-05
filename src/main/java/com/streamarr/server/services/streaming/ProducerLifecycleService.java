@@ -926,6 +926,16 @@ public class ProducerLifecycleService {
   }
 
   /**
+   * Whether the variant is the one that the player requests: the variant of the stream session's
+   * newest media-segment request, or any variant before the player requests a media segment.
+   */
+  public boolean isRequestedVariant(UUID sessionId, String variantLabel) {
+    return Optional.ofNullable(newestMediaSegmentRequests.get(sessionId))
+        .map(newest -> newest.variantLabel().equals(variantLabel))
+        .orElse(true);
+  }
+
+  /**
    * Once the player has received the request's media segment, stops every other video variant when
    * the request's variant is the variant of the stream session's newest media-segment request, and
    * the request arrived no earlier than the request that made it that variant: the player then

@@ -162,6 +162,7 @@ public class HlsStreamingService implements StreamingService {
             .viewerLimits(ViewerLimits.of(options))
             .videoCopySupport(transcodeExecutor.videoCopySupportByWorker())
             .directPlayRefusals(directPlay.refusals())
+            .softwareEncodeCodecFamily(command.softwareEncodeCodecFamily())
             .build();
     var candidate = transcodeDecisionService.decide(request);
     if (candidate.isEmpty()) {
