@@ -252,6 +252,27 @@ class FlywayMigrationOrderTests(unittest.TestCase):
         self.assertRejected(result, f"{SQL}/V119__Store_Language_Preferences.sql",
             f"{SQL}/V120__Store_Subtitle_Preferences.SQL")
 
+    def test_shouldRejectRenamedFileWhenFlywayIgnoredItsSignedLaterVersionPart(self):
+        self.publish_main(f"{SQL}/V118__Store_Skipped_File_Reasons.sql",
+            f"{SQL}/V117_+1__Backfill.sql")
+        self.start_pull_request()
+        self.git(self.checkout, "mv", f"{SQL}/V117_+1__Backfill.sql", f"{SQL}/V117_1__Backfill.sql")
+        self.commit(message="enable")
+
+        result = self.check()
+
+        self.assertRejected(result, f"{SQL}/V117_1__Backfill.sql", "V118")
+
+    def test_shouldAcceptAddedMigrationWhenFlywayIgnoresAHigherBaseBranchFile(self):
+        self.publish_main(f"{SQL}/V118__Store_Skipped_File_Reasons.sql",
+            f"{SQL}/V200_+1__Backfill.sql")
+        self.start_pull_request()
+        self.commit(f"{SQL}/V119__Store_Language_Preferences.sql")
+
+        result = self.check()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_shouldIgnoreMigrationWhenItReachedThePullRequestByMergingTheBaseBranch(self):
         self.publish_main(f"{SQL}/V116__Store_Language_Preferences.sql")
         self.start_pull_request()

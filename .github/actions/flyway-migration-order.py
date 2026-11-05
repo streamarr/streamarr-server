@@ -10,8 +10,9 @@ import subprocess
 import sys
 
 MIGRATION_DIRECTORIES = ("src/main/resources/db/migration", "src/main/java/db/migration")
-# Flyway parses each version part as a BigInteger, which accepts a leading sign.
-VERSION = re.compile(r"[+-]?\d+(?:[._][+-]?\d+)*")
+# Flyway parses each version part as a BigInteger but splits parts only before a digit, so only
+# the first part can carry a sign; Flyway ignores a file whose later part is signed.
+VERSION = re.compile(r"[+-]?\d+(?:[._]\d+)*")
 
 
 def git(*arguments):
