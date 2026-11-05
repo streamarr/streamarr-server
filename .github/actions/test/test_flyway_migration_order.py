@@ -232,7 +232,7 @@ class FlywayMigrationOrderTests(unittest.TestCase):
 
     def test_shouldRejectAddedFileWhenFlywayCouldReadItsNameAsAnotherVersion(self):
         names = [f"{SQL}/V116__Store_Language_Preferences.SQL", f"{SQL}/V+117__Backfill.sql",
-            f"{SQL}/V117_+1__Backfill.sql", f"{SQL}/V117_\u0661__Backfill.sql",
+            f"{SQL}/V117_+1__Backfill.sql", f"{SQL}/V119_\u0661__Backfill.sql",
             f"{SQL}/V117__Backfill.\u017fql", f"{SQL}/Vcurrent__Backfill.sql",
             f"{SQL}/V9223372036854775808__Backfill.sql", f"{JAVA}/V117.java"]
         self.publish_main(f"{SQL}/V118__Store_Skipped_File_Reasons.sql")
