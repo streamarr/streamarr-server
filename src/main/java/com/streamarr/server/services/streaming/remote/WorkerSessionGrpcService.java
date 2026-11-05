@@ -168,12 +168,8 @@ final class WorkerSessionGrpcService
 
     // The contract allows one encoder for each codec family: the one that runs every job of it.
     private static boolean advertisesOneCodecFamilyTwice(WorkerRegistration registration) {
-      var encoders = registration.getCapabilities().getVideoEncodersList();
-      return encoders.stream()
-              .map(encoder -> encoder.getBackend().getCodecFamilyValue())
-              .distinct()
-              .count()
-          < encoders.size();
+      return LiveWorkerConnectionRegistry.listsOneCodecFamilyTwice(
+          registration.getCapabilities().getVideoEncodersList());
     }
 
     @Override

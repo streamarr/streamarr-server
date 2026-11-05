@@ -49,6 +49,7 @@ import com.streamarr.transcode.v1.VideoDecision;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerSessionAccepted;
+import com.streamarr.transcode.v1.WorkerVerifiedVideoEncoder;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import io.micrometer.core.instrument.Counter;
@@ -762,6 +763,14 @@ final class LiveWorkerConnectionRegistry {
         .ifPresent(connection -> warnIfMissingEncoders(workerId, connection));
   }
 
+  static boolean listsOneCodecFamilyTwice(List<WorkerVerifiedVideoEncoder> encoders) {
+    return encoders.stream()
+            .map(encoder -> encoder.getBackend().getCodecFamilyValue())
+            .distinct()
+            .count()
+        < encoders.size();
+  }
+
   private Optional<WorkerConnection> currentConnection(UUID workerId, UUID workerSessionId) {
     return Optional.ofNullable(connections.get(workerId))
         .filter(connection -> connection.workerSessionId().equals(workerSessionId));
@@ -845,13 +854,9 @@ final class LiveWorkerConnectionRegistry {
           Set.copyOf(registration.getCapabilities().getVideoCopyFeaturesValueList());
       countedEncoders =
           new ConcurrentHashMap<>(
-              registration.getCapabilities().getVideoEncodersList().stream()
-                  .map(RemoteEncoderBackendMapper::workerVerifiedEncoder)
-                  .flatMap(Optional::stream)
-                  .filter(LiveWorkerConnectionRegistry::isCountedForEncodes)
-                  .collect(
-                      Collectors.toUnmodifiableMap(
-                          encoder -> encoder.backend().codecFamily(), Function.identity())));
+              byCodecFamily(
+                  registration.getCapabilities().getVideoEncodersList(),
+                  LiveWorkerConnectionRegistry::isCountedForEncodes));
       maximumActiveVariants = registration.getAvailableSlots();
       grantedProbeCapacities = new AtomicReference<>(GrantedProbeCapacities.of(registration));
       this.responseObserver = responseObserver;
@@ -859,6 +864,17 @@ final class LiveWorkerConnectionRegistry {
 
     private UUID workerSessionId() {
       return workerSessionId;
+    }
+
+    private static Map<String, WorkerVerifiedEncoder> byCodecFamily(
+        List<WorkerVerifiedVideoEncoder> encoders, Predicate<WorkerVerifiedEncoder> kept) {
+      return encoders.stream()
+          .map(RemoteEncoderBackendMapper::workerVerifiedEncoder)
+          .flatMap(Optional::stream)
+          .filter(kept)
+          .collect(
+              Collectors.toUnmodifiableMap(
+                  encoder -> encoder.backend().codecFamily(), Function.identity()));
     }
 
     private ExecutionTargetId executionTargetId() {
