@@ -36,4 +36,12 @@ public class VideoStreamCopyFixture {
         .maximumFrameRate(Optional.empty())
         .dynamicRange(VideoPlaybackFactsFixture.SDR_WITHOUT_DOLBY_VISION);
   }
+
+  /** An SDR H.264 High copy at level 4.0, 8 bits, 1920×1080 and 30 fps. */
+  public static VideoStreamCopy.VideoStreamCopyBuilder sdrH264CopyBuilder() {
+    return sdrHevcCopyBuilder()
+        .codecFamily(ProbedCodecFamily.H264)
+        .videoProperties(Optional.of(VideoPlaybackFactsFixture.h264HighPropertiesBuilder().build()))
+        .bitDepth(OptionalInt.of(8));
+  }
 }

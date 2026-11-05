@@ -187,6 +187,27 @@ public class VideoPlaybackFactsFixture {
             Presence.UNSPECIFIED));
   }
 
+  /**
+   * Dolby Vision profile 9: an H.264 base layer with an SDR compatible base, whose record claims
+   * compatibility identifier 2.
+   */
+  public static VideoDynamicRange dolbyVisionProfile9() {
+    return new VideoDynamicRange(
+        CompatibleBase.SDR,
+        Presence.UNSPECIFIED,
+        new DolbyVision.Present(
+            Optional.of(
+                DolbyVisionConfiguration.builder()
+                    .profile(OptionalInt.of(9))
+                    .level(OptionalInt.of(5))
+                    .baseLayerCompatibilityId(OptionalInt.of(2))
+                    .baseLayer(true)
+                    .enhancementLayer(false)
+                    .rpu(true)
+                    .build()),
+            Presence.UNSPECIFIED));
+  }
+
   /** Dolby Vision profile 5: no compatible base, and compatibility identifier 0. */
   public static VideoDynamicRange dolbyVisionProfile5() {
     return new VideoDynamicRange(
