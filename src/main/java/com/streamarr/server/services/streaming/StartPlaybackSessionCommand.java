@@ -22,7 +22,7 @@ public record StartPlaybackSessionCommand(
     @NonNull Optional<Duration> startPosition) {
 
   // Lombok builder default — its generated setter assigns it
-  @SuppressWarnings("java:S9438")
+  @SuppressWarnings({"java:S1068", "java:S9438"})
   public static class StartPlaybackSessionCommandBuilder {
     private Optional<Duration> startPosition = Optional.empty();
   }
