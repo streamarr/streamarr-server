@@ -153,7 +153,6 @@ streaming:
   max-concurrent-transcodes: ${STREAMING_MAX_CONCURRENT_TRANSCODES:8}
   target-segment-duration: ${STREAMING_TARGET_SEGMENT_DURATION:6s}
   session-timeout: ${STREAMING_SESSION_TIMEOUT:60s}
-  session-retention: ${STREAMING_SESSION_RETENTION:24h}
   producer-stall-threshold: ${STREAMING_PRODUCER_STALL_THRESHOLD:10s}
   segment-base-path: ${STREAMING_SEGMENT_BASE_PATH:}
   # How long createStreamSession waits for the probe of a file that has no probe outcome yet. The

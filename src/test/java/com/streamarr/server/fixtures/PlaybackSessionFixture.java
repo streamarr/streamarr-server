@@ -13,7 +13,6 @@ import com.streamarr.server.services.streaming.PlaybackSessionSnapshot;
 import com.streamarr.server.services.streaming.StartPlaybackSessionCommand;
 import com.streamarr.server.services.streaming.StartPlaybackSessionRejection;
 import com.streamarr.server.services.streaming.StreamingService;
-import java.time.Duration;
 import java.util.UUID;
 import lombok.experimental.UtilityClass;
 
@@ -25,8 +24,7 @@ public class PlaybackSessionFixture {
         .streamingService(streams)
         .authorityGate(new FakePlaybackAuthorityGate())
         .executor(Runnable::run)
-        .maximumFormatAttempts(2)
-        .sessionRetention(Duration.ofHours(24));
+        .maximumFormatAttempts(2);
   }
 
   public static StartPlaybackSessionCommand.StartPlaybackSessionCommandBuilder

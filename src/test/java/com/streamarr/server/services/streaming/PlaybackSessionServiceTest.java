@@ -43,6 +43,7 @@ import com.streamarr.server.services.streaming.events.CopiedVariantRanShortEvent
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
@@ -76,6 +77,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 @Tag("UnitTest")
 @DisplayName("Playback Session Service Tests")
 class PlaybackSessionServiceTest {
+  private static final Duration RETENTION = Duration.ofHours(24);
   private final ChildStreams streams = new ChildStreams();
   private final FakePlaybackAuthorityGate authority = new FakePlaybackAuthorityGate();
   private final MutableClock clock = new MutableClock();
@@ -85,7 +87,6 @@ class PlaybackSessionServiceTest {
           .authorityGate(authority)
           .executor(Runnable::run)
           .maximumFormatAttempts(2)
-          .sessionRetention(Duration.ofHours(24))
           .clock(clock)
           .build();
 
@@ -440,7 +441,6 @@ class PlaybackSessionServiceTest {
             .authorityGate(authority)
             .executor(Runnable::run)
             .maximumFormatAttempts(maximum)
-            .sessionRetention(Duration.ofHours(24))
             .clock(clock)
             .build();
     var command = startCommand().options(qualityOptions(quality)).build();
@@ -1090,8 +1090,7 @@ class PlaybackSessionServiceTest {
             .streamingService(streams)
             .authorityGate(authority)
             .executor(Runnable::run)
-            .maximumFormatAttempts(maximum)
-            .sessionRetention(Duration.ofHours(24));
+            .maximumFormatAttempts(maximum);
 
     assertThatThrownBy(builder::build).isInstanceOf(IllegalArgumentException.class);
   }
@@ -1114,7 +1113,6 @@ class PlaybackSessionServiceTest {
             .authorityGate(authority)
             .executor(work::add)
             .maximumFormatAttempts(3)
-            .sessionRetention(Duration.ofHours(24))
             .clock(clock)
             .build();
     var command = startCommand().options(qualityOptions(quality)).build();
@@ -1246,7 +1244,6 @@ class PlaybackSessionServiceTest {
             .authorityGate(authority)
             .executor(work::add)
             .maximumFormatAttempts(2)
-            .sessionRetention(Duration.ofHours(24))
             .clock(clock)
             .build();
     var command = startCommand().build();
@@ -1342,7 +1339,6 @@ class PlaybackSessionServiceTest {
             .authorityGate(authority)
             .executor(work::add)
             .maximumFormatAttempts(2)
-            .sessionRetention(Duration.ofHours(24))
             .clock(clock)
             .build();
     var command = startCommand().build();
@@ -1368,7 +1364,6 @@ class PlaybackSessionServiceTest {
                   throw new RejectedExecutionException();
                 })
             .maximumFormatAttempts(2)
-            .sessionRetention(Duration.ofHours(24))
             .clock(clock)
             .build();
     var command = startCommand().build();
@@ -1420,7 +1415,7 @@ class PlaybackSessionServiceTest {
     var initial = accepted(service.start(command));
     service.reportFormatFailure(report(initial, command).build());
     clock.advance(Duration.ofHours(25));
-    service.reapExpired(clock.instant());
+    service.reapExpired(clock.instant(), RETENTION);
     assertThat(service.access(request(initial, command))).isEmpty();
   }
 
@@ -1462,7 +1457,6 @@ class PlaybackSessionServiceTest {
             .authorityGate(authority)
             .executor(work::add)
             .maximumFormatAttempts(2)
-            .sessionRetention(Duration.ofHours(24))
             .clock(clock)
             .build();
     var command = startCommand().build();
@@ -1536,14 +1530,13 @@ class PlaybackSessionServiceTest {
             .authorityGate(authority)
             .executor(work::add)
             .maximumFormatAttempts(2)
-            .sessionRetention(Duration.ofHours(24))
             .clock(clock)
             .build();
     var command = startCommand().build();
     var initial = accepted(playback.start(command));
     playback.reportFormatFailure(report(initial, command).build());
     clock.advance(Duration.ofHours(25));
-    playback.reapExpired(clock.instant());
+    playback.reapExpired(clock.instant(), RETENTION);
     drain(work);
     assertThat(playback.access(request(initial, command))).isEmpty();
     assertThat(streams.getAllSessions()).isEmpty();
@@ -1558,10 +1551,10 @@ class PlaybackSessionServiceTest {
     clock.advance(Duration.ofHours(23));
     child.setLastAccessedAt(clock.instant());
     clock.advance(Duration.ofHours(2));
-    service.reapExpired(clock.instant());
+    service.reapExpired(clock.instant(), RETENTION);
     assertThat(service.access(request(initial, command))).contains(initial);
     clock.advance(Duration.ofHours(25));
-    service.reapExpired(clock.instant());
+    service.reapExpired(clock.instant(), RETENTION);
     assertThat(service.access(request(initial, command))).isEmpty();
     assertThat(streams.getAllSessions()).isEmpty();
   }
@@ -1738,7 +1731,6 @@ class PlaybackSessionServiceTest {
             .authorityGate(authority)
             .executor(work::add)
             .maximumFormatAttempts(2)
-            .sessionRetention(Duration.ofHours(24))
             .clock(clock)
             .build();
     streams.duringNextCreation =
@@ -1768,7 +1760,6 @@ class PlaybackSessionServiceTest {
             .authorityGate(authority)
             .executor(work::add)
             .maximumFormatAttempts(2)
-            .sessionRetention(Duration.ofHours(24))
             .clock(clock)
             .build();
     var command = startCommand().build();
@@ -1793,7 +1784,6 @@ class PlaybackSessionServiceTest {
             .streamingService(streams)
             .authorityGate(authority)
             .maximumFormatAttempts(2)
-            .sessionRetention(Duration.ofHours(24))
             .clock(clock)
             .build();
     var command = startCommand().build();
@@ -1876,7 +1866,6 @@ class PlaybackSessionServiceTest {
         .streamingService(streams)
         .authorityGate(authority)
         .executor(executor)
-        .sessionRetention(Duration.ofHours(24))
         .clock(clock);
   }
 
@@ -1984,6 +1973,11 @@ class PlaybackSessionServiceTest {
       if (failDestroy) {
         throw new IllegalStateException("Cleanup failed");
       }
+    }
+
+    @Override
+    public boolean destroySessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
+      throw new UnsupportedOperationException();
     }
 
     @Override

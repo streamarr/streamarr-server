@@ -1,0 +1,28 @@
+# Idle segment retention (ADR 0026 shapes). Only a ServerAdmin reads or changes it.
+
+"""
+How long the server keeps a stream session, and its segments, after the last request for it.
+When the segment folder's file system has less than a tenth free, the server deletes idle stream
+sessions sooner, oldest first. It never deletes a stream session that a player requested within
+the server's session timeout, one minute by default.
+"""
+type IdleSegmentRetentionSetting {
+    "The same for every read and change, so a client cache can update the setting in place."
+    id: ID!
+    minutes: Int!
+    "The shortest retention a ServerAdmin can choose."
+    minimumMinutes: Int!
+    "The longest retention a ServerAdmin can choose."
+    maximumMinutes: Int!
+}
+
+input ChangeIdleSegmentRetentionInput {
+    minutes: Int!
+}
+
+type ChangeIdleSegmentRetentionPayload {
+    idleSegmentRetentionSetting: IdleSegmentRetentionSetting
+    userErrors: [ChangeIdleSegmentRetentionError!]!
+}
+
+union ChangeIdleSegmentRetentionError = IdleSegmentRetentionOutOfRangeError

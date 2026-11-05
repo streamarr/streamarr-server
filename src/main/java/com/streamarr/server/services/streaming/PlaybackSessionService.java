@@ -40,7 +40,6 @@ public class PlaybackSessionService implements AutoCloseable {
   private final Executor executor;
   private final Optional<ExecutorService> ownedExecutor;
   private final FormatRecoveryPolicy recoveryPolicy;
-  private final Duration sessionRetention;
   private final Clock clock;
   private final ConcurrentHashMap<UUID, PlaybackSession> sessions = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<UUID, PlaybackSession> streamOwners = new ConcurrentHashMap<>();
@@ -54,12 +53,10 @@ public class PlaybackSessionService implements AutoCloseable {
       @NonNull PlaybackAuthorityGate authorityGate,
       Executor executor,
       int maximumFormatAttempts,
-      @NonNull Duration sessionRetention,
       Clock clock) {
     this.recoveryPolicy = new FormatRecoveryPolicy(maximumFormatAttempts);
     this.streamingService = streamingService;
     this.authorityGate = authorityGate;
-    this.sessionRetention = sessionRetention;
     this.clock = clock == null ? Clock.systemUTC() : clock;
     if (executor == null) {
       var owned = Executors.newVirtualThreadPerTaskExecutor();
@@ -261,8 +258,8 @@ public class PlaybackSessionService implements AutoCloseable {
     discardMatching(playback -> mediaFileIds.contains(playback.command.mediaFileId()));
   }
 
-  public void reapExpired(@NonNull Instant now) {
-    discardMatching(playback -> lastActivity(playback).plus(sessionRetention).isBefore(now));
+  public void reapExpired(@NonNull Instant now, @NonNull Duration retention) {
+    discardMatching(playback -> lastActivity(playback).plus(retention).isBefore(now));
   }
 
   public void closeAll() {

@@ -1296,48 +1296,51 @@ class CedarIdentityPoliciesTest {
   }
 
   @Nested
-  @DisplayName("Encoder preset")
-  class EncoderPresetAdministration {
+  @DisplayName("Server settings")
+  class ServerSettingsAdministration {
 
-    private final List<Intent.UnitIntent> encoderPresetIntents =
-        List.of(new Intent.ViewEncoderPreset(), new Intent.ChangeEncoderPreset());
+    private final List<Intent.UnitIntent> serverSettingsIntents =
+        List.of(
+            new Intent.ViewEncoderPreset(),
+            new Intent.ChangeEncoderPreset(),
+            new Intent.ViewIdleSegmentRetention(),
+            new Intent.ChangeIdleSegmentRetention());
 
     @Test
-    @DisplayName(
-        "Should allow reading and changing the encoder preset when the caller is ServerAdmin")
-    void shouldAllowEncoderPresetWhenCallerIsServerAdmin() {
+    @DisplayName("Should allow reading and changing server settings when the caller is ServerAdmin")
+    void shouldAllowServerSettingsWhenCallerIsServerAdmin() {
       account.setServerAdmin(true);
       accounts.save(account);
 
-      assertThat(encoderPresetIntents)
+      assertThat(serverSettingsIntents)
           .allSatisfy(intent -> assertThat(decide(atHome(), intent)).isEqualTo(ALLOWED));
     }
 
     @Test
-    @DisplayName("Should deny the encoder preset when the caller is not ServerAdmin")
-    void shouldDenyEncoderPresetWhenCallerIsNotServerAdmin() {
-      assertThat(encoderPresetIntents)
+    @DisplayName("Should deny server settings when the caller is not ServerAdmin")
+    void shouldDenyServerSettingsWhenCallerIsNotServerAdmin() {
+      assertThat(serverSettingsIntents)
           .allSatisfy(intent -> assertThat(decide(atHome(), intent)).isEqualTo(DENIED));
     }
 
     @Test
-    @DisplayName("Should deny the encoder preset when the ServerAdmin session is device-bound")
-    void shouldDenyEncoderPresetWhenServerAdminSessionIsDeviceBound() {
+    @DisplayName("Should deny server settings when the ServerAdmin session is device-bound")
+    void shouldDenyServerSettingsWhenServerAdminSessionIsDeviceBound() {
       account.setServerAdmin(true);
       accounts.save(account);
 
-      assertThat(encoderPresetIntents)
+      assertThat(serverSettingsIntents)
           .allSatisfy(intent -> assertThat(decide(onDevice(atHome()), intent)).isEqualTo(DENIED));
     }
 
     @Test
-    @DisplayName("Should deny the encoder preset when the ServerAdmin Account is disabled")
-    void shouldDenyEncoderPresetWhenServerAdminAccountIsDisabled() {
+    @DisplayName("Should deny server settings when the ServerAdmin Account is disabled")
+    void shouldDenyServerSettingsWhenServerAdminAccountIsDisabled() {
       account.setServerAdmin(true);
       account.setEnabled(false);
       accounts.save(account);
 
-      assertThat(encoderPresetIntents)
+      assertThat(serverSettingsIntents)
           .allSatisfy(intent -> assertThat(decide(atHome(), intent)).isEqualTo(DENIED));
     }
   }

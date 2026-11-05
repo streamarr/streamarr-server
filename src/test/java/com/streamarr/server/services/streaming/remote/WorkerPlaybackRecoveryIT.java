@@ -379,7 +379,6 @@ class WorkerPlaybackRecoveryIT {
               .streamingService(streams)
               .authorityGate((_, _) -> true)
               .maximumFormatAttempts(3)
-              .sessionRetention(Duration.ofMinutes(1))
               .build();
       events.listen(VideoCopyOutputMismatchEvent.class, sessions::onVideoCopyOutputMismatch);
       var shortCopies = new ShortCopyListener(lifecycle.lifecycle(), events);

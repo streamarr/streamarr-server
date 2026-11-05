@@ -26,6 +26,7 @@ public final class ServerSettingsTestSupport {
           transaction
               .update(SERVER_SETTINGS)
               .set(SERVER_SETTINGS.ENCODER_PRESET, EncoderPresetChoice.AUTOMATIC.name())
+              .set(SERVER_SETTINGS.IDLE_SEGMENT_RETENTION_MINUTES, 60)
               .execute();
         });
   }
