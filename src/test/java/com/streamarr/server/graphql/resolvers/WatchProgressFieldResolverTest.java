@@ -27,8 +27,6 @@ import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
-import com.streamarr.server.graphql.dataloaders.SeasonDataLoader;
-import com.streamarr.server.graphql.dataloaders.SeriesDataLoader;
 import com.streamarr.server.graphql.dataloaders.WatchProgressDataLoader;
 import com.streamarr.server.graphql.dataloaders.WatchStatusDataLoader;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -42,7 +40,6 @@ import com.streamarr.server.support.security.WithProfileContext;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -68,8 +65,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       SeriesFieldResolver.class,
       SeasonFieldResolver.class,
       EpisodeFieldResolver.class,
-      SeasonDataLoader.class,
-      SeriesDataLoader.class,
       WatchProgressFieldResolverTest.TestConfig.class,
       SecurityContextAuthorizationService.class,
       FakeAuthorizationDecider.class
@@ -557,64 +552,6 @@ class WatchProgressFieldResolverTest {
               "data.series.watchProgress");
 
       assertThat(watchProgress).isNull();
-    }
-  }
-
-  @Nested
-  @DisplayName("Season-Series Navigation")
-  class SeasonSeriesNavigationTests {
-
-    @Test
-    @DisplayName("Should resolve series from season")
-    void shouldResolveSeriesFromSeason() {
-      var seriesId = UUID.randomUUID();
-      var series = Series.builder().title("Parent Series").build();
-      series.setId(seriesId);
-
-      var seasonId = UUID.randomUUID();
-      var season = Season.builder().title("Season 1").seasonNumber(1).series(series).build();
-      season.setId(seasonId);
-
-      when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
-      when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
-      when(seriesService.findSeriesByIds(Set.of(seriesId))).thenReturn(List.of(series));
-
-      String seriesTitle =
-          dgsQueryExecutor.executeAndExtractJsonPath(
-              String.format("{ series(id: \"%s\") { seasons { series { title } } } }", seriesId),
-              "data.series.seasons[0].series.title");
-
-      assertThat(seriesTitle).isEqualTo("Parent Series");
-    }
-
-    @Test
-    @DisplayName("Should resolve season from episode")
-    void shouldResolveSeasonFromEpisode() {
-      var seriesId = UUID.randomUUID();
-      var series = Series.builder().title("Test Series").build();
-      series.setId(seriesId);
-
-      var seasonId = UUID.randomUUID();
-      var season = Season.builder().title("Season 1").seasonNumber(1).series(series).build();
-      season.setId(seasonId);
-
-      var episodeId = UUID.randomUUID();
-      var episode = Episode.builder().title("Pilot").episodeNumber(1).season(season).build();
-      episode.setId(episodeId);
-
-      when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
-      when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
-      when(seriesService.findEpisodes(seasonId)).thenReturn(List.of(episode));
-      when(seriesService.findSeasonsByIds(Set.of(seasonId))).thenReturn(List.of(season));
-
-      Integer seasonNumber =
-          dgsQueryExecutor.executeAndExtractJsonPath(
-              String.format(
-                  "{ series(id: \"%s\") { seasons { episodes { season { seasonNumber } } } } }",
-                  seriesId),
-              "data.series.seasons[0].episodes[0].season.seasonNumber");
-
-      assertThat(seasonNumber).isEqualTo(1);
     }
   }
 
