@@ -178,8 +178,9 @@ class ProducerLifecycleServiceTest {
   @DisplayName("Should refuse initial dispatch when the session is no longer registered")
   void shouldRefuseInitialDispatchWhenTheSessionIsNoLongerRegistered() {
     var session = defaultSessionBuilder().build();
+    var firstListed = session.firstListedVariant();
 
-    assertThatThrownBy(() -> lifecycle.startListedVariant(session, session.firstListedVariant()))
+    assertThatThrownBy(() -> lifecycle.startListedVariant(session, firstListed))
         .isInstanceOf(SessionNotFoundException.class);
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
@@ -550,8 +551,9 @@ class ProducerLifecycleServiceTest {
     limited.startListedVariant(running, running.firstListedVariant());
     var refused = defaultLadderSessionBuilder().build();
     runtimeRegistry.save(refused);
+    var firstListed = refused.firstListedVariant();
 
-    assertThatThrownBy(() -> limited.startListedVariant(refused, refused.firstListedVariant()))
+    assertThatThrownBy(() -> limited.startListedVariant(refused, firstListed))
         .isInstanceOf(TranscodeLimitReachedException.class);
 
     assertThat(refused.getVariantHandles()).isEmpty();
