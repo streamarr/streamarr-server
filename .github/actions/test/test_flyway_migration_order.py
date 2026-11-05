@@ -257,6 +257,17 @@ class FlywayMigrationOrderTests(unittest.TestCase):
         self.assertEqual(result.stderr, "")
         self.assertIn(f"::error file={SQL}/V120__Store_Subtitle_Preferences.SQL", result.stdout)
 
+    def test_shouldAcceptAddedMigrationWhenItAndTheBaseBranchHaveScriptConfigurationFiles(self):
+        self.publish_main(f"{SQL}/V118__Index_Skipped_Files.sql",
+            f"{SQL}/V118__Index_Skipped_Files.sql.conf")
+        self.start_pull_request()
+        self.commit(f"{SQL}/V119__Index_Language_Preferences.sql",
+            f"{SQL}/V119__Index_Language_Preferences.sql.conf")
+
+        result = self.check()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_shouldIgnoreMigrationWhenItReachedThePullRequestByMergingTheBaseBranch(self):
         self.publish_main(f"{SQL}/V116__Store_Language_Preferences.sql")
         self.start_pull_request()

@@ -33,7 +33,9 @@ def fetch(branch):
 
 
 def is_migration(path):
-    return path.rsplit("/", 1)[-1].startswith("V")
+    name = path.rsplit("/", 1)[-1]
+    # V119__x.sql.conf configures V119__x.sql (for example executeInTransaction=false).
+    return name.startswith("V") and not name.endswith(".sql.conf")
 
 
 def version(path):
