@@ -7,6 +7,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.RejectedExecutionException;
+import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -27,6 +28,7 @@ import reactor.core.scheduler.Scheduler;
  */
 @Slf4j
 @Component
+@Builder
 @RequiredArgsConstructor
 public class ActiveStreamEventListener {
 

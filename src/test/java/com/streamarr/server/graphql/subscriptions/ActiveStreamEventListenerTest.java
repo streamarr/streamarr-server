@@ -219,7 +219,12 @@ class ActiveStreamEventListenerTest {
             .movieRepository(new FakeMovieRepository())
             .episodeRepository(new FakeEpisodeRepository())
             .build();
-    return new ActiveStreamEventListener(service, broadcaster, meterRegistry, publicationScheduler);
+    return ActiveStreamEventListener.builder()
+        .activeStreams(service)
+        .broadcaster(broadcaster)
+        .meterRegistry(meterRegistry)
+        .publicationScheduler(publicationScheduler)
+        .build();
   }
 
   private List<ActiveStreamDto.ChangeDto> subscribe() {
