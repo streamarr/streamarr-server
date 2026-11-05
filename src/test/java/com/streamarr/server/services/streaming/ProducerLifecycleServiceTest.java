@@ -49,6 +49,7 @@ import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
+import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -879,6 +880,48 @@ class ProducerLifecycleServiceTest {
 
     // Segment 0 took the attempt out of startup, so the 10 s stall threshold applies.
     assertThat(timeUntilStall(session)).isEqualTo(Duration.ofSeconds(6));
+  }
+
+  // ADR 0037: each progress report that advances the output restarts the stall clock, so a long
+  // merged segment keeps its producer while FFmpeg's output advances.
+  @Test
+  @DisplayName("Should push back the stall deadline when the tracked job attempt reports progress")
+  void shouldPushBackTheStallDeadlineWhenTheTrackedJobAttemptReportsProgress() {
+    var session = startedSession();
+    segmentStore.addSegment(session.getSessionId(), "segment0.m4s", new byte[] {1});
+    recover(session);
+    clock.advance(Duration.ofSeconds(8));
+
+    new JobAttemptProgressListener(lifecycle)
+        .onJobAttemptProgressed(progressOf(session, session.getHandle().orElseThrow().attemptId()));
+    clock.advance(Duration.ofSeconds(8));
+
+    assertThat(timeUntilStall(session)).isEqualTo(Duration.ofSeconds(2));
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the stall deadline when progress names a job attempt that recovery does not"
+          + " track")
+  void shouldKeepTheStallDeadlineWhenProgressNamesAJobAttemptThatRecoveryDoesNotTrack() {
+    var session = startedSession();
+    segmentStore.addSegment(session.getSessionId(), "segment0.m4s", new byte[] {1});
+    recover(session);
+    clock.advance(Duration.ofSeconds(8));
+
+    new JobAttemptProgressListener(lifecycle)
+        .onJobAttemptProgressed(progressOf(session, UUID.randomUUID()));
+    clock.advance(Duration.ofSeconds(8));
+
+    assertThat(timeUntilStall(session)).isZero();
+  }
+
+  private static JobAttemptProgressedEvent progressOf(StreamSession session, UUID jobAttemptId) {
+    return JobAttemptProgressedEvent.builder()
+        .streamSessionId(session.getSessionId())
+        .jobAttemptId(jobAttemptId)
+        .variantLabel(StreamSession.defaultVariant())
+        .build();
   }
 
   @Test

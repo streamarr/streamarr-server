@@ -17,6 +17,7 @@ import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
+import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.transcode.v1.BackgroundProbeCapacityControl;
@@ -24,6 +25,7 @@ import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
+import com.streamarr.transcode.v1.JobAttemptProgress;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeCancelReason;
@@ -697,6 +699,23 @@ final class LiveWorkerConnectionRegistry {
         .flatMap(connection -> connection.activeJob(jobAttemptId))
         .ifPresent(this::publishCompletion);
     return endReportedJobAttempt(workerId, workerSessionId, jobAttemptId);
+  }
+
+  /**
+   * Publishes a running job attempt's progress, which the worker sends only when the attempt's
+   * output has advanced. A report for an attempt that the current session does not run is ignored.
+   */
+  void reportProgress(UUID workerId, UUID workerSessionId, JobAttemptProgress progress) {
+    currentConnection(workerId, workerSessionId)
+        .flatMap(connection -> connection.activeJob(fromProto(progress.getJobAttemptId())))
+        .ifPresent(
+            job ->
+                eventPublisher.publishEvent(
+                    JobAttemptProgressedEvent.builder()
+                        .streamSessionId(fromProto(job.getStreamSessionId()))
+                        .jobAttemptId(fromProto(job.getJobAttemptId()))
+                        .variantLabel(job.getVariant().getVariantLabel())
+                        .build()));
   }
 
   private void publishCompletion(VariantJob job) {

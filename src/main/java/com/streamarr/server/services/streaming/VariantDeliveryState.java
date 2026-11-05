@@ -38,6 +38,13 @@ final class VariantDeliveryState {
     }
   }
 
+  /** The tracked job attempt's output advanced; any other attempt's progress changes nothing. */
+  void restartStallClock(UUID attemptId, Instant now) {
+    if (attemptId.equals(trackedAttemptId)) {
+      lastProgressAt = now;
+    }
+  }
+
   boolean hasStalled(Duration stallThreshold, Duration startupThreshold, Instant now) {
     return !now.isBefore(stallDeadline(stallThreshold, startupThreshold));
   }

@@ -21,12 +21,14 @@ import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
+import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptCompleted;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
+import com.streamarr.transcode.v1.JobAttemptProgress;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.JobAttemptStopped;
 import com.streamarr.transcode.v1.MediaSourceRef;
@@ -1579,6 +1581,50 @@ class WorkerSessionGrpcServiceTest {
             registry.isRunning(
                 fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel()))
         .isEqualTo(reconnected);
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
+  @DisplayName("Should publish a job attempt's progress only when its worker session runs it")
+  void shouldPublishAJobAttemptsProgressOnlyWhenItsWorkerSessionRunsIt(boolean running)
+      throws Exception {
+    var events = new CapturingEventPublisher();
+    var registry =
+        LiveWorkerConnectionRegistry.builder()
+            .configuration(WorkerSessionServerConfiguration.builder().build())
+            .meterRegistry(new SimpleMeterRegistry())
+            .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
+            .eventPublisher(events)
+            .build();
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var connection = workerSession(service, workerId, new IgnoringResponseObserver());
+    connection.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setRegistration(registration(worker(workerId), sourceNamespaceId))
+            .build());
+    var job = variantJob(sourceNamespaceId).toBuilder().setDecision(streamCopyDecision()).build();
+    if (running) {
+      assertThat(registry.dispatch(job)).isPresent();
+    }
+
+    connection.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptProgress(
+                JobAttemptProgress.newBuilder()
+                    .setJobAttemptId(job.getJobAttemptId())
+                    .setKeyframeSearchBytesRead(65_536))
+            .build());
+
+    var progressed =
+        JobAttemptProgressedEvent.builder()
+            .streamSessionId(fromProto(job.getStreamSessionId()))
+            .jobAttemptId(fromProto(job.getJobAttemptId()))
+            .variantLabel(job.getVariant().getVariantLabel())
+            .build();
+    assertThat(events.getEventsOfType(JobAttemptProgressedEvent.class))
+        .isEqualTo(running ? List.of(progressed) : List.of());
   }
 
   @Test

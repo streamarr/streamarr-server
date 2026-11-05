@@ -196,6 +196,22 @@ public class ProducerLifecycleService {
   }
 
   /**
+   * Restarts the stall clock of the variant's tracked job attempt when its worker reports that the
+   * attempt's output advanced (ADR 0037). Progress of an attempt that recovery does not track
+   * changes nothing.
+   */
+  public void restartStallClock(UUID sessionId, String variantLabel, UUID attemptId) {
+    withSessionLock(
+        sessionId,
+        () -> {
+          var state = recoveryStates.get(new VariantKey(sessionId, variantLabel));
+          if (state != null) {
+            state.restartStallClock(attemptId, clock.instant());
+          }
+        });
+  }
+
+  /**
    * How long a held segment request can wait for a wake before recovery must look at the variant
    * again: until the variant's tracked job attempt counts as stalled. Before recovery tracks a job
    * attempt of the variant, the startup stall threshold bounds the wait.
