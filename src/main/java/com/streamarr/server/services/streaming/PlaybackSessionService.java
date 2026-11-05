@@ -359,7 +359,6 @@ public class PlaybackSessionService implements AutoCloseable {
       return Optional.empty();
     }
 
-    forgetTheStartPositionOncePlaybackMoved(playback);
     var failed = failedAttempt(playback, fixedFailure);
     // A failed encode keeps its codec family out of every later format attempt.
     if (failed.output() instanceof FailedFormatAttempt.Encode(var codecFamily)) {
@@ -548,18 +547,21 @@ public class PlaybackSessionService implements AutoCloseable {
       PlaybackSession playback, UUID streamId) {
     return locked(
         playback,
-        () ->
-            CreateStreamSessionCommand.builder()
-                .streamSessionId(streamId)
-                .mediaFileId(playback.command.mediaFileId())
-                .identity(playback.command.identity())
-                .options(
-                    playback.command.options().toBuilder()
-                        .quality(playback.choice.playbackChoice())
-                        .build())
-                .capabilityDeclaration(playback.command.capabilityDeclaration())
-                .excludedEncodeCodecFamilies(Set.copyOf(playback.excludedEncodeCodecFamilies))
-                .startPosition(playback.startPosition));
+        () -> {
+          // The retired format attempt can take a report until it is destroyed, just before this.
+          forgetTheStartPositionOncePlaybackMoved(playback);
+          return CreateStreamSessionCommand.builder()
+              .streamSessionId(streamId)
+              .mediaFileId(playback.command.mediaFileId())
+              .identity(playback.command.identity())
+              .options(
+                  playback.command.options().toBuilder()
+                      .quality(playback.choice.playbackChoice())
+                      .build())
+              .capabilityDeclaration(playback.command.capabilityDeclaration())
+              .excludedEncodeCodecFamilies(Set.copyOf(playback.excludedEncodeCodecFamilies))
+              .startPosition(playback.startPosition);
+        });
   }
 
   private void requireAuthority(AuthenticatedIdentity identity, PlaybackAuthority authority) {
