@@ -99,6 +99,11 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
+  public boolean hasHardwareEncoderFailed(UUID sessionId, String variantLabel) {
+    return workerServer.hasHardwareEncoderFailed(sessionId, variantLabel);
+  }
+
+  @Override
   public boolean isHealthy() {
     return workerServer.hasConnectedWorker(sourceNamespaceId);
   }

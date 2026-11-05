@@ -206,6 +206,11 @@ public final class WorkerSessionServer
     return workerConnections.terminalFailure(streamSessionId);
   }
 
+  public synchronized boolean hasHardwareEncoderFailed(UUID streamSessionId, String variantLabel) {
+    requireStarted();
+    return workerConnections.hasHardwareEncoderFailed(streamSessionId, variantLabel);
+  }
+
   public synchronized boolean hasConnectedWorker(UUID sourceNamespaceId) {
     requireStarted();
     return workerConnections.hasConnectedWorker(sourceNamespaceId);

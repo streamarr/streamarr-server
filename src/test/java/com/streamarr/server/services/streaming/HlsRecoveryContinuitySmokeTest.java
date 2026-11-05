@@ -112,6 +112,7 @@ class HlsRecoveryContinuitySmokeTest {
             .segmentStore(segmentStore)
             .producerLifecycle(lifecycle)
             .heldRequests(workerFixture.workerSessions().heldSegmentRequests())
+            .eventPublisher(new CapturingEventPublisher())
             .build();
   }
 

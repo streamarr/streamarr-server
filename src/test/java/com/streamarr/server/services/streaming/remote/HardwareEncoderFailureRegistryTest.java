@@ -156,6 +156,8 @@ class HardwareEncoderFailureRegistryTest {
     registry.failJobAttempt(workerId, workerSessionId, hardwareFailure(job));
 
     assertThat(events.getEventsOfType(HardwareEncoderFailedEvent.class)).isEmpty();
+    assertThat(registry.hasHardwareEncoderFailed(fromProto(job.getStreamSessionId()), "720p"))
+        .isFalse();
   }
 
   @ParameterizedTest
@@ -297,6 +299,26 @@ class HardwareEncoderFailureRegistryTest {
     var dispatched = registry.dispatch(h264Encode(false));
 
     assertThat(dispatched).map(VariantDispatch::encoder).contains(Optional.of(PINNED_NVENC));
+  }
+
+  @Test
+  @DisplayName(
+      "Should hold the variant's hardware encoder failure until its stream session is destroyed")
+  void shouldHoldTheVariantsHardwareEncoderFailureUntilItsStreamSessionIsDestroyed() {
+    var workerId = UUID.randomUUID();
+    var workerSessionId =
+        registry.register(
+            workerId, nvencWorker(workerId, 1), collecting(new CopyOnWriteArrayList<>()));
+    var job = h264Encode(false);
+    var streamSessionId = fromProto(job.getStreamSessionId());
+    registry.dispatch(job);
+
+    registry.failJobAttempt(workerId, workerSessionId, hardwareFailure(job));
+
+    assertThat(registry.hasHardwareEncoderFailed(streamSessionId, "720p")).isTrue();
+    assertThat(registry.hasHardwareEncoderFailed(streamSessionId, "480p")).isFalse();
+    registry.destroyStreamSession(streamSessionId);
+    assertThat(registry.hasHardwareEncoderFailed(streamSessionId, "720p")).isFalse();
   }
 
   private static WorkerRegistration nvencWorker(UUID workerId, int slots) {

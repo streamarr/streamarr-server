@@ -92,11 +92,13 @@ public class StreamingConfig {
   public SegmentDeliveryCoordinator segmentDeliveryCoordinator(
       SegmentStore segmentStore,
       ProducerLifecycleService producerLifecycleService,
-      HeldSegmentRequests heldSegmentRequests) {
+      HeldSegmentRequests heldSegmentRequests,
+      ApplicationEventPublisher eventPublisher) {
     return SegmentDeliveryCoordinator.builder()
         .segmentStore(segmentStore)
         .producerLifecycle(producerLifecycleService)
         .heldRequests(heldSegmentRequests)
+        .eventPublisher(eventPublisher)
         .build();
   }
 

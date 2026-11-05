@@ -144,6 +144,7 @@ class HlsStreamingSmokeTest {
                     .segmentStore(segmentStore)
                     .producerLifecycle(producerLifecycle)
                     .heldRequests(workerFixture.workerSessions().heldSegmentRequests())
+                    .eventPublisher(new CapturingEventPublisher())
                     .build())
             .build();
 

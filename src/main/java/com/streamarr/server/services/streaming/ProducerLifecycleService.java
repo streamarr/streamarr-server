@@ -101,7 +101,11 @@ public class ProducerLifecycleService {
     PAST_THE_NORMAL_END,
     // The segment lies past a short copy that a source stream outlasts, which no job attempt of the
     // copy can produce; the playback session falls back to an encode (ADR 0052).
-    PAST_A_FAILED_COPY
+    PAST_A_FAILED_COPY,
+    // The variant's hardware encoder failed. The playback session continues on the software
+    // encoder in a new format attempt, so no job attempt of this stream session replaces the
+    // variant (ADR 0044).
+    HARDWARE_ENCODER_FAILED
   }
 
   private record VariantKey(UUID sessionId, String variantLabel) {}
@@ -290,6 +294,10 @@ public class ProducerLifecycleService {
           .getVariantHandle(variantLabel)
           .ifPresent(handle -> doExhaust(sessionId, variantLabel, handle.attemptId()));
       return RecoveryResult.EXHAUSTED;
+    }
+
+    if (transcodeExecutor.hasHardwareEncoderFailed(sessionId, variantLabel)) {
+      return RecoveryResult.HARDWARE_ENCODER_FAILED;
     }
 
     // No job attempt may start at or past the media segment count it advertises, so a request
@@ -1172,7 +1180,8 @@ public class ProducerLifecycleService {
       StreamSession session, String variantLabel, String segmentName) {
     if (!session.offersVariant(variantLabel)
         || session.getVariantHandle(variantLabel).isPresent()
-        || isUnadvertisedMediaSegment(session, segmentName)) {
+        || isUnadvertisedMediaSegment(session, segmentName)
+        || transcodeExecutor.hasHardwareEncoderFailed(session.getSessionId(), variantLabel)) {
       return false;
     }
 

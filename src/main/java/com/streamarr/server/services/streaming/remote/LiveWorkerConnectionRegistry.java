@@ -153,6 +153,8 @@ final class LiveWorkerConnectionRegistry {
 
   private final ConcurrentHashMap<UUID, WorkerConnection> connections = new ConcurrentHashMap<>();
   private final Map<UUID, TranscodeFailure> terminalFailures = new ConcurrentHashMap<>();
+  // The labels of each stream session's variants whose hardware encoder failed (ADR 0044).
+  private final Map<UUID, Set<String>> hardwareEncoderFailures = new ConcurrentHashMap<>();
   private final Map<UUID, CompletableFuture<ProbeAttemptReport>> pendingProbes =
       new ConcurrentHashMap<>();
 
@@ -499,6 +501,7 @@ final class LiveWorkerConnectionRegistry {
       stopStreamSession(streamSessionId);
     } finally {
       terminalFailures.remove(streamSessionId);
+      hardwareEncoderFailures.remove(streamSessionId);
     }
   }
 
@@ -612,6 +615,10 @@ final class LiveWorkerConnectionRegistry {
     return Optional.ofNullable(terminalFailures.get(streamSessionId));
   }
 
+  boolean hasHardwareEncoderFailed(UUID streamSessionId, String variantLabel) {
+    return hardwareEncoderFailures.getOrDefault(streamSessionId, Set.of()).contains(variantLabel);
+  }
+
   /** From this call on, a probe cancelled before its timeout tells its worker of the shutdown. */
   void beginShutdown() {
     shuttingDown = true;
@@ -622,6 +629,7 @@ final class LiveWorkerConnectionRegistry {
     connections.clear();
     closed.forEach(WorkerConnection::abandonAllJobsWithoutWaiting);
     terminalFailures.clear();
+    hardwareEncoderFailures.clear();
   }
 
   ReportedJobAttemptEnd failJobAttempt(
@@ -1399,6 +1407,10 @@ final class LiveWorkerConnectionRegistry {
         RemoteEncoderBackendMapper.videoCodecFamilyName(
                 job.getDecision().getVideo().getCodecFamily())
             .ifPresent(hardwareFailedFamilies::add);
+        hardwareEncoderFailures
+            .computeIfAbsent(
+                fromProto(job.getStreamSessionId()), _ -> ConcurrentHashMap.newKeySet())
+            .add(job.getVariant().getVariantLabel());
       }
 
       return endReportedJobAttempt(attemptId);
