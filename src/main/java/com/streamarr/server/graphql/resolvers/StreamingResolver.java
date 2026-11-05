@@ -72,6 +72,8 @@ import lombok.RequiredArgsConstructor;
 public class StreamingResolver {
 
   private static final String ITEM_ID = "itemId";
+  private static final String PLAYBACK_SESSION_ID = "playbackSessionId";
+  private static final String STREAM_SESSION_ID = "streamSessionId";
   private static final String INVALID_ITEM_ID = "Enter a valid item ID.";
   private static final String ITEM_NOT_FOUND = "This item no longer exists.";
   private static final double NANOSECONDS_PER_SECOND = 1_000_000_000d;
@@ -204,8 +206,8 @@ public class StreamingResolver {
             MutationPayloads.withUuid(
                 input.streamSessionId(),
                 streamId -> reportFailure(input, playbackId, streamId),
-                () -> invalidReportId("streamSessionId")),
-        () -> invalidReportId("playbackSessionId"));
+                () -> invalidReportId(STREAM_SESSION_ID)),
+        () -> invalidReportId(PLAYBACK_SESSION_ID));
   }
 
   private ReportPlaybackFormatFailurePayload reportFailure(
@@ -243,8 +245,8 @@ public class StreamingResolver {
             MutationPayloads.withUuid(
                 input.streamSessionId(),
                 streamId -> switchAudioTrack(input, playbackId, streamId),
-                () -> invalidSwitchId("streamSessionId")),
-        () -> invalidSwitchId("playbackSessionId"));
+                () -> invalidSwitchId(STREAM_SESSION_ID)),
+        () -> invalidSwitchId(PLAYBACK_SESSION_ID));
   }
 
   private SwitchPlaybackAudioTrackPayload switchAudioTrack(
@@ -299,7 +301,7 @@ public class StreamingResolver {
         },
         () ->
             MutationPayloads.inputError(
-                invalidPlaybackId("playbackSessionId"), DestroyPlaybackSessionPayload::new));
+                invalidPlaybackId(PLAYBACK_SESSION_ID), DestroyPlaybackSessionPayload::new));
   }
 
   private PlaybackSessionRequest playbackRequest(UUID id) {
