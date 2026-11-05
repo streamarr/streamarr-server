@@ -83,6 +83,11 @@ public enum DecisionReason {
   AUDIO_CODEC_NOT_DECLARED,
   /** The source has more audio channels than the entry for its codec accepts. */
   AUDIO_CHANNELS_NOT_DECLARED,
+  /**
+   * The probe reported no channel count for the source's audio, and the entry for its codec accepts
+   * fewer channels than the stereo track the decision then assumes.
+   */
+  AUDIO_CHANNELS_UNKNOWN,
   /** The source's audio codec string is one that HLS delivery cannot copy, such as AAC Main. */
   AUDIO_SOURCE_NOT_COPYABLE,
   /** The probe stored no codec string for the source's audio, which a playlist needs for a copy. */
