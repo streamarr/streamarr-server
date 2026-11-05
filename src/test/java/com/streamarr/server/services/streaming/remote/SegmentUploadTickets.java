@@ -7,7 +7,8 @@ final class SegmentUploadTickets {
   static SegmentUploadAdmission.Ticket admitted(SegmentUploadAdmission.Admission admission) {
     return switch (admission) {
       case SegmentUploadAdmission.Admitted(var ticket) -> ticket;
-      case SegmentUploadAdmission.Refused _ ->
+      case SegmentUploadAdmission.WorkerLimitReached _,
+          SegmentUploadAdmission.FleetLimitReached _ ->
           throw new AssertionError("Expected an admitted segment upload, got " + admission);
     };
   }

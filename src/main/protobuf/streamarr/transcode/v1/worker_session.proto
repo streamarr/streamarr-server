@@ -1559,6 +1559,13 @@ message UploadSegmentResponse {
   uint64 accepted_length_bytes = 3;
 }
 
+// The server attaches this message, packed in a google.rpc.Status detail, when
+// it refuses an UploadSegment call with RESOURCE_EXHAUSTED because the worker
+// already holds segment_upload_limit calls. A refusal without it comes from the
+// server's fleet-wide limits. On this refusal the worker queues the segment
+// again; on any other refusal it fails the job attempt (ADR 0037).
+message SegmentUploadLimitReached {}
+
 service TranscodeWorkerService {
   rpc EstablishWorkerSession(stream EstablishWorkerSessionRequest) returns (stream EstablishWorkerSessionResponse) {}
   rpc UploadSegment(stream UploadSegmentRequest) returns (UploadSegmentResponse) {}

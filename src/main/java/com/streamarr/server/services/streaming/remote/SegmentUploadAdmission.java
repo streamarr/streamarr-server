@@ -60,18 +60,18 @@ final class SegmentUploadAdmission {
   }
 
   /**
-   * One admitted upload for {@code workerId}, or a refusal when either that worker's allowance or
-   * the fleet-wide concurrent-upload limit is reached.
+   * One admitted upload for {@code workerId}, or the limit that refuses it: that worker's
+   * allowance, checked first, or the fleet-wide concurrent-upload limit.
    */
   Admission tryAdmit(UUID workerId) {
     reclaimExpired();
 
     if (!tryClaimWorkerAllowance(workerId)) {
-      return new Refused();
+      return new WorkerLimitReached();
     }
     if (!uploadSlots.tryAcquire()) {
       releaseWorkerAllowance(workerId);
-      return new Refused();
+      return new FleetLimitReached();
     }
 
     var ticket = new Ticket(workerId, clock.instant());
@@ -79,11 +79,13 @@ final class SegmentUploadAdmission {
     return new Admitted(ticket);
   }
 
-  sealed interface Admission permits Admitted, Refused {}
+  sealed interface Admission permits Admitted, WorkerLimitReached, FleetLimitReached {}
 
   record Admitted(Ticket ticket) implements Admission {}
 
-  record Refused() implements Admission {}
+  record WorkerLimitReached() implements Admission {}
+
+  record FleetLimitReached() implements Admission {}
 
   private void reclaimExpired() {
     var cutoff = clock.instant().minus(maximumUploadAge);

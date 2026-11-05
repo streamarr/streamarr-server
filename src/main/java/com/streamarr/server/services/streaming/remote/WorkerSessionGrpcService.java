@@ -91,7 +91,14 @@ final class WorkerSessionGrpcService
               .responseObserver(responseObserver)
               .uploadTicket(ticket)
               .build();
-      case SegmentUploadAdmission.Refused _ -> {
+      case SegmentUploadAdmission.WorkerLimitReached _ -> {
+        log.warn(
+            "Rejecting segment upload from worker {}: its segment upload limit is reached",
+            authenticatedWorkerId);
+        responseObserver.onError(SegmentUploadLimits.workerLimitRefusal());
+        yield IGNORED_UPLOAD_OBSERVER;
+      }
+      case SegmentUploadAdmission.FleetLimitReached _ -> {
         log.warn(
             "Rejecting segment upload from worker {}: concurrent upload limit reached",
             authenticatedWorkerId);

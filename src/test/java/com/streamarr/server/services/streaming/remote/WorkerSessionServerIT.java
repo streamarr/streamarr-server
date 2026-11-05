@@ -7,6 +7,7 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigura
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.streamCopyDecision;
 import static com.streamarr.server.fixtures.SegmentRequestFixture.earliestArrivingSegmentRequestBuilder;
+import static com.streamarr.server.services.streaming.remote.SegmentUploadRefusals.statusDetails;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -58,6 +59,7 @@ import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
 import com.streamarr.transcode.v1.SegmentContentType;
+import com.streamarr.transcode.v1.SegmentUploadLimitReached;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
@@ -1517,6 +1519,42 @@ class WorkerSessionServerIT {
                     validSegment)
                 .get(5, TimeUnit.SECONDS);
         assertThat(accepted.getAcceptedLengthBytes()).isEqualTo(validSegment.length);
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should mark the refused upload across the transport when a worker opens one upload more than its segment upload limit")
+  void shouldMarkTheRefusedUploadAcrossTheTransportWhenWorkerOpensOneUploadMoreThanItsLimit()
+      throws Exception {
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+      try (var worker = connect(channel, workerIdentity(UUID.randomUUID()))) {
+        var limit = worker.nextResponse().getSessionAccepted().getSegmentUploadLimit();
+        var uploads =
+            IntStream.rangeClosed(0, limit).mapToObj(_ -> beginSegmentUpload(channel)).toList();
+
+        var firstEnded =
+            CompletableFuture.anyOf(
+                uploads.stream()
+                    .map(SegmentUploadAttempt::response)
+                    .toArray(CompletableFuture[]::new));
+
+        assertThatThrownBy(() -> firstEnded.get(5, TimeUnit.SECONDS))
+            .rootCause()
+            .satisfies(
+                refusal -> {
+                  assertThat(Status.fromThrowable(refusal).getCode())
+                      .isEqualTo(Status.Code.RESOURCE_EXHAUSTED);
+                  assertThat(statusDetails(refusal))
+                      .singleElement()
+                      .matches(detail -> detail.is(SegmentUploadLimitReached.class));
+                });
+        uploads.forEach(upload -> upload.requests().onError(Status.CANCELLED.asRuntimeException()));
       } finally {
         shutdown(channel);
       }

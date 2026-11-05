@@ -29,7 +29,7 @@ class SegmentUploadObserverTest {
             .uploadTicket(admitted(admission.tryAdmit(UUID.randomUUID())))
             .build();
     assertThat(admission.tryAdmit(UUID.randomUUID()))
-        .isInstanceOf(SegmentUploadAdmission.Refused.class);
+        .isInstanceOf(SegmentUploadAdmission.FleetLimitReached.class);
 
     observer.onError(new RuntimeException("worker connection reset mid-upload"));
 

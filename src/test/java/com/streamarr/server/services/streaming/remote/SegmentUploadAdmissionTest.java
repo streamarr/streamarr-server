@@ -31,7 +31,7 @@ class SegmentUploadAdmissionTest {
     assertThat(admission.tryAdmit(UUID.randomUUID()))
         .isInstanceOf(SegmentUploadAdmission.Admitted.class);
     assertThat(admission.tryAdmit(UUID.randomUUID()))
-        .isInstanceOf(SegmentUploadAdmission.Refused.class);
+        .isInstanceOf(SegmentUploadAdmission.FleetLimitReached.class);
   }
 
   @Test
@@ -92,7 +92,8 @@ class SegmentUploadAdmissionTest {
     assertThat(admission.tryAdmit(WORKER_A)).isInstanceOf(SegmentUploadAdmission.Admitted.class);
     assertThat(admission.tryAdmit(WORKER_A)).isInstanceOf(SegmentUploadAdmission.Admitted.class);
 
-    assertThat(admission.tryAdmit(WORKER_A)).isInstanceOf(SegmentUploadAdmission.Refused.class);
+    assertThat(admission.tryAdmit(WORKER_A))
+        .isInstanceOf(SegmentUploadAdmission.WorkerLimitReached.class);
   }
 
   @Test
@@ -112,13 +113,15 @@ class SegmentUploadAdmissionTest {
   void shouldReturnAWorkersAllowanceWhenItsTicketIsClosed() {
     var admission = new SegmentUploadAdmission(8, 100, 1);
     var ticket = admitted(admission.tryAdmit(WORKER_A));
-    assertThat(admission.tryAdmit(WORKER_A)).isInstanceOf(SegmentUploadAdmission.Refused.class);
+    assertThat(admission.tryAdmit(WORKER_A))
+        .isInstanceOf(SegmentUploadAdmission.WorkerLimitReached.class);
 
     ticket.close();
     ticket.close();
 
     assertThat(admission.tryAdmit(WORKER_A)).isInstanceOf(SegmentUploadAdmission.Admitted.class);
-    assertThat(admission.tryAdmit(WORKER_A)).isInstanceOf(SegmentUploadAdmission.Refused.class);
+    assertThat(admission.tryAdmit(WORKER_A))
+        .isInstanceOf(SegmentUploadAdmission.WorkerLimitReached.class);
   }
 
   @Test
@@ -129,7 +132,8 @@ class SegmentUploadAdmissionTest {
     admitted(admission.tryAdmit(WORKER_A));
     admitted(admission.tryAdmit(WORKER_A));
 
-    assertThat(admission.tryAdmit(WORKER_B)).isInstanceOf(SegmentUploadAdmission.Refused.class);
+    assertThat(admission.tryAdmit(WORKER_B))
+        .isInstanceOf(SegmentUploadAdmission.FleetLimitReached.class);
   }
 
   @Test
@@ -141,7 +145,8 @@ class SegmentUploadAdmissionTest {
     // A stream that sent metadata and then stopped: slot taken, bytes reserved, never closed.
     var abandoned = admitted(admission.tryAdmit(WORKER_A));
     assertThat(abandoned.tryReserve(100)).isTrue();
-    assertThat(admission.tryAdmit(WORKER_B)).isInstanceOf(SegmentUploadAdmission.Refused.class);
+    assertThat(admission.tryAdmit(WORKER_B))
+        .isInstanceOf(SegmentUploadAdmission.FleetLimitReached.class);
 
     clock.advance(Duration.ofSeconds(31));
 
@@ -162,7 +167,8 @@ class SegmentUploadAdmissionTest {
 
     clock.advance(Duration.ofSeconds(29));
 
-    assertThat(admission.tryAdmit(WORKER_B)).isInstanceOf(SegmentUploadAdmission.Refused.class);
+    assertThat(admission.tryAdmit(WORKER_B))
+        .isInstanceOf(SegmentUploadAdmission.FleetLimitReached.class);
   }
 
   @Test
@@ -179,7 +185,7 @@ class SegmentUploadAdmissionTest {
 
     assertThat(admission.tryAdmit(WORKER_A))
         .as("a reclaimed ticket must not hand back capacity a second time")
-        .isInstanceOf(SegmentUploadAdmission.Refused.class);
+        .isInstanceOf(SegmentUploadAdmission.FleetLimitReached.class);
     successor.close();
   }
 

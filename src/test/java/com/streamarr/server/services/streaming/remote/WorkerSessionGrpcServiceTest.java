@@ -5,6 +5,7 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.hardwareEncoder
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.keyframeVerifiedHardwareEncoder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.streamCopyDecision;
+import static com.streamarr.server.services.streaming.remote.SegmentUploadRefusals.statusDetails;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,6 +40,7 @@ import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
 import com.streamarr.transcode.v1.SegmentContentType;
+import com.streamarr.transcode.v1.SegmentUploadLimitReached;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.StreamMeasurementSource;
 import com.streamarr.transcode.v1.StreamMeasurements;
@@ -1235,8 +1237,12 @@ class WorkerSessionGrpcServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject an upload when the global concurrent upload limit is exhausted")
-  void shouldRejectUploadWhenGlobalConcurrentUploadLimitIsExhausted() throws Exception {
+  @DisplayName(
+      "Should reject an upload without the segment upload limit marker when the global concurrent"
+          + " upload limit is exhausted")
+  void
+      shouldRejectUploadWithoutTheSegmentUploadLimitMarkerWhenGlobalConcurrentUploadLimitIsExhausted()
+          throws Exception {
     var service =
         new WorkerSessionGrpcService(
             LiveWorkerConnectionRegistryFixture.defaultRegistry(), new FakeSegmentStore());
@@ -1253,6 +1259,8 @@ class WorkerSessionGrpcServiceTest {
     assertThat(rejected.error()).isNotNull();
     assertThat(Status.fromThrowable(rejected.error()).getCode())
         .isEqualTo(Status.Code.RESOURCE_EXHAUSTED);
+    assertThat(statusDetails(rejected.error()))
+        .noneMatch(detail -> detail.is(SegmentUploadLimitReached.class));
     ignored.onNext(UploadSegmentRequest.getDefaultInstance());
     ignored.onError(Status.CANCELLED.asRuntimeException());
     ignored.onCompleted();
@@ -1307,8 +1315,40 @@ class WorkerSessionGrpcServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject an upload when the global declared byte budget is exhausted")
-  void shouldRejectUploadWhenGlobalDeclaredByteBudgetIsExhausted() throws Exception {
+  @DisplayName(
+      "Should mark the refusal as the worker's segment upload limit when a worker opens one upload"
+          + " more than that limit")
+  void shouldMarkTheRefusalAsTheWorkersSegmentUploadLimitWhenWorkerOpensOneUploadMoreThanThatLimit()
+      throws Exception {
+    var workerId = UUID.randomUUID();
+    var service =
+        new WorkerSessionGrpcService(
+            LiveWorkerConnectionRegistryFixture.defaultRegistry(), new FakeSegmentStore());
+    var uploads = new ArrayList<StreamObserver<UploadSegmentRequest>>();
+    for (var index = 0; index < SegmentUploadLimits.MAXIMUM_SEGMENT_UPLOADS_PER_WORKER; index++) {
+      uploads.add(upload(service, workerId, new RecordingUploadResponseObserver()));
+    }
+
+    var refused = new RecordingUploadResponseObserver();
+
+    var excess = upload(service, workerId, refused);
+
+    assertThat(refused.error()).isNotNull();
+    assertThat(Status.fromThrowable(refused.error()).getCode())
+        .isEqualTo(Status.Code.RESOURCE_EXHAUSTED);
+    assertThat(statusDetails(refused.error()))
+        .singleElement()
+        .matches(detail -> detail.is(SegmentUploadLimitReached.class));
+    excess.onError(Status.CANCELLED.asRuntimeException());
+    uploads.forEach(upload -> upload.onError(Status.CANCELLED.asRuntimeException()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject an upload without the segment upload limit marker when the global declared"
+          + " byte budget is exhausted")
+  void shouldRejectUploadWithoutTheSegmentUploadLimitMarkerWhenGlobalDeclaredByteBudgetIsExhausted()
+      throws Exception {
     var workerId = UUID.randomUUID();
     var sourceNamespaceId = UUID.randomUUID();
     var worker = worker(workerId);
@@ -1339,6 +1379,8 @@ class WorkerSessionGrpcServiceTest {
     assertThat(rejected.error()).isNotNull();
     assertThat(Status.fromThrowable(rejected.error()).getCode())
         .isEqualTo(Status.Code.RESOURCE_EXHAUSTED);
+    assertThat(statusDetails(rejected.error()))
+        .noneMatch(detail -> detail.is(SegmentUploadLimitReached.class));
 
     uploads.removeFirst().onError(Status.CANCELLED.asRuntimeException());
     var resumed = new RecordingUploadResponseObserver();
