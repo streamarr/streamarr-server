@@ -6043,6 +6043,29 @@ class HlsStreamingServiceTest {
             OptionalInt.empty()));
   }
 
+  @Test
+  @DisplayName(
+      "Should play the audio track the viewer switched to when the session prefers another"
+          + " language")
+  void shouldPlayTheAudioTrackTheViewerSwitchedToWhenTheSessionPrefersAnotherLanguage() {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra"));
+    var file = seedMediaFile();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId())
+                    .options(
+                        StreamingOptions.builder()
+                            .quality(VideoQuality.ORIGINAL)
+                            .audioLanguage(Language.EN)
+                            .build())
+                    .audioTrackPosition(OptionalInt.of(1))
+                    .build()));
+
+    assertThat(session.getMediaProbe().sessionAudioTrackPosition()).hasValue(1);
+  }
+
   // ADR 0045: a player that selects audio tracks direct-plays a file with several, and selects the
   // audio track that the stream decision names: the track that HLS plays for the same file.
   @Test
