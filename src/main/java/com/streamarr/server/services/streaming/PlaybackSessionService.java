@@ -1263,6 +1263,7 @@ public class PlaybackSessionService implements AutoCloseable {
           return Optional.of(
               PlaybackSessionSnapshot.builder()
                   .playbackSessionId(playback.id)
+                  .mediaFileId(playback.command.mediaFileId())
                   .formatAttemptCount(playback.formatAttemptCount)
                   .maximumFormatAttempts(recoveryPolicy.maximumFormatAttempts())
                   .requestedChoice(playback.requestedChoice)

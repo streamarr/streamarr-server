@@ -1434,6 +1434,101 @@ class CedarIdentityPoliciesTest {
   }
 
   @Nested
+  @DisplayName("Shared playback reports")
+  class SharedPlaybackReports {
+
+    private final List<Intent.UnitIntent> serverAdminIntents =
+        List.of(new Intent.ViewPlaybackReports(), new Intent.MarkPlaybackReportRead());
+
+    @Test
+    @DisplayName("Should allow sharing a playback report when every live playback fact holds")
+    void shouldAllowSharingPlaybackReportWhenEveryLivePlaybackFactHolds() {
+      assertThat(decide(selecting(personal.getId()), new Intent.SharePlaybackReport()))
+          .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should allow sharing a playback report when the session is device-bound")
+    void shouldAllowSharingPlaybackReportWhenSessionIsDeviceBound() {
+      assertThat(decide(onDevice(selecting(personal.getId())), new Intent.SharePlaybackReport()))
+          .isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName("Should deny sharing a playback report when the session is revoked")
+    void shouldDenySharingPlaybackReportWhenSessionIsRevoked() {
+      sessions.revoke(session.getId(), SessionRevocationReason.LOGOUT, Instant.now());
+
+      assertThat(decide(selecting(personal.getId()), new Intent.SharePlaybackReport()))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should deny sharing a playback report when the live session no longer selects the"
+            + " Profile")
+    void shouldDenySharingPlaybackReportWhenLiveSessionNoLongerSelectsProfile() {
+      var identity = selecting(personal.getId());
+      session.setSelectedProfileId(null);
+      sessions.save(session);
+
+      assertThat(decide(identity, new Intent.SharePlaybackReport())).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should deny sharing a playback report when the Account is disabled")
+    void shouldDenySharingPlaybackReportWhenAccountIsDisabled() {
+      account.setEnabled(false);
+      accounts.save(account);
+
+      assertThat(decide(selecting(personal.getId()), new Intent.SharePlaybackReport()))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should allow reading and marking reports read when the caller is ServerAdmin")
+    void shouldAllowReadingAndMarkingReportsReadWhenCallerIsServerAdmin() {
+      account.setServerAdmin(true);
+      accounts.save(account);
+
+      assertThat(serverAdminIntents)
+          .allSatisfy(intent -> assertThat(decide(atHome(), intent)).isEqualTo(ALLOWED));
+    }
+
+    @Test
+    @DisplayName("Should deny reading and marking reports read when the caller is not ServerAdmin")
+    void shouldDenyReadingAndMarkingReportsReadWhenCallerIsNotServerAdmin() {
+      assertThat(serverAdminIntents)
+          .allSatisfy(
+              intent -> assertThat(decide(selecting(personal.getId()), intent)).isEqualTo(DENIED));
+    }
+
+    @Test
+    @DisplayName(
+        "Should deny reading and marking reports read when the ServerAdmin session is"
+            + " device-bound")
+    void shouldDenyReadingAndMarkingReportsReadWhenServerAdminSessionIsDeviceBound() {
+      account.setServerAdmin(true);
+      accounts.save(account);
+
+      assertThat(serverAdminIntents)
+          .allSatisfy(intent -> assertThat(decide(onDevice(atHome()), intent)).isEqualTo(DENIED));
+    }
+
+    @Test
+    @DisplayName(
+        "Should deny reading and marking reports read when the ServerAdmin Account is disabled")
+    void shouldDenyReadingAndMarkingReportsReadWhenServerAdminAccountIsDisabled() {
+      account.setServerAdmin(true);
+      account.setEnabled(false);
+      accounts.save(account);
+
+      assertThat(serverAdminIntents)
+          .allSatisfy(intent -> assertThat(decide(atHome(), intent)).isEqualTo(DENIED));
+    }
+  }
+
+  @Nested
   @DisplayName("Active streams")
   class ActiveStreams {
 
@@ -1604,6 +1699,10 @@ class CedarIdentityPoliciesTest {
 
   private AuthenticatedIdentity visiting() {
     return identityBuilder().contextHouseholdId(visitedHouseholdId).build();
+  }
+
+  private AuthenticatedIdentity selecting(UUID profileId) {
+    return identityBuilder().scope(TokenScope.PROFILE).profileId(profileId).build();
   }
 
   private AuthenticatedIdentity watching(UUID profileId) {

@@ -215,12 +215,15 @@ class AuthorizationParityTest {
           CHANGE_ENCODER_PRESET,
           VIEW_IDLE_SEGMENT_RETENTION,
           CHANGE_IDLE_SEGMENT_RETENTION,
+          VIEW_PLAYBACK_REPORTS,
+          MARK_PLAYBACK_REPORT_READ,
           VIEW_ACTIVE_STREAMS ->
           "serverAdministration";
       case VIEW_PROFILE_PICKER,
           SELECT_PROFILE,
           PLAYBACK,
           SET_LANGUAGE_PREFERENCES,
+          SHARE_PLAYBACK_REPORT,
           VIEW_PROFILE_ACTIVITY,
           VIEW_HOUSEHOLD_ADMINISTRATION,
           VIEW_ACCOUNT_ADMINISTRATION,
@@ -363,6 +366,9 @@ class AuthorizationParityTest {
         new Intent.ChangeEncoderPreset(),
         new Intent.ViewIdleSegmentRetention(),
         new Intent.ChangeIdleSegmentRetention(),
+        new Intent.SharePlaybackReport(),
+        new Intent.ViewPlaybackReports(),
+        new Intent.MarkPlaybackReportRead(),
         new Intent.ViewActiveStreams());
   }
 }

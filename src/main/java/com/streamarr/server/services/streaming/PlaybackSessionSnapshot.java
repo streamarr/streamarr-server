@@ -16,6 +16,7 @@ import lombok.NonNull;
 @Builder
 public record PlaybackSessionSnapshot(
     @NonNull UUID playbackSessionId,
+    @NonNull UUID mediaFileId,
     int formatAttemptCount,
     int maximumFormatAttempts,
     @NonNull VideoQuality requestedChoice,
