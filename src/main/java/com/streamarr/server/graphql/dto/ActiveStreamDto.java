@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.dto;
 
+import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.media.MediaFileTitle;
 import com.streamarr.server.domain.streaming.PlaybackSnapshot;
 import com.streamarr.server.services.streaming.ActiveStream;
@@ -14,6 +15,7 @@ public record ActiveStreamDto(
     ProfileDto profile,
     String deviceName,
     String mediaFileId,
+    BaseCollectable<?> media,
     String title,
     String seriesTitle,
     Integer seasonNumber,
@@ -36,6 +38,7 @@ public record ActiveStreamDto(
         .profile(new ProfileDto(stream.profileId().toString(), stream.profileName().orElse(null)))
         .deviceName(stream.deviceName().orElse(null))
         .mediaFileId(stream.mediaFileId().toString())
+        .media(stream.media().orElse(null))
         .title(title.flatMap(MediaFileTitle::title).orElse(null))
         .seriesTitle(title.flatMap(MediaFileTitle::seriesTitle).orElse(null))
         .seasonNumber(

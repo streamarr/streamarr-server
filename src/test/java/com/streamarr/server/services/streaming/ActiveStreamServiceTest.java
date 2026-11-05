@@ -10,7 +10,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.media.Episode;
+import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaFileTitle;
+import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -19,7 +23,9 @@ import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeCreatingStreamingService;
+import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.ProfileFixture;
@@ -30,6 +36,7 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -51,6 +58,8 @@ class ActiveStreamServiceTest {
   private final FakeProfileRepository profiles = new FakeProfileRepository();
   private final FakeAuthSessionRepository authSessions = new FakeAuthSessionRepository();
   private final FakeMediaFileRepository mediaFiles = new FakeMediaFileRepository();
+  private final FakeMovieRepository movies = new FakeMovieRepository();
+  private final FakeEpisodeRepository episodes = new FakeEpisodeRepository();
   private final ActiveStreamService service =
       ActiveStreamService.builder()
           .authorizationService(authorization)
@@ -59,6 +68,8 @@ class ActiveStreamServiceTest {
           .profileRepository(profiles)
           .authSessionRepository(authSessions)
           .mediaFileRepository(mediaFiles)
+          .movieRepository(movies)
+          .episodeRepository(episodes)
           .build();
 
   @Test
@@ -115,6 +126,25 @@ class ActiveStreamServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should link each stream to its movie or episode and to no media when its file has no match")
+  void shouldLinkEachStreamToItsMovieOrEpisodeAndToNoMediaWhenItsFileHasNoMatch() {
+    var movie = movies.save(Movie.builder().title("A Movie").build());
+    var episode = episodes.save(Episode.builder().title("Pilot").episodeNumber(2).build());
+    var moviePlayback = startedPlaybackOf(matchedFile(movie.getId()));
+    var episodePlayback = startedPlaybackOf(matchedFile(episode.getId()));
+    var unmatchedPlayback = startedPlaybackOf(unmatchedFile());
+
+    var media =
+        service.activeStreams(authorization.currentIdentity()).stream()
+            .collect(Collectors.toMap(ActiveStream::playbackSessionId, ActiveStream::media));
+
+    assertThat(media.get(moviePlayback)).containsSame(movie);
+    assertThat(media.get(episodePlayback)).containsSame(episode);
+    assertThat(media.get(unmatchedPlayback)).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should refuse the active streams when the caller is not allowed to view them")
   void shouldRefuseTheActiveStreamsWhenTheCallerIsNotAllowedToViewThem() {
     acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
@@ -150,6 +180,7 @@ class ActiveStreamServiceTest {
               assertThat(preparing.profileName()).isEmpty();
               assertThat(preparing.deviceName()).isEmpty();
               assertThat(preparing.title()).isEmpty();
+              assertThat(preparing.media()).isEmpty();
               assertThat(preparing.timeline()).isEmpty();
               assertThat(preparing.decision()).isEmpty();
               assertThat(preparing.workers()).isEmpty();
@@ -179,6 +210,21 @@ class ActiveStreamServiceTest {
         .containsExactly(playing.playbackSessionId());
     assertThat(service.activeStream(endedSnapshot.playbackSessionId())).isEmpty();
     assertThat(service.activeStream(failing.playbackSessionId())).isEmpty();
+  }
+
+  private UUID matchedFile(UUID mediaId) {
+    return mediaFiles
+        .save(MediaFile.builder().mediaId(mediaId).status(MediaFileStatus.MATCHED).build())
+        .getId();
+  }
+
+  private UUID unmatchedFile() {
+    return mediaFiles.save(MediaFile.builder().status(MediaFileStatus.UNMATCHED).build()).getId();
+  }
+
+  private UUID startedPlaybackOf(UUID mediaFileId) {
+    var command = startPlaybackBuilder().mediaFileId(mediaFileId).build();
+    return acceptedPlayback(playbackSessions.start(command)).playbackSessionId();
   }
 
   private static StreamSession readySession(PlaybackSessionSnapshot snapshot) {

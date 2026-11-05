@@ -1,17 +1,22 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.BaseAuditableEntity;
+import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileTitle;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
+import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Intent;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -38,6 +43,8 @@ public class ActiveStreamService {
   private final ProfileRepository profileRepository;
   private final AuthSessionRepository authSessionRepository;
   private final MediaFileRepository mediaFileRepository;
+  private final MovieRepository movieRepository;
+  private final EpisodeRepository episodeRepository;
 
   /** Requires a ServerAdmin on a session that is not device-bound. */
   public void requireViewActiveStreams(@NonNull AuthenticatedIdentity identity) {
@@ -79,8 +86,9 @@ public class ActiveStreamService {
     var titles =
         mediaFileRepository.findTitlesByMediaFileIds(
             ids(activities, PlaybackSessionActivity::mediaFileId));
+    var media = mediaByMediaFileId(ids(activities, PlaybackSessionActivity::mediaFileId));
     return activities.stream()
-        .map(activity -> describe(activity, profiles, authSessions, titles))
+        .map(activity -> describe(activity, profiles, authSessions, titles, media))
         .toList();
   }
 
@@ -88,7 +96,8 @@ public class ActiveStreamService {
       PlaybackSessionActivity activity,
       Map<UUID, Profile> profiles,
       Map<UUID, AuthSession> authSessions,
-      Map<UUID, MediaFileTitle> titles) {
+      Map<UUID, MediaFileTitle> titles,
+      Map<UUID, BaseCollectable<?>> media) {
     var authority = activity.authority();
     var ready = readySession(activity);
     return ActiveStream.builder()
@@ -100,10 +109,28 @@ public class ActiveStreamService {
                 .map(AuthSession::getDeviceName))
         .mediaFileId(activity.mediaFileId())
         .title(Optional.ofNullable(titles.get(activity.mediaFileId())))
+        .media(Optional.ofNullable(media.get(activity.mediaFileId())))
         .timeline(ready.map(StreamSession::getPlaybackSnapshot))
         .decision(activity.decision())
         .workers(ready.map(this::workersOf).orElseGet(List::of))
         .build();
+  }
+
+  // One read of the media files and one each of their movies and episodes, however many streams.
+  private Map<UUID, BaseCollectable<?>> mediaByMediaFileId(List<UUID> mediaFileIds) {
+    var mediaIdByMediaFileId =
+        mediaFileRepository.findAllById(mediaFileIds).stream()
+            .filter(file -> file.getMediaId() != null)
+            .collect(Collectors.toMap(MediaFile::getId, MediaFile::getMediaId));
+    var mediaIds = mediaIdByMediaFileId.values().stream().distinct().toList();
+    Map<UUID, BaseCollectable<?>> mediaById = new HashMap<>();
+    movieRepository.findAllById(mediaIds).forEach(movie -> mediaById.put(movie.getId(), movie));
+    episodeRepository
+        .findAllById(mediaIds)
+        .forEach(episode -> mediaById.put(episode.getId(), episode));
+    return mediaIdByMediaFileId.entrySet().stream()
+        .filter(entry -> mediaById.containsKey(entry.getValue()))
+        .collect(Collectors.toMap(Map.Entry::getKey, entry -> mediaById.get(entry.getValue())));
   }
 
   private static Optional<StreamSession> readySession(PlaybackSessionActivity activity) {

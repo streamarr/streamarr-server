@@ -35,6 +35,12 @@ type ActiveStream {
     "The device name that the viewer's sign-in gave, such as the app and device. Null when it gave none."
     deviceName: String
     mediaFileId: ID!
+    """
+    The movie or episode that the stream plays. Null for a media file without a matched movie or episode. Its
+    watchStatus, watchProgress, lastWatchedAt and languagePreference describe the caller's selected Profile,
+    not the viewer's, and fail when the caller has no selected Profile.
+    """
+    media: ActiveStreamMedia
     "The movie or episode title. Null for a media file without a matched movie or episode."
     title: String
     "The series of an episode. Null for a movie."
@@ -55,6 +61,8 @@ type ActiveStream {
     "The worker connection that runs each running job of the stream, by its worker session id."
     workers: [String!]!
 }
+
+union ActiveStreamMedia = Movie | Episode
 
 type ActiveStreamProfile {
     id: ID!

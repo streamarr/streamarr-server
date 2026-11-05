@@ -14,7 +14,9 @@ import com.streamarr.server.domain.media.MediaFileTitle;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeCreatingStreamingService;
+import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.graphql.dto.ActiveStreamDto;
@@ -216,6 +218,8 @@ class ActiveStreamEventListenerTest {
             .profileRepository(new FakeProfileRepository())
             .authSessionRepository(new FakeAuthSessionRepository())
             .mediaFileRepository(mediaFiles)
+            .movieRepository(new FakeMovieRepository())
+            .episodeRepository(new FakeEpisodeRepository())
             .build();
     return new ActiveStreamEventListener(service, broadcaster, meterRegistry, publicationScheduler);
   }

@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.media.MediaFileTitle;
 import com.streamarr.server.domain.streaming.PlaybackSnapshot;
 import java.util.List;
@@ -11,9 +12,9 @@ import lombok.NonNull;
 /**
  * One playback session that plays or prepares a stream now, as a ServerAdmin sees it (#751). {@code
  * deviceName} is the name that the viewer's sign-in gave its device, empty when it gave none.
- * {@code title} is empty for a media file without a matched movie or episode. {@code timeline} and
- * {@code decision} are empty while the current format attempt prepares. {@code workers} names the
- * worker connection that runs each running job.
+ * {@code title} and {@code media}, the movie or episode, are empty for a media file without a
+ * matched movie or episode. {@code timeline} and {@code decision} are empty while the current
+ * format attempt prepares. {@code workers} names the worker connection that runs each running job.
  */
 @Builder
 public record ActiveStream(
@@ -23,6 +24,7 @@ public record ActiveStream(
     @NonNull Optional<String> deviceName,
     @NonNull UUID mediaFileId,
     @NonNull Optional<MediaFileTitle> title,
+    @NonNull Optional<BaseCollectable<?>> media,
     @NonNull Optional<PlaybackSnapshot> timeline,
     @NonNull Optional<PlaybackDecision> decision,
     @NonNull List<String> workers) {

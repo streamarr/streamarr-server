@@ -9,14 +9,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.media.Season;
+import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.repositories.media.EpisodeRepository;
+import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.repositories.media.SeasonRepository;
+import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
@@ -74,6 +81,22 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
         }
       }
       """;
+  private static final String MEDIA =
+      """
+      media {
+        __typename
+        ... on Movie { title runtime images { imageType } }
+        ... on Episode {
+          title episodeNumber images { imageType }
+          season { seasonNumber series { title images { imageType } } }
+        }
+      }
+      """;
+  private static final String MEDIA_SUBSCRIPTION =
+      """
+      subscription { activeStreamsChanged { playbackSessionId activeStream { %s } } }
+      """
+          .formatted(MEDIA);
   private static final String CAPABILITIES =
       """
       {video: [{codecFamily: H264, codecProfiles: [{profile: H264_HIGH, maxLevel: 41}], \
@@ -87,6 +110,10 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
   @Autowired private MeterRegistry meterRegistry;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MovieRepository movieRepository;
+  @Autowired private SeriesRepository seriesRepository;
+  @Autowired private SeasonRepository seasonRepository;
+  @Autowired private EpisodeRepository episodeRepository;
+  @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private DataSource dataSource;
 
@@ -214,6 +241,50 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
         .singleElement()
         .satisfies(stream -> assertThat(stream.path("state").asString()).isEqualTo("PAUSED"));
     assertThat(ended.path("activeStream").isNull()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should link each active stream to its movie, its episode with season and series, or no media"
+          + " for an unmatched file")
+  void shouldLinkEachActiveStreamToItsMovieItsEpisodeWithSeasonAndSeriesOrNoMediaWhenUnmatched() {
+    var admin = adminBearer();
+    var socket = connect(admin);
+    socket.subscribe("streams", MEDIA_SUBSCRIPTION);
+    activeSubscriptions.awaitCount(FIELD, 1);
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+
+    var moviePlayback = startPlayback(savedMovieFile());
+    var deliveredMovie = nextChange(socket, moviePlayback).path("activeStream").path("media");
+    var episodePlayback = startPlayback(savedEpisodeFile(library));
+    var deliveredEpisode = nextChange(socket, episodePlayback).path("activeStream").path("media");
+    var unmatchedPlayback = startPlayback(savedUnmatchedFile(library));
+    var deliveredUnmatched =
+        nextChange(socket, unmatchedPlayback).path("activeStream").path("media");
+    var listed =
+        http.execute(admin, "query { activeStreams { playbackSessionId %s } }".formatted(MEDIA));
+
+    assertThat(listed.path("errors").isMissingNode()).as("errors in %s", listed).isTrue();
+    var listedMedia = listed.path("data").path("activeStreams");
+    for (var media : List.of(deliveredMovie, listedMedia(listedMedia, moviePlayback))) {
+      assertThat(media.path("__typename").asString()).isEqualTo("Movie");
+      assertThat(media.path("title").asString()).isEqualTo("Streamed Movie");
+      assertThat(media.path("runtime").asInt()).isEqualTo(118);
+      assertThat(media.path("images").isArray()).isTrue();
+    }
+
+    for (var media : List.of(deliveredEpisode, listedMedia(listedMedia, episodePlayback))) {
+      assertThat(media.path("__typename").asString()).isEqualTo("Episode");
+      assertThat(media.path("title").asString()).isEqualTo("Pilot");
+      assertThat(media.path("episodeNumber").asInt()).isEqualTo(3);
+      assertThat(media.path("season").path("seasonNumber").asInt()).isEqualTo(2);
+      assertThat(media.path("season").path("series").path("title").asString())
+          .isEqualTo("A Series");
+      assertThat(media.path("season").path("series").path("images").isArray()).isTrue();
+    }
+
+    assertThat(deliveredUnmatched.isNull()).isTrue();
+    assertThat(listedMedia(listedMedia, unmatchedPlayback).isNull()).isTrue();
   }
 
   // The active-stream read of the auth session waits on the table's lock, which the timeline report
@@ -374,6 +445,23 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
     }
   }
 
+  private static JsonNode listedMedia(JsonNode activeStreams, String playbackId) {
+    return activeStreams
+        .valueStream()
+        .filter(stream -> playbackId.equals(stream.path("playbackSessionId").asString()))
+        .findFirst()
+        .orElseThrow(() -> new AssertionError("activeStreams does not list " + playbackId))
+        .path("media");
+  }
+
+  private String startPlayback(UUID mediaFileId) {
+    var created = http.execute(authTestSupport.profileBearer(viewer), createMutation(mediaFileId));
+    var playbackId =
+        created.path("data").path("createPlaybackSession").path("playbackSession").path("id");
+    openPlaybacks.add(playbackId.asString());
+    return playbackId.asString();
+  }
+
   private UUID savedMovieFile() {
     Library library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     var movie =
@@ -381,17 +469,43 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
             Movie.builder()
                 .title("Streamed Movie")
                 .titleSort("Streamed Movie")
+                .runtime(118)
                 .library(library)
-                .files(
-                    Set.of(
-                        MediaFile.builder()
-                            .libraryId(library.getId())
-                            .status(MediaFileStatus.MATCHED)
-                            .filename("streamed.mkv")
-                            .filepathUri("file:///media/" + UUID.randomUUID() + ".mkv")
-                            .build()))
+                .files(Set.of(fileIn(library).status(MediaFileStatus.MATCHED).build()))
                 .build());
     return movie.getFiles().iterator().next().getId();
+  }
+
+  private UUID savedEpisodeFile(Library library) {
+    var series =
+        seriesRepository.saveAndFlush(
+            Series.builder().title("A Series").titleSort("A Series").library(library).build());
+    var season =
+        seasonRepository.saveAndFlush(
+            Season.builder().seasonNumber(2).series(series).library(library).build());
+    var episode =
+        episodeRepository.saveAndFlush(
+            Episode.builder()
+                .title("Pilot")
+                .episodeNumber(3)
+                .season(season)
+                .library(library)
+                .files(Set.of(fileIn(library).status(MediaFileStatus.MATCHED).build()))
+                .build());
+    return episode.getFiles().iterator().next().getId();
+  }
+
+  private UUID savedUnmatchedFile(Library library) {
+    return mediaFileRepository
+        .saveAndFlush(fileIn(library).status(MediaFileStatus.UNMATCHED).build())
+        .getId();
+  }
+
+  private static MediaFile.MediaFileBuilder<?, ?> fileIn(Library library) {
+    return MediaFile.builder()
+        .libraryId(library.getId())
+        .filename(UUID.randomUUID() + ".mkv")
+        .filepathUri("file:///media/" + UUID.randomUUID() + ".mkv");
   }
 
   private String adminBearer() {
