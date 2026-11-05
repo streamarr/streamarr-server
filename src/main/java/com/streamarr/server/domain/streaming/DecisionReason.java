@@ -80,7 +80,10 @@ public enum DecisionReason {
   AUDIO_CHANNELS_NOT_DECLARED,
   /** The source's audio codec string is one that HLS delivery cannot copy, such as AAC Main. */
   AUDIO_SOURCE_NOT_COPYABLE,
-  /** A lower audio step keeps the output within the viewer's maximum bitrate. */
+  /**
+   * The viewer's maximum bitrate takes a lower audio step. The output can still exceed a maximum
+   * below the lowest audio and video rates that the ladder encodes.
+   */
   AUDIO_LOWERED_FOR_BITRATE_LIMIT,
   /** The probe's facts name no single source container that a declaration can list. */
   SOURCE_CONTAINER_UNKNOWN,
