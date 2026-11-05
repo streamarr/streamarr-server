@@ -248,7 +248,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 ### Flyway
 - **NEVER edit a migration that exists on `main`** — in-place edits break checksum validation on every existing database; write a new incremental migration instead
 - **Before merging, re-check your `V###` number against `main`** — parallel branches have collided (two V039s); renumber yours if taken
-- CI rejects a pull request that adds a migration at or below the base branch's highest version (`.github/actions/flyway-migration-order.py`): a database that applied the higher version refuses to start
+- CI rejects a pull request that adds a migration at or below the base branch's highest version, or a `V` file not named `V<digits>__<description>.sql` or `.java` (`.github/actions/flyway-migration-order.py`): a database that applied the higher version refuses to start
 - SQL migrations in `src/main/resources/db/migration`; Java migrations (data transforms) in `src/main/java/db/migration`
 - When changing a stored value's representation (e.g. path → URI), define the encode/decode contract in one codec class with a round-trip test first, then migrate call sites
 

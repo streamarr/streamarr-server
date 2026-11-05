@@ -221,27 +221,31 @@ class FlywayMigrationOrderTests(unittest.TestCase):
 
         self.assertRejected(result, f"{SQL}/V117__Create_Library.sql", "V118")
 
-    def test_shouldRejectAddedMigrationWhenItsNameHasNoDescription(self):
+    def test_shouldRejectAddedMigrationWhenItsDescriptionIsEmpty(self):
         self.publish_main(f"{SQL}/V118__Store_Skipped_File_Reasons.sql")
         self.start_pull_request()
-        self.commit(f"{SQL}/V116__.sql", f"{JAVA}/V117.java")
+        self.commit(f"{SQL}/V116__.sql")
 
         result = self.check()
 
         self.assertRejected(result, f"{SQL}/V116__.sql", "V118")
-        self.assertRejected(result, f"{JAVA}/V117.java", "V118")
 
-    def test_shouldRejectAddedMigrationWhenFlywayAcceptsItsUppercaseSuffixOrSignedVersion(self):
+    def test_shouldRejectAddedFileWhenFlywayCouldReadItsNameAsAnotherVersion(self):
+        names = [f"{SQL}/V116__Store_Language_Preferences.SQL", f"{SQL}/V+117__Backfill.sql",
+            f"{SQL}/V117_+1__Backfill.sql", f"{SQL}/V117_\u0661__Backfill.sql",
+            f"{SQL}/V117__Backfill.\u017fql", f"{SQL}/Vcurrent__Backfill.sql",
+            f"{SQL}/V9223372036854775808__Backfill.sql", f"{JAVA}/V117.java"]
         self.publish_main(f"{SQL}/V118__Store_Skipped_File_Reasons.sql")
         self.start_pull_request()
-        self.commit(f"{SQL}/V116__Store_Language_Preferences.SQL", f"{SQL}/V+117__Backfill.sql")
+        self.commit(*names)
 
         result = self.check()
 
-        self.assertRejected(result, f"{SQL}/V116__Store_Language_Preferences.SQL", "V118")
-        self.assertRejected(result, f"{SQL}/V+117__Backfill.sql", "V118")
+        for name in names:
+            with self.subTest(name=name):
+                self.assertRejected(result, name, "V118")
 
-    def test_shouldRejectAddedMigrationWhenTheBaseBranchHighestHasAnUppercaseSuffix(self):
+    def test_shouldFailWhenTheBaseBranchHoldsAMigrationNameTheCheckCannotRead(self):
         self.publish_main(f"{SQL}/V118__Store_Skipped_File_Reasons.sql",
             f"{SQL}/V120__Store_Subtitle_Preferences.SQL")
         self.start_pull_request()
@@ -249,29 +253,9 @@ class FlywayMigrationOrderTests(unittest.TestCase):
 
         result = self.check()
 
-        self.assertRejected(result, f"{SQL}/V119__Store_Language_Preferences.sql",
-            f"{SQL}/V120__Store_Subtitle_Preferences.SQL")
-
-    def test_shouldRejectRenamedFileWhenFlywayIgnoredItsSignedLaterVersionPart(self):
-        self.publish_main(f"{SQL}/V118__Store_Skipped_File_Reasons.sql",
-            f"{SQL}/V117_+1__Backfill.sql")
-        self.start_pull_request()
-        self.git(self.checkout, "mv", f"{SQL}/V117_+1__Backfill.sql", f"{SQL}/V117_1__Backfill.sql")
-        self.commit(message="enable")
-
-        result = self.check()
-
-        self.assertRejected(result, f"{SQL}/V117_1__Backfill.sql", "V118")
-
-    def test_shouldAcceptAddedMigrationWhenFlywayIgnoresAHigherBaseBranchFile(self):
-        self.publish_main(f"{SQL}/V118__Store_Skipped_File_Reasons.sql",
-            f"{SQL}/V200_+1__Backfill.sql")
-        self.start_pull_request()
-        self.commit(f"{SQL}/V119__Store_Language_Preferences.sql")
-
-        result = self.check()
-
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(result.stderr, "")
+        self.assertIn(f"::error file={SQL}/V120__Store_Subtitle_Preferences.SQL", result.stdout)
 
     def test_shouldIgnoreMigrationWhenItReachedThePullRequestByMergingTheBaseBranch(self):
         self.publish_main(f"{SQL}/V116__Store_Language_Preferences.sql")

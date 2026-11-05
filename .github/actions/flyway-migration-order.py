@@ -10,9 +10,9 @@ import subprocess
 import sys
 
 MIGRATION_DIRECTORIES = ("src/main/resources/db/migration", "src/main/java/db/migration")
-# Flyway parses each version part as a BigInteger but splits parts only before a digit, so only
-# the first part can carry a sign; Flyway ignores a file whose later part is signed.
-VERSION = re.compile(r"[+-]?\d+(?:[._]\d+)*")
+# Flyway also reads signed, Unicode, aliased and uppercase-suffixed names, in ways that differ
+# from this pattern. Any other file whose name starts with V is unreadable and fails the check.
+MIGRATION_NAME = re.compile(r"V(?P<version>[0-9]{1,18}(?:[._][0-9]{1,18})*)__[^/]*\.(?:sql|java)")
 
 
 def git(*arguments):
@@ -32,35 +32,33 @@ def fetch(branch):
     return f"refs/remotes/origin/{branch}"
 
 
+def is_migration(path):
+    return path.rsplit("/", 1)[-1].startswith("V")
+
+
 def version(path):
-    stem, _, suffix = path.rsplit("/", 1)[-1].rpartition(".")
-    if suffix.lower() not in ("sql", "java") or not stem.startswith("V"):
+    """Return the version's sort key and label, or None when the name is unreadable."""
+    match = MIGRATION_NAME.fullmatch(path.rsplit("/", 1)[-1])
+    if match is None:
         return None
-    # Flyway accepts a missing or empty description: V117.java and V117__.sql are version 117.
-    raw = stem[1:].split("__", 1)[0]
-    if not VERSION.fullmatch(raw):
-        return None
-    parts = [int(part) for part in re.split(r"[._]", raw)]
+    parts = [int(part) for part in re.split(r"[._]", match["version"])]
     # Flyway treats trailing zero parts as equal: 1.0 is 1.
     while len(parts) > 1 and parts[-1] == 0:
         parts.pop()
-    return tuple(parts), f"V{raw}"
-
-
-def migrations(listing):
-    return {path: parsed for path in paths(listing) if (parsed := version(path)) is not None}
+    return tuple(parts), f"V{match['version']}"
 
 
 def introduced(changes):
-    """Yield the versions a diff introduces: additions, and renames that change the version."""
+    """Yield the migrations a diff introduces: additions, and renames that change the version."""
     fields = iter(paths(changes))
     for status in fields:
         source = next(fields) if status.startswith("R") else None
         path = next(fields)
-        parsed = version(path)
-        if parsed is None:
+        if not is_migration(path):
             continue
-        if source is not None and (previous := version(source)) and previous[0] == parsed[0]:
+        parsed = version(path)
+        previous = version(source) if source is not None else None
+        if parsed is not None and previous is not None and previous[0] == parsed[0]:
             continue
         yield path, parsed
 
@@ -72,6 +70,10 @@ def escape(value, property_value=False):
     return value
 
 
+def error(path, title, message):
+    print(f"::error file={escape(path, True)},title={escape(title, True)}::{escape(message)}")
+
+
 def main(arguments):
     if len(arguments) != 1:
         print(f"Usage: {sys.argv[0]} <base-branch>", file=sys.stderr)
@@ -79,26 +81,43 @@ def main(arguments):
     branch = arguments[0]
     base = fetch(branch)
     merge_base = git("merge-base", base, "HEAD").strip()
-    existing = migrations(git("ls-tree", "-r", "-z", "--name-only", base, "--",
-                              *MIGRATION_DIRECTORIES))
+    listing = git("ls-tree", "-r", "-z", "--name-only", base, "--", *MIGRATION_DIRECTORIES)
+    existing = {path: version(path) for path in paths(listing) if is_migration(path)}
     added = dict(introduced(git("diff", "--name-status", "-z", "--diff-filter=AR",
                                 "--find-renames", merge_base, "HEAD", "--",
                                 *MIGRATION_DIRECTORIES)))
-    if not existing:
-        print(f"{branch} has no versioned Flyway migrations")
-        return 0
 
-    highest_path, (highest, highest_label) = max(existing.items(), key=lambda item: item[1][0])
-    rejected = [(path, label) for path, (key, label) in sorted(added.items())
-                if path not in existing and key <= highest]
-    for path, label in rejected:
-        message = (f"{label} is at or below {branch}'s highest Flyway version {highest_label} "
-                   f"({highest_path}). A database that applied {highest_label} refuses to start "
-                   f"with a lower pending migration; renumber it above {highest_label}.")
-        print(f"::error file={escape(path, True)},title=Out-of-order Flyway migration::"
-              f"{escape(message)}")
+    unreadable_base = sorted(path for path, parsed in existing.items() if parsed is None)
+    for path in unreadable_base:
+        error(path, "Unreadable Flyway migration name",
+              f"{branch} holds a migration name this check cannot read, so it cannot find "
+              f"{branch}'s highest Flyway version. Name it V<digits>__<description>.sql or .java.")
+    if unreadable_base:
+        return 1
 
-    if rejected:
+    if existing:
+        highest_path, (highest, highest_label) = max(existing.items(), key=lambda item: item[1][0])
+    else:
+        highest_path, highest, highest_label = "no migration", (), "none"
+    failed = False
+    for path, parsed in sorted(added.items()):
+        if path in existing:
+            continue
+        if parsed is None:
+            failed = True
+            error(path, "Unreadable Flyway migration name",
+                  f"Flyway may read this name as a version at or below {branch}'s highest "
+                  f"Flyway version {highest_label} ({highest_path}). Name it "
+                  f"V<digits>__<description>.sql or .java with a version above {highest_label}.")
+        elif parsed[0] <= highest:
+            failed = True
+            error(path, "Out-of-order Flyway migration",
+                  f"{parsed[1]} is at or below {branch}'s highest Flyway version "
+                  f"{highest_label} ({highest_path}). A database that applied {highest_label} "
+                  f"refuses to start with a lower pending migration; renumber it above "
+                  f"{highest_label}.")
+
+    if failed:
         return 1
 
     print(f"Every added Flyway migration sorts above {branch}'s highest version "
