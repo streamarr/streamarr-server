@@ -134,6 +134,15 @@ class TranscodeDecisionReasonTest {
                     .build()),
             List.of(DecisionReason.VIDEO_BIT_DEPTH_NOT_DECLARED)),
         Arguments.of(
+            Named.of(
+                "an HEVC source whose bit depth the probe did not report",
+                hevcMain10().bitDepthUnreported(true).build().probe()),
+            client(
+                hevcEntryBuilder()
+                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .build()),
+            List.of(DecisionReason.VIDEO_BIT_DEPTH_UNKNOWN)),
+        Arguments.of(
             Named.of("a 1080p source to a 720p entry", Source.builder().build().probe()),
             client(h264EntryBuilder().maxWidth(1280).maxHeight(720).build()),
             List.of(DecisionReason.VIDEO_PICTURE_SIZE_NOT_DECLARED)),
@@ -381,6 +390,46 @@ class TranscodeDecisionReasonTest {
 
     assertThat(decision.transcodeMode().copiesVideo()).isFalse();
     assertThat(decision.reasons()).containsExactly(DecisionReason.BITRATE_ABOVE_VIEWER_LIMIT);
+  }
+
+  @Test
+  @DisplayName(
+      "Should name both viewer limits when a fixed quality and the maximum bitrate both refuse a"
+          + " copy")
+  void shouldNameBothViewerLimitsWhenAFixedQualityAndTheMaximumBitrateBothRefuseACopy() {
+    var limits =
+        ViewerLimits.builder()
+            .quality(VideoQuality.HIGH_720P)
+            .maxBitrate(OptionalLong.of(1_000_000))
+            .build();
+    var decision =
+        decide(
+            request(Source.builder().build().probe(), defaultDeclarationBuilder().build())
+                .viewerLimits(limits)
+                .build());
+
+    assertThat(decision.transcodeMode().copiesVideo()).isFalse();
+    assertThat(decision.reasons())
+        .containsExactly(
+            DecisionReason.PICTURE_ABOVE_VIEWER_LIMIT, DecisionReason.BITRATE_ABOVE_VIEWER_LIMIT);
+  }
+
+  @Test
+  @DisplayName(
+      "Should name the HDR10+ that a Dolby Vision copy strips when the client declares both")
+  void shouldNameTheHdr10PlusThatADolbyVisionCopyStripsWhenTheClientDeclaresBoth() {
+    var dolbyVision = profile81();
+    var withHdr10Plus =
+        new VideoDynamicRange(
+            dolbyVision.compatibleBase(), Presence.PRESENT, dolbyVision.dolbyVision());
+    var source = hevcMain10().dynamicRange(withHdr10Plus).build().probe();
+
+    var decision = decide(source, everyRangeClient());
+
+    assertThat(decision.transcodeMode().copiesVideo()).isTrue();
+    assertThat(decision.videoBitstreamRewrites()).contains(BitstreamRewrite.STRIP_HDR10_PLUS);
+    assertThat(decision.reasons())
+        .containsExactly(DecisionReason.HDR10_PLUS_STRIPPED_BESIDE_DOLBY_VISION);
   }
 
   @Test
@@ -656,6 +705,7 @@ class TranscodeDecisionReasonTest {
       String codec,
       String codecString,
       Integer bitDepth,
+      boolean bitDepthUnreported,
       VideoDynamicRange dynamicRange,
       Optional<VideoStreamProperties> videoProperties,
       FrameRateRule frameRateRule,
@@ -666,13 +716,21 @@ class TranscodeDecisionReasonTest {
       Integer audioBitrate,
       Long videoBitrate) {
 
+    private OptionalInt reportedBitDepth() {
+      if (bitDepthUnreported) {
+        return OptionalInt.empty();
+      }
+
+      return OptionalInt.of(bitDepth == null ? 8 : bitDepth);
+    }
+
     MediaProbe probe() {
       var videoCodec = codec == null ? "h264" : codec;
       var audio = audioCodec == null ? "aac" : audioCodec;
       var facts =
           VideoPlaybackFactsFixture.sdrH264FactsBuilder()
               .codecFamily(Optional.of(ProbedCodecFamily.fromProbedName(videoCodec)))
-              .bitDepth(OptionalInt.of(bitDepth == null ? 8 : bitDepth))
+              .bitDepth(reportedBitDepth())
               .codecString(Optional.of(codecString == null ? "avc1.640028" : codecString))
               .videoProperties(
                   videoProperties == null

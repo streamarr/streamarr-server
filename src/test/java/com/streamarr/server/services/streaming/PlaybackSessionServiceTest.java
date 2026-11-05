@@ -158,6 +158,29 @@ class PlaybackSessionServiceTest {
 
   @Test
   @DisplayName(
+      "Should report the measured source rate when the frame-rate rule's output rate is lower")
+  void shouldReportTheMeasuredSourceRateWhenTheFrameRateRulesOutputRateIsLower() {
+    var facts =
+        VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+            .frameRateRule(
+                VideoPlaybackFactsFixture.packetScanRule(119.88, new Fraction(60_000, 1_001)))
+            .build();
+    streams.sourceProbe = defaultProbeBuilder().videoPlaybackFacts(Optional.of(facts)).build();
+
+    var snapshot = accepted(service.start(startCommand().build()));
+
+    assertThat(snapshot.decisions())
+        .singleElement()
+        .satisfies(
+            decision -> {
+              assertThat(decision.video().delivery()).isEqualTo(PlaybackDelivery.COPY);
+              assertThat(decision.video().source().frameRate()).hasValue(119.88);
+              assertThat(decision.video().output().frameRate()).hasValue(119.88);
+            });
+  }
+
+  @Test
+  @DisplayName(
       "Should keep the copy's reasons and add the copy failure to the encode's when a copy falls"
           + " back to an encode")
   void shouldKeepTheCopysReasonsAndAddTheCopyFailureToTheEncodesWhenACopyFallsBackToAnEncode() {
