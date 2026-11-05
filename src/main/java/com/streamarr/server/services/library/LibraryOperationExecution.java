@@ -150,7 +150,7 @@ public class LibraryOperationExecution {
       }
     }
 
-    libraryFolderCheck.requirePassed(library);
+    libraryFolderCheck.requireScannableFolder(library);
     return libraryFileWalk.discoverFiles(library, operation.id(), admissionEnd);
   }
 
@@ -159,7 +159,7 @@ public class LibraryOperationExecution {
       throws InterruptedException {
     log.info("Starting {} library refresh.", library.getName());
     try {
-      requireLibraryFolderPassedUnlessStopped(library, operation);
+      requireScannableLibraryFolderUnlessStopRequested(library, operation);
       libraryRefreshService.refreshLibrary(library, operation, admissionEnd);
       log.info("Finished {} library refresh.", library.getName());
       return LibraryOperationConclusion.FINISHED;
@@ -171,13 +171,13 @@ public class LibraryOperationExecution {
 
   // A refresh reads no media file, so the check alone keeps a finished refresh from marking a
   // library HEALTHY whose folder a scan would fail.
-  private void requireLibraryFolderPassedUnlessStopped(
+  private void requireScannableLibraryFolderUnlessStopRequested(
       Library library, LibraryOperation operation) {
     if (operation.stopRequested()) {
       return;
     }
 
-    libraryFolderCheck.requirePassed(library);
+    libraryFolderCheck.requireScannableFolder(library);
   }
 
   private void end(LibraryOperation operation, LibraryOperationConclusion conclusion) {

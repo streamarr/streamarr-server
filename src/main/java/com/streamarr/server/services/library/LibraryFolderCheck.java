@@ -39,9 +39,11 @@ public class LibraryFolderCheck {
   private final MediaRoot mediaRoot;
 
   /**
-   * @throws LibraryFolderCheckFailedException if the library folder fails the check
+   * Requires a library folder that a scan can safely run on.
+   *
+   * @throws LibraryFolderCheckFailedException if the library folder is not scannable
    */
-  public void requirePassed(Library library) {
+  public void requireScannableFolder(Library library) {
     var problem = findProblem(library);
     if (problem.isEmpty()) {
       return;

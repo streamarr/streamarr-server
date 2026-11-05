@@ -1040,7 +1040,7 @@ class LibraryOperationExecutionTest {
     }
 
     // Empties the movie folder when the finishing step shares the operation's row, after the
-    // scan's own folder check passed.
+    // scan's own folder check found the folder scannable.
     private FakeLibraryOperationRepository emptyingBeforeTheFinishingStep(Path movieFolder) {
       return new FakeLibraryOperationRepository(fakeLibraryRepository) {
         @Override

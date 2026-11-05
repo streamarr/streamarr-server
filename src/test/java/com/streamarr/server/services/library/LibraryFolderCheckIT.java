@@ -178,8 +178,8 @@ class LibraryFolderCheckIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should end a refresh healthy when the library folder passes the check")
-  void shouldEndARefreshHealthyWhenTheLibraryFolderPassesTheCheck() throws IOException {
+  @DisplayName("Should end a refresh healthy when the library folder is scannable")
+  void shouldEndARefreshHealthyWhenTheLibraryFolderIsScannable() throws IOException {
     var libraryPath = Files.createDirectory(tempDir.resolve("library"));
     var library = saveLibrary(libraryPath);
     saveMediaFile(library, saveMovie(library), Files.createFile(libraryPath.resolve("movie.mkv")));

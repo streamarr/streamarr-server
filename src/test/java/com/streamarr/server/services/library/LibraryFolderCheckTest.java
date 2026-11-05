@@ -58,23 +58,23 @@ class LibraryFolderCheckTest {
   }
 
   @Test
-  @DisplayName("Should pass when the library folder holds an entry")
-  void shouldPassWhenTheLibraryFolderHoldsAnEntry() throws IOException {
+  @DisplayName("Should find the library folder scannable when it holds an entry")
+  void shouldFindTheLibraryFolderScannableWhenItHoldsAnEntry() throws IOException {
     var folder = Files.createDirectories(fileSystem.getPath("/library"));
     Files.createFile(folder.resolve("movie.mkv"));
     var library = libraryAt(folder);
     saveFileRecord(library, folder.resolve("movie.mkv"));
 
-    assertThatNoException().isThrownBy(() -> libraryFolderCheck.requirePassed(library));
+    assertThatNoException().isThrownBy(() -> libraryFolderCheck.requireScannableFolder(library));
     assertThat(meterRegistry.find(LibraryFolderCheck.FAILURES_METRIC).counters()).isEmpty();
   }
 
   @Test
-  @DisplayName("Should pass when the library folder is empty and the library has no file records")
-  void shouldPassWhenTheLibraryFolderIsEmptyAndTheLibraryHasNoFileRecords() throws IOException {
+  @DisplayName("Should find an empty library folder scannable when the library has no file records")
+  void shouldFindAnEmptyLibraryFolderScannableWhenTheLibraryHasNoFileRecords() throws IOException {
     var library = libraryAt(Files.createDirectories(fileSystem.getPath("/library")));
 
-    assertThatNoException().isThrownBy(() -> libraryFolderCheck.requirePassed(library));
+    assertThatNoException().isThrownBy(() -> libraryFolderCheck.requireScannableFolder(library));
     assertThat(meterRegistry.find(LibraryFolderCheck.FAILURES_METRIC).counters()).isEmpty();
   }
 
@@ -95,7 +95,7 @@ class LibraryFolderCheckTest {
     var otherLibrary = libraryAt(Files.createDirectories(fileSystem.getPath("/other")));
     saveFileRecord(otherLibrary, fileSystem.getPath("/other/movie.mkv"));
 
-    assertThatNoException().isThrownBy(() -> libraryFolderCheck.requirePassed(library));
+    assertThatNoException().isThrownBy(() -> libraryFolderCheck.requireScannableFolder(library));
   }
 
   @Test
@@ -135,7 +135,7 @@ class LibraryFolderCheckTest {
             .mediaRoot(mediaRootAt(fileSystem, "/media"))
             .build();
 
-    assertThatThrownBy(() -> failingCheck.requirePassed(library))
+    assertThatThrownBy(() -> failingCheck.requireScannableFolder(library))
         .isInstanceOfSatisfying(
             LibraryFolderCheckFailedException.class,
             failure -> assertThat(failure.getProblem()).isEqualTo(LibraryFolderProblem.UNREADABLE));
@@ -181,15 +181,17 @@ class LibraryFolderCheckTest {
   }
 
   @Test
-  @DisplayName("Should pass when only the way to the media root passes a soft link")
-  void shouldPassWhenOnlyTheWayToTheMediaRootPassesASoftLink(@TempDir Path temp)
-      throws IOException {
+  @DisplayName(
+      "Should find the library folder scannable when only the way to the media root passes a soft link")
+  void shouldFindTheLibraryFolderScannableWhenOnlyTheWayToTheMediaRootPassesASoftLink(
+      @TempDir Path temp) throws IOException {
     var realMediaRoot = Files.createDirectory(temp.resolve("real-media"));
     Files.createFile(Files.createDirectory(realMediaRoot.resolve("Movies")).resolve("movie.mkv"));
     var mediaRoot = Files.createSymbolicLink(temp.resolve("media"), realMediaRoot);
     var library = libraryAt(mediaRoot.resolve("Movies"));
 
-    assertThatNoException().isThrownBy(() -> checkWithMediaRoot(mediaRoot).requirePassed(library));
+    assertThatNoException()
+        .isThrownBy(() -> checkWithMediaRoot(mediaRoot).requireScannableFolder(library));
   }
 
   @Test
@@ -251,7 +253,7 @@ class LibraryFolderCheckTest {
 
   private void assertFailure(
       LibraryFolderCheck check, Library library, ExpectedFailure expectedFailure) {
-    assertThatThrownBy(() -> check.requirePassed(library))
+    assertThatThrownBy(() -> check.requireScannableFolder(library))
         .isInstanceOfSatisfying(
             LibraryFolderCheckFailedException.class,
             failure -> assertThat(failure.getProblem()).isEqualTo(expectedFailure.problem()));
