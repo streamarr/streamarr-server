@@ -123,7 +123,7 @@ public class HlsStreamingService implements StreamingService {
     }
 
     // Direct play uses no worker time, so it needs no connected worker (ADR 0045).
-    var directPlay = transcodeDecisionService.decideDirectPlay(directPlayRequest(command, probe));
+    var directPlay = transcodeDecisionService.decideDirectPlay(DirectPlayRequest.of(command, probe));
     if (directPlay instanceof DirectPlayChoice.Accepted(var container, var audioTrackPosition)) {
       var session =
           directPlaySession(command, mediaFile, probe)
@@ -248,16 +248,6 @@ public class HlsStreamingService implements StreamingService {
 
   // A direct-play stream session starts no job attempt, so it has no transcode decision, producer
   // or segments.
-  private static DirectPlayRequest directPlayRequest(
-      CreateStreamSessionCommand command, MediaProbe probe) {
-    return DirectPlayRequest.builder()
-        .source(probe)
-        .capabilityDeclaration(command.capabilityDeclaration())
-        .videoFormatConstraint(command.videoFormatConstraint())
-        .viewerLimits(ViewerLimits.of(command.options()))
-        .build();
-  }
-
   private static StreamSession.StreamSessionBuilder directPlaySession(
       CreateStreamSessionCommand command, MediaFile mediaFile, MediaProbe probe) {
     return StreamSession.builder()
