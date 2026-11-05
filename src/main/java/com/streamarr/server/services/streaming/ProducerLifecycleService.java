@@ -760,10 +760,11 @@ public class ProducerLifecycleService {
 
   /**
    * Starts a variant that the multivariant playlist lists, at the stream session's current segment.
-   * No other variant starts until the player requests one of its segments (ADR 0019). When no slot
-   * is free, another stream session's left variant stops first. Throws {@link
-   * TranscodeLimitReachedException} and starts nothing when the transcode limit still leaves no
-   * place for a stream session that encodes the video.
+   * A variant other than the first-listed one holds the playlist's place, as one that a served
+   * playlist starts (ADR 0050). No other variant starts until the player requests one of its
+   * segments (ADR 0019). When no slot is free, another stream session's left variant stops first.
+   * Throws {@link TranscodeLimitReachedException} and starts nothing when the transcode limit still
+   * leaves no place for a stream session that encodes the video.
    */
   public StreamSession startListedVariant(StreamSession session, String variantLabel) {
     var sessionId = session.getSessionId();
@@ -788,11 +789,23 @@ public class ProducerLifecycleService {
               throw new SessionNotFoundException(sessionId);
             }
 
+            holdThePlaylistsPlaceUnlessFirstListed(current, variantLabel);
             runtimeRegistry.save(current);
           }
 
           return current;
         });
+  }
+
+  // Only the upload budget starts a variant other than the first-listed one. Holding the
+  // playlist's place lets a request of another variant replace it, as when the first playlist
+  // lists the first-listed variant again because the budget no longer leaves it out.
+  private void holdThePlaylistsPlaceUnlessFirstListed(StreamSession session, String variantLabel) {
+    if (variantLabel.equals(session.firstListedVariant())) {
+      return;
+    }
+
+    variantsStartedForTheirPlaylist.put(session.getSessionId(), variantLabel);
   }
 
   /**
