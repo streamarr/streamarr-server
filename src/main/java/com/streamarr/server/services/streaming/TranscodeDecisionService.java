@@ -366,6 +366,10 @@ public class TranscodeDecisionService {
   // the plans before it.
   private static PlanChoice copyPlanBeforeTheKeyframeCheck(
       MediaProbe source, ClientCapabilityDeclaration declaration) {
+    if (source.videoCodec() == null) {
+      return new PlanChoice.Refused(List.of(DecisionReason.VIDEO_CODEC_UNKNOWN));
+    }
+
     var copy = VideoStreamCopy.of(source);
     var facts = source.videoPlaybackFacts();
     if (copy.isEmpty() || facts.isEmpty()) {

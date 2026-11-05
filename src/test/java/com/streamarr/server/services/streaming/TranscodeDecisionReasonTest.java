@@ -346,6 +346,11 @@ class TranscodeDecisionReasonTest {
             DecisionReason.VIDEO_CODEC_STRING_UNKNOWN),
         Arguments.of(
             Named.of(
+                "a source whose codec name the probe did not report",
+                Source.builder().codecNameUnreported(true).build().probe()),
+            DecisionReason.VIDEO_CODEC_UNKNOWN),
+        Arguments.of(
+            Named.of(
                 "an H.264 source whose bit depth the probe did not report",
                 Source.builder().bitDepthUnreported(true).build().probe()),
             DecisionReason.VIDEO_BIT_DEPTH_UNKNOWN),
@@ -823,6 +828,7 @@ class TranscodeDecisionReasonTest {
   @Builder
   record Source(
       String codec,
+      boolean codecNameUnreported,
       String codecString,
       boolean codecStringUnreported,
       Integer bitDepth,
@@ -894,7 +900,7 @@ class TranscodeDecisionReasonTest {
               .framerate(OptionalDouble.of(23.976))
               .width(1920)
               .height(1080)
-              .videoCodec(videoCodec)
+              .videoCodec(codecNameUnreported ? null : videoCodec)
               .audioCodec(audio)
               .bitrate(5_000_000)
               .audioChannels(reportedAudioChannels())
