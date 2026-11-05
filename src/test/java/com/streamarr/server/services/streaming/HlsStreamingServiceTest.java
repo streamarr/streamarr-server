@@ -7335,10 +7335,8 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName(
-      "Should list the encoded variants below the copy and start only the copy when Auto copies"
-          + " the video")
-  void shouldListTheEncodedVariantsBelowTheCopyAndStartOnlyTheCopyWhenAutoCopiesTheVideo() {
+  @DisplayName("Should list the encoded variants below the copy when Auto copies the video")
+  void shouldListTheEncodedVariantsBelowTheCopyWhenAutoCopiesTheVideo() {
     var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
 
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
@@ -7346,6 +7344,13 @@ class HlsStreamingServiceTest {
         .extracting(QualityVariant::label, QualityVariant::width, QualityVariant::height)
         .containsExactly(
             tuple("720p", 1280, 720), tuple("480p", 854, 480), tuple("360p", 640, 360));
+  }
+
+  @Test
+  @DisplayName("Should start only the copy when an Auto stream session lists lower variants")
+  void shouldStartOnlyTheCopyWhenAnAutoStreamSessionListsLowerVariants() {
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
     assertThat(transcodeExecutor.getStartedRequests())
         .singleElement()
         .satisfies(
@@ -7393,9 +7398,24 @@ class HlsStreamingServiceTest {
 
   @Test
   @DisplayName(
-      "Should start a lower variant's encode on the copy's segment list when the player first"
-          + " requests one of its segments")
-  void shouldStartALowerVariantsEncodeOnTheCopysSegmentListWhenThePlayerFirstRequestsItsSegment() {
+      "Should start the lower variant's encode when the player first requests one of its"
+          + " segments")
+  void shouldStartTheLowerVariantsEncodeWhenThePlayerFirstRequestsOneOfItsSegments() {
+    var lower = firstLowerVariantJobFor("480p", "480p/segment2.m4s");
+
+    assertThat(lower.variantLabel()).isEqualTo("480p");
+    assertThat(lower.transcodeDecision().transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(lower.transcodeDecision().encodeCodecProfile())
+        .contains(EncodeCodecProfile.H264_HIGH);
+    assertThat(lower.width()).isEqualTo(854);
+    assertThat(lower.startSequenceNumber()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName(
+      "Should run a lower variant's encode on the copy's segments and seek it like an encode when"
+          + " it starts after segment 0")
+  void shouldRunALowerVariantsEncodeOnTheCopysSegmentsAndSeekItLikeAnEncode() {
     // A keyframe every 2 s up to 118 s leaves the last 6 s slot, 120 s to 121 s, without one, so
     // the copy lists 20 segments where the grid has 21.
     probeResults.setDefaultProbe(
@@ -7403,27 +7423,28 @@ class HlsStreamingServiceTest {
             .duration(Duration.ofSeconds(121))
             .keyframes(ProbeFixture.keyframesEvery(Duration.ofSeconds(2), Duration.ofSeconds(119)))
             .build());
-    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
-    var sessionId = session.getSessionId();
 
-    var delivery =
-        CompletableFuture.supplyAsync(
-            () -> coordinator.deliver(sessionId, "480p", "480p/segment2.m4s"));
-    transcodeExecutor.awaitStartedRequestCount(2);
-    upload(sessionId, "480p", "480p/segment2.m4s");
+    var lower = firstLowerVariantJobFor("480p", "480p/segment2.m4s");
 
-    assertThat(delivery.join()).isInstanceOf(SegmentDelivery.Ready.class);
-    var lower = transcodeExecutor.getStartedRequests().getLast();
-    assertThat(lower.variantLabel()).isEqualTo("480p");
-    assertThat(lower.transcodeDecision().transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
-    assertThat(lower.transcodeDecision().encodeCodecProfile())
-        .contains(EncodeCodecProfile.H264_HIGH);
-    assertThat(lower.width()).isEqualTo(854);
-    assertThat(lower.startSequenceNumber()).isEqualTo(2);
     assertThat(lower.mediaSegmentCount()).isEqualTo(20);
     // The encode reads from the last keyframe at least half a second before 12 s, not from the
     // copy's keyframe at 12 s.
     assertThat(lower.keyframeSeekPosition()).contains(Duration.ofSeconds(10));
+  }
+
+  // Creates an Auto copy session, then requests a lower variant's segment as its player would, and
+  // answers the job that the request started.
+  private TranscodeRequest firstLowerVariantJobFor(String variantLabel, String segmentName) {
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    var sessionId = session.getSessionId();
+    var delivery =
+        CompletableFuture.supplyAsync(
+            () -> coordinator.deliver(sessionId, variantLabel, segmentName));
+    transcodeExecutor.awaitStartedRequestCount(2);
+    upload(sessionId, variantLabel, segmentName);
+
+    assertThat(delivery.join()).isInstanceOf(SegmentDelivery.Ready.class);
+    return transcodeExecutor.getStartedRequests().getLast();
   }
 
   @Test
@@ -8303,12 +8324,11 @@ class HlsStreamingServiceTest {
   }
 
   private void requestAndDeliver(UUID sessionId, String variantLabel, String segmentName) {
+    var startedJobs = transcodeExecutor.getStartedRequests().size();
     var delivery =
         CompletableFuture.supplyAsync(
             () -> coordinator.deliver(sessionId, variantLabel, segmentName));
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .until(() -> transcodeExecutor.isRunning(sessionId, variantLabel));
+    transcodeExecutor.awaitStartedRequestCount(startedJobs + 1);
     upload(sessionId, variantLabel, segmentName);
     assertThat(delivery.join()).isInstanceOf(SegmentDelivery.Ready.class);
   }
