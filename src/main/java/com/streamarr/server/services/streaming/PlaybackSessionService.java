@@ -377,6 +377,7 @@ public class PlaybackSessionService implements AutoCloseable {
     }
 
     streamingService.destroySession(ended.get().directPlayId());
+    changed(playback);
     return currentSnapshot(playback);
   }
 
