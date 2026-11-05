@@ -6,6 +6,7 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.d
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
 import static com.streamarr.server.fixtures.PlayerFiguresFixture.tvFiguresBuilder;
+import static com.streamarr.server.fixtures.PlayerFiguresFixture.unknownDisplayBuilder;
 import static com.streamarr.server.fixtures.PlayerFiguresFixture.unknownFiguresBuilder;
 import static com.streamarr.server.fixtures.PlayerFiguresFixture.webFiguresBuilder;
 import static com.streamarr.server.jooq.generated.tables.PlaybackReportDecision.PLAYBACK_REPORT_DECISION;
@@ -29,6 +30,8 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.playbackreport.NewPlaybackReport;
 import com.streamarr.server.services.playbackreport.PlaybackReport;
+import com.streamarr.server.services.playbackreport.PlayerFigures.PlayerAudio;
+import com.streamarr.server.services.playbackreport.PlayerHdrMode;
 import com.streamarr.server.services.streaming.AudioFormat;
 import com.streamarr.server.services.streaming.PlaybackDecision;
 import com.streamarr.server.services.streaming.PlaybackDecision.TrackDelivery;
@@ -145,6 +148,43 @@ class PlaybackReportRepositoryIT extends AbstractIntegrationTest {
     var id = save(reportBuilder().player(figures).build());
 
     assertThat(repository.findById(id)).map(PlaybackReport::player).contains(figures);
+  }
+
+  @Test
+  @DisplayName(
+      "Should read back the figures that the player could not name when the TV shows HDR"
+          + " without naming its format and is switching display modes")
+  void shouldReadBackFiguresPlayerCouldNotNameWhenTvShowsUnnamedHdrAndSwitchesDisplayModes() {
+    var figures =
+        tvFiguresBuilder()
+            .hdrMode(Optional.of(PlayerHdrMode.HDR))
+            .audio(
+                Optional.of(
+                    PlayerAudio.builder()
+                        .codec("eac3")
+                        .channels(OptionalInt.of(6))
+                        .dolbyAtmos(Optional.empty())
+                        .build()))
+            .display(
+                Optional.of(
+                    unknownDisplayBuilder().hdrMode(Optional.of(PlayerHdrMode.HDR)).build()))
+            .build();
+
+    var id = save(reportBuilder().player(figures).build());
+
+    assertThat(repository.findById(id)).map(PlaybackReport::player).contains(figures);
+  }
+
+  @Test
+  @DisplayName("Should read back no display when the TV reported none of its display figures")
+  void shouldReadBackNoDisplayWhenTvReportedNoneOfItsDisplayFigures() {
+    var figures = tvFiguresBuilder().display(Optional.of(unknownDisplayBuilder().build())).build();
+
+    var id = save(reportBuilder().player(figures).build());
+
+    assertThat(repository.findById(id))
+        .map(PlaybackReport::player)
+        .contains(figures.toBuilder().display(Optional.empty()).build());
   }
 
   @Test

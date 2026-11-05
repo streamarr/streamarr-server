@@ -61,6 +61,16 @@ public class PlaybackReportRepositoryImpl implements PlaybackReportRepository {
           .itemId(PLAYBACK_REPORT.ID)
           .build();
 
+  private static final PlayerDisplay UNKNOWN_DISPLAY =
+      PlayerDisplay.builder()
+          .width(OptionalInt.empty())
+          .height(OptionalInt.empty())
+          .hdrMode(Optional.empty())
+          .refreshRate(OptionalDouble.empty())
+          .dynamicRangeMatched(Optional.empty())
+          .frameRateMatched(Optional.empty())
+          .build();
+
   private final DSLContext dsl;
   private final ObjectMapper objectMapper;
 
@@ -206,7 +216,7 @@ public class PlaybackReportRepositoryImpl implements PlaybackReportRepository {
             audio -> {
               row.setAudioCodec(audio.codec());
               row.setAudioChannels(boxed(audio.channels()));
-              row.setAudioDolbyAtmos(audio.dolbyAtmos());
+              row.setAudioDolbyAtmos(audio.dolbyAtmos().orElse(null));
             });
     figures.display().ifPresent(display -> setDisplay(row, display));
     figures
@@ -235,15 +245,16 @@ public class PlaybackReportRepositoryImpl implements PlaybackReportRepository {
   }
 
   private static void setDisplay(PlaybackReportRecord row, PlayerDisplay display) {
-    row.setDisplayWidth(display.width());
-    row.setDisplayHeight(display.height());
-    row.setDisplayHdrMode(display.hdrMode().name());
-    row.setDisplayRefreshRate(display.refreshRate());
-    row.setDisplayDynamicRangeMatched(display.dynamicRangeMatched());
-    row.setDisplayFrameRateMatched(display.frameRateMatched());
+    row.setDisplayWidth(boxed(display.width()));
+    row.setDisplayHeight(boxed(display.height()));
+    row.setDisplayHdrMode(display.hdrMode().map(Enum::name).orElse(null));
+    row.setDisplayRefreshRate(boxed(display.refreshRate()));
+    row.setDisplayDynamicRangeMatched(display.dynamicRangeMatched().orElse(null));
+    row.setDisplayFrameRateMatched(display.frameRateMatched().orElse(null));
   }
 
-  // The migration's checks keep each group's columns null together.
+  // The migration's checks keep each group's columns null together, apart from the display's
+  // figures, which a TV reports one by one while it switches modes.
   private static PlayerFigures playerFigures(PlaybackReportRecord row) {
     return PlayerFigures.builder()
         .qualityStep(
@@ -272,20 +283,9 @@ public class PlaybackReportRepositoryImpl implements PlaybackReportRepository {
                         PlayerAudio.builder()
                             .codec(codec)
                             .channels(optionalInt(row.getAudioChannels()))
-                            .dolbyAtmos(row.getAudioDolbyAtmos())
+                            .dolbyAtmos(Optional.ofNullable(row.getAudioDolbyAtmos()))
                             .build()))
-        .display(
-            Optional.ofNullable(row.getDisplayWidth())
-                .map(
-                    width ->
-                        PlayerDisplay.builder()
-                            .width(width)
-                            .height(row.getDisplayHeight())
-                            .hdrMode(PlayerHdrMode.valueOf(row.getDisplayHdrMode()))
-                            .refreshRate(row.getDisplayRefreshRate())
-                            .dynamicRangeMatched(row.getDisplayDynamicRangeMatched())
-                            .frameRateMatched(row.getDisplayFrameRateMatched())
-                            .build()))
+        .display(display(row))
         .audioOutput(
             Optional.ofNullable(row.getAudioOutputRoute())
                 .map(route -> new PlayerAudioOutput(route, row.getAudioOutputChannels())))
@@ -303,6 +303,24 @@ public class PlaybackReportRepositoryImpl implements PlaybackReportRepository {
             Optional.ofNullable(row.getBrowserName())
                 .map(name -> new PlayerBrowser(name, row.getBrowserVersion())))
         .build();
+  }
+
+  // A display whose every figure is unknown reads as no display.
+  private static Optional<PlayerDisplay> display(PlaybackReportRecord row) {
+    var display =
+        PlayerDisplay.builder()
+            .width(optionalInt(row.getDisplayWidth()))
+            .height(optionalInt(row.getDisplayHeight()))
+            .hdrMode(Optional.ofNullable(row.getDisplayHdrMode()).map(PlayerHdrMode::valueOf))
+            .refreshRate(optionalDouble(row.getDisplayRefreshRate()))
+            .dynamicRangeMatched(Optional.ofNullable(row.getDisplayDynamicRangeMatched()))
+            .frameRateMatched(Optional.ofNullable(row.getDisplayFrameRateMatched()))
+            .build();
+    if (display.equals(UNKNOWN_DISPLAY)) {
+      return Optional.empty();
+    }
+
+    return Optional.of(display);
   }
 
   private PlaybackReportDecisionRecord decisionRow(UUID reportId, PlaybackDecision decision) {

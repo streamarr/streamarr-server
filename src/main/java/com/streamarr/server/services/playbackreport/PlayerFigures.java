@@ -11,7 +11,7 @@ import lombok.NonNull;
  * figure the player did not know yet is empty. {@code display} and {@code audioOutput} come from a
  * TV client, {@code screen} and {@code browser} from a web client. Bitrates are in bits per second.
  */
-@Builder
+@Builder(toBuilder = true)
 public record PlayerFigures(
     @NonNull Optional<QualityStep> qualityStep,
     @NonNull OptionalDouble observedBitrate,
@@ -35,20 +35,23 @@ public record PlayerFigures(
 
   @Builder
   public record PlayerAudio(
-      @NonNull String codec, @NonNull OptionalInt channels, boolean dolbyAtmos) {}
+      @NonNull String codec,
+      @NonNull OptionalInt channels,
+      @NonNull Optional<Boolean> dolbyAtmos) {}
 
   /**
    * The display mode that the TV switched to, and whether it matched the content's dynamic range
-   * and frame rate.
+   * and frame rate. A figure is empty while the TV switches modes. {@code width} and {@code height}
+   * are present together.
    */
   @Builder(toBuilder = true)
   public record PlayerDisplay(
-      int width,
-      int height,
-      @NonNull PlayerHdrMode hdrMode,
-      double refreshRate,
-      boolean dynamicRangeMatched,
-      boolean frameRateMatched) {}
+      @NonNull OptionalInt width,
+      @NonNull OptionalInt height,
+      @NonNull Optional<PlayerHdrMode> hdrMode,
+      @NonNull OptionalDouble refreshRate,
+      @NonNull Optional<Boolean> dynamicRangeMatched,
+      @NonNull Optional<Boolean> frameRateMatched) {}
 
   /** Where the TV sends its audio, such as HDMI, and how many channels that output accepts. */
   public record PlayerAudioOutput(@NonNull String route, int channels) {}

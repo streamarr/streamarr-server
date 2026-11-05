@@ -114,6 +114,8 @@ type PictureSize {
 "The dynamic range that a player or display reports for what it shows."
 enum PlayerHdrMode {
     SDR
+    "High dynamic range in a format that the player or display does not name."
+    HDR
     HDR10
     HDR10_PLUS
     HLG
@@ -125,18 +127,22 @@ type PlayerAudio {
     codec: String!
     "Null when the player did not know the channel count."
     channels: Int
-    dolbyAtmos: Boolean!
+    "Null when the player did not know whether the audio carries Dolby Atmos."
+    dolbyAtmos: Boolean
 }
 
-"The display mode that the TV switched to, and whether it matched the content's dynamic range and frame rate."
+"""
+The display mode that the TV switched to, and whether it matched the content's dynamic range and frame rate.
+A figure is null when the TV did not report it, as while it switches modes. width and height are null together.
+"""
 type PlayerDisplay {
-    width: Int!
-    height: Int!
-    hdrMode: PlayerHdrMode!
+    width: Int
+    height: Int
+    hdrMode: PlayerHdrMode
     "In hertz."
-    refreshRate: Float!
-    dynamicRangeMatched: Boolean!
-    frameRateMatched: Boolean!
+    refreshRate: Float
+    dynamicRangeMatched: Boolean
+    frameRateMatched: Boolean
 }
 
 "Where the TV sends its audio, such as HDMI, and how many channels that output accepts."
@@ -221,19 +227,25 @@ input PictureSizeInput {
     height: Int!
 }
 
+"Leave out channels or dolbyAtmos when the player does not know it."
 input PlayerAudioInput {
     codec: String!
     channels: Int
-    dolbyAtmos: Boolean! = false
+    dolbyAtmos: Boolean
 }
 
+"""
+Leave out a figure that the TV did not report, as while it switches modes. Send width and height together. A TV
+that shows HDR without naming its format sends hdrMode HDR.
+"""
 input PlayerDisplayInput {
-    width: Int!
-    height: Int!
-    hdrMode: PlayerHdrMode!
-    refreshRate: Float!
-    dynamicRangeMatched: Boolean!
-    frameRateMatched: Boolean!
+    width: Int
+    height: Int
+    hdrMode: PlayerHdrMode
+    "In hertz."
+    refreshRate: Float
+    dynamicRangeMatched: Boolean
+    frameRateMatched: Boolean
 }
 
 input PlayerAudioOutputInput {

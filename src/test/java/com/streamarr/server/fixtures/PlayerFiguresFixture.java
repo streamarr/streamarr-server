@@ -53,19 +53,30 @@ public class PlayerFiguresFixture {
                 PlayerAudio.builder()
                     .codec("eac3")
                     .channels(OptionalInt.of(6))
-                    .dolbyAtmos(true)
+                    .dolbyAtmos(Optional.of(true))
                     .build()))
         .display(
             Optional.of(
-                PlayerDisplay.builder()
-                    .width(3840)
-                    .height(2160)
-                    .hdrMode(PlayerHdrMode.HDR10)
-                    .refreshRate(23.976)
-                    .dynamicRangeMatched(true)
-                    .frameRateMatched(true)
+                unknownDisplayBuilder()
+                    .width(OptionalInt.of(3840))
+                    .height(OptionalInt.of(2160))
+                    .hdrMode(Optional.of(PlayerHdrMode.HDR10))
+                    .refreshRate(OptionalDouble.of(23.976))
+                    .dynamicRangeMatched(Optional.of(true))
+                    .frameRateMatched(Optional.of(true))
                     .build()))
         .audioOutput(Optional.of(new PlayerAudioOutput("HDMI", 8)));
+  }
+
+  /** A TV display mode whose figures the TV did not report yet, as while it switches modes. */
+  public static PlayerDisplay.PlayerDisplayBuilder unknownDisplayBuilder() {
+    return PlayerDisplay.builder()
+        .width(OptionalInt.empty())
+        .height(OptionalInt.empty())
+        .hdrMode(Optional.empty())
+        .refreshRate(OptionalDouble.empty())
+        .dynamicRangeMatched(Optional.empty())
+        .frameRateMatched(Optional.empty());
   }
 
   /** The figures of a web player on a 2560x1440 HDR screen at a pixel ratio of 2. */

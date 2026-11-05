@@ -199,7 +199,7 @@ class PlaybackReportResolverTest {
                                   PlayerFigures.PlayerAudio.builder()
                                       .codec("eac3")
                                       .channels(OptionalInt.of(6))
-                                      .dolbyAtmos(false)
+                                      .dolbyAtmos(Optional.empty())
                                       .build()))
                           .display(Optional.empty())
                           .audioOutput(Optional.empty())
@@ -364,6 +364,46 @@ class PlaybackReportResolverTest {
                         true,
                         "directPlayContainers",
                         List.of()))));
+  }
+
+  @Test
+  @DisplayName(
+      "Should return the figures as unknown when the player shows HDR without naming its format"
+          + " and leaves out Dolby Atmos and the switching display's figures")
+  void shouldReturnFiguresAsUnknownWhenPlayerLeavesOutWhatItCannotName() {
+    var playback = startPlaybackAsCaller();
+    share(
+        shareInput(
+            playback,
+            Map.of(
+                "player",
+                Map.of(
+                    "hdrMode",
+                    "HDR",
+                    "audio",
+                    Map.of("codec", "eac3", "channels", 6),
+                    "display",
+                    Map.of("hdrMode", "HDR")))));
+    var reportId = repository.storedReports().getFirst().id();
+
+    var player =
+        execute("query { playbackReport(id: \"%s\") { %s } }".formatted(reportId, REPORT_FIELDS))
+            .at("/data/playbackReport/player");
+
+    var display = new HashMap<String, Object>();
+    display.put("width", null);
+    display.put("height", null);
+    display.put("hdrMode", "HDR");
+    display.put("refreshRate", null);
+    display.put("dynamicRangeMatched", null);
+    display.put("frameRateMatched", null);
+    var audio = new HashMap<String, Object>();
+    audio.put("codec", "eac3");
+    audio.put("channels", 6);
+    audio.put("dolbyAtmos", null);
+    assertThat(player.path("hdrMode").asString()).isEqualTo("HDR");
+    assertThat(player.path("audio")).isEqualTo(mapper.valueToTree(audio));
+    assertThat(player.path("display")).isEqualTo(mapper.valueToTree(display));
   }
 
   @Test

@@ -7,6 +7,7 @@ import static com.streamarr.server.fixtures.PlaybackSessionFixture.playbackReque
 import static com.streamarr.server.fixtures.PlaybackSessionFixture.playbackServiceBuilder;
 import static com.streamarr.server.fixtures.PlaybackSessionFixture.startPlaybackBuilder;
 import static com.streamarr.server.fixtures.PlayerFiguresFixture.tvFiguresBuilder;
+import static com.streamarr.server.fixtures.PlayerFiguresFixture.unknownDisplayBuilder;
 import static com.streamarr.server.fixtures.PlayerFiguresFixture.unknownFiguresBuilder;
 import static com.streamarr.server.fixtures.PlayerFiguresFixture.webFiguresBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
@@ -358,7 +359,40 @@ class PlaybackReportServiceTest {
           tvFiguresBuilder()
               .audio(
                   Optional.of(
-                      PlayerAudio.builder().codec("aac").channels(OptionalInt.empty()).build()))
+                      PlayerAudio.builder()
+                          .codec("aac")
+                          .channels(OptionalInt.empty())
+                          .dolbyAtmos(Optional.of(false))
+                          .build()))
+              .build();
+
+      accepted(service.sharePlaybackReport(shareBuilder(playback, start).player(figures).build()));
+
+      assertThat(repository.storedReports())
+          .singleElement()
+          .satisfies(report -> assertThat(report.player()).isEqualTo(figures));
+    }
+
+    @Test
+    @DisplayName(
+        "Should store the figures that the player could not name when the TV shows HDR without"
+            + " naming its format and is switching display modes")
+    void shouldStoreFiguresPlayerCouldNotNameWhenTvShowsUnnamedHdrAndSwitchesDisplayModes() {
+      var start = startPlaybackBuilder().build();
+      var playback = acceptedPlayback(playbackSessions.start(start));
+      var figures =
+          tvFiguresBuilder()
+              .hdrMode(Optional.of(PlayerHdrMode.HDR))
+              .audio(
+                  Optional.of(
+                      PlayerAudio.builder()
+                          .codec("eac3")
+                          .channels(OptionalInt.of(6))
+                          .dolbyAtmos(Optional.empty())
+                          .build()))
+              .display(
+                  Optional.of(
+                      unknownDisplayBuilder().hdrMode(Optional.of(PlayerHdrMode.HDR)).build()))
               .build();
 
       accepted(service.sharePlaybackReport(shareBuilder(playback, start).player(figures).build()));
@@ -486,26 +520,47 @@ class PlaybackReportServiceTest {
               tvFiguresBuilder()
                   .audio(
                       Optional.of(
-                          PlayerAudio.builder().codec("").channels(OptionalInt.of(2)).build())),
+                          PlayerAudio.builder()
+                              .codec("")
+                              .channels(OptionalInt.of(2))
+                              .dolbyAtmos(Optional.empty())
+                              .build())),
               PlayerFigure.AUDIO),
           invalid(
               "audio without channels",
               tvFiguresBuilder()
                   .audio(
                       Optional.of(
-                          PlayerAudio.builder().codec("aac").channels(OptionalInt.of(0)).build())),
+                          PlayerAudio.builder()
+                              .codec("aac")
+                              .channels(OptionalInt.of(0))
+                              .dolbyAtmos(Optional.empty())
+                              .build())),
               PlayerFigure.AUDIO),
           invalid(
               "display without a refresh rate",
-              tvFiguresBuilder().display(Optional.of(displayBuilder().refreshRate(0).build())),
+              tvFiguresBuilder()
+                  .display(Optional.of(displayBuilder().refreshRate(OptionalDouble.of(0)).build())),
               PlayerFigure.DISPLAY),
           invalid(
               "display without a width",
-              tvFiguresBuilder().display(Optional.of(displayBuilder().width(0).build())),
+              tvFiguresBuilder()
+                  .display(Optional.of(displayBuilder().width(OptionalInt.of(0)).build())),
               PlayerFigure.DISPLAY),
           invalid(
               "display without a height",
-              tvFiguresBuilder().display(Optional.of(displayBuilder().height(0).build())),
+              tvFiguresBuilder()
+                  .display(Optional.of(displayBuilder().height(OptionalInt.of(0)).build())),
+              PlayerFigure.DISPLAY),
+          invalid(
+              "display with a width but no height",
+              tvFiguresBuilder()
+                  .display(Optional.of(displayBuilder().height(OptionalInt.empty()).build())),
+              PlayerFigure.DISPLAY),
+          invalid(
+              "display with a height but no width",
+              tvFiguresBuilder()
+                  .display(Optional.of(displayBuilder().width(OptionalInt.empty()).build())),
               PlayerFigure.DISPLAY),
           invalid(
               "audio output without channels",

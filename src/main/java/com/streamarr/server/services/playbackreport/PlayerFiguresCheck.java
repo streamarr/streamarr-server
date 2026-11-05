@@ -73,12 +73,14 @@ final class PlayerFiguresCheck {
   }
 
   private static boolean isValid(PlayerFigures.PlayerAudio audio) {
-    var channels = audio.channels();
-    return isText(audio.codec()) && (channels.isEmpty() || channels.getAsInt() > 0);
+    return isText(audio.codec()) && isPositiveWhenPresent(audio.channels());
   }
 
   private static boolean isValid(PlayerFigures.PlayerDisplay display) {
-    return display.width() > 0 && display.height() > 0 && isPositive(display.refreshRate());
+    return display.width().isPresent() == display.height().isPresent()
+        && isPositiveWhenPresent(display.width())
+        && isPositiveWhenPresent(display.height())
+        && display.refreshRate().stream().allMatch(PlayerFiguresCheck::isPositive);
   }
 
   private static boolean isValid(PlayerFigures.PlayerScreen screen) {
@@ -87,6 +89,10 @@ final class PlayerFiguresCheck {
 
   private static boolean isText(String text) {
     return !text.isBlank() && text.codePointCount(0, text.length()) <= MAXIMUM_TEXT_LENGTH;
+  }
+
+  private static boolean isPositiveWhenPresent(OptionalInt value) {
+    return value.stream().allMatch(number -> number > 0);
   }
 
   private static boolean isNonNegative(double value) {

@@ -409,10 +409,10 @@ public class PlaybackReport extends TableImpl<PlaybackReportRecord> {
     @Override
     public List<Check<PlaybackReportRecord>> getChecks() {
         return Arrays.asList(
-            Internal.createCheck(this, DSL.name("chk_playback_report_audio"), "((((audio_codec IS NULL) AND (audio_channels IS NULL) AND (audio_dolby_atmos IS NULL)) OR ((audio_codec IS NOT NULL) AND (audio_dolby_atmos IS NOT NULL))))", true),
+            Internal.createCheck(this, DSL.name("chk_playback_report_audio"), "(((audio_codec IS NOT NULL) OR (num_nulls(audio_channels, audio_dolby_atmos) = 2)))", true),
             Internal.createCheck(this, DSL.name("chk_playback_report_audio_output"), "((num_nulls(audio_output_route, audio_output_channels) = ANY (ARRAY[0, 2])))", true),
             Internal.createCheck(this, DSL.name("chk_playback_report_browser"), "((num_nulls(browser_name, browser_version) = ANY (ARRAY[0, 2])))", true),
-            Internal.createCheck(this, DSL.name("chk_playback_report_display"), "((num_nulls(display_width, display_height, display_hdr_mode, display_refresh_rate, display_dynamic_range_matched, display_frame_rate_matched) = ANY (ARRAY[0, 6])))", true),
+            Internal.createCheck(this, DSL.name("chk_playback_report_display_size"), "((num_nulls(display_width, display_height) = ANY (ARRAY[0, 2])))", true),
             Internal.createCheck(this, DSL.name("chk_playback_report_note_length"), "(((char_length(note) >= 1) AND (char_length(note) <= 280)))", true),
             Internal.createCheck(this, DSL.name("chk_playback_report_quality_step"), "(((num_nulls(quality_step_number, quality_step_count, quality_step_height, quality_step_bitrate) = ANY (ARRAY[0, 4])) AND ((quality_step_number >= 1) AND (quality_step_number <= quality_step_count))))", true),
             Internal.createCheck(this, DSL.name("chk_playback_report_resolution"), "((num_nulls(resolution_width, resolution_height) = ANY (ARRAY[0, 2])))", true),

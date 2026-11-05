@@ -1,7 +1,8 @@
 -- A playback report that a viewer shares with the Server Admin from the Playback Data panel (#751):
 -- the player's figures and the viewer's note, with the server's decisions for the playback session
--- in playback_report_decision. Each figure is NULL when the player did not know it. The server
--- deletes a report 30 days after it was shared.
+-- in playback_report_decision. Each figure is NULL when the player did not know it; a TV reports
+-- its display figures one by one while it switches modes. The server deletes a report 30 days
+-- after it was shared.
 --
 -- capability_declaration keeps the playback session's client capability declaration (ADR 0049)
 -- as the document the server validated when the playback session started. It is shown whole and
@@ -65,11 +66,9 @@ CREATE TABLE playback_report
     CONSTRAINT chk_playback_report_resolution CHECK (
         num_nulls(resolution_width, resolution_height) IN (0, 2)),
     CONSTRAINT chk_playback_report_audio CHECK (
-        (audio_codec IS NULL AND audio_channels IS NULL AND audio_dolby_atmos IS NULL)
-        OR (audio_codec IS NOT NULL AND audio_dolby_atmos IS NOT NULL)),
-    CONSTRAINT chk_playback_report_display CHECK (
-        num_nulls(display_width, display_height, display_hdr_mode, display_refresh_rate,
-                  display_dynamic_range_matched, display_frame_rate_matched) IN (0, 6)),
+        audio_codec IS NOT NULL OR num_nulls(audio_channels, audio_dolby_atmos) = 2),
+    CONSTRAINT chk_playback_report_display_size CHECK (
+        num_nulls(display_width, display_height) IN (0, 2)),
     CONSTRAINT chk_playback_report_audio_output CHECK (
         num_nulls(audio_output_route, audio_output_channels) IN (0, 2)),
     CONSTRAINT chk_playback_report_screen CHECK (

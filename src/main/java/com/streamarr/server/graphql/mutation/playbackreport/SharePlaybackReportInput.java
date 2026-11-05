@@ -53,14 +53,6 @@ public record SharePlaybackReportInput(
                   .map(it -> new PlayerFigures.PlayerBrowser(it.name(), it.version())))
           .build();
     }
-
-    private static OptionalDouble optionalDouble(Double value) {
-      if (value == null) {
-        return OptionalDouble.empty();
-      }
-
-      return OptionalDouble.of(value);
-    }
   }
 
   public record PlayerQualityStepInput(int number, int count, int height, int bitrate) {
@@ -77,34 +69,34 @@ public record SharePlaybackReportInput(
 
   public record PictureSizeInput(int width, int height) {}
 
-  public record PlayerAudioInput(String codec, Integer channels, boolean dolbyAtmos) {
+  public record PlayerAudioInput(String codec, Integer channels, Boolean dolbyAtmos) {
 
     PlayerFigures.PlayerAudio toAudio() {
       return PlayerFigures.PlayerAudio.builder()
           .codec(codec)
           .channels(optionalInt(channels))
-          .dolbyAtmos(dolbyAtmos)
+          .dolbyAtmos(Optional.ofNullable(dolbyAtmos))
           .build();
     }
   }
 
   @Builder
   public record PlayerDisplayInput(
-      int width,
-      int height,
+      Integer width,
+      Integer height,
       PlayerHdrMode hdrMode,
-      double refreshRate,
-      boolean dynamicRangeMatched,
-      boolean frameRateMatched) {
+      Double refreshRate,
+      Boolean dynamicRangeMatched,
+      Boolean frameRateMatched) {
 
     PlayerFigures.PlayerDisplay toDisplay() {
       return PlayerFigures.PlayerDisplay.builder()
-          .width(width)
-          .height(height)
-          .hdrMode(hdrMode)
-          .refreshRate(refreshRate)
-          .dynamicRangeMatched(dynamicRangeMatched)
-          .frameRateMatched(frameRateMatched)
+          .width(optionalInt(width))
+          .height(optionalInt(height))
+          .hdrMode(Optional.ofNullable(hdrMode))
+          .refreshRate(optionalDouble(refreshRate))
+          .dynamicRangeMatched(Optional.ofNullable(dynamicRangeMatched))
+          .frameRateMatched(Optional.ofNullable(frameRateMatched))
           .build();
     }
   }
@@ -124,6 +116,14 @@ public record SharePlaybackReportInput(
   }
 
   public record PlayerBrowserInput(String name, String version) {}
+
+  private static OptionalDouble optionalDouble(Double value) {
+    if (value == null) {
+      return OptionalDouble.empty();
+    }
+
+    return OptionalDouble.of(value);
+  }
 
   private static OptionalInt optionalInt(Integer value) {
     if (value == null) {
