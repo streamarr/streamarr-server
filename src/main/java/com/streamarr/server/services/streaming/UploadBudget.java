@@ -15,10 +15,11 @@ public interface UploadBudget {
   Set<String> withholdFromPlaylist(StreamSession session);
 
   /**
-   * Whether the budget would leave the variant out of the stream session's playlist now, without
-   * serving it.
+   * The variant that the stream session's multivariant playlist would list first now, without
+   * serving it: the first-listed variant, or the top variant that stays when the budget leaves the
+   * first-listed variant out.
    */
-  boolean isWithheldFromPlaylist(StreamSession session, String variantLabel);
+  String topKeptVariant(StreamSession session);
 
   /** Whether the stream session counts against the budget now, and why it does not. */
   UploadBudgetUse useOf(StreamSession session);

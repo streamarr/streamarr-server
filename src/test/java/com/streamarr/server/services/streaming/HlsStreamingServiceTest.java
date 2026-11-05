@@ -7445,26 +7445,20 @@ class HlsStreamingServiceTest {
 
   @Test
   @DisplayName(
-      "Should start no job up front when the upload budget leaves the first-listed variant out of"
-          + " the playlist")
-  void shouldStartNoJobUpFrontWhenTheUploadBudgetLeavesTheFirstListedVariantOutOfThePlaylist() {
+      "Should start the top variant that the upload budget keeps when it creates a stream session"
+          + " whose first-listed variant the budget leaves out")
+  void shouldStartTheTopKeptVariantWhenItCreatesAStreamSessionWhoseFirstListedVariantIsLeftOut() {
     // 80% of 8 Mb/s leaves 1.4 Mb/s beside the active copy's 5 Mb/s average, so the encode's
-    // playlist leaves out its first-listed 480p and starts at 360p.
+    // playlist leaves out its first-listed 480p and keeps only 360p.
     createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
     setInternetUploadMegabitsPerSecond(8);
 
     var session = createEncodeSession();
 
     assertThat(transcodeExecutor.getStartedRequests())
-        .extracting(TranscodeRequest::sessionId)
-        .doesNotContain(session.getSessionId());
-    requestAndDeliver(session.getSessionId(), "360p", "360p/segment0.m4s");
-    assertThat(transcodeExecutor.getStartedRequests().getLast())
-        .satisfies(
-            started -> {
-              assertThat(started.sessionId()).isEqualTo(session.getSessionId());
-              assertThat(started.variantLabel()).isEqualTo("360p");
-            });
+        .filteredOn(started -> started.sessionId().equals(session.getSessionId()))
+        .extracting(TranscodeRequest::variantLabel)
+        .containsExactly("360p");
   }
 
   @Test
@@ -7627,19 +7621,45 @@ class HlsStreamingServiceTest {
 
   @Test
   @DisplayName(
-      "Should keep the playlist whole when the transcode limit leaves no place for the variants"
-          + " that the upload budget keeps")
-  void shouldKeepThePlaylistWholeWhenTheTranscodeLimitLeavesNoPlaceForTheKeptVariants() {
-    // 80% of 8 Mb/s leaves 1.4 Mb/s beside the active copy, which would leave out the encode's
-    // first-listed 480p, so creating the encode starts nothing. Three encodes over the local
-    // network then take every place under the transcode limit of 3, so 360p could not start, and
-    // leaving 480p out would leave the player only a variant that cannot start.
+      "Should deliver the first variant of the playlist when the transcode limit fills between"
+          + " creating the stream session and serving its first playlist")
+  void shouldDeliverThePlaylistsFirstVariantWhenTheTranscodeLimitFillsBeforeTheFirstPlaylist() {
+    storeFirstSegmentsAsEachLadderVariantStarts();
+    // 80% of 8 Mb/s leaves 1.4 Mb/s beside the active copy's 5 Mb/s average, so the budget leaves
+    // out the encode's first-listed 480p. Encodes over the local network then ask for every place
+    // under the transcode limit of 3 before the player reads its playlist.
     createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
     setInternetUploadMegabitsPerSecond(8);
     var session = createEncodeSession();
     for (var encode = 0; encode < 3; encode++) {
+      service.createSession(localNetworkEncode());
+    }
+
+    assertThat(producerLifecycle.freeConfiguredTranscodeSlots()).isZero();
+
+    var firstVariant = listedVariants(session).getFirst().split("/")[0];
+    assertThat(
+            coordinator.deliver(
+                session.getSessionId(), firstVariant, firstVariant + "/segment0.m4s"))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the playlist whole when the upload budget turns on after creation and the"
+          + " transcode limit leaves no place for the variants that the budget keeps")
+  void shouldKeepThePlaylistWholeWhenTheTranscodeLimitLeavesNoPlaceForTheKeptVariants() {
+    // The encode starts its first-listed 480p while the budget is off, and two encodes over the
+    // local network take the other places under the transcode limit of 3. Then 80% of 8 Mb/s
+    // leaves 1.4 Mb/s beside the active copy's 5 Mb/s average, which would leave out 480p, but
+    // 360p could not start, and leaving 480p out would leave the player only a variant that
+    // cannot start.
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    var session = createEncodeSession();
+    for (var encode = 0; encode < 2; encode++) {
       accepted(service.createSession(localNetworkEncode()));
     }
+    setInternetUploadMegabitsPerSecond(8);
 
     assertThat(producerLifecycle.freeConfiguredTranscodeSlots()).isZero();
 
@@ -7885,11 +7905,12 @@ class HlsStreamingServiceTest {
       "Should list the first-listed variant when the top kept variant cannot start as the playlist"
           + " is served")
   void shouldListTheFirstListedVariantWhenTheTopKeptVariantCannotStartAsThePlaylistIsServed() {
-    // 80% of 8 Mb/s leaves 1.4 Mb/s beside the active copy, which would leave out the encode's
-    // first-listed 480p, but no worker takes the 360p job, so the playlist stays whole.
+    // The encode starts its first-listed 480p while the budget is off. Then 80% of 8 Mb/s leaves
+    // 1.4 Mb/s beside the active copy, which would leave out 480p, but no worker takes the 360p
+    // job, so the playlist stays whole.
     createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
-    setInternetUploadMegabitsPerSecond(8);
     var session = createEncodeSession();
+    setInternetUploadMegabitsPerSecond(8);
     transcodeExecutor.failUntargetedStarts();
 
     assertThat(listedVariants(session)).first().isEqualTo("480p/stream.m3u8?t=t");
