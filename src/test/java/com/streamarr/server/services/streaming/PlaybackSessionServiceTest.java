@@ -1616,6 +1616,37 @@ class PlaybackSessionServiceTest {
                 assertThatAttemptsRanOutAfterTheStrippedCopy(snapshot, steps.stripped(), 3));
   }
 
+  // The stripped copy is a format attempt of its own, so it needs room in the budget: under two,
+  // direct play and the Dolby Vision copy use both.
+  @Test
+  @DisplayName(
+      "Should end with attempts exhausted without a stripped copy when the Dolby Vision copy fails"
+          + " with no attempt left")
+  void
+      shouldEndWithAttemptsExhaustedWithoutAStrippedCopyWhenTheDolbyVisionCopyFailsWithNoAttemptLeft() {
+    streams.copiedDolbyVision = Optional.of(DolbyVisionProfile.PROFILE_8_1);
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlay(service, command);
+    var dolbyVisionCopy =
+        service.reportFormatFailure(report(directPlay, command).build()).orElseThrow();
+
+    var failed =
+        service.reportFormatFailure(report(dolbyVisionCopy, command).build()).orElseThrow();
+
+    assertThat(failed.formatAttemptCount()).isEqualTo(2);
+    assertThat(failed.playbackChoice()).isEqualTo(VideoQuality.ORIGINAL);
+    assertThat(failed.formatChange()).isEmpty();
+    assertThat(failed.currentFormatAttempt())
+        .isEqualTo(
+            new PlaybackFormatAttempt.Failed(
+                dolbyVisionCopy.currentFormatAttempt().streamSessionId(),
+                new PlaybackSessionFailure.AttemptsExhausted()));
+    assertThat(streams.createdCommands)
+        .extracting(CreateStreamSessionCommand::videoFormatConstraint)
+        .doesNotContain(VideoFormatConstraint.COPY_WITH_DOLBY_VISION_STRIPPED_OR_ENCODE);
+    assertThat(streams.getAllSessions()).isEmpty();
+  }
+
   private record DolbyVisionSteps(
       PlaybackSessionService playback,
       StartPlaybackSessionCommand command,
