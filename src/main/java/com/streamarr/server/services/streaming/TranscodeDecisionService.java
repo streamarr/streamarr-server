@@ -251,7 +251,7 @@ public class TranscodeDecisionService {
         limits.audioStepBesideCopyOf(source, steps, CopyMediaPlaylist.of(source, properties));
     var limitRefusals = viewerLimitRefusals(limits.allowsCopyPictureOf(source), stepWithinMaximum);
     if (!limitRefusals.isEmpty() && hasVerifiedEncodeThatTheClientPlays(request)) {
-      return new VideoCopyChoice.Refused(limitRefusals);
+      return new VideoCopyChoice.Refused(beforeViewerLimits(source, declaration, limitRefusals));
     }
 
     return switch (acceptedVideoCopyPlan(source, declaration, countsRefusals)) {
@@ -262,6 +262,23 @@ public class TranscodeDecisionService {
       case PlanChoice.Accepted(var plan, var reasons) ->
           new VideoCopyChoice.Copied(stepWithinMaximum.orElse(sessionAudio), plan, reasons);
     };
+  }
+
+  // A copy that the viewer's limits refuse may also be one that the source or the declaration
+  // refuses, which a higher limit would not change, so those reasons come first. The stream-copy
+  // refusal metric counts only the copies that the limits let through.
+  private List<DecisionReason> beforeViewerLimits(
+      MediaProbe source,
+      ClientCapabilityDeclaration declaration,
+      List<DecisionReason> limitRefusals) {
+    var reasons = new ArrayList<DecisionReason>();
+    var plan = acceptedVideoCopyPlan(source, declaration, false);
+    if (plan instanceof PlanChoice.Refused(var refused)) {
+      reasons.addAll(refused);
+    }
+
+    reasons.addAll(limitRefusals);
+    return reasons;
   }
 
   private static List<DecisionReason> viewerLimitRefusals(

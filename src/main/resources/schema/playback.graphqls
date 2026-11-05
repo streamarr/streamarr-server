@@ -132,6 +132,8 @@ enum DecisionReason {
     DYNAMIC_RANGE_NOT_DECLARED
     "The closest entry does not declare the source's Dolby Vision profile and level."
     DOLBY_VISION_NOT_DECLARED
+    "The probe found no Dolby Vision profile or level for the source, so no entry can accept its Dolby Vision."
+    DOLBY_VISION_PROFILE_OR_LEVEL_UNKNOWN
     "The closest entry does not declare HDR10+."
     HDR10_PLUS_NOT_DECLARED
     "A copy that keeps Dolby Vision strips the source's HDR10+ information, whatever the client declares."
@@ -156,6 +158,8 @@ enum DecisionReason {
     VIDEO_CHROMA_SUBSAMPLING_UNKNOWN
     "The source's sample entry is not one under which a playlist describes a copy, such as hev1."
     SAMPLE_ENTRY_NOT_COPYABLE
+    "The probe stored no codec string for the source's video, which a playlist needs to describe a copy."
+    VIDEO_CODEC_STRING_UNKNOWN
     "The probe could not name the source's codec profile."
     VIDEO_CODEC_PROFILE_UNKNOWN
     "The probe stored no video facts for a copy."
@@ -190,7 +194,7 @@ enum DecisionReason {
     DIRECT_PLAY_SAMPLE_ENTRY_NOT_DECLARED
     """
     No video capability entry that lists the file's source container accepts every property of the video stream as
-    it is, or the probe stored no codec profile or bit depth to check.
+    it is, or the probe left one of those properties unknown.
     """
     DIRECT_PLAY_VIDEO_NOT_DECLARED
     "An audio track of the file is one that no audio capability entry listing the file's source container accepts."

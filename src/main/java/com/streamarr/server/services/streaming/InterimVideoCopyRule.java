@@ -42,6 +42,10 @@ final class InterimVideoCopyRule {
       return bitDepthAndChromaRefusal;
     }
 
+    if (facts.codecString().isEmpty()) {
+      return Optional.of(DecisionReason.VIDEO_CODEC_STRING_UNKNOWN);
+    }
+
     if (!hasDescribableCodecString(facts.codecString())) {
       return Optional.of(DecisionReason.SAMPLE_ENTRY_NOT_COPYABLE);
     }

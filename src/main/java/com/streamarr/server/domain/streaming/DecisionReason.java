@@ -25,6 +25,11 @@ public enum DecisionReason {
   DYNAMIC_RANGE_NOT_DECLARED,
   /** The closest entry does not declare the source's Dolby Vision profile and level. */
   DOLBY_VISION_NOT_DECLARED,
+  /**
+   * The probe's facts give no Dolby Vision profile or level for the source, so no entry can accept
+   * its Dolby Vision.
+   */
+  DOLBY_VISION_PROFILE_OR_LEVEL_UNKNOWN,
   /** The closest entry does not declare HDR10+. */
   HDR10_PLUS_NOT_DECLARED,
   /**
@@ -55,6 +60,8 @@ public enum DecisionReason {
   VIDEO_CHROMA_SUBSAMPLING_UNKNOWN,
   /** The source's sample entry is not one under which a playlist describes a copy. */
   SAMPLE_ENTRY_NOT_COPYABLE,
+  /** The probe stored no codec string for the source's video, which a playlist needs for a copy. */
+  VIDEO_CODEC_STRING_UNKNOWN,
   /** The probe could not name the source's codec profile. */
   VIDEO_CODEC_PROFILE_UNKNOWN,
   /** The probe stored no video facts for a copy job to carry. */
@@ -89,8 +96,8 @@ public enum DecisionReason {
   DIRECT_PLAY_SAMPLE_ENTRY_NOT_DECLARED,
   /**
    * No video capability entry that lists the file's source container, and its sample entry in MP4
-   * or MOV, accepts every property of the video stream as it is, or the probe stored no codec
-   * profile or bit depth to check.
+   * or MOV, accepts every property of the video stream as it is, or the probe left one of those
+   * properties unknown.
    */
   DIRECT_PLAY_VIDEO_NOT_DECLARED,
   /**
