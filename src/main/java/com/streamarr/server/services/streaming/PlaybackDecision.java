@@ -129,7 +129,7 @@ public record PlaybackDecision(
     var facts = source.videoPlaybackFacts();
     var range = facts.map(VideoPlaybackFacts::dynamicRange);
     return VideoFormat.builder()
-        .codec(source.videoCodec())
+        .codec(Optional.ofNullable(source.videoCodec()).orElse(VideoFormat.UNKNOWN_CODEC))
         .width(picture.width())
         .height(picture.height())
         .frameRate(frameRate(source))

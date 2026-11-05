@@ -5,7 +5,6 @@ import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.MediaFileProbePropertyIssue;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import java.util.Optional;
-import java.util.OptionalInt;
 import java.util.Set;
 
 /**
@@ -38,8 +37,9 @@ final class InterimVideoCopyRule {
       return Optional.of(reasonFor(issue.get()));
     }
 
-    if (!isCopyableBitDepthAndChroma(videoCodec, facts)) {
-      return Optional.of(DecisionReason.H264_NOT_8_BIT_4_2_0);
+    var bitDepthAndChromaRefusal = bitDepthAndChromaRefusal(videoCodec, facts);
+    if (bitDepthAndChromaRefusal.isPresent()) {
+      return bitDepthAndChromaRefusal;
     }
 
     if (!hasDescribableCodecString(facts.codecString())) {
@@ -89,14 +89,28 @@ final class InterimVideoCopyRule {
     };
   }
 
-  // Clients that declare nothing play only 8-bit 4:2:0 H.264 (streamarr/streamarr-server#395).
-  private static boolean isCopyableBitDepthAndChroma(String videoCodec, VideoPlaybackFacts facts) {
+  // Clients that declare nothing play only 8-bit 4:2:0 H.264 (streamarr/streamarr-server#395). A
+  // depth or subsampling that the probe did not report is unknown, not another format.
+  private static Optional<DecisionReason> bitDepthAndChromaRefusal(
+      String videoCodec, VideoPlaybackFacts facts) {
     if (!"h264".equals(videoCodec)) {
-      return true;
+      return Optional.empty();
     }
 
-    return facts.bitDepth().equals(OptionalInt.of(8))
-        && facts.chromaSubsampling().equals(Optional.of(ChromaSubsampling.CHROMA_420));
+    if (facts.bitDepth().isEmpty()) {
+      return Optional.of(DecisionReason.VIDEO_BIT_DEPTH_UNKNOWN);
+    }
+
+    if (facts.chromaSubsampling().isEmpty()) {
+      return Optional.of(DecisionReason.VIDEO_CHROMA_SUBSAMPLING_UNKNOWN);
+    }
+
+    if (facts.bitDepth().getAsInt() != 8
+        || facts.chromaSubsampling().get() != ChromaSubsampling.CHROMA_420) {
+      return Optional.of(DecisionReason.H264_NOT_8_BIT_4_2_0);
+    }
+
+    return Optional.empty();
   }
 
   private static boolean hasDescribableCodecString(Optional<String> codecString) {
