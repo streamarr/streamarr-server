@@ -70,12 +70,15 @@ public class PlaybackReportService {
                 .playbackSessionId(command.playbackSessionId())
                 .identity(command.identity())
                 .build());
-    if (playback.filter(snapshot -> hasDecision(snapshot, command.streamSessionId())).isEmpty()) {
+    var playingChoice =
+        playback.map(snapshot -> snapshot.attemptPlaybackChoices().get(command.streamSessionId()));
+    if (playingChoice.isEmpty()) {
       return Outcome.rejected(new PlaybackSessionMissing());
     }
 
     return Outcome.accepted(
-        playbackReportRepository.save(newReport(command, note, playback.get())));
+        playbackReportRepository.save(
+            newReport(command, note, playback.get()).playbackChoice(playingChoice.get()).build()));
   }
 
   public ListPage<PlaybackReport> playbackReports(
@@ -106,7 +109,7 @@ public class PlaybackReportService {
         .orElseGet(() -> Outcome.rejected(new PlaybackReportMissing()));
   }
 
-  private NewPlaybackReport newReport(
+  private NewPlaybackReport.NewPlaybackReportBuilder newReport(
       SharePlaybackReportCommand command, Optional<String> note, PlaybackSessionSnapshot playback) {
     return NewPlaybackReport.builder()
         .sharedAt(clock.instant())
@@ -116,17 +119,9 @@ public class PlaybackReportService {
         .mediaFileId(playback.mediaFileId())
         .note(note)
         .requestedChoice(playback.requestedChoice())
-        .playbackChoice(playback.playbackChoice())
         .decisions(playback.decisions())
         .player(command.player())
-        .capabilityDeclaration(playback.capabilityDeclaration())
-        .build();
-  }
-
-  // The figures describe a format attempt that started, so it has a decision.
-  private static boolean hasDecision(PlaybackSessionSnapshot playback, UUID streamSessionId) {
-    return playback.decisions().stream()
-        .anyMatch(decision -> decision.streamSessionId().equals(streamSessionId));
+        .capabilityDeclaration(playback.capabilityDeclaration());
   }
 
   private static boolean isTooLong(String note) {

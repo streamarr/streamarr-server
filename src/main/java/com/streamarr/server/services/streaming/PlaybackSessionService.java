@@ -26,8 +26,10 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
@@ -115,6 +117,7 @@ public class PlaybackSessionService implements AutoCloseable {
     // A retired format attempt can still take a timeline report until its stream session ends.
     private final List<StreamSession> readyAttempts = new ArrayList<>();
     private final List<PlaybackDecision> decisions = new ArrayList<>();
+    private final Map<UUID, VideoQuality> attemptPlaybackChoices = new HashMap<>();
     // The reason that the format attempt before the pending one gives it: its failure, or an audio
     // switch that its player could not make in direct play.
     @Builder.Default private Optional<DecisionReason> pendingAttemptCause = Optional.empty();
@@ -1225,6 +1228,8 @@ public class PlaybackSessionService implements AutoCloseable {
         && !session.getTranscodeDecision().transcodeMode().copiesVideo()) {
       playback.choice = choiceWhenEncoding;
     }
+
+    playback.attemptPlaybackChoices.put(session.getSessionId(), playback.choice.playbackChoice());
   }
 
   // Original that reaches an encode plays it in Auto (ADR 0052).
@@ -1273,6 +1278,7 @@ public class PlaybackSessionService implements AutoCloseable {
                   .offeredChoices(playback.offeredChoices)
                   .currentFormatAttempt(playback.current)
                   .decisions(List.copyOf(playback.decisions))
+                  .attemptPlaybackChoices(Map.copyOf(playback.attemptPlaybackChoices))
                   .build());
         });
   }

@@ -24,6 +24,7 @@ type PlaybackReport {
     "The viewer's note. Null when the viewer sent none."
     note: String
     requestedChoice: VideoQuality!
+    "The playback choice that the captured format attempt played (ADR 0052)."
     playbackChoice: VideoQuality!
     "The decision of each format attempt that had started when the server received the report, the initial format first."
     decisions: [PlaybackDecision!]!

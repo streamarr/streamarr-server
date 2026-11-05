@@ -42,6 +42,7 @@ import com.streamarr.server.services.playbackreport.SharePlaybackReportRejection
 import com.streamarr.server.services.playbackreport.SharePlaybackReportRejection.PlaybackSessionMissing;
 import com.streamarr.server.services.playbackreport.SharePlaybackReportRejection.PlayerFigureInvalid;
 import com.streamarr.server.services.streaming.PlaybackDecision;
+import com.streamarr.server.services.streaming.PlaybackFormatAttempt;
 import com.streamarr.server.services.streaming.PlaybackFormatFailure;
 import com.streamarr.server.services.streaming.PlaybackSessionService;
 import com.streamarr.server.services.streaming.PlaybackSessionSnapshot;
@@ -49,6 +50,7 @@ import com.streamarr.server.services.streaming.ReportPlaybackFormatFailureComman
 import com.streamarr.server.services.streaming.StartPlaybackSessionCommand;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
@@ -245,6 +247,61 @@ class PlaybackReportServiceTest {
                     .contains(captured)
                     .hasSize(2);
               });
+    }
+
+    @Test
+    @DisplayName(
+        "Should keep the captured attempt's playback choice when Original falls back to an encode"
+            + " before the report arrives")
+    void shouldKeepCapturedAttemptsPlaybackChoiceWhenOriginalFallsBackBeforeReportArrives() {
+      var pendingWork = new ArrayDeque<Runnable>();
+      var deferredPlayback = playbackServiceBuilder(streams).executor(pendingWork::add).build();
+      var deferredService =
+          new PlaybackReportService(
+              authorizationService,
+              deferredPlayback,
+              repository,
+              new PlaybackReportList(repository),
+              clock);
+      var start =
+          startPlaybackBuilder()
+              .options(StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build())
+              .build();
+      var copy = acceptedPlayback(deferredPlayback.start(start));
+      var copyStream = copy.currentFormatAttempt().streamSessionId();
+      deferredPlayback.reportFormatFailure(
+          ReportPlaybackFormatFailureCommand.builder()
+              .playbackSessionId(copy.playbackSessionId())
+              .streamSessionId(copyStream)
+              .identity(start.identity())
+              .reason(PlaybackFormatFailure.UNSUPPORTED_FORMAT)
+              .build());
+
+      var whilePending =
+          accepted(deferredService.sharePlaybackReport(shareBuilder(copy, start).build()));
+      assertThat(deferredPlayback.access(playbackRequest(copy, start)).orElseThrow())
+          .satisfies(
+              pending -> {
+                assertThat(pending.currentFormatAttempt())
+                    .isInstanceOf(PlaybackFormatAttempt.Pending.class);
+                assertThat(pending.playbackChoice()).isEqualTo(VideoQuality.AUTO);
+              });
+      while (!pendingWork.isEmpty()) {
+        pendingWork.poll().run();
+      }
+      var encode = deferredPlayback.access(playbackRequest(copy, start)).orElseThrow();
+      var encodeStream = encode.currentFormatAttempt().streamSessionId();
+      var whileReady =
+          accepted(deferredService.sharePlaybackReport(shareBuilder(copy, start).build()));
+      var ofEncode =
+          accepted(
+              deferredService.sharePlaybackReport(
+                  shareBuilder(copy, start).streamSessionId(encodeStream).build()));
+
+      assertThat(encode.playbackChoice()).isEqualTo(VideoQuality.AUTO);
+      assertThat(List.of(whilePending, whileReady, ofEncode))
+          .extracting(id -> repository.findById(id).orElseThrow().playbackChoice())
+          .containsExactly(VideoQuality.ORIGINAL, VideoQuality.ORIGINAL, VideoQuality.AUTO);
     }
 
     @Test
