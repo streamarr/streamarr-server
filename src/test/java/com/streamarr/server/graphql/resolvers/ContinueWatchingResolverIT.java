@@ -145,11 +145,11 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
     var comedy = createSeries(library, "Comedy");
     var expected =
         Map.of(
-            createEpisodeWithProgress(createSeason(library, drama, 1)).getId().toString(),
+            createEpisodeWithProgress(createSeason(drama, 1)).getId().toString(),
             "Drama 1",
-            createEpisodeWithProgress(createSeason(library, drama, 2)).getId().toString(),
+            createEpisodeWithProgress(createSeason(drama, 2)).getId().toString(),
             "Drama 2",
-            createEpisodeWithProgress(createSeason(library, comedy, 1)).getId().toString(),
+            createEpisodeWithProgress(createSeason(comedy, 1)).getId().toString(),
             "Comedy 1");
 
     var edges =
@@ -351,7 +351,7 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
   private Episode createEpisodeWithProgress() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
     var series = createSeries(library, "Test Series");
-    return createEpisodeWithProgress(createSeason(library, series, 1));
+    return createEpisodeWithProgress(createSeason(series, 1));
   }
 
   private Episode createEpisodeWithProgress(Season season) {
@@ -392,13 +392,13 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
         Series.builder().title(title).titleSort(title).library(library).build());
   }
 
-  private Season createSeason(Library library, Series series, int seasonNumber) {
+  private Season createSeason(Series series, int seasonNumber) {
     return seasonRepository.saveAndFlush(
         Season.builder()
             .title("Season " + seasonNumber)
             .seasonNumber(seasonNumber)
             .series(series)
-            .library(library)
+            .library(series.getLibrary())
             .build());
   }
 }

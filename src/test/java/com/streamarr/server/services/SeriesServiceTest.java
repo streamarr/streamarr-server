@@ -179,8 +179,8 @@ class SeriesServiceTest {
     }
 
     @Test
-    @DisplayName("Should return only the named seasons when an id names no season")
-    void shouldReturnOnlyTheNamedSeasonsWhenAnIdNamesNoSeason() {
+    @DisplayName("Should return only the requested seasons when an id matches no season")
+    void shouldReturnOnlyTheRequestedSeasonsWhenAnIdMatchesNoSeason() {
       var first = seasonRepository.save(Season.builder().seasonNumber(1).build());
       var second = seasonRepository.save(Season.builder().seasonNumber(2).build());
       seasonRepository.save(Season.builder().seasonNumber(3).build());
@@ -192,8 +192,8 @@ class SeriesServiceTest {
     }
 
     @Test
-    @DisplayName("Should return only the named series when an id names no series")
-    void shouldReturnOnlyTheNamedSeriesWhenAnIdNamesNoSeries() {
+    @DisplayName("Should return only the requested series when an id matches no series")
+    void shouldReturnOnlyTheRequestedSeriesWhenAnIdMatchesNoSeries() {
       var drama = seriesRepository.save(Series.builder().title("Drama").build());
       var comedy = seriesRepository.save(Series.builder().title("Comedy").build());
       seriesRepository.save(Series.builder().title("Western").build());

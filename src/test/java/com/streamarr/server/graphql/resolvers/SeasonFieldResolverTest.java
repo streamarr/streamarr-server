@@ -116,15 +116,14 @@ class SeasonFieldResolverTest {
   }
 
   @Test
-  @DisplayName(
-      "Should resolve each season's own series from the series batch when seasons span series")
-  void shouldResolveEachSeasonsOwnSeriesFromTheSeriesBatchWhenSeasonsSpanSeries() {
+  @DisplayName("Should resolve each season's own series when seasons span series")
+  void shouldResolveEachSeasonsOwnSeriesWhenSeasonsSpanSeries() {
     var drama = seriesTitled("Drama");
     var comedy = seriesTitled("Comedy");
-    var dramaSeason = seasonOf(drama);
-    var comedySeason = seasonOf(comedy);
+    var dramaSeason = servedSeasonOf(drama);
+    var comedySeason = servedSeasonOf(comedy);
     when(seriesService.findSeriesByIds(anyCollection()))
-        .thenAnswer(read -> named(read.getArgument(0), List.of(drama, comedy)));
+        .thenAnswer(read -> onlyRequested(read.getArgument(0), List.of(drama, comedy)));
 
     Map<String, Object> data =
         dgsQueryExecutor
@@ -178,11 +177,11 @@ class SeasonFieldResolverTest {
     return series;
   }
 
-  private static List<Series> named(Collection<UUID> seriesIds, List<Series> series) {
-    return series.stream().filter(item -> seriesIds.contains(item.getId())).toList();
+  private static List<Series> onlyRequested(Collection<UUID> requestedIds, List<Series> series) {
+    return series.stream().filter(item -> requestedIds.contains(item.getId())).toList();
   }
 
-  private Season seasonOf(Series series) {
+  private Season servedSeasonOf(Series series) {
     var season = Season.builder().title("Season 1").seasonNumber(1).series(series).build();
     season.setId(UUID.randomUUID());
     when(seriesService.findSeasonById(season.getId())).thenReturn(Optional.of(season));

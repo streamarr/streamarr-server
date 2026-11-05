@@ -49,15 +49,14 @@ class EpisodeFieldResolverTest {
   @MockitoBean private SeriesService seriesService;
 
   @Test
-  @DisplayName(
-      "Should resolve each episode's own season from the season batch when episodes span seasons")
-  void shouldResolveEachEpisodesOwnSeasonFromTheSeasonBatchWhenEpisodesSpanSeasons() {
+  @DisplayName("Should resolve each episode's own season when episodes span seasons")
+  void shouldResolveEachEpisodesOwnSeasonWhenEpisodesSpanSeasons() {
     var first = seasonNumbered(1);
     var second = seasonNumbered(2);
-    var pilot = episodeOf(first);
-    var finale = episodeOf(second);
+    var pilot = servedEpisodeOf(first);
+    var finale = servedEpisodeOf(second);
     when(seriesService.findSeasonsByIds(anyCollection()))
-        .thenAnswer(read -> named(read.getArgument(0), List.of(first, second)));
+        .thenAnswer(read -> onlyRequested(read.getArgument(0), List.of(first, second)));
 
     Map<String, Object> data =
         dgsQueryExecutor
@@ -112,11 +111,11 @@ class EpisodeFieldResolverTest {
     return season;
   }
 
-  private static List<Season> named(Collection<UUID> seasonIds, List<Season> seasons) {
-    return seasons.stream().filter(season -> seasonIds.contains(season.getId())).toList();
+  private static List<Season> onlyRequested(Collection<UUID> requestedIds, List<Season> seasons) {
+    return seasons.stream().filter(season -> requestedIds.contains(season.getId())).toList();
   }
 
-  private Episode episodeOf(Season season) {
+  private Episode servedEpisodeOf(Season season) {
     var episode = Episode.builder().title("Episode").episodeNumber(1).season(season).build();
     episode.setId(UUID.randomUUID());
     when(seriesService.findEpisodeById(episode.getId())).thenReturn(Optional.of(episode));
