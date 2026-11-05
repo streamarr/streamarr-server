@@ -50,8 +50,8 @@ class FlywayMigrationOrderTests(unittest.TestCase):
     def start_pull_request(self, name="pull-request", start="main"):
         self.git(self.checkout, "switch", "--quiet", "--create", name, start)
 
-    def check(self, directory=None):
-        return subprocess.run(["python3", str(SCRIPT), "main"], cwd=directory or self.checkout,
+    def check(self, directory=None, arguments=("main",)):
+        return subprocess.run(["python3", str(SCRIPT), *arguments], cwd=directory or self.checkout,
             env=self.environment, capture_output=True, text=True, timeout=30)
 
     def assertRejected(self, result, migration, highest):
@@ -304,6 +304,21 @@ class FlywayMigrationOrderTests(unittest.TestCase):
 
         self.assertRejected(result, f"{SQL}/V116__Store_Language_Preferences.sql", "V118")
 
+
+    def test_shouldFailWithAnAnnotationWhenTheBaseBranchCannotBeFetched(self):
+        self.start_pull_request()
+        self.commit(f"{SQL}/V119__Store_Language_Preferences.sql")
+
+        result = self.check(arguments=("release",))
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("::error title=Flyway migration order check::git fetch", result.stdout)
+
+    def test_shouldFailWhenTheBaseBranchIsNotNamed(self):
+        result = self.check(arguments=())
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("Usage:", result.stderr)
 
 if __name__ == "__main__":
     unittest.main()
