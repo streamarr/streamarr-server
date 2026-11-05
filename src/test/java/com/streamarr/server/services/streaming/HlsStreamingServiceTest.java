@@ -2585,7 +2585,7 @@ class HlsStreamingServiceTest {
       "Should encode and deinterlace an interlaced H.264 source when the client plays H.264 in any quality")
   void shouldEncodeAndDeinterlaceAnInterlacedH264SourceWhenTheClientPlaysH264InAnyQuality(
       VideoQuality quality) {
-    probeResults.setDefaultOutcome(interlacedOutcome(FieldOrder.TT));
+    probeResults.setDefaultOutcome(outcomeWithFieldOrder(FieldOrder.TT));
 
     var session = accepted(service.createSession(interlacedSourceCommand(quality)));
     var started = transcodeExecutor.getStartedRequests().getFirst();
@@ -2648,7 +2648,7 @@ class HlsStreamingServiceTest {
   void
       shouldReportMissingCapacityInsteadOfNoEligibleFormatWhenAutoOrOriginalMustEncodeAnInterlacedSourceAndEveryEncoderIsBusy(
           VideoQuality quality) {
-    probeResults.setDefaultOutcome(interlacedOutcome(FieldOrder.TT));
+    probeResults.setDefaultOutcome(outcomeWithFieldOrder(FieldOrder.TT));
     transcodeExecutor.setEncodeSlots(Map.of("h264", 0));
 
     var outcome = service.createSession(interlacedSourceCommand(quality));
@@ -2689,7 +2689,7 @@ class HlsStreamingServiceTest {
       "Should encode an interlaced source in the codec whose entry keeps the field rate when another"
           + " entry caps it")
   void shouldEncodeAnInterlacedSourceInTheCodecWhoseEntryKeepsTheFieldRateWhenAnotherEntryCapsIt() {
-    probeResults.setDefaultOutcome(interlacedOutcome(FieldOrder.TT));
+    probeResults.setDefaultOutcome(outcomeWithFieldOrder(FieldOrder.TT));
     transcodeExecutor.setHardwareEncodableVideoCodecFamilies(Set.of("av1"));
     var declaration =
         defaultDeclarationBuilder()
@@ -4518,7 +4518,7 @@ class HlsStreamingServiceTest {
   }
 
   // A 29.97 fps H.264 outcome that meets the copy rule apart from its field order.
-  private static ProbeOutcome.Success interlacedOutcome(FieldOrder fieldOrder) {
+  private static ProbeOutcome.Success outcomeWithFieldOrder(FieldOrder fieldOrder) {
     return outcomeWithFrameRateRule(
         VideoPlaybackFactsFixture.interlacedRateRule(new Fraction(30_000, 1_001), fieldOrder));
   }
