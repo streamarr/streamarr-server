@@ -260,6 +260,64 @@ class TranscodeDecisionDolbyVisionCopyTest {
             ENCODE));
   }
 
+  // ADR 0052: after a failed Dolby Vision copy, the next format attempt may only strip the Dolby
+  // Vision, although the client still declares the profile. A source without a PQ or HLG base to
+  // strip down to is encoded.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("sourcesAfterAFailedDolbyVisionCopy")
+  @DisplayName(
+      "Should copy without the Dolby Vision or encode when only the copy with Dolby Vision stripped"
+          + " may follow")
+  void shouldCopyWithoutTheDolbyVisionOrEncodeWhenOnlyTheCopyWithDolbyVisionStrippedMayFollow(
+      String scenario, MediaProbe source, Outcome expected) {
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .capabilityDeclaration(Clients.dolbyVision(13))
+                .videoFormatConstraint(
+                    VideoFormatConstraint.COPY_WITH_DOLBY_VISION_STRIPPED_OR_ENCODE)
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .videoCopySupport(List.of(EVERY_REWRITE_WORKER))
+                .build());
+
+    assertThat(decision.map(Outcome::of)).contains(expected);
+  }
+
+  static Stream<Arguments> sourcesAfterAFailedDolbyVisionCopy() {
+    return Stream.of(
+        Arguments.of(
+            "Profile 8.1",
+            hevc(profile8(CompatibleBase.PQ, 1)),
+            strippingDolbyVision(VideoRange.PQ)),
+        Arguments.of(
+            "Profile 8.4",
+            hevc(profile8(CompatibleBase.HLG, 4)),
+            strippingDolbyVision(VideoRange.HLG)),
+        Arguments.of(
+            "Profile 10.1",
+            av1(profile10(CompatibleBase.PQ, 1)),
+            strippingDolbyVision(VideoRange.PQ)),
+        Arguments.of(
+            "Profile 10.4",
+            av1(profile10(CompatibleBase.HLG, 4)),
+            strippingDolbyVision(VideoRange.HLG)),
+        Arguments.of(
+            "Profile 8.1 with HDR10+, which the client declares",
+            hevc(withHdr10Plus(profile8(CompatibleBase.PQ, 1))),
+            strippingDolbyVision(VideoRange.PQ)),
+        Arguments.of(
+            "Profile 5 with its record",
+            hevc(VideoPlaybackFactsFixture.dolbyVisionProfile5()),
+            ENCODE),
+        Arguments.of(
+            "An HDR10 source without Dolby Vision",
+            hevc(
+                new VideoDynamicRange(
+                    CompatibleBase.PQ, Presence.ABSENT, new DolbyVision.Absent())),
+            ENCODE));
+  }
+
   // ADR 0036: the server sends a rewrite only to a worker that declares it. When no connected
   // worker declares every rewrite that the copy needs, the client receives an encode instead.
   @ParameterizedTest(name = "{0}")
