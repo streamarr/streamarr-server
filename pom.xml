@@ -22,7 +22,7 @@
         </sonar.coverage.jacoco.xmlReportPaths>
         <sonar.coverage.exclusions>
             **/pom.xml, **/StreamarrServerApplication.java, **/com/streamarr/transcode/v1/**,
-            **/CedarEngineSelfCheckLauncher.java, **/DevDataInitializer.java
+            **/CedarEngineSelfCheckLauncher.java, **/DevDataInitializer.java, .github/**
         </sonar.coverage.exclusions>
         <sonar.test.inclusions>**/src/test/**</sonar.test.inclusions>
         <sonar.exclusions>**/jooq/generated/**, **/target/generated-sources/**</sonar.exclusions>

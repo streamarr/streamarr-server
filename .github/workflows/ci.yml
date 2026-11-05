@@ -59,6 +59,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Verify the Flyway migration order check
+        run: python3 -m unittest discover -s .github/actions/test -p 'test_*.py'
+
+      - name: Reject added Flyway migrations at or below the base branch
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_BRANCH: ${{ github.base_ref }}
+        run: python3 .github/actions/flyway-migration-order.py "${BASE_BRANCH}"
+
       - name: Set up Buf
         uses: bufbuild/buf-action@85aebf73123b5c15fd5528aaecbf9129cddf7fa7 # v1.6.0
         with:
