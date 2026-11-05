@@ -18,6 +18,7 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
+import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.DolbyVisionOutput;
@@ -156,9 +157,9 @@ class DolbyVisionWithoutACompatibleBaseTest {
   @ParameterizedTest(name = "{0} beside {1}")
   @MethodSource("workersWithoutTheSampleEntry")
   @DisplayName(
-      "Should encode to SDR when no connected worker writes the Dolby Vision sample entry that the"
-          + " copy needs")
-  void shouldEncodeToSdrWhenNoConnectedWorkerWritesTheDolbyVisionSampleEntryThatTheCopyNeeds(
+      "Should encode to SDR and name the missing worker when no connected worker writes the Dolby"
+          + " Vision sample entry that the copy needs")
+  void shouldEncodeToSdrAndNameTheMissingWorkerWhenNoConnectedWorkerWritesTheSampleEntry(
       DolbyVisionProfile profile, WorkerVideoCopySupport worker) {
     workers.setVideoCopySupportByWorker(List.of(worker));
     probes.setDefaultProbe(baselessSource(profile));
@@ -166,6 +167,8 @@ class DolbyVisionWithoutACompatibleBaseTest {
     var encode = accepted(playback.start(start(VideoQuality.AUTO, baselessClient())));
 
     assertThatAnSdrEncodePlays(encode);
+    assertThat(sessionOf(encode).getTranscodeDecision().reasons())
+        .containsExactly(DecisionReason.NO_WORKER_DELIVERS_COPY);
   }
 
   static Stream<Arguments> workersWithoutTheSampleEntry() {
