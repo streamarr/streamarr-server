@@ -267,7 +267,7 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
                 aResponse()
                     .withStatus(200)
                     .withHeader("Content-Type", "image/jpeg")
-                    .withBody(createTestImage(2000, 3000))));
+                    .withBody(createTestImage(600, 900))));
     var backlog = List.of(savePerson(), savePerson());
     var completions = new CopyOnWriteArrayList<String>();
     var releases = new ArrayList<CountDownLatch>();
@@ -283,39 +283,47 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
         holders.add(holdCpuPermit(release));
       }
 
+      // Background work that waits first and keeps the permit it gets, so a freed permit that
+      // reached background work before the poster would leave the poster waiting for good.
+      var backgroundRelease = new CountDownLatch(1);
+      releases.add(backgroundRelease);
+      holders.add(keepBackgroundCpuPermitOnceGranted(backgroundRelease));
+      await().atMost(Duration.ofSeconds(BOUND_SECONDS)).until(() -> backgroundWaiters() == 1);
       transactionTemplate.executeWithoutResult(
           _ -> {
             for (var index = 0; index < backlog.size(); index++) {
               requestBacklogArtwork(backlog.get(index), index);
             }
           });
-      await().atMost(Duration.ofSeconds(BOUND_SECONDS)).until(() -> backgroundWaiters() == 2);
+      await().atMost(Duration.ofSeconds(BOUND_SECONDS)).until(() -> backgroundWaiters() == 3);
       var artworkRun =
           artworkRequestService.openLibraryOperationRun(
               "scan", ImageRefreshMode.PRESERVE, UUID.randomUUID());
-      var movie =
-          movieService.createMovieWithAssociations(movieMetadata(), mediaFile(), artworkRun);
+      movieService.createMovieWithAssociations(movieMetadata(), mediaFile(), artworkRun);
       await().atMost(Duration.ofSeconds(BOUND_SECONDS)).until(() -> primaryWaiters() == 1);
 
       releases.getFirst().countDown();
-      closeAndAwait(artworkRun);
-      releases.forEach(CountDownLatch::countDown);
-      await()
-          .atMost(Duration.ofSeconds(BOUND_SECONDS))
-          .until(() -> completions.size() == backlog.size() + 1);
+      var summary = closeAndAwait(artworkRun);
 
-      assertThat(completions.getFirst())
-          .isEqualTo(
-              ArtworkStepsTask.instanceId(new ArtworkTarget(movie.getId(), ImageEntityType.MOVIE)));
+      assertThat(summary.counts())
+          .isEqualTo(FinishedImageCounts.builder().saved(1).unavailable(1).build());
     } finally {
       releases.forEach(CountDownLatch::countDown);
-      for (var holder : holders) {
-        holder.await(Duration.ofSeconds(BOUND_SECONDS));
-      }
+      try {
+        for (var holder : holders) {
+          holder.await(Duration.ofSeconds(BOUND_SECONDS));
+        }
 
-      primaryScheduler.stop();
-      backgroundScheduler.stop();
-      artworkPrioritySchedulers.start();
+        // Stopping a scheduler waits only briefly for running steps, so every step finishes first
+        // rather than running on into the shared schedulers and the next test's rows.
+        await()
+            .atMost(Duration.ofSeconds(BOUND_SECONDS))
+            .until(() -> completions.size() >= backlog.size() + 1);
+      } finally {
+        primaryScheduler.stop();
+        backgroundScheduler.stop();
+        artworkPrioritySchedulers.start();
+      }
     }
   }
 
@@ -334,6 +342,18 @@ class RequiredArtworkIT extends AbstractWireMockIntegrationTest {
             });
     assertThat(held.await(BOUND_SECONDS, TimeUnit.SECONDS)).isTrue();
     return holder;
+  }
+
+  private BoundedTask<Void> keepBackgroundCpuPermitOnceGranted(CountDownLatch release) {
+    return BoundedTask.start(
+        () -> {
+          cpuPermits.runWithPermit(
+              CpuPermits.Priority.BACKGROUND,
+              () -> {
+                release.await();
+                return null;
+              });
+        });
   }
 
   private ArtworkTarget savePerson() {
