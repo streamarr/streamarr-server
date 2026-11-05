@@ -36,6 +36,7 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.AudioStreamProperties;
 import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ChannelLayout;
 import com.streamarr.server.domain.streaming.ChosenVideoStream;
@@ -1596,6 +1597,88 @@ class HlsStreamingServiceTest {
 
   @Builder
   record Aac71Step(boolean declaresEac3, int maxBitrate, String codec, long bitrate) {}
+
+  // A copied AAC 4.0 track at 384 kb/s leaves 716 kb/s under 1,100 kb/s, and its own 256 kb/s step
+  // leaves 844. A copied AAC 3.0 track at 320 kb/s leaves 730 kb/s under 1,050 kb/s, and its own
+  // 192 kb/s step leaves 858. AAC carries 3.0 and 4.0 exactly, so each step keeps the copy's layout
+  // (ADR 0050) and comes before stereo. AAC carries quad only as channel configuration 0, so a
+  // copied AAC quad track steps to stereo at 128 kb/s, which leaves 972.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("copiedAacTracksOfThreeAndFourChannels")
+  @DisplayName(
+      "Should keep a copied 3- or 4-channel AAC track's layout at its own lower step when AAC"
+          + " carries the layout and the copy leaves less than the 360p tier's video bitrate")
+  void
+      shouldKeepACopied3Or4ChannelAacTracksLayoutAtItsOwnLowerStepWhenAacCarriesTheLayoutAndTheCopyLeavesLessThanThe360pTiersVideoBitrate(
+          CopiedAacStep expected) {
+    var session =
+        createSessionCopyingAudio(
+            CopiedAudioSession.builder()
+                .track(
+                    ProbeFixture.audioStreamBuilder("aac")
+                        .index(1)
+                        .channels(OptionalInt.of(expected.stepLayout().getChannels()))
+                        .bitrate(OptionalLong.of(expected.copiedBitrate()))
+                        .audioProperties(
+                            Optional.of(
+                                AudioStreamProperties.builder()
+                                    .channelLayout(Optional.of(expected.trackLayout()))
+                                    .build())))
+                .declaration(
+                    defaultDeclarationBuilder()
+                        .audio(List.of(aacEntryBuilder().maxChannels(6).build()))
+                        .build())
+                .maxBitrate(expected.maxBitrate())
+                .build());
+
+    assertThat(session.getTranscodeDecision().audioDecision())
+        .extracting(
+            AudioDecision::mode,
+            AudioDecision::codec,
+            AudioDecision::channels,
+            AudioDecision::bitrate,
+            AudioDecision::channelLayout)
+        .containsExactly(
+            AudioMode.TRANSCODE,
+            "aac",
+            expected.stepLayout().getChannels(),
+            expected.stepBitrate(),
+            Optional.of(expected.stepLayout()));
+    assertThat(session.getVariants()).extracting(QualityVariant::label).containsExactly("360p");
+  }
+
+  static Stream<CopiedAacStep> copiedAacTracksOfThreeAndFourChannels() {
+    return Stream.of(
+        CopiedAacStep.builder()
+            .trackLayout("4.0")
+            .copiedBitrate(384_000L)
+            .maxBitrate(1_100_000)
+            .stepLayout(ChannelLayout.FOUR_POINT_ZERO)
+            .stepBitrate(256_000L)
+            .build(),
+        CopiedAacStep.builder()
+            .trackLayout("3.0")
+            .copiedBitrate(320_000L)
+            .maxBitrate(1_050_000)
+            .stepLayout(ChannelLayout.THREE_POINT_ZERO)
+            .stepBitrate(192_000L)
+            .build(),
+        CopiedAacStep.builder()
+            .trackLayout("quad")
+            .copiedBitrate(384_000L)
+            .maxBitrate(1_100_000)
+            .stepLayout(ChannelLayout.STEREO)
+            .stepBitrate(128_000L)
+            .build());
+  }
+
+  @Builder
+  record CopiedAacStep(
+      String trackLayout,
+      long copiedBitrate,
+      int maxBitrate,
+      ChannelLayout stepLayout,
+      long stepBitrate) {}
 
   // The server does not encode FLAC, so a copied FLAC 5.1 track steps through the server's AC-3 5.1
   // encode only: 448 and 384 kb/s. Under 1,440 kb/s, 448 kb/s leaves 992 for the video. The AC-3
