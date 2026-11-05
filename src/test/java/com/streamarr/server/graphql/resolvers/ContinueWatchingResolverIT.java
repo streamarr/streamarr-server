@@ -27,13 +27,16 @@ import com.streamarr.server.services.pagination.Position;
 import com.streamarr.server.services.pagination.SortValue;
 import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
+import jakarta.persistence.EntityManagerFactory;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.hibernate.SessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -59,6 +62,11 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
   @Autowired private EpisodeRepository episodeRepository;
   @Autowired private SessionProgressRepository sessionProgressRepository;
   @Autowired private AuditColumnFixtures auditColumns;
+  @Autowired private EntityManagerFactory entityManagerFactory;
+
+  private static final String SEASONS_AND_SERIES_QUERY =
+      "{ continueWatching(first: 12) { edges { node { ... on Episode { id season"
+          + " { seasonNumber series { title } } } } } } }";
 
   private static final SortValue WATCHED_AT =
       new SortValue.OfInstant(Instant.parse("2026-10-19T15:07:00Z"));
@@ -131,6 +139,60 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.continueWatching.edges[0].node.season.series.title")
                 .value("Test Series"));
+  }
+
+  @Test
+  @DisplayName(
+      "Should resolve each episode's own season and series when the list spans seasons and series")
+  void shouldResolveEachEpisodesOwnSeasonAndSeriesWhenTheListSpansSeasonsAndSeries()
+      throws Exception {
+    identity = authTestSupport.createIdentity();
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+    var drama = createSeries(library, "Drama");
+    var comedy = createSeries(library, "Comedy");
+    var expected =
+        Map.of(
+            createEpisodeWithProgress(createSeason(drama, 1)).getId().toString(),
+            "Drama 1",
+            createEpisodeWithProgress(createSeason(drama, 2)).getId().toString(),
+            "Drama 2",
+            createEpisodeWithProgress(createSeason(comedy, 1)).getId().toString(),
+            "Comedy 1");
+
+    var edges = execute(SEASONS_AND_SERIES_QUERY).at("/data/continueWatching/edges");
+
+    var resolved =
+        edges
+            .valueStream()
+            .map(edge -> edge.path("node"))
+            .collect(
+                Collectors.toMap(
+                    node -> node.path("id").asString(),
+                    node ->
+                        node.at("/season/series/title").asString()
+                            + " "
+                            + node.at("/season/seasonNumber").asInt()));
+    assertThat(resolved).isEqualTo(expected);
+  }
+
+  @Test
+  @DisplayName(
+      "Should read seasons and series in the same number of statements when the list spans more"
+          + " seasons and series")
+  void shouldReadSeasonsAndSeriesInTheSameNumberOfStatementsWhenTheListSpansMoreSeasonsAndSeries()
+      throws Exception {
+    identity = authTestSupport.createIdentity();
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+    var drama = createSeries(library, "Drama");
+    createEpisodeWithProgress(createSeason(drama, 1));
+    // The first request fills caches that later requests skip.
+    execute(SEASONS_AND_SERIES_QUERY);
+    var forOneEpisode = statementsPreparedBy(SEASONS_AND_SERIES_QUERY);
+
+    createEpisodeWithProgress(createSeason(drama, 2));
+    createEpisodeWithProgress(createSeason(createSeries(library, "Comedy"), 1));
+
+    assertThat(statementsPreparedBy(SEASONS_AND_SERIES_QUERY)).isEqualTo(forOneEpisode);
   }
 
   @Test
@@ -292,6 +354,22 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
   }
 
+  // Hibernate statistics are global, so the count holds only while no other test uses the context.
+  private long statementsPreparedBy(String query) throws Exception {
+    var statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+    var previouslyEnabled = statistics.isStatisticsEnabled();
+    statistics.setStatisticsEnabled(true);
+    statistics.clear();
+
+    try {
+      execute(query);
+      return statistics.getPrepareStatementCount();
+    } finally {
+      statistics.clear();
+      statistics.setStatisticsEnabled(previouslyEnabled);
+    }
+  }
+
   private JsonNode execute(String query) throws Exception {
     var mapper = new ObjectMapper();
     var result =
@@ -311,9 +389,12 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
 
   private Episode createEpisodeWithProgress() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
-    var series = createSeries(library);
-    var season = createSeason(library, series);
+    var series = createSeries(library, "Test Series");
+    return createEpisodeWithProgress(createSeason(series, 1));
+  }
 
+  private Episode createEpisodeWithProgress(Season season) {
+    var library = season.getLibrary();
     var file =
         MediaFile.builder()
             .libraryId(library.getId())
@@ -345,13 +426,18 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
     return episode;
   }
 
-  private Series createSeries(Library library) {
+  private Series createSeries(Library library, String title) {
     return seriesRepository.saveAndFlush(
-        Series.builder().title("Test Series").titleSort("Test Series").library(library).build());
+        Series.builder().title(title).titleSort(title).library(library).build());
   }
 
-  private Season createSeason(Library library, Series series) {
+  private Season createSeason(Series series, int seasonNumber) {
     return seasonRepository.saveAndFlush(
-        Season.builder().title("Season 1").seasonNumber(1).series(series).library(library).build());
+        Season.builder()
+            .title("Season " + seasonNumber)
+            .seasonNumber(seasonNumber)
+            .series(series)
+            .library(series.getLibrary())
+            .build());
   }
 }
