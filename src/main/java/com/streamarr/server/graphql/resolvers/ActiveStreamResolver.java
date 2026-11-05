@@ -26,9 +26,15 @@ public class ActiveStreamResolver {
         .toList();
   }
 
+  // ServerAdmin authority is live, so each delivery checks it again and a subscriber that lost it
+  // ends with the error before the change reaches it.
   @DgsSubscription
   public Publisher<ActiveStreamDto.ChangeDto> activeStreamsChanged() {
-    activeStreams.requireViewActiveStreams(authorizationService.currentIdentity());
-    return broadcaster.getChanges().register();
+    var identity = authorizationService.currentIdentity();
+    activeStreams.requireViewActiveStreams(identity);
+    return broadcaster
+        .getChanges()
+        .register()
+        .doOnNext(_ -> activeStreams.requireViewActiveStreams(identity));
   }
 }

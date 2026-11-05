@@ -6,12 +6,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
@@ -37,6 +39,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -78,6 +82,7 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
   @Autowired private MeterRegistry meterRegistry;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MovieRepository movieRepository;
+  @Autowired private UserAccountRepository userAccountRepository;
 
   private final List<AuthTestSupport.TestIdentity> identities = new ArrayList<>();
   private final List<GraphQlTransportWsTestClient> sockets = new ArrayList<>();
@@ -222,6 +227,73 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
     identities.add(identity);
 
     assertRefused(authTestSupport.deviceBoundProfileBearer(identity));
+  }
+
+  @ParameterizedTest
+  @EnumSource(Revocation.class)
+  @DisplayName(
+      "Should end activeStreamsChanged with FORBIDDEN before delivering a stream when the"
+          + " ServerAdmin loses authority after subscribing")
+  void shouldEndActiveStreamsChangedWithForbiddenWhenTheServerAdminLosesAuthorityAfterSubscribing(
+      Revocation revocation) {
+    var admin = authTestSupport.createAdminIdentity();
+    identities.add(admin);
+    var socket = connect(authTestSupport.profileBearer(admin));
+    socket.subscribe("streams", SUBSCRIPTION);
+    activeSubscriptions.awaitCount(FIELD, 1);
+    revocation.apply(userAccountRepository, admin);
+
+    var created =
+        http.execute(authTestSupport.profileBearer(viewer), createMutation(savedMovieFile()));
+    var playbackId =
+        created.path("data").path("createPlaybackSession").path("playbackSession").path("id");
+    openPlaybacks.add(playbackId.asString());
+    var ending = nextMessageOtherThanAnEarlierStream(socket, playbackId.asString());
+
+    assertThat(ending.path("type").asString()).isEqualTo("error");
+    assertThat(ending.path("payload").path(0).path("extensions").path("code").asString())
+        .isEqualTo("FORBIDDEN");
+    activeSubscriptions.awaitNoneActive();
+  }
+
+  enum Revocation {
+    DEMOTED {
+      @Override
+      void revoke(UserAccount account) {
+        account.setServerAdmin(false);
+      }
+    },
+    DISABLED {
+      @Override
+      void revoke(UserAccount account) {
+        account.setEnabled(false);
+      }
+    };
+
+    abstract void revoke(UserAccount account);
+
+    void apply(UserAccountRepository accounts, AuthTestSupport.TestIdentity identity) {
+      var account = accounts.findById(identity.account().getId()).orElseThrow();
+      revoke(account);
+      accounts.saveAndFlush(account);
+    }
+  }
+
+  // A stream that another test left may still announce itself before the revocation lands, but no
+  // message may carry this test's stream.
+  private static JsonNode nextMessageOtherThanAnEarlierStream(
+      GraphQlTransportWsTestClient socket, String playbackId) {
+    while (true) {
+      var message = socket.nextMessageFor("streams");
+      if (!"next".equals(message.path("type").asString())) {
+        return message;
+      }
+
+      var change = message.path("payload").path("data").path(FIELD);
+      assertThat(change.path("playbackSessionId").asString())
+          .as("a change of this test's stream reached a subscriber without authority")
+          .isNotEqualTo(playbackId);
+    }
   }
 
   private void assertRefused(String bearer) {
