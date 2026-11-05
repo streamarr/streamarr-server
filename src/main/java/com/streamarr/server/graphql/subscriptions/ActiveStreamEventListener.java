@@ -11,10 +11,10 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,8 +35,9 @@ import reactor.core.scheduler.Scheduler;
  * <p>A stored media segment changes nothing but the stream's produced range, so it reads the stream
  * only when that range differs from the one that the last broadcast carried. That check runs on
  * {@code taskScheduler} no sooner than {@link #PRODUCED_RANGE_INTERVAL} after a broadcast last
- * moved the range, and never while a read of the stream is in flight. Segments stored while a check
- * waits join that check, so an encode that runs ahead of the player cannot flood subscribers.
+ * moved the range, and never while a read of the stream is in flight. One check runs at a time per
+ * stream, and segments stored while it waits join it, so an encode that runs ahead of the player
+ * cannot flood subscribers.
  *
  * <p>Publication never fails the playback that triggered it: a failure is counted on {@value
  * LibraryEventListener#PUBLICATION_FAILURES_METRIC} instead, and subscribers recover current state
@@ -61,7 +62,7 @@ public class ActiveStreamEventListener {
   private final ConcurrentHashMap<UUID, MediaTimeRange> deliveredRanges = new ConcurrentHashMap<>();
   // When a broadcast of each stream last carried another produced range than the broadcast before.
   private final ConcurrentHashMap<UUID, Instant> rangeBroadcastsAt = new ConcurrentHashMap<>();
-  private final Set<UUID> scheduledRangeChecks = ConcurrentHashMap.newKeySet();
+  private final ConcurrentHashMap<UUID, RangeCheck> rangeChecks = new ConcurrentHashMap<>();
 
   // One reader at a time per playback session, so broadcasts follow read order. A change that
   // arrives during a read asks for one more read, so the last broadcast carries the latest state,
@@ -71,6 +72,22 @@ public class ActiveStreamEventListener {
   private enum Publication {
     READING,
     READ_AGAIN
+  }
+
+  // One produced range check at a time per playback session. A segment stored while the check
+  // waits joins it; one stored while it reads the range asks for one more check after it.
+  private enum RangeCheck {
+    WAITING,
+    CHECKING,
+    CHECK_AGAIN;
+
+    private RangeCheck withStoredSegment() {
+      if (this == CHECKING) {
+        return CHECK_AGAIN;
+      }
+
+      return this;
+    }
   }
 
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
@@ -88,7 +105,20 @@ public class ActiveStreamEventListener {
       return;
     }
 
-    scheduleRangeCheck(playbackSessionId, nextRangeCheckAt(playbackSessionId));
+    var started = new AtomicBoolean();
+    rangeChecks.compute(
+        playbackSessionId,
+        (_, current) -> {
+          if (current == null) {
+            started.set(true);
+            return RangeCheck.WAITING;
+          }
+
+          return current.withStoredSegment();
+        });
+    if (started.get()) {
+      scheduleRangeCheck(playbackSessionId, nextRangeCheckAt(playbackSessionId));
+    }
   }
 
   private Instant nextRangeCheckAt(UUID playbackSessionId) {
@@ -97,35 +127,46 @@ public class ActiveStreamEventListener {
         .plus(PRODUCED_RANGE_INTERVAL);
   }
 
-  // A segment stored while a check waits joins that check.
   private void scheduleRangeCheck(UUID playbackSessionId, Instant at) {
-    if (!scheduledRangeChecks.add(playbackSessionId)) {
-      return;
-    }
-
     try {
       taskScheduler.schedule(() -> checkProducedRange(playbackSessionId), at);
     } catch (RuntimeException e) {
-      scheduledRangeChecks.remove(playbackSessionId);
+      rangeChecks.remove(playbackSessionId);
       countFailure(e);
     }
   }
 
-  // The range read follows the check's removal from the scheduled set, so it sees every segment
-  // that joined the check, and a segment stored later schedules the next check.
+  // The range read follows the move to CHECKING, so it sees every segment that joined the check.
   private void checkProducedRange(UUID playbackSessionId) {
-    scheduledRangeChecks.remove(playbackSessionId);
-    var now = clock.instant();
+    rangeChecks.replace(playbackSessionId, RangeCheck.WAITING, RangeCheck.CHECKING);
+    var nextCheckAt = compareProducedRange(playbackSessionId, clock.instant());
+    var next =
+        rangeChecks.compute(
+            playbackSessionId,
+            (_, current) -> {
+              if (nextCheckAt.isPresent() || current == RangeCheck.CHECK_AGAIN) {
+                return RangeCheck.WAITING;
+              }
+
+              return null;
+            });
+    if (next != null) {
+      scheduleRangeCheck(
+          playbackSessionId, nextCheckAt.orElseGet(() -> nextRangeCheckAt(playbackSessionId)));
+    }
+  }
+
+  // Reads the stream when its range moved, or answers when to check again if it may not compare
+  // the range yet.
+  private Optional<Instant> compareProducedRange(UUID playbackSessionId, Instant now) {
     if (publications.containsKey(playbackSessionId)) {
       // The read in flight may broadcast a new range, which restarts the interval after it.
-      scheduleRangeCheck(playbackSessionId, now.plus(PRODUCED_RANGE_INTERVAL));
-      return;
+      return Optional.of(now.plus(PRODUCED_RANGE_INTERVAL));
     }
 
     var due = nextRangeCheckAt(playbackSessionId);
     if (now.isBefore(due)) {
-      scheduleRangeCheck(playbackSessionId, due);
-      return;
+      return Optional.of(due);
     }
 
     try {
@@ -136,6 +177,8 @@ public class ActiveStreamEventListener {
     } catch (RuntimeException e) {
       countFailure(e);
     }
+
+    return Optional.empty();
   }
 
   private void read(UUID playbackSessionId) {

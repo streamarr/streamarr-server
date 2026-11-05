@@ -426,6 +426,36 @@ class ActiveStreamEventListenerTest {
     assertThat(delivered).extracting(this::producedRangeOf).containsExactly(rangeOf(0, 12));
   }
 
+  // The first check parks after it found segment 1 missing, so it holds the range [0, 6) while
+  // segment 1 is stored and a second check could run beside it.
+  @Test
+  @DisplayName(
+      "Should deliver one change in 5 seconds when a segment is stored while a produced range check"
+          + " reads the range")
+  void shouldDeliverOneChangeIn5SecondsWhenASegmentIsStoredWhileARangeCheckReadsTheRange()
+      throws Exception {
+    var listener = listenerReading(new FakeMediaFileRepository());
+    var delivered = subscribe();
+    var playback = acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
+    var checkedAt = clock.instant();
+    storeSegment(listener, playback, 0);
+    var lookup = segments.parkAfterLookupOf(SegmentNames.mediaSegmentName(1));
+
+    try (var firstCheck = BoundedTask.start(() -> taskScheduler.runTasksDueAt(checkedAt))) {
+      awaitLatch(lookup.parked());
+      storeSegment(listener, playback, 1);
+      taskScheduler.runTasksDueAt(checkedAt);
+      lookup.release().countDown();
+      firstCheck.await(BOUND);
+    }
+
+    var withinTheInterval = List.copyOf(delivered);
+    runTasksAt(checkedAt.plus(Duration.ofSeconds(5)));
+
+    assertThat(withinTheInterval).extracting(this::producedRangeOf).containsExactly(rangeOf(0, 12));
+    assertThat(delivered).extracting(this::producedRangeOf).containsExactly(rangeOf(0, 12));
+  }
+
   @Test
   @DisplayName("Should wait for no produced range change when nobody subscribes")
   void shouldWaitForNoProducedRangeChangeWhenNobodySubscribes() {
@@ -518,8 +548,18 @@ class ActiveStreamEventListenerTest {
 
     private volatile boolean failing;
 
+    private volatile ParkedLookup parking;
+
+    record ParkedLookup(String segmentName, CountDownLatch parked, CountDownLatch release) {}
+
     void failLookups() {
       failing = true;
+    }
+
+    // The next lookup of the segment parks once it has its answer, until the test releases it.
+    ParkedLookup parkAfterLookupOf(String segmentName) {
+      parking = new ParkedLookup(segmentName, new CountDownLatch(1), new CountDownLatch(1));
+      return parking;
     }
 
     @Override
@@ -528,7 +568,15 @@ class ActiveStreamEventListenerTest {
         throw new IllegalStateException("The segment store is unavailable.");
       }
 
-      return super.segmentExists(sessionId, segmentName);
+      var exists = super.segmentExists(sessionId, segmentName);
+      var lookup = parking;
+      if (lookup != null && segmentName.equals(lookup.segmentName())) {
+        parking = null;
+        lookup.parked().countDown();
+        awaitLatch(lookup.release());
+      }
+
+      return exists;
     }
   }
 
