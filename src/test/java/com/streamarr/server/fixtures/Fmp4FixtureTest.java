@@ -128,27 +128,32 @@ class Fmp4FixtureTest {
         .containsExactly(record);
   }
 
+  // An RPU that a muxer moved into the next sample must show at that sample's start, not behind
+  // the picture that it describes.
   @Test
   @DisplayName(
-      "Should read the type of every NAL unit in every mdat when media follows the hvcC's 4-byte"
-          + " lengths")
-  void shouldReadTheTypeOfEveryNalUnitInEveryMdatWhenMediaFollowsTheHvccsLengths() {
+      "Should group each sample's NAL unit types by the track run's sample sizes when an RPU starts"
+          + " the next sample")
+  void shouldGroupEachSamplesNalUnitTypesByTheTrackRunsSampleSizesWhenAnRpuStartsTheNextSample() {
     var initialization =
         hevcInitialization("hvc1", box("hvcC", hvcc(MAIN_10_FIELDS, 30, new byte[0])));
+    var idr = HexFormat.of().parseHex("000000032601AF");
+    var rpu = HexFormat.of().parseHex("000000027C01");
+    var trailing = HexFormat.of().parseHex("000000030201AF");
     var media = new ByteArrayOutputStream();
-    media.writeBytes(box("moof", box("mfhd", words(0, 1))));
+    // trun flags 0x301: a data offset, then a duration and a size for each sample.
     media.writeBytes(
         box(
-            "mdat",
-            words(3),
-            HexFormat.of().parseHex("2601AF"),
-            words(2),
-            HexFormat.of().parseHex("7C01")));
-    media.writeBytes(box("moof", box("mfhd", words(0, 2))));
-    media.writeBytes(box("mdat", words(2), HexFormat.of().parseHex("7E01")));
+            "moof",
+            box("traf", box("tfhd", words(0, 1)), box("trun", words(0x301, 2, 0, 1, 7, 1, 13)))));
+    media.writeBytes(box("mdat", idr, rpu, trailing));
+    // tfhd flags 0x10: every sample of the run takes the default size of 7 bytes.
+    media.writeBytes(
+        box("moof", box("traf", box("tfhd", words(0x10, 1, 7)), box("trun", words(0, 1)))));
+    media.writeBytes(box("mdat", idr));
 
-    assertThat(Fmp4Fixture.nalUnitTypes(initialization, media.toByteArray()))
-        .containsExactly(19, 62, 63);
+    assertThat(Fmp4Fixture.sampleNalUnitTypes(initialization, media.toByteArray()))
+        .containsExactly(List.of(19), List.of(62, 1), List.of(19));
   }
 
   // The hvcC fields (ISO/IEC 14496-15 8.3.3.1.2) with 4-byte NAL unit lengths and the arrays.

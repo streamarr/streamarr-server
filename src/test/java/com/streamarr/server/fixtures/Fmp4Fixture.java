@@ -106,29 +106,76 @@ public final class Fmp4Fixture {
   }
 
   /**
-   * The NAL unit type of every NAL unit in the media's mdat boxes, in order, for media whose mdat
-   * boxes hold only the samples of the HEVC track that the initialization segment describes.
+   * The NAL unit types of each sample, in order, for media whose fragments each hold one track run
+   * of the HEVC track that the initialization segment describes, with the run's samples back to
+   * back in the mdat that follows its moof. The trun's sample sizes, or the tfhd's default size,
+   * delimit the samples (ISO/IEC 14496-12 8.8.7 and 8.8.8).
    */
-  public static List<Integer> nalUnitTypes(byte[] initialization, byte[] media) {
+  public static List<List<Integer>> sampleNalUnitTypes(byte[] initialization, byte[] media) {
     var hvcC = videoSampleEntry(initialization).visualChild("hvcC").payload();
     var lengthSize = (hvcC.get(21) & 0x03) + 1;
-    var types = new ArrayList<Integer>();
-    for (var mdat : boxes(ByteBuffer.wrap(media))) {
-      if (!mdat.type().equals("mdat")) {
+    var samples = new ArrayList<List<Integer>>();
+    var sampleSizes = List.<Integer>of();
+    for (var box : boxes(ByteBuffer.wrap(media))) {
+      if (box.type().equals("moof")) {
+        sampleSizes = sampleSizes(box);
+      }
+
+      if (box.type().equals("mdat")) {
+        var data = box.payload();
+        assertThat(sampleSizes.stream().mapToInt(Integer::intValue).sum())
+            .as("the sample sizes of the run that precedes the mdat")
+            .isEqualTo(data.remaining());
+        for (var size : sampleSizes) {
+          samples.add(nalUnitTypesOf(data.slice(data.position(), size), lengthSize));
+          data.position(data.position() + size);
+        }
+      }
+    }
+
+    return samples;
+  }
+
+  private static List<Integer> sampleSizes(Box fragment) {
+    var trackFragments = fragment.children("traf");
+    assertThat(trackFragments).as("the track fragments of a moof").hasSize(1);
+    var header = trackFragments.getFirst().child("tfhd").payload();
+    var headerFlags = header.getInt(0) & 0x00FF_FFFF;
+    // track_ID, then the optional base data offset, sample description index and default duration.
+    var defaultSizeOffset =
+        8 + ((headerFlags & 0x01) == 0 ? 0 : 8) + Integer.bitCount(headerFlags & 0x0A) * 4;
+    var run = trackFragments.getFirst().child("trun").payload();
+    var runFlags = run.getInt(0) & 0x00FF_FFFF;
+    var count = run.getInt(4);
+    // The data offset and first-sample flags precede the per-sample fields.
+    var position = 8 + Integer.bitCount(runFlags & 0x005) * 4;
+    var fieldsPerSample = Integer.bitCount(runFlags & 0xF00);
+    var sizes = new ArrayList<Integer>();
+    for (var sample = 0; sample < count; sample++) {
+      var fields = position + sample * fieldsPerSample * 4;
+      if ((runFlags & 0x200) == 0) {
+        assertThat(headerFlags & 0x10).as("a default sample size").isNotZero();
+        sizes.add(header.getInt(defaultSizeOffset));
         continue;
       }
 
-      var samples = mdat.payload();
-      while (samples.hasRemaining()) {
-        var length = 0;
-        for (var index = 0; index < lengthSize; index++) {
-          length = (length << 8) | Byte.toUnsignedInt(samples.get());
-        }
+      sizes.add(run.getInt(fields + ((runFlags & 0x100) == 0 ? 0 : 4)));
+    }
 
-        assertThat(length).as("NAL unit length").isBetween(1, samples.remaining());
-        types.add(nalUnitType(Byte.toUnsignedInt(samples.get(samples.position()))));
-        samples.position(samples.position() + length);
+    return sizes;
+  }
+
+  private static List<Integer> nalUnitTypesOf(ByteBuffer sample, int lengthSize) {
+    var types = new ArrayList<Integer>();
+    while (sample.hasRemaining()) {
+      var length = 0;
+      for (var index = 0; index < lengthSize; index++) {
+        length = (length << 8) | Byte.toUnsignedInt(sample.get());
       }
+
+      assertThat(length).as("NAL unit length").isBetween(1, sample.remaining());
+      types.add(nalUnitType(Byte.toUnsignedInt(sample.get(sample.position()))));
+      sample.position(sample.position() + length);
     }
 
     return types;

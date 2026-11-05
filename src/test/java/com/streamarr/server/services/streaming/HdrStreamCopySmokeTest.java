@@ -264,19 +264,14 @@ class HdrStreamCopySmokeTest {
     assertThat(attribute(streamInf, "SUPPLEMENTAL-CODECS"))
         .contains(supplementalCodecsOf(records.getFirst()));
     assertThat(attribute(streamInf, "VIDEO-RANGE")).contains(copy.base().name());
-    var delivered =
-        IntStream.range(0, mediaSegmentCount(session))
-            .boxed()
-            .flatMap(segment -> mediaNalUnitTypes(session, segment).stream())
-            .toList();
-    assertThat(delivered)
-        .as("a picture for each source frame")
-        .filteredOn(type -> type < FIRST_NON_PICTURE_TYPE)
-        .hasSize(SOURCE_FRAMES);
-    assertThat(delivered)
-        .as("one RPU behind each picture, as the source holds them")
-        .filteredOn(type -> type == RPU_TYPE)
-        .hasSize(SOURCE_FRAMES);
+    assertThat(deliveredSamples(session))
+        .as("each source frame's sample: its picture, then its RPU as the last NAL unit")
+        .hasSize(SOURCE_FRAMES)
+        .allSatisfy(
+            types -> {
+              assertThat(types).filteredOn(type -> type < FIRST_NON_PICTURE_TYPE).hasSize(1);
+              assertThat(types).containsOnlyOnce(RPU_TYPE).endsWith(RPU_TYPE);
+            });
   }
 
   static Stream<DolbyVisionCopy> dolbyVisionCopies() {
@@ -455,15 +450,26 @@ class HdrStreamCopySmokeTest {
   }
 
   private void assertWithoutDolbyVisionUnits(StreamSession session, int segment) {
-    assertThat(mediaNalUnitTypes(session, segment))
-        .as("the NAL unit types of media segment %d", segment)
-        .anyMatch(type -> type < FIRST_NON_PICTURE_TYPE)
-        .doesNotContain(RPU_TYPE, ENHANCEMENT_LAYER_TYPE);
+    assertThat(segmentSamples(session, segment))
+        .as("the NAL unit types of each sample of media segment %d", segment)
+        .isNotEmpty()
+        .allSatisfy(
+            types ->
+                assertThat(types)
+                    .anyMatch(type -> type < FIRST_NON_PICTURE_TYPE)
+                    .doesNotContain(RPU_TYPE, ENHANCEMENT_LAYER_TYPE));
   }
 
-  private List<Integer> mediaNalUnitTypes(StreamSession session, int segment) {
+  private List<List<Integer>> deliveredSamples(StreamSession session) {
+    return IntStream.range(0, mediaSegmentCount(session))
+        .boxed()
+        .flatMap(segment -> segmentSamples(session, segment).stream())
+        .toList();
+  }
+
+  private List<List<Integer>> segmentSamples(StreamSession session, int segment) {
     var sessionId = session.getSessionId();
-    return Fmp4Fixture.nalUnitTypes(
+    return Fmp4Fixture.sampleNalUnitTypes(
         segmentStore.readSegment(sessionId, SegmentNames.INITIALIZATION_SEGMENT_NAME),
         segmentStore.readSegment(sessionId, SegmentNames.mediaSegmentName(segment)));
   }
