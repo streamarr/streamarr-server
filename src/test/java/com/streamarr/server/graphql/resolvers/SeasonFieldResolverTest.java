@@ -145,6 +145,36 @@ class SeasonFieldResolverTest {
   }
 
   @Test
+  @DisplayName(
+      "Should fail only the season whose series is missing when another season's series resolves")
+  void shouldFailOnlyTheSeasonWhoseSeriesIsMissingWhenAnotherSeasonsSeriesResolves() {
+    var found = seriesTitled("Drama");
+    var missing = seriesTitled("Comedy");
+    var foundSeason = servedSeasonOf(found);
+    var orphan = servedSeasonOf(missing);
+    when(seriesService.findSeriesByIds(anyCollection()))
+        .thenAnswer(read -> onlyRequested(read.getArgument(0), List.of(found)));
+
+    var result =
+        dgsQueryExecutor.execute(
+            """
+            {
+              found: season(id: "%s") { series { title } }
+              orphan: season(id: "%s") { series { title } }
+            }
+            """
+                .formatted(foundSeason.getId(), orphan.getId()));
+
+    Map<String, Object> data = result.getData();
+    assertThat(data)
+        .containsEntry("found", Map.of("series", Map.of("title", "Drama")))
+        .containsEntry("orphan", null);
+    assertThat(result.getErrors())
+        .singleElement()
+        .satisfies(error -> assertThat(error.getPath()).first().isEqualTo("orphan"));
+  }
+
+  @Test
   @DisplayName("Should return series not found error when season references missing series")
   void shouldReturnSeriesNotFoundErrorWhenSeasonReferencesMissingSeries() {
     var seriesId = UUID.randomUUID();
