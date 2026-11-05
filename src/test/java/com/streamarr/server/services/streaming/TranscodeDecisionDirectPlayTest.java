@@ -344,9 +344,10 @@ class TranscodeDecisionDirectPlayTest {
   }
 
   // ADR 0045: a player that cannot select an audio track in a directly played file, such as
-  // Chromium's, plays the file's first audio track. It direct-plays the file when the stream
-  // session's chosen audio track is that track, and plays over HLS from the start otherwise. The
-  // probe lists the chosen track first, so a later track listed first is a later choice.
+  // Chromium's, starts on the file's default audio track, or on its first when none is marked. It
+  // direct-plays the file when the stream session's chosen audio track is the first and the player
+  // starts on it, and plays over HLS from the start otherwise, naming why. The probe lists the
+  // chosen track first, so a later track listed first is a later choice.
   @ParameterizedTest(name = "{0}")
   @MethodSource("chosenAudioTracksForAPlayerThatCannotSelectOne")
   @DisplayName(
@@ -365,11 +366,41 @@ class TranscodeDecisionDirectPlayTest {
   static Stream<Arguments> chosenAudioTracksForAPlayerThatCannotSelectOne() {
     var englishFirst = aacBuilder("eng").index(1).build();
     var frenchSecond = aacBuilder("fra").index(2).build();
+    var frenchSecondAsDefault = aacBuilder("fra").index(2).isDefault(true).build();
+    var notSelectable = refused(DecisionReason.DIRECT_PLAY_AUDIO_TRACK_NOT_SELECTABLE);
     return Stream.of(
         Arguments.of("one track", List.of(englishFirst), MATROSKA_DIRECT_PLAY),
         Arguments.of(
             "the first of two tracks", List.of(englishFirst, frenchSecond), MATROSKA_DIRECT_PLAY),
-        Arguments.of("the second of two tracks", List.of(frenchSecond, englishFirst), refused()));
+        Arguments.of(
+            "the second of two tracks", List.of(frenchSecond, englishFirst), notSelectable),
+        Arguments.of(
+            "the first of two tracks when the second is the default",
+            List.of(englishFirst, frenchSecondAsDefault),
+            notSelectable));
+  }
+
+  @Test
+  @DisplayName(
+      "Should name the unselectable audio track after the declaration's refusals when the file"
+          + " fails both")
+  void shouldNameTheUnselectableAudioTrackAfterTheDeclarationsRefusalsWhenTheFileFailsBoth() {
+    var source =
+        h264Source()
+            .containerFormat(Optional.of("mpegts"))
+            .streams(
+                List.of(aacBuilder("fra").index(2).build(), aacBuilder("eng").index(1).build()))
+            .build();
+    var request =
+        request()
+            .capabilityDeclaration(nonSelectingDeclarationListing(SourceContainer.MATROSKA))
+            .source(source);
+
+    assertThat(service.decideDirectPlay(request.build()))
+        .isEqualTo(
+            refused(
+                DecisionReason.DIRECT_PLAY_CONTAINER_NOT_DECLARED,
+                DecisionReason.DIRECT_PLAY_AUDIO_TRACK_NOT_SELECTABLE));
   }
 
   @Test

@@ -5578,6 +5578,44 @@ class HlsStreamingServiceTest {
     assertThat(session.getMediaProbe().sessionAudioTrackPosition()).hasValue(0);
   }
 
+  // The HLS format attempt names why it does not direct-play first among its stream decision's
+  // reasons, so a playback-data overlay shows that the player cannot select the chosen track.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("audioTracksThatANonSelectingPlayerWouldNotStartOn")
+  @DisplayName(
+      "Should name the unselectable audio track when a player that cannot select one starts HLS")
+  void shouldNameTheUnselectableAudioTrackWhenAPlayerThatCannotSelectOneStartsHls(
+      String scenario, MediaProbe probe, OptionalInt chosenAudioTrack) {
+    probeResults.setDefaultProbe(probe);
+    var file = seedMediaFile();
+    var declaration = directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(false).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId())
+                    .capabilityDeclaration(declaration)
+                    .audioTrackPosition(chosenAudioTrack)
+                    .build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.HLS);
+    assertThat(session.getTranscodeDecision().reasons())
+        .first()
+        .isEqualTo(DecisionReason.DIRECT_PLAY_AUDIO_TRACK_NOT_SELECTABLE);
+  }
+
+  static Stream<Arguments> audioTracksThatANonSelectingPlayerWouldNotStartOn() {
+    return Stream.of(
+        Arguments.of(
+            "a later track is chosen",
+            directPlayableProbeWithAudioIn("eng", "fra"),
+            OptionalInt.of(1)),
+        Arguments.of(
+            "the first track is not the default",
+            directPlayableProbeWhoseDefaultAudioTrackIsTheSecond(),
+            OptionalInt.empty()));
+  }
+
   // ADR 0045: a player that selects audio tracks direct-plays a file with several, and selects the
   // audio track that the stream decision names: the track that HLS plays for the same file.
   @Test

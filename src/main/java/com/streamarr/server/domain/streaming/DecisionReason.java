@@ -136,6 +136,12 @@ public enum DecisionReason {
    */
   DIRECT_PLAY_AUDIO_NOT_DECLARED,
   /**
+   * The player cannot select an audio track inside a file that it direct-plays, and it would not
+   * start on the stream session's audio track: the session chose a later track, or the file marks
+   * another track as its default (ADR 0045).
+   */
+  DIRECT_PLAY_AUDIO_TRACK_NOT_SELECTABLE,
+  /**
    * A forced image subtitle track, PGS, VobSub or DVB, is in the language of an audio track
    * (streamarr/streamarr-server#506).
    */

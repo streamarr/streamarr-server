@@ -104,12 +104,15 @@ public class TranscodeDecisionService {
 
     var declaration = request.capabilityDeclaration();
     refusals.addAll(declaration.directPlayRefusals(source, container.get()));
-    var audioTrackPosition = source.sessionAudioTrackPosition();
-    if (!refusals.isEmpty() || !canPlayTheSessionsAudioTrack(declaration, source)) {
+    if (!canPlayTheSessionsAudioTrack(declaration, source)) {
+      refusals.add(DecisionReason.DIRECT_PLAY_AUDIO_TRACK_NOT_SELECTABLE);
+    }
+
+    if (!refusals.isEmpty()) {
       return new DirectPlayChoice.Refused(refusals);
     }
 
-    return new DirectPlayChoice.Accepted(container.get(), audioTrackPosition);
+    return new DirectPlayChoice.Accepted(container.get(), source.sessionAudioTrackPosition());
   }
 
   private static boolean canPlayTheSessionsAudioTrack(
