@@ -1,0 +1,120 @@
+# A Profile's language preferences and its overrides of them for one series, season, episode or
+# movie (ADR 0043). Each override belongs to one Profile and names a language, never a track.
+
+"When a subtitle track starts on."
+enum SubtitleMode {
+    "No subtitle track, not even a forced track."
+    OFF
+    "Only a forced track whose language matches the selected audio. The default."
+    FORCED
+    "The track in the subtitle language, whatever the audio."
+    ALWAYS
+}
+
+"The level that a language preference comes from."
+enum PreferenceSource {
+    "The Profile's own preferences."
+    PROFILE
+    "The Profile's override for the series."
+    SERIES
+    "The Profile's override for the season."
+    SEASON
+    "The Profile's override for the episode or the movie itself."
+    TITLE
+}
+
+"A Profile's own language preferences."
+type ProfileLanguagePreferences {
+    "At most five languages, in the order the Profile prefers them."
+    audioLanguages: [Language!]!
+    subtitleLanguage: Language
+    subtitleMode: SubtitleMode!
+}
+
+"""
+The language preferences that apply to a title for the selected Profile. A stream of the title
+starts in the first audio language that the file holds in a track that can play as the default,
+unless the stream session names its own language.
+"""
+type LanguagePreference {
+    """
+    The audio languages in the order a stream tries them: the episode's or movie's override,
+    the season's, the series', then the Profile's list, each language once.
+    """
+    audioLanguages: [Language!]!
+    subtitleLanguage: Language
+    subtitleMode: SubtitleMode!
+    "The level of the first audio language; PROFILE when no override names an audio language."
+    audioSource: PreferenceSource!
+    "The most specific level that sets the subtitle language or the subtitle mode; PROFILE when no override sets either."
+    subtitleSource: PreferenceSource!
+}
+
+"A title whose language preferences a Profile can override."
+union LanguagePreferenceItem = Movie | Episode | Season | Series
+
+input SetLanguagePreferencesInput {
+    "At most five languages, none twice, in order of preference."
+    audioLanguages: [Language!]!
+    subtitleLanguage: Language
+    subtitleMode: SubtitleMode!
+}
+
+type SetLanguagePreferencesPayload {
+    "The stored preferences. Null when userErrors is not empty."
+    languagePreferences: ProfileLanguagePreferences
+    userErrors: [SetLanguagePreferencesError!]!
+}
+
+union SetLanguagePreferencesError = TooManyAudioLanguagesError | RepeatedAudioLanguageError
+
+"The list names more audio languages than a Profile keeps."
+type TooManyAudioLanguagesError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+    "The most audio languages a Profile keeps."
+    maximum: Int!
+}
+
+"The list names one audio language twice. inputPath points at the second."
+type RepeatedAudioLanguageError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+    language: Language!
+}
+
+"""
+Each language field that the input leaves out keeps the stored value. A field set to null
+inherits from the next wider level: the season, then the series, then the Profile. An override
+whose every field inherits is removed. A switch in the player sets the override of that episode
+or movie only, and never the season's or the series', so the next episode starts from the wider
+levels again. A settings screen sets the override of its own level.
+"""
+input SetLanguageOverrideInput {
+    "The ID of a series, a season, an episode or a movie."
+    itemId: ID!
+    audioLanguage: Language
+    subtitleLanguage: Language
+    subtitleMode: SubtitleMode
+}
+
+type SetLanguageOverridePayload {
+    "The title in its resulting state. Null when userErrors is not empty."
+    item: LanguagePreferenceItem
+    userErrors: [SetLanguageOverrideError!]!
+}
+
+union SetLanguageOverrideError = InvalidIdError | ItemNotFoundError
+
+input ClearLanguageOverrideInput {
+    "The ID of a series, a season, an episode or a movie."
+    itemId: ID!
+}
+
+type ClearLanguageOverridePayload {
+    "The title in its resulting state. Null when userErrors is not empty."
+    item: LanguagePreferenceItem
+    userErrors: [ClearLanguageOverrideError!]!
+}
+
+union ClearLanguageOverrideError = InvalidIdError | ItemNotFoundError

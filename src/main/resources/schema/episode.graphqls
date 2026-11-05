@@ -10,6 +10,8 @@ type Episode {
     images(type: ImageType): [Image]!
     watchProgress: WatchProgress
     watchStatus: WatchStatus!
+    "The language preferences of the selected Profile that apply here: the Profile's own, under its overrides (ADR 0043)."
+    languagePreference: LanguagePreference!
     """
     When the selected Profile last watched this episode, as an ISO-8601 instant. It is the later
     of the latest completion or manual mark that has not been dismissed and the latest session

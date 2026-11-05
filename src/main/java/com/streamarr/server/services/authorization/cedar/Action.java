@@ -35,6 +35,13 @@ enum Action {
       FactRequirement.CONTEXT_HOUSEHOLD_ACCESS,
       FactRequirement.SESSION_LIVENESS,
       FactRequirement.PROFILE_AVAILABILITY),
+  SET_LANGUAGE_PREFERENCES(
+      "setLanguagePreferences",
+      ResourceKind.PROFILE,
+      FactRequirement.SIGNED_PRINCIPAL_CONTEXT,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.CONTEXT_HOUSEHOLD_ACCESS,
+      FactRequirement.PROFILE_AVAILABILITY),
   VIEW_PROFILE_ACTIVITY(
       "viewProfileActivity",
       ResourceKind.PROFILE,
