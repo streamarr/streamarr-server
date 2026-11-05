@@ -15,6 +15,7 @@ import com.streamarr.server.domain.streaming.DecimalSeconds;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
+import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -38,6 +39,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -460,5 +462,78 @@ class HlsStreamingSmokeTest {
                   .isTrue();
               assertThat(workerFixture.worker().processRunning(attemptId)).isFalse();
             });
+  }
+
+  @Test
+  @DisplayName(
+      "Should send the named audio track over HLS when the request names a later track of the file")
+  void shouldSendTheNamedAudioTrackOverHlsWhenTheRequestNamesALaterTrackOfTheFile()
+      throws Exception {
+    var source = generateStereoThenMonoAudioTracks();
+    probeRepository.setDefaultOutcome(probe(source));
+    var file = seedMediaFile(source);
+
+    var session =
+        OutcomeTestSupport.accepted(
+            streamingService.createSession(
+                createStreamSessionCommandBuilder(file.getId(), UUID.randomUUID())
+                    .audioTrackPosition(OptionalInt.of(1))
+                    .build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.HLS);
+    await()
+        .atMost(Duration.ofSeconds(30))
+        .until(() -> segmentStore.segmentExists(session.getSessionId(), "segment0.m4s"));
+    var sent =
+        Files.write(
+            temporaryDirectory.resolve("sent.mp4"),
+            Fmp4Fixture.withInitializationSegment(
+                segmentStore, session.getSessionId(), "segment0.m4s"));
+    assertThat(workerFixture.worker().decodedAudio(source).channelLayout())
+        .as("the file's first audio track")
+        .isEqualTo("stereo");
+    assertThat(workerFixture.worker().decodedAudio(sent).channelLayout())
+        .as("the audio track that the stream session sends")
+        .isEqualTo("mono");
+  }
+
+  // A stereo audio track first and a mono audio track second, beside an H.264 picture that the
+  // default declaration copies.
+  private Path generateStereoThenMonoAudioTracks() throws Exception {
+    return workerFixture
+        .worker()
+        .generateMedia(
+            testVideo.getParent().resolve("stereo-then-mono.mp4"),
+            List.of(
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=320x180:rate=24:duration=8",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=8",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=880:duration=8",
+                "-map",
+                "0:v",
+                "-map",
+                "1:a",
+                "-map",
+                "2:a",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-g",
+                "24",
+                "-c:a",
+                "aac",
+                "-ac:a:0",
+                "2",
+                "-ac:a:1",
+                "1"));
   }
 }
