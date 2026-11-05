@@ -25,6 +25,8 @@ import org.testcontainers.images.builder.Transferable;
 @Slf4j
 public final class WorkerContainerFixture implements AutoCloseable {
 
+  private static final String RMS_LEVEL = "RMS level dB: ";
+
   private final WorkerSessionServer workerSessions;
   private final UUID sourceNamespaceId;
   private final Path sourceRoot;
@@ -272,6 +274,51 @@ public final class WorkerContainerFixture implements AutoCloseable {
     assertThat(result.getExitCode()).isIn(0, 1);
     return result.getExitCode() == 0;
   }
+
+  /**
+   * The media's first audio stream as the worker image's FFmpeg decodes it: the decoder's channel
+   * layout and each channel's RMS level in dBFS, in the layout's channel order.
+   */
+  public DecodedAudio decodedAudio(Path media) throws Exception {
+    var layout =
+        probePackets(media, "a:0", List.of("-show_entries", "stream=channel_layout")).getFirst();
+    var input = "/tmp/levels-" + UUID.randomUUID() + ".mp4";
+    container.copyFileToContainer(Transferable.of(Files.readAllBytes(media), 0644), input);
+    // astats reports its summary at the info level on standard error; a file keeps the launcher's
+    // diagnostics out of it.
+    var decode =
+        container.execInContainer(
+            "bash",
+            "-c",
+            "/cnb/lifecycle/launcher ffmpeg -nostats -xerror -i \"$1\" -map 0:a:0 -af"
+                + " astats=measure_perchannel=RMS_level:measure_overall=none -f null - 2>"
+                + " \"$1.levels\"",
+            "bash",
+            input);
+    assertThat(decode.getExitCode()).as("Decode audio: %s", decode.getStderr()).isZero();
+    var report = container.execInContainer("cat", input + ".levels");
+    assertThat(report.getExitCode()).as(report.getStderr()).isZero();
+    var levels =
+        report
+            .getStdout()
+            .lines()
+            .filter(line -> line.contains(RMS_LEVEL))
+            .map(line -> rmsLevel(line.substring(line.indexOf(RMS_LEVEL) + RMS_LEVEL.length())))
+            .toList();
+    return new DecodedAudio(layout.split(",")[0], levels);
+  }
+
+  // astats writes -inf for a silent channel.
+  private static double rmsLevel(String value) {
+    if (value.equals("-inf")) {
+      return Double.NEGATIVE_INFINITY;
+    }
+
+    return Double.parseDouble(value);
+  }
+
+  /** A decoded audio stream's channel layout, as FFmpeg names it, and each channel's RMS level. */
+  public record DecodedAudio(String channelLayout, List<Double> channelLevels) {}
 
   public long decodedVideoFrameCount(Path media) throws Exception {
     var input = "/tmp/decode-" + UUID.randomUUID() + ".mp4";

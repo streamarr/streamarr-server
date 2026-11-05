@@ -168,6 +168,16 @@ class RemoteVariantJobMapperTest {
         new OutputLayout(ChannelLayout.MONO, AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_MONO),
         new OutputLayout(ChannelLayout.STEREO, AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_STEREO),
         new OutputLayout(
+            ChannelLayout.TWO_POINT_ONE, AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_TWO_POINT_ONE),
+        new OutputLayout(
+            ChannelLayout.THREE_POINT_ZERO,
+            AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_THREE_POINT_ZERO),
+        new OutputLayout(
+            ChannelLayout.FOUR_POINT_ZERO, AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FOUR_POINT_ZERO),
+        new OutputLayout(ChannelLayout.QUAD, AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_QUAD),
+        new OutputLayout(
+            ChannelLayout.QUAD_SIDE, AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_QUAD_SIDE),
+        new OutputLayout(
             ChannelLayout.FIVE_POINT_ZERO, AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ZERO),
         new OutputLayout(
             ChannelLayout.FIVE_POINT_ZERO_SIDE,

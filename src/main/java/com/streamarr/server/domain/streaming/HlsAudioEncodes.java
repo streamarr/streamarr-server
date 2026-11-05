@@ -35,9 +35,28 @@ public final class HlsAudioEncodes {
           SIDE_SURROUND_LAYOUTS,
           "eac3",
           SIDE_SURROUND_LAYOUTS);
+  private static final List<ChannelLayout> AC3_THREE_AND_FOUR_CHANNEL_LAYOUTS =
+      List.of(
+          ChannelLayout.TWO_POINT_ONE,
+          ChannelLayout.THREE_POINT_ZERO,
+          ChannelLayout.FOUR_POINT_ZERO,
+          ChannelLayout.QUAD,
+          ChannelLayout.QUAD_SIDE);
+  // The 3- and 4-channel layouts that each encoder carries exactly (ADR 0050). FFmpeg writes AAC
+  // 2.1 and quad as channel configuration 0, which Chromium refuses, and AVFoundation misplaces
+  // AC-3 and E-AC-3 3.0(back) and 3.1.
+  private static final Map<String, List<ChannelLayout>> THREE_AND_FOUR_CHANNEL_LAYOUTS =
+      Map.of(
+          "aac",
+          List.of(ChannelLayout.THREE_POINT_ZERO, ChannelLayout.FOUR_POINT_ZERO),
+          "ac3",
+          AC3_THREE_AND_FOUR_CHANNEL_LAYOUTS,
+          "eac3",
+          AC3_THREE_AND_FOUR_CHANNEL_LAYOUTS);
   private static final String SEVEN_POINT_ZERO = "7.0";
   private static final int MONO = 1;
   private static final int STEREO = 2;
+  private static final int FOUR_CHANNELS = 4;
   private static final int FIVE_POINT_ZERO = 5;
   private static final int FIVE_POINT_ONE = 6;
   // A 7.0 track has no low-frequency channel, so AAC, AC-3 and E-AC-3 encode it in 5.0: its four
@@ -77,7 +96,9 @@ public final class HlsAudioEncodes {
 
   /**
    * The encode of the track in the codec, by its probed name, or empty when the server does not
-   * encode the codec or the encode would keep at most two channels.
+   * encode the codec or the encode would keep at most two channels. A track of 3 or 4 channels
+   * keeps them in the track's own layout when the codec carries that layout exactly and its entry
+   * accepts that many channels; otherwise the encode would be stereo (ADR 0050).
    */
   public static Optional<AudioDecision> multichannelEncode(
       @NonNull ClientCapabilityDeclaration declaration,
@@ -87,7 +108,12 @@ public final class HlsAudioEncodes {
       return Optional.empty();
     }
 
-    return multichannelEncode(channelMaximums(declaration), codec, track);
+    var channelMaximums = channelMaximums(declaration);
+    if (track.count() <= FOUR_CHANNELS) {
+      return encodeInTheTracksOwnLayout(channelMaximums, codec, track);
+    }
+
+    return multichannelEncode(channelMaximums, codec, track);
   }
 
   /** The AAC encode of the track, with at most two channels. */
@@ -115,6 +141,20 @@ public final class HlsAudioEncodes {
     }
 
     return Optional.of(transcode(codec, channels));
+  }
+
+  private static Optional<AudioDecision> encodeInTheTracksOwnLayout(
+      Map<String, Integer> channelMaximums, String codec, AudioTrackChannels track) {
+    int maximum = channelMaximums.getOrDefault(codec, 0);
+    return track
+        .layout()
+        .flatMap(
+            name ->
+                THREE_AND_FOUR_CHANNEL_LAYOUTS.get(codec).stream()
+                    .filter(layout -> layout.getFfmpegName().equals(name))
+                    .findFirst())
+        .filter(layout -> layout.getChannels() <= maximum)
+        .map(layout -> transcode(codec, layout));
   }
 
   // The channels of the track that an encode keeps before a channel maximum caps them: 5 channels
@@ -160,17 +200,21 @@ public final class HlsAudioEncodes {
   }
 
   private static AudioDecision transcode(String codec, int channels) {
-    var layout =
+    return transcode(
+        codec,
         ENCODER_LAYOUTS.get(codec).stream()
             .filter(candidate -> candidate.getChannels() == channels)
             .findFirst()
-            .orElseThrow();
+            .orElseThrow());
+  }
+
+  private static AudioDecision transcode(String codec, ChannelLayout layout) {
     return AudioDecision.builder()
         .mode(AudioMode.TRANSCODE)
         .codec(codec)
-        .channels(channels)
+        .channels(layout.getChannels())
         .channelLayout(Optional.of(layout))
-        .bitrate(AudioDecision.bitrateFor(codec, channels))
+        .bitrate(AudioDecision.bitrateFor(codec, layout.getChannels()))
         .build();
   }
 }

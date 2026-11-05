@@ -259,6 +259,11 @@ final class RemoteVariantJobMapper {
     return switch (layout) {
       case MONO -> AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_MONO;
       case STEREO -> AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_STEREO;
+      case TWO_POINT_ONE -> AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_TWO_POINT_ONE;
+      case THREE_POINT_ZERO -> AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_THREE_POINT_ZERO;
+      case FOUR_POINT_ZERO -> AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FOUR_POINT_ZERO;
+      case QUAD -> AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_QUAD;
+      case QUAD_SIDE -> AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_QUAD_SIDE;
       case FIVE_POINT_ZERO -> AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ZERO;
       case FIVE_POINT_ZERO_SIDE -> AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ZERO_SIDE;
       case FIVE_POINT_ONE -> AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_FIVE_POINT_ONE;
