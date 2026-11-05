@@ -215,17 +215,17 @@ public record PlaybackDecision(
             .channels(sourceChannels(source))
             .bitrate(source.audioBitrate())
             .build();
+    // A copy delivers the source's audio as it is; the decision's channels and bitrate only plan.
+    if (decision.mode() == AudioMode.COPY) {
+      return Optional.of(new TrackDelivery<>(PlaybackDelivery.COPY, sourceFormat, sourceFormat));
+    }
+
     var output =
         AudioFormat.builder()
             .codec(decision.codec())
             .channels(OptionalInt.of(decision.channels()))
             .bitrate(OptionalLong.of(decision.bitrate()))
             .build();
-    var delivery = PlaybackDelivery.ENCODE;
-    if (decision.mode() == AudioMode.COPY) {
-      delivery = PlaybackDelivery.COPY;
-    }
-
-    return Optional.of(new TrackDelivery<>(delivery, sourceFormat, output));
+    return Optional.of(new TrackDelivery<>(PlaybackDelivery.ENCODE, sourceFormat, output));
   }
 }
