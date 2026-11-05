@@ -6043,6 +6043,34 @@ class HlsStreamingServiceTest {
             OptionalInt.empty()));
   }
 
+  @ParameterizedTest(name = "selects audio track: {0}")
+  @CsvSource({"true, DIRECT_PLAY", "false, HLS"})
+  @DisplayName(
+      "Should decide direct play on the audio track that the session's language chooses when it is"
+          + " a later track")
+  void shouldDecideDirectPlayOnTheAudioTrackThatTheSessionsLanguageChoosesWhenItIsALaterTrack(
+      boolean selectsAudioTrack, StreamDelivery delivery) {
+    probeResults.setDefaultProbe(directPlayableProbeWithAudioIn("eng", "fra"));
+    var file = seedMediaFile();
+    var declaration =
+        directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(selectsAudioTrack).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId())
+                    .options(
+                        StreamingOptions.builder()
+                            .quality(VideoQuality.ORIGINAL)
+                            .audioLanguage(Language.FR)
+                            .build())
+                    .capabilityDeclaration(declaration)
+                    .build()));
+
+    assertThat(session.getDelivery()).isEqualTo(delivery);
+    assertThat(session.getMediaProbe().sessionAudioTrackPosition()).hasValue(1);
+  }
+
   @Test
   @DisplayName(
       "Should play the audio track the viewer switched to when the session prefers another"
