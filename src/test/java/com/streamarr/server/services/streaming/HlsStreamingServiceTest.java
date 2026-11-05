@@ -3180,6 +3180,57 @@ class HlsStreamingServiceTest {
       assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(3);
     }
 
+    // ADR 0043: a track whose title marks a commentary counts as flagged for the default track.
+    @Test
+    @DisplayName(
+        "Should pass over a track whose title marks a commentary when it is in the preferred"
+            + " language")
+    void shouldPassOverATrackWhoseTitleMarksACommentaryWhenItIsInThePreferredLanguage() {
+      useAudioTracks(
+          audioTrack(1, "jpn").build(),
+          audioTrack(2, "eng").title(Optional.of("Director's Commentary")).build(),
+          audioTrack(3, "eng").build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(3);
+    }
+
+    // ADR 0043: without a title, a handler name that is not generic marks the track.
+    @Test
+    @DisplayName(
+        "Should pass over a track whose handler name marks an audio description when it has no"
+            + " title")
+    void shouldPassOverATrackWhoseHandlerNameMarksAnAudioDescriptionWhenItHasNoTitle() {
+      useAudioTracks(
+          audioTrack(1, "jpn").build(),
+          audioTrack(2, "eng").handlerName(Optional.of("Descriptive audio")).build(),
+          audioTrack(3, "eng").build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(3);
+    }
+
+    // ADR 0043: a dependent track played alone carries only what a receiver mixes in.
+    @Test
+    @DisplayName(
+        "Should play a complete audio description track when the only other track is dependent")
+    void shouldPlayACompleteAudioDescriptionTrackWhenTheOnlyOtherTrackIsDependent() {
+      useAudioTracks(
+          audioTrack(1, "eng")
+              .audioProperties(Optional.of(AudioStreamProperties.builder().dependent(true).build()))
+              .build(),
+          audioTrack(2, "eng")
+              .audioProperties(
+                  Optional.of(AudioStreamProperties.builder().descriptions(true).build()))
+              .build());
+
+      var session = createEpisodeSession(StreamingOptions.builder().quality(VideoQuality.AUTO));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+    }
+
     @Test
     @DisplayName("Should describe the chosen track's codec when the chosen track is not the first")
     void shouldDescribeTheChosenTracksCodecWhenTheChosenTrackIsNotTheFirst() {

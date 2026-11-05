@@ -195,18 +195,32 @@ public record MediaProbe(
    * The stream is the first eligible stream in the first of {@code languages}, in order, that the
    * file holds: one in exactly that language before one that shares its base language. A
    * commentary, an audio description, a clean-effects stream and a dependent stream are never
-   * eligible. When no language matches, the file's own default plays: the first eligible stream
-   * whose default flag is set, else the first eligible stream, else the first audio stream.
+   * eligible, whether a disposition or the stream's name marks them. When no language matches, the
+   * file's own default plays: the first eligible stream whose default flag is set, else the first
+   * eligible stream. When no stream is eligible, the same rule picks among the streams that are not
+   * dependent, and a file of dependent streams alone keeps its first audio stream.
    */
   public MediaProbe withSessionAudio(@NonNull List<Language> languages) {
     var eligible = audioStreams().stream().filter(MediaProbe::isEligibleSessionAudio).toList();
+    var complete = audioStreams().stream().filter(stream -> !isDependent(stream)).toList();
     return languages.stream()
         .flatMap(language -> matchingAudio(eligible, language).stream())
         .findFirst()
-        .or(() -> eligible.stream().filter(StreamInfo::isDefault).findFirst())
-        .or(() -> eligible.stream().findFirst())
+        .or(() -> fileDefault(eligible))
+        .or(() -> fileDefault(complete))
         .map(this::withAudioFirst)
         .orElse(this);
+  }
+
+  private static Optional<StreamInfo> fileDefault(List<StreamInfo> candidates) {
+    return candidates.stream()
+        .filter(StreamInfo::isDefault)
+        .findFirst()
+        .or(() -> candidates.stream().findFirst());
+  }
+
+  private static boolean isDependent(StreamInfo stream) {
+    return stream.audioProperties().filter(AudioStreamProperties::dependent).isPresent();
   }
 
   private static Optional<StreamInfo> matchingAudio(List<StreamInfo> eligible, Language language) {
@@ -229,7 +243,8 @@ public record MediaProbe(
   }
 
   private static boolean isEligibleSessionAudio(StreamInfo stream) {
-    if (stream.comment().orElse(false)) {
+    if (stream.comment().orElse(false)
+        || AudioTrackMarks.isNamedCommentaryOrAudioDescription(stream)) {
       return false;
     }
 
