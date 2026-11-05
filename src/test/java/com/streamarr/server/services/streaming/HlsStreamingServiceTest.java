@@ -2600,6 +2600,41 @@ class HlsStreamingServiceTest {
     assertThat(started.framerate()).isEqualTo(OptionalDouble.of(60_000.0 / 1_001));
   }
 
+  // Deinterlaced one frame per field, as item 1.15 of the HLS Authoring Specification for Apple
+  // Devices recommends, a 30i source runs at 60000/1001. A progressive 29.97 source encoded at 720p
+  // keeps its stored rate. RFC 8216 section 4.3.4.2 gives FRAME-RATE to three decimals.
+  @ParameterizedTest(name = "{0} source in {1} says FRAME-RATE={2}")
+  @CsvSource({
+    "TT, AUTO, 59.940",
+    "TT, HIGH_720P, 59.940",
+    "TT, ORIGINAL, 59.940",
+    "BB, AUTO, 59.940",
+    "BB, HIGH_720P, 59.940",
+    "BB, ORIGINAL, 59.940",
+    "PROGRESSIVE, HIGH_720P, 29.970"
+  })
+  @DisplayName(
+      "Should give every encoded variant the encode's output frame rate as FRAME-RATE when the"
+          + " source is 30i or progressive 29.97")
+  void
+      shouldGiveEveryEncodedVariantTheEncodesOutputFrameRateAsFrameRateWhenTheSourceIs30iOrProgressive2997(
+          FieldOrder fieldOrder, VideoQuality quality, String frameRate) {
+    probeResults.setDefaultOutcome(outcomeWithFieldOrder(fieldOrder));
+
+    var session = accepted(service.createSession(interlacedSourceCommand(quality)));
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
+    assertThat(playlist.lines().filter(line -> line.startsWith("#EXT-X-STREAM-INF:")))
+        .hasSize(session.getVariants().size())
+        .isNotEmpty()
+        .allSatisfy(
+            line ->
+                assertThat(line)
+                    .containsPattern(",FRAME-RATE=" + Pattern.quote(frameRate) + "(,|$)"));
+  }
+
   // ADR 0052: Original encodes a source that it cannot copy, and that encode plays Auto's ladder
   // within the viewer's limits. Keyframes 10.01 s apart leave the 6 s interval [12 s, 18 s)
   // without one, so no copy carries this progressive source. A maximum of 0 is no maximum.
