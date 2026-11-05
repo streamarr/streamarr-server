@@ -1604,10 +1604,9 @@ final class LiveWorkerConnectionRegistry {
           .add(job.getVariant().getVariantLabel());
     }
 
-    // A worker refuses a copy beyond the copies that it holds with STARTUP_FAILED. It is recorded
-    // before the attempt's end wakes the held requests, so a woken request finds it.
+    // Recorded before the attempt's end wakes the held requests, so a woken request finds it.
     private void rememberRefusedCopyStart(UUID attemptId, VariantJob job, JobAttemptFailed failed) {
-      if (failed.getFailure() != JobAttemptFailure.JOB_ATTEMPT_FAILURE_STARTUP_FAILED
+      if (failed.getFailure() != JobAttemptFailure.JOB_ATTEMPT_FAILURE_COPY_CAP_REACHED
           || !copiesVideo(job.getDecision())) {
         return;
       }
