@@ -1267,6 +1267,44 @@ class WorkerSessionGrpcServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should admit as many uploads from a worker as its accepted session states and refuse one"
+          + " more when the worker reaches that segment upload limit")
+  void shouldAdmitAsManyUploadsAsTheAcceptedSessionStatesWhenTheWorkerReachesItsSegmentUploadLimit()
+      throws Exception {
+    var workerId = UUID.randomUUID();
+    var service =
+        new WorkerSessionGrpcService(
+            LiveWorkerConnectionRegistryFixture.defaultRegistry(), new FakeSegmentStore());
+    var responses = new ArrayList<EstablishWorkerSessionResponse>();
+    var session = workerSession(service, workerId, new CollectingResponseObserver(responses));
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setRegistration(registration(worker(workerId), UUID.randomUUID()))
+            .build());
+    var limit = responses.getFirst().getSessionAccepted().getSegmentUploadLimit();
+    assertThat(limit).isPositive();
+    var uploads = new ArrayList<StreamObserver<UploadSegmentRequest>>();
+    var admitted = new ArrayList<RecordingUploadResponseObserver>();
+    for (var index = 0; index < limit; index++) {
+      var response = new RecordingUploadResponseObserver();
+      uploads.add(upload(service, workerId, response));
+      admitted.add(response);
+    }
+
+    var refused = new RecordingUploadResponseObserver();
+
+    var excess = upload(service, workerId, refused);
+
+    assertThat(admitted).allSatisfy(response -> assertThat(response.error()).isNull());
+    assertThat(refused.error()).isNotNull();
+    assertThat(Status.fromThrowable(refused.error()).getCode())
+        .isEqualTo(Status.Code.RESOURCE_EXHAUSTED);
+    excess.onError(Status.CANCELLED.asRuntimeException());
+    uploads.forEach(upload -> upload.onError(Status.CANCELLED.asRuntimeException()));
+  }
+
+  @Test
   @DisplayName("Should reject an upload when the global declared byte budget is exhausted")
   void shouldRejectUploadWhenGlobalDeclaredByteBudgetIsExhausted() throws Exception {
     var workerId = UUID.randomUUID();

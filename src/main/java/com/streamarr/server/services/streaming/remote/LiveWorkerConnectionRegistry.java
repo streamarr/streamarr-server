@@ -818,7 +818,9 @@ final class LiveWorkerConnectionRegistry {
 
     private synchronized void accept() {
       var accepted =
-          WorkerSessionAccepted.newBuilder().setWorkerSessionId(toProto(workerSessionId));
+          WorkerSessionAccepted.newBuilder()
+              .setWorkerSessionId(toProto(workerSessionId))
+              .setSegmentUploadLimit(SegmentUploadLimits.MAXIMUM_SEGMENT_UPLOADS_PER_WORKER);
       responseObserver.onNext(
           EstablishWorkerSessionResponse.newBuilder().setSessionAccepted(accepted).build());
     }
