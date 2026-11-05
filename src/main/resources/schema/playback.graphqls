@@ -280,7 +280,7 @@ type CreatePlaybackSessionPayload {
     userErrors: [CreatePlaybackSessionError!]!
 }
 
-union CreatePlaybackSessionError = InvalidIdError | PlaybackSessionClosedError | StartPositionOutOfRangeError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | MediaFileFrameRateUnknownError | TranscodeCapacityUnavailableError | NoEligibleVideoFormatError | CapabilityValuesRequiredError | HlsAacCapabilityRequiredError | CapabilityListTooLongError | CapabilityMaximumInvalidError | CapabilityProfileMismatchError | VideoCodecTierInvalidError
+union CreatePlaybackSessionError = InvalidIdError | PlaybackSessionClosedError | StartPositionOutOfRangeError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | MediaFileFrameRateUnknownError | TranscodeCapacityUnavailableError | NoEligibleVideoFormatError | CapabilityValuesRequiredError | HlsAacCapabilityRequiredError | CapabilityListTooLongError | CapabilityMaximumInvalidError | CapabilityProfileMismatchError | VideoCodecTierInvalidError | AudioMinBlockSizeInvalidError
 
 input ReportPlaybackFormatFailureInput {
     playbackSessionId: ID!

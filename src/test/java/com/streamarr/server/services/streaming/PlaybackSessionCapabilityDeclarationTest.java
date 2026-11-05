@@ -44,6 +44,8 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.Di
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionLevelNotPositive;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionProfileOutsideCodecFamily;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.HlsAacEntryMissing;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.MinBlockSizeNotApplicable;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.MinBlockSizeOutsideFlacBlockSizes;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyAudioDirectPlayContainers;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyAudioEntries;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyCodecProfiles;
@@ -59,6 +61,7 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.Vi
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -392,6 +395,54 @@ class PlaybackSessionCapabilityDeclarationTest {
   }
 
   @Test
+  @DisplayName("Should refuse a minimum block size when the audio entry's codec is not FLAC")
+  void shouldRefuseAMinimumBlockSizeWhenTheAudioEntrysCodecIsNotFlac() {
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(
+                List.of(
+                    aacEntryBuilder().build(),
+                    audioEntryBuilder(AudioCodec.ALAC).minBlockSize(OptionalInt.of(192)).build(),
+                    flacEntryWithMinBlockSize(192),
+                    aacEntryBuilder().minBlockSize(OptionalInt.of(65_536)).build()))
+            .build();
+
+    assertThat(start(declaration))
+        .isEqualTo(
+            Outcome.rejected(
+                List.of(new MinBlockSizeNotApplicable(1), new MinBlockSizeNotApplicable(3))));
+    assertThat(streams.getAllSessions()).isEmpty();
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {-192, 0, 15, 65_536})
+  @DisplayName(
+      "Should refuse a FLAC entry's minimum block size when FLAC allows no block of that size")
+  void shouldRefuseAFlacEntrysMinimumBlockSizeWhenFlacAllowsNoBlockOfThatSize(int minBlockSize) {
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(List.of(aacEntryBuilder().build(), flacEntryWithMinBlockSize(minBlockSize)))
+            .build();
+
+    assertThat(start(declaration))
+        .isEqualTo(Outcome.rejected(new MinBlockSizeOutsideFlacBlockSizes(1)));
+    assertThat(streams.getAllSessions()).isEmpty();
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {16, 192, 65_535})
+  @DisplayName("Should start playback when a FLAC entry's minimum block size is one FLAC allows")
+  void shouldStartPlaybackWhenAFlacEntrysMinimumBlockSizeIsOneFlacAllows(int minBlockSize) {
+    var declaration =
+        defaultDeclarationBuilder()
+            .audio(List.of(aacEntryBuilder().build(), flacEntryWithMinBlockSize(minBlockSize)))
+            .build();
+
+    assertThat(start(declaration)).isInstanceOf(Outcome.Accepted.class);
+    assertThat(streams.getAllSessions()).hasSize(1);
+  }
+
+  @Test
   @DisplayName("Should refuse a Dolby Vision profile when another codec family carries it")
   void shouldRefuseADolbyVisionProfileWhenAnotherCodecFamilyCarriesIt() {
     var declaration =
@@ -538,6 +589,10 @@ class PlaybackSessionCapabilityDeclarationTest {
   private Outcome<PlaybackSessionSnapshot, StartPlaybackSessionRejection> start(
       ClientCapabilityDeclaration declaration) {
     return service.start(startPlaybackBuilder().capabilityDeclaration(declaration).build());
+  }
+
+  private static AudioCapabilityEntry flacEntryWithMinBlockSize(int minBlockSize) {
+    return audioEntryBuilder(AudioCodec.FLAC).minBlockSize(OptionalInt.of(minBlockSize)).build();
   }
 
   private static DolbyVisionProfileCapability dolbyVision(DolbyVisionProfile profile) {

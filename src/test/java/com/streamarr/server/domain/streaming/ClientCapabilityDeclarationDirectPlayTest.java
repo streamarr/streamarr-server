@@ -64,6 +64,15 @@ class ClientCapabilityDeclarationDirectPlayTest {
         .isEmpty();
   }
 
+  @Test
+  @DisplayName("Should cover a FLAC track when its block size reaches the entry's minimum")
+  void shouldCoverAFlacTrackWhenItsBlockSizeReachesTheEntrysMinimum() {
+    var declaration = declaration(List.of(directPlayFlacWithAppleMinimum()));
+
+    assertThat(declaration.directPlayRefusals(source(flacTrack(OptionalInt.of(4_608))), CONTAINER))
+        .isEmpty();
+  }
+
   @ParameterizedTest(name = "{0}")
   @MethodSource("uncoveredAudio")
   @DisplayName("Should name the audio when one of the file's audio tracks is not covered")
@@ -77,7 +86,16 @@ class ClientCapabilityDeclarationDirectPlayTest {
 
   static Stream<Arguments> uncoveredAudio() {
     var aacOnly = List.of(directPlayAac().build());
+    var flacWithAppleMinimum = List.of(directPlayFlacWithAppleMinimum());
     return Stream.of(
+        Arguments.of(
+            "a FLAC block size below the entry's minimum",
+            flacWithAppleMinimum,
+            List.of(flacTrack(OptionalInt.of(144)))),
+        Arguments.of(
+            "an unknown FLAC block size under an entry that gives a minimum",
+            flacWithAppleMinimum,
+            List.of(flacTrack(OptionalInt.empty()))),
         Arguments.of(
             "a second track in a codec without an entry",
             aacOnly,
@@ -225,6 +243,23 @@ class ClientCapabilityDeclarationDirectPlayTest {
 
   private static StreamInfo surroundAc3() {
     return audioStreamBuilder("ac3").channels(OptionalInt.of(6)).build();
+  }
+
+  // The minimum that Apple's CoreMedia needs: it drops a FLAC track with smaller blocks (ADR 0049).
+  private static AudioCapabilityEntry directPlayFlacWithAppleMinimum() {
+    return audioEntryBuilder(AudioCodec.FLAC)
+        .directPlayContainers(List.of(CONTAINER))
+        .minBlockSize(OptionalInt.of(192))
+        .build();
+  }
+
+  private static StreamInfo flacTrack(OptionalInt blockSize) {
+    return audioStreamBuilder("flac")
+        .channels(OptionalInt.of(2))
+        .audioProperties(
+            Optional.of(
+                AudioStreamProperties.builder().flacMinimumBlockSizeSamples(blockSize).build()))
+        .build();
   }
 
   private static MediaProbe source(StreamInfo... audio) {
