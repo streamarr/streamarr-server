@@ -710,12 +710,29 @@ final class LiveWorkerConnectionRegistry {
         .flatMap(connection -> connection.activeJob(fromProto(progress.getJobAttemptId())))
         .ifPresent(
             job ->
-                eventPublisher.publishEvent(
-                    JobAttemptProgressedEvent.builder()
-                        .streamSessionId(fromProto(job.getStreamSessionId()))
-                        .jobAttemptId(fromProto(job.getJobAttemptId()))
-                        .variantLabel(job.getVariant().getVariantLabel())
-                        .build()));
+                publishProgress(
+                    job.getStreamSessionId(),
+                    job.getJobAttemptId(),
+                    job.getVariant().getVariantLabel()));
+  }
+
+  /** ADR 0037: data accepted for an authorized media segment upload is job attempt progress. */
+  void reportUploadProgress(UUID authenticatedWorkerId, SegmentUploadMetadata metadata) {
+    if (!authorizesUpload(authenticatedWorkerId, metadata)) {
+      return;
+    }
+
+    publishProgress(
+        metadata.getStreamSessionId(), metadata.getJobAttemptId(), metadata.getVariantLabel());
+  }
+
+  private void publishProgress(Uuid streamSessionId, Uuid jobAttemptId, String variantLabel) {
+    eventPublisher.publishEvent(
+        JobAttemptProgressedEvent.builder()
+            .streamSessionId(fromProto(streamSessionId))
+            .jobAttemptId(fromProto(jobAttemptId))
+            .variantLabel(variantLabel)
+            .build());
   }
 
   private void publishCompletion(VariantJob job) {

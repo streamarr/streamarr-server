@@ -23,6 +23,8 @@ import lombok.extern.slf4j.Slf4j;
 @Builder
 final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest> {
 
+  private static final int PROGRESS_INTERVAL_BYTES = 1024 * 1024;
+
   private final UUID authenticatedWorkerId;
   private final LiveWorkerConnectionRegistry workerConnections;
   private final SegmentStore segmentStore;
@@ -87,7 +89,11 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
       reject(Status.INVALID_ARGUMENT.withDescription("Segment data exceeds declared length"));
       return;
     }
+    var receivedBefore = data.size();
     data.writeBytes(request.getData().toByteArray());
+    if (data.size() / PROGRESS_INTERVAL_BYTES > receivedBefore / PROGRESS_INTERVAL_BYTES) {
+      workerConnections.reportUploadProgress(authenticatedWorkerId, metadata);
+    }
   }
 
   private boolean wouldExceedDeclaredLength(UploadSegmentRequest request) {

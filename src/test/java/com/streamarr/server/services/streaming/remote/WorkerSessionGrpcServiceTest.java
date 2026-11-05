@@ -1627,6 +1627,55 @@ class WorkerSessionGrpcServiceTest {
         .isEqualTo(running ? List.of(progressed) : List.of());
   }
 
+  // ADR 0037: each chunk of a media segment upload restarts the stall clock, so a large merged
+  // segment that uploads slowly keeps its producer. The server reports once per mebibyte received.
+  @Test
+  @DisplayName("Should publish the job attempt's progress for each mebibyte that its upload delivers")
+  void shouldPublishTheJobAttemptsProgressForEachMebibyteThatItsUploadDelivers() throws Exception {
+    var events = new CapturingEventPublisher();
+    var registry =
+        LiveWorkerConnectionRegistry.builder()
+            .configuration(WorkerSessionServerConfiguration.builder().build())
+            .meterRegistry(new SimpleMeterRegistry())
+            .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
+            .eventPublisher(events)
+            .build();
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var worker = worker(workerId);
+    var workerSessionId =
+        registry.register(
+            workerId, registration(worker, sourceNamespaceId), new IgnoringResponseObserver());
+    var job = variantJob(sourceNamespaceId);
+    assertThat(registry.dispatch(job)).isPresent();
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var upload = upload(service, workerId, new RecordingUploadResponseObserver());
+    upload.onNext(
+        UploadSegmentRequest.newBuilder()
+            .setMetadata(
+                metadataBuilder(workerSessionId, worker, job)
+                    .setContentLengthBytes(3L * 1024 * 1024)
+                    .build())
+            .build());
+
+    for (var chunk = 0; chunk < 5; chunk++) {
+      upload.onNext(
+          UploadSegmentRequest.newBuilder()
+              .setData(ByteString.copyFrom(new byte[512 * 1024]))
+              .build());
+    }
+
+    var progressed =
+        JobAttemptProgressedEvent.builder()
+            .streamSessionId(fromProto(job.getStreamSessionId()))
+            .jobAttemptId(fromProto(job.getJobAttemptId()))
+            .variantLabel(job.getVariant().getVariantLabel())
+            .build();
+    assertThat(events.getEventsOfType(JobAttemptProgressedEvent.class))
+        .containsExactly(progressed, progressed);
+    upload.onError(Status.CANCELLED.asRuntimeException());
+  }
+
   @Test
   @DisplayName("Should ignore a delayed output mismatch when the worker registry is closed")
   void shouldIgnoreDelayedOutputMismatchWhenWorkerRegistryIsClosed() throws Exception {
