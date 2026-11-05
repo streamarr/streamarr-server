@@ -781,6 +781,7 @@ class StreamingResolverTest {
     assertThat(result.read(decision + ".audio.delivery", String.class)).isEqualTo("ENCODE");
     assertThat(result.read(decision + ".audio.source", Map.class))
         .containsEntry("codec", "aac")
+        .containsEntry("channels", null)
         .containsEntry("bitrate", null);
     assertThat(result.read(decision + ".audio.output", Map.class))
         .containsEntry("codec", "aac")
