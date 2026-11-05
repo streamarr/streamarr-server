@@ -61,6 +61,10 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
   @Autowired private SessionProgressRepository sessionProgressRepository;
   @Autowired private AuditColumnFixtures auditColumns;
 
+  private static final String SEASONS_AND_SERIES_QUERY =
+      "{ continueWatching(first: 12) { edges { node { ... on Episode { id season"
+          + " { seasonNumber series { title } } } } } } }";
+
   private static final SortValue WATCHED_AT =
       new SortValue.OfInstant(Instant.parse("2026-10-19T15:07:00Z"));
 
@@ -152,11 +156,7 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
             createEpisodeWithProgress(createSeason(comedy, 1)).getId().toString(),
             "Comedy 1");
 
-    var edges =
-        execute(
-                "{ continueWatching(first: 12) { edges { node { ... on Episode { id season"
-                    + " { seasonNumber series { title } } } } } } }")
-            .at("/data/continueWatching/edges");
+    var edges = execute(SEASONS_AND_SERIES_QUERY).at("/data/continueWatching/edges");
 
     var resolved =
         edges
