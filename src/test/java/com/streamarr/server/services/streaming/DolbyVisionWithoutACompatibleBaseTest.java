@@ -222,6 +222,62 @@ class DolbyVisionWithoutACompatibleBaseTest {
                         client, VideoQuality.ORIGINAL, VideoQuality.AUTO, startedWithEncode)));
   }
 
+  // #401 and ADR 0052: profiles 5 and 10.0 have no compatible base that a stripped copy could
+  // play, so with the default budget of four an encode replaces a rejected Dolby Vision copy as the
+  // second format attempt. Original's encode plays in Auto, and a fixed quality keeps its choice.
+  @ParameterizedTest(name = "{0} in {1}")
+  @MethodSource("rejectedDolbyVisionCopies")
+  @DisplayName(
+      "Should start an encode as the second format attempt when the client rejects the Dolby"
+          + " Vision copy")
+  void shouldStartAnEncodeAsTheSecondFormatAttemptWhenTheClientRejectsTheDolbyVisionCopy(
+      DolbyVisionProfile profile,
+      VideoQuality quality,
+      VideoQuality expectedChoice,
+      Optional<PlaybackFormatChange> expectedChange) {
+    probes.setDefaultProbe(baselessSource(profile));
+    var command = start(quality, baselessClient());
+    var copy = accepted(playback.start(command));
+
+    var encode = rejectCurrentFormatAttempt(copy, command);
+
+    assertThat(sessionOf(copy).getTranscodeDecision().videoDolbyVisionOutput())
+        .contains(new DolbyVisionOutput(profile, SOURCE_LEVEL));
+    assertThat(encode.formatAttemptCount()).isEqualTo(2);
+    assertThat(encode.playbackChoice()).isEqualTo(expectedChoice);
+    assertThat(encode.formatChange()).isEqualTo(expectedChange);
+    assertThatAnSdrEncodePlays(encode);
+  }
+
+  static Stream<Arguments> rejectedDolbyVisionCopies() {
+    var copyFailed = Optional.of(PlaybackFormatChange.COPY_FAILED);
+    return Stream.of(
+        Arguments.of(
+            DolbyVisionProfile.PROFILE_5, VideoQuality.AUTO, VideoQuality.AUTO, Optional.empty()),
+        Arguments.of(
+            DolbyVisionProfile.PROFILE_5, VideoQuality.ORIGINAL, VideoQuality.AUTO, copyFailed),
+        Arguments.of(
+            DolbyVisionProfile.PROFILE_5,
+            VideoQuality.FULL_HD_1080P,
+            VideoQuality.FULL_HD_1080P,
+            copyFailed),
+        Arguments.of(
+            DolbyVisionProfile.PROFILE_10_0, VideoQuality.ORIGINAL, VideoQuality.AUTO, copyFailed));
+  }
+
+  private PlaybackSessionSnapshot rejectCurrentFormatAttempt(
+      PlaybackSessionSnapshot snapshot, StartPlaybackSessionCommand command) {
+    return playback
+        .reportFormatFailure(
+            ReportPlaybackFormatFailureCommand.builder()
+                .playbackSessionId(snapshot.playbackSessionId())
+                .streamSessionId(snapshot.currentFormatAttempt().streamSessionId())
+                .identity(command.identity())
+                .reason(PlaybackFormatFailure.DECODE_ERROR)
+                .build())
+        .orElseThrow();
+  }
+
   private void assertThatAnSdrEncodePlays(PlaybackSessionSnapshot snapshot) {
     var session = sessionOf(snapshot);
     assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
