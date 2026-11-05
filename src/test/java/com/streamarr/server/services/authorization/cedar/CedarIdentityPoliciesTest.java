@@ -1392,7 +1392,9 @@ class CedarIdentityPoliciesTest {
             new Intent.ViewEncoderPreset(),
             new Intent.ChangeEncoderPreset(),
             new Intent.ViewIdleSegmentRetention(),
-            new Intent.ChangeIdleSegmentRetention());
+            new Intent.ChangeIdleSegmentRetention(),
+            new Intent.ViewUploadBudget(),
+            new Intent.ChangeUploadBudget());
 
     @Test
     @DisplayName("Should allow reading and changing server settings when the caller is ServerAdmin")
