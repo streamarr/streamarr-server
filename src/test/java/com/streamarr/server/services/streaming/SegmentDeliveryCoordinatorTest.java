@@ -285,7 +285,7 @@ class SegmentDeliveryCoordinatorTest {
             .build();
     var session = defaultSessionBuilder().build();
     runtimeRegistry.save(session);
-    rig.lifecycle().startFirstListedVariant(session);
+    rig.lifecycle().startListedVariant(session, session.firstListedVariant());
     runtimeRegistry.removeById(session.getSessionId());
     rig.coordinator().forgetSession(session.getSessionId());
 
@@ -321,7 +321,7 @@ class SegmentDeliveryCoordinatorTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
-    rig.lifecycle().startFirstListedVariant(session);
+    rig.lifecycle().startListedVariant(session, session.firstListedVariant());
     destroyRaceRegistry.destroyAfterNextLookup(
         () -> {
           runtimeRegistry.removeById(sessionId);
@@ -359,7 +359,7 @@ class SegmentDeliveryCoordinatorTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
-    rig.lifecycle().startFirstListedVariant(session);
+    rig.lifecycle().startListedVariant(session, session.firstListedVariant());
     transcodeExecutor.setExecutionTargets(List.of(TARGET_A, TARGET_B));
     transcodeExecutor.refuseTarget(TARGET_A);
     transcodeExecutor.refuseTarget(TARGET_B);
@@ -453,7 +453,7 @@ class SegmentDeliveryCoordinatorTest {
             .build();
     var copy = defaultSessionBuilder().mediaProbe(probe).build();
     runtimeRegistry.save(copy);
-    lifecycle.startFirstListedVariant(copy);
+    lifecycle.startListedVariant(copy, copy.firstListedVariant());
     upload(copy.getSessionId(), "segment0.m4s", new byte[] {1});
     completeShortCopy(copy);
     var startedBefore = transcodeExecutor.getStartedRequests().size();
@@ -490,7 +490,7 @@ class SegmentDeliveryCoordinatorTest {
           throws Exception {
     var sixtySecondSession = sessionWithDurationBuilder(60).build();
     runtimeRegistry.save(sixtySecondSession);
-    lifecycle.startFirstListedVariant(sixtySecondSession);
+    lifecycle.startListedVariant(sixtySecondSession, sixtySecondSession.firstListedVariant());
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
     var delivery = deliverAsync(sixtySecondSession.getSessionId(), "segment10.m4s");
@@ -511,7 +511,7 @@ class SegmentDeliveryCoordinatorTest {
       throws Exception {
     var sixtySecondSession = sessionWithDurationBuilder(60).build();
     runtimeRegistry.save(sixtySecondSession);
-    lifecycle.startFirstListedVariant(sixtySecondSession);
+    lifecycle.startListedVariant(sixtySecondSession, sixtySecondSession.firstListedVariant());
     segmentStore.addSegment(sixtySecondSession.getSessionId(), "segment10.m4s", new byte[] {10});
 
     var delivery = deliverAsync(sixtySecondSession.getSessionId(), "segment10.m4s");
@@ -623,7 +623,7 @@ class SegmentDeliveryCoordinatorTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
-    rig.lifecycle().startFirstListedVariant(session);
+    rig.lifecycle().startListedVariant(session, session.firstListedVariant());
     var startsBefore = transcodeExecutor.getStartedRequests().size();
     // A stored segment 0 takes the producer out of startup, so its 200 ms stall deadline runs on
     // the system clock from the request's first look.
@@ -755,7 +755,7 @@ class SegmentDeliveryCoordinatorTest {
     var session = defaultSessionBuilder().build();
     runtimeRegistry.save(session);
     session.setCurrentSegment(900);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
     // init.mp4 resolves to the run's start index, so no earlier segment can ever exist -- the
@@ -1121,7 +1121,7 @@ class SegmentDeliveryCoordinatorTest {
     var session = defaultSessionBuilder().build();
     runtimeRegistry.save(session);
     session.setCurrentSegment(2);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     transcodeExecutor.markDead(session.getSessionId());
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
@@ -1177,7 +1177,7 @@ class SegmentDeliveryCoordinatorTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
-    rig.lifecycle().startFirstListedVariant(session);
+    rig.lifecycle().startListedVariant(session, session.firstListedVariant());
 
     transcodeExecutor.setExecutionTargets(List.of(TARGET_A, TARGET_B));
     transcodeExecutor.refuseTarget(TARGET_A);
@@ -1248,7 +1248,7 @@ class SegmentDeliveryCoordinatorTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
-    rig.lifecycle().startFirstListedVariant(session);
+    rig.lifecycle().startListedVariant(session, session.firstListedVariant());
     gatingExecutor.markDead(sessionId);
     var streamingService =
         HlsStreamingService.builder()
@@ -1300,7 +1300,7 @@ class SegmentDeliveryCoordinatorTest {
 
   private StreamSession started(StreamSession session) {
     runtimeRegistry.save(session);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     return session;
   }
 
@@ -1659,7 +1659,7 @@ class SegmentDeliveryCoordinatorTest {
             .sessionMutex(gate.mutexFactory())
             .build();
     runtimeRegistry.save(session);
-    rig.lifecycle().startFirstListedVariant(session);
+    rig.lifecycle().startListedVariant(session, session.firstListedVariant());
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var switchTo720p =
@@ -2479,7 +2479,7 @@ class SegmentDeliveryCoordinatorTest {
 
   private StreamSession suspended(StreamSession session) {
     runtimeRegistry.save(session);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     lifecycle.suspend(session.getSessionId());
     return session;
   }

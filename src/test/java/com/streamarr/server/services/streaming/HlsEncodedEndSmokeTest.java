@@ -504,7 +504,7 @@ class HlsEncodedEndSmokeTest {
             .transcodeDecision(decision.videoSource(probe.videoPlaybackFacts()).build())
             .build();
     runtimeRegistry.save(session);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     return session;
   }
 

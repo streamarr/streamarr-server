@@ -261,7 +261,7 @@ public class HlsStreamingService implements StreamingService {
       return session;
     }
 
-    return producerLifecycle.startFirstListedVariant(session);
+    return producerLifecycle.startListedVariant(session, session.firstListedVariant());
   }
 
   // A direct-play stream session starts no job attempt, so it has no transcode decision, producer

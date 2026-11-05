@@ -911,7 +911,7 @@ class WorkerSessionServerIT {
                 .runtimeRegistry(runtimeRegistry)
                 .build()
                 .lifecycle();
-        lifecycle.startFirstListedVariant(session);
+        lifecycle.startListedVariant(session, session.firstListedVariant());
         var initial = libx264Worker.nextResponse().getStartVariant().getJob();
 
         try (var nvencWorker =
