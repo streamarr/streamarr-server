@@ -2,8 +2,10 @@ package com.streamarr.server.domain.streaming;
 
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.videoEntryBuilderFor;
 import static com.streamarr.server.fixtures.VideoPlaybackFactsFixture.dolbyVisionProfile5;
 import static com.streamarr.server.fixtures.VideoPlaybackFactsFixture.dolbyVisionProfile82;
+import static com.streamarr.server.fixtures.VideoPlaybackFactsFixture.dolbyVisionProfile9;
 import static com.streamarr.server.fixtures.VideoPlaybackFactsFixture.rangeWithoutEnhancement;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -161,29 +163,105 @@ class VideoCapabilityEntryDirectPlayTest {
             false));
   }
 
-  @Test
+  // Matroska stores no sample entry, so a profile 8.2 or 9 stream in it plays as its SDR base.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("sdrBaseDolbyVisionInMatroska")
   @DisplayName(
-      "Should accept a profile 8.2 stream in Matroska when the entry declares its base codec and SDR")
-  void shouldAcceptAProfile82StreamInMatroskaWhenTheEntryDeclaresItsBaseCodecAndSdr() {
-    var stream = hevcStream().dynamicRange(dolbyVisionProfile82()).build();
+      "Should accept a profile 8.2 or 9 stream in Matroska when the entry declares its base codec and SDR")
+  void shouldAcceptAProfile82Or9StreamInMatroskaWhenTheEntryDeclaresItsBaseCodecAndSdr(
+      String profile, VideoStreamCopy stream) {
+    var sdrEntry = directPlayEntryFor(stream, SourceContainer.MATROSKA).build();
 
-    assertThat(directPlayEntry().build().acceptsDirectPlay(stream, SourceContainer.MATROSKA))
-        .isTrue();
+    assertThat(sdrEntry.acceptsDirectPlay(stream, SourceContainer.MATROSKA)).isTrue();
   }
 
-  // A profile 8.2 file in MP4 or MOV stays off direct play until streamarr/streamarr-server#395
-  // decides it by its sample entry, even under a sample entry that the entry lists.
-  @ParameterizedTest
-  @EnumSource(
-      value = SourceContainer.class,
-      names = {"MP4", "MOV"})
-  @DisplayName("Should refuse a profile 8.2 stream when its container names a sample entry")
-  void shouldRefuseAProfile82StreamWhenItsContainerNamesASampleEntry(SourceContainer container) {
-    var stream =
-        hevcStream().dynamicRange(dolbyVisionProfile82()).sampleEntry(Optional.of("hvc1")).build();
-    var entry = entryListing(container, VideoSampleEntry.HVC1);
+  static Stream<Arguments> sdrBaseDolbyVisionInMatroska() {
+    return Stream.of(
+        Arguments.of("profile 8.2", hevcStream().dynamicRange(dolbyVisionProfile82()).build()),
+        Arguments.of("profile 9", h264Stream().dynamicRange(dolbyVisionProfile9()).build()));
+  }
 
-    assertThat(entry.acceptsDirectPlay(stream, container)).isFalse();
+  // Only Matroska, MP4 and MOV carry a profile 8.2 or 9 stream to direct play.
+  @Test
+  @DisplayName(
+      "Should refuse a profile 8.2 stream in MPEG-TS when the entry declares its base codec and SDR")
+  void shouldRefuseAProfile82StreamInMpegTsWhenTheEntryDeclaresItsBaseCodecAndSdr() {
+    var stream = hevcStream().dynamicRange(dolbyVisionProfile82()).build();
+    var sdrEntry = directPlayEntryFor(stream, SourceContainer.MPEG_TS).build();
+
+    assertThat(sdrEntry.acceptsDirectPlay(stream, SourceContainer.MPEG_TS)).isFalse();
+  }
+
+  // A profile 8.2 or 9 stream plays as its SDR base and keeps its RPUs, so in MP4 or MOV it plays
+  // directly under the sample entry of that base, for an entry that declares no Dolby Vision
+  // profile.
+  @ParameterizedTest(name = "{0} in {1}")
+  @MethodSource("sdrBaseDolbyVisionUnderTheBaseSampleEntry")
+  @DisplayName(
+      "Should accept a profile 8.2 or 9 stream in MP4 or MOV when it is stored under its base sample entry")
+  void shouldAcceptAProfile82Or9StreamInMp4OrMovWhenItIsStoredUnderItsBaseSampleEntry(
+      String scenario,
+      SourceContainer container,
+      VideoStreamCopy stream,
+      VideoSampleEntry baseSampleEntry) {
+    var sdrEntry =
+        directPlayEntryFor(stream, container)
+            .directPlaySampleEntries(List.of(baseSampleEntry))
+            .build();
+
+    assertThat(sdrEntry.acceptsDirectPlay(stream, container)).isTrue();
+  }
+
+  static Stream<Arguments> sdrBaseDolbyVisionUnderTheBaseSampleEntry() {
+    return Stream.of(SourceContainer.MP4, SourceContainer.MOV)
+        .flatMap(
+            container ->
+                Stream.of(
+                    Arguments.of(
+                        "profile 8.2 under hvc1",
+                        container,
+                        profile82StoredUnder("hvc1"),
+                        VideoSampleEntry.HVC1),
+                    Arguments.of(
+                        "profile 9 under avc1",
+                        container,
+                        profile9StoredUnder("avc1"),
+                        VideoSampleEntry.AVC1)));
+  }
+
+  // Under a Dolby Vision sample entry, players refuse a profile 8.2 or 9 stream rather than play
+  // its SDR base. A stream under any sample entry other than its base's stays off direct play too,
+  // whatever the entry lists, and plays over HLS under its base sample entry.
+  @ParameterizedTest(name = "{0} in {1}")
+  @MethodSource("sdrBaseDolbyVisionUnderAnotherSampleEntry")
+  @DisplayName(
+      "Should refuse a profile 8.2 or 9 stream in MP4 or MOV when it is stored under another sample entry")
+  void shouldRefuseAProfile82Or9StreamInMp4OrMovWhenItIsStoredUnderAnotherSampleEntry(
+      String scenario, SourceContainer container, VideoStreamCopy stream) {
+    var entryListingEverything =
+        directPlayEntryFor(stream, container)
+            .directPlaySampleEntries(List.of(VideoSampleEntry.values()))
+            .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG))
+            .dolbyVisionProfiles(
+                Stream.of(DolbyVisionProfile.values())
+                    .map(profile -> dolbyVisionCapability(profile, 13))
+                    .toList())
+            .build();
+
+    assertThat(entryListingEverything.acceptsDirectPlay(stream, container)).isFalse();
+  }
+
+  static Stream<Arguments> sdrBaseDolbyVisionUnderAnotherSampleEntry() {
+    return Stream.of(SourceContainer.MP4, SourceContainer.MOV)
+        .flatMap(
+            container ->
+                Stream.of(
+                    Arguments.of("profile 8.2 under dvh1", container, profile82StoredUnder("dvh1")),
+                    Arguments.of("profile 8.2 under dvhe", container, profile82StoredUnder("dvhe")),
+                    Arguments.of("profile 8.2 under hev1", container, profile82StoredUnder("hev1")),
+                    Arguments.of("profile 9 under dvav", container, profile9StoredUnder("dvav")),
+                    Arguments.of("profile 9 under dva1", container, profile9StoredUnder("dva1")),
+                    Arguments.of("profile 9 under avc3", container, profile9StoredUnder("avc3"))));
   }
 
   // An MP4 or MOV file's video stream is covered only when the entry lists its sample entry
@@ -241,12 +319,38 @@ class VideoCapabilityEntryDirectPlayTest {
         .build();
   }
 
+  // An SDR direct-play entry of the stream's codec family that lists the container.
+  private static VideoCapabilityEntry.VideoCapabilityEntryBuilder directPlayEntryFor(
+      VideoStreamCopy stream, SourceContainer container) {
+    return videoEntryBuilderFor(stream.codecFamily())
+        .hls(false)
+        .directPlayContainers(List.of(container));
+  }
+
   private static VideoCapabilityEntry.VideoCapabilityEntryBuilder directPlayEntry() {
     return hevcEntryBuilder().hls(false).directPlayContainers(List.of(CONTAINER));
   }
 
   private static VideoStreamCopy.VideoStreamCopyBuilder hevcStream() {
     return VideoStreamCopyFixture.sdrHevcCopyBuilder();
+  }
+
+  private static VideoStreamCopy.VideoStreamCopyBuilder h264Stream() {
+    return VideoStreamCopyFixture.sdrH264CopyBuilder();
+  }
+
+  private static VideoStreamCopy profile82StoredUnder(String sampleEntry) {
+    return hevcStream()
+        .dynamicRange(dolbyVisionProfile82())
+        .sampleEntry(Optional.of(sampleEntry))
+        .build();
+  }
+
+  private static VideoStreamCopy profile9StoredUnder(String sampleEntry) {
+    return h264Stream()
+        .dynamicRange(dolbyVisionProfile9())
+        .sampleEntry(Optional.of(sampleEntry))
+        .build();
   }
 
   private static VideoCodecProfileCapability mainTier(VideoCodecProfile profile, int maxLevel) {
