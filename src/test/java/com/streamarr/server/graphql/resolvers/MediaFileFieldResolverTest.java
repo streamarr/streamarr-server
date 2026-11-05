@@ -80,8 +80,8 @@ class MediaFileFieldResolverTest {
 
   @Test
   @DisplayName(
-      "Should read each file's chapters once for both chapter fields when a movie lists its files")
-  void shouldReadEachFilesChaptersOnceForBothChapterFieldsWhenAMovieListsItsFiles() {
+      "Should answer each file's chapter fields from its stored outcome when a movie lists its files")
+  void shouldAnswerEachFilesChapterFieldsFromItsStoredOutcomeWhenAMovieListsItsFiles() {
     var movie = movieWithFiles("listed.mkv", "omitted.mkv", "unknown.mkv");
     var files = movieService.findMediaFiles(movie.getId());
     publish(
@@ -95,9 +95,7 @@ class MediaFileFieldResolverTest {
                 Chapter.builder().endTime(Optional.of(Duration.ofSeconds(90))).build())));
     publish(files.get(1).getId(), new ChapterKnowledge.Omitted());
 
-    List<Map<String, Object>> result =
-        dgsQueryExecutor.executeAndExtractJsonPath(
-            FILES_QUERY, "data.movie.files", Map.of("id", movie.getId().toString()));
+    List<Map<String, Object>> result = queryFiles(movie);
 
     assertThat(result)
         .containsExactly(
@@ -110,8 +108,25 @@ class MediaFileFieldResolverTest {
                 List.of(chapterData(-0.5, null, "Prologue"), chapterData(null, 90.0, null))),
             Map.of("filename", "omitted.mkv", "chapterStatus", "OMITTED", "chapters", List.of()),
             Map.of("filename", "unknown.mkv", "chapterStatus", "UNKNOWN", "chapters", List.of()));
+  }
+
+  // DGS may split one level's loads into more than one batch, so only the per-file count is fixed.
+  @Test
+  @DisplayName(
+      "Should read each file's chapters once for both chapter fields when a movie lists its files")
+  void shouldReadEachFilesChaptersOnceForBothChapterFieldsWhenAMovieListsItsFiles() {
+    var movie = movieWithFiles("first.mkv", "second.mkv", "third.mkv");
+    var fileIds = movieService.findMediaFiles(movie.getId()).stream().map(MediaFile::getId);
+
+    queryFiles(movie);
+
     assertThat(containerInfoRepository.chapterReads().stream().flatMap(List::stream))
-        .containsExactlyInAnyOrderElementsOf(files.stream().map(MediaFile::getId).toList());
+        .containsExactlyInAnyOrderElementsOf(fileIds.toList());
+  }
+
+  private List<Map<String, Object>> queryFiles(Movie movie) {
+    return dgsQueryExecutor.executeAndExtractJsonPath(
+        FILES_QUERY, "data.movie.files", Map.of("id", movie.getId().toString()));
   }
 
   private void publish(UUID mediaFileId, ChapterKnowledge chapters) {
