@@ -207,13 +207,16 @@ class ActiveStreamEventListenerTest {
   private ActiveStreamEventListener listenerReading(
       FakeMediaFileRepository mediaFiles, Scheduler publicationScheduler) {
     var service =
-        new ActiveStreamService(
-            new FakeAuthorizationService(identityFor(defaultPlaybackAuthorityBuilder().build())),
-            playbackSessions,
-            new FakeTranscodeExecutor(),
-            new FakeProfileRepository(),
-            new FakeAuthSessionRepository(),
-            mediaFiles);
+        ActiveStreamService.builder()
+            .authorizationService(
+                new FakeAuthorizationService(
+                    identityFor(defaultPlaybackAuthorityBuilder().build())))
+            .playbackSessions(playbackSessions)
+            .transcodeExecutor(new FakeTranscodeExecutor())
+            .profileRepository(new FakeProfileRepository())
+            .authSessionRepository(new FakeAuthSessionRepository())
+            .mediaFileRepository(mediaFiles)
+            .build();
     return new ActiveStreamEventListener(service, broadcaster, meterRegistry, publicationScheduler);
   }
 

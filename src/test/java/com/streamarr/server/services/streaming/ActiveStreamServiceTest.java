@@ -52,8 +52,14 @@ class ActiveStreamServiceTest {
   private final FakeAuthSessionRepository authSessions = new FakeAuthSessionRepository();
   private final FakeMediaFileRepository mediaFiles = new FakeMediaFileRepository();
   private final ActiveStreamService service =
-      new ActiveStreamService(
-          authorization, playbackSessions, executor, profiles, authSessions, mediaFiles);
+      ActiveStreamService.builder()
+          .authorizationService(authorization)
+          .playbackSessions(playbackSessions)
+          .transcodeExecutor(executor)
+          .profileRepository(profiles)
+          .authSessionRepository(authSessions)
+          .mediaFileRepository(mediaFiles)
+          .build();
 
   @Test
   @DisplayName(
