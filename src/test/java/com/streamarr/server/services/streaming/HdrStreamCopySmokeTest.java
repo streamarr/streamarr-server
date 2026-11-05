@@ -282,15 +282,15 @@ class HdrStreamCopySmokeTest {
             .profile(DolbyVisionProfile.PROFILE_8_1)
             // An Ultra HD Blu-ray profile 8 record names compatibility 6; an MPEG-TS muxer's
             // reserved bits read as compression 3.
-            .sourceRecord(record(6, 3))
-            .normalizedRecord(record(1, 0))
+            .sourceRecord(profile8Record(6, 3))
+            .normalizedRecord(profile8Record(1, 0))
             .build(),
         DolbyVisionCopy.builder()
             .name("profile-8.4")
             .base(CompatibleBase.HLG)
             .profile(DolbyVisionProfile.PROFILE_8_4)
-            .sourceRecord(record(4, 3))
-            .normalizedRecord(record(4, 0))
+            .sourceRecord(profile8Record(4, 3))
+            .normalizedRecord(profile8Record(4, 0))
             .build());
   }
 
@@ -304,7 +304,7 @@ class HdrStreamCopySmokeTest {
         SyntheticHdrSource.hevcSourceBuilder()
             .name("profile-8.1-with-enhancement-layer-units")
             .compatibleBase(CompatibleBase.PQ)
-            .dolbyVisionRecord(Optional.of(record(1, 0)))
+            .dolbyVisionRecord(Optional.of(profile8Record(1, 0)))
             .enhancementLayerUnits(true)
             .build()
             .writtenBy(workerFixture.worker(), sourceRoot);
@@ -343,7 +343,7 @@ class HdrStreamCopySmokeTest {
     }
   }
 
-  private static DolbyVisionConfigurationBox record(int compatibilityId, int compression) {
+  private static DolbyVisionConfigurationBox profile8Record(int compatibilityId, int compression) {
     return DolbyVisionConfigurationBox.builder()
         .profile(8)
         .level(DOLBY_VISION_LEVEL)
@@ -505,14 +505,14 @@ class HdrStreamCopySmokeTest {
 
   // The playlist's Dolby Vision codec of the delivered record: the dvh1 sample entry, its profile
   // and level, and the brand of its compatible base, db1p for PQ and db4h for HLG (ADR 0013).
-  private static String supplementalCodecsOf(DolbyVisionConfigurationBox record) {
+  private static String supplementalCodecsOf(DolbyVisionConfigurationBox delivered) {
     var brand =
-        switch (record.compatibilityId()) {
+        switch (delivered.compatibilityId()) {
           case 1 -> "db1p";
           case 4 -> "db4h";
-          default -> throw new AssertionError("No brand names compatibility " + record);
+          default -> throw new AssertionError("No brand names compatibility " + delivered);
         };
-    return "dvh1.%02d.%02d/%s".formatted(record.profile(), record.level(), brand);
+    return "dvh1.%02d.%02d/%s".formatted(delivered.profile(), delivered.level(), brand);
   }
 
   // ITU-T H.265 D.2.28: the green, blue and red primaries, the white point, then the maximum and

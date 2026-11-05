@@ -286,7 +286,7 @@ public record SyntheticHdrSource(
 
   // The MP4 with the record appended to its hvc1 sample entry. FFmpeg writes the moov behind the
   // mdat, so no chunk offset moves.
-  private static byte[] withRecord(byte[] mp4, byte[] record) {
+  private static byte[] withRecord(byte[] mp4, byte[] recordBox) {
     var rebuilt = new ByteArrayOutputStream();
     var position = 0;
     var passedMdat = false;
@@ -297,7 +297,7 @@ public record SyntheticHdrSource(
       passedMdat |= type.equals("mdat");
       if (type.equals("moov")) {
         assertThat(passedMdat).as("the moov follows the mdat").isTrue();
-        bytes = appended(bytes, SAMPLE_ENTRY_PATH, record);
+        bytes = appended(bytes, SAMPLE_ENTRY_PATH, recordBox);
       }
 
       rebuilt.writeBytes(bytes);

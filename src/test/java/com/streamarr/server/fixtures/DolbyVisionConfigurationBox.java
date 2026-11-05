@@ -44,17 +44,17 @@ public record DolbyVisionConfigurationBox(
     var profileAndLevel = Byte.toUnsignedInt(body.get(2));
     var levelAndFlags = Byte.toUnsignedInt(body.get(3));
     var compatibilityAndCompression = Byte.toUnsignedInt(body.get(4));
-    var record =
+    var fields =
         DolbyVisionConfigurationBox.builder()
             .profile(profileAndLevel >> 1)
             .level(((profileAndLevel & 0x01) << 5) | (levelAndFlags >> 3))
             .compatibilityId(compatibilityAndCompression >> 4)
             .compression((compatibilityAndCompression >> 2) & 0x03)
             .build();
-    assertThat(type).as("the box type of %s", record).isEqualTo(record.boxType());
+    assertThat(type).as("the box type of %s", fields).isEqualTo(fields.boxType());
     assertThat(levelAndFlags & 0x07)
-        .as("the layer flags of %s", record)
+        .as("the layer flags of %s", fields)
         .isEqualTo(RPU_AND_BASE_LAYER);
-    return record;
+    return fields;
   }
 }

@@ -147,7 +147,7 @@ class Fmp4FixtureTest {
           + " entry holds the record")
   void shouldWriteAndReadTheDolbyVisionRecordsFieldsWhenASampleEntryHoldsTheRecord(
       int compatibilityId, int compression, String leadingBytes) {
-    var record =
+    var expected =
         DolbyVisionConfigurationBox.builder()
             .profile(8)
             .level(1)
@@ -156,12 +156,12 @@ class Fmp4FixtureTest {
             .build();
     var expectedBox = box("dvvC", HexFormat.of().parseHex(leadingBytes + "00".repeat(19)));
 
-    assertThat(record.box()).isEqualTo(expectedBox);
+    assertThat(expected.box()).isEqualTo(expectedBox);
     assertThat(
             Fmp4Fixture.dolbyVisionRecords(
                 hevcInitialization(
                     "hvc1", box("hvcC", hvcc(MAIN_10_FIELDS, 30, new byte[0])), expectedBox)))
-        .containsExactly(record);
+        .containsExactly(expected);
   }
 
   // An RPU that a muxer moved into the next sample must show at that sample's start, not behind
@@ -193,9 +193,10 @@ class Fmp4FixtureTest {
             "moof",
             box("traf", box("tfhd", words(0, 1)), box("trun", words(0x201, 1, 1_000_000, 7)))));
     media.writeBytes(box("mdat", IDR_UNIT));
+    var initialization = main10Initialization();
+    var segment = media.toByteArray();
 
-    assertThatThrownBy(
-            () -> Fmp4Fixture.sampleNalUnitTypes(main10Initialization(), media.toByteArray()))
+    assertThatThrownBy(() -> Fmp4Fixture.sampleNalUnitTypes(initialization, segment))
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining("data offset");
   }
