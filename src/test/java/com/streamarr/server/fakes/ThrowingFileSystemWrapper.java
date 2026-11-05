@@ -24,7 +24,10 @@ import java.nio.file.attribute.UserPrincipalLookupService;
 import java.nio.file.spi.FileSystemProvider;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
@@ -41,6 +44,8 @@ public class ThrowingFileSystemWrapper extends FileSystem {
   private final ThrowingFileSystemProvider throwingProvider;
   private final Supplier<RuntimeException> exceptionSupplier;
   private final int entriesBeforeFailure;
+  private final Function<Path, Optional<IOException>> laterAttributeReadFailure;
+  private final Set<Path> pathsWithReadAttributes = ConcurrentHashMap.newKeySet();
 
   public ThrowingFileSystemWrapper(FileSystem delegate) {
     this(
@@ -61,12 +66,50 @@ public class ThrowingFileSystemWrapper extends FileSystem {
     return new ThrowingFileSystemWrapper(delegate, exceptionSupplier, 0);
   }
 
+  /**
+   * Returns a wrapper that lists every entry and gives the attributes of each entry named {@code
+   * fileName} to their first read only. Every later read of them fails with {@code failure}, as
+   * when the entry changes after a walk lists it.
+   */
+  public static ThrowingFileSystemWrapper failingLaterAttributeReadsOf(
+      FileSystem delegate, String fileName, Supplier<IOException> failure) {
+    return new ThrowingFileSystemWrapper(
+        delegate,
+        () -> new IllegalStateException("The directory streams of this wrapper never fail"),
+        Integer.MAX_VALUE,
+        path ->
+            Optional.of(path)
+                .map(Path::getFileName)
+                .filter(name -> name.toString().equals(fileName))
+                .map(_ -> failure.get()));
+  }
+
   private ThrowingFileSystemWrapper(
       FileSystem delegate, Supplier<RuntimeException> exceptionSupplier, int entriesBeforeFailure) {
+    this(delegate, exceptionSupplier, entriesBeforeFailure, _ -> Optional.empty());
+  }
+
+  private ThrowingFileSystemWrapper(
+      FileSystem delegate,
+      Supplier<RuntimeException> exceptionSupplier,
+      int entriesBeforeFailure,
+      Function<Path, Optional<IOException>> laterAttributeReadFailure) {
     this.delegate = delegate;
     this.exceptionSupplier = exceptionSupplier;
     this.entriesBeforeFailure = entriesBeforeFailure;
+    this.laterAttributeReadFailure = laterAttributeReadFailure;
     this.throwingProvider = new ThrowingFileSystemProvider(delegate.provider(), this);
+  }
+
+  private void throwIfALaterAttributeReadFails(Path path) throws IOException {
+    if (pathsWithReadAttributes.add(path)) {
+      return;
+    }
+
+    var failure = laterAttributeReadFailure.apply(path);
+    if (failure.isPresent()) {
+      throw failure.get();
+    }
   }
 
   @Override
@@ -363,6 +406,7 @@ public class ThrowingFileSystemWrapper extends FileSystem {
     @Override
     public <A extends BasicFileAttributes> A readAttributes(
         Path path, Class<A> type, LinkOption... options) throws IOException {
+      fileSystem.throwIfALaterAttributeReadFails(unwrap(path));
       return delegate.readAttributes(unwrap(path), type, options);
     }
 

@@ -53,6 +53,18 @@ type SkippedFile {
 enum SkippedFileReason {
     "The file is a soft link. Streamarr never follows a soft link; a hard link is an ordinary file."
     SOFT_LINK
+    """
+    The file's extension is not a supported video type, and the ignore list (subtitles, artwork,
+    metadata, partial downloads and system files) does not ignore it. The filepath shows the
+    extension.
+    """
+    UNSUPPORTED_FILE_TYPE
+    """
+    The scan listed the entry but could not read its attributes, for example because its
+    permissions changed while the scan walked the folder. A folder that a scan cannot read fails
+    the scan instead.
+    """
+    UNREADABLE
 }
 
 type SkippedFileConnection {
