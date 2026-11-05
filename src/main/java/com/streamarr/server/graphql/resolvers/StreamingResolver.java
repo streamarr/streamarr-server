@@ -274,10 +274,6 @@ public class StreamingResolver {
           new PlaybackSessionError.AudioTrackNotInFileError(
               "This video has no audio track there. Choose another audio track.",
               InputPath.of("audioTrackPosition"));
-      case AudioTrackSwitchRejection.FormatAttemptsExhausted() ->
-          new PlaybackSessionError.PlaybackFormatAttemptsExhaustedError(
-              "The audio track can't change now. Keep the current audio track, or start the video"
-                  + " again.");
       case AudioTrackSwitchRejection.StreamSessionFailed() ->
           new PlaybackSessionError.PlaybackStartupFailedError(
               "The audio track can't change now. Keep the current audio track, or try again later.");

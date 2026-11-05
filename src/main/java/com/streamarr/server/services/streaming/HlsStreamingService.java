@@ -123,7 +123,8 @@ public class HlsStreamingService implements StreamingService {
     }
 
     // Direct play uses no worker time, so it needs no connected worker (ADR 0045).
-    var directPlay = transcodeDecisionService.decideDirectPlay(DirectPlayRequest.of(command, probe));
+    var directPlay =
+        transcodeDecisionService.decideDirectPlay(DirectPlayRequest.of(command, probe));
     if (directPlay instanceof DirectPlayChoice.Accepted(var container, var audioTrackPosition)) {
       var session =
           directPlaySession(command, mediaFile, probe)
