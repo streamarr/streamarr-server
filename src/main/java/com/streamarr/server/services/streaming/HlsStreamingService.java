@@ -84,14 +84,15 @@ public class HlsStreamingService implements StreamingService {
     }
 
     // Direct play uses no worker time, so it needs no connected worker (ADR 0045).
-    var directPlay = directPlaySession(command, mediaFile, probe);
-    if (directPlay.isPresent()) {
-      runtimeRegistry.save(directPlay.get());
+    var directPlay = transcodeDecisionService.decideDirectPlay(directPlayRequest(command, probe));
+    if (directPlay instanceof DirectPlayChoice.Accepted(var container)) {
+      var session = directPlaySession(command, mediaFile, probe).sourceContainer(container).build();
+      runtimeRegistry.save(session);
       log.info(
           "Created direct-play streaming session {} for media file {}",
           command.streamSessionId(),
           command.mediaFileId());
-      return Outcome.accepted(directPlay.get());
+      return Outcome.accepted(session);
     }
 
     // Without a connected worker no encoder is verified. That moment must not read as faulty
@@ -116,6 +117,7 @@ public class HlsStreamingService implements StreamingService {
             .verifiedVideoCodecFamilies(codecFamiliesOf(verifiedWorkers))
             .viewerLimits(ViewerLimits.of(options))
             .videoCopySupport(transcodeExecutor.videoCopySupportByWorker())
+            .directPlayRefusals(directPlay.refusals())
             .build();
     var candidate = transcodeDecisionService.decide(request);
     if (candidate.isEmpty()) {
@@ -189,30 +191,27 @@ public class HlsStreamingService implements StreamingService {
 
   // A direct-play stream session starts no job attempt, so it has no transcode decision, producer
   // or segments.
-  private Optional<StreamSession> directPlaySession(
+  private static DirectPlayRequest directPlayRequest(
+      CreateStreamSessionCommand command, MediaProbe probe) {
+    return DirectPlayRequest.builder()
+        .source(probe)
+        .capabilityDeclaration(command.capabilityDeclaration())
+        .videoFormatConstraint(command.videoFormatConstraint())
+        .viewerLimits(ViewerLimits.of(command.options()))
+        .build();
+  }
+
+  private static StreamSession.StreamSessionBuilder directPlaySession(
       CreateStreamSessionCommand command, MediaFile mediaFile, MediaProbe probe) {
-    var request =
-        DirectPlayRequest.builder()
-            .source(probe)
-            .capabilityDeclaration(command.capabilityDeclaration())
-            .videoFormatConstraint(command.videoFormatConstraint())
-            .viewerLimits(ViewerLimits.of(command.options()))
-            .build();
-    return transcodeDecisionService
-        .decideDirectPlay(request)
-        .map(
-            container ->
-                StreamSession.builder()
-                    .sessionId(command.streamSessionId())
-                    .mediaFileId(command.mediaFileId())
-                    .authority(command.identity().playbackAuthority())
-                    .sourcePath(FilepathCodec.decode(mediaFile.getFilepathUri()))
-                    .mediaProbe(probe)
-                    .options(command.options())
-                    .createdAt(Instant.now())
-                    .delivery(StreamDelivery.DIRECT_PLAY)
-                    .sourceContainer(container)
-                    .build());
+    return StreamSession.builder()
+        .sessionId(command.streamSessionId())
+        .mediaFileId(command.mediaFileId())
+        .authority(command.identity().playbackAuthority())
+        .sourcePath(FilepathCodec.decode(mediaFile.getFilepathUri()))
+        .mediaProbe(probe)
+        .options(command.options())
+        .createdAt(Instant.now())
+        .delivery(StreamDelivery.DIRECT_PLAY);
   }
 
   // The decision that a stream session starts with, and the variants of its ladder.

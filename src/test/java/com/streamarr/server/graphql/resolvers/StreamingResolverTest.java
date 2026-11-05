@@ -788,6 +788,26 @@ class StreamingResolverTest {
         .containsEntry("bitrate", 128_000);
   }
 
+  @Test
+  @DisplayName("Should expose every decision reason when a format attempt's decision names it")
+  void shouldExposeEveryDecisionReasonWhenAFormatAttemptsDecisionNamesIt() {
+    STUB_SERVICE.setNextResult(
+        buildSessionDeciding(
+            UUID.randomUUID(),
+            remuxDecisionBuilder().reasons(List.of(DecisionReason.values())).build()));
+    var playbackId = startPlayback(VideoQuality.AUTO).read(CREATED_PLAYBACK + ".id", String.class);
+
+    var result =
+        dgsQueryExecutor.executeAndGetDocumentContext(
+            """
+            query { playbackSession(id: "%s") { decisions { reasons } } }
+            """
+                .formatted(playbackId));
+
+    assertThat(result.read("data.playbackSession.decisions[0].reasons", List.class))
+        .containsExactlyElementsOf(Stream.of(DecisionReason.values()).map(Enum::name).toList());
+  }
+
   private DocumentContext startPlayback(VideoQuality quality) {
     return dgsQueryExecutor.executeAndGetDocumentContext(
         """

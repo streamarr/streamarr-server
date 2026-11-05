@@ -80,7 +80,8 @@ final class InterimVideoCopyRule {
     return Optional.of(DecisionReason.VIDEO_PROPERTIES_NOT_PROBED);
   }
 
-  private static DecisionReason reasonFor(MediaFileProbePropertyIssue issue) {
+  /** The reason that names the property issue. */
+  static DecisionReason reasonFor(MediaFileProbePropertyIssue issue) {
     return switch (issue) {
       case DOLBY_VISION_COMPATIBILITY_DISAGREES_WITH_TRANSFER ->
           DecisionReason.DOLBY_VISION_COMPATIBILITY_DISAGREES_WITH_TRANSFER;

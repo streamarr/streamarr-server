@@ -49,10 +49,11 @@ type PlaybackDecision {
     "Null when the source has no audio."
     audio: AudioDelivery
     """
-    Why the output differs from the source: first the failure of the format attempt before this one, then the
-    video reasons, then the audio reasons. Empty when the format attempt copies every track as the source holds
-    it. A copy can carry reasons too, such as an audio encode beside a video copy, or Dolby Vision that the copy
-    leaves out.
+    Why the output differs from the source: first the failure of the format attempt before this one, then why
+    the source file does not play directly, then the video reasons, then the audio reasons. Each reason appears
+    once. Empty when the format attempt plays the source file directly, or copies every track as the source
+    holds it in a format attempt that may not direct-play. A copy can carry reasons too, such as an audio encode
+    beside a video copy, or Dolby Vision that the copy leaves out.
     """
     reasons: [DecisionReason!]!
 }
@@ -107,8 +108,9 @@ type AudioFormat {
 }
 
 """
-Why a format attempt's output differs from its source. The stream decision names each reason as it decides, so
-the reasons agree with the output. "The closest entry" is the client's video capability entry for HLS of the
+Why a format attempt's output differs from its source: why the source file does not play directly, why the
+server encodes the video or the audio, or what a copy leaves out. The stream decision names each reason as it
+decides, so the reasons agree with the output. "The closest entry" is the client's video capability entry for HLS of the
 source's codec family that refuses the fewest properties.
 """
 enum DecisionReason {
@@ -134,7 +136,7 @@ enum DecisionReason {
     PICTURE_ABOVE_VIEWER_LIMIT
     "A copy costs more than the client's maximum bitrate beside every audio step."
     BITRATE_ABOVE_VIEWER_LIMIT
-    "The source is interlaced, and HLS delivery needs progressive video."
+    "The source is interlaced. HLS delivery needs progressive video, and direct play of an interlaced file is unmeasured."
     SOURCE_INTERLACED
     "The source is Dolby Vision without a compatible base."
     DOLBY_VISION_WITHOUT_COMPATIBLE_BASE
@@ -142,7 +144,7 @@ enum DecisionReason {
     VIDEO_PROPERTIES_NOT_PROBED
     "The source's Dolby Vision configuration claims another base than the source's transfer signals."
     DOLBY_VISION_COMPATIBILITY_DISAGREES_WITH_TRANSFER
-    "The source's Dolby Vision RPUs start their samples, so a copy would hand players misplaced RPUs."
+    "The source's Dolby Vision RPUs start their samples, so a copy or direct play would hand players misplaced RPUs."
     DOLBY_VISION_RPU_STARTS_SAMPLE
     "The source is H.264 at another bit depth or chroma subsampling than 8-bit 4:2:0."
     H264_NOT_8_BIT_4_2_0
@@ -168,6 +170,27 @@ enum DecisionReason {
     AUDIO_SOURCE_NOT_COPYABLE
     "A lower audio step keeps the output within the client's maximum bitrate."
     AUDIO_LOWERED_FOR_BITRATE_LIMIT
+    "The probe found no single source container that a client can declare for direct play."
+    SOURCE_CONTAINER_UNKNOWN
+    """
+    No video capability entry of the source's codec family lists the file's source container for direct play, or,
+    for a file with audio, no audio capability entry lists it.
+    """
+    DIRECT_PLAY_CONTAINER_NOT_DECLARED
+    """
+    No video capability entry that lists the MP4 or MOV container lists the video stream's sample entry, such as
+    hev1, or the probe stored no sample entry.
+    """
+    DIRECT_PLAY_SAMPLE_ENTRY_NOT_DECLARED
+    """
+    No video capability entry that lists the file's source container accepts every property of the video stream as
+    it is, or the probe stored no codec profile to check.
+    """
+    DIRECT_PLAY_VIDEO_NOT_DECLARED
+    "An audio track of the file is one that no audio capability entry listing the file's source container accepts."
+    DIRECT_PLAY_AUDIO_NOT_DECLARED
+    "A forced image subtitle track, PGS, VobSub or DVB, is in the language of an audio track."
+    FORCED_IMAGE_SUBTITLE_IN_AUDIO_LANGUAGE
     "The direct play of the format attempt before this one failed, so this one plays over HLS."
     DIRECT_PLAY_FAILED
     "The copy of the format attempt before this one failed, so this one encodes the video."
