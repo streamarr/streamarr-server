@@ -27,7 +27,6 @@ public class HardwareEncoderFailureListener {
     eventPublisher.publishEvent(
         RequestedVariantHardwareEncoderFailedEvent.builder()
             .streamSessionId(event.streamSessionId())
-            .jobAttemptId(event.jobAttemptId())
             .variantLabel(event.variantLabel())
             .build());
   }

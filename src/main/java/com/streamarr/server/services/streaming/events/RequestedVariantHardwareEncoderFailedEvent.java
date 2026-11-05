@@ -10,4 +10,4 @@ import lombok.NonNull;
  */
 @Builder
 public record RequestedVariantHardwareEncoderFailedEvent(
-    @NonNull UUID streamSessionId, @NonNull UUID jobAttemptId, @NonNull String variantLabel) {}
+    @NonNull UUID streamSessionId, @NonNull String variantLabel) {}

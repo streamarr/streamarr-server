@@ -1156,7 +1156,6 @@ class PlaybackSessionServiceTest {
       UUID streamSessionId) {
     return RequestedVariantHardwareEncoderFailedEvent.builder()
         .streamSessionId(streamSessionId)
-        .jobAttemptId(UUID.randomUUID())
         .variantLabel("default")
         .build();
   }

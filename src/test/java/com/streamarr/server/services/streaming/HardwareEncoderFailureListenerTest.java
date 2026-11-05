@@ -60,7 +60,6 @@ class HardwareEncoderFailureListenerTest {
         .containsExactly(
             RequestedVariantHardwareEncoderFailedEvent.builder()
                 .streamSessionId(failure.streamSessionId())
-                .jobAttemptId(failure.jobAttemptId())
                 .variantLabel("480p")
                 .build());
   }
