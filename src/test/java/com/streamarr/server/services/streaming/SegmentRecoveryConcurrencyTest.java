@@ -10,6 +10,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
@@ -206,6 +207,7 @@ class SegmentRecoveryConcurrencyTest {
     var lifecycle =
         ProducerLifecycleService.builder()
             .transcodeExecutor(race.executor)
+            .eventPublisher(new CapturingEventPublisher())
             .segmentStore(store)
             .properties(properties)
             .runtimeRegistry(registry)

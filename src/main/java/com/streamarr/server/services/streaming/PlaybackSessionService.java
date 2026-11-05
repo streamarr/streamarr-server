@@ -17,6 +17,7 @@ import com.streamarr.server.services.streaming.events.CopiedVariantRanShortEvent
 import com.streamarr.server.services.streaming.events.MediaSegmentStoredEvent;
 import com.streamarr.server.services.streaming.events.PlaybackSessionChangedEvent;
 import com.streamarr.server.services.streaming.events.ProducedRangeMayHaveMovedEvent;
+import com.streamarr.server.services.streaming.events.RequestedVariantChangedEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import java.time.Clock;
@@ -1126,7 +1127,17 @@ public class PlaybackSessionService implements AutoCloseable {
    */
   @EventListener
   public void onMediaSegmentStored(@NonNull MediaSegmentStoredEvent event) {
-    var playback = streamOwners.get(event.streamSessionId());
+    announceProducedRangeMayHaveMoved(event.streamSessionId());
+  }
+
+  /** The requested variant of a playback session's stream session changed. */
+  @EventListener
+  public void onRequestedVariantChanged(@NonNull RequestedVariantChangedEvent event) {
+    announceProducedRangeMayHaveMoved(event.streamSessionId());
+  }
+
+  private void announceProducedRangeMayHaveMoved(UUID streamSessionId) {
+    var playback = streamOwners.get(streamSessionId);
     if (playback != null) {
       eventPublisher.publishEvent(new ProducedRangeMayHaveMovedEvent(playback.id));
     }

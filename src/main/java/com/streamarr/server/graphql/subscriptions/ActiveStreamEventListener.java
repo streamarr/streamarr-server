@@ -32,12 +32,12 @@ import reactor.core.scheduler.Scheduler;
  * publicationScheduler}, so the transaction that published the change neither waits for the read
  * nor holds its connection while the read runs.
  *
- * <p>A stored media segment changes nothing but the stream's produced range, so it reads the stream
- * only when that range differs from the one that the last broadcast carried. That check runs on
- * {@code taskScheduler} no sooner than {@link #PRODUCED_RANGE_INTERVAL} after a broadcast last
- * moved the range, and never while a read of the stream is in flight. One check runs at a time per
- * stream, and segments stored while it waits join it, so an encode that runs ahead of the player
- * cannot flood subscribers.
+ * <p>A stored media segment or a switch of the requested variant changes nothing but the stream's
+ * produced range, so it reads the stream only when that range differs from the one that the last
+ * broadcast carried. That check runs on {@code taskScheduler} no sooner than {@link
+ * #PRODUCED_RANGE_INTERVAL} after a broadcast last moved the range, and never while a read of the
+ * stream is in flight. One check runs at a time per stream, and segments stored while it waits join
+ * it, so an encode that runs ahead of the player cannot flood subscribers.
  *
  * <p>Publication never fails the playback that triggered it: a failure is counted on {@value
  * LibraryEventListener#PUBLICATION_FAILURES_METRIC} instead, and subscribers recover current state

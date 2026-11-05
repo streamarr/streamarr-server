@@ -74,7 +74,8 @@ public class StreamingConfig {
       StreamingProperties properties,
       RuntimeStreamSessionRegistry runtimeRegistry,
       MutexFactoryProvider mutexFactoryProvider,
-      ServerSettingsService serverSettingsService) {
+      ServerSettingsService serverSettingsService,
+      ApplicationEventPublisher eventPublisher) {
     return ProducerLifecycleService.builder()
         .transcodeExecutor(transcodeExecutor)
         .segmentStore(segmentStore)
@@ -82,6 +83,7 @@ public class StreamingConfig {
         .runtimeRegistry(runtimeRegistry)
         .sessionMutex(mutexFactoryProvider.getMutexFactory())
         .serverSettings(serverSettingsService)
+        .eventPublisher(eventPublisher)
         .build();
   }
 

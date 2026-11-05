@@ -59,6 +59,7 @@ import com.streamarr.server.services.streaming.events.CopiedVariantRanShortEvent
 import com.streamarr.server.services.streaming.events.MediaSegmentStoredEvent;
 import com.streamarr.server.services.streaming.events.PlaybackSessionChangedEvent;
 import com.streamarr.server.services.streaming.events.ProducedRangeMayHaveMovedEvent;
+import com.streamarr.server.services.streaming.events.RequestedVariantChangedEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import java.time.Duration;
@@ -429,6 +430,21 @@ class PlaybackSessionServiceTest {
     var stored = new ProducedRangeMayHaveMovedEvent(initial.playbackSessionId());
     assertThat(events.getEventsOfType(ProducedRangeMayHaveMovedEvent.class))
         .containsExactly(stored, stored);
+  }
+
+  @Test
+  @DisplayName(
+      "Should announce that the produced range may have moved when the current format attempt's"
+          + " stream session changes its requested variant")
+  void shouldAnnounceThatTheProducedRangeMayHaveMovedWhenTheStreamChangesItsRequestedVariant() {
+    var playback = accepted(service.start(startCommand().build()));
+    var stream = playback.currentFormatAttempt().streamSessionId();
+
+    service.onRequestedVariantChanged(new RequestedVariantChangedEvent(stream));
+    service.onRequestedVariantChanged(new RequestedVariantChangedEvent(UUID.randomUUID()));
+
+    assertThat(events.getEventsOfType(ProducedRangeMayHaveMovedEvent.class))
+        .containsExactly(new ProducedRangeMayHaveMovedEvent(playback.playbackSessionId()));
   }
 
   @Test

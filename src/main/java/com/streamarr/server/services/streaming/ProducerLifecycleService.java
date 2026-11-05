@@ -17,6 +17,7 @@ import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.exceptions.TranscodeLimitReachedException;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
+import com.streamarr.server.services.streaming.events.RequestedVariantChangedEvent;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -34,6 +35,7 @@ import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 
 /**
  * Owns every producer (transcode process) mutation for a stream session: initial start, resume of a
@@ -59,6 +61,7 @@ public class ProducerLifecycleService {
   private final RuntimeStreamSessionRegistry runtimeRegistry;
   private final MutexFactory<UUID> sessionMutex;
   private final ServerSettingsService serverSettings;
+  @NonNull private final ApplicationEventPublisher eventPublisher;
   @Builder.Default private final Clock clock = Clock.systemUTC();
   private final ConcurrentHashMap<VariantKey, VariantDeliveryState> recoveryStates =
       new ConcurrentHashMap<>();
@@ -896,6 +899,7 @@ public class ProducerLifecycleService {
     var previous = newestMediaSegmentRequests.put(request.sessionId(), request);
     if (previous == null || !previous.variantLabel().equals(request.variantLabel())) {
       newestVariantArrivals.put(request.sessionId(), request.arrival());
+      eventPublisher.publishEvent(new RequestedVariantChangedEvent(request.sessionId()));
     }
   }
 
