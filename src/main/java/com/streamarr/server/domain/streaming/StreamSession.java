@@ -71,7 +71,7 @@ public class StreamSession {
 
   @Getter(lombok.AccessLevel.NONE)
   @Builder.Default
-  private final AtomicBoolean positionReported = new AtomicBoolean();
+  private final AtomicBoolean playbackMovedFromTheStartPosition = new AtomicBoolean();
 
   public Optional<SourceContainer> getSourceContainer() {
     return Optional.ofNullable(sourceContainer);
@@ -104,17 +104,19 @@ public class StreamSession {
   public void updatePlaybackState(int positionSeconds, PlaybackState state) {
     playbackSnapshot.updateAndGet(
         current -> new PlaybackSnapshot(positionSeconds, state, Instant.now()));
-    positionReported.set(true);
+    var startSecond = getStartPosition().map(Duration::toSeconds).orElse(0L);
+    if (positionSeconds != startSecond) {
+      playbackMovedFromTheStartPosition.set(true);
+    }
   }
 
   /**
-   * Whether playback moved from the start position: the player reported a position in a whole
-   * second other than the start position's. A stream session without a start position starts at
-   * zero.
+   * Whether playback moved from the start position: the player once reported a position in a whole
+   * second other than the start position's. A later report back at that second does not undo the
+   * move. A stream session without a start position starts at zero.
    */
   public boolean hasPlaybackMovedFromTheStartPosition() {
-    var startSecond = getStartPosition().map(Duration::toSeconds).orElse(0L);
-    return positionReported.get() && playbackSnapshot.get().positionSeconds() != startSecond;
+    return playbackMovedFromTheStartPosition.get();
   }
 
   public PlaybackSnapshot getPlaybackSnapshot() {

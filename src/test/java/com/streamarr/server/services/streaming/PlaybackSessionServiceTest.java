@@ -224,6 +224,23 @@ class PlaybackSessionServiceTest {
             });
   }
 
+  // A seek back to the start second does not undo the earlier move.
+  @Test
+  @DisplayName(
+      "Should start the replacement without the start position when playback moved from it and"
+          + " came back")
+  void shouldStartTheReplacementWithoutTheStartPositionWhenPlaybackMovedFromItAndCameBack() {
+    var command = startCommand().startPosition(Optional.of(Duration.ofMillis(600_500))).build();
+    var initial = accepted(service.start(command));
+    readySession(initial).updatePlaybackState(610, PlaybackState.PLAYING);
+    readySession(initial).updatePlaybackState(600, PlaybackState.PLAYING);
+
+    var recovered = service.reportFormatFailure(report(initial, command).build()).orElseThrow();
+
+    assertThat(recovered.formatAttemptCount()).isEqualTo(2);
+    assertThat(streams.createdCommands.getLast().startPosition()).isEmpty();
+  }
+
   @Test
   @DisplayName(
       "Should start the replacement without the start position when playback moved from it")
