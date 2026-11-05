@@ -31,6 +31,197 @@ type PlaybackSession {
     """
     offeredChoices: [VideoQuality!]!
     currentFormatAttempt: PlaybackFormatAttempt!
+    """
+    How each format attempt that started delivers the media title, the initial format first. A format attempt
+    that the server refused, or that failed before its stream session started, has no decision. A playback-data
+    overlay shows the last decision, and the earlier ones show what a fallback changed.
+    """
+    decisions: [PlaybackDecision!]!
+}
+
+"How one format attempt delivers the media title, and why its output differs from the source."
+type PlaybackDecision {
+    "The format attempt's number within its playback session: 1 for the initial format."
+    formatAttempt: Int!
+    "The stream session that the format attempt started."
+    streamSessionId: ID!
+    video: VideoDelivery!
+    "Null when the source has no audio."
+    audio: AudioDelivery
+    """
+    Why the output differs from the source: first the failure of the format attempt before this one, then why
+    the source file does not play directly, then the video reasons, then the audio reasons. Each reason appears
+    once. Empty when the format attempt plays the source file directly, or copies every track as the source
+    holds it in a format attempt that may not direct-play. A copy can carry reasons too, such as an audio encode
+    beside a video copy, or Dolby Vision that the copy leaves out.
+    """
+    reasons: [DecisionReason!]!
+}
+
+"How a format attempt delivers one track."
+enum PlaybackDelivery {
+    "The source file as it is, without HLS."
+    DIRECT_PLAY
+    "A stream copy of the source's track."
+    COPY
+    "An encode of the source's track."
+    ENCODE
+}
+
+type VideoDelivery {
+    delivery: PlaybackDelivery!
+    source: VideoFormat!
+    "The output of the format attempt. For an encode, the largest variant that it offers."
+    output: VideoFormat!
+}
+
+"The format of a video track. A bitrate is in bits per second."
+type VideoFormat {
+    "The codec family, such as h264, hevc or av1, or unknown for a source whose probe named no codec."
+    codec: String!
+    "The displayed picture's width."
+    width: Int!
+    "The displayed picture's height."
+    height: Int!
+    "Frames per second. Null when the probe found no frame rate."
+    frameRate: Float
+    "Null when the probe found no bitrate for the video track."
+    bitrate: Int
+    videoRange: VideoRange!
+    "Whether the track carries Dolby Vision."
+    dolbyVision: Boolean!
+}
+
+type AudioDelivery {
+    delivery: PlaybackDelivery!
+    source: AudioFormat!
+    output: AudioFormat!
+}
+
+"The format of an audio track. A bitrate is in bits per second."
+type AudioFormat {
+    "The codec, such as aac, ac3, eac3, flac or opus."
+    codec: String!
+    "Null when the probe found no channel count for the source's audio track."
+    channels: Int
+    "Null when the probe found no bitrate for the audio track."
+    bitrate: Int
+}
+
+"""
+Why a format attempt's output differs from its source: why the source file does not play directly, why the
+server encodes the video or the audio, or what a copy leaves out. The stream decision names each reason as it
+decides, so the reasons agree with the output. When no entry accepts a copy, "the closest entry" is the client's video
+capability entry for HLS of the source's codec family that refuses the fewest properties. When an entry accepts a copy
+only after the copy leaves out Dolby Vision or HDR10+, "the closest entry" is that accepting entry, and the reasons name
+what it refused in the copies that kept more.
+"""
+enum DecisionReason {
+    "No video capability entry for HLS names the source's codec family."
+    VIDEO_CODEC_NOT_DECLARED
+    "The closest entry does not list the source's codec profile."
+    VIDEO_CODEC_PROFILE_NOT_DECLARED
+    "The source's codec level or tier is above the closest entry's maximum for its profile."
+    VIDEO_CODEC_LEVEL_NOT_DECLARED
+    "The source's bit depth is above the closest entry's maximum."
+    VIDEO_BIT_DEPTH_NOT_DECLARED
+    "The probe reported no bit depth for the source's video, so no entry can accept a copy."
+    VIDEO_BIT_DEPTH_UNKNOWN
+    "The source's picture is larger than the closest entry's maximum."
+    VIDEO_PICTURE_SIZE_NOT_DECLARED
+    "The source's frame rate is above the closest entry's maximum."
+    VIDEO_FRAME_RATE_NOT_DECLARED
+    "The closest entry does not declare the source's compatible base: SDR, PQ or HLG."
+    DYNAMIC_RANGE_NOT_DECLARED
+    "The closest entry does not declare the source's Dolby Vision profile and level."
+    DOLBY_VISION_NOT_DECLARED
+    "The probe found no Dolby Vision profile or level for the source, so no entry can accept its Dolby Vision."
+    DOLBY_VISION_PROFILE_OR_LEVEL_UNKNOWN
+    "The closest entry does not declare HDR10+."
+    HDR10_PLUS_NOT_DECLARED
+    "A copy that keeps Dolby Vision strips the source's HDR10+ information, whatever the client declares."
+    HDR10_PLUS_STRIPPED_BESIDE_DOLBY_VISION
+    "The source's picture is larger than the fixed quality or the maximum size that the client sent."
+    PICTURE_ABOVE_VIEWER_LIMIT
+    "A copy costs more than the client's maximum bitrate beside every audio step."
+    BITRATE_ABOVE_VIEWER_LIMIT
+    "The source is interlaced. HLS delivery needs progressive video, and direct play of an interlaced file is unmeasured."
+    SOURCE_INTERLACED
+    "The source is Dolby Vision without a compatible base."
+    DOLBY_VISION_WITHOUT_COMPATIBLE_BASE
+    "The source's HDR base was probed before the probe described its codec profile."
+    VIDEO_PROPERTIES_NOT_PROBED
+    "The source's Dolby Vision configuration claims another base than the source's transfer signals."
+    DOLBY_VISION_COMPATIBILITY_DISAGREES_WITH_TRANSFER
+    "The source's Dolby Vision RPUs start their samples, so a copy or direct play would hand players misplaced RPUs."
+    DOLBY_VISION_RPU_STARTS_SAMPLE
+    "The source is H.264 at another bit depth or chroma subsampling than 8-bit 4:2:0."
+    H264_NOT_8_BIT_4_2_0
+    "The probe reported no chroma subsampling for the source's H.264 video."
+    VIDEO_CHROMA_SUBSAMPLING_UNKNOWN
+    "The source's sample entry is not one under which a playlist describes a copy, such as hev1."
+    SAMPLE_ENTRY_NOT_COPYABLE
+    "The probe stored no codec string for the source's video, which a playlist needs to describe a copy."
+    VIDEO_CODEC_STRING_UNKNOWN
+    "The probe could not name the source's codec profile."
+    VIDEO_CODEC_PROFILE_UNKNOWN
+    "The probe reported no codec name for the source's video."
+    VIDEO_CODEC_UNKNOWN
+    "The probe stored no video facts for a copy."
+    VIDEO_SOURCE_NOT_COPYABLE
+    "The source's keyframe positions are not known yet."
+    KEYFRAMES_UNKNOWN
+    "The source's keyframes leave a segment without a keyframe."
+    KEYFRAMES_TOO_SPARSE
+    "The source's keyframe timestamps go backwards or out of range."
+    KEYFRAME_TIMESTAMPS_INVALID
+    "No connected worker can make the copy's planned output."
+    NO_WORKER_DELIVERS_COPY
+    "No audio capability entry for HLS names the source's audio codec."
+    AUDIO_CODEC_NOT_DECLARED
+    "The source has more audio channels than the entry for its codec accepts."
+    AUDIO_CHANNELS_NOT_DECLARED
+    """
+    The probe reported no channel count for the source's audio, and the entry for its codec accepts fewer channels than
+    the stereo track the server then assumes.
+    """
+    AUDIO_CHANNELS_UNKNOWN
+    "HLS delivery cannot copy the source's audio codec profile, such as AAC Main."
+    AUDIO_SOURCE_NOT_COPYABLE
+    "The probe stored no codec string for the source's audio, which a playlist needs to describe a copy."
+    AUDIO_CODEC_STRING_UNKNOWN
+    """
+    The client's maximum bitrate takes a lower audio step. The output can still exceed a maximum below the lowest
+    audio and video rates that the server encodes.
+    """
+    AUDIO_LOWERED_FOR_BITRATE_LIMIT
+    "The probe found no single source container that a client can declare for direct play."
+    SOURCE_CONTAINER_UNKNOWN
+    """
+    No video capability entry of the source's codec family lists the file's source container for direct play, or,
+    for a file with audio, no audio capability entry lists it.
+    """
+    DIRECT_PLAY_CONTAINER_NOT_DECLARED
+    """
+    No video capability entry that lists the MP4 or MOV container lists the video stream's sample entry, such as
+    hev1, or the probe stored no sample entry.
+    """
+    DIRECT_PLAY_SAMPLE_ENTRY_NOT_DECLARED
+    """
+    No video capability entry that lists the file's source container accepts every property of the video stream as
+    it is, or the probe left one of those properties unknown.
+    """
+    DIRECT_PLAY_VIDEO_NOT_DECLARED
+    "An audio track of the file is one that no audio capability entry listing the file's source container accepts."
+    DIRECT_PLAY_AUDIO_NOT_DECLARED
+    "A forced image subtitle track, PGS, VobSub or DVB, is in the language of an audio track."
+    FORCED_IMAGE_SUBTITLE_IN_AUDIO_LANGUAGE
+    "The direct play of the format attempt before this one failed, so this one plays over HLS."
+    DIRECT_PLAY_FAILED
+    "The copy of the format attempt before this one failed, so this one encodes the video."
+    COPY_FAILED
+    "The encode of the format attempt before this one failed, so this one encodes in another codec family."
+    ENCODE_FAILED
 }
 
 "Why the output differs from the output that the requested playback choice asked for (ADR 0052)."

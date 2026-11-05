@@ -12,4 +12,5 @@ public record PlaybackSessionDto(
     String playbackChoice,
     String formatChange,
     List<String> offeredChoices,
-    PlaybackFormatAttemptDto currentFormatAttempt) {}
+    PlaybackFormatAttemptDto currentFormatAttempt,
+    List<PlaybackDecisionDto> decisions) {}
