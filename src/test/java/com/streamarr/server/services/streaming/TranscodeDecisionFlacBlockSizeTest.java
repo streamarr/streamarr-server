@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.aacEntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.audioEntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.StreamingProperties;
@@ -13,9 +14,13 @@ import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.AudioStreamProperties;
 import com.streamarr.server.domain.streaming.ChannelLayout;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
+import com.streamarr.server.domain.streaming.DecisionReason;
+import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamSessionFixture;
+import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -33,10 +38,10 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
- * How a FLAC capability entry's minimum block size binds an HLS copy of a FLAC track (ADR 0043, ADR
- * 0049). Each source's first audio track is a 5.1 FLAC track, read by a client whose FLAC entry
- * accepts 6 channels. A refused copy takes the server's E-AC-3, AC-3 or AAC encode until the FLAC
- * encode of streamarr/streamarr-server#503 replaces it.
+ * How a FLAC capability entry's minimum block size binds an HLS copy and direct play of a FLAC
+ * track (ADR 0043, ADR 0049). Each source's first audio track is a 5.1 FLAC track, read by a client
+ * whose FLAC entry accepts 6 channels. A refused copy takes the server's E-AC-3, AC-3 or AAC encode
+ * until the FLAC encode of streamarr/streamarr-server#503 replaces it.
  */
 @Tag("UnitTest")
 @DisplayName("Transcode Decision FLAC Block Size Tests")
@@ -160,6 +165,64 @@ class TranscodeDecisionFlacBlockSizeTest {
 
     assertThat(audio.mode()).isEqualTo(AudioMode.TRANSCODE);
     assertThat(audio.codec()).isEqualTo("eac3");
+  }
+
+  @Test
+  @DisplayName(
+      "Should direct-play a file with a FLAC track when its block size reaches the entry's minimum")
+  void shouldDirectPlayAFileWithAFlacTrackWhenItsBlockSizeReachesTheEntrysMinimum() {
+    var request = directPlayRequest(flacTrack(OptionalInt.of(4_608)));
+
+    assertThat(service.decideDirectPlay(request))
+        .isEqualTo(new DirectPlayChoice.Accepted(SourceContainer.MATROSKA));
+  }
+
+  // Direct play hands the player the same FLAC bytes as an HLS copy, so CoreMedia drops them too.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("blockSizesBelowTheMinimumOrUnknown")
+  @DisplayName(
+      "Should play a file over HLS when its FLAC track's block size is below the entry's minimum or"
+          + " unknown")
+  void shouldPlayAFileOverHlsWhenItsFlacTracksBlockSizeIsBelowTheEntrysMinimumOrUnknown(
+      String scenario, StreamInfo track) {
+    assertThat(service.decideDirectPlay(directPlayRequest(track)))
+        .isEqualTo(
+            new DirectPlayChoice.Refused(List.of(DecisionReason.DIRECT_PLAY_AUDIO_NOT_DECLARED)));
+  }
+
+  private static DirectPlayRequest directPlayRequest(StreamInfo track) {
+    var matroska = List.of(SourceContainer.MATROSKA);
+    var declaration =
+        ClientCapabilityDeclaration.builder()
+            .video(List.of(h264EntryBuilder().directPlayContainers(matroska).build()))
+            .audio(
+                List.of(
+                    aacEntryBuilder().build(),
+                    flacEntry()
+                        .directPlayContainers(matroska)
+                        .minBlockSize(OptionalInt.of(APPLE_MIN_BLOCK_SIZE))
+                        .build()))
+            .build();
+    var source =
+        StreamSessionFixture.defaultProbeBuilder()
+            .containerFormat(Optional.of("matroska,webm"))
+            .videoPlaybackFacts(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .streamIndex(0)
+                        .videoProperties(
+                            Optional.of(
+                                VideoPlaybackFactsFixture.h264HighPropertiesBuilder().build()))
+                        .build()))
+            .audioCodec("flac")
+            .streams(List.of(track))
+            .build();
+    return DirectPlayRequest.builder()
+        .source(source)
+        .capabilityDeclaration(declaration)
+        .videoFormatConstraint(VideoFormatConstraint.DIRECT_PLAY_OR_COPY_OR_ENCODE)
+        .viewerLimits(ViewerLimits.builder().quality(VideoQuality.ORIGINAL).build())
+        .build();
   }
 
   private AudioDecision decideAudio(StreamInfo track, ClientCapabilityDeclaration declaration) {
