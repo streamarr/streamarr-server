@@ -9,6 +9,7 @@ import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.SourceContainer;
@@ -65,6 +66,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
 
 @DgsComponent
@@ -482,6 +484,7 @@ public class StreamingResolver {
         .videoRange(session.getVideoRange().name())
         .startPositionSeconds(startPositionSeconds(session))
         .audioTrackPosition(audioTrackPosition(session))
+        .audioTracks(audioTracks(session.getMediaProbe()))
         .build();
   }
 
@@ -490,6 +493,19 @@ public class StreamingResolver {
         .getStartPosition()
         .map(position -> position.toNanos() / NANOSECONDS_PER_SECOND)
         .orElse(null);
+  }
+
+  private static List<StreamSessionDto.AudioTrack> audioTracks(MediaProbe probe) {
+    var inStreamOrder = probe.audioStreamsInStreamOrder();
+    return IntStream.range(0, inStreamOrder.size())
+        .mapToObj(
+            position ->
+                StreamSessionDto.AudioTrack.builder()
+                    .position(position)
+                    .language(inStreamOrder.get(position).language().orElse(null))
+                    .title(inStreamOrder.get(position).title().orElse(null))
+                    .build())
+        .toList();
   }
 
   // GraphQL's null names a file without audio.
