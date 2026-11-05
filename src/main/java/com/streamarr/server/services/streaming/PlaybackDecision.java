@@ -97,9 +97,19 @@ public record PlaybackDecision(
     return Optional.of(
         AudioFormat.builder()
             .codec(source.audioCodec())
-            .channels(source.audioChannels())
+            .channels(sourceChannels(source))
             .bitrate(source.audioBitrate())
             .build());
+  }
+
+  // A probe that reports zero channels knows no more than one that reports none.
+  private static OptionalInt sourceChannels(MediaProbe source) {
+    var channels = source.audioChannels();
+    if (channels.isPresent() && channels.getAsInt() <= 0) {
+      return OptionalInt.empty();
+    }
+
+    return channels;
   }
 
   private static TrackDelivery<VideoFormat> video(
@@ -202,7 +212,7 @@ public record PlaybackDecision(
     var sourceFormat =
         AudioFormat.builder()
             .codec(source.audioCodec())
-            .channels(source.audioChannels())
+            .channels(sourceChannels(source))
             .bitrate(source.audioBitrate())
             .build();
     var output =
