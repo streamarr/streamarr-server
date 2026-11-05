@@ -90,7 +90,7 @@ public record PlaybackDecision(
   }
 
   private static Optional<AudioFormat> audioSource(MediaProbe source) {
-    if (source.audioCodec() == null || source.audioChannels().isEmpty()) {
+    if (source.audioCodec() == null) {
       return Optional.empty();
     }
 
@@ -202,7 +202,7 @@ public record PlaybackDecision(
     var sourceFormat =
         AudioFormat.builder()
             .codec(source.audioCodec())
-            .channels(OptionalInt.of(source.audioChannels().orElse(decision.channels())))
+            .channels(source.audioChannels())
             .bitrate(source.audioBitrate())
             .build();
     var output =

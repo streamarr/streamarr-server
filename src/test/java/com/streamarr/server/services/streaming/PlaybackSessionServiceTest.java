@@ -251,6 +251,45 @@ class PlaybackSessionServiceTest {
             });
   }
 
+  // Decision 131: an unknown source channel count stays unknown; it never borrows the output's.
+  @Test
+  @DisplayName(
+      "Should leave the source's channel count unknown when the probe reported none and the audio"
+          + " encodes")
+  void shouldLeaveTheSourcesChannelCountUnknownWhenTheProbeReportedNoneAndTheAudioEncodes() {
+    streams.copiesTheSource = false;
+    streams.sourceProbe = defaultProbeBuilder().audioChannels(OptionalInt.empty()).build();
+
+    var snapshot = accepted(service.start(startCommand().build()));
+
+    assertThat(snapshot.decisions().getFirst().audio())
+        .hasValueSatisfying(
+            audio -> {
+              assertThat(audio.source().channels()).isEmpty();
+              assertThat(audio.output().channels()).hasValue(2);
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should show the direct play's audio with an unknown channel count when the probe reported"
+          + " none")
+  void shouldShowTheDirectPlaysAudioWithAnUnknownChannelCountWhenTheProbeReportedNone() {
+    streams.sourceProbe = defaultProbeBuilder().audioChannels(OptionalInt.empty()).build();
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+
+    var directPlay = startDirectPlay(service, command);
+
+    assertThat(directPlay.decisions().getFirst().audio())
+        .hasValueSatisfying(
+            audio -> {
+              assertThat(audio.delivery()).isEqualTo(PlaybackDelivery.DIRECT_PLAY);
+              assertThat(audio.source().codec()).isEqualTo("aac");
+              assertThat(audio.source().channels()).isEmpty();
+              assertThat(audio.output()).isEqualTo(audio.source());
+            });
+  }
+
   @Test
   @DisplayName("Should name the encode failure when an encode falls back to another encode")
   void shouldNameTheEncodeFailureWhenAnEncodeFallsBackToAnotherEncode() {
