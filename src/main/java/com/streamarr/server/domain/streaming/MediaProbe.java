@@ -94,6 +94,14 @@ public record MediaProbe(
   }
 
   /**
+   * The file's audio streams in stream order. {@link #audioStreams} lists the session's audio track
+   * first instead, once {@link #withSessionAudioTrackAt} has chosen one.
+   */
+  public List<StreamInfo> audioStreamsInStreamOrder() {
+    return audioStreams().stream().sorted(Comparator.comparingInt(StreamInfo::index)).toList();
+  }
+
+  /**
    * The position, counting from 0, of the stream session's audio track among the file's audio
    * tracks in stream order, or empty when the file has no audio track. The stream session plays the
    * first audio stream that the probe lists.
@@ -116,8 +124,7 @@ public record MediaProbe(
    * marked. True when the file has no audio track.
    */
   public boolean startsOnTheFirstAudioTrack() {
-    var inStreamOrder =
-        audioStreams().stream().sorted(Comparator.comparingInt(StreamInfo::index)).toList();
+    var inStreamOrder = audioStreamsInStreamOrder();
     return inStreamOrder.stream()
         .filter(StreamInfo::isDefault)
         .findFirst()
@@ -132,8 +139,7 @@ public record MediaProbe(
    * tracks.
    */
   public MediaProbe withSessionAudioTrackAt(int position) {
-    var inStreamOrder =
-        audioStreams().stream().sorted(Comparator.comparingInt(StreamInfo::index)).toList();
+    var inStreamOrder = audioStreamsInStreamOrder();
     return withAudioFirst(inStreamOrder.get(position));
   }
 
