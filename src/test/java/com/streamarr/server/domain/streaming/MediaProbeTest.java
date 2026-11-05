@@ -19,6 +19,9 @@ import org.junit.jupiter.params.provider.ValueSource;
 @DisplayName("Media Probe Tests")
 class MediaProbeTest {
 
+  private static final String MATROSKA_DEMUXER = "matroska,webm";
+  private static final String MOV_DEMUXER = "mov,mp4,m4a,3gp,3g2,mj2";
+
   @ParameterizedTest
   @ValueSource(strings = {"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle"})
   @DisplayName(
@@ -154,32 +157,102 @@ class MediaProbeTest {
     assertThat(probe.withSessionAudioTrackAt(0)).isEqualTo(probe);
   }
 
-  // The streams are listed second track first, as for a session that names the second track, so
-  // the answer must come from stream order.
+  // Chromium and Firefox start on a Matroska file's first audio track whatever its default flags
+  // say. The streams are listed second track first, as for a session that names the second track,
+  // so the answer must come from stream order.
   @ParameterizedTest(name = "first default {0}, second default {1}")
-  @CsvSource({"false, false, true", "true, false, true", "true, true, true", "false, true, false"})
+  @CsvSource({"false, false", "true, false", "true, true", "false, true"})
   @DisplayName(
-      "Should start a non-selecting player on the first audio track unless only a later one is the"
-          + " default")
-  void shouldStartANonSelectingPlayerOnTheFirstAudioTrackUnlessOnlyALaterOneIsTheDefault(
-      boolean firstIsDefault, boolean secondIsDefault, boolean startsOnTheFirst) {
+      "Should start every non-selecting player on a Matroska file's first audio track whatever its"
+          + " default flags")
+  void shouldStartEveryNonSelectingPlayerOnAMatroskaFilesFirstAudioTrackWhateverItsDefaultFlags(
+      boolean firstIsDefault, boolean secondIsDefault) {
     var probe =
-        probe(
+        probeIn(
+            MATROSKA_DEMUXER,
+            Optional.empty(),
             audioIn("fra").index(2).isDefault(secondIsDefault).build(),
             audioIn("eng").index(1).isDefault(firstIsDefault).build());
+
+    assertThat(probe.startsOnTheFirstAudioTrack()).isTrue();
+  }
+
+  // In an MP4 or MOV file, Chromium starts on the first audio track whose enabled flag is set,
+  // which ffprobe reports as the default flag, and Firefox on the first audio track. They agree
+  // unless only a later track is enabled. The streams are listed second track first.
+  @ParameterizedTest(name = "major brand {0}, first enabled {1}, second enabled {2}")
+  @CsvSource({
+    "isom, false, false, true",
+    "isom, true, false, true",
+    "isom, true, true, true",
+    "isom, false, true, false",
+    "'qt  ', false, true, false"
+  })
+  @DisplayName(
+      "Should start every non-selecting player on an MP4 or MOV file's first audio track unless"
+          + " only a later one is enabled")
+  void
+      shouldStartEveryNonSelectingPlayerOnAnMp4OrMovFilesFirstAudioTrackUnlessOnlyALaterOneIsEnabled(
+          String majorBrand,
+          boolean firstIsEnabled,
+          boolean secondIsEnabled,
+          boolean startsOnTheFirst) {
+    var probe =
+        probeIn(
+            MOV_DEMUXER,
+            Optional.of(majorBrand),
+            audioIn("fra").index(2).isDefault(secondIsEnabled).build(),
+            audioIn("eng").index(1).isDefault(firstIsEnabled).build());
 
     assertThat(probe.startsOnTheFirstAudioTrack()).isEqualTo(startsOnTheFirst);
   }
 
+  // Once any audio or video track of an MP4 or MOV file is enabled, Chromium skips every audio
+  // track that is not, so it plays no audio when only the video track is enabled.
+  @ParameterizedTest(name = "first audio track enabled {0}")
+  @CsvSource({"false, false", "true, true"})
+  @DisplayName(
+      "Should start every non-selecting player on an MP4 file's first audio track beside an enabled"
+          + " video track only when that audio track is enabled")
+  void
+      shouldStartEveryNonSelectingPlayerOnAnMp4FilesFirstAudioTrackBesideAnEnabledVideoTrackOnlyWhenThatAudioTrackIsEnabled(
+          boolean firstIsEnabled, boolean startsOnTheFirst) {
+    var probe =
+        probeIn(
+            MOV_DEMUXER,
+            Optional.of("isom"),
+            StreamInfo.builder().index(0).codecType("video").isDefault(true).build(),
+            audioIn("eng").index(1).isDefault(firstIsEnabled).build(),
+            audioIn("fra").index(2).build());
+
+    assertThat(probe.startsOnTheFirstAudioTrack()).isEqualTo(startsOnTheFirst);
+  }
+
+  // An MP4 file reads the enabled flags, so the answer must not depend on a first audio track.
   @Test
   @DisplayName("Should start a non-selecting player on the first audio track when there is none")
   void shouldStartANonSelectingPlayerOnTheFirstAudioTrackWhenThereIsNone() {
-    assertThat(probe(subtitle("subrip", "eng").index(1).build()).startsOnTheFirstAudioTrack())
-        .isTrue();
+    var probe =
+        probeIn(
+            MOV_DEMUXER,
+            Optional.of("isom"),
+            StreamInfo.builder().index(0).codecType("video").isDefault(true).build(),
+            subtitle("mov_text", "eng").index(1).build());
+
+    assertThat(probe.startsOnTheFirstAudioTrack()).isTrue();
   }
 
   private static MediaProbe probe(StreamInfo... streams) {
     return StreamSessionFixture.defaultProbeBuilder().streams(List.of(streams)).build();
+  }
+
+  private static MediaProbe probeIn(
+      String demuxer, Optional<String> majorBrand, StreamInfo... streams) {
+    return StreamSessionFixture.defaultProbeBuilder()
+        .containerFormat(Optional.of(demuxer))
+        .majorBrand(majorBrand)
+        .streams(List.of(streams))
+        .build();
   }
 
   private static StreamInfo audio(String language) {

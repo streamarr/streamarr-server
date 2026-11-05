@@ -80,13 +80,13 @@ public class TranscodeDecisionService {
    * Original; any other format attempt names no refusal. The declaration must cover the video and
    * every audio track from the file's source container (ADR 0049). The decision names the stream
    * session's audio track, which a player that selects audio tracks selects. A player that cannot
-   * select one starts on the file's default audio track, or on its first when none is marked, so it
-   * direct-plays only when the session's track is the first and the player starts on it (ADR 0045).
-   * An interlaced source, a property issue that rules out a copy (ADR 0049) and a forced image
-   * subtitle in the language of any audio track (#506) keep the file on HLS. The refusals name
-   * every check that the file fails. The keyframe grid, the interim HDR copy rule and the codec
-   * string bind only HLS copies. A copy in Original ignores the viewer's limits (ADR 0050), and so
-   * does direct play.
+   * select one starts on the file's first audio track, unless an MP4 or MOV file's enabled flags
+   * start Chromium on another, so it direct-plays only when the session's track is the first and
+   * every such player starts on it (ADR 0045). An interlaced source, a property issue that rules
+   * out a copy (ADR 0049) and a forced image subtitle in the language of any audio track (#506)
+   * keep the file on HLS. The refusals name every check that the file fails. The keyframe grid, the
+   * interim HDR copy rule and the codec string bind only HLS copies. A copy in Original ignores the
+   * viewer's limits (ADR 0050), and so does direct play.
    */
   public DirectPlayChoice decideDirectPlay(@NonNull DirectPlayRequest request) {
     if (request.videoFormatConstraint() != VideoFormatConstraint.DIRECT_PLAY_OR_COPY_OR_ENCODE

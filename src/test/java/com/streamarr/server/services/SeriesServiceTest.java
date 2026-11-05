@@ -179,6 +179,32 @@ class SeriesServiceTest {
     }
 
     @Test
+    @DisplayName("Should return only the requested seasons when an id matches no season")
+    void shouldReturnOnlyTheRequestedSeasonsWhenAnIdMatchesNoSeason() {
+      var first = seasonRepository.save(Season.builder().seasonNumber(1).build());
+      var second = seasonRepository.save(Season.builder().seasonNumber(2).build());
+      seasonRepository.save(Season.builder().seasonNumber(3).build());
+
+      assertThat(
+              seriesService.findSeasonsByIds(
+                  List.of(first.getId(), second.getId(), UUID.randomUUID())))
+          .containsExactlyInAnyOrder(first, second);
+    }
+
+    @Test
+    @DisplayName("Should return only the requested series when an id matches no series")
+    void shouldReturnOnlyTheRequestedSeriesWhenAnIdMatchesNoSeries() {
+      var drama = seriesRepository.save(Series.builder().title("Drama").build());
+      var comedy = seriesRepository.save(Series.builder().title("Comedy").build());
+      seriesRepository.save(Series.builder().title("Western").build());
+
+      assertThat(
+              seriesService.findSeriesByIds(
+                  List.of(drama.getId(), comedy.getId(), UUID.randomUUID())))
+          .containsExactlyInAnyOrder(drama, comedy);
+    }
+
+    @Test
     @DisplayName("Should return no season and no series when the ids name no episode")
     void shouldReturnNoSeasonAndNoSeriesWhenIdsNameNoEpisode() {
       var movieId = List.of(UUID.randomUUID());

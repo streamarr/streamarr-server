@@ -9,11 +9,17 @@ import com.streamarr.server.exceptions.SeasonNotFoundException;
 import com.streamarr.server.services.SeriesService;
 import graphql.schema.DataFetchingEnvironment;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import lombok.RequiredArgsConstructor;
+import org.dataloader.DataLoader;
 
 @DgsComponent
 @RequiredArgsConstructor
 public class EpisodeFieldResolver {
+
+  private static final String SEASON_LOADER = "seasons";
 
   private final SeriesService seriesService;
 
@@ -24,11 +30,15 @@ public class EpisodeFieldResolver {
   }
 
   @DgsData(parentType = "Episode", field = "season")
-  public Season season(DataFetchingEnvironment dfe) {
+  public CompletableFuture<Season> season(DataFetchingEnvironment dfe) {
     Episode episode = dfe.getSource();
     var seasonId = episode.getSeason().getId();
-    return seriesService
-        .findSeasonById(seasonId)
-        .orElseThrow(() -> new SeasonNotFoundException(seasonId, episode.getId()));
+    DataLoader<UUID, Season> loader = dfe.getDataLoader(SEASON_LOADER);
+    return loader
+        .load(seasonId)
+        .thenApply(
+            season ->
+                Optional.ofNullable(season)
+                    .orElseThrow(() -> new SeasonNotFoundException(seasonId, episode.getId())));
   }
 }
