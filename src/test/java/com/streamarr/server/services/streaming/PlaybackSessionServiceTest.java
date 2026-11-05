@@ -56,7 +56,9 @@ import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.services.events.watchprogress.StreamSessionTimelineReportedEvent;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.events.CopiedVariantRanShortEvent;
+import com.streamarr.server.services.streaming.events.MediaSegmentStoredEvent;
 import com.streamarr.server.services.streaming.events.PlaybackSessionChangedEvent;
+import com.streamarr.server.services.streaming.events.PlaybackSessionSegmentStoredEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import java.time.Duration;
@@ -406,6 +408,27 @@ class PlaybackSessionServiceTest {
         new StreamSessionTimelineReportedEvent(UUID.randomUUID()));
 
     assertThat(events.getEventsOfType(PlaybackSessionChangedEvent.class)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should announce a stored media segment only when the current format attempt's stream session"
+          + " stored it")
+  void shouldAnnounceAStoredMediaSegmentOnlyWhenTheCurrentFormatAttemptsStreamSessionStoredIt() {
+    var command = startCommand().build();
+    var initial = accepted(service.start(command));
+    var initialStream = initial.currentFormatAttempt().streamSessionId();
+
+    service.onMediaSegmentStored(new MediaSegmentStoredEvent(initialStream));
+    service.reportFormatFailure(report(initial, command).build()).orElseThrow();
+    var replacement = streams.createdCommands.getLast().streamSessionId();
+    service.onMediaSegmentStored(new MediaSegmentStoredEvent(initialStream));
+    service.onMediaSegmentStored(new MediaSegmentStoredEvent(replacement));
+    service.onMediaSegmentStored(new MediaSegmentStoredEvent(UUID.randomUUID()));
+
+    var stored = new PlaybackSessionSegmentStoredEvent(initial.playbackSessionId());
+    assertThat(events.getEventsOfType(PlaybackSessionSegmentStoredEvent.class))
+        .containsExactly(stored, stored);
   }
 
   @Test

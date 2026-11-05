@@ -22,6 +22,7 @@ import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
+import com.streamarr.server.services.streaming.events.MediaSegmentStoredEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
@@ -1625,6 +1626,51 @@ class WorkerSessionGrpcServiceTest {
             .build();
     assertThat(events.getEventsOfType(JobAttemptProgressedEvent.class))
         .isEqualTo(running ? List.of(progressed) : List.of());
+  }
+
+  @Test
+  @DisplayName(
+      "Should announce each stored media segment but no initialization segment when a worker's"
+          + " uploads complete")
+  void shouldAnnounceEachStoredMediaSegmentButNoInitializationSegmentWhenUploadsComplete()
+      throws Exception {
+    var events = new CapturingEventPublisher();
+    var registry =
+        LiveWorkerConnectionRegistry.builder()
+            .configuration(WorkerSessionServerConfiguration.builder().build())
+            .meterRegistry(new SimpleMeterRegistry())
+            .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
+            .eventPublisher(events)
+            .build();
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var worker = worker(workerId);
+    var workerSessionId =
+        registry.register(
+            workerId, registration(worker, sourceNamespaceId), new IgnoringResponseObserver());
+    var job = variantJob(sourceNamespaceId);
+    assertThat(registry.dispatch(job)).isPresent();
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+
+    for (var segmentName : List.of("init.mp4", "segment0.m4s", "segment1.m4s")) {
+      var response = new SuccessfulUploadResponseObserver();
+      var upload = upload(service, workerId, response);
+      upload.onNext(
+          UploadSegmentRequest.newBuilder()
+              .setMetadata(
+                  metadataBuilder(workerSessionId, worker, job)
+                      .setSegmentName(segmentName)
+                      .setContentLengthBytes(1))
+              .build());
+      upload.onNext(
+          UploadSegmentRequest.newBuilder().setData(ByteString.copyFrom(new byte[] {1})).build());
+      upload.onCompleted();
+      assertThat(response.completed()).as("upload of %s", segmentName).isTrue();
+    }
+
+    var stored = new MediaSegmentStoredEvent(fromProto(job.getStreamSessionId()));
+    assertThat(events.getEventsOfType(MediaSegmentStoredEvent.class))
+        .containsExactly(stored, stored);
   }
 
   // ADR 0037: each chunk of a media segment upload restarts the stall clock, so a large merged

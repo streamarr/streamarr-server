@@ -14,7 +14,9 @@ import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.events.watchprogress.StreamSessionTimelineReportedEvent;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.events.CopiedVariantRanShortEvent;
+import com.streamarr.server.services.streaming.events.MediaSegmentStoredEvent;
 import com.streamarr.server.services.streaming.events.PlaybackSessionChangedEvent;
+import com.streamarr.server.services.streaming.events.PlaybackSessionSegmentStoredEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import java.time.Clock;
@@ -1115,6 +1117,15 @@ public class PlaybackSessionService implements AutoCloseable {
     var playback = streamOwners.get(event.streamSessionId());
     if (playback != null) {
       changed(playback);
+    }
+  }
+
+  /** A job attempt of a playback session's current format attempt stored a media segment. */
+  @EventListener
+  public void onMediaSegmentStored(@NonNull MediaSegmentStoredEvent event) {
+    var playback = streamOwners.get(event.streamSessionId());
+    if (playback != null) {
+      eventPublisher.publishEvent(new PlaybackSessionSegmentStoredEvent(playback.id));
     }
   }
 
