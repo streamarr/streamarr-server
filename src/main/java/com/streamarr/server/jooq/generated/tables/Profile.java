@@ -10,6 +10,7 @@ import com.streamarr.server.jooq.generated.enums.ProfileKind;
 import com.streamarr.server.jooq.generated.tables.AccountInvitation.AccountInvitationPath;
 import com.streamarr.server.jooq.generated.tables.AuthSession.AuthSessionPath;
 import com.streamarr.server.jooq.generated.tables.Household.HouseholdPath;
+import com.streamarr.server.jooq.generated.tables.LanguageOverride.LanguageOverridePath;
 import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.ProfileHouseholdSharePath;
 import com.streamarr.server.jooq.generated.tables.ProfileManager.ProfileManagerPath;
 import com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation.ProfileManagerInvitationPath;
@@ -128,6 +129,21 @@ public class Profile extends TableImpl<ProfileRecord> {
      * The column <code>public.profile.restricted</code>.
      */
     public final TableField<ProfileRecord, Boolean> RESTRICTED = createField(DSL.name("restricted"), SQLDataType.BOOLEAN, this, "");
+
+    /**
+     * The column <code>public.profile.audio_languages</code>.
+     */
+    public final TableField<ProfileRecord, String[]> AUDIO_LANGUAGES = createField(DSL.name("audio_languages"), SQLDataType.CLOB.array().nullable(false).defaultValue(DSL.field(DSL.raw("'{}'::text[]"), SQLDataType.CLOB.array())), this, "");
+
+    /**
+     * The column <code>public.profile.subtitle_language</code>.
+     */
+    public final TableField<ProfileRecord, String> SUBTITLE_LANGUAGE = createField(DSL.name("subtitle_language"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.profile.subtitle_mode</code>.
+     */
+    public final TableField<ProfileRecord, String> SUBTITLE_MODE = createField(DSL.name("subtitle_mode"), SQLDataType.CLOB.nullable(false).defaultValue(DSL.field(DSL.raw("'FORCED'::text"), SQLDataType.CLOB)), this, "");
 
     private Profile(Name alias, Table<ProfileRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
@@ -327,12 +343,27 @@ public class Profile extends TableImpl<ProfileRecord> {
         return _watchHistory;
     }
 
+    private transient LanguageOverridePath _languageOverride;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.language_override</code> table
+     */
+    public LanguageOverridePath languageOverride() {
+        if (_languageOverride == null)
+            _languageOverride = new LanguageOverridePath(this, null, Keys.LANGUAGE_OVERRIDE__LANGUAGE_OVERRIDE_PROFILE_ID_FKEY.getInverseKey());
+
+        return _languageOverride;
+    }
+
     @Override
     public List<Check<ProfileRecord>> getChecks() {
         return Arrays.asList(
             Internal.createCheck(this, DSL.name("chk_profile_maximum_allowed_rating_age"), "(((maximum_allowed_rating_age IS NULL) OR (maximum_allowed_rating_age >= 0)))", true),
             Internal.createCheck(this, DSL.name("chk_profile_name_not_blank"), "((btrim(name) <> ''::text))", true),
-            Internal.createCheck(this, DSL.name("chk_profile_pin_hash_not_blank"), "(((pin_hash IS NULL) OR (btrim(pin_hash) <> ''::text)))", true)
+            Internal.createCheck(this, DSL.name("chk_profile_pin_hash_not_blank"), "(((pin_hash IS NULL) OR (btrim(pin_hash) <> ''::text)))", true),
+            Internal.createCheck(this, DSL.name("profile_audio_languages_at_most_five"), "(((cardinality(audio_languages) <= 5) AND (array_position(audio_languages, NULL::text) IS NULL)))", true),
+            Internal.createCheck(this, DSL.name("profile_subtitle_mode_check"), "((subtitle_mode = ANY (ARRAY['OFF'::text, 'FORCED'::text, 'ALWAYS'::text])))", true)
         );
     }
 

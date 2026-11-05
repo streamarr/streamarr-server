@@ -30,6 +30,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class FakeMediaFileContainerInfoRepository implements MediaFileContainerInfoRepository {
 
@@ -40,6 +41,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   private final Map<UUID, ChapterKnowledge> chapters = new ConcurrentHashMap<>();
   private final Map<UUID, StoredMeasurement> measurements = new ConcurrentHashMap<>();
   private final List<ProbePublication> publications = new ArrayList<>();
+  private final List<List<UUID>> chapterReads = new CopyOnWriteArrayList<>();
   private Optional<ProbeOutcome.Success> defaultProbe = Optional.empty();
   private final Set<UUID> deletedMediaFiles = ConcurrentHashMap.newKeySet();
   private final MediaFileRowLocks rowLocks = new MediaFileRowLocks();
@@ -61,6 +63,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     keyframes.clear();
     chapters.clear();
     measurements.clear();
+    chapterReads.clear();
   }
 
   @Override
@@ -206,6 +209,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   @Override
   public synchronized Map<UUID, ChapterKnowledge> findChapterKnowledge(
       Collection<UUID> mediaFileIds) {
+    chapterReads.add(List.copyOf(mediaFileIds));
     var knowledge = new HashMap<UUID, ChapterKnowledge>();
     for (var mediaFileId : mediaFileIds) {
       storedChapters(mediaFileId).ifPresent(stored -> knowledge.put(mediaFileId, stored));
@@ -419,6 +423,11 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
 
   public synchronized List<ProbePublication> publications() {
     return List.copyOf(publications);
+  }
+
+  /** The media file ids of each chapter read, one list per read. */
+  public List<List<UUID>> chapterReads() {
+    return List.copyOf(chapterReads);
   }
 
   private static MediaFileContainerInfo toRow(ProbePublication publication) {

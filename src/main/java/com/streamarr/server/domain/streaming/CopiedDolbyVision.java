@@ -25,12 +25,19 @@ sealed interface CopiedDolbyVision {
   record Declarable(@NonNull DolbyVisionProfile profile, int level) implements CopiedDolbyVision {}
 
   /**
-   * Dolby Vision that no entry accepts: profile 6 or 7, an unknown profile, a profile that the
-   * contract does not name, or a stream whose level neither its record nor the level table gives.
-   * Until streamarr/streamarr-server#652 stores a maximum frame rate, the table gives no level. A
-   * copy on a PQ or HLG base can still play with the Dolby Vision stripped (ADR 0013).
+   * Dolby Vision that no entry accepts: profile 6 or 7, or a profile that the contract does not
+   * name. A copy on a PQ or HLG base can still play with the Dolby Vision stripped (ADR 0013).
    */
   record Undeclarable() implements CopiedDolbyVision {}
+
+  /**
+   * Dolby Vision that no entry accepts because the probe's facts leave it unknown: neither the
+   * record nor the first RPU header names a profile, or neither the record nor the level table
+   * gives a level. Until streamarr/streamarr-server#652 stores a maximum frame rate, the table
+   * gives no level. A copy on a PQ or HLG base can still play with the Dolby Vision stripped (ADR
+   * 0013).
+   */
+  record Unknown() implements CopiedDolbyVision {}
 
   /**
    * Profile 5 or 10.0, which no entry accepts until the worker can write the Dolby Vision sample
@@ -57,7 +64,7 @@ sealed interface CopiedDolbyVision {
     var base = copy.dynamicRange().compatibleBase();
     var profileNumber = profileNumberFromRecordOrRpuHeader(codecFamily, present);
     if (profileNumber.isEmpty()) {
-      return new Undeclarable();
+      return new Unknown();
     }
 
     if (base == CompatibleBase.SDR && isSdrBaseProfile(codecFamily, profileNumber.getAsInt())) {
@@ -72,9 +79,13 @@ sealed interface CopiedDolbyVision {
     }
 
     var profile = namedProfile(codecFamily, profileNumber.getAsInt(), base);
-    var level = levelFromRecordOrTable(copy, present);
-    if (profile.isEmpty() || level.isEmpty()) {
+    if (profile.isEmpty()) {
       return new Undeclarable();
+    }
+
+    var level = levelFromRecordOrTable(copy, present);
+    if (level.isEmpty()) {
+      return new Unknown();
     }
 
     if (profile.get().compatibleBase() == CompatibleBase.NONE) {

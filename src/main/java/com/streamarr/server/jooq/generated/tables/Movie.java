@@ -11,6 +11,7 @@ import com.streamarr.server.jooq.generated.tables.BaseCollectable.BaseCollectabl
 import com.streamarr.server.jooq.generated.tables.Genre.GenrePath;
 import com.streamarr.server.jooq.generated.tables.Image.ImagePath;
 import com.streamarr.server.jooq.generated.tables.ItemResult.ItemResultPath;
+import com.streamarr.server.jooq.generated.tables.LanguageOverride.LanguageOverridePath;
 import com.streamarr.server.jooq.generated.tables.MovieCompany.MovieCompanyPath;
 import com.streamarr.server.jooq.generated.tables.MovieDirector.MovieDirectorPath;
 import com.streamarr.server.jooq.generated.tables.MovieGenre.MovieGenrePath;
@@ -261,6 +262,19 @@ public class Movie extends TableImpl<MovieRecord> {
             _itemResult = new ItemResultPath(this, null, Keys.ITEM_RESULT__ITEM_RESULT_MOVIE_ID_FKEY.getInverseKey());
 
         return _itemResult;
+    }
+
+    private transient LanguageOverridePath _languageOverride;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.language_override</code> table
+     */
+    public LanguageOverridePath languageOverride() {
+        if (_languageOverride == null)
+            _languageOverride = new LanguageOverridePath(this, null, Keys.LANGUAGE_OVERRIDE__LANGUAGE_OVERRIDE_MOVIE_ID_FKEY.getInverseKey());
+
+        return _languageOverride;
     }
 
     private transient MovieCompanyPath _movieCompany;

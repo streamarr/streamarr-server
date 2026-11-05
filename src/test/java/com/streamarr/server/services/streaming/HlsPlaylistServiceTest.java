@@ -63,6 +63,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -2229,6 +2230,72 @@ class HlsPlaylistServiceTest {
                   .audioDecision(audio)
                   .build())
           .build();
+    }
+  }
+
+  // RFC 8216bis section 4.4.2.2: a tag that the multivariant playlist carries should not appear in
+  // the media playlists that it lists, and PRECISE=YES starts at the offset inside its segment.
+  @Nested
+  @DisplayName("EXT-X-START")
+  class StartTag {
+
+    @ParameterizedTest
+    @CsvSource({"0, 0", "250000000, 0.25", "5381000000000, 5381", "1000000001, 1.000000001"})
+    @DisplayName(
+        "Should mark the start position before every variant when the stream session starts at a"
+            + " position")
+    void shouldMarkTheStartPositionBeforeEveryVariantWhenTheStreamSessionStartsAtAPosition(
+        long startNanos, String timeOffset) {
+      var session =
+          StreamSessionFixture.abrSessionBuilder()
+              .transcodeDecision(encodedDecision("h264", new Fraction(24, 1)))
+              .startPosition(Duration.ofNanos(startNanos))
+              .build();
+
+      var lines = service.generateMultivariantPlaylist(session, "t").lines().toList();
+
+      var startTag = "#EXT-X-START:TIME-OFFSET=" + timeOffset + ",PRECISE=YES";
+      assertThat(lines).containsOnlyOnce(startTag);
+      assertThat(lines.indexOf(startTag))
+          .isLessThan(firstIndexStartingWith(lines, "#EXT-X-STREAM-INF:"));
+    }
+
+    @Test
+    @DisplayName("Should mark the start position when a copy starts at a position")
+    void shouldMarkTheStartPositionWhenACopyStartsAtAPosition() {
+      var session =
+          StreamSessionFixture.defaultSessionBuilder()
+              .startPosition(Duration.ofSeconds(90))
+              .build();
+
+      assertThat(service.generateMultivariantPlaylist(session, "t"))
+          .containsOnlyOnce("#EXT-X-START:TIME-OFFSET=90,PRECISE=YES\n");
+    }
+
+    @Test
+    @DisplayName(
+        "Should leave the start out of the media playlist when the session starts at a position")
+    void shouldLeaveTheStartOutOfTheMediaPlaylistWhenTheSessionStartsAtAPosition() {
+      var session =
+          StreamSessionFixture.defaultSessionBuilder()
+              .startPosition(Duration.ofSeconds(90))
+              .build();
+
+      assertThat(service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "t"))
+          .doesNotContain("#EXT-X-START");
+    }
+
+    @Test
+    @DisplayName("Should mark no start when the stream session has no start position")
+    void shouldMarkNoStartWhenTheStreamSessionHasNoStartPosition() {
+      var session = StreamSessionFixture.defaultSessionBuilder().build();
+
+      assertThat(service.generateMultivariantPlaylist(session, "t")).doesNotContain("#EXT-X-START");
+    }
+
+    private static int firstIndexStartingWith(List<String> lines, String prefix) {
+      return lines.indexOf(
+          lines.stream().filter(line -> line.startsWith(prefix)).findFirst().orElseThrow());
     }
   }
 }

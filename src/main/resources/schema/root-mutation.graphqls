@@ -14,6 +14,12 @@ type Mutation {
     markWatched(input: MarkWatchedInput!): MarkWatchedPayload
     "Marks an item unwatched for the selected Profile and clears its resume position. A season or a series marks each of its episodes."
     markUnwatched(input: MarkUnwatchedInput!): MarkUnwatchedPayload
+    "Replaces the selected Profile's own language preferences."
+    setLanguagePreferences(input: SetLanguagePreferencesInput!): SetLanguagePreferencesPayload
+    "Changes the selected Profile's language override of one series, season, episode or movie."
+    setLanguageOverride(input: SetLanguageOverrideInput!): SetLanguageOverridePayload
+    "Removes the selected Profile's language override of one series, season, episode or movie."
+    clearLanguageOverride(input: ClearLanguageOverrideInput!): ClearLanguageOverridePayload
     grantServerAdmin(input: GrantServerAdminInput!): GrantServerAdminPayload
     revokeServerAdmin(input: RevokeServerAdminInput!): RevokeServerAdminPayload
     grantHouseholdAdmin(input: GrantHouseholdAdminInput!): GrantHouseholdAdminPayload
