@@ -4,7 +4,6 @@ import com.streamarr.server.services.pagination.Row;
 import com.streamarr.server.services.pagination.Seek;
 import com.streamarr.server.services.playbackreport.NewPlaybackReport;
 import com.streamarr.server.services.playbackreport.PlaybackReport;
-import com.streamarr.server.services.playbackreport.PlaybackReportSubmission;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -18,9 +17,6 @@ public interface PlaybackReportRepository {
    * report with the same submission id already, stores nothing and returns that report's id.
    */
   UUID save(NewPlaybackReport report);
-
-  /** The id of the report that the Profile shared for this submission. */
-  Optional<UUID> findIdBySubmission(PlaybackReportSubmission submission);
 
   /** Up to {@code seek.limit()} reports beyond the seek's position, ordered by share time. */
   List<Row<PlaybackReport>> rowsBeyond(Seek seek);

@@ -16,7 +16,6 @@ import com.streamarr.server.services.pagination.Row;
 import com.streamarr.server.services.pagination.Seek;
 import com.streamarr.server.services.playbackreport.NewPlaybackReport;
 import com.streamarr.server.services.playbackreport.PlaybackReport;
-import com.streamarr.server.services.playbackreport.PlaybackReportSubmission;
 import com.streamarr.server.services.playbackreport.PlayerFigures;
 import com.streamarr.server.services.playbackreport.PlayerFigures.PictureSize;
 import com.streamarr.server.services.playbackreport.PlayerFigures.PlayerAudio;
@@ -108,16 +107,6 @@ public class PlaybackReportRepositoryImpl implements PlaybackReportRepository {
     }
 
     return id;
-  }
-
-  @Override
-  public Optional<UUID> findIdBySubmission(PlaybackReportSubmission submission) {
-    return dsl.select(PLAYBACK_REPORT.ID)
-        .from(PLAYBACK_REPORT)
-        .where(PLAYBACK_REPORT.PLAYBACK_SESSION_ID.eq(submission.playbackSessionId()))
-        .and(PLAYBACK_REPORT.SUBMISSION_ID.eq(submission.submissionId()))
-        .and(PLAYBACK_REPORT.PROFILE_ID.eq(submission.profileId()))
-        .fetchOptional(PLAYBACK_REPORT.ID);
   }
 
   @Override

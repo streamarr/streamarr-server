@@ -33,7 +33,6 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.playbackreport.NewPlaybackReport;
 import com.streamarr.server.services.playbackreport.PlaybackReport;
-import com.streamarr.server.services.playbackreport.PlaybackReportSubmission;
 import com.streamarr.server.services.playbackreport.PlayerFigures.PlayerAudio;
 import com.streamarr.server.services.playbackreport.PlayerHdrMode;
 import com.streamarr.server.services.streaming.AudioFormat;
@@ -267,29 +266,6 @@ class PlaybackReportRepositoryIT extends AbstractIntegrationTest {
 
     assertThat(other).isNotEqualTo(first);
     assertThat(repository.findById(other)).isPresent();
-  }
-
-  @Test
-  @DisplayName("Should find a report by its submission only for the Profile that shared it")
-  void shouldFindReportBySubmissionOnlyForProfileThatSharedIt() {
-    var report = reportBuilder().build();
-    var id = save(report);
-    var submission =
-        PlaybackReportSubmission.builder()
-            .profileId(viewer.profile().getId())
-            .playbackSessionId(report.playbackSessionId())
-            .submissionId(report.submissionId())
-            .build();
-
-    assertThat(repository.findIdBySubmission(submission)).contains(id);
-    assertThat(
-            repository.findIdBySubmission(
-                submission.toBuilder().profileId(UUID.randomUUID()).build()))
-        .isEmpty();
-    assertThat(
-            repository.findIdBySubmission(
-                submission.toBuilder().submissionId(UUID.randomUUID()).build()))
-        .isEmpty();
   }
 
   @Test

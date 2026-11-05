@@ -8,7 +8,6 @@ import com.streamarr.server.services.pagination.Seek;
 import com.streamarr.server.services.pagination.SortValue;
 import com.streamarr.server.services.playbackreport.NewPlaybackReport;
 import com.streamarr.server.services.playbackreport.PlaybackReport;
-import com.streamarr.server.services.playbackreport.PlaybackReportSubmission;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -73,18 +72,6 @@ public final class FakePlaybackReportRepository implements PlaybackReportReposit
             .capabilityDeclaration(report.capabilityDeclaration())
             .build());
     return id;
-  }
-
-  @Override
-  public Optional<UUID> findIdBySubmission(PlaybackReportSubmission submission) {
-    return reports.values().stream()
-        .filter(
-            report ->
-                report.profileId().equals(submission.profileId())
-                    && report.playbackSessionId().equals(submission.playbackSessionId())
-                    && submissionIds.get(report.id()).equals(submission.submissionId()))
-        .map(PlaybackReport::id)
-        .findFirst();
   }
 
   @Override

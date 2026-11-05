@@ -162,18 +162,18 @@ class PlaybackReportServiceTest {
 
     @Test
     @DisplayName(
-        "Should return the stored report when the resend arrives after the playback session"
-            + " closed")
-    void shouldReturnStoredReportWhenResendArrivesAfterPlaybackSessionClosed() {
+        "Should read the session as missing and keep the stored report when the resend arrives"
+            + " after the playback session closed")
+    void shouldReadSessionAsMissingAndKeepStoredReportWhenResendArrivesAfterSessionClosed() {
       var start = startPlaybackBuilder().build();
       var playback = acceptedPlayback(playbackSessions.start(start));
       var submission = shareBuilder(playback, start).build();
       var first = accepted(service.sharePlaybackReport(submission));
       playbackSessions.close(playbackRequest(playback, start));
 
-      var resent = accepted(service.sharePlaybackReport(submission));
+      var resent = service.sharePlaybackReport(submission);
 
-      assertThat(resent).isEqualTo(first);
+      assertThat(rejectionOf(resent)).isEqualTo(new PlaybackSessionMissing());
       assertThat(repository.storedReports()).extracting(PlaybackReport::id).containsExactly(first);
     }
 
@@ -193,6 +193,33 @@ class PlaybackReportServiceTest {
 
       assertThat(rejectionOf(outcome)).isEqualTo(new PlaybackSessionMissing());
       assertThat(repository.storedReports()).extracting(PlaybackReport::id).containsExactly(first);
+    }
+
+    @Test
+    @DisplayName(
+        "Should read the session as missing when the same Profile resends a submission from"
+            + " another sign-in")
+    void shouldReadSessionAsMissingWhenSameProfileResendsSubmissionFromAnotherSignIn() {
+      var start = startPlaybackBuilder().build();
+      var playback = acceptedPlayback(playbackSessions.start(start));
+      var submission = shareBuilder(playback, start).build();
+      accepted(service.sharePlaybackReport(submission));
+      var owner = start.identity();
+      var otherSignIn =
+          AuthenticatedIdentity.builder()
+              .accountId(owner.accountId())
+              .authSessionId(UUID.randomUUID())
+              .scope(owner.scope())
+              .householdId(owner.householdId())
+              .householdRole(owner.householdRole())
+              .contextHouseholdId(owner.contextHouseholdId())
+              .profileId(owner.profileId())
+              .build();
+
+      var outcome =
+          service.sharePlaybackReport(submission.toBuilder().identity(otherSignIn).build());
+
+      assertThat(rejectionOf(outcome)).isEqualTo(new PlaybackSessionMissing());
     }
 
     @Test

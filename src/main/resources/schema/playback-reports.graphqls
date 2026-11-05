@@ -184,7 +184,8 @@ input SharePlaybackReportInput {
     streamSessionId: ID!
     """
     A new UUID that the client makes for each press of Share and sends again when it resends after a lost answer.
-    A playback session keeps one report for each submission ID, so a resend returns the stored report.
+    A playback session keeps one report for each submission ID, so a resend returns the stored report. A resend
+    after the playback session closed reads as closed, as any report does.
     """
     submissionId: ID!
     "At most 280 characters. A blank note counts as none."
