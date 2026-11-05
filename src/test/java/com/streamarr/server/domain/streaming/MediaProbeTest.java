@@ -154,6 +154,30 @@ class MediaProbeTest {
     assertThat(probe.withSessionAudioTrackAt(0)).isEqualTo(probe);
   }
 
+  // The streams are listed second track first, as for a session that names the second track, so
+  // the answer must come from stream order.
+  @ParameterizedTest(name = "first default {0}, second default {1}")
+  @CsvSource({"false, false, true", "true, false, true", "true, true, true", "false, true, false"})
+  @DisplayName(
+      "Should start a non-selecting player on the first audio track unless only a later one is the"
+          + " default")
+  void shouldStartANonSelectingPlayerOnTheFirstAudioTrackUnlessOnlyALaterOneIsTheDefault(
+      boolean firstIsDefault, boolean secondIsDefault, boolean startsOnTheFirst) {
+    var probe =
+        probe(
+            audioIn("fra").index(2).isDefault(secondIsDefault).build(),
+            audioIn("eng").index(1).isDefault(firstIsDefault).build());
+
+    assertThat(probe.startsOnTheFirstAudioTrack()).isEqualTo(startsOnTheFirst);
+  }
+
+  @Test
+  @DisplayName("Should start a non-selecting player on the first audio track when there is none")
+  void shouldStartANonSelectingPlayerOnTheFirstAudioTrackWhenThereIsNone() {
+    assertThat(probe(subtitle("subrip", "eng").index(1).build()).startsOnTheFirstAudioTrack())
+        .isTrue();
+  }
+
   private static MediaProbe probe(StreamInfo... streams) {
     return StreamSessionFixture.defaultProbeBuilder().streams(List.of(streams)).build();
   }

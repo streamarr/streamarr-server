@@ -110,6 +110,22 @@ public record MediaProbe(
   }
 
   /**
+   * Whether a player that cannot select an audio track starts on the file's first audio track in
+   * stream order. Such a player starts on the first default audio track, as an MP4 track's enabled
+   * flag or a Matroska track's default flag marks it, or on the first audio track when none is
+   * marked. True when the file has no audio track.
+   */
+  public boolean startsOnTheFirstAudioTrack() {
+    var inStreamOrder =
+        audioStreams().stream().sorted(Comparator.comparingInt(StreamInfo::index)).toList();
+    return inStreamOrder.stream()
+        .filter(StreamInfo::isDefault)
+        .findFirst()
+        .map(track -> track == inStreamOrder.getFirst())
+        .orElse(true);
+  }
+
+  /**
    * This probe with the audio track at {@code position}, counting from 0 among the file's audio
    * tracks in stream order, as the session's audio track: it takes the first audio stream's place,
    * and the probe's audio facts come from it. {@code position} must name one of the file's audio

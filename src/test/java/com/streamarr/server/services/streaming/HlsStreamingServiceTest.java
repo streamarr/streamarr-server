@@ -5557,6 +5557,27 @@ class HlsStreamingServiceTest {
     assertThat(session.getMediaProbe().sessionAudioTrackPosition()).hasValue(1);
   }
 
+  // A player that cannot select an audio track starts on the container's default audio track, as an
+  // MP4 track's enabled flag marks it. When that is not the first, the chosen first track plays
+  // over HLS.
+  @Test
+  @DisplayName(
+      "Should start HLS when the player cannot select an audio track and the first is not the"
+          + " default")
+  void shouldStartHlsWhenThePlayerCannotSelectAnAudioTrackAndTheFirstIsNotTheDefault() {
+    probeResults.setDefaultProbe(directPlayableProbeWhoseDefaultAudioTrackIsTheSecond());
+    var file = seedMediaFile();
+    var declaration = directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(false).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId()).capabilityDeclaration(declaration).build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.HLS);
+    assertThat(session.getMediaProbe().sessionAudioTrackPosition()).hasValue(0);
+  }
+
   // ADR 0045: a player that selects audio tracks direct-plays a file with several, and selects the
   // audio track that the stream decision names: the track that HLS plays for the same file.
   @Test
@@ -5637,6 +5658,18 @@ class HlsStreamingServiceTest {
     }
 
     return directPlayableProbeBuilder().streams(streams).build();
+  }
+
+  private static MediaProbe directPlayableProbeWhoseDefaultAudioTrackIsTheSecond() {
+    var video = ProbeFixture.videoStreamBuilder(directPlayableProbe()).build();
+    var first = ProbeFixture.audioStreamBuilder("aac").index(1).channels(OptionalInt.of(2)).build();
+    var second =
+        ProbeFixture.audioStreamBuilder("aac")
+            .index(2)
+            .channels(OptionalInt.of(2))
+            .isDefault(true)
+            .build();
+    return directPlayableProbeBuilder().streams(List.of(video, first, second)).build();
   }
 
   private static MediaProbe directPlayableProbe() {
