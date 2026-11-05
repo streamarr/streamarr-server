@@ -79,7 +79,10 @@ public enum DecisionReason {
   KEYFRAMES_TOO_SPARSE,
   /** The source's keyframe timestamps go backwards or out of range. */
   KEYFRAME_TIMESTAMPS_INVALID,
-  /** No connected worker delivers the copy's bitstream rewrites. */
+  /**
+   * No connected worker delivers the copy's bitstream rewrites, or the Dolby Vision sample entry of
+   * a profile 5 or 10.0 copy.
+   */
   NO_WORKER_DELIVERS_COPY,
   /** No audio capability entry for HLS names the source's audio codec. */
   AUDIO_CODEC_NOT_DECLARED,
@@ -94,6 +97,16 @@ public enum DecisionReason {
   AUDIO_SOURCE_NOT_COPYABLE,
   /** The probe stored no codec string for the source's audio, which a playlist needs for a copy. */
   AUDIO_CODEC_STRING_UNKNOWN,
+  /**
+   * The source's FLAC minimum block size is below the minimum of each audio capability entry for
+   * HLS that accepts the rest of the copy (ADR 0049).
+   */
+  AUDIO_BLOCK_SIZE_NOT_DECLARED,
+  /**
+   * The probe stored no FLAC minimum block size for the source's audio, and each audio capability
+   * entry for HLS that accepts the rest of the copy gives a minimum (ADR 0049).
+   */
+  AUDIO_BLOCK_SIZE_UNKNOWN,
   /**
    * The viewer's maximum bitrate takes a lower audio step. The output can still exceed a maximum
    * below the lowest audio and video rates that the ladder encodes.
@@ -132,5 +145,11 @@ public enum DecisionReason {
   /** An earlier format attempt's copy failed, so this format attempt encodes the video. */
   COPY_FAILED,
   /** An earlier format attempt's encode failed, so this one encodes in another codec family. */
-  ENCODE_FAILED
+  ENCODE_FAILED,
+  /**
+   * An earlier format attempt's Dolby Vision copy failed, so this one copies the video with its
+   * Dolby Vision stripped, or encodes it when the client or the workers rule that copy out (ADR
+   * 0052).
+   */
+  DOLBY_VISION_COPY_FAILED
 }

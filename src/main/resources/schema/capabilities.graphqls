@@ -73,6 +73,13 @@ input AudioCapabilityEntryInput {
     hls: Boolean!
     "The source containers from which the player opens a stream of this codec, by direct play. An entry that does not apply to HLS lists at least one."
     directPlayContainers: [SourceContainer!]! = []
+    """
+    The smallest STREAMINFO minimum block size, in samples, of a FLAC track that the player plays, from
+    16 to 65,535. Only a FLAC entry gives one. The entry then accepts a FLAC track only when the track's
+    minimum block size is known and at least this size, so a track with smaller or unknown blocks plays
+    as an encode. Without it, the entry accepts every block size.
+    """
+    minBlockSize: Int
 }
 
 """
@@ -214,6 +221,12 @@ type CapabilityMaximumInvalidError implements InputMutationError & MutationError
 
 "A codec profile or Dolby Vision profile belongs to another codec family than its video capability entry."
 type CapabilityProfileMismatchError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"An audio capability entry gives a minimum block size although its codec is not FLAC, or gives one outside FLAC's block sizes of 16 to 65,535 samples."
+type AudioMinBlockSizeInvalidError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
 }

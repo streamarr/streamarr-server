@@ -41,12 +41,12 @@ sealed interface CopiedDolbyVision {
   record Unknown() implements CopiedDolbyVision {}
 
   /**
-   * Profile 5 or 10.0, which no entry accepts until the worker can write the Dolby Vision sample
-   * entry and configuration record that such a copy needs: dvh1 for profile 5, dav1 for 10.0
-   * (streamarr/streamarr-server#396). The worker writes HEVC copies under hvc1 without the record
-   * and cannot write dav1, and a picture with no compatible base shows wrong colours or is refused
-   * without them. Direct play delivers the stream under its own sample entry, so it reads {@code
-   * level}, which is empty when neither the record nor the level table gives one.
+   * Profile 5 or 10.0, which has no compatible base. A copy fits an entry that lists the profile at
+   * or above its level, and only a worker that writes the Dolby Vision sample entry and
+   * configuration record that such a copy needs delivers it: dvh1 for profile 5, dav1 for 10.0 (ADR
+   * 0013). Without them, a picture with no compatible base shows wrong colours or is refused.
+   * {@code level} is empty when neither the record nor the level table gives one, and then no entry
+   * accepts the stream.
    */
   record NeedsDolbyVisionSampleEntry(
       @NonNull DolbyVisionProfile profile, @NonNull OptionalInt level)

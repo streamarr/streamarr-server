@@ -122,6 +122,17 @@ public record TranscodeDecision(
   }
 
   /**
+   * The codec string of the sample entry that a copy of the video carries, which the copy's
+   * playlist entry and job name: the Dolby Vision entry's for a copy of profile 5 or 10.0 (ADR
+   * 0013), otherwise the one that the probe stored.
+   */
+  public Optional<String> copyCodecString() {
+    return videoDolbyVisionOutput
+        .flatMap(DolbyVisionOutput::codecs)
+        .or(() -> videoSource.flatMap(VideoPlaybackFacts::codecString));
+  }
+
+  /**
    * The dynamic range of the planned video output, as a playlist names it. Dolby Vision without a
    * compatible base is PQ.
    */

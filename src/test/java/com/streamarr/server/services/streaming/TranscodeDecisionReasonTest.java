@@ -184,6 +184,32 @@ class TranscodeDecisionReasonTest {
                 DecisionReason.DYNAMIC_RANGE_NOT_DECLARED)),
         Arguments.of(
             Named.of(
+                "a Dolby Vision profile 5 source to a client that declares only profile 8.1",
+                hevcMain10()
+                    .dynamicRange(VideoPlaybackFactsFixture.dolbyVisionProfile5())
+                    .build()
+                    .probe()),
+            everyRangeClient(),
+            List.of(DecisionReason.DOLBY_VISION_NOT_DECLARED)),
+        Arguments.of(
+            Named.of(
+                "a Dolby Vision profile 5 source whose level neither the record nor the level table"
+                    + " gives, to a client that declares profile 5",
+                hevcMain10().dynamicRange(profile5WithoutALevel()).build().probe()),
+            client(
+                hevcEntryBuilder()
+                    .compatibleBases(List.of())
+                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .dolbyVisionProfiles(
+                        List.of(
+                            DolbyVisionProfileCapability.builder()
+                                .profile(DolbyVisionProfile.PROFILE_5)
+                                .maxLevel(13)
+                                .build()))
+                    .build()),
+            List.of(DecisionReason.DOLBY_VISION_PROFILE_OR_LEVEL_UNKNOWN)),
+        Arguments.of(
+            Named.of(
                 "a source that one entry refuses for two properties and another for one",
                 Source.builder().build().probe()),
             client(
@@ -319,14 +345,6 @@ class TranscodeDecisionReasonTest {
                 "Dolby Vision whose RPUs start their samples",
                 hevcMain10().dynamicRange(rpusStartingTheirSamples()).build().probe()),
             DecisionReason.DOLBY_VISION_RPU_STARTS_SAMPLE),
-        Arguments.of(
-            Named.of(
-                "Dolby Vision without a compatible base",
-                hevcMain10()
-                    .dynamicRange(VideoPlaybackFactsFixture.dolbyVisionProfile5())
-                    .build()
-                    .probe()),
-            DecisionReason.DOLBY_VISION_WITHOUT_COMPATIBLE_BASE),
         Arguments.of(
             Named.of(
                 "a PQ source that probe version 4 described",
@@ -791,6 +809,22 @@ class TranscodeDecisionReasonTest {
 
   private static VideoDynamicRange range(CompatibleBase base) {
     return VideoPlaybackFactsFixture.rangeWithoutEnhancement(base);
+  }
+
+  // Profile 5 without a compatible base, whose record names no level.
+  private static VideoDynamicRange profile5WithoutALevel() {
+    return new VideoDynamicRange(
+        CompatibleBase.NONE,
+        Presence.ABSENT,
+        new DolbyVision.Present(
+            Optional.of(
+                DolbyVisionConfiguration.builder()
+                    .profile(OptionalInt.of(5))
+                    .baseLayerCompatibilityId(OptionalInt.of(0))
+                    .baseLayer(true)
+                    .rpu(true)
+                    .build()),
+            Presence.PRESENT));
   }
 
   private static VideoDynamicRange profile81() {

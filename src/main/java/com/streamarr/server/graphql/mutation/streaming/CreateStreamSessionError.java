@@ -44,4 +44,7 @@ public sealed interface CreateStreamSessionError extends MutationError {
 
   record VideoCodecTierInvalidError(String message, List<String> inputPath)
       implements CreateStreamSessionError, InputMutationError {}
+
+  record AudioMinBlockSizeInvalidError(String message, List<String> inputPath)
+      implements CreateStreamSessionError, InputMutationError {}
 }

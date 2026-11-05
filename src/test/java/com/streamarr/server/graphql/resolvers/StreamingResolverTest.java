@@ -27,14 +27,18 @@ import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecisionReason;
+import com.streamarr.server.domain.streaming.DolbyVision;
+import com.streamarr.server.domain.streaming.DolbyVisionOutput;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
+import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.ShortCopy;
@@ -90,6 +94,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
+import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
@@ -622,6 +627,63 @@ class StreamingResolverTest {
             ready.read(
                 "data.playbackSession.currentFormatAttempt.streamSession.videoRange", String.class))
         .isEqualTo("SDR");
+  }
+
+  // ADR 0052: Original stays selected after the fallback to the copy with Dolby Vision stripped,
+  // and the answer names the change so the client shows the Dolby Vision notice and marks Original.
+  @Test
+  @DisplayName(
+      "Should keep Original and name the stripped Dolby Vision when Original's Dolby Vision copy"
+          + " fails")
+  void shouldKeepOriginalAndNameTheStrippedDolbyVisionWhenOriginalsDolbyVisionCopyFails() {
+    var profile81 =
+        VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+            .dynamicRange(
+                new VideoDynamicRange(
+                    CompatibleBase.PQ,
+                    Presence.ABSENT,
+                    new DolbyVision.Present(Optional.empty(), Presence.PRESENT)))
+            .build();
+    STUB_SERVICE.setNextResult(
+        buildSessionDeciding(
+            UUID.randomUUID(),
+            remuxDecisionBuilder()
+                .videoSource(Optional.of(profile81))
+                .videoBitstreamRewrites(List.of(BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD))
+                .videoDolbyVisionOutput(
+                    Optional.of(new DolbyVisionOutput(DolbyVisionProfile.PROFILE_8_1, 6)))
+                .build()));
+    var created = startPlaybackReadingChoices(VideoQuality.ORIGINAL);
+    var playbackId = created.read(CREATED_PLAYBACK + ".id", String.class);
+
+    var reported =
+        reportFailure(
+            playbackId,
+            created.read(CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.id", String.class),
+            "UNSUPPORTED_FORMAT");
+    STUB_SERVICE.setNextResult(
+        buildSessionDeciding(
+            UUID.randomUUID(),
+            remuxDecisionBuilder()
+                .videoSource(Optional.of(profile81))
+                .videoBitstreamRewrites(List.of(BitstreamRewrite.STRIP_DOLBY_VISION))
+                .build()));
+    REPLACEMENT_TASKS.remove().run();
+
+    assertThat(reported.read(REPORTED_PLAYBACK + ".playbackChoice", String.class))
+        .isEqualTo("ORIGINAL");
+    assertThat(reported.read(REPORTED_PLAYBACK + ".formatChange", String.class))
+        .isEqualTo("DOLBY_VISION_STRIPPED");
+    var ready = playbackStatus(playbackId);
+    assertThat(ready.read("data.playbackSession.formatAttemptCount", Integer.class)).isEqualTo(2);
+    assertThat(ready.read("data.playbackSession.playbackChoice", String.class))
+        .isEqualTo("ORIGINAL");
+    assertThat(ready.read("data.playbackSession.formatChange", String.class))
+        .isEqualTo("DOLBY_VISION_STRIPPED");
+    assertThat(
+            ready.read(
+                "data.playbackSession.currentFormatAttempt.streamSession.videoRange", String.class))
+        .isEqualTo("PQ");
   }
 
   @ParameterizedTest
@@ -1704,6 +1766,90 @@ class StreamingResolverTest {
                             .maxHeight(1080)
                             .build()))
                 .build());
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry a FLAC entry's minimum block size when the declaration gives one for FLAC")
+  void shouldCarryAFlacEntrysMinimumBlockSizeWhenTheDeclarationGivesOneForFlac() {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+
+    var context =
+        dgsQueryExecutor.executeAndGetDocumentContext(
+            """
+            mutation {
+              createPlaybackSession(input: {
+                mediaFileId: "%s"
+                capabilities: {
+                  video: [{
+                    codecFamily: H264, codecProfiles: [{profile: H264_HIGH, maxLevel: 41}]
+                    maxBitDepth: 8, maxWidth: 1920, maxHeight: 1080, maxFrameRate: 60
+                    compatibleBases: [SDR], dolbyVisionProfiles: [], hdr10Plus: false, hls: true
+                  }]
+                  audio: [
+                    {codec: AAC, maxChannels: 2, hls: true}
+                    {codec: FLAC, maxChannels: 8, hls: true, minBlockSize: 192}
+                  ]
+                }
+              }) {
+                playbackSession { id }
+                userErrors { __typename }
+              }
+            }
+            """
+                .formatted(UUID.randomUUID()));
+
+    List<Object> errors = context.read("data.createPlaybackSession.userErrors");
+    assertThat(errors).isEmpty();
+    assertThat(STUB_SERVICE.getLastReceivedDeclaration().audio())
+        .containsExactly(
+            aacEntryBuilder().build(),
+            audioEntryBuilder(AudioCodec.FLAC)
+                .maxChannels(8)
+                .minBlockSize(OptionalInt.of(192))
+                .build());
+  }
+
+  @Test
+  @DisplayName("Should refuse a minimum block size when the audio entry's codec is not FLAC")
+  void shouldRefuseAMinimumBlockSizeWhenTheAudioEntrysCodecIsNotFlac() {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+
+    var context =
+        dgsQueryExecutor.executeAndGetDocumentContext(
+            """
+            mutation {
+              createPlaybackSession(input: {
+                mediaFileId: "%s"
+                capabilities: {
+                  video: [{
+                    codecFamily: H264, codecProfiles: [{profile: H264_HIGH, maxLevel: 41}]
+                    maxBitDepth: 8, maxWidth: 1920, maxHeight: 1080, maxFrameRate: 60
+                    compatibleBases: [SDR], dolbyVisionProfiles: [], hdr10Plus: false, hls: true
+                  }]
+                  audio: [{codec: AAC, maxChannels: 2, hls: true, minBlockSize: 192}]
+                }
+              }) {
+                playbackSession { id }
+                userErrors {
+                  __typename
+                  ... on InputMutationError { inputPath }
+                }
+              }
+            }
+            """
+                .formatted(UUID.randomUUID()));
+
+    assertThat(context.read(CREATED_PLAYBACK, Object.class)).isNull();
+    List<Map<String, Object>> errors = context.read("data.createPlaybackSession.userErrors");
+    assertThat(errors)
+        .containsExactly(
+            Map.of(
+                "__typename",
+                "AudioMinBlockSizeInvalidError",
+                "inputPath",
+                List.of("capabilities", "audio", "0", "minBlockSize")));
+    assertThat(STUB_SERVICE.getAllSessions()).isEmpty();
   }
 
   @Test

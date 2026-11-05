@@ -14,6 +14,15 @@ sealed interface NextFormatAttempt {
   record CopyOrEncode(@NonNull PlayingChoice whenCopying, @NonNull PlayingChoice whenEncoding)
       implements NextFormatAttempt {}
 
+  /**
+   * Another format attempt copies the video with its Dolby Vision stripped when one capability
+   * entry accepts that copy and plays {@code whenCopying}. Otherwise it encodes the video and plays
+   * {@code whenEncoding}.
+   */
+  record CopyWithDolbyVisionStrippedOrEncode(
+      @NonNull PlayingChoice whenCopying, @NonNull PlayingChoice whenEncoding)
+      implements NextFormatAttempt {}
+
   /** The playback session ends with this failure. */
   record Fail(@NonNull PlaybackSessionFailure reason) implements NextFormatAttempt {}
 }

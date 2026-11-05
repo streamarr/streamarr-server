@@ -21,6 +21,8 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.Di
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionLevelNotPositive;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionProfileOutsideCodecFamily;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.HlsAacEntryMissing;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.MinBlockSizeNotApplicable;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.MinBlockSizeOutsideFlacBlockSizes;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyAudioDirectPlayContainers;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyAudioEntries;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyCodecProfiles;
@@ -44,6 +46,10 @@ final class CapabilityDeclarationRules {
 
   /** The longest list that a declaration may hold, generous for any measured player. */
   static final int MAXIMUM_LIST_SIZE = 32;
+
+  // The block sizes that a FLAC stream's STREAMINFO block allows (RFC 9639, section 8.2).
+  private static final int SMALLEST_FLAC_BLOCK_SIZE = 16;
+  private static final int LARGEST_FLAC_BLOCK_SIZE = 65_535;
 
   private CapabilityDeclarationRules() {}
 
@@ -212,7 +218,26 @@ final class CapabilityDeclarationRules {
     }
 
     audioDeliveryRejection(index, entry).ifPresent(rejections::add);
+    minBlockSizeRejection(index, entry).ifPresent(rejections::add);
     return rejections;
+  }
+
+  private static Optional<CapabilityDeclarationRejection> minBlockSizeRejection(
+      int index, AudioCapabilityEntry entry) {
+    if (entry.minBlockSize().isEmpty()) {
+      return Optional.empty();
+    }
+
+    if (entry.codec() != AudioCodec.FLAC) {
+      return Optional.of(new MinBlockSizeNotApplicable(index));
+    }
+
+    int minBlockSize = entry.minBlockSize().getAsInt();
+    if (minBlockSize < SMALLEST_FLAC_BLOCK_SIZE || minBlockSize > LARGEST_FLAC_BLOCK_SIZE) {
+      return Optional.of(new MinBlockSizeOutsideFlacBlockSizes(index));
+    }
+
+    return Optional.empty();
   }
 
   // An entry applies to HLS, to direct play from the source containers that it lists, or to both

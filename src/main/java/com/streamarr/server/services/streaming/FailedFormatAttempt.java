@@ -11,8 +11,17 @@ record FailedFormatAttempt(@NonNull PlaybackSessionFailure reason, @NonNull Outp
   /** The format attempt sent the source file itself (ADR 0045). */
   record DirectPlay() implements Output {}
 
-  /** The format attempt copied the video. */
+  /**
+   * The format attempt copied the video without Dolby Vision that the copy with Dolby Vision
+   * stripped could drop.
+   */
   record Copy() implements Output {}
+
+  /**
+   * The format attempt copied the video and kept its Dolby Vision on a PQ or HLG base, which the
+   * copy with Dolby Vision stripped plays (ADR 0052).
+   */
+  record DolbyVisionCopyOnAnHdrBase() implements Output {}
 
   /** The format attempt encoded the video in this codec family. */
   record Encode(@NonNull String codecFamily) implements Output {}

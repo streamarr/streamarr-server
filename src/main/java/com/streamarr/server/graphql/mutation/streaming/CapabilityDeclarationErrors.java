@@ -1,6 +1,7 @@
 package com.streamarr.server.graphql.mutation.streaming;
 
 import com.streamarr.server.graphql.mutation.InputPath;
+import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionError.AudioMinBlockSizeInvalidError;
 import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionError.CapabilityListTooLongError;
 import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionError.CapabilityMaximumInvalidError;
 import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionError.CapabilityProfileMismatchError;
@@ -21,6 +22,8 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.Di
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionLevelNotPositive;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionProfileOutsideCodecFamily;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.HlsAacEntryMissing;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.MinBlockSizeNotApplicable;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.MinBlockSizeOutsideFlacBlockSizes;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyAudioDirectPlayContainers;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyAudioEntries;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyCodecProfiles;
@@ -47,6 +50,7 @@ public final class CapabilityDeclarationErrors {
   private static final String MAX_LEVEL = "maxLevel";
   private static final String DIRECT_PLAY_CONTAINERS = "directPlayContainers";
   private static final String DIRECT_PLAY_SAMPLE_ENTRIES = "directPlaySampleEntries";
+  private static final String MIN_BLOCK_SIZE = "minBlockSize";
   private static final String DELIVERY_MISSING =
       "List a source container for direct play, or apply the entry to HLS.";
   private static final String TOO_MANY = "List no more than %d values here.";
@@ -124,6 +128,16 @@ public final class CapabilityDeclarationErrors {
               videoPath(entry, DIRECT_PLAY_SAMPLE_ENTRIES));
       case TooManyDirectPlaySampleEntries(var entry, var maximum) ->
           tooMany(maximum, videoPath(entry, DIRECT_PLAY_SAMPLE_ENTRIES));
+      case MinBlockSizeNotApplicable(var entry) ->
+          new AudioMinBlockSizeInvalidError(
+              "Leave out the minimum block size of an entry whose codec is not FLAC. Only FLAC has"
+                  + " block sizes.",
+              audioPath(entry, MIN_BLOCK_SIZE));
+      case MinBlockSizeOutsideFlacBlockSizes(var entry) ->
+          new AudioMinBlockSizeInvalidError(
+              "Enter a minimum block size from 16 to 65,535 samples, the block sizes that FLAC"
+                  + " allows.",
+              audioPath(entry, MIN_BLOCK_SIZE));
     };
   }
 
