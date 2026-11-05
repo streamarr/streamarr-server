@@ -11,12 +11,13 @@ import lombok.Builder;
 import lombok.NonNull;
 
 /** A report as the viewer shares it, before the server stores it. */
-@Builder
+@Builder(toBuilder = true)
 public record NewPlaybackReport(
     @NonNull Instant sharedAt,
     @NonNull UUID profileId,
     @NonNull UUID playbackSessionId,
     @NonNull UUID streamSessionId,
+    @NonNull UUID submissionId,
     @NonNull UUID mediaFileId,
     @NonNull Optional<String> note,
     @NonNull VideoQuality requestedChoice,

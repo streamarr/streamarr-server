@@ -10,7 +10,11 @@ import lombok.Builder;
 /** {@code note} and each figure are null when the client left them out. */
 @Builder
 public record SharePlaybackReportInput(
-    String playbackSessionId, String streamSessionId, String note, PlayerFiguresInput player) {
+    String playbackSessionId,
+    String streamSessionId,
+    String submissionId,
+    String note,
+    PlayerFiguresInput player) {
 
   @Builder
   public record PlayerFiguresInput(

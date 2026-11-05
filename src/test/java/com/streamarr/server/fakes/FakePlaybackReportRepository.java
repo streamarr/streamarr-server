@@ -8,6 +8,7 @@ import com.streamarr.server.services.pagination.Seek;
 import com.streamarr.server.services.pagination.SortValue;
 import com.streamarr.server.services.playbackreport.NewPlaybackReport;
 import com.streamarr.server.services.playbackreport.PlaybackReport;
+import com.streamarr.server.services.playbackreport.PlaybackReportSubmission;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,6 +22,7 @@ public final class FakePlaybackReportRepository implements PlaybackReportReposit
 
   private final Map<UUID, PlaybackReport> reports = new ConcurrentHashMap<>();
   private final Map<UUID, String> profileNames = new ConcurrentHashMap<>();
+  private final Map<UUID, UUID> submissionIds = new ConcurrentHashMap<>();
   private final List<Boolean> deletionActors = new ArrayList<>();
 
   /** The name a stored report shows for the Profile, as the profile table holds it. */
@@ -38,8 +40,20 @@ public final class FakePlaybackReportRepository implements PlaybackReportReposit
   }
 
   @Override
-  public UUID save(NewPlaybackReport report) {
+  public synchronized UUID save(NewPlaybackReport report) {
+    var stored =
+        reports.values().stream()
+            .filter(
+                candidate ->
+                    candidate.playbackSessionId().equals(report.playbackSessionId())
+                        && submissionIds.get(candidate.id()).equals(report.submissionId()))
+            .findFirst();
+    if (stored.isPresent()) {
+      return stored.get().id();
+    }
+
     var id = UUID.randomUUID();
+    submissionIds.put(id, report.submissionId());
     reports.put(
         id,
         PlaybackReport.builder()
@@ -59,6 +73,18 @@ public final class FakePlaybackReportRepository implements PlaybackReportReposit
             .capabilityDeclaration(report.capabilityDeclaration())
             .build());
     return id;
+  }
+
+  @Override
+  public Optional<UUID> findIdBySubmission(PlaybackReportSubmission submission) {
+    return reports.values().stream()
+        .filter(
+            report ->
+                report.profileId().equals(submission.profileId())
+                    && report.playbackSessionId().equals(submission.playbackSessionId())
+                    && submissionIds.get(report.id()).equals(submission.submissionId()))
+        .map(PlaybackReport::id)
+        .findFirst();
   }
 
   @Override

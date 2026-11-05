@@ -60,6 +60,7 @@ class PlaybackReportRetentionSweeperTest {
             .profileId(UUID.randomUUID())
             .playbackSessionId(UUID.randomUUID())
             .streamSessionId(UUID.randomUUID())
+            .submissionId(UUID.randomUUID())
             .mediaFileId(UUID.randomUUID())
             .note(Optional.empty())
             .requestedChoice(VideoQuality.AUTO)

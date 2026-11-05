@@ -29,6 +29,7 @@ import graphql.schema.DataFetchingEnvironment;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 
 @DgsComponent
@@ -50,14 +51,25 @@ public class PlaybackReportResolver {
   public SharePlaybackReportPayload sharePlaybackReport(
       @InputArgument SharePlaybackReportInput input) {
     authorizationService.requireProfile();
-    return MutationPayloads.withUuid(
+    var command = SharePlaybackReportCommand.builder();
+    return withShareId(
         input.playbackSessionId(),
+        "playbackSessionId",
         playbackSessionId ->
-            MutationPayloads.withUuid(
+            withShareId(
                 input.streamSessionId(),
-                streamSessionId -> share(input, playbackSessionId, streamSessionId),
-                () -> invalidShareId("streamSessionId")),
-        () -> invalidShareId("playbackSessionId"));
+                "streamSessionId",
+                streamSessionId ->
+                    withShareId(
+                        input.submissionId(),
+                        "submissionId",
+                        submissionId ->
+                            share(
+                                input,
+                                command
+                                    .playbackSessionId(playbackSessionId)
+                                    .streamSessionId(streamSessionId)
+                                    .submissionId(submissionId)))));
   }
 
   @DgsQuery
@@ -104,13 +116,12 @@ public class PlaybackReportResolver {
   }
 
   private SharePlaybackReportPayload share(
-      SharePlaybackReportInput input, UUID playbackSessionId, UUID streamSessionId) {
+      SharePlaybackReportInput input,
+      SharePlaybackReportCommand.SharePlaybackReportCommandBuilder command) {
     return MutationPayloads.payload(
         playbackReportService.sharePlaybackReport(
-            SharePlaybackReportCommand.builder()
+            command
                 .identity(authorizationService.currentIdentity())
-                .playbackSessionId(playbackSessionId)
-                .streamSessionId(streamSessionId)
                 .note(Optional.ofNullable(input.note()))
                 .player(input.player().toFigures())
                 .build()),
@@ -118,10 +129,15 @@ public class PlaybackReportResolver {
         PlaybackReportResolver::sharePayload);
   }
 
-  private static SharePlaybackReportPayload invalidShareId(String field) {
-    return MutationPayloads.inputError(
-        new SharePlaybackReportError.InvalidIdError(INVALID_ID, InputPath.of(field)),
-        PlaybackReportResolver::sharePayload);
+  private static SharePlaybackReportPayload withShareId(
+      String id, String field, Function<UUID, SharePlaybackReportPayload> whenValid) {
+    return MutationPayloads.withUuid(
+        id,
+        whenValid,
+        () ->
+            MutationPayloads.inputError(
+                new SharePlaybackReportError.InvalidIdError(INVALID_ID, InputPath.of(field)),
+                PlaybackReportResolver::sharePayload));
   }
 
   private static SharePlaybackReportPayload sharePayload(

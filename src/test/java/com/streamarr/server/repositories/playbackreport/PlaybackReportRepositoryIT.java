@@ -9,7 +9,10 @@ import static com.streamarr.server.fixtures.PlayerFiguresFixture.tvFiguresBuilde
 import static com.streamarr.server.fixtures.PlayerFiguresFixture.unknownDisplayBuilder;
 import static com.streamarr.server.fixtures.PlayerFiguresFixture.unknownFiguresBuilder;
 import static com.streamarr.server.fixtures.PlayerFiguresFixture.webFiguresBuilder;
+import static com.streamarr.server.jooq.generated.tables.PlaybackReport.PLAYBACK_REPORT;
 import static com.streamarr.server.jooq.generated.tables.PlaybackReportDecision.PLAYBACK_REPORT_DECISION;
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitWaitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -30,6 +33,7 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.playbackreport.NewPlaybackReport;
 import com.streamarr.server.services.playbackreport.PlaybackReport;
+import com.streamarr.server.services.playbackreport.PlaybackReportSubmission;
 import com.streamarr.server.services.playbackreport.PlayerFigures.PlayerAudio;
 import com.streamarr.server.services.playbackreport.PlayerHdrMode;
 import com.streamarr.server.services.streaming.AudioFormat;
@@ -38,6 +42,7 @@ import com.streamarr.server.services.streaming.PlaybackDecision.TrackDelivery;
 import com.streamarr.server.services.streaming.PlaybackDelivery;
 import com.streamarr.server.services.streaming.VideoFormat;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.TestFixtureWork;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -47,14 +52,19 @@ import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import org.jooq.DSLContext;
+import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
@@ -67,6 +77,7 @@ class PlaybackReportRepositoryIT extends AbstractIntegrationTest {
   @Autowired private PlaybackReportRepository repository;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
+  @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private AuthTestSupport auth;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
@@ -198,6 +209,90 @@ class PlaybackReportRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should return the stored report's ID and store nothing more when the same submission is"
+          + " saved again")
+  void shouldReturnStoredReportIdAndStoreNothingMoreWhenSameSubmissionIsSavedAgain() {
+    var report = reportBuilder().decisions(List.of(copyWithAudio())).build();
+    var first = save(report);
+
+    var again = save(report);
+
+    assertThat(again).isEqualTo(first);
+    assertThat(reportCountOf(report)).isOne();
+    assertThat(decisionCountOf(first)).isOne();
+  }
+
+  @Test
+  @DisplayName("Should store one report when two identical submissions arrive at the same time")
+  void shouldStoreOneReportWhenTwoIdenticalSubmissionsArriveAtTheSameTime() throws Exception {
+    var report = reportBuilder().decisions(List.of(copyWithAudio())).build();
+    var firstInserted = new CountDownLatch(1);
+    var commitFirst = new CountDownLatch(1);
+    var firstBackendPid = new AtomicInteger();
+
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
+      var first =
+          executor.submit(
+              () ->
+                  inTransaction(
+                      () -> {
+                        var id = repository.save(report);
+                        firstBackendPid.set(backendPid());
+                        firstInserted.countDown();
+                        awaitLatch(commitFirst);
+                        return id;
+                      }));
+      awaitLatch(firstInserted);
+      var second = executor.submit(() -> save(report));
+      awaitWaitersBehind(jdbcTemplate, firstBackendPid.get(), 1);
+      commitFirst.countDown();
+
+      assertThat(second.get(10, TimeUnit.SECONDS)).isEqualTo(first.get(10, TimeUnit.SECONDS));
+      assertThat(decisionCountOf(first.get())).isOne();
+    }
+
+    assertThat(reportCountOf(report)).isOne();
+  }
+
+  @Test
+  @DisplayName(
+      "Should store a report for each playback session when two playback sessions send the same"
+          + " submission ID")
+  void shouldStoreReportForEachPlaybackSessionWhenTwoSendTheSameSubmissionId() {
+    var report = reportBuilder().build();
+    var first = save(report);
+
+    var other = save(report.toBuilder().playbackSessionId(UUID.randomUUID()).build());
+
+    assertThat(other).isNotEqualTo(first);
+    assertThat(repository.findById(other)).isPresent();
+  }
+
+  @Test
+  @DisplayName("Should find a report by its submission only for the Profile that shared it")
+  void shouldFindReportBySubmissionOnlyForProfileThatSharedIt() {
+    var report = reportBuilder().build();
+    var id = save(report);
+    var submission =
+        PlaybackReportSubmission.builder()
+            .profileId(viewer.profile().getId())
+            .playbackSessionId(report.playbackSessionId())
+            .submissionId(report.submissionId())
+            .build();
+
+    assertThat(repository.findIdBySubmission(submission)).contains(id);
+    assertThat(
+            repository.findIdBySubmission(
+                submission.toBuilder().profileId(UUID.randomUUID()).build()))
+        .isEmpty();
+    assertThat(
+            repository.findIdBySubmission(
+                submission.toBuilder().submissionId(UUID.randomUUID()).build()))
+        .isEmpty();
+  }
+
+  @Test
   @DisplayName("Should keep the first read time when a report is marked read twice")
   void shouldKeepFirstReadTimeWhenReportIsMarkedReadTwice() {
     var id = save(reportBuilder().build());
@@ -233,10 +328,7 @@ class PlaybackReportRepositoryIT extends AbstractIntegrationTest {
     inTransaction(() -> repository.deleteSharedBefore(cutoff));
 
     assertThat(repository.findById(expired)).isEmpty();
-    assertThat(
-            dsl.fetchCount(
-                PLAYBACK_REPORT_DECISION, PLAYBACK_REPORT_DECISION.PLAYBACK_REPORT_ID.eq(expired)))
-        .isZero();
+    assertThat(decisionCountOf(expired)).isZero();
     assertThat(repository.findById(kept)).isPresent();
   }
 
@@ -267,6 +359,7 @@ class PlaybackReportRepositoryIT extends AbstractIntegrationTest {
         .profileId(viewer.profile().getId())
         .playbackSessionId(UUID.randomUUID())
         .streamSessionId(UUID.randomUUID())
+        .submissionId(UUID.randomUUID())
         .mediaFileId(mediaFile.getId())
         .note(Optional.empty())
         .requestedChoice(VideoQuality.AUTO)
@@ -282,6 +375,20 @@ class PlaybackReportRepositoryIT extends AbstractIntegrationTest {
 
   private <T> T inTransaction(Supplier<T> work) {
     return transactionTemplate.execute(_ -> work.get());
+  }
+
+  private int backendPid() {
+    return dsl.select(DSL.function("pg_backend_pid", Integer.class)).fetchSingle().value1();
+  }
+
+  private int reportCountOf(NewPlaybackReport report) {
+    return dsl.fetchCount(
+        PLAYBACK_REPORT, PLAYBACK_REPORT.PLAYBACK_SESSION_ID.eq(report.playbackSessionId()));
+  }
+
+  private int decisionCountOf(UUID reportId) {
+    return dsl.fetchCount(
+        PLAYBACK_REPORT_DECISION, PLAYBACK_REPORT_DECISION.PLAYBACK_REPORT_ID.eq(reportId));
   }
 
   /** H.264 without a tier, HEVC with Dolby Vision and direct play, and two audio codecs. */

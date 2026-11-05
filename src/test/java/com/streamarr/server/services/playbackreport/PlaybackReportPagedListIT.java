@@ -83,6 +83,7 @@ class PlaybackReportPagedListIT
                     .profileId(scope.viewer().profile().getId())
                     .playbackSessionId(UUID.randomUUID())
                     .streamSessionId(UUID.randomUUID())
+                    .submissionId(UUID.randomUUID())
                     .mediaFileId(scope.mediaFileId())
                     .note(Optional.empty())
                     .requestedChoice(VideoQuality.AUTO)

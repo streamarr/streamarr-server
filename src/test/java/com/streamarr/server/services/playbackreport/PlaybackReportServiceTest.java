@@ -145,6 +145,57 @@ class PlaybackReportServiceTest {
     }
 
     @Test
+    @DisplayName(
+        "Should return the stored report when the client resends a submission after losing the"
+            + " answer")
+    void shouldReturnStoredReportWhenClientResendsSubmissionAfterLosingTheAnswer() {
+      var start = startPlaybackBuilder().build();
+      var playback = acceptedPlayback(playbackSessions.start(start));
+      var submission = shareBuilder(playback, start).build();
+
+      var first = accepted(service.sharePlaybackReport(submission));
+      var resent = accepted(service.sharePlaybackReport(submission));
+
+      assertThat(resent).isEqualTo(first);
+      assertThat(repository.storedReports()).extracting(PlaybackReport::id).containsExactly(first);
+    }
+
+    @Test
+    @DisplayName(
+        "Should return the stored report when the resend arrives after the playback session"
+            + " closed")
+    void shouldReturnStoredReportWhenResendArrivesAfterPlaybackSessionClosed() {
+      var start = startPlaybackBuilder().build();
+      var playback = acceptedPlayback(playbackSessions.start(start));
+      var submission = shareBuilder(playback, start).build();
+      var first = accepted(service.sharePlaybackReport(submission));
+      playbackSessions.close(playbackRequest(playback, start));
+
+      var resent = accepted(service.sharePlaybackReport(submission));
+
+      assertThat(resent).isEqualTo(first);
+      assertThat(repository.storedReports()).extracting(PlaybackReport::id).containsExactly(first);
+    }
+
+    @Test
+    @DisplayName(
+        "Should read the session as missing when another viewer sends the submission ID of a"
+            + " stored report")
+    void shouldReadSessionAsMissingWhenAnotherViewerSendsSubmissionIdOfStoredReport() {
+      var start = startPlaybackBuilder().build();
+      var playback = acceptedPlayback(playbackSessions.start(start));
+      var submission = shareBuilder(playback, start).build();
+      var first = accepted(service.sharePlaybackReport(submission));
+      var otherViewer = identityFor(defaultPlaybackAuthorityBuilder().build());
+
+      var outcome =
+          service.sharePlaybackReport(submission.toBuilder().identity(otherViewer).build());
+
+      assertThat(rejectionOf(outcome)).isEqualTo(new PlaybackSessionMissing());
+      assertThat(repository.storedReports()).extracting(PlaybackReport::id).containsExactly(first);
+    }
+
+    @Test
     @DisplayName("Should store the report without a note when the viewer sends a blank note")
     void shouldStoreReportWithoutNoteWhenViewerSendsBlankNote() {
       var start = startPlaybackBuilder().build();
@@ -732,6 +783,7 @@ class PlaybackReportServiceTest {
         .identity(start.identity())
         .playbackSessionId(playback.playbackSessionId())
         .streamSessionId(playback.currentFormatAttempt().streamSessionId())
+        .submissionId(UUID.randomUUID())
         .note(Optional.empty())
         .player(unknownFiguresBuilder().build());
   }

@@ -45,7 +45,8 @@ public class PlaybackReportService {
   /**
    * Stores the viewer's figures and note with the server's decisions for the playback session as
    * they stand now, and its capability declaration. A playback session that the viewer does not
-   * own, or whose format attempts do not include the captured stream session, reads as missing.
+   * own, or whose format attempts do not include the captured stream session, reads as missing. A
+   * resent submission returns the report stored for it, even after the playback session closed.
    */
   @Transactional
   public Outcome<UUID, SharePlaybackReportRejection> sharePlaybackReport(
@@ -62,6 +63,11 @@ public class PlaybackReportService {
         .forEach(rejections::add);
     if (!rejections.isEmpty()) {
       return Outcome.rejected(rejections);
+    }
+
+    var stored = playbackReportRepository.findIdBySubmission(submissionOf(command));
+    if (stored.isPresent()) {
+      return Outcome.accepted(stored.get());
     }
 
     var playback =
@@ -116,12 +122,21 @@ public class PlaybackReportService {
         .profileId(command.identity().profileId())
         .playbackSessionId(playback.playbackSessionId())
         .streamSessionId(command.streamSessionId())
+        .submissionId(command.submissionId())
         .mediaFileId(playback.mediaFileId())
         .note(note)
         .requestedChoice(playback.requestedChoice())
         .decisions(playback.decisions())
         .player(command.player())
         .capabilityDeclaration(playback.capabilityDeclaration());
+  }
+
+  private static PlaybackReportSubmission submissionOf(SharePlaybackReportCommand command) {
+    return PlaybackReportSubmission.builder()
+        .profileId(command.identity().profileId())
+        .playbackSessionId(command.playbackSessionId())
+        .submissionId(command.submissionId())
+        .build();
   }
 
   private static boolean isTooLong(String note) {

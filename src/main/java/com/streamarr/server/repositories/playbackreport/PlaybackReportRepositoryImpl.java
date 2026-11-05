@@ -16,6 +16,7 @@ import com.streamarr.server.services.pagination.Row;
 import com.streamarr.server.services.pagination.Seek;
 import com.streamarr.server.services.playbackreport.NewPlaybackReport;
 import com.streamarr.server.services.playbackreport.PlaybackReport;
+import com.streamarr.server.services.playbackreport.PlaybackReportSubmission;
 import com.streamarr.server.services.playbackreport.PlayerFigures;
 import com.streamarr.server.services.playbackreport.PlayerFigures.PictureSize;
 import com.streamarr.server.services.playbackreport.PlayerFigures.PlayerAudio;
@@ -81,6 +82,7 @@ public class PlaybackReportRepositoryImpl implements PlaybackReportRepository {
     row.setProfileId(report.profileId());
     row.setPlaybackSessionId(report.playbackSessionId());
     row.setStreamSessionId(report.streamSessionId());
+    row.setSubmissionId(report.submissionId());
     row.setMediaFileId(report.mediaFileId());
     row.setNote(report.note().orElse(null));
     row.setRequestedChoice(report.requestedChoice().name());
@@ -88,17 +90,34 @@ public class PlaybackReportRepositoryImpl implements PlaybackReportRepository {
     row.setCapabilityDeclaration(
         JSONB.jsonb(objectMapper.writeValueAsString(report.capabilityDeclaration())));
     setPlayerFigures(row, report.player());
-    var id =
+    var inserted =
         dsl.insertInto(PLAYBACK_REPORT)
             .set(row)
+            .onConflict(PLAYBACK_REPORT.PLAYBACK_SESSION_ID, PLAYBACK_REPORT.SUBMISSION_ID)
+            .doNothing()
             .returning(PLAYBACK_REPORT.ID)
-            .fetchSingle(PLAYBACK_REPORT.ID);
+            .fetchOptional(PLAYBACK_REPORT.ID);
+    if (inserted.isEmpty()) {
+      return storedIdOf(report);
+    }
+
+    var id = inserted.get();
     var decisions = report.decisions().stream().map(decision -> decisionRow(id, decision)).toList();
     if (!decisions.isEmpty()) {
       dsl.batchInsert(decisions).execute();
     }
 
     return id;
+  }
+
+  @Override
+  public Optional<UUID> findIdBySubmission(PlaybackReportSubmission submission) {
+    return dsl.select(PLAYBACK_REPORT.ID)
+        .from(PLAYBACK_REPORT)
+        .where(PLAYBACK_REPORT.PLAYBACK_SESSION_ID.eq(submission.playbackSessionId()))
+        .and(PLAYBACK_REPORT.SUBMISSION_ID.eq(submission.submissionId()))
+        .and(PLAYBACK_REPORT.PROFILE_ID.eq(submission.profileId()))
+        .fetchOptional(PLAYBACK_REPORT.ID);
   }
 
   @Override
@@ -142,6 +161,16 @@ public class PlaybackReportRepositoryImpl implements PlaybackReportRepository {
     return dsl.deleteFrom(PLAYBACK_REPORT)
         .where(PLAYBACK_REPORT.SHARED_AT.lt(utc(cutoff)))
         .execute();
+  }
+
+  // ON CONFLICT DO NOTHING waits for a concurrent insert of the same submission to commit, so this
+  // read-committed statement sees that report.
+  private UUID storedIdOf(NewPlaybackReport report) {
+    return dsl.select(PLAYBACK_REPORT.ID)
+        .from(PLAYBACK_REPORT)
+        .where(PLAYBACK_REPORT.PLAYBACK_SESSION_ID.eq(report.playbackSessionId()))
+        .and(PLAYBACK_REPORT.SUBMISSION_ID.eq(report.submissionId()))
+        .fetchSingle(PLAYBACK_REPORT.ID);
   }
 
   private SelectOnConditionStep<Record> selectReports() {

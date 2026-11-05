@@ -221,6 +221,8 @@ class PlaybackReportResolverTest {
                 "not-a-uuid",
                 "streamSessionId",
                 UUID.randomUUID().toString(),
+                "submissionId",
+                UUID.randomUUID().toString(),
                 "player",
                 Map.of()));
 
@@ -228,6 +230,35 @@ class PlaybackReportResolverTest {
     assertThat(payload.at("/userErrors/0/__typename").asString()).isEqualTo("InvalidIdError");
     assertThat(payload.at("/userErrors/0/inputPath"))
         .isEqualTo(mapper.valueToTree(List.of("playbackSessionId")));
+  }
+
+  @Test
+  @DisplayName("Should return an invalid ID error when the submission ID is malformed")
+  void shouldReturnInvalidIdErrorWhenSubmissionIdIsMalformed() {
+    var playback = startPlaybackAsCaller();
+
+    var payload =
+        share(shareInput(playback, Map.of("submissionId", "not-a-uuid", "player", Map.of())));
+
+    assertThat(payload.path("playbackReportId").isNull()).isTrue();
+    assertThat(payload.at("/userErrors/0/__typename").asString()).isEqualTo("InvalidIdError");
+    assertThat(payload.at("/userErrors/0/inputPath"))
+        .isEqualTo(mapper.valueToTree(List.of("submissionId")));
+    assertThat(repository.storedReports()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should return the stored report's ID when the client resends a submission")
+  void shouldReturnStoredReportIdWhenClientResendsSubmission() {
+    var playback = startPlaybackAsCaller();
+    var input = shareInput(playback, Map.of("player", Map.of()));
+
+    var first = share(input);
+    var resent = share(input);
+
+    assertThat(resent.path("playbackReportId").asString())
+        .isEqualTo(first.path("playbackReportId").asString());
+    assertThat(repository.storedReports()).hasSize(1);
   }
 
   @Test
@@ -269,6 +300,8 @@ class PlaybackReportResolverTest {
                 "playbackSessionId",
                 UUID.randomUUID().toString(),
                 "streamSessionId",
+                UUID.randomUUID().toString(),
+                "submissionId",
                 UUID.randomUUID().toString(),
                 "player",
                 Map.of()));
@@ -502,6 +535,7 @@ class PlaybackReportResolverTest {
     var input = new HashMap<String, Object>(fields);
     input.put("playbackSessionId", playback.playbackSessionId().toString());
     input.put("streamSessionId", playback.currentFormatAttempt().streamSessionId().toString());
+    input.putIfAbsent("submissionId", UUID.randomUUID().toString());
     return input;
   }
 

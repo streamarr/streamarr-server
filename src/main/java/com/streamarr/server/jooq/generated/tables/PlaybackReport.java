@@ -116,6 +116,11 @@ public class PlaybackReport extends TableImpl<PlaybackReportRecord> {
     public final TableField<PlaybackReportRecord, UUID> STREAM_SESSION_ID = createField(DSL.name("stream_session_id"), SQLDataType.UUID.nullable(false), this, "");
 
     /**
+     * The column <code>public.playback_report.submission_id</code>.
+     */
+    public final TableField<PlaybackReportRecord, UUID> SUBMISSION_ID = createField(DSL.name("submission_id"), SQLDataType.UUID.nullable(false), this, "");
+
+    /**
      * The column <code>public.playback_report.media_file_id</code>.
      */
     public final TableField<PlaybackReportRecord, UUID> MEDIA_FILE_ID = createField(DSL.name("media_file_id"), SQLDataType.UUID, this, "");
@@ -362,6 +367,11 @@ public class PlaybackReport extends TableImpl<PlaybackReportRecord> {
     @Override
     public UniqueKey<PlaybackReportRecord> getPrimaryKey() {
         return Keys.PLAYBACK_REPORT_PKEY;
+    }
+
+    @Override
+    public List<UniqueKey<PlaybackReportRecord>> getUniqueKeys() {
+        return Arrays.asList(Keys.UQ_PLAYBACK_REPORT_SUBMISSION);
     }
 
     @Override

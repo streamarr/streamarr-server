@@ -4,6 +4,9 @@
 -- its display figures one by one while it switches modes. The server deletes a report 30 days
 -- after it was shared.
 --
+-- submission_id is the id that the client makes for each press of Share and sends again when it
+-- resends after a lost answer; a playback session keeps one report for each submission.
+--
 -- capability_declaration keeps the playback session's client capability declaration (ADR 0049)
 -- as the document the server validated when the playback session started. It is shown whole and
 -- never queried.
@@ -19,6 +22,7 @@ CREATE TABLE playback_report
     profile_id                     UUID                     NOT NULL,
     playback_session_id            UUID                     NOT NULL,
     stream_session_id              UUID                     NOT NULL,
+    submission_id                  UUID                     NOT NULL,
     media_file_id                  UUID,
     note                           TEXT,
     requested_choice               TEXT                     NOT NULL,
@@ -54,6 +58,7 @@ CREATE TABLE playback_report
     browser_name                   TEXT,
     browser_version                TEXT,
     CONSTRAINT playback_report_pkey PRIMARY KEY (id),
+    CONSTRAINT uq_playback_report_submission UNIQUE (playback_session_id, submission_id),
     CONSTRAINT fk_playback_report_profile FOREIGN KEY (profile_id)
         REFERENCES profile (id) ON DELETE CASCADE,
     CONSTRAINT fk_playback_report_media_file FOREIGN KEY (media_file_id)

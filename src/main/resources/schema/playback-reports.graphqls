@@ -182,6 +182,11 @@ input SharePlaybackReportInput {
     A stream session that is not one of the playback session's started format attempts reads as closed.
     """
     streamSessionId: ID!
+    """
+    A new UUID that the client makes for each press of Share and sends again when it resends after a lost answer.
+    A playback session keeps one report for each submission ID, so a resend returns the stored report.
+    """
+    submissionId: ID!
     "At most 280 characters. A blank note counts as none."
     note: String
     "The figures that the Playback Data panel showed when the viewer pressed Share."
