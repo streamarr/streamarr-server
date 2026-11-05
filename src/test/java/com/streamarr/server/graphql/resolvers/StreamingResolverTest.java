@@ -710,31 +710,6 @@ class StreamingResolverTest {
     assertThat(inputPath).containsExactly("audioTrackPosition");
   }
 
-  // The resolver's playback session allows two format attempts, and the stub streaming service
-  // direct-plays the second as well, so a second switch finds no format attempt left.
-  @Test
-  @DisplayName(
-      "Should return a typed attempts error when the viewer switches tracks with no attempt left")
-  void shouldReturnATypedAttemptsErrorWhenTheViewerSwitchesTracksWithNoAttemptLeft() {
-    STUB_SERVICE.setNextResult(buildDirectPlaySessionOfTwoAudioTracks());
-    var created = startPlaybackReadingChoices(VideoQuality.ORIGINAL);
-    var playbackId = created.read(CREATED_PLAYBACK + ".id", String.class);
-    var directPlayId =
-        created.read(CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.id", String.class);
-    STUB_SERVICE.setNextResult(buildDirectPlaySessionOfTwoAudioTracks());
-    switchAudioTrack(playbackId, directPlayId, 1);
-    var secondId =
-        playbackStatus(playbackId)
-            .read("data.playbackSession.currentFormatAttempt.streamSession.id", String.class);
-
-    var switched = switchAudioTrack(playbackId, secondId, 1);
-
-    assertThat(switched.read(SWITCHED_PLAYBACK, Object.class)).isNull();
-    assertThat(
-            switched.read("data.switchPlaybackAudioTrack.userErrors[0].__typename", String.class))
-        .isEqualTo("PlaybackFormatAttemptsExhaustedError");
-  }
-
   @ParameterizedTest
   @ValueSource(strings = {"playbackSessionId", "streamSessionId"})
   @DisplayName("Should identify the malformed field when an audio track switch has an invalid ID")

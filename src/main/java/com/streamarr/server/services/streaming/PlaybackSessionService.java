@@ -94,7 +94,10 @@ public class PlaybackSessionService implements AutoCloseable {
     // The HLS stream session that an audio switch starts while direct play stays current.
     @Builder.Default private Optional<PendingAudioTrackSwitch> audioTrackSwitch = Optional.empty();
     @Builder.Default private List<VideoQuality> offeredChoices = List.of();
+    // The format attempts that count against the budget. An audio switch's format attempt does
+    // not (ADR 0043), so it differs from startedFormatAttempts, which numbers each decision.
     @Builder.Default private int formatAttemptCount = 1;
+    @Builder.Default private int startedFormatAttempts = 1;
     private final Set<String> excludedEncodeCodecFamilies = new HashSet<>();
     private final Set<UUID> streamIds = new HashSet<>();
     // A retired format attempt can still take a timeline report until its stream session ends.
@@ -228,12 +231,12 @@ public class PlaybackSessionService implements AutoCloseable {
    * viewer chose, as a player that cannot select an audio track in a directly played file needs
    * (ADR 0045). The HLS format attempt is the one that follows a failed direct play: a copy keeps
    * Original without a format change, and an encode plays in Auto with {@code
-   * AUDIO_TRACK_SWITCHED}. It counts against the format-attempt budget, and every later format
-   * attempt plays the chosen track. A switch is the viewer's choice, not a failure, so direct play
-   * stops only once the HLS stream session has started. When it does not start or fails first, or
-   * no format attempt is left, direct play goes on and the outcome says why. The playback session
-   * stays as it is when the stream session is not its current direct-play format attempt, or when
-   * that attempt already plays the chosen track.
+   * AUDIO_TRACK_SWITCHED}. It spends no format attempt (ADR 0043), and every later format attempt
+   * plays the chosen track. A switch is the viewer's choice, not a failure, so direct play stops
+   * only once the HLS stream session has started. When it does not start or fails first, direct
+   * play goes on and the outcome says why. The playback session stays as it is when the stream
+   * session is not its current direct-play format attempt, or when that attempt already plays the
+   * chosen track.
    */
   public Outcome<PlaybackSessionSnapshot, AudioTrackSwitchRejection> switchAudioTrack(
       @NonNull SwitchPlaybackAudioTrackCommand command) {
@@ -299,10 +302,6 @@ public class PlaybackSessionService implements AutoCloseable {
 
     if (session.getDirectPlayAudioTrackPosition().equals(OptionalInt.of(position))) {
       return new AudioTrackSwitch.Unchanged();
-    }
-
-    if (playback.formatAttemptCount >= recoveryPolicy.maximumFormatAttempts()) {
-      return new AudioTrackSwitch.Refused(new AudioTrackSwitchRejection.FormatAttemptsExhausted());
     }
 
     var pending =
@@ -391,7 +390,7 @@ public class PlaybackSessionService implements AutoCloseable {
     playback.audioTrackPosition = OptionalInt.of(ended.get().position());
     playback.pendingAttemptCause =
         Optional.of(DecisionReason.DIRECT_PLAY_AUDIO_TRACK_NOT_SELECTABLE);
-    playback.formatAttemptCount++;
+    playback.startedFormatAttempts++;
     playback.lastAccessedAt = clock.instant();
     streamOwners.remove(ended.get().directPlayId(), playback);
     adopt(playback, session, AUTO_AFTER_AN_AUDIO_TRACK_SWITCH);
@@ -794,6 +793,7 @@ public class PlaybackSessionService implements AutoCloseable {
     playback.lastAccessedAt = clock.instant();
     playback.current = new PlaybackFormatAttempt.Pending(childId);
     playback.formatAttemptCount++;
+    playback.startedFormatAttempts++;
     playback.streamIds.add(childId);
     streamOwners.remove(failedId, playback);
     streamOwners.put(childId, playback);
@@ -1040,7 +1040,7 @@ public class PlaybackSessionService implements AutoCloseable {
     playback.current = new PlaybackFormatAttempt.Ready(session);
     playback.readyAttempts.add(session);
     playback.decisions.add(
-        PlaybackDecision.of(playback.formatAttemptCount, session, playback.pendingAttemptCause));
+        PlaybackDecision.of(playback.startedFormatAttempts, session, playback.pendingAttemptCause));
     // A direct-play stream session sends the source as it is and holds no transcode decision.
     if (session.getDelivery() == StreamDelivery.HLS
         && !session.getTranscodeDecision().transcodeMode().copiesVideo()) {

@@ -1416,7 +1416,7 @@ class PlaybackSessionServiceTest {
 
     assertThat(switched.playbackChoice()).isEqualTo(VideoQuality.ORIGINAL);
     assertThat(switched.formatChange()).isEmpty();
-    assertThat(switched.formatAttemptCount()).isEqualTo(2);
+    assertThat(switched.formatAttemptCount()).isEqualTo(1);
     assertThat(switched.currentFormatAttempt())
         .isInstanceOfSatisfying(
             PlaybackFormatAttempt.Ready.class,
@@ -1486,7 +1486,7 @@ class PlaybackSessionServiceTest {
 
     var encode = playback.reportFormatFailure(report(copy, command).build()).orElseThrow();
 
-    assertThat(encode.formatAttemptCount()).isEqualTo(3);
+    assertThat(encode.formatAttemptCount()).isEqualTo(2);
     assertThat(streams.createdCommands.getLast())
         .satisfies(
             next -> {
@@ -1510,22 +1510,51 @@ class PlaybackSessionServiceTest {
     assertThat(streams.createdCommands).hasSize(1);
   }
 
-  // ADR 0052: the format-attempt budget bounds every format attempt. A switch with no attempt left
-  // keeps the direct play that plays, instead of ending playback.
+  // ADR 0043: the move to HLS follows from what the player cannot do, not from an error, so it
+  // spends no format attempt, even when direct play used the whole budget.
   @Test
-  @DisplayName(
-      "Should keep direct play when the viewer switches tracks with no format attempt left")
-  void shouldKeepDirectPlayWhenTheViewerSwitchesTracksWithNoFormatAttemptLeft() {
+  @DisplayName("Should move to HLS when the viewer switches tracks with no format attempt left")
+  void shouldMoveToHlsWhenTheViewerSwitchesTracksWithNoFormatAttemptLeft() {
     var playback = serviceRunning(Runnable::run).maximumFormatAttempts(1).build();
     var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
     var directPlay = startDirectPlayOfTwoAudioTracks(playback, command);
 
-    var outcome = playback.switchAudioTrack(audioSwitch(directPlay, command, 1));
+    var switched = accepted(playback.switchAudioTrack(audioSwitch(directPlay, command, 1)));
 
-    assertThat(outcome)
-        .isEqualTo(Outcome.rejected(new AudioTrackSwitchRejection.FormatAttemptsExhausted()));
-    assertThat(playback.access(request(directPlay, command))).contains(directPlay);
-    assertThat(streams.createdCommands).hasSize(1);
+    assertThat(switched.formatAttemptCount()).isEqualTo(1);
+    assertThat(switched.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready -> {
+              assertThat(ready.session().getDelivery()).isEqualTo(StreamDelivery.HLS);
+              assertThat(streams.getAllSessions()).containsExactly(ready.session());
+            });
+  }
+
+  // ADR 0043: the switch spends no format attempt, so a budget of two still holds the encode that
+  // follows a failed copy. Each format attempt keeps its own number.
+  @Test
+  @DisplayName(
+      "Should encode within a budget of two when the copy that an audio switch started fails")
+  void shouldEncodeWithinABudgetOfTwoWhenTheCopyThatAnAudioSwitchStartedFails() {
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(2).build();
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlayOfTwoAudioTracks(playback, command);
+    var copy = accepted(playback.switchAudioTrack(audioSwitch(directPlay, command, 1)));
+
+    var encode = playback.reportFormatFailure(report(copy, command).build()).orElseThrow();
+
+    assertThat(encode.formatAttemptCount()).isEqualTo(2);
+    assertThat(encode.playbackChoice()).isEqualTo(VideoQuality.AUTO);
+    assertThat(encode.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready ->
+                assertThat(ready.session().getTranscodeDecision().transcodeMode().copiesVideo())
+                    .isFalse());
+    assertThat(encode.decisions())
+        .extracting(PlaybackDecision::formatAttempt)
+        .containsExactly(1, 2, 3);
   }
 
   // A switch is the viewer's choice, not a failure, so direct play plays on until the HLS format
@@ -1637,7 +1666,7 @@ class PlaybackSessionServiceTest {
 
     var switched = accepted(service.switchAudioTrack(audioSwitch(directPlay, command, 1)));
 
-    assertThat(switched.formatAttemptCount()).isEqualTo(2);
+    assertThat(switched.formatAttemptCount()).isEqualTo(1);
     assertThat(switched.currentFormatAttempt())
         .isInstanceOfSatisfying(
             PlaybackFormatAttempt.Ready.class,
@@ -1792,7 +1821,7 @@ class PlaybackSessionServiceTest {
 
     drain(work);
     var hls = playback.access(request(directPlay, command)).orElseThrow();
-    assertThat(hls.formatAttemptCount()).isEqualTo(2);
+    assertThat(hls.decisions()).extracting(PlaybackDecision::formatAttempt).containsExactly(1, 2);
     assertThat(hls.currentFormatAttempt())
         .isInstanceOfSatisfying(
             PlaybackFormatAttempt.Ready.class,
