@@ -10,8 +10,8 @@ import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
-import java.util.OptionalLong;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -19,17 +19,15 @@ import lombok.NonNull;
 import org.springframework.stereotype.Service;
 
 /**
- * The upload budget over the stream sessions of this server, with its time series: the internet
- * upload speed, the streams' share of it, the counted total, the active streams counted and not
- * counted, and the variants that served playlists leave out. No meter carries a per-session or
- * per-viewer tag.
+ * The upload budget over the stream sessions of this server, with its time series: the active
+ * streams by network route, the internet streams' total average bitrate, and the variants that
+ * served playlists leave out. No gauge reads the server settings, and no meter carries a
+ * per-session or per-viewer tag.
  */
 @Service
 public class ServerUploadBudget implements UploadBudget {
 
-  private static final String METRIC_PREFIX = "streamarr.streaming.upload_budget_";
-  private static final String COUNTED = "counted";
-  private static final String BITS_PER_SECOND = "bits_per_second";
+  private static final String ACTIVE_STREAMS = "streamarr.streaming.active_streams";
 
   private final ServerSettingsService serverSettings;
   private final RuntimeStreamSessionRegistry runtimeRegistry;
@@ -48,7 +46,7 @@ public class ServerUploadBudget implements UploadBudget {
     this.producerLifecycle = producerLifecycle;
     this.properties = properties;
     withheldVariants =
-        Counter.builder(METRIC_PREFIX + "withheld_variants")
+        Counter.builder("streamarr.streaming.upload_budget_withheld_variants")
             .description("Variants that the upload budget left out of served playlists")
             .register(meterRegistry);
     registerGauges(meterRegistry);
@@ -56,32 +54,20 @@ public class ServerUploadBudget implements UploadBudget {
 
   private void registerGauges(MeterRegistry meterRegistry) {
     Gauge.builder(
-            METRIC_PREFIX + "internet_upload",
+            "streamarr.streaming.internet_streams_bitrate",
             this,
-            budget ->
-                zeroWhenOff(budget.serverSettings.uploadBudget().internetUploadBitsPerSecond()))
-        .description("The internet upload speed that a ServerAdmin entered, or 0 while it is off")
-        .baseUnit(BITS_PER_SECOND)
+            ServerUploadBudget::internetStreamsBitrate)
+        .description(
+            "The total average bitrate of the active stream sessions whose client reached the"
+                + " server over the internet")
+        .baseUnit("bits_per_second")
         .register(meterRegistry);
-    Gauge.builder(
-            METRIC_PREFIX + "stream_share",
-            this,
-            budget -> zeroWhenOff(budget.serverSettings.uploadBudget().streamShareBitsPerSecond()))
-        .description("The share of the upload that counted stream sessions may use together")
-        .baseUnit(BITS_PER_SECOND)
-        .register(meterRegistry);
-    Gauge.builder(METRIC_PREFIX + COUNTED, this, ServerUploadBudget::countedTotal)
-        .description("The average bitrate of every stream session that counts against the budget")
-        .baseUnit(BITS_PER_SECOND)
-        .register(meterRegistry);
-    Gauge.builder(METRIC_PREFIX + "active_streams", this, budget -> budget.activeStreams(true))
-        .description("Active stream sessions, by whether they count against the upload budget")
-        .tag(COUNTED, "true")
-        .register(meterRegistry);
-    Gauge.builder(METRIC_PREFIX + "active_streams", this, budget -> budget.activeStreams(false))
-        .description("Active stream sessions, by whether they count against the upload budget")
-        .tag(COUNTED, "false")
-        .register(meterRegistry);
+    for (var route : NetworkRoute.values()) {
+      Gauge.builder(ACTIVE_STREAMS, this, budget -> budget.activeStreams(route).count())
+          .description("Active stream sessions, by the network route that their client attested")
+          .tag("network_route", route.name().toLowerCase(Locale.ROOT))
+          .register(meterRegistry);
+    }
   }
 
   /**
@@ -195,17 +181,14 @@ public class ServerUploadBudget implements UploadBudget {
         .sum();
   }
 
-  private double countedTotal() {
-    return (double) countedSessions().mapToLong(this::downloadedAverage).sum();
+  private double internetStreamsBitrate() {
+    return (double) activeStreams(NetworkRoute.INTERNET).mapToLong(this::downloadedAverage).sum();
   }
 
-  private double activeStreams(boolean counted) {
-    var on = isOn();
-    return (double)
-        runtimeRegistry.findAll().stream()
-            .filter(session -> !session.isSuspended())
-            .filter(session -> (useOf(session, on) == UploadBudgetUse.COUNTED) == counted)
-            .count();
+  private Stream<StreamSession> activeStreams(NetworkRoute route) {
+    return runtimeRegistry.findAll().stream()
+        .filter(session -> !session.isSuspended())
+        .filter(session -> session.getNetworkRoute() == route);
   }
 
   private Stream<StreamSession> countedSessions() {
@@ -240,9 +223,5 @@ public class ServerUploadBudget implements UploadBudget {
 
   private long average(StreamSession session, String variantLabel) {
     return VariantBandwidth.of(session, variantLabel, properties).average();
-  }
-
-  private static double zeroWhenOff(OptionalLong bitsPerSecond) {
-    return (double) bitsPerSecond.orElse(0);
   }
 }
