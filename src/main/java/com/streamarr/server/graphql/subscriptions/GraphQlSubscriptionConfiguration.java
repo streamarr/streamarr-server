@@ -3,7 +3,6 @@ package com.streamarr.server.graphql.subscriptions;
 import com.streamarr.server.graphql.dto.WatchStateChange;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.UUID;
-import java.util.concurrent.Executors;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import reactor.core.scheduler.Scheduler;
@@ -13,11 +12,13 @@ import reactor.core.scheduler.Schedulers;
 class GraphQlSubscriptionConfiguration {
 
   // A publishOn worker drains one operation at a time, so each operation still receives its
-  // values in broadcast order on these virtual threads.
+  // values in broadcast order on these virtual threads. A plain Executor, not an ExecutorService:
+  // Reactor cancels an ExecutorService task with an interrupt, and an interrupt closes the database
+  // connection that a running delivery reads through when its operation ends.
   @Bean(destroyMethod = "dispose")
   Scheduler graphQlSubscriptionDeliveryScheduler() {
-    return Schedulers.fromExecutorService(
-        Executors.newVirtualThreadPerTaskExecutor(), "graphql-subscription-delivery");
+    var deliveryThreads = Thread.ofVirtual().name("graphql-subscription-delivery-", 0).factory();
+    return Schedulers.fromExecutor(task -> deliveryThreads.newThread(task).start());
   }
 
   // Keyed by Profile id, so each change reaches only the operations of its Profile.
