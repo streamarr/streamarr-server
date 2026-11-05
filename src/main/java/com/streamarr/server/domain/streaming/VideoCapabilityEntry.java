@@ -246,9 +246,7 @@ public record VideoCapabilityEntry(
       VideoStreamCopy copy, VideoStreamProperties properties) {
     var refusals = new ArrayList<DecisionReason>();
     codecProfileRefusal(properties).ifPresent(refusals::add);
-    if (!acceptsBitDepth(copy.bitDepth())) {
-      refusals.add(DecisionReason.VIDEO_BIT_DEPTH_NOT_DECLARED);
-    }
+    bitDepthRefusal(copy.bitDepth()).ifPresent(refusals::add);
 
     if (!acceptsPictureSize(copy.decodedSize())) {
       refusals.add(DecisionReason.VIDEO_PICTURE_SIZE_NOT_DECLARED);
@@ -295,8 +293,20 @@ public record VideoCapabilityEntry(
     return codecProfileRefusal(properties).isEmpty();
   }
 
+  private Optional<DecisionReason> bitDepthRefusal(OptionalInt bitDepth) {
+    if (bitDepth.isEmpty()) {
+      return Optional.of(DecisionReason.VIDEO_BIT_DEPTH_UNKNOWN);
+    }
+
+    if (bitDepth.getAsInt() > maxBitDepth) {
+      return Optional.of(DecisionReason.VIDEO_BIT_DEPTH_NOT_DECLARED);
+    }
+
+    return Optional.empty();
+  }
+
   private boolean acceptsBitDepth(OptionalInt bitDepth) {
-    return bitDepth.isPresent() && bitDepth.getAsInt() <= maxBitDepth;
+    return bitDepthRefusal(bitDepth).isEmpty();
   }
 
   // The maximums bound a picture in either orientation, so a portrait phone video fits an entry

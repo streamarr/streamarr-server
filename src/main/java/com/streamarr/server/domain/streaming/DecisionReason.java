@@ -15,6 +15,8 @@ public enum DecisionReason {
   VIDEO_CODEC_LEVEL_NOT_DECLARED,
   /** The source's bit depth is above the closest entry's maximum. */
   VIDEO_BIT_DEPTH_NOT_DECLARED,
+  /** The probe reported no bit depth for the source's video, so no entry can accept a copy. */
+  VIDEO_BIT_DEPTH_UNKNOWN,
   /** The source's picture is larger than the closest entry's maximum. */
   VIDEO_PICTURE_SIZE_NOT_DECLARED,
   /** The source's frame rate is above the closest entry's maximum. */
@@ -25,6 +27,11 @@ public enum DecisionReason {
   DOLBY_VISION_NOT_DECLARED,
   /** The closest entry does not declare HDR10+. */
   HDR10_PLUS_NOT_DECLARED,
+  /**
+   * A copy that keeps Dolby Vision strips the source's HDR10+ information, whatever the client
+   * declares (ADR 0036).
+   */
+  HDR10_PLUS_STRIPPED_BESIDE_DOLBY_VISION,
   /** The source's picture is larger than the fixed quality or the maximum size the viewer sent. */
   PICTURE_ABOVE_VIEWER_LIMIT,
   /** A copy costs more than the viewer's maximum bitrate beside every audio step. */
@@ -81,7 +88,7 @@ public enum DecisionReason {
   /**
    * No video capability entry that lists the file's source container, and its sample entry in MP4
    * or MOV, accepts every property of the video stream as it is, or the probe stored no codec
-   * profile to check.
+   * profile or bit depth to check.
    */
   DIRECT_PLAY_VIDEO_NOT_DECLARED,
   /**

@@ -249,9 +249,9 @@ public class TranscodeDecisionService {
     var steps = AudioSteps.below(sessionAudio, AudioTrackChannels.of(source), declaration);
     var stepWithinMaximum =
         limits.audioStepBesideCopyOf(source, steps, CopyMediaPlaylist.of(source, properties));
-    var limitRefusal = viewerLimitRefusal(limits.allowsCopyPictureOf(source), stepWithinMaximum);
-    if (limitRefusal.isPresent() && hasVerifiedEncodeThatTheClientPlays(request)) {
-      return new VideoCopyChoice.Refused(List.of(limitRefusal.get()));
+    var limitRefusals = viewerLimitRefusals(limits.allowsCopyPictureOf(source), stepWithinMaximum);
+    if (!limitRefusals.isEmpty() && hasVerifiedEncodeThatTheClientPlays(request)) {
+      return new VideoCopyChoice.Refused(limitRefusals);
     }
 
     return switch (acceptedVideoCopyPlan(source, declaration, countsRefusals)) {
@@ -264,17 +264,18 @@ public class TranscodeDecisionService {
     };
   }
 
-  private static Optional<DecisionReason> viewerLimitRefusal(
+  private static List<DecisionReason> viewerLimitRefusals(
       boolean pictureWithinLimits, Optional<AudioDecision> stepWithinMaximum) {
+    var refusals = new ArrayList<DecisionReason>();
     if (!pictureWithinLimits) {
-      return Optional.of(DecisionReason.PICTURE_ABOVE_VIEWER_LIMIT);
+      refusals.add(DecisionReason.PICTURE_ABOVE_VIEWER_LIMIT);
     }
 
     if (stepWithinMaximum.isEmpty()) {
-      return Optional.of(DecisionReason.BITRATE_ABOVE_VIEWER_LIMIT);
+      refusals.add(DecisionReason.BITRATE_ABOVE_VIEWER_LIMIT);
     }
 
-    return Optional.empty();
+    return refusals;
   }
 
   // A worker that does not deliver a copy's planned output would fail the copy, so the client gets
@@ -368,13 +369,25 @@ public class TranscodeDecisionService {
       var plan = plans.get(index);
       var entry = declaration.hlsCopyEntry(copy.get().afterRewrites(plan.bitstreamRewrites()));
       if (entry.isPresent()) {
-        var leftOut = refusedBy(entry.get(), copy.get(), plans.subList(0, index));
-        return new PlanChoice.Accepted(plan, leftOut);
+        var refused = refusedBy(entry.get(), copy.get(), plans.subList(0, index));
+        var leftOut = Stream.concat(refused.stream(), strippedWhateverTheClientDeclares(plan));
+        return new PlanChoice.Accepted(plan, leftOut.toList());
       }
     }
 
     var bestPicture = copy.get().afterRewrites(plans.getFirst().bitstreamRewrites());
     return new PlanChoice.Refused(declaration.hlsCopyRefusals(bestPicture));
+  }
+
+  // A plan that keeps Dolby Vision strips HDR10+ whatever the client declares (ADR 0036). Every
+  // other plan strips HDR10+ only after an entry refused it in the plan before.
+  private static Stream<DecisionReason> strippedWhateverTheClientDeclares(CopyPlan plan) {
+    if (plan.dolbyVisionOutput().isEmpty()
+        || !plan.bitstreamRewrites().contains(BitstreamRewrite.STRIP_HDR10_PLUS)) {
+      return Stream.empty();
+    }
+
+    return Stream.of(DecisionReason.HDR10_PLUS_STRIPPED_BESIDE_DOLBY_VISION);
   }
 
   // What the entry that accepts a later plan refused in the plans before it: only the dynamic-range

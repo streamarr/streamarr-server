@@ -5,7 +5,6 @@ import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.DolbyVision;
-import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamDelivery;
@@ -15,6 +14,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoRange;
+import com.streamarr.server.domain.streaming.VideoStreamCopy;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -132,20 +132,20 @@ public record PlaybackDecision(
         .codec(source.videoCodec())
         .width(picture.width())
         .height(picture.height())
-        .frameRate(frameRate(source, facts))
+        .frameRate(frameRate(source))
         .bitrate(videoStreamBitrate(source, facts))
         .videoRange(range.map(it -> rangeOf(it.compatibleBase())).orElse(VideoRange.SDR))
         .dolbyVision(range.filter(PlaybackDecision::hasDolbyVision).isPresent())
         .build();
   }
 
-  private static OptionalDouble frameRate(MediaProbe source, Optional<VideoPlaybackFacts> facts) {
-    var rate = facts.flatMap(VideoPlaybackFacts::outputFrameRate).map(Fraction::toDouble);
-    if (rate.isPresent()) {
-      return OptionalDouble.of(rate.get());
-    }
-
-    return source.framerate();
+  // The frame-rate rule's output rate is the rate an encode runs at, which can be below the
+  // source's measured rate, so the source keeps the rate that a copy carries.
+  private static OptionalDouble frameRate(MediaProbe source) {
+    return VideoStreamCopy.of(source)
+        .map(VideoStreamCopy::frameRate)
+        .filter(OptionalDouble::isPresent)
+        .orElse(source.framerate());
   }
 
   private static OptionalLong videoStreamBitrate(
