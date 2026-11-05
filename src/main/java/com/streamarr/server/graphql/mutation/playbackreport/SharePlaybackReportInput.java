@@ -53,6 +53,14 @@ public record SharePlaybackReportInput(
                   .map(it -> new PlayerFigures.PlayerBrowser(it.name(), it.version())))
           .build();
     }
+
+    private static OptionalDouble optionalDouble(Double value) {
+      if (value == null) {
+        return OptionalDouble.empty();
+      }
+
+      return OptionalDouble.of(value);
+    }
   }
 
   public record PlayerQualityStepInput(int number, int count, int height, int bitrate) {
@@ -116,14 +124,6 @@ public record SharePlaybackReportInput(
   }
 
   public record PlayerBrowserInput(String name, String version) {}
-
-  private static OptionalDouble optionalDouble(Double value) {
-    if (value == null) {
-      return OptionalDouble.empty();
-    }
-
-    return OptionalDouble.of(value);
-  }
 
   private static OptionalInt optionalInt(Integer value) {
     if (value == null) {

@@ -174,8 +174,7 @@ class PlaybackReportResolverTest {
         .singleElement()
         .satisfies(
             report -> {
-              assertThat(report.id().toString())
-                  .isEqualTo(payload.path("playbackReportId").asString());
+              assertThat(report.id()).hasToString(payload.path("playbackReportId").asString());
               assertThat(report.note()).contains("Picture freezes.");
               assertThat(report.player())
                   .isEqualTo(

@@ -654,9 +654,10 @@ class PlaybackReportServiceTest {
     @DisplayName("Should refuse every read when the caller is not a ServerAdmin")
     void shouldRefuseEveryReadWhenCallerIsNotServerAdmin() {
       var reportId = shareReportAt(NOW);
+      var page = firstPage(10);
       authorizationService.denyAll();
 
-      assertThatThrownBy(() -> service.playbackReports(serverAdmin, firstPage(10)))
+      assertThatThrownBy(() -> service.playbackReports(serverAdmin, page))
           .isInstanceOf(AccessDeniedException.class);
       assertThatThrownBy(() -> service.playbackReport(serverAdmin, reportId))
           .isInstanceOf(AccessDeniedException.class);
