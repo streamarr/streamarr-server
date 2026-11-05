@@ -54,6 +54,7 @@ class HlsStreamingSmokeTest {
       Path.of("src/test/resources/BigBuckBunny_320x180_10s.mp4").toAbsolutePath();
 
   private FakeMediaFileRepository mediaFileRepository;
+  private FakeMediaFileContainerInfoRepository probeRepository;
   private LocalSegmentStore segmentStore;
   private HlsStreamingService streamingService;
   private HlsPlaylistService playlistService;
@@ -96,22 +97,8 @@ class HlsStreamingSmokeTest {
             workerFixture.sourceNamespaceId(),
             testVideo.getParent());
     workerFixture.start();
-    var outcome =
-        new RemoteFfprobeService(
-                workerFixture.workerSessions(),
-                workerFixture.sourceNamespaceId(),
-                testVideo.getParent())
-            .probe(
-                ProbeExecutionRequest.builder()
-                    .sourcePath(testVideo)
-                    .attemptId(UUID.randomUUID())
-                    .probeVersion(ProbeVersion.CURRENT)
-                    .priority(ProbePriority.BACKGROUND)
-                    .build());
-    assertThat(outcome).isInstanceOf(ProbeOutcome.Success.class);
-    var completeProbe = (ProbeOutcome.Success) outcome;
-    var probeRepository = new FakeMediaFileContainerInfoRepository();
-    probeRepository.setDefaultOutcome(completeProbe);
+    probeRepository = new FakeMediaFileContainerInfoRepository();
+    probeRepository.setDefaultOutcome(probe(testVideo));
 
     var qualityLadderService = new QualityLadderService();
     var properties =
@@ -176,13 +163,34 @@ class HlsStreamingSmokeTest {
     return StreamingOptions.builder().quality(VideoQuality.AUTO).build();
   }
 
+  private ProbeOutcome.Success probe(Path source) {
+    var outcome =
+        new RemoteFfprobeService(
+                workerFixture.workerSessions(),
+                workerFixture.sourceNamespaceId(),
+                source.getParent())
+            .probe(
+                ProbeExecutionRequest.builder()
+                    .sourcePath(source)
+                    .attemptId(UUID.randomUUID())
+                    .probeVersion(ProbeVersion.CURRENT)
+                    .priority(ProbePriority.BACKGROUND)
+                    .build());
+    assertThat(outcome).isInstanceOf(ProbeOutcome.Success.class);
+    return (ProbeOutcome.Success) outcome;
+  }
+
   private MediaFile seedMediaFile() {
+    return seedMediaFile(testVideo);
+  }
+
+  private MediaFile seedMediaFile(Path source) {
     var file =
         MediaFile.builder()
-            .filepathUri(FilepathCodec.encode(testVideo))
-            .filename("BigBuckBunny_320x180.mp4")
+            .filepathUri(FilepathCodec.encode(source))
+            .filename(source.getFileName().toString())
             .status(MediaFileStatus.MATCHED)
-            .size(testVideo.toFile().length())
+            .size(source.toFile().length())
             .build();
     return mediaFileRepository.save(file);
   }
