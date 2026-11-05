@@ -162,6 +162,16 @@ class TranscodeDecisionReasonTest {
             List.of(DecisionReason.DYNAMIC_RANGE_NOT_DECLARED)),
         Arguments.of(
             Named.of(
+                "an SDR source to a PQ-only entry",
+                hevcMain10().dynamicRange(range(CompatibleBase.SDR)).build().probe()),
+            client(
+                hevcEntryBuilder()
+                    .compatibleBases(List.of(CompatibleBase.PQ))
+                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .build()),
+            List.of(DecisionReason.DYNAMIC_RANGE_NOT_DECLARED)),
+        Arguments.of(
+            Named.of(
                 "a Dolby Vision 8.1 source to an SDR entry",
                 hevcMain10().dynamicRange(profile81()).build().probe()),
             client(
