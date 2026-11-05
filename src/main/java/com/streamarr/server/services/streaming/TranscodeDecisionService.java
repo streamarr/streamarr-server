@@ -130,12 +130,13 @@ public class TranscodeDecisionService {
    * viewer's limits or that no encode can play: the source has no encoded variant, or no video
    * capability entry for HLS accepts one in a codec that a connected worker's verified encoder
    * encodes, busy or not (ADR 0050). A copy whose planned output needs more than passing the source
-   * through also needs a connected worker, busy or not, that delivers it (ADR 0036). An encode
-   * uses, among the codecs that a worker-verified encoder encodes (ADR 0009), the one whose video
-   * capability entry for HLS fits an encoded variant of the source at the highest frame rate (ADR
-   * 0049), and the first in the codec preference on a tie (ADR 0009). The audio follows the audio
-   * capability entries for HLS. Returns empty when neither a copy nor a supported encode satisfies
-   * the request's constraints.
+   * through also needs a connected worker, busy or not, that delivers it (ADR 0036), including the
+   * Dolby Vision sample entry of a profile 5 or 10.0 copy (ADR 0013). An encode uses, among the
+   * codecs that a worker-verified encoder encodes (ADR 0009), the one whose video capability entry
+   * for HLS fits an encoded variant of the source at the highest frame rate (ADR 0049), and the
+   * first in the codec preference on a tie (ADR 0009). The audio follows the audio capability
+   * entries for HLS. Returns empty when neither a copy nor a supported encode satisfies the
+   * request's constraints.
    */
   public Optional<TranscodeDecision> decide(@NonNull TranscodeDecisionRequest request) {
     var source = request.source();
@@ -257,8 +258,7 @@ public class TranscodeDecisionService {
 
     return switch (acceptedVideoCopyPlan(request, countsRefusals)) {
       case PlanChoice.Refused(var reasons) -> new VideoCopyChoice.Refused(reasons);
-      case PlanChoice.Accepted(var plan, _)
-          when !hasWorkerThatDeliversTheCopy(request, plan.bitstreamRewrites()) ->
+      case PlanChoice.Accepted(var plan, _) when !hasWorkerThatDeliversTheCopy(request, plan) ->
           new VideoCopyChoice.Refused(List.of(DecisionReason.NO_WORKER_DELIVERS_COPY));
       case PlanChoice.Accepted(var plan, var reasons) ->
           new VideoCopyChoice.Copied(stepWithinMaximum.orElse(sessionAudio), plan, reasons);
@@ -298,10 +298,11 @@ public class TranscodeDecisionService {
   // the encode instead (ADR 0036). Busy workers count, so a lack of free slots refuses the session
   // for capacity and never turns the copy into an encode.
   private static boolean hasWorkerThatDeliversTheCopy(
-      TranscodeDecisionRequest request, List<BitstreamRewrite> bitstreamRewrites) {
-    var copy =
+      TranscodeDecisionRequest request, CopyPlan plan) {
+    var plannedCopy =
         PlannedVideoOutput.StreamCopy.of(
-            request.source().videoPlaybackFacts().orElseThrow(), bitstreamRewrites);
+            request.source().videoPlaybackFacts().orElseThrow(), plan.bitstreamRewrites());
+    var copy = plan.dolbyVisionOutput().map(plannedCopy::withDolbyVisionOutput).orElse(plannedCopy);
     return !copy.requiresPlannedOutputSupport()
         || request.videoCopySupport().stream()
             .anyMatch(worker -> worker.deliversPlannedOutputOf(copy));

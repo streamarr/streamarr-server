@@ -10,11 +10,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.domain.streaming.VideoSampleEntry;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentPublication;
+import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
 import com.streamarr.transcode.v1.AudioChannelLayout;
 import com.streamarr.transcode.v1.AudioDecision;
 import com.streamarr.transcode.v1.AudioMode;
@@ -53,6 +55,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -745,6 +748,42 @@ class LiveWorkerConnectionRegistryTest {
             registry.dispatch(
                 copyJob(pqCopy().setDolbyVisionOutput(dolbyVisionOutput(sampleEntry)))))
         .isPresent();
+  }
+
+  // ADR 0036: the decision plans a profile 5 or 10.0 copy only when a connected worker writes its
+  // dvh1 or dav1 sample entry, so the registry reports the Dolby Vision sample entries that each
+  // worker lists.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("dolbyVisionSampleEntryFeatures")
+  @DisplayName(
+      "Should report the Dolby Vision sample entries that a worker lists when the worker registers")
+  void shouldReportTheDolbyVisionSampleEntriesThatAWorkerListsWhenTheWorkerRegisters(
+      String features, List<Integer> featureValues, Set<VideoSampleEntry> sampleEntries) {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    registry.register(
+        WORKER_ID,
+        registrationSupporting(
+            WORKER_ID, plannedOutputSupport().addAllVideoCopyFeaturesValue(featureValues)),
+        new CancellableObserver());
+
+    assertThat(registry.videoCopySupportByWorker(SOURCE_NAMESPACE_ID))
+        .singleElement()
+        .extracting(WorkerVideoCopySupport::dolbyVisionSampleEntries)
+        .isEqualTo(sampleEntries);
+  }
+
+  static Stream<Arguments> dolbyVisionSampleEntryFeatures() {
+    var dvh1 = VideoCopyFeature.VIDEO_COPY_FEATURE_DVH1_SAMPLE_ENTRY_VALUE;
+    var dav1 = VideoCopyFeature.VIDEO_COPY_FEATURE_DAV1_SAMPLE_ENTRY_VALUE;
+    return Stream.of(
+        Arguments.of("the planned output alone", List.of(), Set.of()),
+        Arguments.of("dvh1", List.of(dvh1), Set.of(VideoSampleEntry.DVH1)),
+        Arguments.of("dav1", List.of(dav1), Set.of(VideoSampleEntry.DAV1)),
+        Arguments.of(
+            "dvh1 and dav1",
+            List.of(dvh1, dav1),
+            Set.of(VideoSampleEntry.DVH1, VideoSampleEntry.DAV1)),
+        Arguments.of("a feature this server does not know", List.of(99), Set.of()));
   }
 
   // An encode always carries its planned range, and the planned output feature covers only copies.

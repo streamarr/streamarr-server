@@ -790,6 +790,20 @@ class RemoteVariantJobMapperTest {
         .build();
   }
 
+  // ADR 0013: the worker checks the produced initialization segment against the job's codec string.
+  // A copy without a compatible base names its dvh1 or dav1 sample entry with the Dolby Vision
+  // profile and level, and a copy on a PQ or HLG base keeps the codec string that the probe stored.
+  @ParameterizedTest
+  @CsvSource({"PROFILE_5, dvh1.05.07", "PROFILE_10_0, dav1.10.07", "PROFILE_8_1, avc1.640028"})
+  @DisplayName(
+      "Should send the codec string of the copy's sample entry when the copy keeps Dolby Vision")
+  void shouldSendTheCodecStringOfTheCopysSampleEntryWhenTheCopyKeepsDolbyVision(
+      DolbyVisionProfile profile, String codecString) {
+    var video = mapper.map(copyKeepingDolbyVision(profile, 7)).getDecision().getVideo();
+
+    assertThat(video.getCodecString()).isEqualTo(codecString);
+  }
+
   // Slot counts and execution targets read the Dolby Vision output to find the workers that write
   // its sample entry.
   @Test

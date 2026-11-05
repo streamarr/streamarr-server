@@ -1,8 +1,10 @@
 package com.streamarr.server.services.streaming.remote;
 
+import com.streamarr.server.domain.streaming.VideoSampleEntry;
 import com.streamarr.transcode.v1.VideoCopyFeature;
 import com.streamarr.transcode.v1.VideoDecision;
 import com.streamarr.transcode.v1.VideoMode;
+import java.util.Optional;
 import java.util.Set;
 
 // A worker that predates a copy feature refuses a copy that sets output_dynamic_range, and it
@@ -29,6 +31,22 @@ final class RemoteVideoCopyRequirements {
           DOLBY_VISION_SAMPLE_ENTRY_AV01,
           UNRECOGNIZED ->
           Set.of(plannedOutput);
+    };
+  }
+
+  // The Dolby Vision sample entry that a worker listing the feature writes; empty for every other
+  // feature, including one that this server does not know.
+  static Optional<VideoSampleEntry> dolbyVisionSampleEntry(int featureValue) {
+    return Optional.ofNullable(VideoCopyFeature.forNumber(featureValue))
+        .flatMap(RemoteVideoCopyRequirements::dolbyVisionSampleEntry);
+  }
+
+  private static Optional<VideoSampleEntry> dolbyVisionSampleEntry(VideoCopyFeature feature) {
+    return switch (feature) {
+      case VIDEO_COPY_FEATURE_DVH1_SAMPLE_ENTRY -> Optional.of(VideoSampleEntry.DVH1);
+      case VIDEO_COPY_FEATURE_DAV1_SAMPLE_ENTRY -> Optional.of(VideoSampleEntry.DAV1);
+      case VIDEO_COPY_FEATURE_UNSPECIFIED, VIDEO_COPY_FEATURE_PLANNED_OUTPUT, UNRECOGNIZED ->
+          Optional.empty();
     };
   }
 

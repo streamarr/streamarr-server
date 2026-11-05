@@ -32,6 +32,32 @@ public record DolbyVisionOutput(@NonNull DolbyVisionProfile profile, int level) 
     };
   }
 
+  /**
+   * The Dolby Vision sample entry that a copy of profile 5 or 10.0 carries in place of its codec's
+   * base entry: dvh1 for profile 5 and dav1 for 10.0 (ADR 0013). Empty for a profile with a
+   * compatible base, which keeps its base sample entry.
+   */
+  public Optional<VideoSampleEntry> dolbyVisionSampleEntry() {
+    return switch (profile) {
+      case PROFILE_5 -> Optional.of(VideoSampleEntry.DVH1);
+      case PROFILE_10_0 -> Optional.of(VideoSampleEntry.DAV1);
+      case PROFILE_8_1, PROFILE_8_4, PROFILE_10_1, PROFILE_10_4 -> Optional.empty();
+    };
+  }
+
+  /**
+   * The CODECS value of a copy that carries a Dolby Vision sample entry, such as {@code dvh1.05.06}
+   * for profile 5 at level 6 (ADR 0013). Empty for a profile with a compatible base, whose CODECS
+   * names its base sample entry.
+   */
+  public Optional<String> codecs() {
+    return dolbyVisionSampleEntry()
+        .map(
+            entry ->
+                String.format(
+                    Locale.ROOT, "%s.%02d.%02d", entry.getLabel(), profile.profileNumber(), level));
+  }
+
   // The level takes two digits, and the brand names the compatible base: db1p for PQ, db4h for HLG.
   private String codec(String entryAndProfile, String brand) {
     return String.format(Locale.ROOT, "%s.%02d/%s", entryAndProfile, level, brand);

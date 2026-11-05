@@ -12,7 +12,6 @@ import com.streamarr.server.domain.streaming.PlannedVideoOutput;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.VideoEncodeDecision;
-import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoRange;
 import com.streamarr.server.domain.streaming.VideoStreamCopy;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
@@ -129,14 +128,9 @@ public class HlsPlaylistService {
         .codecString();
   }
 
-  // A copy advertises the codec string that the probe stored, which names the sample entry that
-  // the copy carries.
+  // A copy advertises the codec string of the sample entry that it carries.
   private static String copiedVideoCodecString(StreamSession session) {
-    return session
-        .getTranscodeDecision()
-        .videoSource()
-        .flatMap(VideoPlaybackFacts::codecString)
-        .orElseThrow();
+    return session.getTranscodeDecision().copyCodecString().orElseThrow();
   }
 
   // ADR 0037: the tag is true only for a variant pinned to a keyframe-verified encoder backend. A

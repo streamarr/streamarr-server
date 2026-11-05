@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
+import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.MediaFileProbePropertyIssue;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
@@ -9,10 +10,10 @@ import java.util.Set;
 
 /**
  * The copy rule that still holds for what the playlist cannot describe yet (ADR 0013,
- * streamarr/streamarr-server#396). A PQ or HLG source that probe version 5 or later described may
- * be copied, with or without Dolby Vision, and its capability entry decides whether the client
- * accepts it. Dolby Vision without a compatible base, and any HDR base of an earlier probe version,
- * is refused. A source that the rule refuses is encoded to 8-bit SDR.
+ * streamarr/streamarr-server#396). A PQ or HLG source, or Dolby Vision without a compatible base,
+ * that probe version 5 or later described may be copied, and its capability entry decides whether
+ * the client accepts it. Any HDR base of an earlier probe version is refused. A source that the
+ * rule refuses is encoded to 8-bit SDR.
  */
 final class InterimVideoCopyRule {
 
@@ -46,7 +47,7 @@ final class InterimVideoCopyRule {
       return Optional.of(DecisionReason.VIDEO_CODEC_STRING_UNKNOWN);
     }
 
-    if (!hasDescribableCodecString(facts.codecString())) {
+    if (!hasDescribableCodecString(facts)) {
       return Optional.of(DecisionReason.SAMPLE_ENTRY_NOT_COPYABLE);
     }
 
@@ -71,8 +72,7 @@ final class InterimVideoCopyRule {
   private static Optional<DecisionReason> dynamicRangeRefusal(VideoPlaybackFacts facts) {
     return switch (facts.dynamicRange().compatibleBase()) {
       case SDR, UNSPECIFIED -> Optional.empty();
-      case PQ, HLG -> hdrBaseRefusal(facts);
-      case NONE -> Optional.of(DecisionReason.DOLBY_VISION_WITHOUT_COMPATIBLE_BASE);
+      case PQ, HLG, NONE -> hdrBaseRefusal(facts);
     };
   }
 
@@ -117,10 +117,17 @@ final class InterimVideoCopyRule {
     return Optional.empty();
   }
 
-  private static boolean hasDescribableCodecString(Optional<String> codecString) {
-    return codecString
+  // A copy without a compatible base carries the Dolby Vision sample entry that its Dolby Vision
+  // output names, whatever entry the source uses (ADR 0013), so it needs only a stored codec
+  // string.
+  private static boolean hasDescribableCodecString(VideoPlaybackFacts facts) {
+    var carriesADolbyVisionSampleEntry =
+        facts.dynamicRange().compatibleBase() == CompatibleBase.NONE;
+    return facts
+        .codecString()
         .map(string -> string.split("\\.", 2)[0])
-        .filter(DESCRIBABLE_SAMPLE_ENTRIES::contains)
+        .filter(
+            entry -> carriesADolbyVisionSampleEntry || DESCRIBABLE_SAMPLE_ENTRIES.contains(entry))
         .isPresent();
   }
 }

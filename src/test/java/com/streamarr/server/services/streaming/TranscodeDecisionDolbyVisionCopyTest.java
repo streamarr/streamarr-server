@@ -28,6 +28,7 @@ import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoRange;
+import com.streamarr.server.domain.streaming.VideoSampleEntry;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
@@ -48,8 +49,9 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
- * The decision for Dolby Vision on a PQ or HLG base (ADR 0013, ADR 0036): the server copies the
- * best picture that the client declares, one output for each client and format attempt.
+ * The decision for Dolby Vision on a PQ or HLG base and without a compatible base (ADR 0013, ADR
+ * 0036): the server copies the best picture that the client declares, one output for each client
+ * and format attempt.
  */
 @Tag("UnitTest")
 @DisplayName("Transcode Decision Dolby Vision Copy Tests")
@@ -318,6 +320,126 @@ class TranscodeDecisionDolbyVisionCopyTest {
             ENCODE));
   }
 
+  // ADR 0013: a profile 5 or 10.0 copy matches through its Dolby Vision profile and level alone. It
+  // keeps its RPUs under the dvh1 or dav1 sample entry with the record that the playlist describes,
+  // and only a worker that writes that entry delivers it. Every other client gets an encode.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("baselessDolbyVisionDecisions")
+  @DisplayName(
+      "Should copy Dolby Vision without a compatible base only when the client declares its profile"
+          + " and a worker writes its sample entry")
+  void shouldCopyDolbyVisionWithoutABaseOnlyWhenTheClientDeclaresItAndAWorkerWritesItsSampleEntry(
+      String scenario,
+      MediaProbe source,
+      ClientCapabilityDeclaration client,
+      WorkerVideoCopySupport worker,
+      Outcome expected) {
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .capabilityDeclaration(client)
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .videoCopySupport(List.of(worker))
+                .build());
+
+    assertThat(decision.map(Outcome::of)).contains(expected);
+  }
+
+  static Stream<Arguments> baselessDolbyVisionDecisions() {
+    var profile5 = hevc(dolbyVisionRecord(CompatibleBase.NONE, 5, 0));
+    var profile100 = av1(dolbyVisionRecord(CompatibleBase.NONE, 10, 0));
+    var dvh1Worker = workerWriting(VideoSampleEntry.DVH1);
+    var dav1Worker = workerWriting(VideoSampleEntry.DAV1);
+    return Stream.of(
+        Arguments.of(
+            "Profile 5 to a client that declares profile 5, beside a worker that writes dvh1",
+            profile5,
+            Clients.baseless(13),
+            dvh1Worker,
+            keepingDolbyVision(DolbyVisionProfile.PROFILE_5, VideoRange.PQ)),
+        Arguments.of(
+            "Profile 5 at the client's maximum level",
+            profile5,
+            Clients.baseless(SOURCE_LEVEL),
+            dvh1Worker,
+            keepingDolbyVision(DolbyVisionProfile.PROFILE_5, VideoRange.PQ)),
+        Arguments.of(
+            "Profile 5 stored under hev1, whose copy the worker writes under dvh1",
+            hevcUnderHev1(dolbyVisionRecord(CompatibleBase.NONE, 5, 0)),
+            Clients.baseless(13),
+            dvh1Worker,
+            keepingDolbyVision(DolbyVisionProfile.PROFILE_5, VideoRange.PQ)),
+        Arguments.of(
+            "Profile 5 from a probe version 4 outcome, which names no codec profile to check",
+            hevcFromProbeVersion4(dolbyVisionRecord(CompatibleBase.NONE, 5, 0)),
+            Clients.baseless(13),
+            dvh1Worker,
+            ENCODE),
+        Arguments.of(
+            "Profile 5 above the client's maximum level",
+            profile5,
+            Clients.baseless(SOURCE_LEVEL - 1),
+            dvh1Worker,
+            ENCODE),
+        Arguments.of(
+            "Profile 5 beside a worker that writes only dav1",
+            profile5,
+            Clients.baseless(13),
+            dav1Worker,
+            ENCODE),
+        Arguments.of(
+            "Profile 5 beside a worker that writes no Dolby Vision sample entry",
+            profile5,
+            Clients.baseless(13),
+            EVERY_REWRITE_WORKER,
+            ENCODE),
+        Arguments.of(
+            "Profile 5 beside a worker that writes dvh1 but does not normalize the record",
+            profile5,
+            Clients.baseless(13),
+            WorkerVideoCopySupport.builder()
+                .plannedOutput(true)
+                .bitstreamRewrites(
+                    Set.of(BitstreamRewrite.STRIP_DOLBY_VISION, BitstreamRewrite.STRIP_HDR10_PLUS))
+                .dolbyVisionSampleEntries(Set.of(VideoSampleEntry.DVH1))
+                .build(),
+            ENCODE),
+        Arguments.of(
+            "Profile 5 to a client that declares profiles 8.1 and 8.4 with every base",
+            profile5,
+            Clients.dolbyVision(13),
+            dvh1Worker,
+            ENCODE),
+        Arguments.of(
+            "Profile 10.0 beside a worker that writes only dvh1, as the pinned worker does",
+            profile100,
+            Clients.baseless(13),
+            dvh1Worker,
+            ENCODE),
+        Arguments.of(
+            "Profile 10.0 beside a worker that writes dav1",
+            profile100,
+            Clients.baseless(13),
+            dav1Worker,
+            keepingDolbyVision(DolbyVisionProfile.PROFILE_10_0, VideoRange.PQ)),
+        Arguments.of(
+            "Profile 10.0 to a client that declares profiles 10.1 and 10.4 with every base",
+            profile100,
+            Clients.dolbyVision(13),
+            dav1Worker,
+            ENCODE));
+  }
+
+  // A worker that applies every rewrite and writes the Dolby Vision sample entries.
+  private static WorkerVideoCopySupport workerWriting(VideoSampleEntry... sampleEntries) {
+    return WorkerVideoCopySupport.builder()
+        .plannedOutput(true)
+        .bitstreamRewrites(Set.of(BitstreamRewrite.values()))
+        .dolbyVisionSampleEntries(Set.of(sampleEntries))
+        .build();
+  }
+
   // ADR 0036: the server sends a rewrite only to a worker that declares it. When no connected
   // worker declares every rewrite that the copy needs, the client receives an encode instead.
   @ParameterizedTest(name = "{0}")
@@ -537,6 +659,17 @@ class TranscodeDecisionDolbyVisionCopyTest {
         .probe();
   }
 
+  // A copy of HEVC from Matroska, MPEG-TS or a raw stream carries hev1 (ADR 0013).
+  private static MediaProbe hevcUnderHev1(VideoDynamicRange range) {
+    return Source.builder()
+        .codec("hevc")
+        .codecString("hev1.2.4.L150.90")
+        .dynamicRange(range)
+        .videoProperties(Optional.of(properties(VideoCodecProfile.HEVC_MAIN_10)))
+        .build()
+        .probe();
+  }
+
   private static MediaProbe hevcFromProbeVersion4(VideoDynamicRange range) {
     return Source.builder()
         .codec("hevc")
@@ -640,6 +773,24 @@ class TranscodeDecisionDolbyVisionCopyTest {
               List.of(
                   hevcEntryBuilder().compatibleBases(hdrBases()).hdr10Plus(hdr10Plus).build(),
                   av1EntryBuilder().compatibleBases(hdrBases()).hdr10Plus(hdr10Plus).build(),
+                  h264EntryBuilder().build()))
+          .build();
+    }
+
+    // HEVC and AV1 entries that list profiles 5 and 10.0 up to the maximum level and no compatible
+    // base, which a copy without a compatible base does not need (ADR 0049).
+    static ClientCapabilityDeclaration baseless(int maxLevel) {
+      return defaultDeclarationBuilder()
+          .video(
+              List.of(
+                  hevcEntryBuilder()
+                      .compatibleBases(List.of())
+                      .dolbyVisionProfiles(profiles(maxLevel, DolbyVisionProfile.PROFILE_5))
+                      .build(),
+                  av1EntryBuilder()
+                      .compatibleBases(List.of())
+                      .dolbyVisionProfiles(profiles(maxLevel, DolbyVisionProfile.PROFILE_10_0))
+                      .build(),
                   h264EntryBuilder().build()))
           .build();
     }

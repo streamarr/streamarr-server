@@ -372,11 +372,17 @@ public record VideoCapabilityEntry(
   }
 
   private static DecisionReason dolbyVisionRefusal(VideoStreamCopy copy) {
-    if (CopiedDolbyVision.of(copy) instanceof CopiedDolbyVision.Unknown) {
-      return DecisionReason.DOLBY_VISION_PROFILE_OR_LEVEL_UNKNOWN;
-    }
-
-    return DecisionReason.DOLBY_VISION_NOT_DECLARED;
+    return switch (CopiedDolbyVision.of(copy)) {
+      case CopiedDolbyVision.Unknown _ -> DecisionReason.DOLBY_VISION_PROFILE_OR_LEVEL_UNKNOWN;
+      case CopiedDolbyVision.NeedsDolbyVisionSampleEntry(_, var level) when level.isEmpty() ->
+          DecisionReason.DOLBY_VISION_PROFILE_OR_LEVEL_UNKNOWN;
+      case CopiedDolbyVision.None _,
+          CopiedDolbyVision.KeptUnderSdrBase _,
+          CopiedDolbyVision.Declarable _,
+          CopiedDolbyVision.Undeclarable _,
+          CopiedDolbyVision.NeedsDolbyVisionSampleEntry _ ->
+          DecisionReason.DOLBY_VISION_NOT_DECLARED;
+    };
   }
 
   // A profile 8.2 or 9 stream in MP4 or MOV plays as its SDR base only under that base's sample
@@ -395,10 +401,9 @@ public record VideoCapabilityEntry(
     return switch (CopiedDolbyVision.of(copy)) {
       case CopiedDolbyVision.None _, CopiedDolbyVision.KeptUnderSdrBase _ -> true;
       case CopiedDolbyVision.Declarable(var profile, var level) -> listsDolbyVision(profile, level);
-      case CopiedDolbyVision.Undeclarable _,
-          CopiedDolbyVision.Unknown _,
-          CopiedDolbyVision.NeedsDolbyVisionSampleEntry _ ->
-          false;
+      case CopiedDolbyVision.NeedsDolbyVisionSampleEntry(var profile, var level) ->
+          level.isPresent() && listsDolbyVision(profile, level.getAsInt());
+      case CopiedDolbyVision.Undeclarable _, CopiedDolbyVision.Unknown _ -> false;
     };
   }
 
