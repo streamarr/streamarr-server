@@ -1,13 +1,9 @@
 package com.streamarr.server.repositories.media;
 
-import static com.streamarr.server.jooq.generated.tables.BaseCollectable.BASE_COLLECTABLE;
-import static com.streamarr.server.jooq.generated.tables.Episode.EPISODE;
 import static com.streamarr.server.jooq.generated.tables.MediaFile.MEDIA_FILE;
-import static com.streamarr.server.jooq.generated.tables.Season.SEASON;
 
 import com.streamarr.server.domain.media.MatchingFailure;
 import com.streamarr.server.domain.media.MediaFileStatus;
-import com.streamarr.server.domain.media.MediaFileTitle;
 import com.streamarr.server.jooq.generated.enums.ItemResultFailureReason;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import jakarta.persistence.EntityManager;
@@ -17,7 +13,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -45,45 +40,6 @@ public class MediaFileRepositoryCustomImpl implements MediaFileRepositoryCustom 
         .from(MEDIA_FILE)
         .where(MEDIA_FILE.ID.eq(mediaFileId))
         .fetchOptional(MEDIA_FILE.MEDIA_ID);
-  }
-
-  @Override
-  public Map<UUID, MediaFileTitle> findTitlesByMediaFileIds(Collection<UUID> mediaFileIds) {
-    if (mediaFileIds.isEmpty()) {
-      return Map.of();
-    }
-
-    var item = BASE_COLLECTABLE.as("item");
-    var series = BASE_COLLECTABLE.as("series");
-    return dsl.select(
-            MEDIA_FILE.ID, item.TITLE, series.TITLE, SEASON.SEASON_NUMBER, EPISODE.EPISODE_NUMBER)
-        .from(MEDIA_FILE)
-        .join(item)
-        .on(item.ID.eq(MEDIA_FILE.MEDIA_ID))
-        .leftJoin(EPISODE)
-        .on(EPISODE.ID.eq(MEDIA_FILE.MEDIA_ID))
-        .leftJoin(SEASON)
-        .on(SEASON.ID.eq(EPISODE.SEASON_ID))
-        .leftJoin(series)
-        .on(series.ID.eq(SEASON.SERIES_ID))
-        .where(MEDIA_FILE.ID.in(mediaFileIds))
-        .fetchMap(
-            MEDIA_FILE.ID,
-            row ->
-                MediaFileTitle.builder()
-                    .title(Optional.ofNullable(row.value2()))
-                    .seriesTitle(Optional.ofNullable(row.value3()))
-                    .seasonNumber(optionalInt(row.value4()))
-                    .episodeNumber(optionalInt(row.value5()))
-                    .build());
-  }
-
-  private static OptionalInt optionalInt(Integer value) {
-    if (value == null) {
-      return OptionalInt.empty();
-    }
-
-    return OptionalInt.of(value);
   }
 
   @Override

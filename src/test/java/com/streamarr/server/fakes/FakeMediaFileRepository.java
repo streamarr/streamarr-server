@@ -3,7 +3,6 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.media.MatchingFailure;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
-import com.streamarr.server.domain.media.MediaFileTitle;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import java.util.Collection;
 import java.util.EnumMap;
@@ -13,28 +12,12 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public class FakeMediaFileRepository extends FakeJpaRepository<MediaFile>
     implements MediaFileRepository {
 
   private RuntimeException nextMatchingFailureWriteFailure;
-
-  private final Map<UUID, MediaFileTitle> titles = new ConcurrentHashMap<>();
-
-  /** The title that {@link #findTitlesByMediaFileIds} returns for the media file. */
-  public void storeTitle(UUID mediaFileId, MediaFileTitle title) {
-    titles.put(mediaFileId, title);
-  }
-
-  @Override
-  public Map<UUID, MediaFileTitle> findTitlesByMediaFileIds(Collection<UUID> mediaFileIds) {
-    return mediaFileIds.stream()
-        .filter(titles::containsKey)
-        .collect(Collectors.toMap(Function.identity(), titles::get));
-  }
 
   public void failNextMatchingFailureWriteWith(RuntimeException failure) {
     this.nextMatchingFailureWriteFailure = failure;
