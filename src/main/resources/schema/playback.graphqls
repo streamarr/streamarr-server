@@ -6,6 +6,10 @@ with the full format-attempt budget and no format-failure history (ADR 0052).
 """
 type PlaybackSession {
     id: ID!
+    """
+    The format attempts that count against maximumFormatAttempts. The HLS format attempt that an audio switch
+    starts from direct play counts none (ADR 0043), so this can be less than the number of decisions.
+    """
     formatAttemptCount: Int!
     "The playback session's format-attempt budget. The default is 4."
     maximumFormatAttempts: Int!
@@ -335,7 +339,7 @@ type SwitchPlaybackAudioTrackPayload {
     userErrors: [SwitchPlaybackAudioTrackError!]!
 }
 
-union SwitchPlaybackAudioTrackError = InvalidIdError | PlaybackSessionClosedError | AudioTrackNotInFileError | PlaybackFormatAttemptsExhaustedError | PlaybackStartupFailedError | StartPositionOutOfRangeError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | MediaFileFrameRateUnknownError | TranscodeCapacityUnavailableError | NoEligibleVideoFormatError
+union SwitchPlaybackAudioTrackError = InvalidIdError | PlaybackSessionClosedError | AudioTrackNotInFileError | PlaybackStartupFailedError | StartPositionOutOfRangeError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | MediaFileFrameRateUnknownError | TranscodeCapacityUnavailableError | NoEligibleVideoFormatError
 
 "The file has no audio track at the position that the input names."
 type AudioTrackNotInFileError implements InputMutationError & MutationError {
