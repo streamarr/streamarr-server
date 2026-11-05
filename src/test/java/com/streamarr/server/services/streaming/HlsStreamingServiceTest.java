@@ -3130,6 +3130,23 @@ class HlsStreamingServiceTest {
       assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
     }
 
+    // ADR 0043: the Profile's preferences come before the file's default, with or without a title.
+    @Test
+    @DisplayName(
+        "Should play the Profile's first language when the file belongs to no title and the session"
+            + " names none")
+    void shouldPlayTheProfilesFirstLanguageWhenTheFileBelongsToNoTitleAndTheSessionNamesNone() {
+      useAudioTracks(audioTrack(1, "jpn").isDefault(true).build(), audioTrack(2, "eng").build());
+      var file = seedMediaFile();
+
+      var session =
+          accepted(
+              service.createSession(
+                  createStreamSessionCommandBuilder(file.getId(), profileId).build()));
+
+      assertThat(session.getTranscodeDecision().audioStreamIndex()).hasValue(2);
+    }
+
     @Test
     @DisplayName("Should name no audio stream when the session carries no audio")
     void shouldNameNoAudioStreamWhenTheSessionCarriesNoAudio() {
@@ -3397,7 +3414,7 @@ class HlsStreamingServiceTest {
         .deliveryCoordinator(rig.coordinator())
         .meterRegistry(meters)
         .languagePreferences(
-            (profileId, titleId) -> languagePreferences.audioLanguagesFor(profileId, titleId))
+            (profileId, file) -> languagePreferences.audioLanguagesFor(profileId, file))
         .build();
   }
 

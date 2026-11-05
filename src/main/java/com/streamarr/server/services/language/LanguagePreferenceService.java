@@ -7,6 +7,7 @@ import com.streamarr.server.domain.language.OverrideScope;
 import com.streamarr.server.domain.language.ProfileLanguagePreferences;
 import com.streamarr.server.domain.language.TitleKind;
 import com.streamarr.server.domain.language.TitleLineage;
+import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.repositories.language.LanguagePreferenceRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
@@ -139,7 +140,12 @@ public class LanguagePreferenceService implements PlaybackLanguagePreferences {
 
   @Override
   @Transactional(readOnly = true)
-  public List<Language> audioLanguagesFor(@NonNull UUID profileId, @NonNull UUID titleId) {
+  public List<Language> audioLanguagesFor(@NonNull UUID profileId, @NonNull MediaFile file) {
+    var titleId = file.getMediaId();
+    if (titleId == null) {
+      return storedPreferencesOf(profileId).audioLanguages();
+    }
+
     return preferencesOf(profileId, List.of(titleId)).get(titleId).audioLanguages();
   }
 

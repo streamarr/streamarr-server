@@ -85,7 +85,7 @@ public class HlsStreamingService implements StreamingService {
   }
 
   // A track the viewer switched to, else the session's own language, then the Profile's
-  // preferences for the title (ADR 0043).
+  // preferences for the file (ADR 0043).
   private MediaProbe withSessionAudio(
       MediaProbe probe, CreateStreamSessionCommand command, MediaFile mediaFile) {
     var position = command.audioTrackPosition();
@@ -99,11 +99,8 @@ public class HlsStreamingService implements StreamingService {
   private List<Language> audioLanguages(CreateStreamSessionCommand command, MediaFile mediaFile) {
     var languages = new ArrayList<Language>();
     Optional.ofNullable(command.options().audioLanguage()).ifPresent(languages::add);
-    Optional.ofNullable(mediaFile.getMediaId())
-        .map(
-            titleId ->
-                languagePreferences.audioLanguagesFor(command.identity().profileId(), titleId))
-        .ifPresent(languages::addAll);
+    languages.addAll(
+        languagePreferences.audioLanguagesFor(command.identity().profileId(), mediaFile));
     return languages;
   }
 

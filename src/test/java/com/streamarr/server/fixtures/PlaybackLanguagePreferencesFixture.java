@@ -9,6 +9,6 @@ public final class PlaybackLanguagePreferencesFixture {
 
   /** Preferences that name no language, so a stream session plays the file's default audio. */
   public static PlaybackLanguagePreferences noLanguagePreferences() {
-    return (profileId, titleId) -> List.of();
+    return (profileId, file) -> List.of();
   }
 }
