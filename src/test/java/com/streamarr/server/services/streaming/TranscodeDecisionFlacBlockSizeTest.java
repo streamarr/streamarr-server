@@ -210,7 +210,7 @@ class TranscodeDecisionFlacBlockSizeTest {
     var request = directPlayRequest(flacTrack(OptionalInt.of(4_608)));
 
     assertThat(service.decideDirectPlay(request))
-        .isEqualTo(new DirectPlayChoice.Accepted(SourceContainer.MATROSKA));
+        .isEqualTo(new DirectPlayChoice.Accepted(SourceContainer.MATROSKA, OptionalInt.of(0)));
   }
 
   // Direct play hands the player the same FLAC bytes as an HLS copy, so CoreMedia drops them too.

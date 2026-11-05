@@ -50,8 +50,8 @@ public record PlaybackDecision(
 
   /**
    * The decision of a stream session that a format attempt started. {@code cause} is the reason
-   * that an earlier format attempt's failure gives this one, which comes before the stream
-   * decision's own reasons.
+   * that an earlier format attempt's failure, or an audio switch away from direct play, gives this
+   * one, which comes before the stream decision's own reasons.
    */
   static PlaybackDecision of(
       int formatAttempt, @NonNull StreamSession session, @NonNull Optional<DecisionReason> cause) {

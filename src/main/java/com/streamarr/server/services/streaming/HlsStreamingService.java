@@ -74,7 +74,19 @@ public class HlsStreamingService implements StreamingService {
 
     return playbackProbeService
         .read(mediaFileId)
-        .fold(probe -> startSession(command, mediaFile.get(), probe), Outcome::rejected);
+        .fold(
+            probe -> startSession(command, mediaFile.get(), withChosenAudioTrack(probe, command)),
+            Outcome::rejected);
+  }
+
+  private static MediaProbe withChosenAudioTrack(
+      MediaProbe probe, CreateStreamSessionCommand command) {
+    var position = command.audioTrackPosition();
+    if (position.isEmpty()) {
+      return probe;
+    }
+
+    return probe.withSessionAudioTrackAt(position.getAsInt());
   }
 
   private Outcome<StreamSession, CreateStreamSessionRejection> startSession(
@@ -97,8 +109,12 @@ public class HlsStreamingService implements StreamingService {
 
     // Direct play uses no worker time, so it needs no connected worker (ADR 0045).
     var directPlay = transcodeDecisionService.decideDirectPlay(directPlayRequest(command, probe));
-    if (directPlay instanceof DirectPlayChoice.Accepted(var container)) {
-      var session = directPlaySession(command, mediaFile, probe).sourceContainer(container).build();
+    if (directPlay instanceof DirectPlayChoice.Accepted(var container, var audioTrackPosition)) {
+      var session =
+          directPlaySession(command, mediaFile, probe)
+              .sourceContainer(container)
+              .directPlayAudioTrackPosition(audioTrackPosition)
+              .build();
       runtimeRegistry.save(session);
       log.info(
           "Created direct-play streaming session {} for media file {}",
