@@ -79,7 +79,10 @@ public enum DecisionReason {
   KEYFRAMES_TOO_SPARSE,
   /** The source's keyframe timestamps go backwards or out of range. */
   KEYFRAME_TIMESTAMPS_INVALID,
-  /** No connected worker delivers the copy's bitstream rewrites. */
+  /**
+   * No connected worker delivers the copy's bitstream rewrites, or the Dolby Vision sample entry of
+   * a profile 5 or 10.0 copy.
+   */
   NO_WORKER_DELIVERS_COPY,
   /** No audio capability entry for HLS names the source's audio codec. */
   AUDIO_CODEC_NOT_DECLARED,

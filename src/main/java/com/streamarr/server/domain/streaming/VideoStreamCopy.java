@@ -67,17 +67,31 @@ public record VideoStreamCopy(
   }
 
   /**
-   * The Dolby Vision that the playlist describes when this copy keeps it: a profile with a PQ or
-   * HLG base that a capability entry can name, at the level that the record names or the level
-   * table gives (ADR 0013). Empty for a copy without such Dolby Vision.
+   * The Dolby Vision that the playlist describes when this copy keeps it: a profile that a
+   * capability entry can name, at the level that the record names or the level table gives (ADR
+   * 0013). Empty for a copy without such Dolby Vision.
    */
   public Optional<DolbyVisionOutput> dolbyVisionOutput() {
-    if (CopiedDolbyVision.of(this)
-        instanceof CopiedDolbyVision.Declarable(var profile, var level)) {
-      return Optional.of(new DolbyVisionOutput(profile, level));
+    return switch (CopiedDolbyVision.of(this)) {
+      case CopiedDolbyVision.Declarable(var profile, var level) ->
+          Optional.of(new DolbyVisionOutput(profile, level));
+      case CopiedDolbyVision.NeedsDolbyVisionSampleEntry(var profile, var level) ->
+          dolbyVisionOutputAt(profile, level);
+      case CopiedDolbyVision.None _,
+          CopiedDolbyVision.KeptUnderSdrBase _,
+          CopiedDolbyVision.Undeclarable _,
+          CopiedDolbyVision.Unknown _ ->
+          Optional.empty();
+    };
+  }
+
+  private static Optional<DolbyVisionOutput> dolbyVisionOutputAt(
+      DolbyVisionProfile profile, OptionalInt level) {
+    if (level.isEmpty()) {
+      return Optional.empty();
     }
 
-    return Optional.empty();
+    return Optional.of(new DolbyVisionOutput(profile, level.getAsInt()));
   }
 
   /**

@@ -1093,8 +1093,8 @@ final class LiveWorkerConnectionRegistry {
           && canDeliverVideoAsPlanned(decision.getVideo());
     }
 
-    // A rewrite that the server's domain does not name yet, such as the profile 7 conversion, is
-    // one that no decision lists.
+    // A rewrite or copy feature that the server's domain does not name yet, such as the profile 7
+    // conversion, is one that no decision needs.
     private WorkerVideoCopySupport videoCopySupport() {
       return WorkerVideoCopySupport.builder()
           .plannedOutput(
@@ -1102,6 +1102,11 @@ final class LiveWorkerConnectionRegistry {
           .bitstreamRewrites(
               bitstreamRewrites.stream()
                   .map(RemoteBitstreamRewriteMapper::fromProto)
+                  .flatMap(Optional::stream)
+                  .collect(Collectors.toUnmodifiableSet()))
+          .dolbyVisionSampleEntries(
+              videoCopyFeatures.stream()
+                  .map(RemoteVideoCopyRequirements::dolbyVisionSampleEntry)
                   .flatMap(Optional::stream)
                   .collect(Collectors.toUnmodifiableSet()))
           .build();

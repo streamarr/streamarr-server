@@ -48,14 +48,14 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * The copy rules of ADR 0013 and ADR 0036. The interim copy rule still holds for a probe version 4
- * outcome and for Dolby Vision without a compatible base: the server copies the video only when
- * every condition holds. The compatible base is SDR or unspecified; no Dolby Vision compatibility
- * identifier disagrees with the signaled transfer; the source is not H.264, or is 8-bit 4:2:0
- * H.264; and the client names the source's codec. A copy also needs the codec string that the probe
- * stored, under a sample entry that a playlist can describe: never hev1 or a Dolby Vision entry
- * (ADR 0013). Since the third amendment, a PQ or HLG source that probe version 5 described is
- * copied to a client that declares its base (streamarr/streamarr-server#396), and {@link
- * TranscodeDecisionDolbyVisionCopyTest} covers Dolby Vision on such a base.
+ * outcome: the server copies the video only when every condition holds. The compatible base is SDR
+ * or unspecified; no Dolby Vision compatibility identifier disagrees with the signaled transfer;
+ * the source is not H.264, or is 8-bit 4:2:0 H.264; and the client names the source's codec. A copy
+ * also needs the codec string that the probe stored, under a sample entry that a playlist can
+ * describe: never hev1 or a Dolby Vision entry (ADR 0013). Since the third amendment, a PQ or HLG
+ * source that probe version 5 described is copied to a client that declares its base
+ * (streamarr/streamarr-server#396), and {@link TranscodeDecisionDolbyVisionCopyTest} covers Dolby
+ * Vision on such a base and Dolby Vision without a compatible base.
  */
 @Tag("UnitTest")
 @DisplayName("Transcode Decision Copy Rule Tests")

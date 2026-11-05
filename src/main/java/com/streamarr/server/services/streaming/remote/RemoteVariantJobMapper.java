@@ -148,7 +148,7 @@ final class RemoteVariantJobMapper {
         com.streamarr.transcode.v1.VideoDecision.newBuilder()
             .setMode(VideoMode.VIDEO_MODE_COPY)
             .setCodecFamily(codecFamily(decision.videoCodecFamily()))
-            .setCodecString(source.codecString().orElseThrow())
+            .setCodecString(decision.copyCodecString().orElseThrow())
             .setSourceDynamicRange(RemoteDynamicRangeMapper.toProto(source.dynamicRange()))
             .setStreamIndex(source.streamIndex())
             .setSourceCodecFamily(sourceCodecFamily(source))

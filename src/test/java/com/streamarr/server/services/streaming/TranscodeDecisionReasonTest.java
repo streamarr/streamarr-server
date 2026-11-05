@@ -184,6 +184,15 @@ class TranscodeDecisionReasonTest {
                 DecisionReason.DYNAMIC_RANGE_NOT_DECLARED)),
         Arguments.of(
             Named.of(
+                "a Dolby Vision profile 5 source to a client that declares only profile 8.1",
+                hevcMain10()
+                    .dynamicRange(VideoPlaybackFactsFixture.dolbyVisionProfile5())
+                    .build()
+                    .probe()),
+            everyRangeClient(),
+            List.of(DecisionReason.DOLBY_VISION_NOT_DECLARED)),
+        Arguments.of(
+            Named.of(
                 "a source that one entry refuses for two properties and another for one",
                 Source.builder().build().probe()),
             client(
@@ -319,14 +328,6 @@ class TranscodeDecisionReasonTest {
                 "Dolby Vision whose RPUs start their samples",
                 hevcMain10().dynamicRange(rpusStartingTheirSamples()).build().probe()),
             DecisionReason.DOLBY_VISION_RPU_STARTS_SAMPLE),
-        Arguments.of(
-            Named.of(
-                "Dolby Vision without a compatible base",
-                hevcMain10()
-                    .dynamicRange(VideoPlaybackFactsFixture.dolbyVisionProfile5())
-                    .build()
-                    .probe()),
-            DecisionReason.DOLBY_VISION_WITHOUT_COMPATIBLE_BASE),
         Arguments.of(
             Named.of(
                 "a PQ source that probe version 4 described",
