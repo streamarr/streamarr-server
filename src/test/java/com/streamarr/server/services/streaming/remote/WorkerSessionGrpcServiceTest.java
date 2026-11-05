@@ -1628,10 +1628,10 @@ class WorkerSessionGrpcServiceTest {
   }
 
   // ADR 0037: each chunk of a media segment upload restarts the stall clock, so a large merged
-  // segment that uploads slowly keeps its producer. The server reports once per mebibyte received.
+  // segment that uploads slowly keeps its producer.
   @Test
-  @DisplayName("Should publish the job attempt's progress for each mebibyte that its upload delivers")
-  void shouldPublishTheJobAttemptsProgressForEachMebibyteThatItsUploadDelivers() throws Exception {
+  @DisplayName("Should publish the job attempt's progress for each chunk that its upload delivers")
+  void shouldPublishTheJobAttemptsProgressForEachChunkThatItsUploadDelivers() throws Exception {
     var events = new CapturingEventPublisher();
     var registry =
         LiveWorkerConnectionRegistry.builder()
@@ -1654,14 +1654,14 @@ class WorkerSessionGrpcServiceTest {
         UploadSegmentRequest.newBuilder()
             .setMetadata(
                 metadataBuilder(workerSessionId, worker, job)
-                    .setContentLengthBytes(3L * 1024 * 1024)
+                    .setContentLengthBytes(1024L * 1024)
                     .build())
             .build());
 
-    for (var chunk = 0; chunk < 5; chunk++) {
+    for (var chunk = 0; chunk < 3; chunk++) {
       upload.onNext(
           UploadSegmentRequest.newBuilder()
-              .setData(ByteString.copyFrom(new byte[512 * 1024]))
+              .setData(ByteString.copyFrom(new byte[64 * 1024]))
               .build());
     }
 
@@ -1672,7 +1672,7 @@ class WorkerSessionGrpcServiceTest {
             .variantLabel(job.getVariant().getVariantLabel())
             .build();
     assertThat(events.getEventsOfType(JobAttemptProgressedEvent.class))
-        .containsExactly(progressed, progressed);
+        .containsExactly(progressed, progressed, progressed);
     upload.onError(Status.CANCELLED.asRuntimeException());
   }
 
