@@ -5353,8 +5353,8 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should name no direct-play refusal when the format attempt may not direct-play")
-  void shouldNameNoDirectPlayRefusalWhenTheFormatAttemptMayNotDirectPlay() {
+  @DisplayName("Should name no reason when the format attempt may not direct-play")
+  void shouldNameNoReasonWhenTheFormatAttemptMayNotDirectPlay() {
     probeResults.setDefaultProbe(
         directPlayableProbeBuilder().containerFormat(Optional.of("mpegts")).build());
     var file = seedMediaFile();
@@ -5366,8 +5366,7 @@ class HlsStreamingServiceTest {
                     .videoFormatConstraint(VideoFormatConstraint.COPY_OR_ENCODE)
                     .build()));
 
-    assertThat(session.getTranscodeDecision().reasons())
-        .doesNotContain(DecisionReason.DIRECT_PLAY_CONTAINER_NOT_DECLARED);
+    assertThat(session.getTranscodeDecision().reasons()).isEmpty();
   }
 
   @Test
