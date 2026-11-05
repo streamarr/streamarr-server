@@ -19,6 +19,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
+import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -96,7 +97,7 @@ public record PlaybackDecision(
     return Optional.of(
         AudioFormat.builder()
             .codec(source.audioCodec())
-            .channels(source.audioChannels().getAsInt())
+            .channels(source.audioChannels())
             .bitrate(source.audioBitrate())
             .build());
   }
@@ -201,13 +202,13 @@ public record PlaybackDecision(
     var sourceFormat =
         AudioFormat.builder()
             .codec(source.audioCodec())
-            .channels(source.audioChannels().orElse(decision.channels()))
+            .channels(OptionalInt.of(source.audioChannels().orElse(decision.channels())))
             .bitrate(source.audioBitrate())
             .build();
     var output =
         AudioFormat.builder()
             .codec(decision.codec())
-            .channels(decision.channels())
+            .channels(OptionalInt.of(decision.channels()))
             .bitrate(OptionalLong.of(decision.bitrate()))
             .build();
     var delivery = PlaybackDelivery.ENCODE;
