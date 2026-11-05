@@ -727,15 +727,16 @@ final class LiveWorkerConnectionRegistry {
   }
 
   // A held request's pass re-measures its stall deadline and counts as an access of the stream
-  // session, so progress on a long merged segment wakes the requests held on the variant.
+  // session, so progress on a long merged segment wakes the requests held on the variant. The
+  // synchronous event restarts the stall clock first, so a woken pass never sees the old deadline.
   private void publishProgress(Uuid streamSessionId, Uuid jobAttemptId, String variantLabel) {
-    heldRequests.wakeVariant(fromProto(streamSessionId), variantLabel);
     eventPublisher.publishEvent(
         JobAttemptProgressedEvent.builder()
             .streamSessionId(fromProto(streamSessionId))
             .jobAttemptId(fromProto(jobAttemptId))
             .variantLabel(variantLabel)
             .build());
+    heldRequests.wakeVariant(fromProto(streamSessionId), variantLabel);
   }
 
   private void publishCompletion(VariantJob job) {
