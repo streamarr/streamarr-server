@@ -12,7 +12,7 @@ import sys
 MIGRATION_DIRECTORIES = ("src/main/resources/db/migration", "src/main/java/db/migration")
 # Flyway also reads signed, Unicode, aliased and uppercase-suffixed names, in ways that differ
 # from this pattern. Any other file whose name starts with V is unreadable and fails the check.
-MIGRATION_NAME = re.compile(r"V(?P<version>[0-9]{1,18}(?:[._][0-9]{1,18})*)__[^/]*\.(?:sql|java)")
+MIGRATION_NAME = re.compile(r"V(?P<version>\d{1,18}(?:[._]\d{1,18})*)__[^/]*\.(?:sql|java)", re.ASCII)
 
 
 def git(*arguments):
