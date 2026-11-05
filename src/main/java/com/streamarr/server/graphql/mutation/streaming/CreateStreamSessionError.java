@@ -16,6 +16,9 @@ public sealed interface CreateStreamSessionError extends MutationError {
   record MediaFileNotFoundError(String message, List<String> inputPath)
       implements CreateStreamSessionError, InputMutationError {}
 
+  record StartPositionOutOfRangeError(String message, List<String> inputPath)
+      implements CreateStreamSessionError, InputMutationError {}
+
   record MediaFileProbeNotReadyError(String message) implements CreateStreamSessionError {}
 
   record InvalidMediaFileError(String message) implements CreateStreamSessionError {}

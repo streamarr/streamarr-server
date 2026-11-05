@@ -19,6 +19,7 @@ import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.mutation.Outcome;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.HashSet;
@@ -61,6 +62,10 @@ public class HlsStreamingService implements StreamingService {
       throw new AuthenticationRequiredException();
     }
 
+    if (command.startPosition().filter(Duration::isNegative).isPresent()) {
+      return Outcome.rejected(new CreateStreamSessionRejection.StartPositionOutOfRange());
+    }
+
     var mediaFileId = command.mediaFileId();
     var mediaFile = mediaFileRepository.findById(mediaFileId);
     if (mediaFile.isEmpty()) {
@@ -78,20 +83,28 @@ public class HlsStreamingService implements StreamingService {
       return Outcome.rejected(new CreateStreamSessionRejection.NoMediaSegments());
     }
 
+    if (command
+        .startPosition()
+        .filter(start -> start.compareTo(probe.duration()) >= 0)
+        .isPresent()) {
+      return Outcome.rejected(new CreateStreamSessionRejection.StartPositionOutOfRange());
+    }
+
     var picture = probe.displayedSize();
     if (picture.width() <= 0 || picture.height() <= 0) {
       return Outcome.rejected(new CreateStreamSessionRejection.InvalidPictureSize());
     }
 
     // Direct play uses no worker time, so it needs no connected worker (ADR 0045).
-    var directPlay = directPlaySession(command, mediaFile, probe);
-    if (directPlay.isPresent()) {
-      runtimeRegistry.save(directPlay.get());
+    var directPlay = transcodeDecisionService.decideDirectPlay(directPlayRequest(command, probe));
+    if (directPlay instanceof DirectPlayChoice.Accepted(var container)) {
+      var session = directPlaySession(command, mediaFile, probe).sourceContainer(container).build();
+      runtimeRegistry.save(session);
       log.info(
           "Created direct-play streaming session {} for media file {}",
           command.streamSessionId(),
           command.mediaFileId());
-      return Outcome.accepted(directPlay.get());
+      return Outcome.accepted(session);
     }
 
     // Without a connected worker no encoder is verified. That moment must not read as faulty
@@ -116,6 +129,7 @@ public class HlsStreamingService implements StreamingService {
             .verifiedVideoCodecFamilies(codecFamiliesOf(verifiedWorkers))
             .viewerLimits(ViewerLimits.of(options))
             .videoCopySupport(transcodeExecutor.videoCopySupportByWorker())
+            .directPlayRefusals(directPlay.refusals())
             .build();
     var candidate = transcodeDecisionService.decide(request);
     if (candidate.isEmpty()) {
@@ -161,8 +175,10 @@ public class HlsStreamingService implements StreamingService {
             .transcodeDecision(decision)
             .options(options)
             .variants(variants)
+            .startPosition(command.startPosition().orElse(null))
             .createdAt(now)
             .build();
+    startAtTheStartSegment(session);
 
     try {
       runtimeRegistry.save(session);
@@ -187,32 +203,42 @@ public class HlsStreamingService implements StreamingService {
     return Outcome.accepted(session);
   }
 
+  // The first-listed variant's first job attempt starts at the segment that holds the start
+  // position, on the stream session's own segment timeline.
+  private void startAtTheStartSegment(StreamSession session) {
+    var startPosition = session.getStartPosition();
+    if (startPosition.isEmpty()) {
+      return;
+    }
+
+    var timeline = MediaSegmentTimelines.of(session, properties);
+    session.setCurrentSegment(timeline.mediaSegmentIndexAt(startPosition.get()));
+  }
+
   // A direct-play stream session starts no job attempt, so it has no transcode decision, producer
   // or segments.
-  private Optional<StreamSession> directPlaySession(
+  private static DirectPlayRequest directPlayRequest(
+      CreateStreamSessionCommand command, MediaProbe probe) {
+    return DirectPlayRequest.builder()
+        .source(probe)
+        .capabilityDeclaration(command.capabilityDeclaration())
+        .videoFormatConstraint(command.videoFormatConstraint())
+        .viewerLimits(ViewerLimits.of(command.options()))
+        .build();
+  }
+
+  private static StreamSession.StreamSessionBuilder directPlaySession(
       CreateStreamSessionCommand command, MediaFile mediaFile, MediaProbe probe) {
-    var request =
-        DirectPlayRequest.builder()
-            .source(probe)
-            .capabilityDeclaration(command.capabilityDeclaration())
-            .videoFormatConstraint(command.videoFormatConstraint())
-            .viewerLimits(ViewerLimits.of(command.options()))
-            .build();
-    return transcodeDecisionService
-        .decideDirectPlay(request)
-        .map(
-            container ->
-                StreamSession.builder()
-                    .sessionId(command.streamSessionId())
-                    .mediaFileId(command.mediaFileId())
-                    .authority(command.identity().playbackAuthority())
-                    .sourcePath(FilepathCodec.decode(mediaFile.getFilepathUri()))
-                    .mediaProbe(probe)
-                    .options(command.options())
-                    .createdAt(Instant.now())
-                    .delivery(StreamDelivery.DIRECT_PLAY)
-                    .sourceContainer(container)
-                    .build());
+    return StreamSession.builder()
+        .sessionId(command.streamSessionId())
+        .mediaFileId(command.mediaFileId())
+        .authority(command.identity().playbackAuthority())
+        .sourcePath(FilepathCodec.decode(mediaFile.getFilepathUri()))
+        .mediaProbe(probe)
+        .options(command.options())
+        .startPosition(command.startPosition().orElse(null))
+        .createdAt(Instant.now())
+        .delivery(StreamDelivery.DIRECT_PLAY);
   }
 
   // The decision that a stream session starts with, and the variants of its ladder.

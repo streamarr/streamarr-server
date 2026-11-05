@@ -44,6 +44,7 @@ import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.ContainerCropping;
+import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.Deinterlace;
 import com.streamarr.server.domain.streaming.DeinterlaceOutput;
 import com.streamarr.server.domain.streaming.DolbyVision;
@@ -2585,7 +2586,7 @@ class HlsStreamingServiceTest {
       "Should encode and deinterlace an interlaced H.264 source when the client plays H.264 in any quality")
   void shouldEncodeAndDeinterlaceAnInterlacedH264SourceWhenTheClientPlaysH264InAnyQuality(
       VideoQuality quality) {
-    probeResults.setDefaultOutcome(interlacedOutcome(FieldOrder.TT));
+    probeResults.setDefaultOutcome(outcomeWithFieldOrder(FieldOrder.TT));
 
     var session = accepted(service.createSession(interlacedSourceCommand(quality)));
     var started = transcodeExecutor.getStartedRequests().getFirst();
@@ -2598,6 +2599,41 @@ class HlsStreamingServiceTest {
         .extracting(QualityVariant::frameRate)
         .containsOnly(new Fraction(60_000, 1_001));
     assertThat(started.framerate()).isEqualTo(OptionalDouble.of(60_000.0 / 1_001));
+  }
+
+  // Deinterlaced one frame per field, as item 1.15 of the HLS Authoring Specification for Apple
+  // Devices recommends, a 30i source runs at 60000/1001. A progressive 29.97 source encoded at 720p
+  // keeps its stored rate. RFC 8216 section 4.3.4.2 gives FRAME-RATE to three decimals.
+  @ParameterizedTest(name = "{0} source in {1} says FRAME-RATE={2}")
+  @CsvSource({
+    "TT, AUTO, 59.940",
+    "TT, HIGH_720P, 59.940",
+    "TT, ORIGINAL, 59.940",
+    "BB, AUTO, 59.940",
+    "BB, HIGH_720P, 59.940",
+    "BB, ORIGINAL, 59.940",
+    "PROGRESSIVE, HIGH_720P, 29.970"
+  })
+  @DisplayName(
+      "Should give every encoded variant the encode's output frame rate as FRAME-RATE when the"
+          + " source is 30i or progressive 29.97")
+  void
+      shouldGiveEveryEncodedVariantTheEncodesOutputFrameRateAsFrameRateWhenTheSourceIs30iOrProgressive2997(
+          FieldOrder fieldOrder, VideoQuality quality, String frameRate) {
+    probeResults.setDefaultOutcome(outcomeWithFieldOrder(fieldOrder));
+
+    var session = accepted(service.createSession(interlacedSourceCommand(quality)));
+    var playlist =
+        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
+    assertThat(playlist.lines().filter(line -> line.startsWith("#EXT-X-STREAM-INF:")))
+        .hasSize(session.getVariants().size())
+        .isNotEmpty()
+        .allSatisfy(
+            line ->
+                assertThat(line)
+                    .containsPattern(",FRAME-RATE=" + Pattern.quote(frameRate) + "(,|$)"));
   }
 
   // ADR 0052: Original encodes a source that it cannot copy, and that encode plays Auto's ladder
@@ -2648,7 +2684,7 @@ class HlsStreamingServiceTest {
   void
       shouldReportMissingCapacityInsteadOfNoEligibleFormatWhenAutoOrOriginalMustEncodeAnInterlacedSourceAndEveryEncoderIsBusy(
           VideoQuality quality) {
-    probeResults.setDefaultOutcome(interlacedOutcome(FieldOrder.TT));
+    probeResults.setDefaultOutcome(outcomeWithFieldOrder(FieldOrder.TT));
     transcodeExecutor.setEncodeSlots(Map.of("h264", 0));
 
     var outcome = service.createSession(interlacedSourceCommand(quality));
@@ -2689,7 +2725,7 @@ class HlsStreamingServiceTest {
       "Should encode an interlaced source in the codec whose entry keeps the field rate when another"
           + " entry caps it")
   void shouldEncodeAnInterlacedSourceInTheCodecWhoseEntryKeepsTheFieldRateWhenAnotherEntryCapsIt() {
-    probeResults.setDefaultOutcome(interlacedOutcome(FieldOrder.TT));
+    probeResults.setDefaultOutcome(outcomeWithFieldOrder(FieldOrder.TT));
     transcodeExecutor.setHardwareEncodableVideoCodecFamilies(Set.of("av1"));
     var declaration =
         defaultDeclarationBuilder()
@@ -4518,7 +4554,7 @@ class HlsStreamingServiceTest {
   }
 
   // A 29.97 fps H.264 outcome that meets the copy rule apart from its field order.
-  private static ProbeOutcome.Success interlacedOutcome(FieldOrder fieldOrder) {
+  private static ProbeOutcome.Success outcomeWithFieldOrder(FieldOrder fieldOrder) {
     return outcomeWithFrameRateRule(
         VideoPlaybackFactsFixture.interlacedRateRule(new Fraction(30_000, 1_001), fieldOrder));
   }
@@ -5305,7 +5341,7 @@ class HlsStreamingServiceTest {
   @Test
   @DisplayName("Should start direct play without a connected worker when Original covers the file")
   void shouldStartDirectPlayWithoutAConnectedWorkerWhenOriginalCoversTheFile() {
-    probeResults.setDefaultProbe(directPlayableProbe());
+    probeResults.setDefaultProbe(directPlayableProbeBuilder().build());
     transcodeExecutor.setHealthy(false);
     var file = seedMediaFile();
 
@@ -5322,7 +5358,7 @@ class HlsStreamingServiceTest {
   @Test
   @DisplayName("Should start HLS when the format attempt may not direct-play")
   void shouldStartHlsWhenTheFormatAttemptMayNotDirectPlay() {
-    probeResults.setDefaultProbe(directPlayableProbe());
+    probeResults.setDefaultProbe(directPlayableProbeBuilder().build());
     var file = seedMediaFile();
 
     var session =
@@ -5337,9 +5373,41 @@ class HlsStreamingServiceTest {
   }
 
   @Test
+  @DisplayName("Should name why Original plays over HLS when the declaration omits the container")
+  void shouldNameWhyOriginalPlaysOverHlsWhenTheDeclarationOmitsTheContainer() {
+    probeResults.setDefaultProbe(
+        directPlayableProbeBuilder().containerFormat(Optional.of("mpegts")).build());
+    var file = seedMediaFile();
+
+    var session = accepted(service.createSession(directPlayCommand(file.getId()).build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.HLS);
+    assertThat(session.getTranscodeDecision().reasons())
+        .first()
+        .isEqualTo(DecisionReason.DIRECT_PLAY_CONTAINER_NOT_DECLARED);
+  }
+
+  @Test
+  @DisplayName("Should name no reason when the format attempt may not direct-play")
+  void shouldNameNoReasonWhenTheFormatAttemptMayNotDirectPlay() {
+    probeResults.setDefaultProbe(
+        directPlayableProbeBuilder().containerFormat(Optional.of("mpegts")).build());
+    var file = seedMediaFile();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(file.getId())
+                    .videoFormatConstraint(VideoFormatConstraint.COPY_OR_ENCODE)
+                    .build()));
+
+    assertThat(session.getTranscodeDecision().reasons()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should take no transcode place for an open direct-play session")
   void shouldTakeNoTranscodePlaceForAnOpenDirectPlaySession() {
-    probeResults.setDefaultProbe(directPlayableProbe());
+    probeResults.setDefaultProbe(directPlayableProbeBuilder().build());
     accepted(service.createSession(directPlayCommand(seedMediaFile().getId()).build()));
 
     for (int i = 0; i < streamingProperties().maxConcurrentTranscodes(); i++) {
@@ -5354,7 +5422,7 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(3);
   }
 
-  private static MediaProbe directPlayableProbe() {
+  private static MediaProbe.MediaProbeBuilder directPlayableProbeBuilder() {
     var facts =
         VideoPlaybackFactsFixture.sdrH264FactsBuilder()
             .streamIndex(0)
@@ -5364,8 +5432,7 @@ class HlsStreamingServiceTest {
     return defaultProbeBuilder()
         .containerFormat(Optional.of("matroska,webm"))
         .audioChannels(OptionalInt.of(2))
-        .videoPlaybackFacts(Optional.of(facts))
-        .build();
+        .videoPlaybackFacts(Optional.of(facts));
   }
 
   private static ClientCapabilityDeclaration directPlayDeclaration() {
@@ -5385,6 +5452,124 @@ class HlsStreamingServiceTest {
         .options(StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build())
         .capabilityDeclaration(directPlayDeclaration())
         .videoFormatConstraint(VideoFormatConstraint.DIRECT_PLAY_OR_COPY_OR_ENCODE);
+  }
+
+  // A copy's segment opens at its keyframe, so a position before the keyframe that opens segment 1
+  // still lies in segment 0.
+  @ParameterizedTest
+  @CsvSource({"0, 0", "6499, 0", "6500, 1", "13000, 2", "23999, 3"})
+  @DisplayName("Should start the copy at the segment that holds the start position")
+  void shouldStartTheCopyAtTheSegmentThatHoldsTheStartPosition(
+      long startMillis, int expectedSegment) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .duration(Duration.ofSeconds(24))
+            .keyframes(keyframesAtMillis(0, 6_500, 12_000, 18_000))
+            .build());
+    var command =
+        createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+            .startPosition(Optional.of(Duration.ofMillis(startMillis)))
+            .build();
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(session.getStartPosition()).contains(Duration.ofMillis(startMillis));
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(TranscodeRequest::startSequenceNumber)
+        .isEqualTo(expectedSegment);
+  }
+
+  @Test
+  @DisplayName(
+      "Should start only the first-listed variant at the segment that holds the start position when"
+          + " the session encodes")
+  void
+      shouldStartOnlyTheFirstListedVariantAtTheSegmentThatHoldsTheStartPositionWhenTheSessionEncodes() {
+    var command =
+        createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+            .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+            .startPosition(Optional.of(Duration.ofMillis(5_381_500)))
+            .build();
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getVariants()).hasSizeGreaterThan(1);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.variantLabel())
+                  .isEqualTo(session.getVariants().getFirst().label());
+              assertThat(request.startSequenceNumber()).isEqualTo(896);
+              assertThat(request.seekPosition()).isEqualTo(5_376);
+            });
+    assertThat(
+            new HlsPlaylistService(streamingProperties())
+                .generateMultivariantPlaylist(session, "token"))
+        .contains("#EXT-X-START:TIME-OFFSET=5381.5,PRECISE=YES\n");
+  }
+
+  @Test
+  @DisplayName("Should start at segment 0 and mark no start when the command has no start position")
+  void shouldStartAtSegment0AndMarkNoStartWhenTheCommandHasNoStartPosition() {
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getStartPosition()).isEmpty();
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(TranscodeRequest::startSequenceNumber)
+        .isEqualTo(0);
+    assertThat(
+            new HlsPlaylistService(streamingProperties())
+                .generateMultivariantPlaylist(session, "token"))
+        .doesNotContain("#EXT-X-START");
+  }
+
+  @ParameterizedTest
+  @ValueSource(longs = {-1, 7_200_000, 7_200_001})
+  @DisplayName("Should refuse a start position before zero or at or past the media's end")
+  void shouldRefuseAStartPositionBeforeZeroOrAtOrPastTheMediasEnd(long startMillis) {
+    var command =
+        createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+            .startPosition(Optional.of(Duration.ofMillis(startMillis)))
+            .build();
+
+    var outcome = service.createSession(command);
+
+    assertThat(rejectionOf(outcome))
+        .isEqualTo(new CreateStreamSessionRejection.StartPositionOutOfRange());
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+    assertThat(runtimeRegistry.findById(command.streamSessionId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should refuse a start position before zero when the media file does not exist")
+  void shouldRefuseAStartPositionBeforeZeroWhenTheMediaFileDoesNotExist() {
+    var command =
+        createStreamSessionCommandBuilder(UUID.randomUUID(), UUID.randomUUID())
+            .startPosition(Optional.of(Duration.ofNanos(-1)))
+            .build();
+
+    assertThat(rejectionOf(service.createSession(command)))
+        .isEqualTo(new CreateStreamSessionRejection.StartPositionOutOfRange());
+  }
+
+  @Test
+  @DisplayName("Should carry the start position in a direct-play session")
+  void shouldCarryTheStartPositionInADirectPlaySession() {
+    probeResults.setDefaultProbe(directPlayableProbeBuilder().build());
+    var command =
+        directPlayCommand(seedMediaFile().getId())
+            .startPosition(Optional.of(Duration.ofMillis(5_381_500)))
+            .build();
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
+    assertThat(session.getStartPosition()).contains(Duration.ofMillis(5_381_500));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
 
   @Test

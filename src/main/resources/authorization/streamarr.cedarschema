@@ -122,6 +122,11 @@ namespace Streamarr {
     resource: Profile,
     context: {},
   };
+  action setLanguagePreferences appliesTo {
+    principal: Account,
+    resource: Profile,
+    context: {},
+  };
   action viewProfileActivity appliesTo {
     principal: Account,
     resource: Profile,

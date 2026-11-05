@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.DecimalSeconds;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionOutput;
 import com.streamarr.server.domain.streaming.EncodedVideoOutput;
@@ -45,6 +46,7 @@ public class HlsPlaylistService {
       sb.append(INDEPENDENT_SEGMENTS_TAG);
     }
 
+    appendStart(sb, session);
     if (hasAudio) {
       appendAudioRendition(sb, audio.channels());
     }
@@ -76,6 +78,19 @@ public class HlsPlaylistService {
     }
 
     return sb.toString();
+  }
+
+  // RFC 8216bis section 4.4.2.2: the player starts at the start position, in the segment that holds
+  // it, and renders nothing that presents before it. The multivariant playlist carries the tag, so
+  // no media playlist repeats it.
+  private static void appendStart(StringBuilder sb, StreamSession session) {
+    session
+        .getStartPosition()
+        .ifPresent(
+            start ->
+                sb.append("#EXT-X-START:TIME-OFFSET=")
+                    .append(DecimalSeconds.of(start).stripTrailingZeros().toPlainString())
+                    .append(",PRECISE=YES\n"));
   }
 
   // A measured copy advertises its measured peak. An unmeasured copy, like an encoded variant, adds

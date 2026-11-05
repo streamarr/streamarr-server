@@ -51,6 +51,18 @@ class MediaSegmentTimelineTest {
     assertThat(timeline.mediaSegmentDuration(20)).isEqualTo(Duration.ofMillis(5_500));
   }
 
+  // The grid counts whole milliseconds, so a position in the media's last fraction of a millisecond
+  // still lies in the last segment.
+  @ParameterizedTest
+  @CsvSource({"PT0S, 0", "PT5.999S, 0", "PT6S, 1", "PT2M0.0004S, 20", "PT2M5.5004S, 20"})
+  @DisplayName("Should find the media segment that holds a position on the timeline")
+  void shouldFindTheMediaSegmentThatHoldsAPositionOnTheTimeline(
+      Duration position, int expectedIndex) {
+    var timeline = new MediaSegmentTimeline.PlainGrid(Duration.parse("PT2M5.5009S"), SIX_SECONDS);
+
+    assertThat(timeline.mediaSegmentIndexAt(position)).isEqualTo(expectedIndex);
+  }
+
   @Test
   @DisplayName("Should start each media segment on the zero-based grid when locating it")
   void shouldStartEachMediaSegmentOnTheZeroBasedGridWhenLocatingIt() {
