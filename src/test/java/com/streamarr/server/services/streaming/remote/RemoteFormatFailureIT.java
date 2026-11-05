@@ -425,7 +425,7 @@ class RemoteFormatFailureIT {
     try (var rig = new FailureRig(events, mergedPlainGridEncodeSession());
         var worker = new TestWorker(rig.server);
         var tasks = Executors.newVirtualThreadPerTaskExecutor()) {
-      rig.streaming.lifecycle().startFirstListedVariant(rig.session);
+      rig.streaming.lifecycle().startListedVariant(rig.session, rig.session.firstListedVariant());
       var failed = worker.nextJob();
       worker.fail(failed, JobAttemptFailure.JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED);
       rig.awaitStopped();

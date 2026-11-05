@@ -151,7 +151,7 @@ class EncoderPresetDispatchIT extends AbstractIntegrationTest {
             .transcodeDecision(fullTranscodeDecision("h264"))
             .build();
     registry.save(session);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     return session;
   }
 }
