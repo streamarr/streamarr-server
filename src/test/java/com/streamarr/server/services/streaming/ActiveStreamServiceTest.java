@@ -5,17 +5,23 @@ import static com.streamarr.server.fixtures.PlaybackSessionFixture.playbackReque
 import static com.streamarr.server.fixtures.PlaybackSessionFixture.playbackServiceBuilder;
 import static com.streamarr.server.fixtures.PlaybackSessionFixture.startPlaybackBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.defaultVariantBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.MediaTimeRange;
 import com.streamarr.server.domain.streaming.PlaybackState;
+import com.streamarr.server.domain.streaming.QualityVariant;
+import com.streamarr.server.domain.streaming.SourceContainer;
+import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
@@ -26,9 +32,13 @@ import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
+import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
+import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -44,13 +54,23 @@ class ActiveStreamServiceTest {
 
   private static final ExecutionTargetId WORKER = new ExecutionTargetId("worker-session-1");
 
-  private final FakeCreatingStreamingService streams = new FakeCreatingStreamingService();
+  private final FakeRuntimeStreamSessionRegistry registry = new FakeRuntimeStreamSessionRegistry();
+  private final FakeCreatingStreamingService streams = new FakeCreatingStreamingService(registry);
   private final ConcurrentLinkedQueue<Runnable> formatAttemptStarts = new ConcurrentLinkedQueue<>();
   private final PlaybackSessionService playbackSessions =
       playbackServiceBuilder(streams).executor(formatAttemptStarts::add).build();
   private final FakeAuthorizationService authorization =
       new FakeAuthorizationService(identityFor(defaultPlaybackAuthorityBuilder().build()));
   private final FakeTranscodeExecutor executor = new FakeTranscodeExecutor();
+  private final FakeSegmentStore segments = new FakeSegmentStore();
+  private final ProducerLifecycleService producerLifecycle =
+      StreamingRigFixture.streamingRigBuilder()
+          .transcodeExecutor(executor)
+          .segmentStore(segments)
+          .properties(StreamingProperties.builder().build())
+          .runtimeRegistry(registry)
+          .build()
+          .lifecycle();
   private final FakeProfileRepository profiles = new FakeProfileRepository();
   private final FakeAuthSessionRepository authSessions = new FakeAuthSessionRepository();
   private final FakeMediaFileRepository mediaFiles = new FakeMediaFileRepository();
@@ -61,6 +81,7 @@ class ActiveStreamServiceTest {
           .authorizationService(authorization)
           .playbackSessions(playbackSessions)
           .transcodeExecutor(executor)
+          .producerLifecycle(producerLifecycle)
           .profileRepository(profiles)
           .authSessionRepository(authSessions)
           .mediaFileRepository(mediaFiles)
@@ -167,9 +188,9 @@ class ActiveStreamServiceTest {
 
   @Test
   @DisplayName(
-      "Should describe a stream with its media but without timeline, decision or worker while its"
-          + " format attempt prepares")
-  void shouldDescribeAStreamWithItsMediaButWithoutTimelineDecisionOrWorkerWhileItPrepares() {
+      "Should describe a stream with its media but without timeline, decision, produced range or"
+          + " worker while its format attempt prepares")
+  void shouldDescribeAStreamWithItsMediaButWithoutTimelineDecisionRangeOrWorkerWhileItPrepares() {
     var movie = movies.save(Movie.builder().build());
     var command = startPlaybackBuilder().mediaFileId(matchedFile(movie.getId())).build();
     var snapshot = acceptedPlayback(playbackSessions.start(command));
@@ -189,6 +210,7 @@ class ActiveStreamServiceTest {
               assertThat(preparing.media()).containsSame(movie);
               assertThat(preparing.timeline()).isEmpty();
               assertThat(preparing.decision()).isEmpty();
+              assertThat(preparing.producedRange()).isEmpty();
               assertThat(preparing.workers()).isEmpty();
             });
   }
@@ -216,6 +238,75 @@ class ActiveStreamServiceTest {
         .containsExactly(playing.playbackSessionId());
     assertThat(service.activeStream(endedSnapshot.playbackSessionId())).isEmpty();
     assertThat(service.activeStream(failing.playbackSessionId())).isEmpty();
+  }
+
+  // The default probe's keyframes open every 6 s slot, so media segment N covers [6N, 6N + 6) s.
+  @Test
+  @DisplayName(
+      "Should report the run of produced media segments that holds the position as the produced"
+          + " range when the stream plays HLS")
+  void shouldReportTheRunOfProducedMediaSegmentsThatHoldsThePositionWhenTheStreamPlaysHls() {
+    var snapshot = acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
+    var session = readySession(snapshot);
+    session.updatePlaybackState(40, PlaybackState.PLAYING);
+    store(session, StreamSession.defaultVariant(), 0, 1, 4, 5, 6, 7, 9);
+
+    var stream = service.activeStream(snapshot.playbackSessionId());
+
+    assertThat(stream)
+        .hasValueSatisfying(
+            playing -> assertThat(playing.producedRange()).contains(rangeOf(24, 48)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should report no produced range when no produced media segment holds the stream's position")
+  void shouldReportNoProducedRangeWhenNoProducedMediaSegmentHoldsTheStreamsPosition() {
+    var snapshot = acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
+    var session = readySession(snapshot);
+    session.updatePlaybackState(40, PlaybackState.PLAYING);
+    store(session, StreamSession.defaultVariant(), 0, 1, 2, 3, 5, 7);
+
+    var stream = service.activeStream(snapshot.playbackSessionId());
+
+    assertThat(stream).hasValueSatisfying(playing -> assertThat(playing.producedRange()).isEmpty());
+  }
+
+  @Test
+  @DisplayName("Should report no produced range when the stream plays directly")
+  void shouldReportNoProducedRangeWhenTheStreamPlaysDirectly() {
+    streams.shapeSessions(
+        session ->
+            session.delivery(StreamDelivery.DIRECT_PLAY).sourceContainer(SourceContainer.MP4));
+    var snapshot = acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
+    var session = readySession(snapshot);
+    session.updatePlaybackState(40, PlaybackState.PLAYING);
+    store(session, StreamSession.defaultVariant(), 6);
+
+    var stream = service.activeStream(snapshot.playbackSessionId());
+
+    assertThat(stream).hasValueSatisfying(playing -> assertThat(playing.producedRange()).isEmpty());
+  }
+
+  @Test
+  @DisplayName(
+      "Should report the produced range of the variant whose media segment the player requested"
+          + " last, and of the first listed variant before any request")
+  void shouldReportTheProducedRangeOfTheVariantWhoseMediaSegmentThePlayerRequestedLast() {
+    streams.shapeSessions(session -> session.variants(List.of(variant("1080p"), variant("720p"))));
+    var snapshot = acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
+    var session = readySession(snapshot);
+    session.updatePlaybackState(40, PlaybackState.PLAYING);
+    store(session, "1080p", 6);
+    store(session, "720p", 4, 5, 6, 7, 8);
+
+    var beforeAnyRequest = service.activeStream(snapshot.playbackSessionId()).orElseThrow();
+    producerLifecycle.prepareRequestedVariant(
+        session.getSessionId(), "720p", SegmentNames.mediaSegmentName(6));
+    var afterTheRequest = service.activeStream(snapshot.playbackSessionId()).orElseThrow();
+
+    assertThat(beforeAnyRequest.producedRange()).contains(rangeOf(36, 42));
+    assertThat(afterTheRequest.producedRange()).contains(rangeOf(24, 54));
   }
 
   private UUID matchedFile(UUID mediaId) {
@@ -253,5 +344,27 @@ class ActiveStreamServiceTest {
                 .build(),
             target);
     session.setHandle(handle);
+  }
+
+  private void store(StreamSession session, String variantLabel, int... mediaSegmentIndexes) {
+    for (var index : mediaSegmentIndexes) {
+      segments.storeSegment(
+          session.getSessionId(),
+          SegmentNames.storedSegmentName(variantLabel, SegmentNames.mediaSegmentName(index)),
+          new byte[] {1});
+    }
+  }
+
+  private static MediaTimeRange rangeOf(int startSeconds, int endSeconds) {
+    return new MediaTimeRange(Duration.ofSeconds(startSeconds), Duration.ofSeconds(endSeconds));
+  }
+
+  private static QualityVariant variant(String label) {
+    return defaultVariantBuilder()
+        .width(1280)
+        .height(720)
+        .videoBitrate(3_000_000L)
+        .label(label)
+        .build();
   }
 }

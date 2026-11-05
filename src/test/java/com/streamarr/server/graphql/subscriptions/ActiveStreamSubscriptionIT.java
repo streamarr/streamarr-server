@@ -32,6 +32,8 @@ import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
 import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
+import com.streamarr.server.services.streaming.SegmentNames;
+import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.support.ActiveSubscriptions;
 import com.streamarr.server.support.AuthTestSupport;
@@ -101,6 +103,12 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
       subscription { activeStreamsChanged { playbackSessionId activeStream { %s } } }
       """
           .formatted(MEDIA);
+  private static final String PRODUCED_RANGE = "producedRange { startSeconds endSeconds }";
+  private static final String PRODUCED_RANGE_SUBSCRIPTION =
+      """
+      subscription { activeStreamsChanged { playbackSessionId activeStream { %s } } }
+      """
+          .formatted(PRODUCED_RANGE);
   private static final String CAPABILITIES =
       """
       {video: [{codecFamily: H264, codecProfiles: [{profile: H264_HIGH, maxLevel: 41}], \
@@ -121,10 +129,12 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
   @Autowired private ImageRepository imageRepository;
   @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private DataSource dataSource;
+  @Autowired private SegmentStore segmentStore;
 
   private final List<AuthTestSupport.TestIdentity> identities = new ArrayList<>();
   private final List<GraphQlTransportWsTestClient> sockets = new ArrayList<>();
   private final List<String> openPlaybacks = new ArrayList<>();
+  private final List<UUID> streamsWithSegments = new ArrayList<>();
   private ActiveSubscriptions activeSubscriptions;
   private GraphQlHttpTestClient http;
   private AuthTestSupport.TestIdentity viewer;
@@ -200,6 +210,7 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
   void releaseResources() {
     var viewerBearer = authTestSupport.profileBearer(viewer);
     openPlaybacks.forEach(id -> http.execute(viewerBearer, destroyMutation(id)));
+    streamsWithSegments.forEach(segmentStore::deleteSession);
     sockets.forEach(GraphQlTransportWsTestClient::close);
     http.close();
     activeSubscriptions.awaitNoneActive();
@@ -246,6 +257,61 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
         .singleElement()
         .satisfies(stream -> assertThat(stream.path("state").asString()).isEqualTo("PAUSED"));
     assertThat(ended.path("activeStream").isNull()).isTrue();
+  }
+
+  // The default probe's keyframes open every 6 s slot, so media segment N covers [6N, 6N + 6) s.
+  @Test
+  @DisplayName(
+      "Should deliver and list the run of produced media segments around a stream's position when"
+          + " a ServerAdmin subscribes and queries")
+  void shouldDeliverAndListTheProducedRangeAroundAStreamsPositionWhenAServerAdminSubscribes() {
+    var admin = adminBearer();
+    var socket = connect(admin);
+    socket.subscribe("streams", PRODUCED_RANGE_SUBSCRIPTION);
+    activeSubscriptions.awaitCount(FIELD, 1);
+    var viewerBearer = authTestSupport.profileBearer(viewer);
+    var created = http.execute(viewerBearer, createMutation(savedMovieFile()));
+    var playback = created.path("data").path("createPlaybackSession").path("playbackSession");
+    var playbackId = playback.path("id").asString();
+    openPlaybacks.add(playbackId);
+    var started = nextChange(socket, playbackId).path("activeStream");
+    var streamId =
+        playback.path("currentFormatAttempt").path("streamSession").path("id").asString();
+    storeMediaSegments(UUID.fromString(streamId), 0, 4, 5, 6, 7, 9);
+
+    http.execute(viewerBearer, timelineMutation(streamId, 40, "PLAYING"));
+    var playing = nextChange(socket, playbackId).path("activeStream");
+    var listed =
+        http.execute(
+            admin, "query { activeStreams { playbackSessionId %s } }".formatted(PRODUCED_RANGE));
+
+    assertThat(started.path("producedRange").isNull()).as("range before any segment").isTrue();
+    assertProducedRange("subscription", playing.path("producedRange"), 24, 48);
+    var listedStream =
+        listed
+            .path("data")
+            .path("activeStreams")
+            .valueStream()
+            .filter(stream -> playbackId.equals(stream.path("playbackSessionId").asString()))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("activeStreams does not list " + playbackId));
+    assertProducedRange("query", listedStream.path("producedRange"), 24, 48);
+  }
+
+  private static void assertProducedRange(
+      String source, JsonNode range, double startSeconds, double endSeconds) {
+    assertThat(range.path("startSeconds").asDouble())
+        .as("%s start", source)
+        .isEqualTo(startSeconds);
+    assertThat(range.path("endSeconds").asDouble()).as("%s end", source).isEqualTo(endSeconds);
+  }
+
+  private void storeMediaSegments(UUID streamSessionId, int... mediaSegmentIndexes) {
+    streamsWithSegments.add(streamSessionId);
+    for (var index : mediaSegmentIndexes) {
+      segmentStore.storeSegment(
+          streamSessionId, SegmentNames.mediaSegmentName(index), new byte[] {1});
+    }
   }
 
   @Test

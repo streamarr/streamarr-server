@@ -9,9 +9,9 @@ extend type Query {
 
 extend type Subscription {
     """
-    An active stream started, changed its format attempt, playing state or position, or ended. Delivers the
-    stream as the server reads it after the change, with activeStream null once it ended or failed. Requires a
-    ServerAdmin. Every other caller gets FORBIDDEN, and so does a ServerAdmin's device-bound session.
+    An active stream started, changed its format attempt, playing state, position or produced range, or ended.
+    Delivers the stream as the server reads it after the change, with activeStream null once it ended or failed.
+    Requires a ServerAdmin. Every other caller gets FORBIDDEN, and so does a ServerAdmin's device-bound session.
 
     To build current state, subscribe first, then query activeStreams, and apply each change by
     playbackSessionId. One stream's changes arrive in the order they happened. A client may miss an
@@ -51,6 +51,18 @@ type ActiveStream {
     Null while the format attempt prepares.
     """
     decision: PlaybackDecision
+    """
+    The stretch of the media title that the current format attempt has produced as media segments, around the
+    stream's current position. Null for direct play, while the format attempt prepares, and before any segment
+    around the position exists.
+
+    The range runs from the start of the first to the end of the last media segment of the unbroken run of
+    produced segments that holds positionSeconds. After a seek it shows the run at the new position, not the
+    furthest segment ever produced. When the stream has several variants, the range describes the variant whose
+    media segment the player requested last. Before the player requests one, it describes the variant that the
+    multivariant playlist lists first.
+    """
+    producedRange: MediaTimeRange
     "The worker connection that runs each running job of the stream, by its worker session id."
     workers: [String!]!
 }

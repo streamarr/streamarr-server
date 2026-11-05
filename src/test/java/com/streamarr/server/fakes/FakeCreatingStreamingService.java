@@ -18,11 +18,13 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.UnaryOperator;
 
 public final class FakeCreatingStreamingService implements StreamingService {
   private final FakeStreamingService streams;
   private Runnable beforeNextDestroy = () -> {};
   private Runnable afterNextSnapshot = () -> {};
+  private UnaryOperator<StreamSession.StreamSessionBuilder> sessionShape = UnaryOperator.identity();
   private final Set<UUID> failingDestructions = ConcurrentHashMap.newKeySet();
 
   public FakeCreatingStreamingService() {
@@ -45,6 +47,11 @@ public final class FakeCreatingStreamingService implements StreamingService {
     failingDestructions.add(sessionId);
   }
 
+  /** Changes every stream session that this service creates from now on. */
+  public void shapeSessions(UnaryOperator<StreamSession.StreamSessionBuilder> shape) {
+    sessionShape = shape;
+  }
+
   public void addSession(StreamSession session) {
     streams.addSession(session);
   }
@@ -53,15 +60,17 @@ public final class FakeCreatingStreamingService implements StreamingService {
   public Outcome<StreamSession, CreateStreamSessionRejection> createSession(
       CreateStreamSessionCommand command) {
     var session =
-        defaultSessionBuilder()
-            .sessionId(command.streamSessionId())
-            .mediaFileId(command.mediaFileId())
-            .authority(command.identity().playbackAuthority())
-            .options(command.options())
-            .transcodeDecision(
-                command.videoFormatConstraint() == VideoFormatConstraint.ENCODE_ONLY
-                    ? fullTranscodeDecision("h264")
-                    : remuxDecision())
+        sessionShape
+            .apply(
+                defaultSessionBuilder()
+                    .sessionId(command.streamSessionId())
+                    .mediaFileId(command.mediaFileId())
+                    .authority(command.identity().playbackAuthority())
+                    .options(command.options())
+                    .transcodeDecision(
+                        command.videoFormatConstraint() == VideoFormatConstraint.ENCODE_ONLY
+                            ? fullTranscodeDecision("h264")
+                            : remuxDecision()))
             .build();
     streams.addSession(session);
     return Outcome.accepted(session);
