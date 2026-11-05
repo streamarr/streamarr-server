@@ -13,17 +13,17 @@ import org.junit.jupiter.api.Test;
 import reactor.core.scheduler.Scheduler;
 
 @Tag("UnitTest")
-@DisplayName("GraphQL Subscription Configuration Tests")
-class GraphQlSubscriptionConfigurationTest {
+@DisplayName("Subscription Delivery Threads Tests")
+class SubscriptionDeliveryThreadsTest {
 
   private static final long BOUND_SECONDS = 10;
 
-  private final Scheduler deliveryScheduler =
-      new GraphQlSubscriptionConfiguration().graphQlSubscriptionDeliveryScheduler();
+  private final SubscriptionDeliveryThreads deliveryThreads = new SubscriptionDeliveryThreads();
+  private final Scheduler deliveryScheduler = deliveryThreads.scheduler();
 
   @AfterEach
-  void disposeScheduler() {
-    deliveryScheduler.dispose();
+  void closeDeliveryThreads() {
+    deliveryThreads.close();
   }
 
   @Test
