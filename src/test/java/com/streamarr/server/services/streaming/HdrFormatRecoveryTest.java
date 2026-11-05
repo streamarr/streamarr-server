@@ -101,6 +101,7 @@ class HdrFormatRecoveryTest {
     workers.setVideoCopySupportByWorker(List.of(workerWithRewrites(BitstreamRewrite.values())));
     playback =
         PlaybackSessionService.builder()
+            .eventPublisher(_ -> {})
             .streamingService(streaming())
             .authorityGate(new FakePlaybackAuthorityGate())
             .executor(Runnable::run)
