@@ -8,6 +8,7 @@ import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.JobAttemptProgressListener;
 import com.streamarr.server.services.streaming.PlaybackAuthorityGate;
+import com.streamarr.server.services.streaming.PlaybackLanguagePreferences;
 import com.streamarr.server.services.streaming.PlaybackProbeService;
 import com.streamarr.server.services.streaming.PlaybackSessionService;
 import com.streamarr.server.services.streaming.ProducerLifecycleService;
@@ -119,7 +120,8 @@ public class StreamingConfig {
       RuntimeStreamSessionRegistry runtimeRegistry,
       ProducerLifecycleService producerLifecycleService,
       SegmentDeliveryCoordinator segmentDeliveryCoordinator,
-      MeterRegistry meterRegistry) {
+      MeterRegistry meterRegistry,
+      PlaybackLanguagePreferences languagePreferences) {
     return HlsStreamingService.builder()
         .mediaFileRepository(mediaFileRepository)
         .transcodeExecutor(transcodeExecutor)
@@ -133,6 +135,7 @@ public class StreamingConfig {
         .producerLifecycle(producerLifecycleService)
         .deliveryCoordinator(segmentDeliveryCoordinator)
         .meterRegistry(meterRegistry)
+        .languagePreferences(languagePreferences)
         .build();
   }
 }
