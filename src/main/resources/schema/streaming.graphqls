@@ -11,6 +11,20 @@ interface StreamSession {
     playback starts at the beginning of the media.
     """
     startPositionSeconds: Float
+    "Whether the stream session counts against the upload budget now, and why it does not."
+    uploadBudgetUse: UploadBudgetUse!
+}
+
+"Whether a stream session counts against the upload budget, and why it does not."
+enum UploadBudgetUse {
+    "The stream session is active, its client reached the server over the internet, and it counts."
+    COUNTED
+    "The client attested that it reached the server over the local network, so the stream session never counts."
+    LOCAL_NETWORK_ATTESTED
+    "No ServerAdmin has set an internet upload speed, so no stream session counts."
+    BUDGET_OFF
+    "The stream session is suspended and sends nothing."
+    SUSPENDED
 }
 
 """
@@ -39,6 +53,7 @@ type DirectPlayStreamSession implements StreamSession {
     file has no audio track.
     """
     audioTrackPosition: Int
+    uploadBudgetUse: UploadBudgetUse!
     """
     The file's audio tracks in stream order, so that a player that cannot list them offers them (ADR 0045).
     Empty when the file has no audio track.
@@ -79,6 +94,7 @@ type HlsStreamSession implements StreamSession {
     media.
     """
     startPositionSeconds: Float
+    uploadBudgetUse: UploadBudgetUse!
 }
 
 "The dynamic range of a stream session's video, as an HLS playlist's VIDEO-RANGE attribute names it."

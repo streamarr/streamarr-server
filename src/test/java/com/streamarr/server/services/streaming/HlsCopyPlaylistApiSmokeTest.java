@@ -29,6 +29,7 @@ import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.PlaybackSessionFixture;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.properties.RemoteTranscodeProperties;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -167,6 +168,7 @@ class HlsCopyPlaylistApiSmokeTest {
     streamingService =
         HlsStreamingService.builder()
             .languagePreferences(noLanguagePreferences())
+            .uploadBudget(UploadBudgetFixture.OFF)
             .meterRegistry(new SimpleMeterRegistry())
             .mediaFileRepository(mediaFiles)
             .transcodeExecutor(transcodeExecutor)
@@ -187,7 +189,7 @@ class HlsCopyPlaylistApiSmokeTest {
         MockMvcBuilders.standaloneSetup(
                 new StreamController(
                     streamingService,
-                    new HlsPlaylistService(properties),
+                    new HlsPlaylistService(properties, UploadBudgetFixture.OFF),
                     rig.coordinator(),
                     new FakeAuthorizationService(this::playbackIdentity, TOKEN),
                     new DirectPlaySourceService(

@@ -25,6 +25,7 @@ import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.LoopbackProbeWorker;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -212,6 +213,7 @@ class LibraryScanProbeCapacityIT extends AbstractScanningIntegrationTest {
     var streamingService =
         HlsStreamingService.builder()
             .languagePreferences(noLanguagePreferences())
+            .uploadBudget(UploadBudgetFixture.OFF)
             .meterRegistry(new SimpleMeterRegistry())
             .mediaFileRepository(mediaFiles)
             .transcodeExecutor(transcodeExecutor)

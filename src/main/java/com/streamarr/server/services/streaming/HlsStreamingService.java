@@ -54,6 +54,7 @@ public class HlsStreamingService implements StreamingService {
   private final RuntimeStreamSessionRegistry runtimeRegistry;
   private final ProducerLifecycleService producerLifecycle;
   private final SegmentDeliveryCoordinator deliveryCoordinator;
+  private final UploadBudget uploadBudget;
   private final MeterRegistry meterRegistry;
   private final PlaybackLanguagePreferences languagePreferences;
 
@@ -214,12 +215,13 @@ public class HlsStreamingService implements StreamingService {
             .variants(variants)
             .startPosition(command.startPosition().orElse(null))
             .createdAt(now)
+            .networkRoute(command.networkRoute())
             .build();
     startAtTheStartSegment(session);
 
     try {
       runtimeRegistry.save(session);
-      session = producerLifecycle.startFirstListedVariant(session);
+      session = startUnlessWithheld(session);
     } catch (TranscodeLimitReachedException _) {
       // Another start took the last place under the transcode limit after this admission, so no
       // job attempt of this stream session was dispatched.
@@ -252,6 +254,16 @@ public class HlsStreamingService implements StreamingService {
     session.setCurrentSegment(timeline.mediaSegmentIndexAt(startPosition.get()));
   }
 
+  // A variant that the upload budget leaves out of the playlist would run for no player, so the top
+  // variant that stays starts when the server serves the playlist instead (ADR 0050).
+  private StreamSession startUnlessWithheld(StreamSession session) {
+    if (uploadBudget.isWithheldFromPlaylist(session, session.firstListedVariant())) {
+      return session;
+    }
+
+    return producerLifecycle.startFirstListedVariant(session);
+  }
+
   // A direct-play stream session starts no job attempt, so it has no transcode decision, producer
   // or segments.
   private static StreamSession.StreamSessionBuilder directPlaySession(
@@ -264,6 +276,7 @@ public class HlsStreamingService implements StreamingService {
         .mediaProbe(probe)
         .options(command.options())
         .startPosition(command.startPosition().orElse(null))
+        .networkRoute(command.networkRoute())
         .createdAt(Instant.now())
         .delivery(StreamDelivery.DIRECT_PLAY);
   }

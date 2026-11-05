@@ -23,6 +23,7 @@ import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.mutation.Outcome;
@@ -116,6 +117,7 @@ class TranscodeLimitRaceTest {
     service =
         HlsStreamingService.builder()
             .languagePreferences(noLanguagePreferences())
+            .uploadBudget(UploadBudgetFixture.OFF)
             .mediaFileRepository(mediaFileRepository)
             .transcodeExecutor(transcodeExecutor)
             .segmentStore(segmentStore)

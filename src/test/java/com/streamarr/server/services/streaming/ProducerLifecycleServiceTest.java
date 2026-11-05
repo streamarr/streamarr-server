@@ -50,6 +50,7 @@ import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -167,7 +168,8 @@ class ProducerLifecycleServiceTest {
                         .build()))
             .build();
     runtimeRegistry.save(session);
-    var playlists = new HlsPlaylistService(StreamingProperties.builder().build());
+    var playlists =
+        new HlsPlaylistService(StreamingProperties.builder().build(), UploadBudgetFixture.OFF);
 
     lifecycle.startFirstListedVariant(session);
     var playlist = playlists.generateMultivariantPlaylist(session, "test-token");

@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.EncodeFormat;
+import com.streamarr.server.domain.streaming.NetworkRoute;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import java.time.Duration;
@@ -27,6 +28,7 @@ public record CreateStreamSessionCommand(
     @NonNull AuthenticatedIdentity identity,
     @NonNull StreamingOptions options,
     @NonNull ClientCapabilityDeclaration capabilityDeclaration,
+    @NonNull NetworkRoute networkRoute,
     @NonNull VideoFormatConstraint videoFormatConstraint,
     @NonNull Set<String> excludedEncodeCodecFamilies,
     @NonNull Set<EncodeFormat> excludedEncodeFormats,
@@ -55,6 +57,7 @@ public record CreateStreamSessionCommand(
           identity,
           options,
           capabilityDeclaration,
+          networkRoute,
           videoFormatConstraint,
           excludedEncodeCodecFamilies,
           excludedEncodeFormats,
