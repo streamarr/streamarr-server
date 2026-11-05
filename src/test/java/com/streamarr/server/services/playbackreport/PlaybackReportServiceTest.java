@@ -1,6 +1,7 @@
 package com.streamarr.server.services.playbackreport;
 
 import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountScopedBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.declarationBuilderFor;
 import static com.streamarr.server.fixtures.PlaybackSessionFixture.acceptedPlayback;
 import static com.streamarr.server.fixtures.PlaybackSessionFixture.playbackRequest;
 import static com.streamarr.server.fixtures.PlaybackSessionFixture.playbackServiceBuilder;
@@ -17,6 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.streaming.DecisionReason;
+import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.FakeAuthorizationService;
@@ -39,8 +41,11 @@ import com.streamarr.server.services.playbackreport.PlayerFigures.QualityStep;
 import com.streamarr.server.services.playbackreport.SharePlaybackReportRejection.NoteTooLong;
 import com.streamarr.server.services.playbackreport.SharePlaybackReportRejection.PlaybackSessionMissing;
 import com.streamarr.server.services.playbackreport.SharePlaybackReportRejection.PlayerFigureInvalid;
+import com.streamarr.server.services.streaming.PlaybackDecision;
+import com.streamarr.server.services.streaming.PlaybackFormatFailure;
 import com.streamarr.server.services.streaming.PlaybackSessionService;
 import com.streamarr.server.services.streaming.PlaybackSessionSnapshot;
+import com.streamarr.server.services.streaming.ReportPlaybackFormatFailureCommand;
 import com.streamarr.server.services.streaming.StartPlaybackSessionCommand;
 import java.time.Duration;
 import java.time.Instant;
@@ -130,6 +135,7 @@ class PlaybackReportServiceTest {
                 assertThat(report.decisions().getFirst().reasons())
                     .containsExactly(DecisionReason.DOLBY_VISION_NOT_DECLARED);
                 assertThat(report.player()).isEqualTo(figures);
+                assertThat(report.capabilityDeclaration()).isEqualTo(start.capabilityDeclaration());
               });
       assertThat(authorizationService.recordedIntents())
           .containsExactly(new Intent.SharePlaybackReport());
@@ -210,6 +216,54 @@ class PlaybackReportServiceTest {
     }
 
     @Test
+    @DisplayName(
+        "Should keep the captured stream session when playback falls back before the report"
+            + " arrives")
+    void shouldKeepCapturedStreamSessionWhenPlaybackFallsBackBeforeReportArrives() {
+      var start = startPlaybackBuilder().build();
+      var playback = acceptedPlayback(playbackSessions.start(start));
+      var captured = playback.currentFormatAttempt().streamSessionId();
+      playbackSessions.reportFormatFailure(
+          ReportPlaybackFormatFailureCommand.builder()
+              .playbackSessionId(playback.playbackSessionId())
+              .streamSessionId(captured)
+              .identity(start.identity())
+              .reason(PlaybackFormatFailure.UNSUPPORTED_FORMAT)
+              .build());
+
+      accepted(service.sharePlaybackReport(shareBuilder(playback, start).build()));
+
+      var serverSide = playbackSessions.access(playbackRequest(playback, start)).orElseThrow();
+      assertThat(serverSide.currentFormatAttempt().streamSessionId()).isNotEqualTo(captured);
+      assertThat(repository.storedReports())
+          .singleElement()
+          .satisfies(
+              report -> {
+                assertThat(report.streamSessionId()).isEqualTo(captured);
+                assertThat(report.decisions())
+                    .extracting(PlaybackDecision::streamSessionId)
+                    .contains(captured)
+                    .hasSize(2);
+              });
+    }
+
+    @Test
+    @DisplayName(
+        "Should read the session as missing when the captured stream session is not one of its"
+            + " format attempts")
+    void shouldReadSessionAsMissingWhenCapturedStreamSessionIsNotOneOfItsFormatAttempts() {
+      var start = startPlaybackBuilder().build();
+      var playback = acceptedPlayback(playbackSessions.start(start));
+
+      var outcome =
+          service.sharePlaybackReport(
+              shareBuilder(playback, start).streamSessionId(UUID.randomUUID()).build());
+
+      assertThat(rejectionOf(outcome)).isEqualTo(new PlaybackSessionMissing());
+      assertThat(repository.storedReports()).isEmpty();
+    }
+
+    @Test
     @DisplayName("Should store nothing when authorization denies sharing the report")
     void shouldStoreNothingWhenAuthorizationDeniesSharingTheReport() {
       var start = startPlaybackBuilder().build();
@@ -229,6 +283,25 @@ class PlaybackReportServiceTest {
       var start = startPlaybackBuilder().build();
       var playback = acceptedPlayback(playbackSessions.start(start));
       var figures = webFiguresBuilder().build();
+
+      accepted(service.sharePlaybackReport(shareBuilder(playback, start).player(figures).build()));
+
+      assertThat(repository.storedReports())
+          .singleElement()
+          .satisfies(report -> assertThat(report.player()).isEqualTo(figures));
+    }
+
+    @Test
+    @DisplayName("Should accept audio without a channel count when the player did not know it")
+    void shouldAcceptAudioWithoutChannelCountWhenPlayerDidNotKnowIt() {
+      var start = startPlaybackBuilder().build();
+      var playback = acceptedPlayback(playbackSessions.start(start));
+      var figures =
+          tvFiguresBuilder()
+              .audio(
+                  Optional.of(
+                      PlayerAudio.builder().codec("aac").channels(OptionalInt.empty()).build()))
+              .build();
 
       accepted(service.sharePlaybackReport(shareBuilder(playback, start).player(figures).build()));
 
@@ -466,6 +539,24 @@ class PlaybackReportServiceTest {
     }
 
     @Test
+    @DisplayName("Should keep the capability declaration when the playback session has closed")
+    void shouldKeepCapabilityDeclarationWhenPlaybackSessionHasClosed() {
+      var start =
+          startPlaybackBuilder()
+              .capabilityDeclaration(declarationBuilderFor(ProbedCodecFamily.HEVC).build())
+              .build();
+      var playback = acceptedPlayback(playbackSessions.start(start));
+      var reportId = accepted(service.sharePlaybackReport(shareBuilder(playback, start).build()));
+
+      playbackSessions.close(playbackRequest(playback, start));
+
+      assertThat(playbackSessions.access(playbackRequest(playback, start))).isEmpty();
+      assertThat(service.playbackReport(serverAdmin, reportId))
+          .map(PlaybackReport::capabilityDeclaration)
+          .contains(start.capabilityDeclaration());
+    }
+
+    @Test
     @DisplayName("Should count only unread reports when one report is marked read")
     void shouldCountOnlyUnreadReportsWhenOneReportIsMarkedRead() {
       var read = shareReportAt(NOW.minusSeconds(60));
@@ -526,6 +617,7 @@ class PlaybackReportServiceTest {
     return SharePlaybackReportCommand.builder()
         .identity(start.identity())
         .playbackSessionId(playback.playbackSessionId())
+        .streamSessionId(playback.currentFormatAttempt().streamSessionId())
         .note(Optional.empty())
         .player(unknownFiguresBuilder().build());
   }

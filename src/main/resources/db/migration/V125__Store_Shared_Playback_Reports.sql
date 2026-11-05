@@ -2,6 +2,10 @@
 -- the player's figures and the viewer's note, with the server's decisions for the playback session
 -- in playback_report_decision. Each figure is NULL when the player did not know it. The server
 -- deletes a report 30 days after it was shared.
+--
+-- capability_declaration keeps the playback session's client capability declaration (ADR 0049)
+-- as the document the server validated when the playback session started. It is shown whole and
+-- never queried.
 CREATE TABLE playback_report
 (
     id                             UUID                     NOT NULL DEFAULT gen_random_uuid(),
@@ -18,6 +22,7 @@ CREATE TABLE playback_report
     note                           TEXT,
     requested_choice               TEXT                     NOT NULL,
     playback_choice                TEXT                     NOT NULL,
+    capability_declaration         JSONB                    NOT NULL,
     quality_step_number            INTEGER,
     quality_step_count             INTEGER,
     quality_step_height            INTEGER,

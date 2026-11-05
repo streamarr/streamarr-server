@@ -24,6 +24,7 @@ import org.jooq.Field;
 import org.jooq.ForeignKey;
 import org.jooq.Index;
 import org.jooq.InverseForeignKey;
+import org.jooq.JSONB;
 import org.jooq.Name;
 import org.jooq.Path;
 import org.jooq.PlainSQL;
@@ -133,6 +134,11 @@ public class PlaybackReport extends TableImpl<PlaybackReportRecord> {
      * The column <code>public.playback_report.playback_choice</code>.
      */
     public final TableField<PlaybackReportRecord, String> PLAYBACK_CHOICE = createField(DSL.name("playback_choice"), SQLDataType.CLOB.nullable(false), this, "");
+
+    /**
+     * The column <code>public.playback_report.capability_declaration</code>.
+     */
+    public final TableField<PlaybackReportRecord, JSONB> CAPABILITY_DECLARATION = createField(DSL.name("capability_declaration"), SQLDataType.JSONB.nullable(false), this, "");
 
     /**
      * The column <code>public.playback_report.quality_step_number</code>.

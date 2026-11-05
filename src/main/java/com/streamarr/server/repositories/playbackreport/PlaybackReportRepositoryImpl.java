@@ -5,6 +5,7 @@ import static com.streamarr.server.jooq.generated.tables.PlaybackReportDecision.
 import static com.streamarr.server.jooq.generated.tables.Profile.PROFILE;
 import static org.jooq.impl.DSL.coalesce;
 
+import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.streaming.VideoRange;
@@ -44,9 +45,11 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
+import org.jooq.JSONB;
 import org.jooq.Record;
 import org.jooq.SelectOnConditionStep;
 import org.springframework.stereotype.Repository;
+import tools.jackson.databind.ObjectMapper;
 
 @Repository
 @RequiredArgsConstructor
@@ -59,6 +62,7 @@ public class PlaybackReportRepositoryImpl implements PlaybackReportRepository {
           .build();
 
   private final DSLContext dsl;
+  private final ObjectMapper objectMapper;
 
   @Override
   public UUID save(NewPlaybackReport report) {
@@ -71,6 +75,8 @@ public class PlaybackReportRepositoryImpl implements PlaybackReportRepository {
     row.setNote(report.note().orElse(null));
     row.setRequestedChoice(report.requestedChoice().name());
     row.setPlaybackChoice(report.playbackChoice().name());
+    row.setCapabilityDeclaration(
+        JSONB.jsonb(objectMapper.writeValueAsString(report.capabilityDeclaration())));
     setPlayerFigures(row, report.player());
     var id =
         dsl.insertInto(PLAYBACK_REPORT)
@@ -149,8 +155,7 @@ public class PlaybackReportRepositoryImpl implements PlaybackReportRepository {
                 Collectors.mapping(PlaybackReportRepositoryImpl::decision, Collectors.toList())));
   }
 
-  private static PlaybackReport report(
-      Record fetched, Map<UUID, List<PlaybackDecision>> decisions) {
+  private PlaybackReport report(Record fetched, Map<UUID, List<PlaybackDecision>> decisions) {
     var row = fetched.into(PLAYBACK_REPORT);
     return PlaybackReport.builder()
         .id(row.getId())
@@ -166,6 +171,9 @@ public class PlaybackReportRepositoryImpl implements PlaybackReportRepository {
         .playbackChoice(VideoQuality.valueOf(row.getPlaybackChoice()))
         .decisions(decisions.getOrDefault(row.getId(), List.of()))
         .player(playerFigures(row))
+        .capabilityDeclaration(
+            objectMapper.readValue(
+                row.getCapabilityDeclaration().data(), ClientCapabilityDeclaration.class))
         .build();
   }
 

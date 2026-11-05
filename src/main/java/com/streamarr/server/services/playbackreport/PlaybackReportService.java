@@ -44,7 +44,8 @@ public class PlaybackReportService {
 
   /**
    * Stores the viewer's figures and note with the server's decisions for the playback session as
-   * they stand now. A playback session that the viewer does not own reads as missing.
+   * they stand now, and its capability declaration. A playback session that the viewer does not
+   * own, or whose format attempts do not include the captured stream session, reads as missing.
    */
   @Transactional
   public Outcome<UUID, SharePlaybackReportRejection> sharePlaybackReport(
@@ -69,7 +70,7 @@ public class PlaybackReportService {
                 .playbackSessionId(command.playbackSessionId())
                 .identity(command.identity())
                 .build());
-    if (playback.isEmpty()) {
+    if (playback.filter(snapshot -> hasDecision(snapshot, command.streamSessionId())).isEmpty()) {
       return Outcome.rejected(new PlaybackSessionMissing());
     }
 
@@ -111,14 +112,21 @@ public class PlaybackReportService {
         .sharedAt(clock.instant())
         .profileId(command.identity().profileId())
         .playbackSessionId(playback.playbackSessionId())
-        .streamSessionId(playback.currentFormatAttempt().streamSessionId())
+        .streamSessionId(command.streamSessionId())
         .mediaFileId(playback.mediaFileId())
         .note(note)
         .requestedChoice(playback.requestedChoice())
         .playbackChoice(playback.playbackChoice())
         .decisions(playback.decisions())
         .player(command.player())
+        .capabilityDeclaration(playback.capabilityDeclaration())
         .build();
+  }
+
+  // The figures describe a format attempt that started, so it has a decision.
+  private static boolean hasDecision(PlaybackSessionSnapshot playback, UUID streamSessionId) {
+    return playback.decisions().stream()
+        .anyMatch(decision -> decision.streamSessionId().equals(streamSessionId));
   }
 
   private static boolean isTooLong(String note) {

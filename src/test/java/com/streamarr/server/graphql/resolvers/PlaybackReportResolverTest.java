@@ -21,9 +21,11 @@ import com.streamarr.server.services.playbackreport.PlaybackReportService;
 import com.streamarr.server.services.playbackreport.PlayerFigures;
 import com.streamarr.server.services.playbackreport.PlayerHdrMode;
 import com.streamarr.server.services.streaming.PlaybackSessionService;
+import com.streamarr.server.services.streaming.PlaybackSessionSnapshot;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -77,6 +79,10 @@ class PlaybackReportResolverTest {
       """
       id sharedAt readAt profileName note requestedChoice playbackChoice mediaFileId
       decisions { formatAttempt reasons }
+      capabilityDeclaration {
+        video { codecFamily codecProfiles { profile maxLevel maxTier } compatibleBases hls }
+        audio { codec maxChannels hls directPlayContainers }
+      }
       player {
         qualityStep { number count height bitrate }
         observedBitrate bufferSeconds droppedFrames stalls
@@ -143,25 +149,25 @@ class PlaybackReportResolverTest {
   @Test
   @DisplayName("Should store the input figures and note when a viewer shares a report")
   void shouldStoreInputFiguresAndNoteWhenViewerSharesReport() {
-    var playbackSessionId = startPlaybackAsCaller();
+    var playback = startPlaybackAsCaller();
 
     var payload =
         share(
-            Map.of(
-                "playbackSessionId",
-                playbackSessionId.toString(),
-                "note",
-                "Picture freezes.",
-                "player",
+            shareInput(
+                playback,
                 Map.of(
-                    "qualityStep",
-                    Map.of("number", 2, "count", 3, "height", 1080, "bitrate", 8_000_000),
-                    "droppedFrames",
-                    4,
-                    "hdrMode",
-                    "HDR10",
-                    "audio",
-                    Map.of("codec", "eac3", "channels", 6))));
+                    "note",
+                    "Picture freezes.",
+                    "player",
+                    Map.of(
+                        "qualityStep",
+                        Map.of("number", 2, "count", 3, "height", 1080, "bitrate", 8_000_000),
+                        "droppedFrames",
+                        4,
+                        "hdrMode",
+                        "HDR10",
+                        "audio",
+                        Map.of("codec", "eac3", "channels", 6)))));
 
     assertThat(payload.path("userErrors").size()).isZero();
     assertThat(repository.storedReports())
@@ -209,7 +215,15 @@ class PlaybackReportResolverTest {
   void shouldReturnInvalidIdErrorWhenPlaybackSessionIdIsMalformed() {
     caller.set(viewerIdentity());
 
-    var payload = share(Map.of("playbackSessionId", "not-a-uuid", "player", Map.of()));
+    var payload =
+        share(
+            Map.of(
+                "playbackSessionId",
+                "not-a-uuid",
+                "streamSessionId",
+                UUID.randomUUID().toString(),
+                "player",
+                Map.of()));
 
     assertThat(payload.path("playbackReportId").isNull()).isTrue();
     assertThat(payload.at("/userErrors/0/__typename").asString()).isEqualTo("InvalidIdError");
@@ -220,17 +234,19 @@ class PlaybackReportResolverTest {
   @Test
   @DisplayName("Should name the note and the figure when both are out of range")
   void shouldNameNoteAndFigureWhenBothAreOutOfRange() {
-    var playbackSessionId = startPlaybackAsCaller();
+    var playback = startPlaybackAsCaller();
 
     var payload =
         share(
-            Map.of(
-                "playbackSessionId",
-                playbackSessionId.toString(),
-                "note",
-                "a".repeat(281),
-                "player",
-                Map.of("screen", Map.of("width", 0, "height", 1, "pixelRatio", 1, "hdr", false))));
+            shareInput(
+                playback,
+                Map.of(
+                    "note",
+                    "a".repeat(281),
+                    "player",
+                    Map.of(
+                        "screen",
+                        Map.of("width", 0, "height", 1, "pixelRatio", 1, "hdr", false)))));
 
     assertThat(payload.path("userErrors"))
         .extracting(error -> error.path("__typename").asString())
@@ -249,7 +265,14 @@ class PlaybackReportResolverTest {
     caller.set(viewerIdentity());
 
     var payload =
-        share(Map.of("playbackSessionId", UUID.randomUUID().toString(), "player", Map.of()));
+        share(
+            Map.of(
+                "playbackSessionId",
+                UUID.randomUUID().toString(),
+                "streamSessionId",
+                UUID.randomUUID().toString(),
+                "player",
+                Map.of()));
 
     assertThat(payload.at("/userErrors/0/__typename").asString())
         .isEqualTo("PlaybackSessionClosedError");
@@ -259,29 +282,29 @@ class PlaybackReportResolverTest {
   @Test
   @DisplayName("Should return every figure of a report when a ServerAdmin opens it")
   void shouldReturnEveryFigureOfReportWhenServerAdminOpensIt() {
-    var playbackSessionId = startPlaybackAsCaller();
+    var playback = startPlaybackAsCaller();
     share(
-        Map.of(
-            "playbackSessionId",
-            playbackSessionId.toString(),
-            "player",
+        shareInput(
+            playback,
             Map.of(
-                "display",
+                "player",
                 Map.of(
-                    "width",
-                    3840,
-                    "height",
-                    2160,
-                    "hdrMode",
-                    "DOLBY_VISION",
-                    "refreshRate",
-                    23.976,
-                    "dynamicRangeMatched",
-                    true,
-                    "frameRateMatched",
-                    false),
-                "audioOutput",
-                Map.of("route", "HDMI", "channels", 8))));
+                    "display",
+                    Map.of(
+                        "width",
+                        3840,
+                        "height",
+                        2160,
+                        "hdrMode",
+                        "DOLBY_VISION",
+                        "refreshRate",
+                        23.976,
+                        "dynamicRangeMatched",
+                        true,
+                        "frameRateMatched",
+                        false),
+                    "audioOutput",
+                    Map.of("route", "HDMI", "channels", 8)))));
     var reportId = repository.storedReports().getFirst().id();
 
     var report =
@@ -314,6 +337,34 @@ class PlaybackReportResolverTest {
     assertThat(report.at("/player/droppedFrames").isNull()).isTrue();
     assertThat(report.at("/player/screen").isNull()).isTrue();
     assertThat(report.path("decisions").size()).isEqualTo(1);
+    assertThat(report.at("/capabilityDeclaration/video/0"))
+        .isEqualTo(
+            mapper.valueToTree(
+                Map.of(
+                    "codecFamily",
+                    "H264",
+                    "codecProfiles",
+                    List.of(
+                        profile("H264_CONSTRAINED_BASELINE"),
+                        profile("H264_MAIN"),
+                        profile("H264_HIGH")),
+                    "compatibleBases",
+                    List.of("SDR"),
+                    "hls",
+                    true)));
+    assertThat(report.at("/capabilityDeclaration/audio"))
+        .isEqualTo(
+            mapper.valueToTree(
+                List.of(
+                    Map.of(
+                        "codec",
+                        "AAC",
+                        "maxChannels",
+                        2,
+                        "hls",
+                        true,
+                        "directPlayContainers",
+                        List.of()))));
   }
 
   @Test
@@ -391,15 +442,33 @@ class PlaybackReportResolverTest {
                     .isEqualTo("FORBIDDEN"));
   }
 
-  private UUID startPlaybackAsCaller() {
+  // The default declaration's H.264 profiles go up to level 5.2 and have no tier.
+  private static Map<String, Object> profile(String name) {
+    var profile = new HashMap<String, Object>();
+    profile.put("profile", name);
+    profile.put("maxLevel", 52);
+    profile.put("maxTier", null);
+    return profile;
+  }
+
+  private PlaybackSessionSnapshot startPlaybackAsCaller() {
     var start = startPlaybackBuilder().build();
     caller.set(start.identity());
-    return acceptedPlayback(playbackSessions.start(start)).playbackSessionId();
+    return acceptedPlayback(playbackSessions.start(start));
+  }
+
+  /** The share input for the playback session's current format attempt, with these fields. */
+  private static Map<String, Object> shareInput(
+      PlaybackSessionSnapshot playback, Map<String, Object> fields) {
+    var input = new HashMap<String, Object>(fields);
+    input.put("playbackSessionId", playback.playbackSessionId().toString());
+    input.put("streamSessionId", playback.currentFormatAttempt().streamSessionId().toString());
+    return input;
   }
 
   private void shareEmptyReport() {
-    var playbackSessionId = startPlaybackAsCaller();
-    share(Map.of("playbackSessionId", playbackSessionId.toString(), "player", Map.of()));
+    var playback = startPlaybackAsCaller();
+    share(shareInput(playback, Map.of("player", Map.of())));
   }
 
   private static AuthenticatedIdentity viewerIdentity() {

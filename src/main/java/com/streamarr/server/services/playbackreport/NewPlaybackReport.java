@@ -1,5 +1,6 @@
 package com.streamarr.server.services.playbackreport;
 
+import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.services.streaming.PlaybackDecision;
 import java.time.Instant;
@@ -21,7 +22,8 @@ public record NewPlaybackReport(
     @NonNull VideoQuality requestedChoice,
     @NonNull VideoQuality playbackChoice,
     @NonNull List<PlaybackDecision> decisions,
-    @NonNull PlayerFigures player) {
+    @NonNull PlayerFigures player,
+    @NonNull ClientCapabilityDeclaration capabilityDeclaration) {
 
   public NewPlaybackReport {
     decisions = List.copyOf(decisions);

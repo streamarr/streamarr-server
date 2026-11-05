@@ -1,5 +1,10 @@
 package com.streamarr.server.repositories.playbackreport;
 
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.aacEntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.audioEntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
 import static com.streamarr.server.fixtures.PlayerFiguresFixture.tvFiguresBuilder;
 import static com.streamarr.server.fixtures.PlayerFiguresFixture.unknownFiguresBuilder;
 import static com.streamarr.server.fixtures.PlayerFiguresFixture.webFiguresBuilder;
@@ -9,9 +14,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.streaming.AudioCodec;
+import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
+import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecisionReason;
+import com.streamarr.server.domain.streaming.DolbyVisionProfile;
+import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
+import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.streaming.VideoRange;
+import com.streamarr.server.domain.streaming.VideoSampleEntry;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -88,6 +100,7 @@ class PlaybackReportRepositoryIT extends AbstractIntegrationTest {
             .playbackChoice(VideoQuality.AUTO)
             .decisions(List.of(copyWithAudio(), encodeWithoutAudio()))
             .player(tvFiguresBuilder().build())
+            .capabilityDeclaration(tvDeclaration())
             .build();
 
     var id = save(report);
@@ -108,6 +121,7 @@ class PlaybackReportRepositoryIT extends AbstractIntegrationTest {
                 .playbackChoice(VideoQuality.AUTO)
                 .decisions(report.decisions())
                 .player(report.player())
+                .capabilityDeclaration(report.capabilityDeclaration())
                 .build());
   }
 
@@ -206,7 +220,8 @@ class PlaybackReportRepositoryIT extends AbstractIntegrationTest {
         .requestedChoice(VideoQuality.AUTO)
         .playbackChoice(VideoQuality.AUTO)
         .decisions(List.of())
-        .player(unknownFiguresBuilder().build());
+        .player(unknownFiguresBuilder().build())
+        .capabilityDeclaration(defaultDeclarationBuilder().build());
   }
 
   private UUID save(NewPlaybackReport report) {
@@ -215,6 +230,33 @@ class PlaybackReportRepositoryIT extends AbstractIntegrationTest {
 
   private <T> T inTransaction(Supplier<T> work) {
     return transactionTemplate.execute(_ -> work.get());
+  }
+
+  /** H.264 without a tier, HEVC with Dolby Vision and direct play, and two audio codecs. */
+  private static ClientCapabilityDeclaration tvDeclaration() {
+    return ClientCapabilityDeclaration.builder()
+        .video(
+            List.of(
+                h264EntryBuilder().build(),
+                hevcEntryBuilder()
+                    .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
+                    .dolbyVisionProfiles(
+                        List.of(
+                            DolbyVisionProfileCapability.builder()
+                                .profile(DolbyVisionProfile.PROFILE_8_1)
+                                .maxLevel(6)
+                                .build()))
+                    .directPlayContainers(List.of(SourceContainer.MP4))
+                    .directPlaySampleEntries(List.of(VideoSampleEntry.HVC1))
+                    .build()))
+        .audio(
+            List.of(
+                aacEntryBuilder().build(),
+                audioEntryBuilder(AudioCodec.EAC3)
+                    .maxChannels(6)
+                    .directPlayContainers(List.of(SourceContainer.MATROSKA))
+                    .build()))
+        .build();
   }
 
   private static PlaybackDecision copyWithAudio() {

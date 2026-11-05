@@ -1,5 +1,6 @@
 package com.streamarr.server.services.playbackreport;
 
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.PlayerFiguresFixture.unknownFiguresBuilder;
 import static com.streamarr.server.jooq.generated.tables.PlaybackReport.PLAYBACK_REPORT;
 
@@ -88,6 +89,7 @@ class PlaybackReportPagedListIT
                     .playbackChoice(VideoQuality.AUTO)
                     .decisions(List.of())
                     .player(unknownFiguresBuilder().build())
+                    .capabilityDeclaration(defaultDeclarationBuilder().build())
                     .build()));
   }
 

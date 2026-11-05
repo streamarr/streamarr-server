@@ -6,10 +6,14 @@ import java.util.UUID;
 import lombok.Builder;
 import lombok.NonNull;
 
-/** A blank note counts as no note. */
+/**
+ * {@code streamSessionId} names the format attempt whose figures the player captured. A blank note
+ * counts as none.
+ */
 @Builder
 public record SharePlaybackReportCommand(
     @NonNull AuthenticatedIdentity identity,
     @NonNull UUID playbackSessionId,
+    @NonNull UUID streamSessionId,
     @NonNull Optional<String> note,
     @NonNull PlayerFigures player) {}

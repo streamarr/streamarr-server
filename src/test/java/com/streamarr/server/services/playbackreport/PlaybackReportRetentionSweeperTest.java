@@ -1,5 +1,6 @@
 package com.streamarr.server.services.playbackreport;
 
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.PlayerFiguresFixture.unknownFiguresBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -65,6 +66,7 @@ class PlaybackReportRetentionSweeperTest {
             .playbackChoice(VideoQuality.AUTO)
             .decisions(List.of())
             .player(unknownFiguresBuilder().build())
+            .capabilityDeclaration(defaultDeclarationBuilder().build())
             .build());
   }
 }

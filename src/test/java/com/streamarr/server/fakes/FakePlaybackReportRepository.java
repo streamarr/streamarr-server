@@ -56,6 +56,7 @@ public final class FakePlaybackReportRepository implements PlaybackReportReposit
             .playbackChoice(report.playbackChoice())
             .decisions(report.decisions())
             .player(report.player())
+            .capabilityDeclaration(report.capabilityDeclaration())
             .build());
     return id;
   }

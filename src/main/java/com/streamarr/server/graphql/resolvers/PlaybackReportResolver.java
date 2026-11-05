@@ -52,12 +52,12 @@ public class PlaybackReportResolver {
     authorizationService.requireProfile();
     return MutationPayloads.withUuid(
         input.playbackSessionId(),
-        playbackSessionId -> share(input, playbackSessionId),
-        () ->
-            MutationPayloads.inputError(
-                new SharePlaybackReportError.InvalidIdError(
-                    INVALID_ID, InputPath.of("playbackSessionId")),
-                PlaybackReportResolver::sharePayload));
+        playbackSessionId ->
+            MutationPayloads.withUuid(
+                input.streamSessionId(),
+                streamSessionId -> share(input, playbackSessionId, streamSessionId),
+                () -> invalidShareId("streamSessionId")),
+        () -> invalidShareId("playbackSessionId"));
   }
 
   @DgsQuery
@@ -103,16 +103,24 @@ public class PlaybackReportResolver {
                 MarkPlaybackReportReadPayload::new));
   }
 
-  private SharePlaybackReportPayload share(SharePlaybackReportInput input, UUID playbackSessionId) {
+  private SharePlaybackReportPayload share(
+      SharePlaybackReportInput input, UUID playbackSessionId, UUID streamSessionId) {
     return MutationPayloads.payload(
         playbackReportService.sharePlaybackReport(
             SharePlaybackReportCommand.builder()
                 .identity(authorizationService.currentIdentity())
                 .playbackSessionId(playbackSessionId)
+                .streamSessionId(streamSessionId)
                 .note(Optional.ofNullable(input.note()))
                 .player(input.player().toFigures())
                 .build()),
         PlaybackReportErrors::toError,
+        PlaybackReportResolver::sharePayload);
+  }
+
+  private static SharePlaybackReportPayload invalidShareId(String field) {
+    return MutationPayloads.inputError(
+        new SharePlaybackReportError.InvalidIdError(INVALID_ID, InputPath.of(field)),
         PlaybackReportResolver::sharePayload);
   }
 

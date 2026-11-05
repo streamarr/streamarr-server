@@ -17,7 +17,7 @@ type PlaybackReport {
     profileId: ID!
     profileName: String!
     playbackSessionId: ID!
-    "The stream session of the format attempt that played when the viewer shared the report."
+    "The stream session of the format attempt whose figures the player captured."
     streamSessionId: ID!
     "Null once the media file is removed from its library."
     mediaFileId: ID
@@ -25,9 +25,52 @@ type PlaybackReport {
     note: String
     requestedChoice: VideoQuality!
     playbackChoice: VideoQuality!
-    "The decision of each format attempt that had started, the initial format first."
+    "The decision of each format attempt that had started when the server received the report, the initial format first."
     decisions: [PlaybackDecision!]!
     player: PlayerFigures!
+    "The client capability declaration that the playback session carried (ADR 0049)."
+    capabilityDeclaration: ClientCapabilityDeclaration!
+}
+
+"What the client's player and display accepted, as the client declared it when the playback session started."
+type ClientCapabilityDeclaration {
+    video: [VideoCapabilityEntry!]!
+    audio: [AudioCapabilityEntry!]!
+}
+
+"One group of video values and maximums that the player accepts together for one codec family."
+type VideoCapabilityEntry {
+    codecFamily: VideoCodecFamily!
+    codecProfiles: [VideoCodecProfileCapability!]!
+    maxBitDepth: Int!
+    maxWidth: Int!
+    maxHeight: Int!
+    maxFrameRate: Float!
+    compatibleBases: [DeclaredCompatibleBase!]!
+    dolbyVisionProfiles: [DolbyVisionProfileCapability!]!
+    hdr10Plus: Boolean!
+    hls: Boolean!
+    directPlayContainers: [SourceContainer!]!
+    directPlaySampleEntries: [VideoSampleEntry!]!
+}
+
+type VideoCodecProfileCapability {
+    profile: VideoCodecProfile!
+    maxLevel: Int!
+    "Null for an H.264 profile, which has no tier."
+    maxTier: VideoCodecTier
+}
+
+type DolbyVisionProfileCapability {
+    profile: DolbyVisionProfile!
+    maxLevel: Int!
+}
+
+type AudioCapabilityEntry {
+    codec: AudioCodec!
+    maxChannels: Int!
+    hls: Boolean!
+    directPlayContainers: [SourceContainer!]!
 }
 
 """
@@ -127,6 +170,11 @@ type PlaybackReportEdge {
 input SharePlaybackReportInput {
     "A playback session of the selected Profile. Another viewer's playback session reads as closed."
     playbackSessionId: ID!
+    """
+    The stream session of the format attempt that the Playback Data panel showed when the viewer pressed Share.
+    A stream session that is not one of the playback session's started format attempts reads as closed.
+    """
+    streamSessionId: ID!
     "At most 280 characters. A blank note counts as none."
     note: String
     "The figures that the Playback Data panel showed when the viewer pressed Share."

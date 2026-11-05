@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import java.util.List;
 import java.util.Optional;
@@ -11,12 +12,14 @@ import lombok.NonNull;
  * {@code playbackChoice} is the playback choice that plays now: {@code requestedChoice}, or Auto
  * once Original reaches an encode (ADR 0052). {@code formatChange} says why the output differs from
  * the output that {@code requestedChoice} asked for. {@code decisions} holds the decision of each
- * format attempt that started, the initial format first (#751).
+ * format attempt that started, the initial format first (#751). {@code capabilityDeclaration} is
+ * the declaration that every format attempt replays.
  */
 @Builder
 public record PlaybackSessionSnapshot(
     @NonNull UUID playbackSessionId,
     @NonNull UUID mediaFileId,
+    @NonNull ClientCapabilityDeclaration capabilityDeclaration,
     int formatAttemptCount,
     int maximumFormatAttempts,
     @NonNull VideoQuality requestedChoice,

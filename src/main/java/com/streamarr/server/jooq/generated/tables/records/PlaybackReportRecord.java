@@ -9,6 +9,7 @@ import com.streamarr.server.jooq.generated.tables.PlaybackReport;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
+import org.jooq.JSONB;
 import org.jooq.Record1;
 import org.jooq.impl.UpdatableRecordImpl;
 
@@ -218,269 +219,283 @@ public class PlaybackReportRecord extends UpdatableRecordImpl<PlaybackReportReco
     }
 
     /**
+     * Setter for <code>public.playback_report.capability_declaration</code>.
+     */
+    public void setCapabilityDeclaration(JSONB value) {
+        set(14, value);
+    }
+
+    /**
+     * Getter for <code>public.playback_report.capability_declaration</code>.
+     */
+    public JSONB getCapabilityDeclaration() {
+        return (JSONB) get(14);
+    }
+
+    /**
      * Setter for <code>public.playback_report.quality_step_number</code>.
      */
     public void setQualityStepNumber(Integer value) {
-        set(14, value);
+        set(15, value);
     }
 
     /**
      * Getter for <code>public.playback_report.quality_step_number</code>.
      */
     public Integer getQualityStepNumber() {
-        return (Integer) get(14);
+        return (Integer) get(15);
     }
 
     /**
      * Setter for <code>public.playback_report.quality_step_count</code>.
      */
     public void setQualityStepCount(Integer value) {
-        set(15, value);
+        set(16, value);
     }
 
     /**
      * Getter for <code>public.playback_report.quality_step_count</code>.
      */
     public Integer getQualityStepCount() {
-        return (Integer) get(15);
+        return (Integer) get(16);
     }
 
     /**
      * Setter for <code>public.playback_report.quality_step_height</code>.
      */
     public void setQualityStepHeight(Integer value) {
-        set(16, value);
+        set(17, value);
     }
 
     /**
      * Getter for <code>public.playback_report.quality_step_height</code>.
      */
     public Integer getQualityStepHeight() {
-        return (Integer) get(16);
+        return (Integer) get(17);
     }
 
     /**
      * Setter for <code>public.playback_report.quality_step_bitrate</code>.
      */
     public void setQualityStepBitrate(Integer value) {
-        set(17, value);
+        set(18, value);
     }
 
     /**
      * Getter for <code>public.playback_report.quality_step_bitrate</code>.
      */
     public Integer getQualityStepBitrate() {
-        return (Integer) get(17);
+        return (Integer) get(18);
     }
 
     /**
      * Setter for <code>public.playback_report.observed_bitrate</code>.
      */
     public void setObservedBitrate(Double value) {
-        set(18, value);
+        set(19, value);
     }
 
     /**
      * Getter for <code>public.playback_report.observed_bitrate</code>.
      */
     public Double getObservedBitrate() {
-        return (Double) get(18);
+        return (Double) get(19);
     }
 
     /**
      * Setter for <code>public.playback_report.buffer_seconds</code>.
      */
     public void setBufferSeconds(Double value) {
-        set(19, value);
+        set(20, value);
     }
 
     /**
      * Getter for <code>public.playback_report.buffer_seconds</code>.
      */
     public Double getBufferSeconds() {
-        return (Double) get(19);
+        return (Double) get(20);
     }
 
     /**
      * Setter for <code>public.playback_report.dropped_frames</code>.
      */
     public void setDroppedFrames(Integer value) {
-        set(20, value);
+        set(21, value);
     }
 
     /**
      * Getter for <code>public.playback_report.dropped_frames</code>.
      */
     public Integer getDroppedFrames() {
-        return (Integer) get(20);
+        return (Integer) get(21);
     }
 
     /**
      * Setter for <code>public.playback_report.stalls</code>.
      */
     public void setStalls(Integer value) {
-        set(21, value);
+        set(22, value);
     }
 
     /**
      * Getter for <code>public.playback_report.stalls</code>.
      */
     public Integer getStalls() {
-        return (Integer) get(21);
+        return (Integer) get(22);
     }
 
     /**
      * Setter for <code>public.playback_report.resolution_width</code>.
      */
     public void setResolutionWidth(Integer value) {
-        set(22, value);
+        set(23, value);
     }
 
     /**
      * Getter for <code>public.playback_report.resolution_width</code>.
      */
     public Integer getResolutionWidth() {
-        return (Integer) get(22);
+        return (Integer) get(23);
     }
 
     /**
      * Setter for <code>public.playback_report.resolution_height</code>.
      */
     public void setResolutionHeight(Integer value) {
-        set(23, value);
+        set(24, value);
     }
 
     /**
      * Getter for <code>public.playback_report.resolution_height</code>.
      */
     public Integer getResolutionHeight() {
-        return (Integer) get(23);
+        return (Integer) get(24);
     }
 
     /**
      * Setter for <code>public.playback_report.video_codec</code>.
      */
     public void setVideoCodec(String value) {
-        set(24, value);
+        set(25, value);
     }
 
     /**
      * Getter for <code>public.playback_report.video_codec</code>.
      */
     public String getVideoCodec() {
-        return (String) get(24);
+        return (String) get(25);
     }
 
     /**
      * Setter for <code>public.playback_report.hdr_mode</code>.
      */
     public void setHdrMode(String value) {
-        set(25, value);
+        set(26, value);
     }
 
     /**
      * Getter for <code>public.playback_report.hdr_mode</code>.
      */
     public String getHdrMode() {
-        return (String) get(25);
+        return (String) get(26);
     }
 
     /**
      * Setter for <code>public.playback_report.audio_codec</code>.
      */
     public void setAudioCodec(String value) {
-        set(26, value);
+        set(27, value);
     }
 
     /**
      * Getter for <code>public.playback_report.audio_codec</code>.
      */
     public String getAudioCodec() {
-        return (String) get(26);
+        return (String) get(27);
     }
 
     /**
      * Setter for <code>public.playback_report.audio_channels</code>.
      */
     public void setAudioChannels(Integer value) {
-        set(27, value);
+        set(28, value);
     }
 
     /**
      * Getter for <code>public.playback_report.audio_channels</code>.
      */
     public Integer getAudioChannels() {
-        return (Integer) get(27);
+        return (Integer) get(28);
     }
 
     /**
      * Setter for <code>public.playback_report.audio_dolby_atmos</code>.
      */
     public void setAudioDolbyAtmos(Boolean value) {
-        set(28, value);
+        set(29, value);
     }
 
     /**
      * Getter for <code>public.playback_report.audio_dolby_atmos</code>.
      */
     public Boolean getAudioDolbyAtmos() {
-        return (Boolean) get(28);
+        return (Boolean) get(29);
     }
 
     /**
      * Setter for <code>public.playback_report.display_width</code>.
      */
     public void setDisplayWidth(Integer value) {
-        set(29, value);
+        set(30, value);
     }
 
     /**
      * Getter for <code>public.playback_report.display_width</code>.
      */
     public Integer getDisplayWidth() {
-        return (Integer) get(29);
+        return (Integer) get(30);
     }
 
     /**
      * Setter for <code>public.playback_report.display_height</code>.
      */
     public void setDisplayHeight(Integer value) {
-        set(30, value);
+        set(31, value);
     }
 
     /**
      * Getter for <code>public.playback_report.display_height</code>.
      */
     public Integer getDisplayHeight() {
-        return (Integer) get(30);
+        return (Integer) get(31);
     }
 
     /**
      * Setter for <code>public.playback_report.display_hdr_mode</code>.
      */
     public void setDisplayHdrMode(String value) {
-        set(31, value);
+        set(32, value);
     }
 
     /**
      * Getter for <code>public.playback_report.display_hdr_mode</code>.
      */
     public String getDisplayHdrMode() {
-        return (String) get(31);
+        return (String) get(32);
     }
 
     /**
      * Setter for <code>public.playback_report.display_refresh_rate</code>.
      */
     public void setDisplayRefreshRate(Double value) {
-        set(32, value);
+        set(33, value);
     }
 
     /**
      * Getter for <code>public.playback_report.display_refresh_rate</code>.
      */
     public Double getDisplayRefreshRate() {
-        return (Double) get(32);
+        return (Double) get(33);
     }
 
     /**
@@ -488,7 +503,7 @@ public class PlaybackReportRecord extends UpdatableRecordImpl<PlaybackReportReco
      * <code>public.playback_report.display_dynamic_range_matched</code>.
      */
     public void setDisplayDynamicRangeMatched(Boolean value) {
-        set(33, value);
+        set(34, value);
     }
 
     /**
@@ -496,7 +511,7 @@ public class PlaybackReportRecord extends UpdatableRecordImpl<PlaybackReportReco
      * <code>public.playback_report.display_dynamic_range_matched</code>.
      */
     public Boolean getDisplayDynamicRangeMatched() {
-        return (Boolean) get(33);
+        return (Boolean) get(34);
     }
 
     /**
@@ -504,7 +519,7 @@ public class PlaybackReportRecord extends UpdatableRecordImpl<PlaybackReportReco
      * <code>public.playback_report.display_frame_rate_matched</code>.
      */
     public void setDisplayFrameRateMatched(Boolean value) {
-        set(34, value);
+        set(35, value);
     }
 
     /**
@@ -512,119 +527,119 @@ public class PlaybackReportRecord extends UpdatableRecordImpl<PlaybackReportReco
      * <code>public.playback_report.display_frame_rate_matched</code>.
      */
     public Boolean getDisplayFrameRateMatched() {
-        return (Boolean) get(34);
+        return (Boolean) get(35);
     }
 
     /**
      * Setter for <code>public.playback_report.audio_output_route</code>.
      */
     public void setAudioOutputRoute(String value) {
-        set(35, value);
+        set(36, value);
     }
 
     /**
      * Getter for <code>public.playback_report.audio_output_route</code>.
      */
     public String getAudioOutputRoute() {
-        return (String) get(35);
+        return (String) get(36);
     }
 
     /**
      * Setter for <code>public.playback_report.audio_output_channels</code>.
      */
     public void setAudioOutputChannels(Integer value) {
-        set(36, value);
+        set(37, value);
     }
 
     /**
      * Getter for <code>public.playback_report.audio_output_channels</code>.
      */
     public Integer getAudioOutputChannels() {
-        return (Integer) get(36);
+        return (Integer) get(37);
     }
 
     /**
      * Setter for <code>public.playback_report.screen_width</code>.
      */
     public void setScreenWidth(Integer value) {
-        set(37, value);
+        set(38, value);
     }
 
     /**
      * Getter for <code>public.playback_report.screen_width</code>.
      */
     public Integer getScreenWidth() {
-        return (Integer) get(37);
+        return (Integer) get(38);
     }
 
     /**
      * Setter for <code>public.playback_report.screen_height</code>.
      */
     public void setScreenHeight(Integer value) {
-        set(38, value);
+        set(39, value);
     }
 
     /**
      * Getter for <code>public.playback_report.screen_height</code>.
      */
     public Integer getScreenHeight() {
-        return (Integer) get(38);
+        return (Integer) get(39);
     }
 
     /**
      * Setter for <code>public.playback_report.screen_pixel_ratio</code>.
      */
     public void setScreenPixelRatio(Double value) {
-        set(39, value);
+        set(40, value);
     }
 
     /**
      * Getter for <code>public.playback_report.screen_pixel_ratio</code>.
      */
     public Double getScreenPixelRatio() {
-        return (Double) get(39);
+        return (Double) get(40);
     }
 
     /**
      * Setter for <code>public.playback_report.screen_hdr</code>.
      */
     public void setScreenHdr(Boolean value) {
-        set(40, value);
+        set(41, value);
     }
 
     /**
      * Getter for <code>public.playback_report.screen_hdr</code>.
      */
     public Boolean getScreenHdr() {
-        return (Boolean) get(40);
+        return (Boolean) get(41);
     }
 
     /**
      * Setter for <code>public.playback_report.browser_name</code>.
      */
     public void setBrowserName(String value) {
-        set(41, value);
+        set(42, value);
     }
 
     /**
      * Getter for <code>public.playback_report.browser_name</code>.
      */
     public String getBrowserName() {
-        return (String) get(41);
+        return (String) get(42);
     }
 
     /**
      * Setter for <code>public.playback_report.browser_version</code>.
      */
     public void setBrowserVersion(String value) {
-        set(42, value);
+        set(43, value);
     }
 
     /**
      * Getter for <code>public.playback_report.browser_version</code>.
      */
     public String getBrowserVersion() {
-        return (String) get(42);
+        return (String) get(43);
     }
 
     // -------------------------------------------------------------------------
@@ -650,7 +665,7 @@ public class PlaybackReportRecord extends UpdatableRecordImpl<PlaybackReportReco
     /**
      * Create a detached, initialised PlaybackReportRecord
      */
-    public PlaybackReportRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, OffsetDateTime sharedAt, OffsetDateTime readAt, UUID profileId, UUID playbackSessionId, UUID streamSessionId, UUID mediaFileId, String note, String requestedChoice, String playbackChoice, Integer qualityStepNumber, Integer qualityStepCount, Integer qualityStepHeight, Integer qualityStepBitrate, Double observedBitrate, Double bufferSeconds, Integer droppedFrames, Integer stalls, Integer resolutionWidth, Integer resolutionHeight, String videoCodec, String hdrMode, String audioCodec, Integer audioChannels, Boolean audioDolbyAtmos, Integer displayWidth, Integer displayHeight, String displayHdrMode, Double displayRefreshRate, Boolean displayDynamicRangeMatched, Boolean displayFrameRateMatched, String audioOutputRoute, Integer audioOutputChannels, Integer screenWidth, Integer screenHeight, Double screenPixelRatio, Boolean screenHdr, String browserName, String browserVersion) {
+    public PlaybackReportRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, OffsetDateTime sharedAt, OffsetDateTime readAt, UUID profileId, UUID playbackSessionId, UUID streamSessionId, UUID mediaFileId, String note, String requestedChoice, String playbackChoice, JSONB capabilityDeclaration, Integer qualityStepNumber, Integer qualityStepCount, Integer qualityStepHeight, Integer qualityStepBitrate, Double observedBitrate, Double bufferSeconds, Integer droppedFrames, Integer stalls, Integer resolutionWidth, Integer resolutionHeight, String videoCodec, String hdrMode, String audioCodec, Integer audioChannels, Boolean audioDolbyAtmos, Integer displayWidth, Integer displayHeight, String displayHdrMode, Double displayRefreshRate, Boolean displayDynamicRangeMatched, Boolean displayFrameRateMatched, String audioOutputRoute, Integer audioOutputChannels, Integer screenWidth, Integer screenHeight, Double screenPixelRatio, Boolean screenHdr, String browserName, String browserVersion) {
         super(PlaybackReport.PLAYBACK_REPORT);
 
         setId(id);
@@ -667,6 +682,7 @@ public class PlaybackReportRecord extends UpdatableRecordImpl<PlaybackReportReco
         setNote(note);
         setRequestedChoice(requestedChoice);
         setPlaybackChoice(playbackChoice);
+        setCapabilityDeclaration(capabilityDeclaration);
         setQualityStepNumber(qualityStepNumber);
         setQualityStepCount(qualityStepCount);
         setQualityStepHeight(qualityStepHeight);

@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.dto;
 
+import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.services.playbackreport.PlaybackReport;
 import com.streamarr.server.services.playbackreport.PlayerFigures;
 import java.time.Instant;
@@ -22,7 +23,8 @@ public record PlaybackReportDto(
     String requestedChoice,
     String playbackChoice,
     List<PlaybackDecisionDto> decisions,
-    PlayerFigures player) {
+    PlayerFigures player,
+    ClientCapabilityDeclaration capabilityDeclaration) {
 
   public static PlaybackReportDto from(PlaybackReport report) {
     return PlaybackReportDto.builder()
@@ -39,6 +41,7 @@ public record PlaybackReportDto(
         .playbackChoice(report.playbackChoice().name())
         .decisions(report.decisions().stream().map(PlaybackDecisionDto::from).toList())
         .player(report.player())
+        .capabilityDeclaration(report.capabilityDeclaration())
         .build();
   }
 }

@@ -1264,6 +1264,7 @@ public class PlaybackSessionService implements AutoCloseable {
               PlaybackSessionSnapshot.builder()
                   .playbackSessionId(playback.id)
                   .mediaFileId(playback.command.mediaFileId())
+                  .capabilityDeclaration(playback.command.capabilityDeclaration())
                   .formatAttemptCount(playback.formatAttemptCount)
                   .maximumFormatAttempts(recoveryPolicy.maximumFormatAttempts())
                   .requestedChoice(playback.requestedChoice)
