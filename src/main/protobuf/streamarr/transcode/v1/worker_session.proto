@@ -639,16 +639,16 @@ message TranscodeExecution {
   // Deprecated: segment_start_ticks replaces this list, and a worker that reads
   // segment_start_ticks ignores it. Segment N's start, in slots of
   // target_segment_duration_seconds; empty means segment N starts at slot N.
-  // Otherwise it holds media_segment_count strictly increasing entries from 0,
-  // and the last segment's audio ends at advertised_end, after its start
-  // (ADR 0037, segment list).
+  // Otherwise it holds media_segment_count strictly increasing entries from 0;
+  // when advertised_end is set, the last segment's audio ends there, after the
+  // last start (ADR 0037, segment list).
   repeated uint32 segment_start_slots = 9;
   // Segment N's start, in ticks of segment_start_time_base on the zero-based
   // timeline of ProbeKeyframePositionsPart: 0 for segment 0, otherwise the
   // stored presentation tick of the source keyframe that opens segment N.
   // Empty means the plain grid (N x target_segment_duration_seconds). Otherwise
-  // it holds media_segment_count strictly increasing entries from 0, and the
-  // last segment's audio ends at advertised_end, after its start (ADR 0037).
+  // media_segment_count strictly increasing entries from 0; when advertised_end
+  // is set, the last segment's audio ends there, after the last start (ADR 0037).
   repeated uint64 segment_start_ticks = 10;
   // This field holds the time base of segment_start_ticks: the time base of
   // the stored keyframe positions of the source's chosen video stream. The
