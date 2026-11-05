@@ -37,7 +37,10 @@ public class ActiveStreamEventListener {
   private final ConcurrentHashMap<UUID, Publication> publications = new ConcurrentHashMap<>();
 
   // One reader at a time per playback session, so broadcasts follow read order. A change that
-  // arrives during a read asks for one more read, so the last broadcast carries the latest state.
+  // arrives during a read asks for one more read, so the last broadcast carries the latest state,
+  // even while nobody subscribes: the read in flight may still broadcast to a subscriber that
+  // registers later. Only a new read waits for a subscriber, checked in the same map update that
+  // a finishing reader's removal contends on.
   private enum Publication {
     READING,
     READ_AGAIN
@@ -46,17 +49,10 @@ public class ActiveStreamEventListener {
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
   public void onPlaybackSessionChanged(PlaybackSessionChangedEvent event) {
     var playbackSessionId = event.playbackSessionId();
-    // A read in flight may broadcast to a subscriber that registers after this change, so it must
-    // read again even while nobody subscribes; only a new read waits for a subscriber.
-    if (!broadcaster.getChanges().hasRegistrations()) {
-      publications.computeIfPresent(playbackSessionId, (_, _) -> Publication.READ_AGAIN);
-      return;
-    }
-
+    // Only a newly started reader maps to READING here; a reader in flight maps to READ_AGAIN.
     var publication =
-        publications.merge(
-            playbackSessionId, Publication.READING, (_, _) -> Publication.READ_AGAIN);
-    if (publication == Publication.READ_AGAIN) {
+        publications.compute(playbackSessionId, (_, current) -> onChange(current));
+    if (publication != Publication.READING) {
       return;
     }
 
@@ -66,6 +62,18 @@ public class ActiveStreamEventListener {
       publications.remove(playbackSessionId);
       countFailure(e);
     }
+  }
+
+  private Publication onChange(Publication current) {
+    if (current != null) {
+      return Publication.READ_AGAIN;
+    }
+
+    if (!broadcaster.getChanges().hasRegistrations()) {
+      return null;
+    }
+
+    return Publication.READING;
   }
 
   private void publishUntilCurrent(UUID playbackSessionId) {
