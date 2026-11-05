@@ -84,7 +84,8 @@ CREATE TRIGGER fill_audit_columns BEFORE INSERT OR UPDATE ON playback_report
     FOR EACH ROW EXECUTE FUNCTION fill_audit_columns();
 
 -- The decision of each format attempt of the playback session, as the server held it when the
--- viewer shared the report. The audio columns are NULL together when the source has no audio.
+-- viewer shared the report. The audio columns are NULL together when the source has no audio; with
+-- audio, a channel count or bitrate is NULL when the probe found none.
 -- reasons keeps the DecisionReason names in the decision's order.
 CREATE TABLE playback_report_decision
 (
@@ -122,8 +123,8 @@ CREATE TABLE playback_report_decision
     CONSTRAINT chk_playback_report_decision_audio_delivery
         CHECK (audio_delivery IN ('DIRECT_PLAY', 'COPY', 'ENCODE')),
     CONSTRAINT chk_playback_report_decision_audio CHECK (
-        num_nulls(audio_delivery, audio_source_codec, audio_source_channels, audio_output_codec,
-                  audio_output_channels) IN (0, 5)
+        num_nulls(audio_delivery, audio_source_codec, audio_output_codec) IN (0, 3)
         AND (audio_delivery IS NOT NULL
-             OR (audio_source_bitrate IS NULL AND audio_output_bitrate IS NULL)))
+             OR num_nulls(audio_source_channels, audio_source_bitrate, audio_output_channels,
+                          audio_output_bitrate) = 4))
 );

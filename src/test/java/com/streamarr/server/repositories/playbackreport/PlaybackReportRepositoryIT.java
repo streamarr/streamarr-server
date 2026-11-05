@@ -127,6 +127,17 @@ class PlaybackReportRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should read back a decision whose audio channel count is unknown when a report is saved")
+  void shouldReadBackADecisionWhoseAudioChannelCountIsUnknownWhenAReportIsSaved() {
+    var decisions = List.of(copyWithUnknownAudioChannels());
+
+    var id = save(reportBuilder().decisions(decisions).build());
+
+    assertThat(repository.findById(id)).map(PlaybackReport::decisions).contains(decisions);
+  }
+
+  @Test
   @DisplayName("Should read back the figures of a web player when it reports its screen")
   void shouldReadBackFiguresOfWebPlayerWhenItReportsScreen() {
     var figures = webFiguresBuilder().build();
@@ -273,6 +284,19 @@ class PlaybackReportRepositoryIT extends AbstractIntegrationTest {
                     new AudioFormat("truehd", OptionalInt.of(8), OptionalLong.empty()),
                     new AudioFormat("eac3", OptionalInt.of(6), OptionalLong.of(640_000)))))
         .reasons(List.of(DecisionReason.AUDIO_CODEC_NOT_DECLARED))
+        .build();
+  }
+
+  // The probe found no channel count or bitrate, and a copy repeats its source.
+  private static PlaybackDecision copyWithUnknownAudioChannels() {
+    var video = videoBuilder().build();
+    var audio = new AudioFormat("aac", OptionalInt.empty(), OptionalLong.empty());
+    return PlaybackDecision.builder()
+        .formatAttempt(1)
+        .streamSessionId(UUID.randomUUID())
+        .video(new TrackDelivery<>(PlaybackDelivery.COPY, video, video))
+        .audio(Optional.of(new TrackDelivery<>(PlaybackDelivery.COPY, audio, audio)))
+        .reasons(List.of())
         .build();
   }
 

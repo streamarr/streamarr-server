@@ -306,7 +306,7 @@ public class PlaybackReportDecision extends TableImpl<PlaybackReportDecisionReco
     @Override
     public List<Check<PlaybackReportDecisionRecord>> getChecks() {
         return Arrays.asList(
-            Internal.createCheck(this, DSL.name("chk_playback_report_decision_audio"), "(((num_nulls(audio_delivery, audio_source_codec, audio_source_channels, audio_output_codec, audio_output_channels) = ANY (ARRAY[0, 5])) AND ((audio_delivery IS NOT NULL) OR ((audio_source_bitrate IS NULL) AND (audio_output_bitrate IS NULL)))))", true),
+            Internal.createCheck(this, DSL.name("chk_playback_report_decision_audio"), "(((num_nulls(audio_delivery, audio_source_codec, audio_output_codec) = ANY (ARRAY[0, 3])) AND ((audio_delivery IS NOT NULL) OR (num_nulls(audio_source_channels, audio_source_bitrate, audio_output_channels, audio_output_bitrate) = 4))))", true),
             Internal.createCheck(this, DSL.name("chk_playback_report_decision_audio_delivery"), "((audio_delivery = ANY (ARRAY['DIRECT_PLAY'::text, 'COPY'::text, 'ENCODE'::text])))", true),
             Internal.createCheck(this, DSL.name("chk_playback_report_decision_video_delivery"), "((video_delivery = ANY (ARRAY['DIRECT_PLAY'::text, 'COPY'::text, 'ENCODE'::text])))", true)
         );
