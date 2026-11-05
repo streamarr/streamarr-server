@@ -69,7 +69,7 @@ class SegmentRecoveryConcurrencyTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     registry.save(session);
-    rig.lifecycle().startFirstListedVariant(session);
+    rig.lifecycle().startListedVariant(session, session.firstListedVariant());
     executor.markDead(sessionId);
     rig.lifecycle()
         .recover(
@@ -106,7 +106,7 @@ class SegmentRecoveryConcurrencyTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     registry.save(session);
-    rig.lifecycle().startFirstListedVariant(session);
+    rig.lifecycle().startListedVariant(session, session.firstListedVariant());
     var originalAttempt = session.getHandle().orElseThrow().attemptId();
     rig.lifecycle()
         .recover(
@@ -141,7 +141,7 @@ class SegmentRecoveryConcurrencyTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     registry.save(session);
-    rig.lifecycle().startFirstListedVariant(session);
+    rig.lifecycle().startListedVariant(session, session.firstListedVariant());
     executor.markDead(sessionId);
     if (refused) {
       executor.refuseTarget(ExecutionTargetId.LOCAL);
@@ -225,7 +225,7 @@ class SegmentRecoveryConcurrencyTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     registry.save(session);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     lifecycle.recover(
         earliestArrivingSegmentRequestBuilder()
             .sessionId(sessionId)

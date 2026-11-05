@@ -185,7 +185,7 @@ class ShortCopyListenerTest {
 
   private StreamSession started(StreamSession session) {
     runtimeRegistry.save(session);
-    return lifecycle.startFirstListedVariant(session);
+    return lifecycle.startListedVariant(session, session.firstListedVariant());
   }
 
   private void storeSegments(StreamSession session, int count) {
