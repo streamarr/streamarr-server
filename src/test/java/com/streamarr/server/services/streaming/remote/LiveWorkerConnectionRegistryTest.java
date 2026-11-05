@@ -27,6 +27,7 @@ import com.streamarr.transcode.v1.DolbyVisionAbsent;
 import com.streamarr.transcode.v1.DolbyVisionOutput;
 import com.streamarr.transcode.v1.DolbyVisionSampleEntry;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
+import com.streamarr.transcode.v1.JobAttemptProgress;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.MasteringDisplayColorVolume;
 import com.streamarr.transcode.v1.MediaSourceRef;
@@ -175,6 +176,22 @@ class LiveWorkerConnectionRegistryTest {
 
     assertThat(held.wake().await(Duration.ZERO)).isTrue();
     assertThat(held.isRunning()).isFalse();
+  }
+
+  // A held request re-checks its stall deadline and its stream session's access on each pass, so
+  // progress on a long merged segment must start a pass before the deadline or idle timeout.
+  @Test
+  @DisplayName("Should wake the requests held on a variant when its job attempt reports progress")
+  void shouldWakeRequestsHeldOnVariantWhenItsJobAttemptReportsProgress() throws Exception {
+    var held = HeldVariant.dispatch();
+
+    held.registry()
+        .reportProgress(
+            WORKER_ID,
+            held.workerSessionId(),
+            JobAttemptProgress.newBuilder().setJobAttemptId(held.job().getJobAttemptId()).build());
+
+    assertThat(held.wake().await(Duration.ZERO)).isTrue();
   }
 
   @Test
