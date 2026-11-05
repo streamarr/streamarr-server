@@ -5387,6 +5387,124 @@ class HlsStreamingServiceTest {
         .videoFormatConstraint(VideoFormatConstraint.DIRECT_PLAY_OR_COPY_OR_ENCODE);
   }
 
+  // A copy's segment opens at its keyframe, so a position before the keyframe that opens segment 1
+  // still lies in segment 0.
+  @ParameterizedTest
+  @CsvSource({"0, 0", "6499, 0", "6500, 1", "13000, 2", "23999, 3"})
+  @DisplayName("Should start the copy at the segment that holds the start position")
+  void shouldStartTheCopyAtTheSegmentThatHoldsTheStartPosition(
+      long startMillis, int expectedSegment) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .duration(Duration.ofSeconds(24))
+            .keyframes(keyframesAtMillis(0, 6_500, 12_000, 18_000))
+            .build());
+    var command =
+        createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+            .startPosition(Optional.of(Duration.ofMillis(startMillis)))
+            .build();
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(session.getStartPosition()).contains(Duration.ofMillis(startMillis));
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(TranscodeRequest::startSequenceNumber)
+        .isEqualTo(expectedSegment);
+  }
+
+  @Test
+  @DisplayName(
+      "Should start only the first-listed variant at the segment that holds the start position when"
+          + " the session encodes")
+  void
+      shouldStartOnlyTheFirstListedVariantAtTheSegmentThatHoldsTheStartPositionWhenTheSessionEncodes() {
+    var command =
+        createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+            .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+            .startPosition(Optional.of(Duration.ofMillis(5_381_500)))
+            .build();
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getVariants()).hasSizeGreaterThan(1);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.variantLabel())
+                  .isEqualTo(session.getVariants().getFirst().label());
+              assertThat(request.startSequenceNumber()).isEqualTo(896);
+              assertThat(request.seekPosition()).isEqualTo(5_376);
+            });
+    assertThat(
+            new HlsPlaylistService(streamingProperties())
+                .generateMultivariantPlaylist(session, "token"))
+        .contains("#EXT-X-START:TIME-OFFSET=5381.5,PRECISE=YES\n");
+  }
+
+  @Test
+  @DisplayName("Should start at segment 0 and mark no start when the command has no start position")
+  void shouldStartAtSegment0AndMarkNoStartWhenTheCommandHasNoStartPosition() {
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getStartPosition()).isEmpty();
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(TranscodeRequest::startSequenceNumber)
+        .isEqualTo(0);
+    assertThat(
+            new HlsPlaylistService(streamingProperties())
+                .generateMultivariantPlaylist(session, "token"))
+        .doesNotContain("#EXT-X-START");
+  }
+
+  @ParameterizedTest
+  @ValueSource(longs = {-1, 7_200_000, 7_200_001})
+  @DisplayName("Should refuse a start position before zero or at or past the media's end")
+  void shouldRefuseAStartPositionBeforeZeroOrAtOrPastTheMediasEnd(long startMillis) {
+    var command =
+        createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+            .startPosition(Optional.of(Duration.ofMillis(startMillis)))
+            .build();
+
+    var outcome = service.createSession(command);
+
+    assertThat(rejectionOf(outcome))
+        .isEqualTo(new CreateStreamSessionRejection.StartPositionOutOfRange());
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+    assertThat(runtimeRegistry.findById(command.streamSessionId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should refuse a start position before zero when the media file does not exist")
+  void shouldRefuseAStartPositionBeforeZeroWhenTheMediaFileDoesNotExist() {
+    var command =
+        createStreamSessionCommandBuilder(UUID.randomUUID(), UUID.randomUUID())
+            .startPosition(Optional.of(Duration.ofNanos(-1)))
+            .build();
+
+    assertThat(rejectionOf(service.createSession(command)))
+        .isEqualTo(new CreateStreamSessionRejection.StartPositionOutOfRange());
+  }
+
+  @Test
+  @DisplayName("Should carry the start position in a direct-play session")
+  void shouldCarryTheStartPositionInADirectPlaySession() {
+    probeResults.setDefaultProbe(directPlayableProbe());
+    var command =
+        directPlayCommand(seedMediaFile().getId())
+            .startPosition(Optional.of(Duration.ofMillis(5_381_500)))
+            .build();
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
+    assertThat(session.getStartPosition()).contains(Duration.ofMillis(5_381_500));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
   @Test
   @DisplayName("Should not resurrect a session when destroyed during a segment request")
   void shouldNotResurrectSessionWhenDestroyedDuringSegmentRequest() {

@@ -60,7 +60,7 @@ type FailedPlaybackFormatAttempt {
     error: PlaybackFormatAttemptError!
 }
 
-union PlaybackFormatAttemptError = PlaybackOutputMismatchError | PlaybackInvalidSpecificationError | PlaybackFormatRejectedError | PlaybackFormatAttemptsExhaustedError | PlaybackStartupFailedError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | MediaFileFrameRateUnknownError | TranscodeCapacityUnavailableError | NoEligibleVideoFormatError
+union PlaybackFormatAttemptError = StartPositionOutOfRangeError | PlaybackOutputMismatchError | PlaybackInvalidSpecificationError | PlaybackFormatRejectedError | PlaybackFormatAttemptsExhaustedError | PlaybackStartupFailedError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | MediaFileFrameRateUnknownError | TranscodeCapacityUnavailableError | NoEligibleVideoFormatError
 
 enum PlaybackFormatFailure {
     UNSUPPORTED_FORMAT
@@ -72,6 +72,16 @@ input CreatePlaybackSessionInput {
     options: StreamingOptionsInput
     "What the client's current player and display accept."
     capabilities: ClientCapabilityDeclarationInput!
+    """
+    Where playback starts, in seconds from the start of the media, such as the viewer's resume position.
+    It must be 0 or more and less than the media's duration. The server refuses any other value with
+    StartPositionOutOfRangeError. An HLS stream session starts its first job attempt at the segment that
+    holds this position, and its multivariant playlist marks the position with EXT-X-START. A direct-play
+    stream session returns the position, and the client seeks the file there. A later format attempt
+    starts at this position too, until the client reports a playback position in another second. Null
+    starts playback at the beginning of the media.
+    """
+    startPositionSeconds: Float
 }
 
 type CreatePlaybackSessionPayload {
@@ -79,7 +89,7 @@ type CreatePlaybackSessionPayload {
     userErrors: [CreatePlaybackSessionError!]!
 }
 
-union CreatePlaybackSessionError = InvalidIdError | PlaybackSessionClosedError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | MediaFileFrameRateUnknownError | TranscodeCapacityUnavailableError | NoEligibleVideoFormatError | CapabilityValuesRequiredError | HlsAacCapabilityRequiredError | CapabilityListTooLongError | CapabilityMaximumInvalidError | CapabilityProfileMismatchError | VideoCodecTierInvalidError
+union CreatePlaybackSessionError = InvalidIdError | PlaybackSessionClosedError | StartPositionOutOfRangeError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | MediaFileFrameRateUnknownError | TranscodeCapacityUnavailableError | NoEligibleVideoFormatError | CapabilityValuesRequiredError | HlsAacCapabilityRequiredError | CapabilityListTooLongError | CapabilityMaximumInvalidError | CapabilityProfileMismatchError | VideoCodecTierInvalidError
 
 input ReportPlaybackFormatFailureInput {
     playbackSessionId: ID!
@@ -129,4 +139,10 @@ type PlaybackFormatAttemptsExhaustedError implements MutationError {
 
 type PlaybackStartupFailedError implements MutationError {
     message: String!
+}
+
+"The start position lies before 0, or at or past the end of the media."
+type StartPositionOutOfRangeError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
 }

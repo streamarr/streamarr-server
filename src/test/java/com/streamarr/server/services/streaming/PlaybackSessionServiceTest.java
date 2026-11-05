@@ -23,6 +23,7 @@ import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.ShortCopy;
 import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -148,6 +149,93 @@ class PlaybackSessionServiceTest {
               assertThat(replacement.options().quality()).isEqualTo(VideoQuality.AUTO);
               assertThat(replacement.excludedEncodeCodecFamilies()).containsExactly("h264");
             });
+  }
+
+  @Test
+  @DisplayName("Should start the first format attempt at the start position when playback starts")
+  void shouldStartTheFirstFormatAttemptAtTheStartPositionWhenPlaybackStarts() {
+    var command = startCommand().startPosition(Optional.of(Duration.ofMillis(5_381_500))).build();
+
+    var snapshot = accepted(service.start(command));
+
+    assertThat(streams.createdCommands)
+        .singleElement()
+        .extracting(CreateStreamSessionCommand::startPosition)
+        .isEqualTo(Optional.of(Duration.ofMillis(5_381_500)));
+    assertThat(snapshot.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready ->
+                assertThat(ready.session().getStartPosition())
+                    .contains(Duration.ofMillis(5_381_500)));
+  }
+
+  @Test
+  @DisplayName("Should start the first format attempt without a start position when none is given")
+  void shouldStartTheFirstFormatAttemptWithoutAStartPositionWhenNoneIsGiven() {
+    accepted(service.start(startCommand().build()));
+
+    assertThat(streams.createdCommands)
+        .singleElement()
+        .extracting(CreateStreamSessionCommand::startPosition)
+        .isEqualTo(Optional.empty());
+  }
+
+  // The player reports whole seconds, so a report at the start position's second has not moved.
+  @ParameterizedTest
+  @ValueSource(ints = {-1, 5_381})
+  @DisplayName(
+      "Should start the replacement at the start position when playback has not moved from it")
+  void shouldStartTheReplacementAtTheStartPositionWhenPlaybackHasNotMovedFromIt(
+      int reportedSeconds) {
+    var command = startCommand().startPosition(Optional.of(Duration.ofMillis(5_381_500))).build();
+    var initial = accepted(service.start(command));
+    if (reportedSeconds >= 0) {
+      readySession(initial).updatePlaybackState(reportedSeconds, PlaybackState.PLAYING);
+    }
+
+    var recovered = service.reportFormatFailure(report(initial, command).build()).orElseThrow();
+
+    assertThat(recovered.formatAttemptCount()).isEqualTo(2);
+    assertThat(streams.createdCommands.getLast().startPosition())
+        .contains(Duration.ofMillis(5_381_500));
+  }
+
+  @Test
+  @DisplayName(
+      "Should start the replacement at the start position when a copy fails before it is ready")
+  void shouldStartTheReplacementAtTheStartPositionWhenACopyFailsBeforeItIsReady() {
+    streams.duringNextCreation =
+        creation ->
+            service.onVideoCopyOutputMismatch(
+                new VideoCopyOutputMismatchEvent(
+                    creation.streamSessionId(), UUID.randomUUID(), "default"));
+    var command = startCommand().startPosition(Optional.of(Duration.ofSeconds(600))).build();
+
+    accepted(service.start(command));
+
+    assertThat(streams.createdCommands).hasSize(2);
+    assertThat(streams.createdCommands.getLast())
+        .satisfies(
+            replacement -> {
+              assertThat(replacement.videoFormatConstraint())
+                  .isEqualTo(VideoFormatConstraint.ENCODE_ONLY);
+              assertThat(replacement.startPosition()).contains(Duration.ofSeconds(600));
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should start the replacement without the start position when playback moved from it")
+  void shouldStartTheReplacementWithoutTheStartPositionWhenPlaybackMovedFromIt() {
+    var command = startCommand().startPosition(Optional.of(Duration.ofMillis(5_381_500))).build();
+    var initial = accepted(service.start(command));
+    readySession(initial).updatePlaybackState(5_391, PlaybackState.PLAYING);
+
+    var recovered = service.reportFormatFailure(report(initial, command).build()).orElseThrow();
+
+    assertThat(recovered.formatAttemptCount()).isEqualTo(2);
+    assertThat(streams.createdCommands.getLast().startPosition()).isEmpty();
   }
 
   @Test
@@ -1820,6 +1908,10 @@ class PlaybackSessionServiceTest {
         .build();
   }
 
+  private static StreamSession readySession(PlaybackSessionSnapshot snapshot) {
+    return ((PlaybackFormatAttempt.Ready) snapshot.currentFormatAttempt()).session();
+  }
+
   private ReportPlaybackFormatFailureCommand.ReportPlaybackFormatFailureCommandBuilder report(
       PlaybackSessionSnapshot snapshot, StartPlaybackSessionCommand command) {
     return ReportPlaybackFormatFailureCommand.builder()
@@ -1926,6 +2018,7 @@ class PlaybackSessionServiceTest {
               .authority(command.identity().playbackAuthority())
               .options(command.options())
               .mediaProbe(sourceProbe)
+              .startPosition(command.startPosition().orElse(null))
               .build();
       sessions.put(session.getSessionId(), session);
       if (duringNextCreation != null) {

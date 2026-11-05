@@ -77,6 +77,8 @@ public class PlaybackSessionService implements AutoCloseable {
     // Every later format attempt follows the playback choice that plays now (ADR 0052).
     private PlayingChoice choice;
     private PlaybackFormatAttempt current;
+    // Every format attempt starts at the start position until playback moves from it.
+    private Optional<Duration> startPosition;
     private Instant lastAccessedAt;
     @Builder.Default private List<VideoQuality> offeredChoices = List.of();
     @Builder.Default private int formatAttemptCount = 1;
@@ -174,6 +176,7 @@ public class PlaybackSessionService implements AutoCloseable {
               .requestedChoice(requested)
               .choice(PlayingChoice.requested(requested))
               .current(new PlaybackFormatAttempt.Pending(childId))
+              .startPosition(command.startPosition())
               .lastAccessedAt(clock.instant())
               .build();
       playback.streamIds.add(childId);
@@ -353,6 +356,7 @@ public class PlaybackSessionService implements AutoCloseable {
       return Optional.empty();
     }
 
+    forgetTheStartPositionOncePlaybackMoved(playback);
     var failed = failedAttempt(playback, fixedFailure);
     // A failed encode keeps its codec family out of every later format attempt.
     if (failed.output() instanceof FailedFormatAttempt.Encode(var codecFamily)) {
@@ -381,6 +385,15 @@ public class PlaybackSessionService implements AutoCloseable {
                       .choice(whenCopying)
                       .choiceWhenEncoding(whenEncoding)));
     };
+  }
+
+  // Once the player reports that playback moved from the start position, the client seeks the
+  // replacement itself, so the replacement starts at the beginning of the media.
+  private static void forgetTheStartPositionOncePlaybackMoved(PlaybackSession playback) {
+    if (playback.current instanceof PlaybackFormatAttempt.Ready(var session)
+        && session.hasPlaybackMovedFromTheStartPosition()) {
+      playback.startPosition = Optional.empty();
+    }
   }
 
   // A format attempt fails before it is ready only through the worker's copy output mismatch,
@@ -542,7 +555,8 @@ public class PlaybackSessionService implements AutoCloseable {
                         .quality(playback.choice.playbackChoice())
                         .build())
                 .capabilityDeclaration(playback.command.capabilityDeclaration())
-                .excludedEncodeCodecFamilies(Set.copyOf(playback.excludedEncodeCodecFamilies)));
+                .excludedEncodeCodecFamilies(Set.copyOf(playback.excludedEncodeCodecFamilies))
+                .startPosition(playback.startPosition));
   }
 
   private void requireAuthority(AuthenticatedIdentity identity, PlaybackAuthority authority) {

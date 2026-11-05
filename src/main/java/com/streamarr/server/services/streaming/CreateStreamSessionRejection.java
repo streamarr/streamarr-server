@@ -24,4 +24,7 @@ public sealed interface CreateStreamSessionRejection extends StartPlaybackSessio
 
   /** The probed duration, missing or under a millisecond, gives the playlist no media segment. */
   record NoMediaSegments() implements CreateStreamSessionRejection {}
+
+  /** The start position lies before zero, or at or past the probed media's end. */
+  record StartPositionOutOfRange() implements CreateStreamSessionRejection {}
 }

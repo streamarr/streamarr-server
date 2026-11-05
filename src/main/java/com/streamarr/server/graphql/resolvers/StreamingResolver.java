@@ -69,6 +69,7 @@ public class StreamingResolver {
   private static final String ITEM_ID = "itemId";
   private static final String INVALID_ITEM_ID = "Enter a valid item ID.";
   private static final String ITEM_NOT_FOUND = "This item no longer exists.";
+  private static final double NANOSECONDS_PER_SECOND = 1_000_000_000d;
 
   private final PlaybackSessionService playbackSessions;
   private final AuthorizationService authorizationService;
@@ -110,6 +111,8 @@ public class StreamingResolver {
                   .identity(authorizationService.currentIdentity())
                   .options(mapOptions(input.options()))
                   .capabilityDeclaration(input.capabilities().toDeclaration())
+                  .startPosition(
+                      Optional.ofNullable(input.startPositionSeconds()).map(this::toPosition))
                   .build());
       return MutationPayloads.payload(
           outcome.map(this::toCreatedSessionDto),
@@ -153,7 +156,17 @@ public class StreamingResolver {
       case CreateStreamSessionRejection.NoMediaSegments() ->
           new CreateStreamSessionError.InvalidMediaFileError(
               "This video file has no playable length. Ask your server admin to check the file.");
+      case CreateStreamSessionRejection.StartPositionOutOfRange() ->
+          new CreateStreamSessionError.StartPositionOutOfRangeError(
+              "This video can't start at that point. Play it from the beginning instead.",
+              InputPath.of("startPositionSeconds"));
     };
+  }
+
+  // Rounding down keeps a position a fraction of a nanosecond below zero negative, so the service
+  // refuses it.
+  private Duration toPosition(double seconds) {
+    return Duration.ofNanos((long) Math.floor(seconds * NANOSECONDS_PER_SECOND));
   }
 
   private CreateStreamSessionError probeFailureError(ProbeError reason) {
@@ -393,6 +406,7 @@ public class StreamingResolver {
               .videoRange(session.getVideoRange().name())
               .mediaEndSeconds(
                   session.getNormalEnd().map(end -> end.toMillis() / 1000.0).orElse(null))
+              .startPositionSeconds(startPositionSeconds(session))
               .build();
       case DIRECT_PLAY -> directPlayDto(session, session.getSourceContainer().orElseThrow());
     };
@@ -404,7 +418,15 @@ public class StreamingResolver {
         .streamUrl(streamUrl(session, "source." + container.getExtension()))
         .sourceContainer(container.name())
         .videoRange(session.getVideoRange().name())
+        .startPositionSeconds(startPositionSeconds(session))
         .build();
+  }
+
+  private static Double startPositionSeconds(StreamSession session) {
+    return session
+        .getStartPosition()
+        .map(position -> position.toNanos() / NANOSECONDS_PER_SECOND)
+        .orElse(null);
   }
 
   // The issuer refuses to mint for sessions the caller does not own — every DTO carries a playback

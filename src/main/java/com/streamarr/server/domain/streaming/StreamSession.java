@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
@@ -32,6 +33,10 @@ public class StreamSession {
   private final StreamingOptions options;
   private final Instant createdAt;
   @Builder.Default private final StreamDelivery delivery = StreamDelivery.HLS;
+
+  /** Where playback of the stream session starts on the media timeline. */
+  @Getter(lombok.AccessLevel.NONE)
+  private final Duration startPosition;
 
   /** The source container that a direct-play stream session serves. */
   @Getter(lombok.AccessLevel.NONE)
@@ -64,8 +69,17 @@ public class StreamSession {
   @Builder.Default
   private final AtomicReference<ShortCopy> shortCopy = new AtomicReference<>();
 
+  @Getter(lombok.AccessLevel.NONE)
+  @Builder.Default
+  private final AtomicBoolean positionReported = new AtomicBoolean();
+
   public Optional<SourceContainer> getSourceContainer() {
     return Optional.ofNullable(sourceContainer);
+  }
+
+  /** Empty when playback starts at the beginning of the media. */
+  public Optional<Duration> getStartPosition() {
+    return Optional.ofNullable(startPosition);
   }
 
   /**
@@ -90,6 +104,17 @@ public class StreamSession {
   public void updatePlaybackState(int positionSeconds, PlaybackState state) {
     playbackSnapshot.updateAndGet(
         current -> new PlaybackSnapshot(positionSeconds, state, Instant.now()));
+    positionReported.set(true);
+  }
+
+  /**
+   * Whether playback moved from the start position: the player reported a position in a whole
+   * second other than the start position's. A stream session without a start position starts at
+   * zero.
+   */
+  public boolean hasPlaybackMovedFromTheStartPosition() {
+    var startSecond = getStartPosition().map(Duration::toSeconds).orElse(0L);
+    return positionReported.get() && playbackSnapshot.get().positionSeconds() != startSecond;
   }
 
   public PlaybackSnapshot getPlaybackSnapshot() {
