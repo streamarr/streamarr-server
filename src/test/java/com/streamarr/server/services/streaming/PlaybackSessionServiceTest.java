@@ -388,6 +388,18 @@ class PlaybackSessionServiceTest {
   }
 
   @Test
+  @DisplayName("Should announce the change when an audio track switch moves direct play to HLS")
+  void shouldAnnounceTheChangeWhenAnAudioTrackSwitchMovesDirectPlayToHls() {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlayOfTwoAudioTracks(service, command);
+    var beforeSwitch = changesOf(directPlay);
+
+    accepted(service.switchAudioTrack(audioSwitch(directPlay, command, 1)));
+
+    assertThat(changesOf(directPlay)).isEqualTo(beforeSwitch + 1);
+  }
+
+  @Test
   @DisplayName("Should announce nothing when a timeline report names a stream that no session owns")
   void shouldAnnounceNothingWhenATimelineReportNamesAStreamThatNoSessionOwns() {
     service.onStreamSessionTimelineReported(
