@@ -6031,6 +6031,35 @@ class HlsStreamingServiceTest {
         .containsExactly(DecisionReason.DIRECT_PLAY_AUDIO_TRACK_NOT_SELECTABLE);
   }
 
+  // Chromium plays no audio from an MP4 file whose only enabled track is the video, so the file
+  // plays over HLS.
+  @Test
+  @DisplayName(
+      "Should start HLS when the player cannot select an audio track and an MP4 file enables only"
+          + " its video track")
+  void shouldStartHlsWhenThePlayerCannotSelectAnAudioTrackAndAnMp4FileEnablesOnlyItsVideoTrack() {
+    var file = directPlayableMp4ProbeBuilder();
+    var video = ProbeFixture.videoStreamBuilder(file.build()).isDefault(true).build();
+    var stereo = ProbeFixture.audioStreamBuilder("aac").channels(OptionalInt.of(2));
+    var english = stereo.index(1).language(Optional.of("eng")).build();
+    var french = stereo.index(2).language(Optional.of("fra")).build();
+    probeResults.setDefaultProbe(file.streams(List.of(video, english, french)).build());
+    var declaration =
+        directPlayMp4DeclarationBuilder().selectsAudioTrackInDirectPlay(false).build();
+
+    var session =
+        accepted(
+            service.createSession(
+                directPlayCommand(seedMediaFile().getId())
+                    .options(englishInOriginal())
+                    .capabilityDeclaration(declaration)
+                    .build()));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.HLS);
+    assertThat(session.getTranscodeDecision().reasons())
+        .containsExactly(DecisionReason.DIRECT_PLAY_AUDIO_TRACK_NOT_SELECTABLE);
+  }
+
   // The HLS format attempt names why it does not direct-play first among its stream decision's
   // reasons, so a playback-data overlay shows that the player cannot select the chosen track.
   @ParameterizedTest(name = "{0}")

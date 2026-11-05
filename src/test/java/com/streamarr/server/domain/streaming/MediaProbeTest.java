@@ -207,11 +207,39 @@ class MediaProbeTest {
     assertThat(probe.startsOnTheFirstAudioTrack()).isEqualTo(startsOnTheFirst);
   }
 
+  // Once any audio or video track of an MP4 or MOV file is enabled, Chromium skips every audio
+  // track that is not, so it plays no audio when only the video track is enabled.
+  @ParameterizedTest(name = "first audio track enabled {0}")
+  @CsvSource({"false, false", "true, true"})
+  @DisplayName(
+      "Should start every non-selecting player on an MP4 file's first audio track beside an enabled"
+          + " video track only when that audio track is enabled")
+  void
+      shouldStartEveryNonSelectingPlayerOnAnMp4FilesFirstAudioTrackBesideAnEnabledVideoTrackOnlyWhenThatAudioTrackIsEnabled(
+          boolean firstIsEnabled, boolean startsOnTheFirst) {
+    var probe =
+        probeIn(
+            MOV_DEMUXER,
+            Optional.of("isom"),
+            StreamInfo.builder().index(0).codecType("video").isDefault(true).build(),
+            audioIn("eng").index(1).isDefault(firstIsEnabled).build(),
+            audioIn("fra").index(2).build());
+
+    assertThat(probe.startsOnTheFirstAudioTrack()).isEqualTo(startsOnTheFirst);
+  }
+
+  // An MP4 file reads the enabled flags, so the answer must not depend on a first audio track.
   @Test
   @DisplayName("Should start a non-selecting player on the first audio track when there is none")
   void shouldStartANonSelectingPlayerOnTheFirstAudioTrackWhenThereIsNone() {
-    assertThat(probe(subtitle("subrip", "eng").index(1).build()).startsOnTheFirstAudioTrack())
-        .isTrue();
+    var probe =
+        probeIn(
+            MOV_DEMUXER,
+            Optional.of("isom"),
+            StreamInfo.builder().index(0).codecType("video").isDefault(true).build(),
+            subtitle("mov_text", "eng").index(1).build());
+
+    assertThat(probe.startsOnTheFirstAudioTrack()).isTrue();
   }
 
   private static MediaProbe probe(StreamInfo... streams) {
