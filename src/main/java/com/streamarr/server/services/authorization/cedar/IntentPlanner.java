@@ -182,6 +182,10 @@ final class IntentPlanner {
           unitPlan(AuthorizationCheck.onServer(Action.CHANGE_IDLE_SEGMENT_RETENTION));
       case Intent.ViewActiveStreams _ ->
           unitPlan(AuthorizationCheck.onServer(Action.VIEW_ACTIVE_STREAMS));
+      case Intent.ViewUploadBudget _ ->
+          unitPlan(AuthorizationCheck.onServer(Action.VIEW_UPLOAD_BUDGET));
+      case Intent.ChangeUploadBudget _ ->
+          unitPlan(AuthorizationCheck.onServer(Action.CHANGE_UPLOAD_BUDGET));
     };
   }
 
