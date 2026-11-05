@@ -590,14 +590,18 @@ class StreamingResolverTest {
         .isEqualTo("AUDIO_TRACK_SWITCHED");
   }
 
-  @Test
+  // The switch's stream session starts at the playback session's start position until playback
+  // moves from it, so a re-probe that shortens the file refuses that position too.
+  @ParameterizedTest(name = "{1}")
+  @MethodSource("audioSwitchRejections")
   @DisplayName(
       "Should return the typed creation error when the stream session for an audio switch is"
           + " refused")
-  void shouldReturnTheTypedCreationErrorWhenTheStreamSessionForAnAudioSwitchIsRefused() {
+  void shouldReturnTheTypedCreationErrorWhenTheStreamSessionForAnAudioSwitchIsRefused(
+      CreateStreamSessionRejection rejection, String errorType) {
     STUB_SERVICE.setNextResult(buildDirectPlaySessionOfTwoAudioTracks());
     var created = startPlaybackReadingChoices(VideoQuality.ORIGINAL);
-    STUB_SERVICE.setRejection(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(8));
+    STUB_SERVICE.setRejection(rejection);
 
     var switched =
         switchAudioTrack(
@@ -608,7 +612,17 @@ class StreamingResolverTest {
     assertThat(switched.read(SWITCHED_PLAYBACK, Object.class)).isNull();
     assertThat(
             switched.read("data.switchPlaybackAudioTrack.userErrors[0].__typename", String.class))
-        .isEqualTo("TranscodeCapacityUnavailableError");
+        .isEqualTo(errorType);
+  }
+
+  static Stream<Arguments> audioSwitchRejections() {
+    return Stream.of(
+        Arguments.of(
+            new CreateStreamSessionRejection.TranscodeCapacityUnavailable(8),
+            "TranscodeCapacityUnavailableError"),
+        Arguments.of(
+            new CreateStreamSessionRejection.StartPositionOutOfRange(),
+            "StartPositionOutOfRangeError"));
   }
 
   @Test

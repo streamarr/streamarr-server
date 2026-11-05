@@ -335,7 +335,7 @@ type SwitchPlaybackAudioTrackPayload {
     userErrors: [SwitchPlaybackAudioTrackError!]!
 }
 
-union SwitchPlaybackAudioTrackError = InvalidIdError | PlaybackSessionClosedError | AudioTrackNotInFileError | PlaybackFormatAttemptsExhaustedError | PlaybackStartupFailedError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | MediaFileFrameRateUnknownError | TranscodeCapacityUnavailableError | NoEligibleVideoFormatError
+union SwitchPlaybackAudioTrackError = InvalidIdError | PlaybackSessionClosedError | AudioTrackNotInFileError | PlaybackFormatAttemptsExhaustedError | PlaybackStartupFailedError | StartPositionOutOfRangeError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | MediaFileFrameRateUnknownError | TranscodeCapacityUnavailableError | NoEligibleVideoFormatError
 
 "The file has no audio track at the position that the input names."
 type AudioTrackNotInFileError implements InputMutationError & MutationError {
