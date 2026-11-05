@@ -99,10 +99,14 @@ public class SegmentDeliveryCoordinator {
     };
   }
 
-  // The request's variant is the variant that the player requests, so the playback session
-  // continues it on the software encoder; the player reads the new format attempt once its segment
-  // request ends as unrecoverable (ADR 0044).
+  // Only the variant that the player requests continues on the software encoder; the player reads
+  // the new format attempt once its segment request ends as unrecoverable. A held request for a
+  // variant that the player has left just ends (ADR 0044).
   private SegmentDelivery continueInSoftware(SegmentRequest request) {
+    if (!producerLifecycle.isRequestedVariant(request.sessionId(), request.variantLabel())) {
+      return unrecoverableDelivery(request.sessionId(), request.segmentName());
+    }
+
     eventPublisher.publishEvent(
         RequestedVariantHardwareEncoderFailedEvent.builder()
             .streamSessionId(request.sessionId())

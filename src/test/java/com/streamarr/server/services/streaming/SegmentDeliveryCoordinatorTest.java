@@ -1599,6 +1599,23 @@ class SegmentDeliveryCoordinatorTest {
         .containsExactly(softwareContinuationOf(sessionId, "480p"));
   }
 
+  @Test
+  @DisplayName(
+      "Should answer a held request as unrecoverable without a software continuation when the"
+          + " player has left its variant before the variant's hardware encoder fails")
+  void shouldNotContinueInSoftwareWhenThePlayerLeftTheVariantBeforeItsHardwareEncoderFails()
+      throws Exception {
+    var session = startedLadderSession();
+    var sessionId = session.getSessionId();
+    var held = heldDelivery(sessionId, "480p", "480p/segment1.m4s");
+    lifecycle.prepareRequestedVariant(sessionId, "720p", "720p/segment1.m4s");
+
+    transcodeExecutor.failHardwareEncoder(sessionId, "480p");
+
+    assertThat(held.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(events.getEventsOfType(RequestedVariantHardwareEncoderFailedEvent.class)).isEmpty();
+  }
+
   private static RequestedVariantHardwareEncoderFailedEvent softwareContinuationOf(
       UUID sessionId, String variantLabel) {
     return RequestedVariantHardwareEncoderFailedEvent.builder()
