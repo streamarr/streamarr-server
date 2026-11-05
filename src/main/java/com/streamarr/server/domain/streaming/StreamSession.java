@@ -169,6 +169,11 @@ public class StreamSession {
     variantHandles.remove(variantLabel);
   }
 
+  /** The transcode decision that the variant's job attempts run. */
+  public TranscodeDecision decisionOf(@NonNull String variantLabel) {
+    return transcodeDecision;
+  }
+
   /**
    * Whether the stream session offers this variant: a variant of its ladder, or the default variant
    * when the session has no ladder.
