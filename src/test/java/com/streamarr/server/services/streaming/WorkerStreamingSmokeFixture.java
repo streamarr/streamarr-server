@@ -8,8 +8,10 @@ import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfigu
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
 import java.util.Collection;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;
+import org.springframework.context.ApplicationEventPublisher;
 
 final class WorkerStreamingSmokeFixture implements AutoCloseable {
   private final UUID sourceNamespaceId = UUID.randomUUID();
@@ -17,13 +19,18 @@ final class WorkerStreamingSmokeFixture implements AutoCloseable {
   private final WorkerContainerFixture worker;
   private final LocalSegmentStore segmentStore;
 
+  // The event publisher defaults to one that only captures, so no listener reacts.
   @Builder
   private WorkerStreamingSmokeFixture(
-      Path sourceRoot, LocalSegmentStore segmentStore, String ffmpegScript) {
+      Path sourceRoot,
+      LocalSegmentStore segmentStore,
+      String ffmpegScript,
+      ApplicationEventPublisher eventPublisher) {
     this.segmentStore = segmentStore;
     workerSessions =
         WorkerSessionServer.builder()
-            .eventPublisher(new CapturingEventPublisher())
+            .eventPublisher(
+                Optional.ofNullable(eventPublisher).orElseGet(CapturingEventPublisher::new))
             .configuration(
                 WorkerSessionServerConfiguration.builder().address("127.0.0.1").port(0).build())
             .segmentStore(segmentStore)
