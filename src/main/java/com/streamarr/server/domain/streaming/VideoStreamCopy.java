@@ -96,7 +96,10 @@ public record VideoStreamCopy(
     }
 
     return switch (CopiedDolbyVision.of(this)) {
-      case CopiedDolbyVision.Declarable _, CopiedDolbyVision.Undeclarable _ -> true;
+      case CopiedDolbyVision.Declarable _,
+          CopiedDolbyVision.Undeclarable _,
+          CopiedDolbyVision.Unknown _ ->
+          true;
       case CopiedDolbyVision.None _,
           CopiedDolbyVision.KeptUnderSdrBase _,
           CopiedDolbyVision.NeedsDolbyVisionSampleEntry _ ->
