@@ -9,8 +9,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -37,6 +39,14 @@ class ClientCapabilityDeclarationTest {
                   builder -> builder.codecProfiles(h264EntryBuilder().build().codecProfiles()),
               "compatibleBases", builder -> builder.compatibleBases(List.of(CompatibleBase.SDR)),
               "dolbyVisionProfiles", builder -> builder.dolbyVisionProfiles(List.of()));
+
+  // The builder defaults both values, so only the canonical constructor can receive null.
+  private static final Map<String, ThrowingCallable> AUDIO_ENTRIES_WITHOUT_A_DEFAULTED_VALUE =
+      Map.of(
+          "directPlayContainers",
+          () -> new AudioCapabilityEntry(AudioCodec.AAC, 2, true, null, OptionalInt.empty()),
+          "minBlockSize",
+          () -> new AudioCapabilityEntry(AudioCodec.AAC, 2, true, List.of(), null));
 
   @ParameterizedTest
   @MethodSource("requiredDeclarationLists")
@@ -150,6 +160,43 @@ class ClientCapabilityDeclarationTest {
     assertThatThrownBy(() -> declaration.acceptsHlsCopy(null))
         .isInstanceOf(NullPointerException.class)
         .hasMessageContaining("copy");
+  }
+
+  @Test
+  @DisplayName("Should refuse to judge an audio copy when the caller passes no stream")
+  void shouldRefuseToJudgeAnAudioCopyWhenTheCallerPassesNoStream() {
+    var declaration =
+        ClientCapabilityDeclaration.builder()
+            .video(List.of(h264EntryBuilder().build()))
+            .audio(List.of(aacEntryBuilder().build()))
+            .build();
+
+    assertThatThrownBy(() -> declaration.acceptsHlsAudioCopy(null, 2))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("stream");
+  }
+
+  @Test
+  @DisplayName("Should refuse to judge an entry's audio copy when the caller passes no stream")
+  void shouldRefuseToJudgeAnEntrysAudioCopyWhenTheCallerPassesNoStream() {
+    var entry = aacEntryBuilder().build();
+
+    assertThatThrownBy(() -> entry.acceptsHlsCopy(null, 2))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("stream");
+  }
+
+  @ParameterizedTest
+  @MethodSource("defaultedAudioEntryValues")
+  @DisplayName("Should refuse an audio capability entry when a defaulted value is null")
+  void shouldRefuseAnAudioCapabilityEntryWhenADefaultedValueIsNull(String missing) {
+    assertThatThrownBy(AUDIO_ENTRIES_WITHOUT_A_DEFAULTED_VALUE.get(missing))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining(missing);
+  }
+
+  static Stream<String> defaultedAudioEntryValues() {
+    return AUDIO_ENTRIES_WITHOUT_A_DEFAULTED_VALUE.keySet().stream().sorted();
   }
 
   static Stream<String> requiredDeclarationLists() {

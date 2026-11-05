@@ -191,6 +191,16 @@ enum DecisionReason {
     "The probe stored no codec string for the source's audio, which a playlist needs to describe a copy."
     AUDIO_CODEC_STRING_UNKNOWN
     """
+    The source's FLAC minimum block size is below the minimum of each audio entry for HLS that accepts the rest of the
+    copy.
+    """
+    AUDIO_BLOCK_SIZE_NOT_DECLARED
+    """
+    The probe stored no FLAC minimum block size for the source's audio, and each audio entry for HLS that accepts the
+    rest of the copy gives a minimum.
+    """
+    AUDIO_BLOCK_SIZE_UNKNOWN
+    """
     The client's maximum bitrate takes a lower audio step. The output can still exceed a maximum below the lowest
     audio and video rates that the server encodes.
     """
@@ -285,7 +295,7 @@ type CreatePlaybackSessionPayload {
     userErrors: [CreatePlaybackSessionError!]!
 }
 
-union CreatePlaybackSessionError = InvalidIdError | PlaybackSessionClosedError | StartPositionOutOfRangeError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | MediaFileFrameRateUnknownError | TranscodeCapacityUnavailableError | NoEligibleVideoFormatError | CapabilityValuesRequiredError | HlsAacCapabilityRequiredError | CapabilityListTooLongError | CapabilityMaximumInvalidError | CapabilityProfileMismatchError | VideoCodecTierInvalidError
+union CreatePlaybackSessionError = InvalidIdError | PlaybackSessionClosedError | StartPositionOutOfRangeError | MediaFileNotFoundError | MediaFileProbeNotReadyError | InvalidMediaFileError | MediaFileHasNoVideoError | MediaFileFrameRateUnknownError | TranscodeCapacityUnavailableError | NoEligibleVideoFormatError | CapabilityValuesRequiredError | HlsAacCapabilityRequiredError | CapabilityListTooLongError | CapabilityMaximumInvalidError | CapabilityProfileMismatchError | VideoCodecTierInvalidError | AudioMinBlockSizeInvalidError
 
 input ReportPlaybackFormatFailureInput {
     playbackSessionId: ID!

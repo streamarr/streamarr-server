@@ -17,6 +17,8 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.Di
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionLevelNotPositive;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionProfileOutsideCodecFamily;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.HlsAacEntryMissing;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.MinBlockSizeNotApplicable;
+import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.MinBlockSizeOutsideFlacBlockSizes;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyAudioDirectPlayContainers;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyAudioEntries;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.TooManyCodecProfiles;
@@ -165,7 +167,15 @@ class CapabilityDeclarationErrorsTest {
         Arguments.of(
             new TooManyDirectPlaySampleEntries(1, 32),
             CreateStreamSessionError.CapabilityListTooLongError.class,
-            List.of("capabilities", "video", "1", "directPlaySampleEntries")));
+            List.of("capabilities", "video", "1", "directPlaySampleEntries")),
+        Arguments.of(
+            new MinBlockSizeNotApplicable(2),
+            CreateStreamSessionError.AudioMinBlockSizeInvalidError.class,
+            List.of("capabilities", "audio", "2", "minBlockSize")),
+        Arguments.of(
+            new MinBlockSizeOutsideFlacBlockSizes(3),
+            CreateStreamSessionError.AudioMinBlockSizeInvalidError.class,
+            List.of("capabilities", "audio", "3", "minBlockSize")));
   }
 
   @Test

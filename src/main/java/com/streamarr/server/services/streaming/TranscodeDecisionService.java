@@ -5,6 +5,7 @@ import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.AudioSteps;
+import com.streamarr.server.domain.streaming.AudioStreamProperties;
 import com.streamarr.server.domain.streaming.AudioTrackChannels;
 import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
@@ -632,12 +633,16 @@ public class TranscodeDecisionService {
     // source's count. Only an encode names an output layout.
     var track = AudioTrackChannels.of(source);
     int sourceChannels = track.count();
-    var sourceCodecString =
-        source.audioStreams().stream().findFirst().flatMap(StreamInfo::codecString);
+    var sourceStream = source.audioStreams().stream().findFirst();
+    var sourceCodecString = sourceStream.flatMap(StreamInfo::codecString);
     var copyChannelMaximum = HlsAudioEncodes.channelMaximum(declaration, source.audioCodec());
     var encodeReason =
         audioEncodeReason(copyChannelMaximum, source)
-            .or(() -> audioCodecStringRefusal(source.audioCodec(), sourceCodecString));
+            .or(() -> audioCodecStringRefusal(source.audioCodec(), sourceCodecString))
+            .or(
+                () ->
+                    sourceStream.flatMap(
+                        stream -> audioBlockSizeRefusal(declaration, stream, sourceChannels)));
     if (encodeReason.isPresent()) {
       return new SessionAudio(HlsAudioEncodes.forTrack(declaration, track), encodeReason);
     }
@@ -684,6 +689,26 @@ public class TranscodeDecisionService {
     }
 
     return Optional.empty();
+  }
+
+  // By now an entry names the codec and accepts the channels, so only a FLAC entry's minimum block
+  // size can refuse the copy (ADR 0049).
+  private static Optional<DecisionReason> audioBlockSizeRefusal(
+      ClientCapabilityDeclaration declaration, StreamInfo stream, int channels) {
+    if (declaration.acceptsHlsAudioCopy(stream, channels)) {
+      return Optional.empty();
+    }
+
+    var blockSize =
+        stream
+            .audioProperties()
+            .map(AudioStreamProperties::flacMinimumBlockSizeSamples)
+            .orElseGet(OptionalInt::empty);
+    if (blockSize.isEmpty()) {
+      return Optional.of(DecisionReason.AUDIO_BLOCK_SIZE_UNKNOWN);
+    }
+
+    return Optional.of(DecisionReason.AUDIO_BLOCK_SIZE_NOT_DECLARED);
   }
 
   private static boolean isCopyableAudioCodecString(String codec, String codecString) {

@@ -83,4 +83,11 @@ public sealed interface CapabilityDeclarationRejection extends StartPlaybackSess
 
   record TooManyDirectPlaySampleEntries(int videoEntry, int maximum)
       implements CapabilityDeclarationRejection {}
+
+  /** The audio entry gives a minimum block size, and only FLAC has block sizes. */
+  record MinBlockSizeNotApplicable(int audioEntry) implements CapabilityDeclarationRejection {}
+
+  /** The FLAC entry's minimum block size lies outside FLAC's block sizes, 16 to 65,535 samples. */
+  record MinBlockSizeOutsideFlacBlockSizes(int audioEntry)
+      implements CapabilityDeclarationRejection {}
 }

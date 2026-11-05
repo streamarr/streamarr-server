@@ -94,6 +94,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
+import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
@@ -1765,6 +1766,90 @@ class StreamingResolverTest {
                             .maxHeight(1080)
                             .build()))
                 .build());
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry a FLAC entry's minimum block size when the declaration gives one for FLAC")
+  void shouldCarryAFlacEntrysMinimumBlockSizeWhenTheDeclarationGivesOneForFlac() {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+
+    var context =
+        dgsQueryExecutor.executeAndGetDocumentContext(
+            """
+            mutation {
+              createPlaybackSession(input: {
+                mediaFileId: "%s"
+                capabilities: {
+                  video: [{
+                    codecFamily: H264, codecProfiles: [{profile: H264_HIGH, maxLevel: 41}]
+                    maxBitDepth: 8, maxWidth: 1920, maxHeight: 1080, maxFrameRate: 60
+                    compatibleBases: [SDR], dolbyVisionProfiles: [], hdr10Plus: false, hls: true
+                  }]
+                  audio: [
+                    {codec: AAC, maxChannels: 2, hls: true}
+                    {codec: FLAC, maxChannels: 8, hls: true, minBlockSize: 192}
+                  ]
+                }
+              }) {
+                playbackSession { id }
+                userErrors { __typename }
+              }
+            }
+            """
+                .formatted(UUID.randomUUID()));
+
+    List<Object> errors = context.read("data.createPlaybackSession.userErrors");
+    assertThat(errors).isEmpty();
+    assertThat(STUB_SERVICE.getLastReceivedDeclaration().audio())
+        .containsExactly(
+            aacEntryBuilder().build(),
+            audioEntryBuilder(AudioCodec.FLAC)
+                .maxChannels(8)
+                .minBlockSize(OptionalInt.of(192))
+                .build());
+  }
+
+  @Test
+  @DisplayName("Should refuse a minimum block size when the audio entry's codec is not FLAC")
+  void shouldRefuseAMinimumBlockSizeWhenTheAudioEntrysCodecIsNotFlac() {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+
+    var context =
+        dgsQueryExecutor.executeAndGetDocumentContext(
+            """
+            mutation {
+              createPlaybackSession(input: {
+                mediaFileId: "%s"
+                capabilities: {
+                  video: [{
+                    codecFamily: H264, codecProfiles: [{profile: H264_HIGH, maxLevel: 41}]
+                    maxBitDepth: 8, maxWidth: 1920, maxHeight: 1080, maxFrameRate: 60
+                    compatibleBases: [SDR], dolbyVisionProfiles: [], hdr10Plus: false, hls: true
+                  }]
+                  audio: [{codec: AAC, maxChannels: 2, hls: true, minBlockSize: 192}]
+                }
+              }) {
+                playbackSession { id }
+                userErrors {
+                  __typename
+                  ... on InputMutationError { inputPath }
+                }
+              }
+            }
+            """
+                .formatted(UUID.randomUUID()));
+
+    assertThat(context.read(CREATED_PLAYBACK, Object.class)).isNull();
+    List<Map<String, Object>> errors = context.read("data.createPlaybackSession.userErrors");
+    assertThat(errors)
+        .containsExactly(
+            Map.of(
+                "__typename",
+                "AudioMinBlockSizeInvalidError",
+                "inputPath",
+                List.of("capabilities", "audio", "0", "minBlockSize")));
+    assertThat(STUB_SERVICE.getAllSessions()).isEmpty();
   }
 
   @Test

@@ -15,6 +15,7 @@ import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoSampleEntry;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 
 /**
  * The client capability declaration as the schema spells it. The schema's enums name the domain
@@ -86,7 +87,11 @@ public record ClientCapabilityDeclarationInput(
   }
 
   public record AudioCapabilityEntryInput(
-      AudioCodec codec, int maxChannels, boolean hls, List<SourceContainer> directPlayContainers) {
+      AudioCodec codec,
+      int maxChannels,
+      boolean hls,
+      List<SourceContainer> directPlayContainers,
+      Integer minBlockSize) {
 
     AudioCapabilityEntry toEntry() {
       return AudioCapabilityEntry.builder()
@@ -94,6 +99,7 @@ public record ClientCapabilityDeclarationInput(
           .maxChannels(maxChannels)
           .hls(hls)
           .directPlayContainers(directPlayContainers)
+          .minBlockSize(minBlockSize == null ? OptionalInt.empty() : OptionalInt.of(minBlockSize))
           .build();
     }
   }
