@@ -248,24 +248,22 @@ public sealed interface MediaSegmentTimeline {
     }
 
     /**
-     * The media segment whose interval holds the slot the given distance before segment {@code
-     * index}'s start slot, counted in whole target segment durations and at least one segment back.
-     * The index falls below zero when the distance reaches past the first slot.
+     * The latest media segment that ends at most one slot after the slot the given distance before
+     * segment {@code index}'s start, counted in whole target segment durations, and at least one
+     * segment back. On the plain grid that is the segment that starts at that slot. A long merged
+     * segment that ends later than that is still being produced toward the requested segment, so it
+     * is not the one to look for. The index falls below zero when no segment ends that early.
      */
     @Override
     public int mediaSegmentIndexBefore(int index, @NonNull Duration distance) {
-      var slot =
-          mediaSegmentStartSlot(index) - distance.toSeconds() / targetSegmentDurationSeconds();
-      if (slot < 0) {
-        return -1;
+      var latestEnd =
+          mediaSegmentStartSlot(index) - distance.toSeconds() / targetSegmentDurationSeconds() + 1;
+      var found = index;
+      while (found > 0 && mediaSegmentStartSlot(found) > latestEnd) {
+        found--;
       }
 
-      var holder = index;
-      while (holder > 0 && mediaSegmentStartSlot(holder) > slot) {
-        holder--;
-      }
-
-      return Math.min(holder, index - 1);
+      return found - 1;
     }
 
     /**

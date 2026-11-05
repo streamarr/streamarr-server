@@ -192,19 +192,34 @@ class MediaSegmentTimelineTest {
   }
 
   // Keyframes every 10 s open segments in slots 0, 1, 3, 5, 6, 8, 10 and 11 of 6 s. From segment
-  // 6's slot 10, 24 s reach back to slot 6, which segment 4 opens, and 12 s to slot 8.
+  // 6's slot 10, 24 s reach back to slot 6: segment 3 ends in slot 6, and segment 4, which opens
+  // there, ends in slot 8. On the plain grid the segment found starts at that slot.
   @ParameterizedTest
-  @CsvSource({"6, PT24S, 4", "6, PT12S, 5", "6, PT0S, 5", "7, PT6S, 6", "1, PT12S, -1"})
+  @CsvSource({"6, PT24S, 3", "6, PT12S, 4", "6, PT0S, 5", "7, PT6S, 6", "1, PT12S, -1"})
   @DisplayName(
-      "Should count slots back, and at least one segment, when finding a merged segment before"
-          + " another")
-  void shouldCountSlotsBackWhenFindingAMergedSegmentBeforeAnother(
+      "Should find the latest merged segment that ends by one slot past the distance back when"
+          + " finding a merged segment before another")
+  void shouldFindTheLatestMergedSegmentThatEndsByOneSlotPastTheDistanceBack(
       int index, Duration distance, int expectedIndex) {
     var timeline =
         streamCopyOver(
             Duration.ofSeconds(72), 0, 10_000, 20_000, 30_000, 40_000, 50_000, 60_000, 70_000);
 
     assertThat(timeline.mediaSegmentIndexBefore(index, distance)).isEqualTo(expectedIndex);
+  }
+
+  // Keyframes 30 s apart open segments in slots 0, 5 and 10. Segment 0 runs 30 s, so no segment
+  // ends 24 s before segment 1 opens, and a request for segment 1 never waits on segment 0.
+  @ParameterizedTest
+  @CsvSource({"1, -1", "2, 0"})
+  @DisplayName(
+      "Should find no segment before the next one when the merged segment before it is long")
+  void shouldFindNoSegmentBeforeTheNextOneWhenTheMergedSegmentBeforeItIsLong(
+      int index, int expectedIndex) {
+    var timeline = streamCopyOver(Duration.ofSeconds(72), 0, 30_000, 60_000);
+
+    assertThat(timeline.mediaSegmentIndexBefore(index, Duration.ofSeconds(24)))
+        .isEqualTo(expectedIndex);
   }
 
   @Test

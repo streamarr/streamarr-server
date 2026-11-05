@@ -1906,6 +1906,27 @@ class ProducerLifecycleServiceTest {
     assertThat(relocated.segmentStartSlots()).isEqualTo(first.segmentStartSlots());
   }
 
+  // Keyframes 30 s apart over 2 h open segments in the 6 s slots 0, 5, 10 and so on. Segment 0
+  // runs 30 s, so a request for segment 1 while the copy produces segment 0 is the next segment,
+  // not a seek past the relocation gap.
+  @Test
+  @DisplayName(
+      "Should keep the copy running when the next segment is requested while a long merged segment"
+          + " is produced")
+  void shouldKeepTheCopyRunningWhenTheNextSegmentIsRequestedWhileALongMergedSegmentIsProduced() {
+    var keyframes =
+        LongStream.iterate(0, time -> time <= 7_200_000, time -> time + 30_000)
+            .mapToObj(time -> new KeyframePosition(time, time))
+            .toList();
+    var session = startedCopySession(defaultProbeBuilder().keyframes(knownKeyframes(keyframes)));
+
+    lifecycle.ensurePositioned(
+        session.getSessionId(), StreamSession.defaultVariant(), "segment1.m4s");
+
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(1);
+    assertThat(transcodeExecutor.getStoppedVariants()).isEmpty();
+  }
+
   @Test
   @DisplayName("Should start a replacement copy attempt at its segment's first keyframe")
   void shouldStartAReplacementCopyAttemptAtItsSegmentsFirstKeyframe() {
