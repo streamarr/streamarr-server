@@ -2,6 +2,8 @@ package com.streamarr.server.graphql.subscriptions;
 
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.support.GraphQlResults.firstErrorCode;
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitBlockedBackendPid;
+import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -23,10 +25,12 @@ import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.support.ActiveSubscriptions;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.BoundedTask;
 import com.streamarr.server.support.GraphQlHttpTestClient;
 import com.streamarr.server.support.GraphQlTransportWsTestClient;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.net.URI;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -34,6 +38,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -83,6 +88,7 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MovieRepository movieRepository;
   @Autowired private UserAccountRepository userAccountRepository;
+  @Autowired private DataSource dataSource;
 
   private final List<AuthTestSupport.TestIdentity> identities = new ArrayList<>();
   private final List<GraphQlTransportWsTestClient> sockets = new ArrayList<>();
@@ -208,6 +214,52 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
         .singleElement()
         .satisfies(stream -> assertThat(stream.path("state").asString()).isEqualTo("PAUSED"));
     assertThat(ended.path("activeStream").isNull()).isTrue();
+  }
+
+  // The active-stream read of the auth session waits on the table's lock, which the timeline report
+  // itself never reads. A report that read the stream inside its own transaction would wait with
+  // it, holding its connection; one that publishes after commit, on another thread, answers first.
+  @Test
+  @DisplayName(
+      "Should answer a timeline report and deliver its change afterwards when the active-stream"
+          + " read waits on a lock")
+  void shouldAnswerATimelineReportAndDeliverItsChangeAfterwardsWhenTheActiveStreamReadWaits()
+      throws Exception {
+    var socket = connect(adminBearer());
+    socket.subscribe("streams", SUBSCRIPTION);
+    activeSubscriptions.awaitCount(FIELD, 1);
+    var viewerBearer = authTestSupport.profileBearer(viewer);
+    var created = http.execute(viewerBearer, createMutation(savedMovieFile()));
+    var playback = created.path("data").path("createPlaybackSession").path("playbackSession");
+    var playbackId = playback.path("id").asString();
+    openPlaybacks.add(playbackId);
+    nextChange(socket, playbackId);
+    var streamId =
+        playback.path("currentFormatAttempt").path("streamSession").path("id").asString();
+
+    try (var observer = dataSource.getConnection();
+        var authSessionLock = dataSource.getConnection()) {
+      authSessionLock.setAutoCommit(false);
+      try (var statement = authSessionLock.createStatement()) {
+        statement.execute("LOCK TABLE auth_session IN ACCESS EXCLUSIVE MODE");
+      }
+
+      try (var report =
+          BoundedTask.start(
+              () -> http.execute(viewerBearer, timelineMutation(streamId, 30, "PAUSED")))) {
+        awaitBlockedBackendPid(observer, backendPid(authSessionLock), null);
+
+        var answered = report.await(Duration.ofSeconds(5));
+
+        assertThat(answered.path("errors").isMissingNode()).as("errors in %s", answered).isTrue();
+      }
+
+      authSessionLock.rollback();
+    }
+
+    var paused = nextChange(socket, playbackId).path("activeStream");
+    assertThat(paused.path("positionSeconds").asInt()).isEqualTo(30);
+    assertThat(paused.path("state").asString()).isEqualTo("PAUSED");
   }
 
   @Test
