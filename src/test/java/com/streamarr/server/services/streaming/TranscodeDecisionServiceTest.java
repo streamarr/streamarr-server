@@ -70,6 +70,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.ArgumentsSource;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -186,6 +187,106 @@ class TranscodeDecisionServiceTest {
                 .build());
 
     assertThat(decision.map(TranscodeDecision::transcodeMode)).contains(TranscodeMode.REMUX);
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode the lower variants beside an Auto copy in a codec that a busy worker's"
+          + " verified encoder encodes")
+  void
+      shouldEncodeTheLowerVariantsBesideAnAutoCopyInACodecThatABusyWorkersVerifiedEncoderEncodes() {
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(probe("h264", "aac"))
+                    .capabilityDeclaration(declaring(H264))
+                    .encodableVideoCodecFamilies(Set.of())
+                    .verifiedVideoCodecFamilies(Set.of("h264"))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.lowerVariantCodecProfile()).contains(EncodeCodecProfile.H264_HIGH);
+    assertThat(decision.lowerVariantDecision().orElseThrow())
+        .satisfies(
+            lower -> {
+              assertThat(lower.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+              assertThat(lower.videoCodecFamily()).isEqualTo("h264");
+              assertThat(lower.audioDecision()).isEqualTo(decision.audioDecision());
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode the lower variants beside an Auto copy in the preferred codec family that is"
+          + " not excluded")
+  void shouldEncodeTheLowerVariantsBesideAnAutoCopyInThePreferredCodecFamilyThatIsNotExcluded() {
+    var request =
+        TranscodeDecisionRequest.builder()
+            .source(probe("h264", "aac"))
+            .capabilityDeclaration(declaring(AV1, H264))
+            .encodableVideoCodecFamilies(Set.of("h264", "av1"))
+            .hardwareEncodableVideoCodecFamilies(HARDWARE_AV1);
+
+    var preferred = service.decide(request.build()).orElseThrow();
+    var withoutAv1 =
+        service.decide(request.excludedEncodeCodecFamilies(Set.of("av1")).build()).orElseThrow();
+
+    assertThat(preferred.lowerVariantCodecProfile()).contains(EncodeCodecProfile.AV1_MAIN);
+    assertThat(withoutAv1.lowerVariantCodecProfile()).contains(EncodeCodecProfile.H264_HIGH);
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"ORIGINAL", "FULL_HD_1080P"})
+  @DisplayName(
+      "Should encode no lower variant beside a copy when the viewer picks Original or a fixed quality")
+  void shouldEncodeNoLowerVariantBesideACopyWhenTheViewerPicksOriginalOrAFixedQuality(
+      VideoQuality quality) {
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(probe("h264", "aac"))
+                    .capabilityDeclaration(declaring(H264))
+                    .encodableVideoCodecFamilies(Set.of("h264"))
+                    .viewerLimits(limitsIn(quality))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.lowerVariantCodecProfile()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should copy without lower variants when the source has no usable frame rate")
+  void shouldCopyWithoutLowerVariantsWhenTheSourceHasNoUsableFrameRate() {
+    var source =
+        probeBuilder("h264", "aac")
+            .framerate(OptionalDouble.empty())
+            .videoPlaybackFacts(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .streamIndex(0)
+                        .codecString(Optional.of(SDR_CODEC_STRINGS.get("h264")))
+                        .frameRateRule(VideoPlaybackFactsFixture.refusedRule())
+                        .build()))
+            .build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaring(H264))
+                    .encodableVideoCodecFamilies(Set.of("h264"))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.lowerVariantCodecProfile()).isEmpty();
   }
 
   @Test

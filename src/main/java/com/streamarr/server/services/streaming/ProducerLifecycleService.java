@@ -2188,7 +2188,11 @@ public class ProducerLifecycleService {
         .pinnedEncoder(session.getPinnedEncoder(variantLabel))
         .sourcePath(session.getSourcePath())
         .seekPosition(timeline.mediaSegmentStartSeconds(startSequenceNumber))
-        .keyframeSeekPosition(seekPosition(session, timeline, startSequenceNumber))
+        .keyframeSeekPosition(
+            seekPosition(
+                session,
+                MediaSegmentTimelines.seekingOf(session, variantLabel, properties),
+                startSequenceNumber))
         .exactSegmentStarts(MediaSegmentTimelines.exactSegmentStartsOf(session, timeline))
         .targetSegmentDuration(timeline.targetSegmentDurationSeconds())
         .framerate(

@@ -186,29 +186,46 @@ public class StreamSession {
     variantHandles.remove(variantLabel);
   }
 
-  /** The transcode decision that the variant's job attempts run. */
+  /**
+   * The transcode decision that the variant's job attempts run: the encode of a copy's lower
+   * variants for a labelled variant beside a copy (ADR 0050), and the stream session's decision for
+   * every other variant.
+   */
   public TranscodeDecision decisionOf(@NonNull String variantLabel) {
-    return transcodeDecision;
+    if (DEFAULT_VARIANT.equals(variantLabel)) {
+      return transcodeDecision;
+    }
+
+    return transcodeDecision.lowerVariantDecision().orElse(transcodeDecision);
   }
 
   /**
    * Whether the stream session offers this variant: a variant of its ladder, or the default variant
-   * when the session has no ladder.
+   * when the multivariant playlist lists it.
    */
   public boolean offersVariant(String variantLabel) {
-    if (variants.isEmpty()) {
-      return DEFAULT_VARIANT.equals(variantLabel);
+    if (DEFAULT_VARIANT.equals(variantLabel) && listsDefaultVariant()) {
+      return true;
     }
 
     return variants.stream().anyMatch(variant -> variant.label().equals(variantLabel));
   }
 
   /**
-   * The variant that the multivariant playlist lists first: the default variant of a stream session
-   * without a ladder, and the first variant of its ladder otherwise.
+   * Whether the multivariant playlist lists the default variant: the one variant of a stream
+   * session without a ladder, or a copy, which lists first beside its encoded lower variants (ADR
+   * 0050).
    */
+  public boolean listsDefaultVariant() {
+    return variants.isEmpty()
+        || (transcodeDecision != null
+            && transcodeDecision.transcodeMode() != null
+            && transcodeDecision.transcodeMode().copiesVideo());
+  }
+
+  /** The variant that the multivariant playlist lists first. */
   public String firstListedVariant() {
-    if (variants.isEmpty()) {
+    if (listsDefaultVariant()) {
       return DEFAULT_VARIANT;
     }
 

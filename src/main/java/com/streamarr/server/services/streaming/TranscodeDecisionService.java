@@ -213,6 +213,7 @@ public class TranscodeDecisionService {
             .videoSource(source.videoPlaybackFacts())
             .videoBitstreamRewrites(copyPlan.map(CopyPlan::bitstreamRewrites).orElseGet(List::of))
             .videoDolbyVisionOutput(copyPlan.flatMap(CopyPlan::dolbyVisionOutput))
+            .lowerVariantCodecProfile(copyPlan.flatMap(_ -> lowerVariantCodecProfile(request)))
             .reasons(
                 afterDirectPlayRefusals(
                     request,
@@ -267,6 +268,23 @@ public class TranscodeDecisionService {
             .map(_ -> DecisionReason.VIDEO_CODEC_NOT_DECLARED)
             .stream();
     return Stream.concat(videoReasons.stream(), undeclared).distinct().toList();
+  }
+
+  // In Auto, encoded lower variants sit beside a copy (ADR 0050). They encode only once the player
+  // switches to one, so a busy worker's verified encoder counts. A source without an encoded
+  // variant, such as one without a usable frame rate, copies alone.
+  private static Optional<EncodeCodecProfile> lowerVariantCodecProfile(
+      TranscodeDecisionRequest request) {
+    if (request.viewerLimits().quality() != VideoQuality.AUTO) {
+      return Optional.empty();
+    }
+
+    return selectEncode(
+            request.toBuilder()
+                .encodableVideoCodecFamilies(request.verifiedVideoCodecFamilies())
+                .build())
+        .map(EncodeChoice::codecProfile)
+        .filter(profile -> encodedVariantRequest(request.source(), profile).isPresent());
   }
 
   // Every decision about the audio reads the source's first audio stream, the session's.

@@ -49,6 +49,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -1305,8 +1306,9 @@ class SegmentDeliveryCoordinatorTest {
   }
 
   private List<String> runningVariants(StreamSession session) {
-    return session.getVariants().stream()
-        .map(QualityVariant::label)
+    var defaultVariant =
+        Stream.of(StreamSession.defaultVariant()).filter(_ -> session.listsDefaultVariant());
+    return Stream.concat(defaultVariant, session.getVariants().stream().map(QualityVariant::label))
         .filter(label -> transcodeExecutor.isRunning(session.getSessionId(), label))
         .toList();
   }
@@ -1690,10 +1692,12 @@ class SegmentDeliveryCoordinatorTest {
   }
 
   private StreamSession playingFirstListedVariant(StreamSession session, int deliveredSegments) {
+    var variant = session.firstListedVariant();
     for (var index = 0; index < deliveredSegments; index++) {
-      var segmentName = "480p/" + SegmentNames.mediaSegmentName(index);
+      var segmentName =
+          SegmentNames.storedSegmentName(variant, SegmentNames.mediaSegmentName(index));
       upload(session.getSessionId(), segmentName, new byte[] {1});
-      assertThat(coordinator.deliver(session.getSessionId(), "480p", segmentName))
+      assertThat(coordinator.deliver(session.getSessionId(), variant, segmentName))
           .isInstanceOf(SegmentDelivery.Ready.class);
     }
 
@@ -2294,7 +2298,7 @@ class SegmentDeliveryCoordinatorTest {
           throws Exception {
     transcodeExecutor.setExecutionTargets(List.of(TARGET_A, TARGET_B));
     var switching = switchingTo1080p(startedCopyLadderSession());
-    assertThat(transcodeExecutor.runningExecutionTarget(switching.sessionId(), "480p"))
+    assertThat(transcodeExecutor.runningExecutionTarget(switching.sessionId(), "default"))
         .contains(TARGET_A);
     transcodeExecutor.setExecutionTargets(List.of(TARGET_B, TARGET_A));
     transcodeExecutor.limitCopies(TARGET_B, 1);
@@ -2305,7 +2309,7 @@ class SegmentDeliveryCoordinatorTest {
     var delivery = deliverAsync(refusedId, "segment0.m4s");
     transcodeExecutor.awaitStartedTarget(TARGET_A);
 
-    assertThat(runningVariants(switching.session())).containsExactlyInAnyOrder("480p", "1080p");
+    assertThat(runningVariants(switching.session())).containsExactlyInAnyOrder("default", "1080p");
     assertThat(runningCopyTarget(refused)).contains(TARGET_A);
     upload(refusedId, "segment0.m4s", new byte[] {0});
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
@@ -2329,7 +2333,7 @@ class SegmentDeliveryCoordinatorTest {
 
       assertThat(delivery.get(2, TimeUnit.SECONDS))
           .isInstanceOf(SegmentDelivery.Unrecoverable.class);
-      assertThat(runningVariants(busy.session())).containsExactlyInAnyOrder("480p", "1080p");
+      assertThat(runningVariants(busy.session())).containsExactlyInAnyOrder("default", "1080p");
     } finally {
       busyMutex.unlock();
     }
@@ -2355,7 +2359,7 @@ class SegmentDeliveryCoordinatorTest {
       var delivery = deliverAsync(refusedId, "segment0.m4s");
       transcodeExecutor.awaitStartedTarget(ExecutionTargetId.LOCAL);
 
-      assertThat(runningVariants(busy.session())).containsExactlyInAnyOrder("480p", "1080p");
+      assertThat(runningVariants(busy.session())).containsExactlyInAnyOrder("default", "1080p");
       assertThat(runningVariants(idle.session())).containsExactly("1080p");
       upload(refusedId, "segment0.m4s", new byte[] {0});
       assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
@@ -2382,7 +2386,7 @@ class SegmentDeliveryCoordinatorTest {
     var delivery = deliverAsync(requesting.getSessionId(), "1080p", "1080p/segment0.m4s");
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
-    assertThat(runningVariants(switching.session())).containsExactlyInAnyOrder("480p", "1080p");
+    assertThat(runningVariants(switching.session())).containsExactlyInAnyOrder("default", "1080p");
     deliverSwitch(switching);
   }
 

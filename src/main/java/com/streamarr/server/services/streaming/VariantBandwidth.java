@@ -32,8 +32,8 @@ record VariantBandwidth(long peak, long average) {
 
   /**
    * The bandwidth of a stream session's variant: the source file for a direct-play stream session,
-   * the copy for the default variant of a stream session without a ladder, and otherwise the
-   * variant of its ladder.
+   * the copy for the default variant that the playlist lists beside no ladder or beside lower
+   * variants, and otherwise the variant of its ladder.
    */
   static VariantBandwidth of(
       @NonNull StreamSession session,
@@ -44,7 +44,7 @@ record VariantBandwidth(long peak, long average) {
     }
 
     var audio = session.getTranscodeDecision().audioDecision();
-    if (StreamSession.defaultVariant().equals(variantLabel) && session.getVariants().isEmpty()) {
+    if (StreamSession.defaultVariant().equals(variantLabel) && session.listsDefaultVariant()) {
       return ofCopy(session.getMediaProbe(), audio, properties);
     }
 
