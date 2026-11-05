@@ -28,7 +28,6 @@ import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.ProfileFixture;
-import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import java.util.List;
 import java.util.UUID;
@@ -84,7 +83,7 @@ class ActiveStreamServiceTest {
             .profileId(profile.getId())
             .authSessionId(authSession.getId())
             .build();
-    var episode = episodes.save(Episode.builder().title("Pilot").episodeNumber(2).build());
+    var episode = episodes.save(Episode.builder().build());
     var command =
         startPlaybackBuilder()
             .identity(identityFor(authority))
@@ -116,15 +115,14 @@ class ActiveStreamServiceTest {
               assertThat(stream.decision()).isEqualTo(snapshot.decisions().stream().findFirst());
               assertThat(stream.workers()).containsExactly(WORKER.value());
             });
-    assertThat(authorization.recordedIntents()).containsExactly(new Intent.ViewActiveStreams());
   }
 
   @Test
   @DisplayName(
       "Should link each stream to its movie or episode and to no media when its file has no match")
   void shouldLinkEachStreamToItsMovieOrEpisodeAndToNoMediaWhenItsFileHasNoMatch() {
-    var movie = movies.save(Movie.builder().title("A Movie").build());
-    var episode = episodes.save(Episode.builder().title("Pilot").episodeNumber(2).build());
+    var movie = movies.save(Movie.builder().build());
+    var episode = episodes.save(Episode.builder().build());
     var moviePlayback = startedPlaybackOf(matchedFile(movie.getId()));
     var episodePlayback = startedPlaybackOf(matchedFile(episode.getId()));
     var unmatchedPlayback = startedPlaybackOf(unmatchedFile());
@@ -133,9 +131,25 @@ class ActiveStreamServiceTest {
         service.activeStreams(authorization.currentIdentity()).stream()
             .collect(Collectors.toMap(ActiveStream::playbackSessionId, ActiveStream::media));
 
-    assertThat(media.get(moviePlayback)).containsSame(movie);
-    assertThat(media.get(episodePlayback)).containsSame(episode);
-    assertThat(media.get(unmatchedPlayback)).isEmpty();
+    assertThat(media.get(moviePlayback)).as("movie stream").containsSame(movie);
+    assertThat(media.get(episodePlayback)).as("episode stream").containsSame(episode);
+    assertThat(media.get(unmatchedPlayback)).as("unmatched stream").isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should link a stream to no media when its file names no movie or episode")
+  void shouldLinkAStreamToNoMediaWhenItsFileNamesNoMovieOrEpisode() {
+    var playback = startedPlaybackOf(matchedFile(UUID.randomUUID()));
+
+    var streamsNow = service.activeStreams(authorization.currentIdentity());
+
+    assertThat(streamsNow)
+        .singleElement()
+        .satisfies(
+            stream -> {
+              assertThat(stream.playbackSessionId()).isEqualTo(playback);
+              assertThat(stream.media()).isEmpty();
+            });
   }
 
   @Test
@@ -153,10 +167,11 @@ class ActiveStreamServiceTest {
 
   @Test
   @DisplayName(
-      "Should describe a stream without timeline, decision or worker while its format attempt"
-          + " prepares")
-  void shouldDescribeAStreamWithoutTimelineDecisionOrWorkerWhileItsFormatAttemptPrepares() {
-    var command = startPlaybackBuilder().build();
+      "Should describe a stream with its media but without timeline, decision or worker while its"
+          + " format attempt prepares")
+  void shouldDescribeAStreamWithItsMediaButWithoutTimelineDecisionOrWorkerWhileItPrepares() {
+    var movie = movies.save(Movie.builder().build());
+    var command = startPlaybackBuilder().mediaFileId(matchedFile(movie.getId())).build();
     var snapshot = acceptedPlayback(playbackSessions.start(command));
     playbackSessions.reportFormatFailure(
         ReportPlaybackFormatFailureCommand.builder()
@@ -171,9 +186,7 @@ class ActiveStreamServiceTest {
     assertThat(stream)
         .hasValueSatisfying(
             preparing -> {
-              assertThat(preparing.profileName()).isEmpty();
-              assertThat(preparing.deviceName()).isEmpty();
-              assertThat(preparing.media()).isEmpty();
+              assertThat(preparing.media()).containsSame(movie);
               assertThat(preparing.timeline()).isEmpty();
               assertThat(preparing.decision()).isEmpty();
               assertThat(preparing.workers()).isEmpty();

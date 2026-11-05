@@ -10,16 +10,19 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.domain.media.Episode;
+import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.fixtures.ImageFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
+import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
@@ -42,6 +45,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -85,10 +89,10 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
       """
       media {
         __typename
-        ... on Movie { title runtime images { imageType } }
+        ... on Movie { title runtime images(type: POSTER) { imageType } }
         ... on Episode {
-          title episodeNumber images { imageType }
-          season { seasonNumber series { title images { imageType } } }
+          title episodeNumber
+          season { seasonNumber series { title images(type: POSTER) { imageType } } }
         }
       }
       """;
@@ -114,6 +118,7 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
   @Autowired private SeasonRepository seasonRepository;
   @Autowired private EpisodeRepository episodeRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
+  @Autowired private ImageRepository imageRepository;
   @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private DataSource dataSource;
 
@@ -246,17 +251,21 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
   @Test
   @DisplayName(
       "Should link each active stream to its movie, its episode with season and series, or no media"
-          + " for an unmatched file")
-  void shouldLinkEachActiveStreamToItsMovieItsEpisodeWithSeasonAndSeriesOrNoMediaWhenUnmatched() {
+          + " when a ServerAdmin subscribes and queries")
+  void shouldLinkEachActiveStreamToItsMovieEpisodeOrNoMediaWhenAServerAdminSubscribesAndQueries() {
     var admin = adminBearer();
     var socket = connect(admin);
     socket.subscribe("streams", MEDIA_SUBSCRIPTION);
     activeSubscriptions.awaitCount(FIELD, 1);
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var movie = savedMovie(library);
+    var series = savedSeries(library);
+    savePoster(movie.getId(), ImageEntityType.MOVIE);
+    savePoster(series.getId(), ImageEntityType.SERIES);
 
-    var moviePlayback = startPlayback(savedMovieFile());
+    var moviePlayback = startPlayback(fileOf(movie));
     var deliveredMovie = nextChange(socket, moviePlayback).path("activeStream").path("media");
-    var episodePlayback = startPlayback(savedEpisodeFile(library));
+    var episodePlayback = startPlayback(savedEpisodeFile(series));
     var deliveredEpisode = nextChange(socket, episodePlayback).path("activeStream").path("media");
     var unmatchedPlayback = startPlayback(savedUnmatchedFile(library));
     var deliveredUnmatched =
@@ -265,26 +274,58 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
         http.execute(admin, "query { activeStreams { playbackSessionId %s } }".formatted(MEDIA));
 
     assertThat(listed.path("errors").isMissingNode()).as("errors in %s", listed).isTrue();
-    var listedMedia = listed.path("data").path("activeStreams");
-    for (var media : List.of(deliveredMovie, listedMedia(listedMedia, moviePlayback))) {
-      assertThat(media.path("__typename").asString()).isEqualTo("Movie");
-      assertThat(media.path("title").asString()).isEqualTo("Streamed Movie");
-      assertThat(media.path("runtime").asInt()).isEqualTo(118);
-      assertThat(media.path("images").isArray()).isTrue();
-    }
+    var listedStreams = listed.path("data").path("activeStreams");
+    assertMovie("subscription", deliveredMovie);
+    assertMovie("query", listedMedia(listedStreams, moviePlayback));
+    assertEpisode("subscription", deliveredEpisode);
+    assertEpisode("query", listedMedia(listedStreams, episodePlayback));
+    assertThat(deliveredUnmatched.isNull()).as("subscription unmatched media").isTrue();
+    assertThat(listedMedia(listedStreams, unmatchedPlayback).isNull())
+        .as("query unmatched media")
+        .isTrue();
+  }
 
-    for (var media : List.of(deliveredEpisode, listedMedia(listedMedia, episodePlayback))) {
-      assertThat(media.path("__typename").asString()).isEqualTo("Episode");
-      assertThat(media.path("title").asString()).isEqualTo("Pilot");
-      assertThat(media.path("episodeNumber").asInt()).isEqualTo(3);
-      assertThat(media.path("season").path("seasonNumber").asInt()).isEqualTo(2);
-      assertThat(media.path("season").path("series").path("title").asString())
-          .isEqualTo("A Series");
-      assertThat(media.path("season").path("series").path("images").isArray()).isTrue();
-    }
+  @Test
+  @DisplayName(
+      "Should refuse a stream's media watch status with PROFILE_REQUIRED when a ServerAdmin queries"
+          + " without a selected Profile")
+  void shouldRefuseAStreamsMediaWatchStatusWithProfileRequiredWhenAServerAdminHasNoProfile() {
+    var identity = authTestSupport.createAdminIdentity();
+    identities.add(identity);
+    var playback = startPlayback(savedMovieFile());
 
-    assertThat(deliveredUnmatched.isNull()).isTrue();
-    assertThat(listedMedia(listedMedia, unmatchedPlayback).isNull()).isTrue();
+    var listed =
+        http.execute(
+            authTestSupport.accountBearer(identity),
+            "query { activeStreams { playbackSessionId media { ... on Movie { watchStatus } } } }");
+
+    assertThat(listedMedia(listed.path("data").path("activeStreams"), playback).isNull())
+        .as("media in %s", listed)
+        .isTrue();
+    assertThat(firstErrorCode(listed)).isEqualTo("PROFILE_REQUIRED");
+  }
+
+  private static void assertMovie(String source, JsonNode media) {
+    assertThat(media.path("__typename").asString()).as("%s typename", source).isEqualTo("Movie");
+    assertThat(media.path("title").asString()).as("%s title", source).isEqualTo("Streamed Movie");
+    assertThat(media.path("runtime").asInt()).as("%s runtime", source).isEqualTo(118);
+    assertThat(media.path("images").path(0).path("imageType").asString())
+        .as("%s poster", source)
+        .isEqualTo("POSTER");
+  }
+
+  private static void assertEpisode(String source, JsonNode media) {
+    var season = media.path("season");
+    assertThat(media.path("__typename").asString()).as("%s typename", source).isEqualTo("Episode");
+    assertThat(media.path("title").asString()).as("%s title", source).isEqualTo("Pilot");
+    assertThat(media.path("episodeNumber").asInt()).as("%s episode", source).isEqualTo(3);
+    assertThat(season.path("seasonNumber").asInt()).as("%s season", source).isEqualTo(2);
+    assertThat(season.path("series").path("title").asString())
+        .as("%s series", source)
+        .isEqualTo("A Series");
+    assertThat(season.path("series").path("images").path(0).path("imageType").asString())
+        .as("%s series poster", source)
+        .isEqualTo("POSTER");
   }
 
   // The active-stream read of the auth session waits on the table's lock, which the timeline report
@@ -456,30 +497,55 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
 
   private String startPlayback(UUID mediaFileId) {
     var created = http.execute(authTestSupport.profileBearer(viewer), createMutation(mediaFileId));
+    assertThat(created.path("errors").isMissingNode()).as("errors in %s", created).isTrue();
     var playbackId =
-        created.path("data").path("createPlaybackSession").path("playbackSession").path("id");
-    openPlaybacks.add(playbackId.asString());
-    return playbackId.asString();
+        created
+            .path("data")
+            .path("createPlaybackSession")
+            .path("playbackSession")
+            .path("id")
+            .asString();
+    assertThat(playbackId).as("playback session id in %s", created).isNotBlank();
+    openPlaybacks.add(playbackId);
+    return playbackId;
   }
 
   private UUID savedMovieFile() {
-    Library library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
-    var movie =
-        movieRepository.saveAndFlush(
-            Movie.builder()
-                .title("Streamed Movie")
-                .titleSort("Streamed Movie")
-                .runtime(118)
-                .library(library)
-                .files(Set.of(fileIn(library).status(MediaFileStatus.MATCHED).build()))
-                .build());
+    return fileOf(
+        savedMovie(libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary())));
+  }
+
+  private Movie savedMovie(Library library) {
+    return movieRepository.saveAndFlush(
+        Movie.builder()
+            .title("Streamed Movie")
+            .titleSort("Streamed Movie")
+            .runtime(118)
+            .library(library)
+            .files(Set.of(fileIn(library).status(MediaFileStatus.MATCHED).build()))
+            .build());
+  }
+
+  private static UUID fileOf(Movie movie) {
     return movie.getFiles().iterator().next().getId();
   }
 
-  private UUID savedEpisodeFile(Library library) {
-    var series =
-        seriesRepository.saveAndFlush(
-            Series.builder().title("A Series").titleSort("A Series").library(library).build());
+  private Series savedSeries(Library library) {
+    return seriesRepository.saveAndFlush(
+        Series.builder().title("A Series").titleSort("A Series").library(library).build());
+  }
+
+  private void savePoster(UUID entityId, ImageEntityType entityType) {
+    imageRepository.saveAndFlush(
+        ImageFixture.imageBuilder(entityId)
+            .entityType(entityType)
+            .key("/poster.jpg")
+            .path(entityType.name().toLowerCase(Locale.ROOT) + "/poster.jpg")
+            .build());
+  }
+
+  private UUID savedEpisodeFile(Series series) {
+    var library = series.getLibrary();
     var season =
         seasonRepository.saveAndFlush(
             Season.builder().seasonNumber(2).series(series).library(library).build());
