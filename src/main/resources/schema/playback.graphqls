@@ -178,6 +178,8 @@ enum DecisionReason {
     AUDIO_CHANNELS_NOT_DECLARED
     "HLS delivery cannot copy the source's audio codec profile, such as AAC Main."
     AUDIO_SOURCE_NOT_COPYABLE
+    "The probe stored no codec string for the source's audio, which a playlist needs to describe a copy."
+    AUDIO_CODEC_STRING_UNKNOWN
     """
     The client's maximum bitrate takes a lower audio step. The output can still exceed a maximum below the lowest
     audio and video rates that the server encodes.

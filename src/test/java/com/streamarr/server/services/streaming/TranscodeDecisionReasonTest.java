@@ -574,7 +574,13 @@ class TranscodeDecisionReasonTest {
         Arguments.of(
             Named.of("AAC Main", Source.builder().audioCodecString("mp4a.40.1").build().probe()),
             defaultDeclarationBuilder().build(),
-            DecisionReason.AUDIO_SOURCE_NOT_COPYABLE));
+            DecisionReason.AUDIO_SOURCE_NOT_COPYABLE),
+        Arguments.of(
+            Named.of(
+                "AAC whose probe stored no codec string",
+                Source.builder().audioCodecStringUnreported(true).build().probe()),
+            defaultDeclarationBuilder().build(),
+            DecisionReason.AUDIO_CODEC_STRING_UNKNOWN));
   }
 
   @Test
@@ -802,6 +808,7 @@ class TranscodeDecisionReasonTest {
       KeyframeKnowledge keyframes,
       String audioCodec,
       String audioCodecString,
+      boolean audioCodecStringUnreported,
       Integer audioChannels,
       Integer audioBitrate,
       Long videoBitrate) {
@@ -876,6 +883,10 @@ class TranscodeDecisionReasonTest {
     }
 
     private String audioCodecString(@NonNull String audio) {
+      if (audioCodecStringUnreported) {
+        return null;
+      }
+
       if (audioCodecString != null) {
         return audioCodecString;
       }
