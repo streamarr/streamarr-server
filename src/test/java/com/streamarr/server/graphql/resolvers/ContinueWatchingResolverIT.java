@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -131,6 +132,44 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.continueWatching.edges[0].node.season.series.title")
                 .value("Test Series"));
+  }
+
+  @Test
+  @DisplayName(
+      "Should resolve each episode's own season and series when the list spans seasons and series")
+  void shouldResolveEachEpisodesOwnSeasonAndSeriesWhenTheListSpansSeasonsAndSeries()
+      throws Exception {
+    identity = authTestSupport.createIdentity();
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+    var drama = createSeries(library, "Drama");
+    var comedy = createSeries(library, "Comedy");
+    var expected =
+        Map.of(
+            createEpisodeWithProgress(createSeason(library, drama, 1)).getId().toString(),
+            "Drama 1",
+            createEpisodeWithProgress(createSeason(library, drama, 2)).getId().toString(),
+            "Drama 2",
+            createEpisodeWithProgress(createSeason(library, comedy, 1)).getId().toString(),
+            "Comedy 1");
+
+    var edges =
+        execute(
+                "{ continueWatching(first: 12) { edges { node { ... on Episode { id season"
+                    + " { seasonNumber series { title } } } } } } }")
+            .at("/data/continueWatching/edges");
+
+    var resolved =
+        edges
+            .valueStream()
+            .map(edge -> edge.path("node"))
+            .collect(
+                Collectors.toMap(
+                    node -> node.path("id").asString(),
+                    node ->
+                        node.at("/season/series/title").asString()
+                            + " "
+                            + node.at("/season/seasonNumber").asInt()));
+    assertThat(resolved).isEqualTo(expected);
   }
 
   @Test
@@ -311,9 +350,12 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
 
   private Episode createEpisodeWithProgress() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
-    var series = createSeries(library);
-    var season = createSeason(library, series);
+    var series = createSeries(library, "Test Series");
+    return createEpisodeWithProgress(createSeason(library, series, 1));
+  }
 
+  private Episode createEpisodeWithProgress(Season season) {
+    var library = season.getLibrary();
     var file =
         MediaFile.builder()
             .libraryId(library.getId())
@@ -345,13 +387,18 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
     return episode;
   }
 
-  private Series createSeries(Library library) {
+  private Series createSeries(Library library, String title) {
     return seriesRepository.saveAndFlush(
-        Series.builder().title("Test Series").titleSort("Test Series").library(library).build());
+        Series.builder().title(title).titleSort(title).library(library).build());
   }
 
-  private Season createSeason(Library library, Series series) {
+  private Season createSeason(Library library, Series series, int seasonNumber) {
     return seasonRepository.saveAndFlush(
-        Season.builder().title("Season 1").seasonNumber(1).series(series).library(library).build());
+        Season.builder()
+            .title("Season " + seasonNumber)
+            .seasonNumber(seasonNumber)
+            .series(series)
+            .library(library)
+            .build());
   }
 }

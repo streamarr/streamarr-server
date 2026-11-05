@@ -27,6 +27,7 @@ import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
+import com.streamarr.server.graphql.dataloaders.SeasonDataLoader;
 import com.streamarr.server.graphql.dataloaders.WatchProgressDataLoader;
 import com.streamarr.server.graphql.dataloaders.WatchStatusDataLoader;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -40,6 +41,7 @@ import com.streamarr.server.support.security.WithProfileContext;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -65,6 +67,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       SeriesFieldResolver.class,
       SeasonFieldResolver.class,
       EpisodeFieldResolver.class,
+      SeasonDataLoader.class,
       WatchProgressFieldResolverTest.TestConfig.class,
       SecurityContextAuthorizationService.class,
       FakeAuthorizationDecider.class
@@ -599,7 +602,7 @@ class WatchProgressFieldResolverTest {
       when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
       when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
       when(seriesService.findEpisodes(seasonId)).thenReturn(List.of(episode));
-      when(seriesService.findSeasonById(seasonId)).thenReturn(Optional.of(season));
+      when(seriesService.findSeasonsByIds(Set.of(seasonId))).thenReturn(List.of(season));
 
       Integer seasonNumber =
           dgsQueryExecutor.executeAndExtractJsonPath(

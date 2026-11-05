@@ -330,6 +330,12 @@ public class SeriesService {
     return seasonRepository.findById(seasonId);
   }
 
+  /** Returns the seasons with the given ids; an id without a season is left out. */
+  @Transactional(readOnly = true)
+  public List<Season> findSeasonsByIds(Collection<UUID> seasonIds) {
+    return seasonRepository.findAllById(seasonIds);
+  }
+
   @Transactional(readOnly = true)
   public Optional<Episode> findEpisodeById(UUID episodeId) {
     return episodeRepository.findById(episodeId);
