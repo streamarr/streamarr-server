@@ -272,6 +272,29 @@ public sealed interface MediaSegmentTimeline {
       return openingKeyframes.size();
     }
 
+    /**
+     * Each segment's exact start in ticks of the keyframe positions that these segments opened at:
+     * zero for segment 0, and the stored presentation tick of its opening keyframe for every later
+     * segment.
+     */
+    public ExactSegmentStarts exactStartsIn(@NonNull KeyframePositions positions) {
+      var ticks =
+          IntStream.range(0, mediaSegmentCount())
+              .mapToObj(index -> startTicks(index, positions))
+              .toList();
+      return new ExactSegmentStarts(
+          ticks, new Fraction(positions.timeBaseNumerator(), positions.timeBaseDenominator()));
+    }
+
+    private long startTicks(int index, KeyframePositions positions) {
+      if (index == 0) {
+        return 0;
+      }
+
+      var keyframeIndex = openingKeyframes.get(index).keyframeIndex();
+      return positions.keyframes().get(keyframeIndex).presentationTime();
+    }
+
     @Override
     public List<Integer> segmentStartSlots() {
       return IntStream.range(0, mediaSegmentCount())

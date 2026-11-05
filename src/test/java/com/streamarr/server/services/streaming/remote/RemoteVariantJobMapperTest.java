@@ -12,6 +12,7 @@ import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.ExactSegmentStarts;
 import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
@@ -267,6 +268,36 @@ class RemoteVariantJobMapperTest {
     var execution = mapper.map(copyAttempt().build()).getExecution();
 
     assertThat(execution.getSegmentStartSlotsList()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should write each segment's exact start and its time base when the attempt carries the copy's starts")
+  void shouldWriteEachSegmentsExactStartAndItsTimeBaseWhenTheAttemptCarriesTheCopysStarts() {
+    var request =
+        copyAttempt()
+            .mediaSegmentCount(4)
+            .exactSegmentStarts(
+                Optional.of(
+                    new ExactSegmentStarts(
+                        List.of(0L, 315_000L, 585_000L, 855_000L), new Fraction(1, 90_000))))
+            .build();
+
+    var execution = mapper.map(request).getExecution();
+
+    assertThat(execution.getSegmentStartTicksList())
+        .containsExactly(0L, 315_000L, 585_000L, 855_000L);
+    assertThat(execution.getSegmentStartTimeBase().getNumerator()).isEqualTo(1);
+    assertThat(execution.getSegmentStartTimeBase().getDenominator()).isEqualTo(90_000);
+  }
+
+  @Test
+  @DisplayName("Should send no exact starts and no time base when the attempt uses the plain grid")
+  void shouldSendNoExactStartsAndNoTimeBaseWhenTheAttemptUsesThePlainGrid() {
+    var execution = mapper.map(encodeAttempt("h264").build()).getExecution();
+
+    assertThat(execution.getSegmentStartTicksList()).isEmpty();
+    assertThat(execution.hasSegmentStartTimeBase()).isFalse();
   }
 
   @Test

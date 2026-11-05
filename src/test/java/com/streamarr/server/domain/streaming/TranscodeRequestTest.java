@@ -199,6 +199,7 @@ class TranscodeRequestTest {
         request.sourcePath(),
         request.seekPosition(),
         request.keyframeSeekPosition(),
+        request.exactSegmentStarts(),
         request.targetSegmentDuration(),
         request.framerate(),
         request.outputFrameRate(),

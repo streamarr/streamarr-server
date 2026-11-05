@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.DemuxerSeekTime;
+import com.streamarr.server.domain.streaming.ExactSegmentStarts;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
@@ -36,6 +37,20 @@ final class MediaSegmentTimelines {
     return streamCopyOf(probe, properties)
         .orElseThrow(
             () -> new IllegalStateException("A stream copy session needs the source's keyframes"));
+  }
+
+  /**
+   * Each segment's exact start, which every job attempt of a stream copy session carries, or empty
+   * when the session's segments start on the plain grid (ADR 0037, segment list).
+   */
+  static Optional<ExactSegmentStarts> exactSegmentStartsOf(
+      StreamSession session, MediaSegmentTimeline timeline) {
+    return switch (session.getMediaProbe().keyframes()) {
+      case KeyframeKnowledge.Known(var positions)
+          when timeline instanceof MediaSegmentTimeline.StreamCopy copy ->
+          Optional.of(copy.exactStartsIn(positions));
+      default -> Optional.empty();
+    };
   }
 
   // Without the keyframes, the worker reads from one period before the attempt's first segment.

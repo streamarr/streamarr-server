@@ -311,6 +311,13 @@ final class RemoteVariantJobMapper {
     request
         .keyframeSeekPosition()
         .ifPresent(position -> execution.setSeekPosition(protobufDuration(position)));
+    request
+        .exactSegmentStarts()
+        .ifPresent(
+            starts ->
+                execution
+                    .addAllSegmentStartTicks(starts.ticks())
+                    .setSegmentStartTimeBase(fraction(starts.timeBase())));
     return execution.build();
   }
 

@@ -60,6 +60,7 @@ import com.streamarr.server.domain.streaming.DolbyVisionOutput;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
+import com.streamarr.server.domain.streaming.ExactSegmentStarts;
 import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
@@ -146,6 +147,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.LongStream;
 import java.util.stream.Stream;
 import lombok.Builder;
 import org.junit.jupiter.api.BeforeEach;
@@ -2947,6 +2949,63 @@ class HlsStreamingServiceTest {
         .containsExactly("6.500000", "5.500000", "6.000000", "6.000000");
     // RFC 8216 §4.3.3.1: each EXTINF, rounded to the nearest integer, fits the target duration.
     assertThat(playlist).contains("#EXT-X-TARGETDURATION:7\n");
+  }
+
+  @Test
+  @DisplayName(
+      "Should send each segment's exact start in the source's keyframe ticks when the video is copied")
+  void shouldSendEachSegmentsExactStartInTheSourcesKeyframeTicksWhenTheVideoIsCopied() {
+    // Keyframes at 0.04, 6.5, 12.5 and 18.5 s on a 90 kHz time base. Segment 0 starts at zero,
+    // because it also holds the media before its keyframe.
+    var positions =
+        KeyframePositions.builder()
+            .streamIndex(0)
+            .timeBaseNumerator(1)
+            .timeBaseDenominator(90_000)
+            .source(KeyframePositionSource.PACKET_SCAN)
+            .keyframes(
+                LongStream.of(3_600, 585_000, 1_125_000, 1_665_000)
+                    .mapToObj(ticks -> new KeyframePosition(ticks, ticks))
+                    .toList())
+            .build();
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .duration(Duration.ofSeconds(24))
+            .keyframes(new KeyframeKnowledge.Known(positions))
+            .build());
+    var file = seedMediaFile();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(TranscodeRequest::exactSegmentStarts)
+        .isEqualTo(
+            Optional.of(
+                new ExactSegmentStarts(
+                    List.of(0L, 585_000L, 1_125_000L, 1_665_000L), new Fraction(1, 90_000))));
+  }
+
+  @Test
+  @DisplayName("Should send no exact segment starts when the video is encoded")
+  void shouldSendNoExactSegmentStartsWhenTheVideoIsEncoded() {
+    // The keyframes are known, but the client cannot play HEVC, so the video is encoded.
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .duration(Duration.ofSeconds(24))
+            .videoCodec("hevc")
+            .keyframes(keyframesAtMillis(0, 6_000, 12_000, 18_000))
+            .build());
+    var file = seedMediaFile();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .isNotEmpty()
+        .allSatisfy(request -> assertThat(request.exactSegmentStarts()).isEmpty());
   }
 
   private static KeyframeKnowledge keyframesAtMillis(long... presentationTimes) {
