@@ -78,11 +78,15 @@ public class TranscodeDecisionService {
    * Whether the stream session direct-plays the source file from its source container (ADR 0045),
    * or plays over HLS and why. Only a format attempt that may direct-play does, and only in
    * Original; any other format attempt names no refusal. The declaration must cover the video and
-   * every audio track from the file's source container (ADR 0049). An interlaced source, a property
-   * issue that rules out a copy (ADR 0049) and a forced image subtitle in the language of any audio
-   * track (#506) keep the file on HLS. The refusals name every check that the file fails. The
-   * keyframe grid, the interim HDR copy rule and the codec string bind only HLS copies. A copy in
-   * Original ignores the viewer's limits (ADR 0050), and so does direct play.
+   * every audio track from the file's source container (ADR 0049). The decision names the stream
+   * session's audio track, which a player that selects audio tracks selects. A player that cannot
+   * select one starts on the file's default audio track, or on its first when none is marked, so it
+   * direct-plays only when the session's track is the first and the player starts on it (ADR 0045).
+   * An interlaced source, a property issue that rules out a copy (ADR 0049) and a forced image
+   * subtitle in the language of any audio track (#506) keep the file on HLS. The refusals name
+   * every check that the file fails. The keyframe grid, the interim HDR copy rule and the codec
+   * string bind only HLS copies. A copy in Original ignores the viewer's limits (ADR 0050), and so
+   * does direct play.
    */
   public DirectPlayChoice decideDirectPlay(@NonNull DirectPlayRequest request) {
     if (request.videoFormatConstraint() != VideoFormatConstraint.DIRECT_PLAY_OR_COPY_OR_ENCODE
@@ -98,12 +102,24 @@ public class TranscodeDecisionService {
       return new DirectPlayChoice.Refused(refusals);
     }
 
-    refusals.addAll(request.capabilityDeclaration().directPlayRefusals(source, container.get()));
+    var declaration = request.capabilityDeclaration();
+    refusals.addAll(declaration.directPlayRefusals(source, container.get()));
+    if (!canPlayTheSessionsAudioTrack(declaration, source)) {
+      refusals.add(DecisionReason.DIRECT_PLAY_AUDIO_TRACK_NOT_SELECTABLE);
+    }
+
     if (!refusals.isEmpty()) {
       return new DirectPlayChoice.Refused(refusals);
     }
 
-    return new DirectPlayChoice.Accepted(container.get());
+    return new DirectPlayChoice.Accepted(container.get(), source.sessionAudioTrackPosition());
+  }
+
+  private static boolean canPlayTheSessionsAudioTrack(
+      ClientCapabilityDeclaration declaration, MediaProbe source) {
+    return declaration.selectsAudioTrackInDirectPlay()
+        || (source.sessionAudioTrackPosition().orElse(0) == 0
+            && source.startsOnTheFirstAudioTrack());
   }
 
   // No player's direct play of an interlaced file was measured.
@@ -176,7 +192,17 @@ public class TranscodeDecisionService {
             .videoDolbyVisionOutput(copyPlan.flatMap(CopyPlan::dolbyVisionOutput))
             .reasons(
                 afterDirectPlayRefusals(request, reasons(videoCopy, sessionAudio, audioDecision)))
+            .audioStreamIndex(audioStreamIndex(source, audioDecision))
             .build());
+  }
+
+  // Every decision about the audio reads the source's first audio stream, the session's.
+  private static OptionalInt audioStreamIndex(MediaProbe source, AudioDecision audio) {
+    if (audio.mode() == AudioMode.NONE) {
+      return OptionalInt.empty();
+    }
+
+    return source.audioStreams().stream().mapToInt(StreamInfo::index).findFirst();
   }
 
   // Video reasons come first. Audio that a copy lowers below the session's audio for the viewer's

@@ -31,6 +31,14 @@ type DirectPlayStreamSession implements StreamSession {
     playback starts. Null when playback starts at the beginning of the media.
     """
     startPositionSeconds: Float
+    """
+    The audio track that a player that selects audio tracks selects after it opens the file (ADR 0045): its
+    position, counting from 0, among the file's audio tracks in stream order, which is the order of the
+    player's own audio track list. It is the track that HLS plays for the same file. A player that cannot
+    select audio tracks direct-plays only when it is 0 and that track is the one it starts on. Null when the
+    file has no audio track.
+    """
+    audioTrackPosition: Int
 }
 
 "A stream session that sends HLS, from job attempts that copy or encode the source."

@@ -19,12 +19,14 @@ public sealed interface StreamSessionDto {
       Double startPositionSeconds)
       implements StreamSessionDto {}
 
+  /** {@code audioTrackPosition} is null for a file without audio. */
   @Builder
   record DirectPlayStreamSession(
       String id,
       String streamUrl,
       String sourceContainer,
       String videoRange,
-      Double startPositionSeconds)
+      Double startPositionSeconds,
+      Integer audioTrackPosition)
       implements StreamSessionDto {}
 }
