@@ -27,6 +27,7 @@ import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.SyntheticHdrSource;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
@@ -140,8 +141,9 @@ class HevcEncodeSmokeTest {
             .producerLifecycle(rig.lifecycle())
             .deliveryCoordinator(coordinator)
             .languagePreferences(noLanguagePreferences())
+            .uploadBudget(UploadBudgetFixture.OFF)
             .build();
-    playlistService = new HlsPlaylistService(properties);
+    playlistService = new HlsPlaylistService(properties, UploadBudgetFixture.OFF);
   }
 
   @AfterEach

@@ -16,6 +16,8 @@ import com.streamarr.server.domain.streaming.VideoStreamCopy;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.OptionalDouble;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -33,6 +35,7 @@ public class HlsPlaylistService {
   private static final int PLAYLIST_VERSION = 6;
 
   private final StreamingProperties properties;
+  private final UploadBudget uploadBudget;
 
   public String generateMultivariantPlaylist(StreamSession session, String token) {
     var audio = session.getTranscodeDecision().audioDecision();
@@ -49,38 +52,28 @@ public class HlsPlaylistService {
       appendAudioRendition(sb, audio.channels());
     }
 
-    // Only a copy runs without a ladder. It keeps the source's video bitrate, the displayed source
-    // dimensions and, when it is known, the source's frame rate.
-    if (session.getVariants().isEmpty()) {
-      var probe = session.getMediaProbe();
-      var size = probe.displayedSize();
-      var codecs = codecs(session, copiedVideoCodecString(session));
-      appendStreamInf(
-          sb,
-          VariantBandwidth.ofCopy(probe, audio, properties),
-          size.width(),
-          size.height(),
-          codecs,
-          hasAudio);
-      appendCopiedFrameRate(sb, probe);
-      appendVideoRange(sb, session);
-      appendSupplementalCodecs(sb, session);
-      sb.append("\n");
-      sb.append("stream.m3u8?t=").append(token).append("\n");
-      return sb.toString();
-    }
-
-    for (var variant : session.getVariants()) {
-      var bandwidth = VariantBandwidth.ofEncoded(variant, audio);
-      var codecs = codecs(session, encodedVideoCodecString(session, variant));
-      appendStreamInf(sb, bandwidth, variant.width(), variant.height(), codecs, hasAudio);
-      appendFrameRate(sb, variant);
-      appendVideoRange(sb, session);
-      sb.append("\n");
-      sb.append(variant.label()).append("/stream.m3u8?t=").append(token).append("\n");
-    }
-
+    var withheld = uploadBudget.withholdFromPlaylist(session);
+    entries(session, token, hasAudio).stream()
+        .filter(entry -> !withheld.contains(entry.variantLabel()))
+        .forEach(entry -> sb.append(entry.lines()));
     return sb.toString();
+  }
+
+  // One variant's EXT-X-STREAM-INF tag and URI.
+  private record PlaylistEntry(String variantLabel, String lines) {}
+
+  // Only a copy runs without a ladder.
+  private List<PlaylistEntry> entries(StreamSession session, String token, boolean hasAudio) {
+    if (session.getVariants().isEmpty()) {
+      return List.of(copyEntry(session, token, hasAudio));
+    }
+
+    var entries = new ArrayList<PlaylistEntry>();
+    for (var variant : session.getVariants()) {
+      entries.add(encodedEntry(session, variant, token, hasAudio));
+    }
+
+    return entries;
   }
 
   // RFC 8216bis section 4.4.2.2: the player starts at the start position, in the segment that holds
@@ -94,6 +87,48 @@ public class HlsPlaylistService {
                 sb.append("#EXT-X-START:TIME-OFFSET=")
                     .append(DecimalSeconds.of(start).stripTrailingZeros().toPlainString())
                     .append(",PRECISE=YES\n"));
+  }
+
+  // A copy keeps the source's video bitrate, the displayed source dimensions and, when it is known,
+  // the source's frame rate.
+  private PlaylistEntry copyEntry(StreamSession session, String token, boolean hasAudio) {
+    var probe = session.getMediaProbe();
+    var size = probe.displayedSize();
+    var bandwidth =
+        VariantBandwidth.ofCopy(probe, session.getTranscodeDecision().audioDecision(), properties);
+    var sb = new StringBuilder();
+    appendStreamInf(
+        sb,
+        bandwidth,
+        size.width(),
+        size.height(),
+        codecs(session, copiedVideoCodecString(session)),
+        hasAudio);
+    appendCopiedFrameRate(sb, probe);
+    appendVideoRange(sb, session);
+    appendSupplementalCodecs(sb, session);
+    sb.append("\n");
+    sb.append("stream.m3u8?t=").append(token).append("\n");
+    return new PlaylistEntry(StreamSession.defaultVariant(), sb.toString());
+  }
+
+  private PlaylistEntry encodedEntry(
+      StreamSession session, QualityVariant variant, String token, boolean hasAudio) {
+    var bandwidth =
+        VariantBandwidth.ofEncoded(variant, session.getTranscodeDecision().audioDecision());
+    var sb = new StringBuilder();
+    appendStreamInf(
+        sb,
+        bandwidth,
+        variant.width(),
+        variant.height(),
+        codecs(session, encodedVideoCodecString(session, variant)),
+        hasAudio);
+    appendFrameRate(sb, variant);
+    appendVideoRange(sb, session);
+    sb.append("\n");
+    sb.append(variant.label()).append("/stream.m3u8?t=").append(token).append("\n");
+    return new PlaylistEntry(variant.label(), sb.toString());
   }
 
   private static String codecs(StreamSession session, String videoCodecString) {

@@ -17,7 +17,8 @@ public sealed interface StreamSessionDto {
       String transcodeMode,
       String videoRange,
       Double mediaEndSeconds,
-      Double startPositionSeconds)
+      Double startPositionSeconds,
+      String uploadBudgetUse)
       implements StreamSessionDto {}
 
   /** {@code audioTrackPosition} is null for a file without audio. */
@@ -29,7 +30,8 @@ public sealed interface StreamSessionDto {
       String videoRange,
       Double startPositionSeconds,
       Integer audioTrackPosition,
-      List<AudioTrack> audioTracks)
+      List<AudioTrack> audioTracks,
+      String uploadBudgetUse)
       implements StreamSessionDto {}
 
   /** {@code language} and {@code title} are null when the file gives none. */

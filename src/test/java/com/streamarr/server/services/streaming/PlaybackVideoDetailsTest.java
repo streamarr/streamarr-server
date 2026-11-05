@@ -17,6 +17,7 @@ import com.streamarr.server.domain.streaming.DolbyVisionOutput;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.EncodeFormat;
+import com.streamarr.server.domain.streaming.NetworkRoute;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamingOptions;
@@ -96,6 +97,7 @@ class PlaybackVideoDetailsTest {
                 .identity(profileScopedBuilder().build())
                 .capabilityDeclaration(defaultDeclarationBuilder().build())
                 .options(StreamingOptions.builder().build())
+                .networkRoute(NetworkRoute.INTERNET)
                 .build())
         .fold(
             snapshot -> snapshot.decisions().getFirst(),
