@@ -71,17 +71,18 @@ class FlywayMigrationOrderTests(unittest.TestCase):
         self.assertRejected(result, f"{SQL}/V116__Store_Language_Preferences.sql",
             f"{SQL}/V118__Store_Skipped_File_Reasons.sql")
 
-    def test_shouldRejectAddedMigrationWhenTheBaseBranchAddedAMigrationWithTheSameContent(self):
+    def test_shouldRejectAddedMigrationWhenTheBaseBranchAddedItsVersionWithTheSameContent(self):
         statement = "ALTER TABLE library ADD COLUMN refreshed_on TIMESTAMPTZ;\n"
         self.publish_main(f"{SQL}/V115__Store_Retention.sql")
         self.start_pull_request()
         self.commit(f"{SQL}/V116__Store_Library_Refresh.sql", content=statement)
-        self.publish_main(f"{SQL}/V118__Store_Library_Refresh.sql", content=statement)
+        self.publish_main(f"{SQL}/V116__Add_Library_Refresh.sql", content=statement)
         self.git(self.checkout, "switch", "--quiet", "pull-request")
 
         result = self.check()
 
-        self.assertRejected(result, f"{SQL}/V116__Store_Library_Refresh.sql", "V118")
+        self.assertRejected(result, f"{SQL}/V116__Store_Library_Refresh.sql",
+            f"{SQL}/V116__Add_Library_Refresh.sql")
 
     def test_shouldAcceptStackedPullRequestWhenTheBaseBranchSquashMergedItsParent(self):
         self.publish_main(f"{SQL}/V118__Store_Skipped_File_Reasons.sql")
@@ -195,6 +196,40 @@ class FlywayMigrationOrderTests(unittest.TestCase):
         result = self.check()
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_shouldRejectRenamedFileWhenItBecomesAMigrationBelowTheBaseBranchHighest(self):
+        self.publish_main(f"{SQL}/V118__Store_Skipped_File_Reasons.sql",
+            f"{SQL}/Store_Language_Preferences.sql.disabled")
+        self.start_pull_request()
+        self.git(self.checkout, "mv", f"{SQL}/Store_Language_Preferences.sql.disabled",
+            f"{SQL}/V117__Store_Language_Preferences.sql")
+        self.commit(message="enable")
+
+        result = self.check()
+
+        self.assertRejected(result, f"{SQL}/V117__Store_Language_Preferences.sql", "V118")
+
+    def test_shouldRejectRenamedMigrationWhenItsVersionChangesBelowTheBaseBranchHighest(self):
+        self.publish_main(f"{SQL}/V010__Create_Library.sql",
+            f"{SQL}/V118__Store_Skipped_File_Reasons.sql")
+        self.start_pull_request()
+        self.git(self.checkout, "mv", f"{SQL}/V010__Create_Library.sql",
+            f"{SQL}/V117__Create_Library.sql")
+        self.commit(message="renumber")
+
+        result = self.check()
+
+        self.assertRejected(result, f"{SQL}/V117__Create_Library.sql", "V118")
+
+    def test_shouldRejectAddedMigrationWhenItsNameHasNoDescription(self):
+        self.publish_main(f"{SQL}/V118__Store_Skipped_File_Reasons.sql")
+        self.start_pull_request()
+        self.commit(f"{SQL}/V116__.sql", f"{JAVA}/V117.java")
+
+        result = self.check()
+
+        self.assertRejected(result, f"{SQL}/V116__.sql", "V118")
+        self.assertRejected(result, f"{JAVA}/V117.java", "V118")
 
     def test_shouldIgnoreMigrationWhenItReachedThePullRequestByMergingTheBaseBranch(self):
         self.publish_main(f"{SQL}/V116__Store_Language_Preferences.sql")

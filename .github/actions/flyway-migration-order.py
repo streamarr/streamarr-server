@@ -10,7 +10,7 @@ import subprocess
 import sys
 
 MIGRATION_DIRECTORIES = ("src/main/resources/db/migration", "src/main/java/db/migration")
-VERSIONED_MIGRATION = re.compile(r"V(?P<version>\d+(?:[._]\d+)*)__.+\.(?:sql|java)")
+VERSION = re.compile(r"\d+(?:[._]\d+)*")
 
 
 def git(*arguments):
@@ -31,10 +31,13 @@ def fetch(branch):
 
 
 def version(path):
-    match = VERSIONED_MIGRATION.fullmatch(path.rsplit("/", 1)[-1])
-    if match is None:
+    stem, _, suffix = path.rsplit("/", 1)[-1].rpartition(".")
+    if suffix not in ("sql", "java") or not stem.startswith("V"):
         return None
-    raw = match["version"]
+    # Flyway accepts a missing or empty description: V117.java and V117__.sql are version 117.
+    raw = stem[1:].split("__", 1)[0]
+    if not VERSION.fullmatch(raw):
+        return None
     parts = [int(part) for part in re.split(r"[._]", raw)]
     # Flyway treats trailing zero parts as equal: 1.0 is 1.
     while len(parts) > 1 and parts[-1] == 0:
@@ -44,6 +47,20 @@ def version(path):
 
 def migrations(listing):
     return {path: parsed for path in paths(listing) if (parsed := version(path)) is not None}
+
+
+def introduced(changes):
+    """Yield the versions a diff introduces: additions, and renames that change the version."""
+    fields = iter(paths(changes))
+    for status in fields:
+        source = next(fields) if status.startswith("R") else None
+        path = next(fields)
+        parsed = version(path)
+        if parsed is None:
+            continue
+        if source is not None and (previous := version(source)) and previous[0] == parsed[0]:
+            continue
+        yield path, parsed
 
 
 def escape(value, property_value=False):
@@ -62,8 +79,9 @@ def main(arguments):
     merge_base = git("merge-base", base, "HEAD").strip()
     existing = migrations(git("ls-tree", "-r", "-z", "--name-only", base, "--",
                               *MIGRATION_DIRECTORIES))
-    added = migrations(git("diff", "--name-only", "-z", "--diff-filter=A", "--find-renames",
-                           merge_base, "HEAD", "--", *MIGRATION_DIRECTORIES))
+    added = dict(introduced(git("diff", "--name-status", "-z", "--diff-filter=AR",
+                                "--find-renames", merge_base, "HEAD", "--",
+                                *MIGRATION_DIRECTORIES)))
     if not existing:
         print(f"{branch} has no versioned Flyway migrations")
         return 0
