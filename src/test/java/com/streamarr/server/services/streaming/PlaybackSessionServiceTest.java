@@ -1412,6 +1412,27 @@ class PlaybackSessionServiceTest {
             });
   }
 
+  // The HLS format attempt names why it does not direct-play, as one after a failed direct play
+  // names the failure, so a playback-data overlay shows why the viewer's switch moved to HLS.
+  @Test
+  @DisplayName(
+      "Should name the unselectable audio track in the decision of the format attempt that an audio"
+          + " switch starts")
+  void shouldNameTheUnselectableAudioTrackInTheDecisionOfTheFormatAttemptThatAnAudioSwitchStarts() {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlayOfTwoAudioTracks(service, command);
+
+    var switched = accepted(service.switchAudioTrack(audioSwitch(directPlay, command, 1)));
+
+    assertThat(switched.decisions())
+        .extracting(decision -> decision.video().delivery(), PlaybackDecision::reasons)
+        .containsExactly(
+            tuple(PlaybackDelivery.DIRECT_PLAY, List.of()),
+            tuple(
+                PlaybackDelivery.COPY,
+                List.of(DecisionReason.DIRECT_PLAY_AUDIO_TRACK_NOT_SELECTABLE)));
+  }
+
   // ADR 0052: Original that reaches an encode plays it in Auto, and the notice names the switch.
   @Test
   @DisplayName(

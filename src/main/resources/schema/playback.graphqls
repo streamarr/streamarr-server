@@ -226,7 +226,8 @@ enum DecisionReason {
     DIRECT_PLAY_AUDIO_NOT_DECLARED
     """
     The player cannot select an audio track inside a file that it direct-plays, and it would not start on the audio
-    track that the viewer chose: the viewer chose a later track, or the file marks another track as its default.
+    track that the viewer chose: the viewer chose a later track, or the file marks another track as its default. The
+    format attempt that the viewer's audio switch moves from direct play to HLS names it too.
     """
     DIRECT_PLAY_AUDIO_TRACK_NOT_SELECTABLE
     "A forced image subtitle track, PGS, VobSub or DVB, is in the language of an audio track."

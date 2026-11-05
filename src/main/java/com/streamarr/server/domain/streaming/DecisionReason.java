@@ -138,7 +138,8 @@ public enum DecisionReason {
   /**
    * The player cannot select an audio track inside a file that it direct-plays, and it would not
    * start on the stream session's audio track: the session chose a later track, or the file marks
-   * another track as its default (ADR 0045).
+   * another track as its default (ADR 0045). The format attempt that a viewer's audio switch moves
+   * from direct play to HLS names it too.
    */
   DIRECT_PLAY_AUDIO_TRACK_NOT_SELECTABLE,
   /**

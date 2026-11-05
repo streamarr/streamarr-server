@@ -100,7 +100,8 @@ public class PlaybackSessionService implements AutoCloseable {
     // A retired format attempt can still take a timeline report until its stream session ends.
     private final List<StreamSession> readyAttempts = new ArrayList<>();
     private final List<PlaybackDecision> decisions = new ArrayList<>();
-    // The reason that the failure of the format attempt before the pending one gives it.
+    // The reason that the format attempt before the pending one gives it: its failure, or an audio
+    // switch that its player could not make in direct play.
     @Builder.Default private Optional<DecisionReason> pendingAttemptCause = Optional.empty();
   }
 
@@ -388,6 +389,8 @@ public class PlaybackSessionService implements AutoCloseable {
     }
 
     playback.audioTrackPosition = OptionalInt.of(ended.get().position());
+    playback.pendingAttemptCause =
+        Optional.of(DecisionReason.DIRECT_PLAY_AUDIO_TRACK_NOT_SELECTABLE);
     playback.formatAttemptCount++;
     playback.lastAccessedAt = clock.instant();
     streamOwners.remove(ended.get().directPlayId(), playback);
