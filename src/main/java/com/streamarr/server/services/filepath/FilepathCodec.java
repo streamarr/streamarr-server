@@ -28,6 +28,19 @@ public final class FilepathCodec {
     return path.toAbsolutePath().toUri().toString();
   }
 
+  /**
+   * Encodes {@code path} as an entry of its folder. The URI never ends with a separator, even for a
+   * folder or a soft link to one, so the URI of a soft link does not depend on its target.
+   */
+  public static String encodeEntry(Path path) {
+    var filepathUri = encode(path);
+    if (path.getFileName() == null || filepathUri.charAt(filepathUri.length() - 1) != SEPARATOR) {
+      return filepathUri;
+    }
+
+    return filepathUri.substring(0, filepathUri.length() - 1);
+  }
+
   public static Path decode(String filepathUri) {
     return decode(FileSystems.getDefault(), filepathUri);
   }

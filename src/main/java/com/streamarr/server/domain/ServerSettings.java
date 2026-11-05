@@ -10,9 +10,15 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.experimental.SuperBuilder;
+import org.hibernate.annotations.DynamicUpdate;
 
-/** The server-wide settings. The table holds exactly one row, which its migration creates. */
+/**
+ * The server-wide settings. The table holds exactly one row, which its migration creates. Each
+ * update writes only the columns it changed, so changes to different settings never undo each
+ * other.
+ */
 @Entity
+@DynamicUpdate
 @Getter
 @Setter
 @SuperBuilder(toBuilder = true)
@@ -23,4 +29,6 @@ public class ServerSettings extends BaseAuditableEntity<ServerSettings> {
   @Enumerated(EnumType.STRING)
   @Builder.Default
   private EncoderPresetChoice encoderPreset = EncoderPresetChoice.AUTOMATIC;
+
+  @Builder.Default private int idleSegmentRetentionMinutes = 60;
 }

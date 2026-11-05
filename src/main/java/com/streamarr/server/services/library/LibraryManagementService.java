@@ -58,6 +58,7 @@ public class LibraryManagementService {
   private final MutationTransactions mutationTransactions;
   private final LibraryOperationRepository libraryOperations;
   private final LibraryOperationService libraryOperationService;
+  private final MediaRoot mediaRoot;
 
   public List<LibraryMetadata> getAlphabetIndex(UUID libraryId) {
     return libraryMetadataRepository.findByLibraryIdOrderByLetterAsc(libraryId);
@@ -140,11 +141,34 @@ public class LibraryManagementService {
         return Optional.empty();
       }
 
-      return Optional.of(FilepathNameNormalizer.normalizeToFileSystemNames(path));
+      var folder = FilepathNameNormalizer.normalizeToFileSystemNames(path);
+      var folderRejection = folderRejection(folder);
+      if (folderRejection.isPresent()) {
+        rejections.add(folderRejection.get());
+        return Optional.empty();
+      }
+
+      return Optional.of(folder);
     } catch (InvalidPathException _) {
       rejections.add(new AddLibraryRejection.PathNotFound());
     } catch (SecurityException | IOException _) {
       rejections.add(new AddLibraryRejection.PathNotReadable());
+    }
+
+    return Optional.empty();
+  }
+
+  // Scans and playback never follow a soft link below the media root (ADR 0045). So a library
+  // folder sits in the media root, and neither it nor a folder between the media root and it may
+  // be a soft link.
+  private Optional<AddLibraryRejection> folderRejection(Path folder) throws IOException {
+    var root = mediaRoot.path();
+    if (!folder.startsWith(root)) {
+      return Optional.of(new AddLibraryRejection.PathOutsideMediaRoot(root));
+    }
+
+    if (mediaRoot.hasSoftLinkTo(folder)) {
+      return Optional.of(new AddLibraryRejection.PathThroughSoftLink());
     }
 
     return Optional.empty();

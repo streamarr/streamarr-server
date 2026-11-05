@@ -4,7 +4,7 @@ import com.streamarr.server.domain.LibraryFolderProblem;
 import lombok.Getter;
 
 @Getter
-public class LibraryFolderCheckFailedException extends LibraryScanFailedException {
+public class LibraryFolderCheckFailedException extends RuntimeException {
 
   private final LibraryFolderProblem problem;
 
@@ -19,6 +19,10 @@ public class LibraryFolderCheckFailedException extends LibraryScanFailedExceptio
       case UNREADABLE -> "Streamarr cannot read the folder of library %s.".formatted(libraryName);
       case EMPTY ->
           "The folder of library %s is empty, but Streamarr still records files for the library."
+              .formatted(libraryName);
+      case SOFT_LINK ->
+          ("The folder of library %s is reached through a soft link, and Streamarr never follows"
+                  + " soft links.")
               .formatted(libraryName);
     };
   }

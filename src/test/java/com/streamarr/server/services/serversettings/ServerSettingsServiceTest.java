@@ -13,6 +13,7 @@ import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeServerSettingsRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.Intent;
+import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -124,6 +125,87 @@ class ServerSettingsServiceTest {
     authorizationService.denyAll();
 
     assertThatThrownBy(() -> serverSettingsService.changeEncoderPreset(identity, "PLACEBO"))
+        .isInstanceOf(AccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should keep idle stream sessions for one hour when no ServerAdmin has changed it")
+  void shouldKeepIdleStreamSessionsForOneHourWhenNoServerAdminHasChangedIt() {
+    assertThat(serverSettingsService.idleSegmentRetention()).isEqualTo(Duration.ofHours(1));
+  }
+
+  @Test
+  @DisplayName(
+      "Should report one hour and the allowed range when a ServerAdmin reads the retention")
+  void shouldReportOneHourAndAllowedRangeWhenServerAdminReadsRetention() {
+    var setting = serverSettingsService.readIdleSegmentRetentionSetting(identity);
+
+    assertThat(setting.minutes()).isEqualTo(60);
+    assertThat(setting.minimumMinutes()).isEqualTo(5);
+    assertThat(setting.maximumMinutes()).isEqualTo(10_080);
+    assertThat(authorizationService.recordedIntents())
+        .containsExactly(new Intent.ViewIdleSegmentRetention());
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {5, 30, 10_080})
+  @DisplayName("Should keep idle stream sessions for the new time when a ServerAdmin changes it")
+  void shouldKeepIdleStreamSessionsForNewTimeWhenServerAdminChangesIt(int minutes) {
+    var setting = accepted(serverSettingsService.changeIdleSegmentRetention(identity, minutes));
+
+    assertThat(setting.minutes()).isEqualTo(minutes);
+    assertThat(serverSettingsService.readIdleSegmentRetentionSetting(identity).minutes())
+        .isEqualTo(minutes);
+    assertThat(serverSettingsService.idleSegmentRetention()).isEqualTo(Duration.ofMinutes(minutes));
+    assertThat(authorizationService.recordedIntents())
+        .startsWith(new Intent.ChangeIdleSegmentRetention());
+  }
+
+  @Test
+  @DisplayName(
+      "Should identify the setting by the stored settings id when a ServerAdmin reads and changes"
+          + " the retention")
+  void shouldIdentifySettingByStoredSettingsIdWhenServerAdminReadsAndChangesRetention() {
+    var settingsId = serverSettingsRepository.findAll().getFirst().getId();
+
+    var read = serverSettingsService.readIdleSegmentRetentionSetting(identity);
+    var changed = accepted(serverSettingsService.changeIdleSegmentRetention(identity, 30));
+
+    assertThat(settingsId).isNotNull();
+    assertThat(read.id()).isEqualTo(settingsId);
+    assertThat(changed.id()).isEqualTo(settingsId);
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {Integer.MIN_VALUE, -60, 0, 4, 10_081, Integer.MAX_VALUE})
+  @DisplayName("Should reject the change and keep one hour when the retention is out of range")
+  void shouldRejectChangeAndKeepOneHourWhenRetentionIsOutOfRange(int minutes) {
+    var outcome = serverSettingsService.changeIdleSegmentRetention(identity, minutes);
+
+    assertThat(rejectionOf(outcome))
+        .isEqualTo(new ChangeIdleSegmentRetentionRejection.OutOfRange());
+    assertThat(serverSettingsService.idleSegmentRetention()).isEqualTo(Duration.ofHours(1));
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {30, 4})
+  @DisplayName(
+      "Should refuse a caller who is not a ServerAdmin and keep one hour when the caller changes"
+          + " the retention")
+  void shouldRefuseCallerWhoIsNotServerAdminAndKeepOneHourWhenCallerChangesRetention(int minutes) {
+    authorizationService.denyAll();
+
+    assertThatThrownBy(() -> serverSettingsService.changeIdleSegmentRetention(identity, minutes))
+        .isInstanceOf(AccessDeniedException.class);
+    assertThat(serverSettingsService.idleSegmentRetention()).isEqualTo(Duration.ofHours(1));
+  }
+
+  @Test
+  @DisplayName("Should refuse the retention read when the caller is not a ServerAdmin")
+  void shouldRefuseRetentionReadWhenCallerIsNotServerAdmin() {
+    authorizationService.denyAll();
+
+    assertThatThrownBy(() -> serverSettingsService.readIdleSegmentRetentionSetting(identity))
         .isInstanceOf(AccessDeniedException.class);
   }
 

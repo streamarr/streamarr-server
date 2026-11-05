@@ -14,15 +14,20 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.NotDirectoryException;
 import java.nio.file.Path;
 import java.util.Optional;
+import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
- * Fails a scan whose library folder does not exist, cannot be read, or is empty while Streamarr
- * still records files for the library. An unmounted share leaves exactly such a folder, and a scan
- * that went on would remove every item of the library.
+ * Fails a scan or refresh whose library folder does not exist, cannot be read, or is empty while
+ * Streamarr still records files for the library. An unmounted share leaves exactly such a folder,
+ * and a scan that went on would remove every item of the library. Also fails a scan or refresh
+ * whose library folder, or a folder between the media root and it, is a soft link, because scans
+ * never follow one. A refresh runs the check so that it never marks HEALTHY a library whose folder
+ * a scan would fail.
  */
 @Service
+@Builder
 @RequiredArgsConstructor
 public class LibraryFolderCheck {
 
@@ -31,11 +36,14 @@ public class LibraryFolderCheck {
   private final FileSystem fileSystem;
   private final MediaFileRepository mediaFileRepository;
   private final MeterRegistry meterRegistry;
+  private final MediaRoot mediaRoot;
 
   /**
-   * @throws LibraryFolderCheckFailedException if the library folder fails the check
+   * Requires a library folder that a scan can safely run on.
+   *
+   * @throws LibraryFolderCheckFailedException if the library folder is not scannable
    */
-  public void requirePassed(Library library) {
+  public void requireScannableFolder(Library library) {
     var problem = findProblem(library);
     if (problem.isEmpty()) {
       return;
@@ -53,6 +61,11 @@ public class LibraryFolderCheck {
       return Optional.of(LibraryFolderProblem.UNREADABLE);
     }
 
+    var softLinkProblem = softLinkProblem(folder);
+    if (softLinkProblem.isPresent()) {
+      return softLinkProblem;
+    }
+
     try (var entries = Files.newDirectoryStream(folder)) {
       if (entries.iterator().hasNext()) {
         return Optional.empty();
@@ -68,5 +81,19 @@ public class LibraryFolderCheck {
     }
 
     return Optional.empty();
+  }
+
+  private Optional<LibraryFolderProblem> softLinkProblem(Path folder) {
+    try {
+      if (mediaRoot.hasSoftLinkTo(folder)) {
+        return Optional.of(LibraryFolderProblem.SOFT_LINK);
+      }
+
+      return Optional.empty();
+    } catch (NoSuchFileException _) {
+      return Optional.of(LibraryFolderProblem.MISSING);
+    } catch (IOException | SecurityException _) {
+      return Optional.of(LibraryFolderProblem.UNREADABLE);
+    }
   }
 }

@@ -294,7 +294,11 @@ enum Action {
   VIEW_ENCODER_PRESET(
       "viewEncoderPreset", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
   CHANGE_ENCODER_PRESET(
-      "changeEncoderPreset", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
+      "changeEncoderPreset", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  VIEW_IDLE_SEGMENT_RETENTION(
+      "viewIdleSegmentRetention", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  CHANGE_IDLE_SEGMENT_RETENTION(
+      "changeIdleSegmentRetention", ResourceKind.SERVER, FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
 
   private static final String ACTION_TYPE = "Streamarr::Action";
 

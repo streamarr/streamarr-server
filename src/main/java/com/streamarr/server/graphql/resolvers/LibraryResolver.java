@@ -13,10 +13,12 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
+import com.streamarr.server.graphql.cursor.ConnectionArguments;
 import com.streamarr.server.graphql.cursor.LibraryItemCursors;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.AlphabetIndexDto;
+import com.streamarr.server.graphql.dto.SkippedFileDetails;
 import com.streamarr.server.graphql.inputs.AddLibraryInput;
 import com.streamarr.server.graphql.inputs.MediaFilterInput;
 import com.streamarr.server.graphql.inputs.MediaFilterMapper;
@@ -40,6 +42,7 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.library.LibraryAdministrationService;
 import com.streamarr.server.services.library.LibraryCountsService.Counts;
 import com.streamarr.server.services.library.LibraryQueryService;
+import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
@@ -53,6 +56,8 @@ import org.dataloader.DataLoader;
 @DgsComponent
 @RequiredArgsConstructor
 public class LibraryResolver {
+
+  private static final int SKIPPED_FILES_PAGE_SIZE = 100;
 
   private final LibraryQueryService libraryQueries;
   private final AuthorizationService authorizationService;
@@ -223,6 +228,20 @@ public class LibraryResolver {
     libraryAdministrationService.requireViewLibraryAdministration(
         authorizationService.currentIdentity());
     return dfe.getSource();
+  }
+
+  @DgsData(parentType = "LibraryAdministration")
+  public Connection<SkippedFileDetails> skippedFiles(DataFetchingEnvironment dfe) {
+    Library library = dfe.getSource();
+    var list = new ListIdentity("library-skipped-files", library.getId());
+    var request =
+        positionCursors.pageRequest(
+            list,
+            ConnectionArguments.paginationOptions(paginationService, dfe, SKIPPED_FILES_PAGE_SIZE));
+    var page =
+        libraryAdministrationService.skippedFiles(
+            authorizationService.currentIdentity(), library.getId(), request);
+    return relayConnectionAdapter.toConnection(page, list, SkippedFileDetails::from);
   }
 
   @DgsTypeResolver(name = "Media")

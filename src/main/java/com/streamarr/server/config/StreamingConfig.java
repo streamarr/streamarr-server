@@ -13,11 +13,13 @@ import com.streamarr.server.services.streaming.ProducerLifecycleService;
 import com.streamarr.server.services.streaming.QualityLadderService;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
+import com.streamarr.server.services.streaming.SegmentFolderSpace;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.ShortCopyListener;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
+import com.streamarr.server.services.streaming.local.FileStoreSegmentFolderSpace;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -38,13 +40,17 @@ public class StreamingConfig {
         .streamingService(streamingService)
         .authorityGate(authorityGate)
         .maximumFormatAttempts(properties.maxFormatAttempts())
-        .sessionRetention(properties.sessionRetention())
         .build();
   }
 
   @Bean
   public LocalSegmentStore segmentStore(StreamingProperties properties) {
     return new LocalSegmentStore(Path.of(properties.segmentBasePath()));
+  }
+
+  @Bean
+  public SegmentFolderSpace segmentFolderSpace(StreamingProperties properties) {
+    return new FileStoreSegmentFolderSpace(Path.of(properties.segmentBasePath()));
   }
 
   @Bean

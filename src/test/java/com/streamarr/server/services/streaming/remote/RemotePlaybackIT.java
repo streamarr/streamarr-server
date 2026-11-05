@@ -129,6 +129,7 @@ class RemotePlaybackIT {
           rig(
               PlaybackRigConfiguration.builder()
                   .streamSessionId(streamSessionId)
+                  .sourcePath(mediaFile)
                   .segmentStore(segmentStore)
                   .executor(executor)
                   .heldRequests(server.heldSegmentRequests())
@@ -228,6 +229,7 @@ class RemotePlaybackIT {
           rig(
               PlaybackRigConfiguration.builder()
                   .streamSessionId(streamSessionId)
+                  .sourcePath(mediaFile)
                   .segmentStore(segmentStore)
                   .executor(executor)
                   .heldRequests(server.heldSegmentRequests())
@@ -706,6 +708,7 @@ class RemotePlaybackIT {
   @Builder
   private record PlaybackRigConfiguration(
       UUID streamSessionId,
+      Path sourcePath,
       LocalSegmentStore segmentStore,
       RemoteTranscodeExecutor executor,
       HeldSegmentRequests heldRequests) {}
@@ -716,6 +719,7 @@ class RemotePlaybackIT {
             .sessionId(configuration.streamSessionId())
             .mediaFileId(UUID.randomUUID())
             .authority(StreamSessionFixture.playbackAuthorityFor(UUID.randomUUID()))
+            .sourcePath(configuration.sourcePath())
             .mediaProbe(StreamSessionFixture.defaultProbeBuilder().build())
             .transcodeDecision(transcodeDecision())
             .build();

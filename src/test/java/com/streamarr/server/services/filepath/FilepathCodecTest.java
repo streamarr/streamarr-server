@@ -351,4 +351,29 @@ class FilepathCodecTest {
         .isExactlyInstanceOf(IllegalArgumentException.class)
         .hasMessage("Path is not below its root");
   }
+
+  @Test
+  @DisplayName(
+      "Should encode a soft link to a folder without a trailing separator when encoding an entry")
+  void shouldEncodeASoftLinkToAFolderWithoutATrailingSeparatorWhenEncodingAnEntry(
+      @TempDir Path root) throws IOException {
+    var target = Files.createDirectory(root.resolve("target"));
+    var link = Files.createSymbolicLink(root.resolve("Linked Folder"), target);
+    var withTarget = FilepathCodec.encodeEntry(link);
+    Files.delete(target);
+
+    var withoutTarget = FilepathCodec.encodeEntry(link);
+
+    assertThat(withTarget).isEqualTo(withoutTarget).endsWith("/Linked%20Folder");
+    assertThat(FilepathCodec.decode(withTarget)).isEqualTo(link.toAbsolutePath());
+  }
+
+  @Test
+  @DisplayName("Should encode a file entry as encode does when the entry is a regular file")
+  void shouldEncodeAFileEntryAsEncodeDoesWhenTheEntryIsARegularFile(@TempDir Path root)
+      throws IOException {
+    var file = Files.createFile(root.resolve("Movie (2001).mkv"));
+
+    assertThat(FilepathCodec.encodeEntry(file)).isEqualTo(FilepathCodec.encode(file));
+  }
 }

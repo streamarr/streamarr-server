@@ -11,6 +11,7 @@ import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
 import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.VideoFormatConstraint;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -81,6 +82,11 @@ public final class FakeCreatingStreamingService implements StreamingService {
     }
 
     streams.destroySession(sessionId);
+  }
+
+  @Override
+  public boolean destroySessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
+    return streams.destroySessionIfLastAccessedBefore(sessionId, cutoff);
   }
 
   @Override

@@ -70,12 +70,28 @@ public class LibraryOperationDriver {
    * operation starts.
    */
   public CompletableFuture<Void> nextEnd(UUID libraryId) {
-    return ends.computeIfAbsent(libraryId, _ -> new CompletableFuture<>());
+    return ends.compute(
+        libraryId,
+        (_, end) -> {
+          if (end == null || end.isDone()) {
+            return new CompletableFuture<>();
+          }
+
+          return end;
+        });
   }
 
   /** Waits for a future from {@link #nextEnd}. */
   public void awaitEnd(CompletableFuture<Void> end) {
     awaitEnd(end, BOUND);
+  }
+
+  /**
+   * Waits for the end of the first scan of a library that {@code addLibrary} just added. That scan
+   * may have ended before this call.
+   */
+  public void awaitFirstScanEnd(UUID addedLibraryId) {
+    awaitEnd(ends.computeIfAbsent(addedLibraryId, _ -> new CompletableFuture<>()));
   }
 
   private static void awaitEnd(CompletableFuture<Void> end, Duration bound) {
@@ -106,9 +122,6 @@ public class LibraryOperationDriver {
   }
 
   private void completeEnd(UUID libraryId) {
-    var end = ends.remove(libraryId);
-    if (end != null) {
-      end.complete(null);
-    }
+    ends.computeIfAbsent(libraryId, _ -> new CompletableFuture<>()).complete(null);
   }
 }

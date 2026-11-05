@@ -119,6 +119,22 @@ public class ServerSettingsRecord extends UpdatableRecordImpl<ServerSettingsReco
         return (String) get(6);
     }
 
+    /**
+     * Setter for
+     * <code>public.server_settings.idle_segment_retention_minutes</code>.
+     */
+    public void setIdleSegmentRetentionMinutes(Integer value) {
+        set(7, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.server_settings.idle_segment_retention_minutes</code>.
+     */
+    public Integer getIdleSegmentRetentionMinutes() {
+        return (Integer) get(7);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -142,7 +158,7 @@ public class ServerSettingsRecord extends UpdatableRecordImpl<ServerSettingsReco
     /**
      * Create a detached, initialised ServerSettingsRecord
      */
-    public ServerSettingsRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, Boolean singleton, String encoderPreset) {
+    public ServerSettingsRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, Boolean singleton, String encoderPreset, Integer idleSegmentRetentionMinutes) {
         super(ServerSettings.SERVER_SETTINGS);
 
         setId(id);
@@ -152,6 +168,7 @@ public class ServerSettingsRecord extends UpdatableRecordImpl<ServerSettingsReco
         setLastModifiedBy(lastModifiedBy);
         setSingleton(singleton);
         setEncoderPreset(encoderPreset);
+        setIdleSegmentRetentionMinutes(idleSegmentRetentionMinutes);
         resetTouchedOnNotNull();
     }
 }

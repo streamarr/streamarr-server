@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.services.mutation.Outcome;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
@@ -15,6 +16,12 @@ public interface StreamingService {
 
   /** System destroy — no caller identity; reserved for the reaper, cleanup, and shutdown. */
   void destroySession(UUID sessionId);
+
+  /**
+   * System destroy of a session that no request reached since the cutoff; returns whether it
+   * destroyed the session. A request that reaches the session first keeps it.
+   */
+  boolean destroySessionIfLastAccessedBefore(UUID sessionId, Instant cutoff);
 
   /**
    * Owner-checked destroy. A wrong-owner call is a silent no-op by design: an unowned session must

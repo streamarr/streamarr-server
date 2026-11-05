@@ -1292,6 +1292,12 @@ public class ProducerLifecycleService {
     return withSessionLock(sessionId, () -> runtimeRegistry.removeById(sessionId).isPresent());
   }
 
+  /** {@link #removeSession}, but only when no request reached the session since the cutoff. */
+  public boolean removeSessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
+    return withSessionLock(
+        sessionId, () -> runtimeRegistry.removeIfLastAccessedBefore(sessionId, cutoff));
+  }
+
   /**
    * Stops every producer of a session already removed from the registry. Taking the mutex closes
    * the window where a concurrent replace could start a producer for a destroyed session.

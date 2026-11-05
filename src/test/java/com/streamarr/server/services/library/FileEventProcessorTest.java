@@ -19,6 +19,7 @@ import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeProbeTaskRequests;
+import com.streamarr.server.fakes.FakeSkippedFileRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
@@ -164,6 +165,7 @@ class FileEventProcessorTest {
                     .mediaFileRepository(mediaFileRepository)
                     .fileSystem(fileSystem)
                     .fileDiscoveryRuns(fileDiscoveryRuns)
+                    .skippedFileRepository(new FakeSkippedFileRepository())
                     .mutexFactoryProvider(new MutexFactoryProvider())
                     .build())
             .libraryRepository(libraryRepository)

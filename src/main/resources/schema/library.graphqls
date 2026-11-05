@@ -34,6 +34,35 @@ type LibraryAdministration {
     createdOn: String!
     lastModifiedBy: String
     lastModifiedOn: String!
+    """
+    The files that the latest scan to walk the library's folder found and skipped, in filepath
+    order. A scan replaces the skipped files of earlier scans as its walk starts, so while it walks
+    the list holds only what it has skipped so far. A scan that is stopped before its walk, or whose
+    library folder check fails, leaves the earlier skipped files. A file that the file watcher
+    skips appears after the next scan.
+    """
+    skippedFiles(first: Int, after: String, last: Int, before: String): SkippedFileConnection!
+}
+
+"A file that a scan found in its library's folder and skipped."
+type SkippedFile {
+    filepathUri: String!
+    reason: SkippedFileReason!
+}
+
+enum SkippedFileReason {
+    "The file is a soft link. Streamarr never follows a soft link; a hard link is an ordinary file."
+    SOFT_LINK
+}
+
+type SkippedFileConnection {
+    edges: [SkippedFileEdge!]!
+    pageInfo: PageInfo!
+}
+
+type SkippedFileEdge {
+    node: SkippedFile!
+    cursor: String!
 }
 
 "The receipt for a removed library: the id of the library that no longer exists."
@@ -157,6 +186,8 @@ union AddLibraryError =
   | LibraryPathNotFoundError
   | LibraryPathNotDirectoryError
   | LibraryPathNotReadableError
+  | LibraryPathThroughSoftLinkError
+  | LibraryPathOutsideMediaRootError
   | LibraryPathAlreadyRegisteredError
   | LibraryPathOverlapError
 
