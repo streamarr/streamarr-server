@@ -40,6 +40,15 @@ public record AudioCapabilityEntry(
     return directPlayContainers.contains(container);
   }
 
+  /**
+   * Whether this entry accepts an HLS copy of the audio stream with the channel count that the copy
+   * announces (ADR 0049): the entry applies to HLS, names the stream's codec, and accepts that many
+   * channels.
+   */
+  public boolean acceptsHlsCopy(@NonNull StreamInfo stream, int channels) {
+    return hls && namesCodecOf(stream) && channels <= maxChannels;
+  }
+
   // An AAC stream also needs a codec string that names an AAC profile that the declaration covers.
   private boolean namesCodecOf(StreamInfo stream) {
     if (stream.codec().flatMap(AudioCodec::ofProbedName).filter(codec::equals).isEmpty()) {

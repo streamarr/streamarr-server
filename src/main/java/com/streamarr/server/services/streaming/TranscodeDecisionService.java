@@ -616,13 +616,17 @@ public class TranscodeDecisionService {
     // source's count. Only an encode names an output layout.
     var track = AudioTrackChannels.of(source);
     int sourceChannels = track.count();
-    var sourceCodecString =
-        source.audioStreams().stream().findFirst().flatMap(StreamInfo::codecString);
+    var sourceStream = source.audioStreams().stream().findFirst();
+    var sourceCodecString = sourceStream.flatMap(StreamInfo::codecString);
     var copyChannelMaximum = HlsAudioEncodes.channelMaximum(declaration, source.audioCodec());
     var encodeReason =
         audioEncodeReason(copyChannelMaximum, source)
             .or(() -> audioCodecStringRefusal(source.audioCodec(), sourceCodecString));
-    if (encodeReason.isPresent()) {
+    boolean copyFits =
+        sourceStream
+            .filter(stream -> declaration.acceptsHlsAudioCopy(stream, sourceChannels))
+            .isPresent();
+    if (encodeReason.isPresent() || !copyFits) {
       return new SessionAudio(HlsAudioEncodes.forTrack(declaration, track), encodeReason);
     }
 

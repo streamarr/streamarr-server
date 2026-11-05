@@ -32,6 +32,14 @@ public record ClientCapabilityDeclaration(
   }
 
   /**
+   * Whether one audio capability entry accepts the HLS copy of the audio stream with the channel
+   * count that the copy announces.
+   */
+  public boolean acceptsHlsAudioCopy(@NonNull StreamInfo stream, int channels) {
+    return audio.stream().anyMatch(entry -> entry.acceptsHlsCopy(stream, channels));
+  }
+
+  /**
    * Why no video capability entry accepts the stream copy over HLS: the codec family that no HLS
    * entry names, or the properties that the closest HLS entry of the codec family refuses. The
    * closest entry refuses the fewest properties, and the first declared wins a tie. Empty when an
