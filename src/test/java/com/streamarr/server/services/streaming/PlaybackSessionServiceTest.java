@@ -855,6 +855,27 @@ class PlaybackSessionServiceTest {
         service.access(request(initial, command)).orElseThrow(), quality);
   }
 
+  // ADR 0037: a copy whose segment exceeds the cap on the segment list falls back to an encode
+  // under ADR 0052, as any failed copy does.
+  @ParameterizedTest
+  @EnumSource(
+      value = VideoQuality.class,
+      mode = EnumSource.Mode.EXCLUDE,
+      names = {"AUTO", "ORIGINAL"})
+  @DisplayName("Should encode at the same fixed quality when its copy exceeds the segment cap")
+  void shouldEncodeAtTheSameFixedQualityWhenItsCopyExceedsTheSegmentCap(VideoQuality quality) {
+    var command = startCommand().options(qualityOptions(quality)).build();
+    var initial = accepted(service.start(command));
+
+    service.onTerminalTranscodeFailure(
+        terminalFailure(
+            initial.currentFormatAttempt().streamSessionId(),
+            TranscodeFailure.SEGMENT_CAP_EXCEEDED));
+
+    assertThatTheFixedQualityPlaysAnEncodeAfterItsCopyFailed(
+        service.access(request(initial, command)).orElseThrow(), quality);
+  }
+
   @ParameterizedTest
   @CsvSource({
     "AUTO,OUTPUT_MISMATCH",
@@ -920,6 +941,7 @@ class PlaybackSessionServiceTest {
     return switch (failure) {
       case OUTPUT_MISMATCH -> new PlaybackSessionFailure.OutputMismatch();
       case INVALID_SPECIFICATION -> new PlaybackSessionFailure.InvalidSpecification();
+      case SEGMENT_CAP_EXCEEDED -> new PlaybackSessionFailure.OutputMismatch();
     };
   }
 

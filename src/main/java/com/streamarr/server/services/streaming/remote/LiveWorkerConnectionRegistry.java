@@ -623,7 +623,7 @@ final class LiveWorkerConnectionRegistry {
   }
 
   private void publishTerminalFailure(VariantJob job, JobAttemptFailed failed) {
-    var failure = WorkerConnection.terminalFailure(failed);
+    var failure = WorkerConnection.terminalFailure(job, failed);
     if (failure.isEmpty()) {
       return;
     }
@@ -1202,7 +1202,7 @@ final class LiveWorkerConnectionRegistry {
       var attemptId = fromProto(failed.getJobAttemptId());
       var job = activeVariants.get(attemptId);
       if (job != null) {
-        terminalFailure(failed)
+        terminalFailure(job, failed)
             .ifPresent(
                 failure -> terminalFailures.put(fromProto(job.getStreamSessionId()), failure));
       }
@@ -1211,21 +1211,33 @@ final class LiveWorkerConnectionRegistry {
     }
 
     // The worker contract says that a replacement attempt with the same decision repeats an output
-    // mismatch on the same encoder backend, and an invalid specification on every worker.
-    private static Optional<TranscodeFailure> terminalFailure(JobAttemptFailed failed) {
+    // mismatch on the same encoder backend, and an invalid specification on every worker. Every
+    // attempt on the same segment list cuts the same segments, so it repeats a segment over the cap
+    // too (ADR 0037).
+    private static Optional<TranscodeFailure> terminalFailure(
+        VariantJob job, JobAttemptFailed failed) {
       return switch (failed.getFailure()) {
         case JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH -> Optional.of(TranscodeFailure.OUTPUT_MISMATCH);
         case JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION ->
             Optional.of(TranscodeFailure.INVALID_SPECIFICATION);
+        case JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED -> segmentCapFailure(job);
         case JOB_ATTEMPT_FAILURE_UNSPECIFIED,
             JOB_ATTEMPT_FAILURE_SOURCE_UNAVAILABLE,
             JOB_ATTEMPT_FAILURE_STARTUP_FAILED,
             JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED,
-            JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED,
             JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES,
             UNRECOGNIZED ->
             Optional.empty();
       };
+    }
+
+    // A job on the plain grid keeps ordinary recovery for a segment over the cap.
+    private static Optional<TranscodeFailure> segmentCapFailure(VariantJob job) {
+      if (job.getExecution().getSegmentStartSlotsCount() == 0) {
+        return Optional.empty();
+      }
+
+      return Optional.of(TranscodeFailure.SEGMENT_CAP_EXCEEDED);
     }
 
     private static boolean isCopyOutputMismatch(VariantJob job, JobAttemptFailed failed) {

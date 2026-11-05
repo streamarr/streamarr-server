@@ -311,15 +311,24 @@ public class PlaybackSessionService implements AutoCloseable {
             reserveFormatAttempt(playback, failedId, new PlaybackSessionFailure.OutputMismatch()));
   }
 
-  /** Fails the playback session without another format attempt, which would fail the same way. */
+  /**
+   * Fails the playback session without another format attempt, which would fail the same way. A
+   * segment over the cap on the segment list starts a new format attempt instead, as a failed copy
+   * does, because that attempt's stream session encodes on the plain grid (ADR 0037).
+   */
   @EventListener
   public void onTerminalTranscodeFailure(@NonNull TerminalTranscodeFailureEvent event) {
     var failedId = event.streamSessionId();
-    var reason =
-        switch (event.failure()) {
-          case OUTPUT_MISMATCH -> new PlaybackSessionFailure.OutputMismatch();
-          case INVALID_SPECIFICATION -> new PlaybackSessionFailure.InvalidSpecification();
-        };
+    switch (event.failure()) {
+      case OUTPUT_MISMATCH ->
+          failWithoutFormatAttempt(failedId, new PlaybackSessionFailure.OutputMismatch());
+      case INVALID_SPECIFICATION ->
+          failWithoutFormatAttempt(failedId, new PlaybackSessionFailure.InvalidSpecification());
+      case SEGMENT_CAP_EXCEEDED -> recoverFromFailedCopy(failedId);
+    }
+  }
+
+  private void failWithoutFormatAttempt(UUID failedId, PlaybackSessionFailure reason) {
     handleJobFailure(failedId, playback -> reserveFailure(playback, failedId, reason));
   }
 
