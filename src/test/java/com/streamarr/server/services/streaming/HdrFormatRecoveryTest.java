@@ -48,16 +48,20 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
+import lombok.Builder;
+import lombok.NonNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
@@ -116,7 +120,7 @@ class HdrFormatRecoveryTest {
           VideoQuality quality,
           VideoRange base,
           Optional<PlaybackFormatChange> expectedChange) {
-    probes.setDefaultProbe(dolbyVisionSource(profile));
+    probes.setDefaultProbe(dolbyVisionSource(profile).build());
     var command = start(quality);
     var dolbyVisionCopy = accepted(playback.start(command));
 
@@ -170,7 +174,7 @@ class HdrFormatRecoveryTest {
   void shouldEncodeInAutoWhenOriginalsDolbyVisionCopyFailsAndNoConnectedWorkerStripsDolbyVision() {
     workers.setVideoCopySupportByWorker(
         List.of(workerWithRewrites(BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD)));
-    probes.setDefaultProbe(dolbyVisionSource(DolbyVisionProfile.PROFILE_8_1));
+    probes.setDefaultProbe(dolbyVisionSource(DolbyVisionProfile.PROFILE_8_1).build());
     var command = start(VideoQuality.ORIGINAL);
     var dolbyVisionCopy = accepted(playback.start(command));
 
@@ -181,6 +185,42 @@ class HdrFormatRecoveryTest {
     assertThat(encode.playbackChoice()).isEqualTo(VideoQuality.AUTO);
     assertThat(encode.formatChange()).contains(PlaybackFormatChange.COPY_FAILED);
     assertThat(decisionOf(encode).transcodeMode().copiesVideo()).isFalse();
+  }
+
+  // ADR 0052: a source without an output frame rate cannot be encoded (#446), so no encode can
+  // replace its copies. A rejected Dolby Vision copy still falls back to the copy with Dolby Vision
+  // stripped in every playback choice, and the rejected stripped copy ends playback with the typed
+  // error.
+  @ParameterizedTest
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"AUTO", "ORIGINAL", "FULL_HD_1080P"})
+  @DisplayName(
+      "Should end with the typed error after the stripped copy when no encode can replace the"
+          + " Dolby Vision copy")
+  void shouldEndWithTheTypedErrorAfterTheStrippedCopyWhenNoEncodeCanReplaceTheDolbyVisionCopy(
+      VideoQuality quality) {
+    probes.setDefaultProbe(
+        dolbyVisionSource(DolbyVisionProfile.PROFILE_8_1).frameRateUnknown(true).build());
+    var command = start(quality);
+    var dolbyVisionCopy = accepted(playback.start(command));
+    var stripped = rejectCurrentFormatAttempt(dolbyVisionCopy, command);
+
+    var failed = rejectCurrentFormatAttempt(stripped, command);
+
+    assertThat(decisionOf(dolbyVisionCopy).videoDolbyVisionOutput()).isPresent();
+    assertThat(decisionOf(stripped).videoBitstreamRewrites())
+        .containsExactly(BitstreamRewrite.STRIP_DOLBY_VISION);
+    assertThat(stripped.playbackChoice()).isEqualTo(quality);
+    assertThat(failed.formatAttemptCount()).isEqualTo(3);
+    assertThat(failed.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Failed.class,
+            attempt ->
+                assertThat(attempt.reason())
+                    .isEqualTo(
+                        new PlaybackSessionFailure.CreationRejected(
+                            new CreateStreamSessionRejection.FrameRateUnknown())));
   }
 
   // ADR 0052 and #401: every encode is SDR until #397, so the encode that replaces a rejected HDR
@@ -194,11 +234,11 @@ class HdrFormatRecoveryTest {
   void shouldReplaceARejectedHdrCopyWithAnEncodeWhoseDecisionPlaylistAndRangeSaySdr(
       VideoRange copyRange, VideoQuality quality, Optional<PlaybackFormatChange> expectedChange) {
     probes.setDefaultProbe(
-        hevcSource(
-            new VideoDynamicRange(
-                CompatibleBase.valueOf(copyRange.name()),
-                Presence.ABSENT,
-                new DolbyVision.Absent())));
+        sourceBuilder()
+            .dynamicRange(
+                VideoPlaybackFactsFixture.rangeWithoutEnhancement(
+                    CompatibleBase.valueOf(copyRange.name())))
+            .build());
     var command = start(quality);
     var hdrCopy = accepted(playback.start(command));
 
@@ -344,7 +384,7 @@ class HdrFormatRecoveryTest {
   }
 
   // A single-layer source with the profile's record at level 6 on the profile's base.
-  private static MediaProbe dolbyVisionSource(DolbyVisionProfile profile) {
+  private static SourceBuilder dolbyVisionSource(DolbyVisionProfile profile) {
     var range =
         new VideoDynamicRange(
             profile.compatibleBase(),
@@ -359,40 +399,66 @@ class HdrFormatRecoveryTest {
                         .rpu(true)
                         .build()),
                 Presence.PRESENT));
-    if (profile.codecFamily() == ProbedCodecFamily.AV1) {
-      return source("av1", "av01.0.08M.10", VideoCodecProfile.AV1_MAIN, range);
-    }
-
-    return hevcSource(range);
+    var codec =
+        switch (profile.codecFamily()) {
+          case AV1 -> Codec.AV1_MAIN;
+          default -> Codec.HEVC_MAIN_10;
+        };
+    return sourceBuilder().codec(codec).dynamicRange(range);
   }
 
   private static int compatibilityIdOf(DolbyVisionProfile profile) {
     return profile.compatibleBase() == CompatibleBase.HLG ? 4 : 1;
   }
 
-  private static MediaProbe hevcSource(VideoDynamicRange range) {
-    return source("hevc", "hvc1.2.4.L150.90", VideoCodecProfile.HEVC_MAIN_10, range);
+  /** A 10-bit video codec that a source can carry, with its codec string. */
+  private enum Codec {
+    HEVC_MAIN_10("hevc", "hvc1.2.4.L150.90", VideoCodecProfile.HEVC_MAIN_10),
+    AV1_MAIN("av1", "av01.0.08M.10", VideoCodecProfile.AV1_MAIN);
+
+    private final String probedName;
+    private final String codecString;
+    private final VideoCodecProfile profile;
+
+    Codec(String probedName, String codecString, VideoCodecProfile profile) {
+      this.probedName = probedName;
+      this.codecString = codecString;
+      this.profile = profile;
+    }
   }
 
-  // The default 1080p source at 24 fps, whose keyframes open every 6 s interval, as 10-bit video in
-  // this codec and dynamic range, beside stereo AAC.
+  /**
+   * The default 1080p source, whose keyframes open every 6 s interval, as 10-bit video in this
+   * dynamic range, beside stereo AAC. It is HEVC Main 10 unless it names its codec, and runs at 24
+   * fps unless its frame rate is unknown.
+   */
+  @Builder(builderMethodName = "sourceBuilder", builderClassName = "SourceBuilder")
   private static MediaProbe source(
-      String codec, String codecString, VideoCodecProfile codecProfile, VideoDynamicRange range) {
+      Codec codec, @NonNull VideoDynamicRange dynamicRange, boolean frameRateUnknown) {
+    var video = Optional.ofNullable(codec).orElse(Codec.HEVC_MAIN_10);
+    var framerate = OptionalDouble.of(24);
+    var frameRateRule = VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1));
+    if (frameRateUnknown) {
+      framerate = OptionalDouble.empty();
+      frameRateRule = VideoPlaybackFactsFixture.refusedRule();
+    }
+
     return defaultProbeBuilder()
-        .videoCodec(codec)
+        .framerate(framerate)
+        .videoCodec(video.probedName)
         .videoPlaybackFacts(
             Optional.of(
                 VideoPlaybackFactsFixture.sdrH264FactsBuilder()
                     .streamIndex(0)
-                    .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))
-                    .codecFamily(Optional.of(ProbedCodecFamily.fromProbedName(codec)))
-                    .dynamicRange(range)
+                    .frameRateRule(frameRateRule)
+                    .codecFamily(Optional.of(ProbedCodecFamily.fromProbedName(video.probedName)))
+                    .dynamicRange(dynamicRange)
                     .bitDepth(OptionalInt.of(10))
-                    .codecString(Optional.of(codecString))
+                    .codecString(Optional.of(video.codecString))
                     .videoProperties(
                         Optional.of(
                             VideoStreamProperties.builder()
-                                .codecProfile(Optional.of(codecProfile))
+                                .codecProfile(Optional.of(video.profile))
                                 .codecLevel(OptionalInt.of(40))
                                 .codecTier(Optional.of(VideoCodecTier.MAIN))
                                 .firstFramesRead(true)
