@@ -454,6 +454,37 @@ class ActiveStreamEventListenerTest {
     assertThat(delivered).extracting(this::producedRangeOf).containsExactly(rangeOf(0, 12));
   }
 
+  // The check parks after it found segment 1 missing, so it holds the range [0, 6) while a
+  // timeline report broadcasts [0, 12) and restarts the interval.
+  @Test
+  @DisplayName(
+      "Should deliver no range-only change before 5 seconds when another change moves the produced"
+          + " range while a range check reads it")
+  void shouldDeliverNoRangeOnlyChangeBefore5SecondsWhenAnotherChangeMovesTheRangeDuringACheck()
+      throws Exception {
+    var listener = listenerReading(new FakeMediaFileRepository());
+    var delivered = subscribe();
+    var playback = acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
+    var checkedAt = clock.instant();
+    storeSegment(listener, playback, 0);
+    var lookup = segments.parkAfterLookupOf(SegmentNames.mediaSegmentName(1));
+
+    try (var check = BoundedTask.start(() -> taskScheduler.runTasksDueAt(checkedAt))) {
+      awaitLatch(lookup.parked());
+      store(playback, 1);
+      listener.onPlaybackSessionChanged(
+          new PlaybackSessionChangedEvent(playback.playbackSessionId()));
+      lookup.release().countDown();
+      check.await(BOUND);
+    }
+
+    var withinTheInterval = List.copyOf(delivered);
+    runTasksAt(checkedAt.plus(Duration.ofSeconds(5)));
+
+    assertThat(withinTheInterval).extracting(this::producedRangeOf).containsExactly(rangeOf(0, 12));
+    assertThat(delivered).extracting(this::producedRangeOf).containsExactly(rangeOf(0, 12));
+  }
+
   @Test
   @DisplayName(
       "Should deliver a moved produced range at once when the last change that moved it is more than"

@@ -15,6 +15,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -139,7 +140,7 @@ public class ActiveStreamEventListener {
   // The range read follows the move to CHECKING, so it sees every segment that joined the check.
   private void checkProducedRange(UUID playbackSessionId) {
     rangeChecks.replace(playbackSessionId, RangeCheck.WAITING, RangeCheck.CHECKING);
-    var nextCheckAt = compareProducedRange(playbackSessionId, clock.instant());
+    var nextCheckAt = compareProducedRange(playbackSessionId);
     var next =
         rangeChecks.compute(
             playbackSessionId,
@@ -156,34 +157,72 @@ public class ActiveStreamEventListener {
     }
   }
 
-  // Reads the stream when its range moved, or answers when to check again if it may not compare
-  // the range yet.
-  private Optional<Instant> compareProducedRange(UUID playbackSessionId, Instant now) {
+  // Reads the stream when its range moved, or answers when to check again if it may not read yet.
+  private Optional<Instant> compareProducedRange(UUID playbackSessionId) {
     if (publications.containsKey(playbackSessionId)) {
       // The read in flight may broadcast a new range, which restarts the interval after it.
-      return Optional.of(now.plus(PRODUCED_RANGE_INTERVAL));
+      return Optional.of(clock.instant().plus(PRODUCED_RANGE_INTERVAL));
     }
 
     var due = nextRangeCheckAt(playbackSessionId);
-    if (now.isBefore(due)) {
+    if (clock.instant().isBefore(due)) {
       return Optional.of(due);
     }
 
+    Optional<MediaTimeRange> range;
     try {
-      var range = activeStreams.producedRange(playbackSessionId);
-      if (!range.equals(Optional.ofNullable(deliveredRanges.get(playbackSessionId)))) {
-        read(playbackSessionId);
-      }
+      range = activeStreams.producedRange(playbackSessionId);
     } catch (RuntimeException e) {
       countFailure(e);
+      return Optional.empty();
     }
 
+    if (range.equals(Optional.ofNullable(deliveredRanges.get(playbackSessionId)))) {
+      return Optional.empty();
+    }
+
+    return readMovedRange(playbackSessionId);
+  }
+
+  // A broadcast while the check read the range may have moved it and restarted the interval, so the
+  // read starts only in the map update that a reader's start and end contend on, after checking the
+  // interval and the reader again.
+  private Optional<Instant> readMovedRange(UUID playbackSessionId) {
+    var deferredUntil = new AtomicReference<Instant>();
+    var publication =
+        publications.compute(
+            playbackSessionId,
+            (_, current) -> {
+              var now = clock.instant();
+              if (current != null) {
+                deferredUntil.set(now.plus(PRODUCED_RANGE_INTERVAL));
+                return current;
+              }
+
+              var due = nextRangeCheckAt(playbackSessionId);
+              if (now.isBefore(due)) {
+                deferredUntil.set(due);
+                return null;
+              }
+
+              return onChange(null);
+            });
+    if (deferredUntil.get() != null) {
+      return Optional.of(deferredUntil.get());
+    }
+
+    startReader(playbackSessionId, publication);
     return Optional.empty();
   }
 
   private void read(UUID playbackSessionId) {
     // Only a newly started reader maps to READING here; a reader in flight maps to READ_AGAIN.
-    var publication = publications.compute(playbackSessionId, (_, current) -> onChange(current));
+    startReader(
+        playbackSessionId,
+        publications.compute(playbackSessionId, (_, current) -> onChange(current)));
+  }
+
+  private void startReader(UUID playbackSessionId, Publication publication) {
     if (publication == null) {
       // Nobody subscribes, so no subscriber holds a produced range to compare with.
       forgetProducedRange(playbackSessionId);
