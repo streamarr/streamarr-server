@@ -5,7 +5,9 @@ import static com.streamarr.server.fixtures.PlaybackSessionFixture.playbackReque
 import static com.streamarr.server.fixtures.PlaybackSessionFixture.playbackServiceBuilder;
 import static com.streamarr.server.fixtures.PlaybackSessionFixture.startPlaybackBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultVariantBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -17,6 +19,7 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaTimeRange;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.QualityVariant;
@@ -307,6 +310,53 @@ class ActiveStreamServiceTest {
 
     assertThat(beforeAnyRequest.producedRange()).contains(rangeOf(36, 42));
     assertThat(afterTheRequest.producedRange()).contains(rangeOf(24, 54));
+  }
+
+  // A title that runs past its probed duration leaves media segments past the advertised end in
+  // the store. A 60 s title advertises media segments 0 to 9.
+  @Test
+  @DisplayName(
+      "Should end the produced range at the media end when an encode stored media segments past the"
+          + " advertised end")
+  void shouldEndTheProducedRangeAtTheMediaEndWhenAnEncodeStoredMediaSegmentsPastTheAdvertisedEnd() {
+    streams.shapeSessions(
+        session ->
+            session
+                .mediaProbe(sixtySecondProbe())
+                .transcodeDecision(fullTranscodeDecision("h264")));
+    var snapshot = acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
+    var session = readySession(snapshot);
+    session.updatePlaybackState(57, PlaybackState.PLAYING);
+    store(session, StreamSession.defaultVariant(), 8, 9, 10, 11);
+
+    var stream = service.activeStream(snapshot.playbackSessionId());
+
+    assertThat(stream)
+        .hasValueSatisfying(
+            playing -> assertThat(playing.producedRange()).contains(rangeOf(48, 60)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should end the produced range at the media end when a stream copy stored media segments past"
+          + " the advertised end")
+  void
+      shouldEndTheProducedRangeAtTheMediaEndWhenAStreamCopyStoredMediaSegmentsPastTheAdvertisedEnd() {
+    streams.shapeSessions(session -> session.mediaProbe(sixtySecondProbe()));
+    var snapshot = acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
+    var session = readySession(snapshot);
+    session.updatePlaybackState(57, PlaybackState.PLAYING);
+    store(session, StreamSession.defaultVariant(), 8, 9, 10, 11);
+
+    var stream = service.activeStream(snapshot.playbackSessionId());
+
+    assertThat(stream)
+        .hasValueSatisfying(
+            playing -> assertThat(playing.producedRange()).contains(rangeOf(48, 60)));
+  }
+
+  private static MediaProbe sixtySecondProbe() {
+    return defaultProbeBuilder().duration(Duration.ofSeconds(60)).build();
   }
 
   private UUID matchedFile(UUID mediaId) {

@@ -1652,11 +1652,15 @@ public class ProducerLifecycleService {
 
     var timeline = timelineOf(session);
     var variantLabel = requestedVariant(session);
+    // Media that runs past its probed duration stores media segments that the playlist never
+    // advertises, and the run ends at the last advertised one.
     IntPredicate stored =
         index ->
-            segmentStore.segmentExists(
-                session.getSessionId(),
-                SegmentNames.storedSegmentName(variantLabel, SegmentNames.mediaSegmentName(index)));
+            timeline.advertises(index)
+                && segmentStore.segmentExists(
+                    session.getSessionId(),
+                    SegmentNames.storedSegmentName(
+                        variantLabel, SegmentNames.mediaSegmentName(index)));
     var holding = timeline.mediaSegmentIndexAt(position);
     if (!stored.test(holding)) {
       return Optional.empty();
