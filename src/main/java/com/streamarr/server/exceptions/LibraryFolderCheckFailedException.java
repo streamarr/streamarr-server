@@ -4,7 +4,7 @@ import com.streamarr.server.domain.LibraryFolderProblem;
 import lombok.Getter;
 
 @Getter
-public class LibraryFolderCheckFailedException extends LibraryScanFailedException {
+public class LibraryFolderCheckFailedException extends RuntimeException {
 
   private final LibraryFolderProblem problem;
 
