@@ -51,8 +51,6 @@ public enum DecisionReason {
    * an interlaced file was measured.
    */
   SOURCE_INTERLACED,
-  /** The source is Dolby Vision without a compatible base, which no client copy plays. */
-  DOLBY_VISION_WITHOUT_COMPATIBLE_BASE,
   /** The source's HDR base was probed before probe version 5, which reports no codec profile. */
   VIDEO_PROPERTIES_NOT_PROBED,
   /** {@link MediaFileProbePropertyIssue#DOLBY_VISION_COMPATIBILITY_DISAGREES_WITH_TRANSFER}. */

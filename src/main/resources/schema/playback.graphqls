@@ -147,8 +147,6 @@ enum DecisionReason {
     BITRATE_ABOVE_VIEWER_LIMIT
     "The source is interlaced. HLS delivery needs progressive video, and direct play of an interlaced file is unmeasured."
     SOURCE_INTERLACED
-    "The source is Dolby Vision without a compatible base."
-    DOLBY_VISION_WITHOUT_COMPATIBLE_BASE
     "The source's HDR base was probed before the probe described its codec profile."
     VIDEO_PROPERTIES_NOT_PROBED
     "The source's Dolby Vision configuration claims another base than the source's transfer signals."
