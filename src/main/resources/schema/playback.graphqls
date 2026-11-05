@@ -232,6 +232,11 @@ enum DecisionReason {
     COPY_FAILED
     "The encode of the format attempt before this one failed, so this one encodes in another codec family."
     ENCODE_FAILED
+    """
+    The Dolby Vision copy of the format attempt before this one failed, so this one copies the video with its Dolby
+    Vision stripped, or encodes it when the client or the workers rule that copy out.
+    """
+    DOLBY_VISION_COPY_FAILED
 }
 
 "Why the output differs from the output that the requested playback choice asked for (ADR 0052)."

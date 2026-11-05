@@ -12,10 +12,11 @@ sealed interface CopiedDolbyVision {
   record None() implements CopiedDolbyVision {}
 
   /**
-   * Profile 8.2 or 9: the copy keeps its RPUs under the sample entry of its SDR base (ADR 0036), so
-   * it fits an entry that accepts the base codec and SDR.
+   * Profile 8.2 or 9: the copy keeps its RPUs under the sample entry of its SDR base (ADR 0036),
+   * hvc1 for profile 8.2 and avc1 for profile 9, so it fits an entry that accepts the base codec
+   * and SDR.
    */
-  record KeptUnderSdrBase() implements CopiedDolbyVision {}
+  record KeptUnderSdrBase(@NonNull VideoSampleEntry baseSampleEntry) implements CopiedDolbyVision {}
 
   /**
    * A profile that an entry can list, at the level that the configuration record names. Without a
@@ -67,8 +68,9 @@ sealed interface CopiedDolbyVision {
       return new Unknown();
     }
 
-    if (base == CompatibleBase.SDR && isSdrBaseProfile(codecFamily, profileNumber.getAsInt())) {
-      return new KeptUnderSdrBase();
+    var sdrBaseSampleEntry = sdrBaseSampleEntry(codecFamily, profileNumber.getAsInt());
+    if (base == CompatibleBase.SDR && sdrBaseSampleEntry.isPresent()) {
+      return new KeptUnderSdrBase(sdrBaseSampleEntry.get());
     }
 
     // Profile 5 has no compatible base whatever the signaled transfer claims, so a PQ transfer
@@ -154,11 +156,14 @@ sealed interface CopiedDolbyVision {
     return OptionalInt.of(8);
   }
 
-  private static boolean isSdrBaseProfile(ProbedCodecFamily codecFamily, int profileNumber) {
+  // The sample entry of the SDR base under which a profile 8.2 or 9 copy keeps its RPUs, or empty
+  // for a profile without an SDR base.
+  private static Optional<VideoSampleEntry> sdrBaseSampleEntry(
+      ProbedCodecFamily codecFamily, int profileNumber) {
     return switch (codecFamily) {
-      case HEVC -> profileNumber == 8;
-      case H264 -> profileNumber == 9;
-      case AV1, OTHER -> false;
+      case HEVC -> Optional.of(VideoSampleEntry.HVC1).filter(_ -> profileNumber == 8);
+      case H264 -> Optional.of(VideoSampleEntry.AVC1).filter(_ -> profileNumber == 9);
+      case AV1, OTHER -> Optional.empty();
     };
   }
 

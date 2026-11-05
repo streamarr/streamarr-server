@@ -142,5 +142,11 @@ public enum DecisionReason {
   /** An earlier format attempt's copy failed, so this format attempt encodes the video. */
   COPY_FAILED,
   /** An earlier format attempt's encode failed, so this one encodes in another codec family. */
-  ENCODE_FAILED
+  ENCODE_FAILED,
+  /**
+   * An earlier format attempt's Dolby Vision copy failed, so this one copies the video with its
+   * Dolby Vision stripped, or encodes it when the client or the workers rule that copy out (ADR
+   * 0052).
+   */
+  DOLBY_VISION_COPY_FAILED
 }

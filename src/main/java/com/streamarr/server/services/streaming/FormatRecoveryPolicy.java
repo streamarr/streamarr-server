@@ -10,7 +10,10 @@ import lombok.NonNull;
  * at original quality, which copies when it can (ADR 0045). Otherwise Original's failure is a
  * failed copy, because an encode that Original reaches plays in Auto, so it falls back to an encode
  * in Auto. A fixed quality's failed copy falls back to an encode at the same fixed quality, and the
- * failure of the fixed quality's own encode ends playback.
+ * failure of the fixed quality's own encode ends playback. In every playback choice, a Dolby Vision
+ * copy on a PQ or HLG base that the client rejects first falls back to the copy with Dolby Vision
+ * stripped, which keeps the playback choice; a worker's mismatch or a short copy would repeat in
+ * that copy, so it goes straight to the encode.
  */
 record FormatRecoveryPolicy(int maximumFormatAttempts) {
   private static final PlayingChoice AUTO_AFTER_A_FAILED_COPY =
@@ -26,6 +29,14 @@ record FormatRecoveryPolicy(int maximumFormatAttempts) {
 
   NextFormatAttempt after(
       @NonNull PlayingChoice choice, @NonNull FailedFormatAttempt failed, int formatAttemptCount) {
+    if (failed.output() instanceof FailedFormatAttempt.DolbyVisionCopyOnAnHdrBase
+        && failed.reason() instanceof PlaybackSessionFailure.FixedFormatFailed) {
+      return withinBudget(
+          new NextFormatAttempt.CopyWithDolbyVisionStrippedOrEncode(
+              choiceWhenStrippingDolbyVision(choice), choiceWhenEncodingAfterACopy(choice)),
+          formatAttemptCount);
+    }
+
     return switch (choice.playbackChoice()) {
       case AUTO -> encodeWithinBudget(choice, formatAttemptCount);
       case ORIGINAL -> afterOriginalsFailure(choice, failed, formatAttemptCount);
@@ -42,7 +53,7 @@ record FormatRecoveryPolicy(int maximumFormatAttempts) {
           formatAttemptCount);
     }
 
-    return encodeWithinBudget(AUTO_AFTER_A_FAILED_COPY, formatAttemptCount);
+    return encodeWithinBudget(choiceWhenEncodingAfterACopy(choice), formatAttemptCount);
   }
 
   private NextFormatAttempt afterAFixedQualitysFailure(
@@ -51,9 +62,27 @@ record FormatRecoveryPolicy(int maximumFormatAttempts) {
       return new NextFormatAttempt.Fail(failed.reason());
     }
 
-    var encodeAtTheSameQuality =
-        new PlayingChoice(choice.playbackChoice(), Optional.of(PlaybackFormatChange.COPY_FAILED));
-    return encodeWithinBudget(encodeAtTheSameQuality, formatAttemptCount);
+    return encodeWithinBudget(choiceWhenEncodingAfterACopy(choice), formatAttemptCount);
+  }
+
+  // Auto's recoveries are not announced. Original and a fixed quality stay selected.
+  private static PlayingChoice choiceWhenStrippingDolbyVision(PlayingChoice choice) {
+    if (choice.playbackChoice() == VideoQuality.AUTO) {
+      return choice;
+    }
+
+    return new PlayingChoice(
+        choice.playbackChoice(), Optional.of(PlaybackFormatChange.DOLBY_VISION_STRIPPED));
+  }
+
+  // Original's encode plays in Auto, and a fixed quality's encode keeps the fixed quality.
+  private static PlayingChoice choiceWhenEncodingAfterACopy(PlayingChoice choice) {
+    return switch (choice.playbackChoice()) {
+      case AUTO -> choice;
+      case ORIGINAL -> AUTO_AFTER_A_FAILED_COPY;
+      case LOW_360P, MEDIUM_480P, HIGH_720P, FULL_HD_1080P, UHD_4K ->
+          new PlayingChoice(choice.playbackChoice(), Optional.of(PlaybackFormatChange.COPY_FAILED));
+    };
   }
 
   private NextFormatAttempt encodeWithinBudget(PlayingChoice next, int formatAttemptCount) {

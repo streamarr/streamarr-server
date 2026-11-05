@@ -21,27 +21,35 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.awaitility.Awaitility.await;
 
+import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.DecisionReason;
+import com.streamarr.server.domain.streaming.DolbyVision;
+import com.streamarr.server.domain.streaming.DolbyVisionOutput;
+import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
+import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.ShortCopy;
 import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
+import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.PlaybackSessionClosedException;
 import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.events.CopiedVariantRanShortEvent;
@@ -1383,6 +1391,372 @@ class PlaybackSessionServiceTest {
     return snapshot;
   }
 
+  // ADR 0052: a rejected Dolby Vision copy on a PQ or HLG base first falls back to the copy with
+  // Dolby Vision stripped in every playback choice. Original and a fixed quality stay selected and
+  // name the change; Auto's recoveries are not announced.
+  @ParameterizedTest
+  @CsvSource({
+    "AUTO, PROFILE_8_1, DECODE_ERROR,",
+    "AUTO, PROFILE_10_4, UNSUPPORTED_FORMAT,",
+    "ORIGINAL, PROFILE_8_1, UNSUPPORTED_FORMAT, DOLBY_VISION_STRIPPED",
+    "ORIGINAL, PROFILE_8_4, DECODE_ERROR, DOLBY_VISION_STRIPPED",
+    "ORIGINAL, PROFILE_10_1, DECODE_ERROR, DOLBY_VISION_STRIPPED",
+    "ORIGINAL, PROFILE_10_4, DECODE_ERROR, DOLBY_VISION_STRIPPED",
+    "HIGH_720P, PROFILE_8_4, UNSUPPORTED_FORMAT, DOLBY_VISION_STRIPPED",
+    "UHD_4K, PROFILE_10_1, DECODE_ERROR, DOLBY_VISION_STRIPPED"
+  })
+  @DisplayName(
+      "Should play the copy with Dolby Vision stripped when the client rejects a Dolby Vision copy"
+          + " on an HDR base")
+  void shouldPlayTheCopyWithDolbyVisionStrippedWhenTheClientRejectsADolbyVisionCopyOnAnHdrBase(
+      VideoQuality quality,
+      DolbyVisionProfile profile,
+      PlaybackFormatFailure reason,
+      PlaybackFormatChange expectedChange) {
+    streams.copiedDolbyVision = Optional.of(profile);
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(4).build();
+    var command = startCommand().options(qualityOptions(quality)).build();
+    var dolbyVisionCopy = accepted(playback.start(command));
+
+    var stripped =
+        playback
+            .reportFormatFailure(report(dolbyVisionCopy, command).reason(reason).build())
+            .orElseThrow();
+
+    assertThat(stripped.formatAttemptCount()).isEqualTo(2);
+    assertThat(stripped.playbackChoice()).isEqualTo(quality);
+    assertThat(stripped.formatChange()).isEqualTo(Optional.ofNullable(expectedChange));
+    assertThatTheCopyWithDolbyVisionStrippedPlays(stripped);
+    assertThat(streams.getAllSessions())
+        .singleElement()
+        .extracting(StreamSession::getSessionId)
+        .isEqualTo(stripped.currentFormatAttempt().streamSessionId());
+    assertThat(streams.createdCommands.getLast())
+        .satisfies(
+            next -> {
+              assertThat(next.videoFormatConstraint())
+                  .isEqualTo(VideoFormatConstraint.COPY_WITH_DOLBY_VISION_STRIPPED_OR_ENCODE);
+              assertThat(next.options().quality()).isEqualTo(quality);
+            });
+  }
+
+  // Profiles 5 and 10.0 have no compatible base, so the server never strips their Dolby Vision.
+  @ParameterizedTest
+  @CsvSource({
+    "AUTO, PROFILE_5, AUTO,",
+    "ORIGINAL, PROFILE_5, AUTO, COPY_FAILED",
+    "ORIGINAL, PROFILE_10_0, AUTO, COPY_FAILED",
+    "FULL_HD_1080P, PROFILE_10_0, FULL_HD_1080P, COPY_FAILED"
+  })
+  @DisplayName(
+      "Should start an encode as the second format attempt when the client rejects a Dolby Vision"
+          + " copy without a compatible base")
+  void shouldStartAnEncodeAsTheSecondFormatAttemptWhenTheClientRejectsADolbyVisionCopyWithoutABase(
+      VideoQuality quality,
+      DolbyVisionProfile profile,
+      VideoQuality expectedChoice,
+      PlaybackFormatChange expectedChange) {
+    streams.copiedDolbyVision = Optional.of(profile);
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(4).build();
+    var command = startCommand().options(qualityOptions(quality)).build();
+    var dolbyVisionCopy = accepted(playback.start(command));
+
+    var encode =
+        playback.reportFormatFailure(report(dolbyVisionCopy, command).build()).orElseThrow();
+
+    assertThatAnEncodeIsTheFormatAttempt(encode, 2);
+    assertThat(encode.playbackChoice()).isEqualTo(expectedChoice);
+    assertThat(encode.formatChange()).isEqualTo(Optional.ofNullable(expectedChange));
+  }
+
+  // ADR 0052: the copy with Dolby Vision stripped copies the same video stream, so it would fail as
+  // a mismatched or short copy does. Those failures go straight to the encode.
+  @ParameterizedTest
+  @MethodSource("dolbyVisionCopyWorkerFailures")
+  @DisplayName(
+      "Should start an encode without the stripped copy when a Dolby Vision copy mismatches or runs"
+          + " short")
+  void shouldStartAnEncodeWithoutTheStrippedCopyWhenADolbyVisionCopyMismatchesOrRunsShort(
+      VideoQuality quality,
+      BiConsumer<PlaybackSessionService, UUID> failCopy,
+      VideoQuality expectedChoice,
+      Optional<PlaybackFormatChange> expectedChange) {
+    streams.copiedDolbyVision = Optional.of(DolbyVisionProfile.PROFILE_8_1);
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(4).build();
+    var command = startCommand().options(qualityOptions(quality)).build();
+    var dolbyVisionCopy = accepted(playback.start(command));
+
+    failCopy.accept(playback, dolbyVisionCopy.currentFormatAttempt().streamSessionId());
+
+    var encode = playback.access(request(dolbyVisionCopy, command)).orElseThrow();
+    assertThatAnEncodeIsTheFormatAttempt(encode, 2);
+    assertThat(encode.playbackChoice()).isEqualTo(expectedChoice);
+    assertThat(encode.formatChange()).isEqualTo(expectedChange);
+    assertThat(encode.decisions().getLast().reasons()).containsExactly(DecisionReason.COPY_FAILED);
+  }
+
+  static Stream<Arguments> dolbyVisionCopyWorkerFailures() {
+    BiConsumer<PlaybackSessionService, UUID> mismatch =
+        (playback, copyId) ->
+            playback.onVideoCopyOutputMismatch(
+                new VideoCopyOutputMismatchEvent(copyId, UUID.randomUUID(), "default"));
+    BiConsumer<PlaybackSessionService, UUID> runShort =
+        (playback, copyId) -> playback.onCopiedVariantRanShort(ranShort(copyId));
+    var copyFailed = Optional.of(PlaybackFormatChange.COPY_FAILED);
+    return Stream.of(
+        Arguments.of(
+            VideoQuality.AUTO,
+            Named.of("output mismatch", mismatch),
+            VideoQuality.AUTO,
+            Optional.empty()),
+        Arguments.of(
+            VideoQuality.ORIGINAL,
+            Named.of("output mismatch", mismatch),
+            VideoQuality.AUTO,
+            copyFailed),
+        Arguments.of(
+            VideoQuality.ORIGINAL, Named.of("short copy", runShort), VideoQuality.AUTO, copyFailed),
+        Arguments.of(
+            VideoQuality.HIGH_720P,
+            Named.of("short copy", runShort),
+            VideoQuality.HIGH_720P,
+            copyFailed));
+  }
+
+  // ADR 0052: a format error during the copy with Dolby Vision stripped falls back to the encode,
+  // as during any HLS copy: in Auto for Original, and at the same fixed quality.
+  @ParameterizedTest
+  @CsvSource({
+    "AUTO, AUTO,",
+    "ORIGINAL, AUTO, COPY_FAILED",
+    "FULL_HD_1080P, FULL_HD_1080P, COPY_FAILED"
+  })
+  @DisplayName("Should reach an encode when the client rejects the copy with Dolby Vision stripped")
+  void shouldReachAnEncodeWhenTheClientRejectsTheCopyWithDolbyVisionStripped(
+      VideoQuality quality, VideoQuality expectedChoice, PlaybackFormatChange expectedChange) {
+    streams.copiedDolbyVision = Optional.of(DolbyVisionProfile.PROFILE_8_1);
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(4).build();
+    var command = startCommand().options(qualityOptions(quality)).build();
+    var dolbyVisionCopy = accepted(playback.start(command));
+    var stripped =
+        playback.reportFormatFailure(report(dolbyVisionCopy, command).build()).orElseThrow();
+
+    var encode = playback.reportFormatFailure(report(stripped, command).build()).orElseThrow();
+
+    assertThatTheCopyWithDolbyVisionStrippedPlays(stripped);
+    assertThatAnEncodeIsTheFormatAttempt(encode, 3);
+    assertThat(encode.playbackChoice()).isEqualTo(expectedChoice);
+    assertThat(encode.formatChange()).isEqualTo(Optional.ofNullable(expectedChange));
+    assertThat(streams.createdCommands.getLast().options().quality()).isEqualTo(expectedChoice);
+  }
+
+  // ADR 0052: a step that the declaration or the workers rule out is skipped, so a rejected Dolby
+  // Vision copy whose stripped copy is not eligible reaches the encode at once.
+  @ParameterizedTest
+  @CsvSource({
+    "AUTO, AUTO,",
+    "ORIGINAL, AUTO, COPY_FAILED",
+    "MEDIUM_480P, MEDIUM_480P, COPY_FAILED"
+  })
+  @DisplayName(
+      "Should encode the next format attempt when the copy with Dolby Vision stripped is not"
+          + " eligible")
+  void shouldEncodeTheNextFormatAttemptWhenTheCopyWithDolbyVisionStrippedIsNotEligible(
+      VideoQuality quality, VideoQuality expectedChoice, PlaybackFormatChange expectedChange) {
+    streams.copiedDolbyVision = Optional.of(DolbyVisionProfile.PROFILE_8_1);
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(4).build();
+    var command = startCommand().options(qualityOptions(quality)).build();
+    var dolbyVisionCopy = accepted(playback.start(command));
+    streams.copiesTheSource = false;
+
+    var encode =
+        playback.reportFormatFailure(report(dolbyVisionCopy, command).build()).orElseThrow();
+
+    assertThat(streams.createdCommands.getLast().videoFormatConstraint())
+        .isEqualTo(VideoFormatConstraint.COPY_WITH_DOLBY_VISION_STRIPPED_OR_ENCODE);
+    assertThatAnEncodeIsTheFormatAttempt(encode, 2);
+    assertThat(encode.playbackChoice()).isEqualTo(expectedChoice);
+    assertThat(encode.formatChange()).isEqualTo(Optional.ofNullable(expectedChange));
+  }
+
+  // The format attempt after a rejected Dolby Vision copy copies with Dolby Vision stripped, or
+  // encodes when that copy is not eligible; either way the failed Dolby Vision copy is its cause.
+  @ParameterizedTest
+  @CsvSource({"true, COPY", "false, ENCODE"})
+  @DisplayName(
+      "Should name the failed Dolby Vision copy as the cause when the format attempt after it"
+          + " strips Dolby Vision or encodes")
+  void shouldNameTheFailedDolbyVisionCopyAsTheCauseWhenTheNextFormatAttemptStripsOrEncodes(
+      boolean strippedCopyEligible, PlaybackDelivery expectedDelivery) {
+    streams.copiedDolbyVision = Optional.of(DolbyVisionProfile.PROFILE_8_1);
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(4).build();
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var dolbyVisionCopy = accepted(playback.start(command));
+    streams.copiesTheSource = strippedCopyEligible;
+
+    var next = playback.reportFormatFailure(report(dolbyVisionCopy, command).build()).orElseThrow();
+
+    assertThat(next.decisions())
+        .extracting(decision -> decision.video().delivery(), PlaybackDecision::reasons)
+        .containsExactly(
+            tuple(PlaybackDelivery.COPY, List.of()),
+            tuple(expectedDelivery, List.of(DecisionReason.DOLBY_VISION_COPY_FAILED)));
+  }
+
+  // ADR 0052: four format attempts hold Original's direct play, Dolby Vision copy, stripped copy
+  // and encode.
+  @Test
+  @DisplayName(
+      "Should reach an encode in Auto from direct play when the default budget holds every Dolby"
+          + " Vision step")
+  void shouldReachAnEncodeInAutoFromDirectPlayWhenTheDefaultBudgetHoldsEveryDolbyVisionStep() {
+    var steps = failDirectPlayThenTheDolbyVisionCopy(4);
+
+    var encode =
+        steps.playback().reportFormatFailure(report(steps.stripped(), steps.command()).build());
+
+    assertThat(encode)
+        .hasValueSatisfying(
+            snapshot -> {
+              assertThatAnEncodeIsTheFormatAttempt(snapshot, 4);
+              assertThat(snapshot.playbackChoice()).isEqualTo(VideoQuality.AUTO);
+              assertThat(snapshot.formatChange()).contains(PlaybackFormatChange.COPY_FAILED);
+            });
+  }
+
+  // ADR 0052: a budget of three ends Original's playback when the stripped copy fails.
+  @Test
+  @DisplayName(
+      "Should end with attempts exhausted from direct play when a budget of three meets a failed"
+          + " stripped copy")
+  void shouldEndWithAttemptsExhaustedFromDirectPlayWhenABudgetOfThreeMeetsAFailedStrippedCopy() {
+    var steps = failDirectPlayThenTheDolbyVisionCopy(3);
+
+    var failed =
+        steps.playback().reportFormatFailure(report(steps.stripped(), steps.command()).build());
+
+    assertThat(failed)
+        .hasValueSatisfying(
+            snapshot ->
+                assertThatAttemptsRanOutAfterTheStrippedCopy(snapshot, steps.stripped(), 3));
+  }
+
+  // The stripped copy is a format attempt of its own, so it needs room in the budget: under two,
+  // direct play and the Dolby Vision copy use both.
+  @Test
+  @DisplayName(
+      "Should end with attempts exhausted without a stripped copy when the Dolby Vision copy fails"
+          + " with no attempt left")
+  void
+      shouldEndWithAttemptsExhaustedWithoutAStrippedCopyWhenTheDolbyVisionCopyFailsWithNoAttemptLeft() {
+    streams.copiedDolbyVision = Optional.of(DolbyVisionProfile.PROFILE_8_1);
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlay(service, command);
+    var dolbyVisionCopy =
+        service.reportFormatFailure(report(directPlay, command).build()).orElseThrow();
+
+    var failed =
+        service.reportFormatFailure(report(dolbyVisionCopy, command).build()).orElseThrow();
+
+    assertThat(failed.formatAttemptCount()).isEqualTo(2);
+    assertThat(failed.playbackChoice()).isEqualTo(VideoQuality.ORIGINAL);
+    assertThat(failed.formatChange()).isEmpty();
+    assertThat(failed.currentFormatAttempt())
+        .isEqualTo(
+            new PlaybackFormatAttempt.Failed(
+                dolbyVisionCopy.currentFormatAttempt().streamSessionId(),
+                new PlaybackSessionFailure.AttemptsExhausted()));
+    assertThat(streams.createdCommands)
+        .extracting(CreateStreamSessionCommand::videoFormatConstraint)
+        .doesNotContain(VideoFormatConstraint.COPY_WITH_DOLBY_VISION_STRIPPED_OR_ENCODE);
+    assertThat(streams.getAllSessions()).isEmpty();
+  }
+
+  private record DolbyVisionSteps(
+      PlaybackSessionService playback,
+      StartPlaybackSessionCommand command,
+      PlaybackSessionSnapshot stripped) {}
+
+  // Original direct-plays a profile 8.1 file, and the client rejects direct play and then the Dolby
+  // Vision copy, so the stripped copy plays as the third format attempt.
+  private DolbyVisionSteps failDirectPlayThenTheDolbyVisionCopy(int maximum) {
+    streams.copiedDolbyVision = Optional.of(DolbyVisionProfile.PROFILE_8_1);
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(maximum).build();
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlay(playback, command);
+    var dolbyVisionCopy =
+        playback.reportFormatFailure(report(directPlay, command).build()).orElseThrow();
+    assertThat(dolbyVisionCopy.formatChange()).isEmpty();
+    assertThat(dolbyVisionCopy.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready ->
+                assertThat(ready.session().getTranscodeDecision().videoDolbyVisionOutput())
+                    .isPresent());
+    var stripped =
+        playback.reportFormatFailure(report(dolbyVisionCopy, command).build()).orElseThrow();
+    assertThat(stripped.formatAttemptCount()).isEqualTo(3);
+    assertThat(stripped.playbackChoice()).isEqualTo(VideoQuality.ORIGINAL);
+    assertThatTheCopyWithDolbyVisionStrippedPlays(stripped);
+    return new DolbyVisionSteps(playback, command, stripped);
+  }
+
+  // ADR 0052: with two format attempts, the stripped copy is the last one.
+  @Test
+  @DisplayName(
+      "Should end with attempts exhausted when the stripped copy fails under a budget of two")
+  void shouldEndWithAttemptsExhaustedWhenTheStrippedCopyFailsUnderABudgetOfTwo() {
+    streams.copiedDolbyVision = Optional.of(DolbyVisionProfile.PROFILE_8_1);
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var dolbyVisionCopy = accepted(service.start(command));
+    var stripped =
+        service.reportFormatFailure(report(dolbyVisionCopy, command).build()).orElseThrow();
+
+    var failed = service.reportFormatFailure(report(stripped, command).build()).orElseThrow();
+
+    assertThatTheCopyWithDolbyVisionStrippedPlays(stripped);
+    assertThatAttemptsRanOutAfterTheStrippedCopy(failed, stripped, 2);
+  }
+
+  private void assertThatTheCopyWithDolbyVisionStrippedPlays(PlaybackSessionSnapshot snapshot) {
+    assertThat(snapshot.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready -> {
+              var decision = ready.session().getTranscodeDecision();
+              assertThat(decision.transcodeMode().copiesVideo()).isTrue();
+              assertThat(decision.videoBitstreamRewrites())
+                  .containsExactly(BitstreamRewrite.STRIP_DOLBY_VISION);
+              assertThat(decision.videoDolbyVisionOutput()).isEmpty();
+            });
+  }
+
+  private void assertThatAnEncodeIsTheFormatAttempt(
+      PlaybackSessionSnapshot snapshot, int formatAttemptCount) {
+    assertThat(snapshot.formatAttemptCount()).isEqualTo(formatAttemptCount);
+    assertThat(snapshot.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Ready.class,
+            ready -> {
+              assertThat(ready.session().getTranscodeDecision().transcodeMode().copiesVideo())
+                  .isFalse();
+              assertThat(streams.getAllSessions()).containsExactly(ready.session());
+            });
+  }
+
+  private void assertThatAttemptsRanOutAfterTheStrippedCopy(
+      PlaybackSessionSnapshot failed, PlaybackSessionSnapshot stripped, int maximum) {
+    assertThat(failed.formatAttemptCount()).isEqualTo(maximum);
+    assertThat(failed.playbackChoice()).isEqualTo(VideoQuality.ORIGINAL);
+    assertThat(failed.formatChange()).contains(PlaybackFormatChange.DOLBY_VISION_STRIPPED);
+    assertThat(failed.currentFormatAttempt())
+        .isEqualTo(
+            new PlaybackFormatAttempt.Failed(
+                stripped.currentFormatAttempt().streamSessionId(),
+                new PlaybackSessionFailure.AttemptsExhausted()));
+    assertThat(streams.getAllSessions()).isEmpty();
+  }
+
   // ADR 0052: a copy that ran short after every source stream ended ends playback normally, and
   // that end wins over every failure in its stream session.
   @ParameterizedTest
@@ -2286,6 +2660,9 @@ class PlaybackSessionServiceTest {
     private List<DecisionReason> copyReasons = List.of();
     private List<DecisionReason> encodeReasons = List.of();
     private MediaProbe sourceProbe = defaultProbeBuilder().build();
+    // The Dolby Vision that a copy keeps when the format attempt may keep it, as the transcode
+    // decision finds for a client that declares the profile.
+    private Optional<DolbyVisionProfile> copiedDolbyVision = Optional.empty();
 
     @Override
     public Outcome<StreamSession, CreateStreamSessionRejection> createSession(
@@ -2335,9 +2712,42 @@ class PlaybackSessionServiceTest {
             .variants(List.of(ENCODED_720P));
       }
 
+      if (constraint == VideoFormatConstraint.COPY_WITH_DOLBY_VISION_STRIPPED_OR_ENCODE) {
+        return defaultSessionBuilder()
+            .transcodeDecision(
+                remuxDecisionBuilder()
+                    .videoBitstreamRewrites(List.of(BitstreamRewrite.STRIP_DOLBY_VISION))
+                    .reasons(copyReasons)
+                    .build())
+            .variants(List.of());
+      }
+
+      var copy =
+          copiedDolbyVision
+              .map(ChildStreams::keepingDolbyVision)
+              .orElseGet(StreamSessionFixture::remuxDecisionBuilder);
       return defaultSessionBuilder()
-          .transcodeDecision(remuxDecisionBuilder().reasons(copyReasons).build())
+          .transcodeDecision(copy.reasons(copyReasons).build())
           .variants(List.of());
+    }
+
+    // A copy that keeps Dolby Vision copies a source that carries it, on the profile's base.
+    private static TranscodeDecision.TranscodeDecisionBuilder keepingDolbyVision(
+        DolbyVisionProfile profile) {
+      var range =
+          new VideoDynamicRange(
+              profile.compatibleBase(),
+              Presence.ABSENT,
+              new DolbyVision.Present(Optional.empty(), Presence.PRESENT));
+      var facts =
+          VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+              .streamIndex(0)
+              .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))
+              .dynamicRange(range)
+              .build();
+      return remuxDecisionBuilder()
+          .videoSource(Optional.of(facts))
+          .videoDolbyVisionOutput(Optional.of(new DolbyVisionOutput(profile, 6)));
     }
 
     @Override

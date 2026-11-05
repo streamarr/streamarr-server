@@ -252,10 +252,10 @@ public class TranscodeDecisionService {
         limits.audioStepBesideCopyOf(source, steps, CopyMediaPlaylist.of(source, properties));
     var limitRefusals = viewerLimitRefusals(limits.allowsCopyPictureOf(source), stepWithinMaximum);
     if (!limitRefusals.isEmpty() && hasVerifiedEncodeThatTheClientPlays(request)) {
-      return new VideoCopyChoice.Refused(beforeViewerLimits(source, declaration, limitRefusals));
+      return new VideoCopyChoice.Refused(beforeViewerLimits(request, limitRefusals));
     }
 
-    return switch (acceptedVideoCopyPlan(source, declaration, countsRefusals)) {
+    return switch (acceptedVideoCopyPlan(request, countsRefusals)) {
       case PlanChoice.Refused(var reasons) -> new VideoCopyChoice.Refused(reasons);
       case PlanChoice.Accepted(var plan, _)
           when !hasWorkerThatDeliversTheCopy(request, plan.bitstreamRewrites()) ->
@@ -269,11 +269,9 @@ public class TranscodeDecisionService {
   // refuses, which a higher limit would not change, so those reasons come first. The stream-copy
   // refusal metric counts only the copies that the limits let through.
   private List<DecisionReason> beforeViewerLimits(
-      MediaProbe source,
-      ClientCapabilityDeclaration declaration,
-      List<DecisionReason> limitRefusals) {
+      TranscodeDecisionRequest request, List<DecisionReason> limitRefusals) {
     var reasons = new ArrayList<DecisionReason>();
-    var plan = acceptedVideoCopyPlan(source, declaration, false);
+    var plan = acceptedVideoCopyPlan(request, false);
     if (plan instanceof PlanChoice.Refused(var refused)) {
       reasons.addAll(refused);
     }
@@ -325,8 +323,11 @@ public class TranscodeDecisionService {
   }
 
   private PlanChoice acceptedVideoCopyPlan(
-      MediaProbe source, ClientCapabilityDeclaration declaration, boolean countsRefusals) {
-    var choice = copyPlanBeforeTheKeyframeCheck(source, declaration);
+      TranscodeDecisionRequest request, boolean countsRefusals) {
+    var source = request.source();
+    var choice =
+        copyPlanBeforeTheKeyframeCheck(
+            source, request.capabilityDeclaration(), request.videoFormatConstraint());
     if (choice instanceof PlanChoice.Refused) {
       return choice;
     }
@@ -357,7 +358,8 @@ public class TranscodeDecisionService {
    */
   static boolean isCopyAcceptedBeforeTheKeyframeCheck(
       MediaProbe source, ClientCapabilityDeclaration declaration) {
-    return copyPlanBeforeTheKeyframeCheck(source, declaration) instanceof PlanChoice.Accepted;
+    return copyPlanBeforeTheKeyframeCheck(source, declaration, VideoFormatConstraint.COPY_OR_ENCODE)
+        instanceof PlanChoice.Accepted;
   }
 
   // The first copy plan that a video capability entry for HLS accepts, or the reasons that the copy
@@ -366,7 +368,9 @@ public class TranscodeDecisionService {
   // (streamarr/streamarr-server#653). A plan after the first leaves out what the entries refused in
   // the plans before it.
   private static PlanChoice copyPlanBeforeTheKeyframeCheck(
-      MediaProbe source, ClientCapabilityDeclaration declaration) {
+      MediaProbe source,
+      ClientCapabilityDeclaration declaration,
+      VideoFormatConstraint constraint) {
     if (source.videoCodec() == null) {
       return new PlanChoice.Refused(List.of(DecisionReason.VIDEO_CODEC_UNKNOWN));
     }
@@ -386,7 +390,8 @@ public class TranscodeDecisionService {
       return new PlanChoice.Refused(List.of(ruleRefusal.get()));
     }
 
-    var plans = copyPlans(copy.get());
+    var plans =
+        copyPlans(copy.get()).stream().filter(plan -> isPermittedBy(constraint, plan)).toList();
     for (var index = 0; index < plans.size(); index++) {
       var plan = plans.get(index);
       var entry = declaration.hlsCopyEntry(copy.get().afterRewrites(plan.bitstreamRewrites()));
@@ -397,8 +402,12 @@ public class TranscodeDecisionService {
       }
     }
 
-    var bestPicture = copy.get().afterRewrites(plans.getFirst().bitstreamRewrites());
-    return new PlanChoice.Refused(declaration.hlsCopyRefusals(bestPicture));
+    return plans.stream()
+        .findFirst()
+        .map(best -> copy.get().afterRewrites(best.bitstreamRewrites()))
+        .map(declaration::hlsCopyRefusals)
+        .map(PlanChoice.Refused::new)
+        .orElse(new PlanChoice.Refused(List.of()));
   }
 
   // A plan that keeps Dolby Vision strips HDR10+ whatever the client declares (ADR 0036). Every
@@ -442,6 +451,13 @@ public class TranscodeDecisionService {
     }
 
     return plans;
+  }
+
+  // After a failed Dolby Vision copy, only the copy with Dolby Vision stripped may follow (ADR
+  // 0052).
+  private static boolean isPermittedBy(VideoFormatConstraint constraint, CopyPlan plan) {
+    return constraint != VideoFormatConstraint.COPY_WITH_DOLBY_VISION_STRIPPED_OR_ENCODE
+        || plan.bitstreamRewrites().contains(BitstreamRewrite.STRIP_DOLBY_VISION);
   }
 
   // Dolby Vision that no capability entry can name stays in these plans, and every entry refuses

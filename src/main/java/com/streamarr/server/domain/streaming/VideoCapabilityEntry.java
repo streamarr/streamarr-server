@@ -358,13 +358,12 @@ public record VideoCapabilityEntry(
   }
 
   // Direct play sends the stream under its own sample entry and configuration record, so a profile
-  // 5 or 10.0 stream plays where the entry lists its profile. A profile 8.2 or 9 stream plays
-  // directly only from Matroska until streamarr/streamarr-server#395 decides it by its sample entry
-  // in MP4 or MOV: under dvh1 or dvav, no player plays it as its SDR base.
+  // 5 or 10.0 stream plays where the entry lists its profile.
   private boolean acceptsDirectPlayDolbyVision(VideoStreamCopy video, SourceContainer container) {
     return switch (CopiedDolbyVision.of(video)) {
       case CopiedDolbyVision.None _ -> true;
-      case CopiedDolbyVision.KeptUnderSdrBase _ -> container == SourceContainer.MATROSKA;
+      case CopiedDolbyVision.KeptUnderSdrBase(var baseSampleEntry) ->
+          playsAsItsSdrBase(video, container, baseSampleEntry);
       case CopiedDolbyVision.Declarable(var profile, var level) -> listsDolbyVision(profile, level);
       case CopiedDolbyVision.NeedsDolbyVisionSampleEntry(var profile, var level) ->
           level.isPresent() && listsDolbyVision(profile, level.getAsInt());
@@ -378,6 +377,18 @@ public record VideoCapabilityEntry(
     }
 
     return DecisionReason.DOLBY_VISION_NOT_DECLARED;
+  }
+
+  // A profile 8.2 or 9 stream in MP4 or MOV plays as its SDR base only under that base's sample
+  // entry: under dvh1 or dvav, players refuse it, whatever the entry lists. Matroska stores no
+  // sample entry, so the stream plays there as a plain HEVC or H.264 stream.
+  private static boolean playsAsItsSdrBase(
+      VideoStreamCopy video, SourceContainer container, VideoSampleEntry baseSampleEntry) {
+    if (container.storesSampleEntries()) {
+      return video.sampleEntry().filter(baseSampleEntry.getLabel()::equals).isPresent();
+    }
+
+    return container == SourceContainer.MATROSKA;
   }
 
   private boolean acceptsDolbyVision(VideoStreamCopy copy) {

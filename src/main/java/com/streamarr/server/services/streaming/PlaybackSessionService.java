@@ -1,9 +1,11 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.PlaybackSessionClosedException;
@@ -394,13 +396,28 @@ public class PlaybackSessionService implements AutoCloseable {
                     .choice(whenCopying)
                     .choiceWhenEncoding(whenEncoding)));
       }
+      case NextFormatAttempt.CopyWithDolbyVisionStrippedOrEncode(
+              var whenCopying,
+              var whenEncoding) -> {
+        playback.pendingAttemptCause = Optional.of(DecisionReason.DOLBY_VISION_COPY_FAILED);
+        yield Optional.of(
+            reserveNextFormatAttempt(
+                playback,
+                failedId,
+                ReservedFormatAttempt.builder()
+                    .videoFormatConstraint(
+                        VideoFormatConstraint.COPY_WITH_DOLBY_VISION_STRIPPED_OR_ENCODE)
+                    .choice(whenCopying)
+                    .choiceWhenEncoding(whenEncoding)));
+      }
     };
   }
 
   private static DecisionReason causeOf(FailedFormatAttempt failed) {
     return switch (failed.output()) {
       case FailedFormatAttempt.DirectPlay _ -> DecisionReason.DIRECT_PLAY_FAILED;
-      case FailedFormatAttempt.Copy _ -> DecisionReason.COPY_FAILED;
+      case FailedFormatAttempt.Copy _, FailedFormatAttempt.DolbyVisionCopyOnAnHdrBase _ ->
+          DecisionReason.COPY_FAILED;
       case FailedFormatAttempt.Encode _ -> DecisionReason.ENCODE_FAILED;
     };
   }
@@ -430,11 +447,25 @@ public class PlaybackSessionService implements AutoCloseable {
       return new FailedFormatAttempt.DirectPlay();
     }
 
-    if (session.getTranscodeDecision().transcodeMode().copiesVideo()) {
-      return new FailedFormatAttempt.Copy();
+    var decision = session.getTranscodeDecision();
+    if (!decision.transcodeMode().copiesVideo()) {
+      return new FailedFormatAttempt.Encode(decision.videoCodecFamily());
     }
 
-    return new FailedFormatAttempt.Encode(session.getTranscodeDecision().videoCodecFamily());
+    if (keepsDolbyVisionOnAnHdrBase(decision)) {
+      return new FailedFormatAttempt.DolbyVisionCopyOnAnHdrBase();
+    }
+
+    return new FailedFormatAttempt.Copy();
+  }
+
+  // Profiles 5 and 10.0 have no compatible base, so their copy has no stripped copy to fall back
+  // to.
+  private static boolean keepsDolbyVisionOnAnHdrBase(TranscodeDecision decision) {
+    return decision
+        .videoDolbyVisionOutput()
+        .filter(output -> output.profile().compatibleBase() != CompatibleBase.NONE)
+        .isPresent();
   }
 
   private FormatAttemptReservation reserveNextFormatAttempt(

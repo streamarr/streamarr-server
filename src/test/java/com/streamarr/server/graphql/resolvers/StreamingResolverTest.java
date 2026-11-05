@@ -27,14 +27,18 @@ import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecisionReason;
+import com.streamarr.server.domain.streaming.DolbyVision;
+import com.streamarr.server.domain.streaming.DolbyVisionOutput;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
+import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.ShortCopy;
@@ -623,6 +627,63 @@ class StreamingResolverTest {
             ready.read(
                 "data.playbackSession.currentFormatAttempt.streamSession.videoRange", String.class))
         .isEqualTo("SDR");
+  }
+
+  // ADR 0052: Original stays selected after the fallback to the copy with Dolby Vision stripped,
+  // and the answer names the change so the client shows the Dolby Vision notice and marks Original.
+  @Test
+  @DisplayName(
+      "Should keep Original and name the stripped Dolby Vision when Original's Dolby Vision copy"
+          + " fails")
+  void shouldKeepOriginalAndNameTheStrippedDolbyVisionWhenOriginalsDolbyVisionCopyFails() {
+    var profile81 =
+        VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+            .dynamicRange(
+                new VideoDynamicRange(
+                    CompatibleBase.PQ,
+                    Presence.ABSENT,
+                    new DolbyVision.Present(Optional.empty(), Presence.PRESENT)))
+            .build();
+    STUB_SERVICE.setNextResult(
+        buildSessionDeciding(
+            UUID.randomUUID(),
+            remuxDecisionBuilder()
+                .videoSource(Optional.of(profile81))
+                .videoBitstreamRewrites(List.of(BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD))
+                .videoDolbyVisionOutput(
+                    Optional.of(new DolbyVisionOutput(DolbyVisionProfile.PROFILE_8_1, 6)))
+                .build()));
+    var created = startPlaybackReadingChoices(VideoQuality.ORIGINAL);
+    var playbackId = created.read(CREATED_PLAYBACK + ".id", String.class);
+
+    var reported =
+        reportFailure(
+            playbackId,
+            created.read(CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.id", String.class),
+            "UNSUPPORTED_FORMAT");
+    STUB_SERVICE.setNextResult(
+        buildSessionDeciding(
+            UUID.randomUUID(),
+            remuxDecisionBuilder()
+                .videoSource(Optional.of(profile81))
+                .videoBitstreamRewrites(List.of(BitstreamRewrite.STRIP_DOLBY_VISION))
+                .build()));
+    REPLACEMENT_TASKS.remove().run();
+
+    assertThat(reported.read(REPORTED_PLAYBACK + ".playbackChoice", String.class))
+        .isEqualTo("ORIGINAL");
+    assertThat(reported.read(REPORTED_PLAYBACK + ".formatChange", String.class))
+        .isEqualTo("DOLBY_VISION_STRIPPED");
+    var ready = playbackStatus(playbackId);
+    assertThat(ready.read("data.playbackSession.formatAttemptCount", Integer.class)).isEqualTo(2);
+    assertThat(ready.read("data.playbackSession.playbackChoice", String.class))
+        .isEqualTo("ORIGINAL");
+    assertThat(ready.read("data.playbackSession.formatChange", String.class))
+        .isEqualTo("DOLBY_VISION_STRIPPED");
+    assertThat(
+            ready.read(
+                "data.playbackSession.currentFormatAttempt.streamSession.videoRange", String.class))
+        .isEqualTo("PQ");
   }
 
   @ParameterizedTest

@@ -229,12 +229,14 @@ class EncoderPresetSmokeTest {
     return List.of(text.substring(start + "options: ".length(), end).split(" "));
   }
 
-  // Runs the worker's command again with the image's own FFmpeg at the given SVT-AV1 preset,
-  // writing to a file instead of the worker's pipe.
+  // Runs the worker's fMP4 output again with the image's own FFmpeg at the given SVT-AV1 preset,
+  // writing to a file instead of the worker's pipe. The worker's command can name further outputs
+  // after pipe:1, such as the frame checksums on pipe:2 that report its progress.
   private List<String> svtAv1Reference(List<String> workerCommand, int svtAv1Preset)
       throws Exception {
-    assertThat(workerCommand).as("the worker's FFmpeg arguments").endsWith("pipe:1");
-    var arguments = new ArrayList<>(workerCommand.subList(0, workerCommand.size() - 1));
+    var outputIndex = workerCommand.indexOf("pipe:1");
+    assertThat(outputIndex).as("the worker's fMP4 output in its FFmpeg arguments").isPositive();
+    var arguments = new ArrayList<>(workerCommand.subList(0, outputIndex));
     var presetFlagIndex = arguments.indexOf("-preset");
     if (presetFlagIndex >= 0) {
       arguments.subList(presetFlagIndex, presetFlagIndex + 2).clear();
