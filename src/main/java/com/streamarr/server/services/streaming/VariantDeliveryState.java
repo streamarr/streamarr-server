@@ -16,6 +16,7 @@ final class VariantDeliveryState {
   private int runStart;
   private int frontier;
   private Instant lastProgressAt = Instant.EPOCH;
+  private boolean reportedProgress;
   private final Set<ExecutionTargetId> attemptedSinceProgress = new LinkedHashSet<>();
 
   void syncProgress(TranscodeHandle handle, IntPredicate frontierSegmentExists, Instant now) {
@@ -42,6 +43,7 @@ final class VariantDeliveryState {
   void restartStallClock(UUID attemptId, Instant now) {
     if (attemptId.equals(trackedAttemptId)) {
       lastProgressAt = now;
+      reportedProgress = true;
     }
   }
 
@@ -51,7 +53,8 @@ final class VariantDeliveryState {
 
   /** The moment the tracked job attempt counts as stalled unless it publishes again first. */
   Instant stallDeadline(Duration stallThreshold, Duration startupThreshold) {
-    var budget = frontier > runStart ? stallThreshold : startupThreshold;
+    // A job attempt that reports progress has started, even before it stores a segment.
+    var budget = frontier > runStart || reportedProgress ? stallThreshold : startupThreshold;
     return lastProgressAt.plus(budget);
   }
 
@@ -100,5 +103,6 @@ final class VariantDeliveryState {
     runStart = handle.startSequenceNumber();
     frontier = runStart;
     lastProgressAt = now;
+    reportedProgress = false;
   }
 }

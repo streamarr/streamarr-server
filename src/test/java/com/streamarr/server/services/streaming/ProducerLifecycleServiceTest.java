@@ -912,6 +912,24 @@ class ProducerLifecycleServiceTest {
     assertThat(timeUntilStall(session)).isEqualTo(Duration.ofSeconds(2));
   }
 
+  // The startup allowance covers the first merged segment's whole span. Once the attempt reports
+  // progress it has started, so silence after that is measured against the stall threshold.
+  @Test
+  @DisplayName(
+      "Should use the stall threshold when the job attempt reports progress before its first"
+          + " segment")
+  void shouldUseTheStallThresholdWhenTheJobAttemptReportsProgressBeforeItsFirstSegment() {
+    var session = startedSession();
+    recover(session);
+    clock.advance(Duration.ofSeconds(3));
+
+    new JobAttemptProgressListener(lifecycle)
+        .onJobAttemptProgressed(progressOf(session, session.getHandle().orElseThrow().attemptId()));
+    clock.advance(Duration.ofSeconds(4));
+
+    assertThat(timeUntilStall(session)).isEqualTo(Duration.ofSeconds(6));
+  }
+
   @Test
   @DisplayName(
       "Should keep the stall deadline when progress names a job attempt that recovery does not"
