@@ -295,6 +295,42 @@ class PlaybackSessionServiceTest {
             });
   }
 
+  // A copy delivers the source's audio as it is, so its output repeats the source's channel count
+  // and bitrate, known or not, instead of the planning defaults.
+  @ParameterizedTest
+  @MethodSource("copiedAudioSources")
+  @DisplayName("Should describe the copied audio as its source when the audio copies")
+  void shouldDescribeTheCopiedAudioAsItsSourceWhenTheAudioCopies(MediaProbe source) {
+    streams.sourceProbe = source;
+
+    var snapshot = accepted(service.start(startCommand().build()));
+
+    assertThat(snapshot.decisions().getFirst().audio())
+        .hasValueSatisfying(
+            audio -> {
+              assertThat(audio.delivery()).isEqualTo(PlaybackDelivery.COPY);
+              assertThat(audio.source().channels()).isEqualTo(source.audioChannels());
+              assertThat(audio.source().bitrate()).isEqualTo(source.audioBitrate());
+              assertThat(audio.output()).isEqualTo(audio.source());
+            });
+  }
+
+  static Stream<Named<MediaProbe>> copiedAudioSources() {
+    return Stream.of(
+        Named.of(
+            "no channel count or bitrate",
+            defaultProbeBuilder()
+                .audioChannels(OptionalInt.empty())
+                .audioBitrate(OptionalLong.empty())
+                .build()),
+        Named.of(
+            "six channels at 640 kb/s",
+            defaultProbeBuilder()
+                .audioChannels(OptionalInt.of(6))
+                .audioBitrate(OptionalLong.of(640_000L))
+                .build()));
+  }
+
   static Stream<Named<OptionalInt>> unknownChannelCounts() {
     return Stream.of(
         Named.of("no channel count", OptionalInt.empty()),
