@@ -120,10 +120,11 @@ public class ServerUploadBudget implements UploadBudget {
   /**
    * Leaves out each variant whose average bitrate would take the counted stream sessions over the
    * streams' share of the upload. When no variant fits, the lowest stays, so the stream session
-   * never has nothing to play; a copy lists no other variant, so the budget never leaves it out.
-   * When no variant that stays runs or can start now, as when the transcode limit leaves no place
-   * for it, the budget leaves the playlist whole. A stream session that its client reached over the
-   * local network sends nothing over the internet upload, so the budget leaves its playlist whole.
+   * never has nothing to play. In Auto, a copy that does not fit plays through its encoded lower
+   * variants; a copy without them is the lowest variant and stays. When no variant that stays runs
+   * or can start now, as when the transcode limit leaves no place for it, the budget leaves the
+   * playlist whole. A stream session that its client reached over the local network sends nothing
+   * over the internet upload, so the budget leaves its playlist whole.
    */
   private Set<String> variantsWithheldFrom(StreamSession session) {
     var share = serverSettings.uploadBudget().streamShareBitsPerSecond();
@@ -162,7 +163,7 @@ public class ServerUploadBudget implements UploadBudget {
   // Each listed variant's average bitrate, in the order that the playlist lists them.
   private Map<String, Long> listedVariantAverages(StreamSession session) {
     var averages = new LinkedHashMap<String, Long>();
-    if (session.getVariants().isEmpty()) {
+    if (session.listsDefaultVariant()) {
       averages.put(
           StreamSession.defaultVariant(), average(session, StreamSession.defaultVariant()));
     }

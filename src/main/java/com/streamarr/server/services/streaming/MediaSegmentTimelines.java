@@ -62,6 +62,20 @@ final class MediaSegmentTimelines {
     return Optional.of(copy.exactStartsIn(positions));
   }
 
+  /**
+   * The timeline by which a variant's job attempts seek. An encoded lower variant beside a copy
+   * lists the copy's segments but reads, as every encode does, from a keyframe before the grid
+   * start of its first segment, which the copy's keyframe can follow (ADR 0050).
+   */
+  static MediaSegmentTimeline seekingOf(
+      StreamSession session, String variantLabel, StreamingProperties properties) {
+    if (session.decisionOf(variantLabel).transcodeMode().copiesVideo()) {
+      return of(session, properties);
+    }
+
+    return encodeOf(session.getMediaProbe(), properties);
+  }
+
   // Without the keyframes, the worker reads from one period before the attempt's first segment.
   private static MediaSegmentTimeline encodeOf(MediaProbe probe, StreamingProperties properties) {
     var grid = of(probe, properties);
