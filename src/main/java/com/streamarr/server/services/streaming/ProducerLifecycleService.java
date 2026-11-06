@@ -1834,7 +1834,7 @@ public class ProducerLifecycleService {
   private static Optional<Duration> seekPosition(
       StreamSession session, MediaSegmentTimeline timeline, int startSequenceNumber) {
     var keyframeSeek = timeline.keyframeSeekPosition(startSequenceNumber);
-    if (keyframeSeek.isPresent() || session.getTranscodeDecision().transcodeMode().copiesVideo()) {
+    if (keyframeSeek.isPresent()) {
       return keyframeSeek;
     }
 
