@@ -434,6 +434,35 @@ class SeekPriorityIT {
 
   @Test
   @DisplayName(
+      "Should never name an on-demand job attempt that reproduces media stored before it started,"
+          + " and name it once it stores media past it")
+  void
+      shouldNeverNameAnOnDemandJobAttemptThatReproducesMediaStoredBeforeItStartedAndNameItOncePast()
+          throws Exception {
+    var worker = registerWorker(WORKER_ID, 8);
+    var steady = startPlaying(worker);
+    deliverAhead(steady, 9);
+    registry.updatePlaybackState(steady.sessionId(), 0, PlaybackState.PLAYING);
+    var switching = startPlaying(worker);
+    storeSegments(switching, "720p", 21, 40);
+    var switched = request(switching.sessionId(), "720p", segmentName("720p", 20));
+    assertThat(worker.nextJobs(1).getFirst().getVariant().getVariantLabel()).isEqualTo("720p");
+    assertThat(storeAndAwait(switched)).isInstanceOf(SegmentDelivery.Ready.class);
+    var switchedAttempt = attemptOf(switching, "720p");
+    var seeking = startPlaying(worker);
+
+    seek(worker, seeking);
+
+    assertThat(nextYield(worker).getJobAttemptIdsList())
+        .containsExactly(steady.job().getJobAttemptId());
+    storeSegments(switching, "720p", 41, 41);
+    seek(worker, seeking, 200);
+    assertThat(nextYield(worker).getJobAttemptIdsList())
+        .containsExactlyInAnyOrder(steady.job().getJobAttemptId(), switchedAttempt);
+  }
+
+  @Test
+  @DisplayName(
       "Should keep the yield of a backward seek when the earlier seek's older request delivers its"
           + " segment")
   void shouldKeepTheYieldOfABackwardSeekWhenTheEarlierSeeksOlderRequestDeliversItsSegment()
@@ -654,14 +683,23 @@ class SeekPriorityIT {
   }
 
   private void storeSegments(Playing playing, int firstSegment, int lastSegment) {
+    storeSegments(playing, "480p", firstSegment, lastSegment);
+  }
+
+  private void storeSegments(
+      Playing playing, String variantLabel, int firstSegment, int lastSegment) {
     for (var index = firstSegment; index <= lastSegment; index++) {
-      segmentStore.addSegment(playing.sessionId(), segmentName(index), SEGMENT_BYTES);
+      segmentStore.addSegment(playing.sessionId(), segmentName(variantLabel, index), SEGMENT_BYTES);
     }
   }
 
   private Uuid attemptOf(Playing playing) {
-    var handle = registry.findById(playing.sessionId()).orElseThrow().getVariantHandle("480p");
-    return ProtoUuid.toProto(handle.orElseThrow().attemptId());
+    return attemptOf(playing, "480p");
+  }
+
+  private Uuid attemptOf(Playing playing, String variantLabel) {
+    var session = registry.findById(playing.sessionId()).orElseThrow();
+    return ProtoUuid.toProto(session.getVariantHandle(variantLabel).orElseThrow().attemptId());
   }
 
   private void deliverAhead(Playing playing, int lastSegment) {

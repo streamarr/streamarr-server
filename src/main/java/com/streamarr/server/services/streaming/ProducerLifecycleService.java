@@ -1789,8 +1789,8 @@ public class ProducerLifecycleService {
   // The first job attempt that reports an encoder pins the variant to that encoder backend. Every
   // started job attempt moves the session's start segment, which the current segment falls back to
   // before the player requests a media segment, to its first media segment.
-  private static void installHandle(
-      StreamSession session, String variantLabel, TranscodeHandle handle) {
+  private void installHandle(StreamSession session, String variantLabel, TranscodeHandle handle) {
+    seekPriority.jobAttemptStarted(session, variantLabel, handle);
     session.setVariantHandle(variantLabel, handle);
     session.setCurrentSegment(handle.startSequenceNumber());
     handle.encoder().ifPresent(encoder -> session.pinEncoder(variantLabel, encoder));

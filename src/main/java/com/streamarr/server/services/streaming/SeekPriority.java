@@ -58,10 +58,10 @@ public class SeekPriority {
 
   private record VariantKey(UUID sessionId, String variantLabel) {}
 
-  // What a relocation's job attempt found stored after its start: media up to firstMissing, which
-  // it reproduces before anything new, and from nextStored on, media it reaches only by
-  // reproducing it too. Only the media in between is the job attempt's own output once stored.
-  private record StoredAtStart(int startIndex, int firstMissing, int nextStored) {
+  // What a job attempt found stored after its start: media up to firstMissing, which it reproduces
+  // before anything new, and from nextStored on, media it reaches only by reproducing it too. Only
+  // the media in between is the job attempt's own output once stored.
+  private record StoredAtStart(UUID attemptId, int firstMissing, int nextStored) {
 
     private boolean isOwnOutputThrough(int index, IntPredicate isStored) {
       if (index >= nextStored) {
@@ -101,7 +101,6 @@ public class SeekPriority {
     highestRequestedSegments.put(sessionId, segmentIndex);
     latestSeeks.put(sessionId, clock.instant());
     var key = new VariantKey(sessionId, variantLabel);
-    storedAtStarts.put(key, storedAtStart(session, variantLabel, segmentIndex));
     var earlierWorker = Optional.ofNullable(pendingSeeks.get(key)).flatMap(PendingSeek::target);
     pendingSeeks.put(
         key,
@@ -215,9 +214,23 @@ public class SeekPriority {
     return transcodeExecutor.runningExecutionTarget(session.getSessionId(), variantLabel);
   }
 
-  private StoredAtStart storedAtStart(StreamSession session, String variantLabel, int startIndex) {
+  /**
+   * The job attempt started. A relocation, a recovery replacement or an on-demand start can begin
+   * before media that the variant already stored, which the job attempt reproduces first.
+   */
+  public synchronized void jobAttemptStarted(
+      @NonNull StreamSession session,
+      @NonNull String variantLabel,
+      @NonNull TranscodeHandle handle) {
+    storedAtStarts.put(
+        new VariantKey(session.getSessionId(), variantLabel),
+        storedAtStart(session, variantLabel, handle));
+  }
+
+  private StoredAtStart storedAtStart(
+      StreamSession session, String variantLabel, TranscodeHandle handle) {
     var timeline = MediaSegmentTimelines.of(session, properties);
-    var firstMissing = startIndex + 1;
+    var firstMissing = handle.startSequenceNumber() + 1;
     while (timeline.advertises(firstMissing) && isStored(session, variantLabel, firstMissing)) {
       firstMissing++;
     }
@@ -231,7 +244,7 @@ public class SeekPriority {
       nextStored = Integer.MAX_VALUE;
     }
 
-    return new StoredAtStart(startIndex, firstMissing, nextStored);
+    return new StoredAtStart(handle.attemptId(), firstMissing, nextStored);
   }
 
   /** The stream session ended, so its seeks wait for nothing. */
@@ -348,13 +361,13 @@ public class SeekPriority {
     return stored.compareTo(needed) > 0;
   }
 
-  // Stored media that the job attempt has produced or passed. A relocation's job attempt may find
-  // media already stored after its start, which counts only as far as its own output reaches.
+  // Stored media that the job attempt has produced or passed. A job attempt may find media already
+  // stored after its start, which counts only as far as its own output reaches.
   private IntPredicate ownOutputOf(
       StreamSession session, String variantLabel, TranscodeHandle handle) {
     IntPredicate isStored = index -> isStored(session, variantLabel, index);
     var atStart = storedAtStarts.get(new VariantKey(session.getSessionId(), variantLabel));
-    if (atStart == null || atStart.startIndex() != handle.startSequenceNumber()) {
+    if (atStart == null || !atStart.attemptId().equals(handle.attemptId())) {
       return isStored;
     }
 
