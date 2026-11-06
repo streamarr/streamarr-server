@@ -129,8 +129,8 @@ public sealed interface PlannedVideoOutput {
 
   /**
    * An encode, in the codec profile that it forces, with the bit depth, 8 or 10, and the chroma
-   * subsampling that it writes. An H.264 encode is always 8-bit SDR, because almost no device
-   * decodes 10-bit H.264 (#397).
+   * subsampling that it writes. Every encode writes 4:2:0, and an H.264 encode is always 8-bit SDR,
+   * because almost no device decodes 10-bit H.264 (#397).
    */
   @Builder
   record Encode(
@@ -144,6 +144,10 @@ public sealed interface PlannedVideoOutput {
       requireSpecified(dynamicRange);
       if (bitDepth != 8 && bitDepth != 10) {
         throw new IllegalArgumentException("A planned encode's bit depth must be 8 or 10");
+      }
+
+      if (chromaSubsampling != ChromaSubsampling.CHROMA_420) {
+        throw new IllegalArgumentException("A planned encode must write 4:2:0");
       }
 
       if (codecProfile.filter(EncodeCodecProfile.H264_HIGH::equals).isPresent()

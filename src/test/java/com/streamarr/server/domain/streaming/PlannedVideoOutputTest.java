@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -211,6 +212,21 @@ class PlannedVideoOutputTest {
   private static Arguments planWithoutValue(
       String plan, String missingValue, ThrowingCallable build) {
     return Arguments.of(Named.of(plan, missingValue), build);
+  }
+
+  // #397: every encode writes 4:2:0, the subsampling that every HLS player decodes.
+  @ParameterizedTest
+  @EnumSource(
+      value = ChromaSubsampling.class,
+      names = {"CHROMA_420"},
+      mode = EnumSource.Mode.EXCLUDE)
+  @DisplayName("Should refuse a planned encode when its chroma subsampling is not 4:2:0")
+  void shouldRefuseAPlannedEncodeWhenItsChromaSubsamplingIsNot420(ChromaSubsampling chroma) {
+    var encode = encodeBuilder().chromaSubsampling(chroma);
+
+    assertThatThrownBy(encode::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("4:2:0");
   }
 
   @ParameterizedTest
