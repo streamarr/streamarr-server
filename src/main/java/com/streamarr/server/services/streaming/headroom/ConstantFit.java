@@ -18,9 +18,6 @@ import java.util.stream.IntStream;
  */
 final class ConstantFit {
 
-  // A pivot this small against the matrix's largest entry means the measurements do not separate
-  // the constants.
-  private static final double SINGULAR_PIVOT = 1e-9;
   // A held constant at zero adds nothing to any cost, so it stays out of the solved constants.
   private static final double UNKNOWN = 0;
 
@@ -97,7 +94,7 @@ final class ConstantFit {
     var held = new HeldConstants(unknowns, current);
     while (true) {
       var free = held.free();
-      var values = eliminate(held.withoutHeld(matrix, free));
+      var values = LinearSystem.solve(held.withoutHeld(matrix, free));
       if (values.isEmpty() && !held.holdValueless(free)) {
         return Optional.empty();
       }
@@ -234,56 +231,5 @@ final class ConstantFit {
     }
 
     return grown;
-  }
-
-  private static Optional<double[]> eliminate(double[][] matrix) {
-    var size = matrix.length;
-    var scale = largestEntry(matrix);
-    for (var pivot = 0; pivot < size; pivot++) {
-      var best = pivot;
-      for (var row = pivot + 1; row < size; row++) {
-        if (Math.abs(matrix[row][pivot]) > Math.abs(matrix[best][pivot])) {
-          best = row;
-        }
-      }
-
-      var swapped = matrix[pivot];
-      matrix[pivot] = matrix[best];
-      matrix[best] = swapped;
-      if (Math.abs(matrix[pivot][pivot]) <= SINGULAR_PIVOT * scale) {
-        return Optional.empty();
-      }
-
-      for (var row = 0; row < size; row++) {
-        if (row != pivot) {
-          subtractRow(matrix, row, pivot);
-        }
-      }
-    }
-
-    var values = new double[size];
-    for (var row = 0; row < size; row++) {
-      values[row] = matrix[row][size] / matrix[row][row];
-    }
-
-    return Optional.of(values);
-  }
-
-  private static double largestEntry(double[][] matrix) {
-    var largest = 0.0;
-    for (var row : matrix) {
-      for (var column = 0; column < row.length - 1; column++) {
-        largest = Math.max(largest, Math.abs(row[column]));
-      }
-    }
-
-    return largest;
-  }
-
-  private static void subtractRow(double[][] matrix, int row, int pivot) {
-    var factor = matrix[row][pivot] / matrix[pivot][pivot];
-    for (var column = pivot; column < matrix[row].length; column++) {
-      matrix[row][column] -= factor * matrix[pivot][column];
-    }
   }
 }
