@@ -1235,15 +1235,17 @@ final class LiveWorkerConnectionRegistry {
       log.warn("Worker session {} ignored cancellation of probe {}", workerSessionId, attemptId);
       abandonAllJobsWithoutWaiting()
           .forEach(job -> logAbandonedJob(job, "probe cancellation timed out"));
-      synchronized (outbound) {
-        try {
-          responseObserver.onError(
-              Status.DEADLINE_EXCEEDED
-                  .withDescription("Worker did not stop a cancelled probe")
-                  .asRuntimeException());
-        } catch (RuntimeException failure) {
-          log.debug(
-              "Worker session {} already closed after probe timeout", workerSessionId, failure);
+      synchronized (this) {
+        synchronized (outbound) {
+          try {
+            responseObserver.onError(
+                Status.DEADLINE_EXCEEDED
+                    .withDescription("Worker did not stop a cancelled probe")
+                    .asRuntimeException());
+          } catch (RuntimeException failure) {
+            log.debug(
+                "Worker session {} already closed after probe timeout", workerSessionId, failure);
+          }
         }
       }
     }
@@ -1898,13 +1900,16 @@ final class LiveWorkerConnectionRegistry {
       return drained;
     }
 
+    // The monitor orders the replacement after any publication that the old session started.
     private void closeAsReplaced() {
-      synchronized (outbound) {
-        try {
-          responseObserver.onError(
-              Status.ABORTED.withDescription("Worker connection replaced").asRuntimeException());
-        } catch (RuntimeException _) {
-          // The previous call is already dead; the replacement proceeds regardless.
+      synchronized (this) {
+        synchronized (outbound) {
+          try {
+            responseObserver.onError(
+                Status.ABORTED.withDescription("Worker connection replaced").asRuntimeException());
+          } catch (RuntimeException _) {
+            // The previous call is already dead; the replacement proceeds regardless.
+          }
         }
       }
     }
