@@ -85,7 +85,7 @@ class OrphanedMediaFileCleanupServiceTest {
                 .status(MediaFileStatus.MATCHED)
                 .build());
 
-    orphanedMediaFileCleanupService.cleanupOrphanedFiles(library);
+    removeMissingMediaFiles(orphanedMediaFileCleanupService);
 
     assertThat(fakeMediaFileRepository.findById(orphanedMediaFile.getId())).isEmpty();
   }
@@ -104,7 +104,7 @@ class OrphanedMediaFileCleanupServiceTest {
                 .status(MediaFileStatus.MATCHED)
                 .build());
 
-    orphanedMediaFileCleanupService.cleanupOrphanedFiles(library);
+    removeMissingMediaFiles(orphanedMediaFileCleanupService);
 
     assertThat(fakeMediaFileRepository.findById(existingMediaFile.getId())).isPresent();
   }
@@ -123,7 +123,7 @@ class OrphanedMediaFileCleanupServiceTest {
                 .status(MediaFileStatus.MATCHED)
                 .build());
 
-    orphanedMediaFileCleanupService.cleanupOrphanedFiles(library);
+    removeMissingMediaFiles(orphanedMediaFileCleanupService);
 
     assertThat(fakeMediaFileRepository.findById(otherLibraryFile.getId())).isPresent();
   }
@@ -143,7 +143,7 @@ class OrphanedMediaFileCleanupServiceTest {
             .status(MediaFileStatus.MATCHED)
             .build());
 
-    orphanedMediaFileCleanupService.cleanupOrphanedFiles(library);
+    removeMissingMediaFiles(orphanedMediaFileCleanupService);
 
     assertThat(fakeMovieRepository.findById(movie.getId())).isEmpty();
   }
@@ -173,7 +173,7 @@ class OrphanedMediaFileCleanupServiceTest {
             .status(MediaFileStatus.MATCHED)
             .build());
 
-    orphanedMediaFileCleanupService.cleanupOrphanedFiles(library);
+    removeMissingMediaFiles(orphanedMediaFileCleanupService);
 
     assertThat(fakeMovieRepository.findById(movie.getId())).isPresent();
   }
@@ -191,7 +191,7 @@ class OrphanedMediaFileCleanupServiceTest {
                 .status(MediaFileStatus.MATCHED)
                 .build());
 
-    orphanedMediaFileCleanupService.cleanupOrphanedFiles(library);
+    removeMissingMediaFiles(orphanedMediaFileCleanupService);
 
     assertThat(fakeMediaFileRepository.findById(corruptedFile.getId())).isEmpty();
   }
@@ -216,7 +216,7 @@ class OrphanedMediaFileCleanupServiceTest {
                 .status(MediaFileStatus.MATCHED)
                 .build());
 
-    orphanedMediaFileCleanupService.cleanupOrphanedFiles(library);
+    removeMissingMediaFiles(orphanedMediaFileCleanupService);
 
     assertThat(fakeMediaFileRepository.findById(validOrphan.getId())).isEmpty();
   }
@@ -239,10 +239,14 @@ class OrphanedMediaFileCleanupServiceTest {
             new SecurityExceptionFileSystem(fileSystem),
             _ -> {});
 
-    assertThatThrownBy(() -> serviceWithDeniedAccess.cleanupOrphanedFiles(library))
+    assertThatThrownBy(() -> removeMissingMediaFiles(serviceWithDeniedAccess))
         .isInstanceOf(SecurityException.class);
 
     assertThat(fakeMediaFileRepository.findById(mediaFile.getId())).isPresent();
+  }
+
+  private void removeMissingMediaFiles(OrphanedMediaFileCleanupService service) {
+    service.removeMissingMediaFiles(library, service.findMissingMediaFileIds(library));
   }
 
   private Path createMovieFile(String folder, String filename) throws IOException {

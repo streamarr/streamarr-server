@@ -230,7 +230,7 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
     Runnable change =
         watchStateChange
             ? () -> watchStatus.markWatched(identity.profile().getId(), movie.getId())
-            : () -> fileCleanup.cleanupOrphanedFiles(library);
+            : () -> removeMissingMediaFiles(library);
 
     transactions.executeWithoutResult(
         status -> {
@@ -284,7 +284,7 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
     new ActiveSubscriptions(metrics).awaitCount("libraryItemUpdated", 1);
     new ActiveSubscriptions(metrics).awaitCount("libraryItemRemoved", 1);
 
-    transactions.executeWithoutResult(_ -> fileCleanup.cleanupOrphanedFiles(library));
+    transactions.executeWithoutResult(_ -> removeMissingMediaFiles(library));
     refresh(sentinel, "After cleanup");
 
     assertThat(
@@ -299,6 +299,10 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
                 .at("/payload/data/libraryItemUpdated/itemId")
                 .asString())
         .isEqualTo(sentinel.getId().toString());
+  }
+
+  private void removeMissingMediaFiles(Library library) {
+    fileCleanup.removeMissingMediaFiles(library, fileCleanup.findMissingMediaFileIds(library));
   }
 
   private void refresh(Movie movie, String title) {
