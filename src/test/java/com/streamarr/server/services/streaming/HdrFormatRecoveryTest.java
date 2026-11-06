@@ -389,35 +389,14 @@ class HdrFormatRecoveryTest {
       "Should deliver what the manual choice promises or name the change in every format attempt"
           + " until playback ends")
   void shouldDeliverWhatTheManualChoicePromisesOrNameTheChangeInEveryFormatAttemptUntilPlaybackEnds(
-      ManualChoiceScenario scenario) {
-    probes.setDefaultProbe(scenario.source());
-    var command =
-        start(
-            StreamingOptions.builder()
-                .quality(scenario.quality())
-                .dynamicRange(scenario.rangeChoice())
-                .build(),
-            scenario.client());
-    var delivered = new ArrayList<DeliveredAttempt>();
-    var snapshot = accepted(playback.start(command));
-    while (snapshot.currentFormatAttempt() instanceof PlaybackFormatAttempt.Ready) {
-      assertThat(snapshot.requestedChoice()).isEqualTo(scenario.quality());
-      assertThatTheDecisionKeepsTheHdrChoice(snapshot, scenario.rangeChoice());
-      delivered.add(deliveredAttempt(snapshot));
-      snapshot = rejectCurrentFormatAttempt(snapshot, command);
-    }
-
-    assertThat(delivered).containsExactlyElementsOf(scenario.attempts());
-    assertThat(snapshot.currentFormatAttempt())
-        .isInstanceOfSatisfying(
-            PlaybackFormatAttempt.Failed.class,
-            failed -> assertThat(failed.reason()).isEqualTo(scenario.end()));
+      FormatAttemptScenario scenario) {
+    assertThatEveryFormatAttemptDeliversTheScenario(scenario);
   }
 
   // In Auto, a failed encode falls back to the encode in another codec that the client and a worker
   // share, and playback ends with the typed error when none is left or the budget of four is spent
   // (#401). A fixed quality changes format once (ADR 0052).
-  static Stream<ManualChoiceScenario> manualChoices() {
+  static Stream<FormatAttemptScenario> manualChoices() {
     var original = VideoQuality.ORIGINAL;
     var fullHd = VideoQuality.FULL_HD_1080P;
     var hd = VideoQuality.HIGH_720P;
@@ -593,6 +572,32 @@ class HdrFormatRecoveryTest {
             .build());
   }
 
+  // The viewer rejects every format attempt until playback ends.
+  private void assertThatEveryFormatAttemptDeliversTheScenario(FormatAttemptScenario scenario) {
+    probes.setDefaultProbe(scenario.source());
+    var command =
+        start(
+            StreamingOptions.builder()
+                .quality(scenario.quality())
+                .dynamicRange(scenario.rangeChoice())
+                .build(),
+            scenario.client());
+    var delivered = new ArrayList<DeliveredAttempt>();
+    var snapshot = accepted(playback.start(command));
+    while (snapshot.currentFormatAttempt() instanceof PlaybackFormatAttempt.Ready) {
+      assertThat(snapshot.requestedChoice()).isEqualTo(scenario.quality());
+      assertThatTheDecisionKeepsTheHdrChoice(snapshot, scenario.rangeChoice());
+      delivered.add(deliveredAttempt(snapshot));
+      snapshot = rejectCurrentFormatAttempt(snapshot, command);
+    }
+
+    assertThat(delivered).containsExactlyElementsOf(scenario.attempts());
+    assertThat(snapshot.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Failed.class,
+            failed -> assertThat(failed.reason()).isEqualTo(scenario.end()));
+  }
+
   /** What one format attempt delivers, as the server's answer, decision and playlist report it. */
   private enum Output {
     DIRECT_PLAY,
@@ -618,8 +623,8 @@ class HdrFormatRecoveryTest {
     }
   }
 
-  @Builder(builderMethodName = "manualChoiceScenarioBuilder")
-  private record ManualChoiceScenario(
+  @Builder(builderMethodName = "formatAttemptScenarioBuilder")
+  private record FormatAttemptScenario(
       @NonNull String name,
       @NonNull MediaProbe source,
       @NonNull VideoQuality quality,
@@ -634,8 +639,8 @@ class HdrFormatRecoveryTest {
     }
   }
 
-  private static ManualChoiceScenario.ManualChoiceScenarioBuilder scenario(String name) {
-    return ManualChoiceScenario.manualChoiceScenarioBuilder()
+  private static FormatAttemptScenario.FormatAttemptScenarioBuilder scenario(String name) {
+    return FormatAttemptScenario.formatAttemptScenarioBuilder()
         .name(name)
         .client(dolbyVisionClient());
   }
