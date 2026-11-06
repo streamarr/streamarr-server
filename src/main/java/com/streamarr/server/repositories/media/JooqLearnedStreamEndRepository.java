@@ -1,5 +1,6 @@
 package com.streamarr.server.repositories.media;
 
+import static com.streamarr.server.jooq.generated.tables.MediaFile.MEDIA_FILE;
 import static com.streamarr.server.jooq.generated.tables.MediaFileContainerInfo.MEDIA_FILE_CONTAINER_INFO;
 import static com.streamarr.server.jooq.generated.tables.MediaFileLearnedStreamEnd.MEDIA_FILE_LEARNED_STREAM_END;
 import static com.streamarr.server.repositories.media.StoredOutcomeConditions.snapshotMatches;
@@ -25,13 +26,18 @@ public class JooqLearnedStreamEndRepository implements LearnedStreamEndRepositor
 
   private final DSLContext dsl;
 
-  // One statement stores the end only while the file's stored probe outcome holds its snapshot, so
-  // a late completion of an attempt that read an earlier version of the file stores nothing. It
-  // keeps the first end learned for a snapshot against a concurrent completion, and replaces an end
-  // learned for an earlier version of the file.
+  // The media file's row lock, which probe publication also takes, makes the insert read the
+  // stored outcome as it stands once any publication has committed. The end is stored only while
+  // that outcome holds its snapshot, so a completion of an attempt that read an earlier version of
+  // the file stores nothing. The first end learned for a snapshot wins against a concurrent
+  // completion, and an end learned for an earlier version of the file is replaced.
   @Override
   @Transactional
   public boolean store(LearnedStreamEnd learned) {
+    if (!lockMediaFile(learned.mediaFileId())) {
+      return false;
+    }
+
     var snapshot = learned.snapshot();
     var end = learned.endTime();
     return dsl.insertInto(
@@ -76,6 +82,15 @@ public class JooqLearnedStreamEndRepository implements LearnedStreamEndRepositor
                             DSL.excluded(LEARNED.SOURCE_MODIFIED_NANOS))))
             .execute()
         == 1;
+  }
+
+  private boolean lockMediaFile(UUID mediaFileId) {
+    return dsl.select(MEDIA_FILE.ID)
+        .from(MEDIA_FILE)
+        .where(MEDIA_FILE.ID.eq(mediaFileId))
+        .forUpdate()
+        .fetchOptional()
+        .isPresent();
   }
 
   @Override

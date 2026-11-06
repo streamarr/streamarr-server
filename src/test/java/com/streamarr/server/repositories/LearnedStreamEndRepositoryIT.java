@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.media.LearnedStreamEnd;
@@ -24,11 +25,17 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import org.jooq.DSLContext;
+import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Learned Stream End Repository Integration Tests")
@@ -39,6 +46,9 @@ class LearnedStreamEndRepositoryIT extends AbstractIntegrationTest
   @Autowired private MediaFileContainerInfoRepository probeOutcomes;
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private LibraryRepository libraryRepository;
+  @Autowired private TransactionTemplate transactionTemplate;
+  @Autowired private DSLContext dsl;
+  @Autowired private JdbcTemplate jdbc;
 
   private final List<MediaFile> createdFiles = new ArrayList<>();
 
@@ -116,6 +126,47 @@ class LearnedStreamEndRepositoryIT extends AbstractIntegrationTest
       throws InterruptedException {
     start.await();
     return learnedStreamEnds.store(learned);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the changed file's end when an attempt that read the earlier version stores its"
+          + " end while the changed file's outcome and end commit")
+  void shouldKeepTheChangedFilesEndWhenAnEarlierVersionsEndIsStoredWhileTheChangedFileCommits()
+      throws Exception {
+    var mediaFileId = createProbedMediaFile();
+    var earlier = learnedAudioEnd(mediaFileId);
+    var changed =
+        earlier.toBuilder().snapshot(CHANGED_SNAPSHOT).endTime(Duration.ofSeconds(91)).build();
+
+    try (var threads = Executors.newVirtualThreadPerTaskExecutor()) {
+      var storingEarlier =
+          transactionTemplate.execute(
+              _ -> {
+                storeProbeOutcome(mediaFileId, CHANGED_SNAPSHOT);
+                assertThat(learnedStreamEnds.store(changed)).isTrue();
+                var holder = dsl.fetchValue(DSL.field("pg_backend_pid()", Integer.class));
+                Future<Boolean> pending = threads.submit(() -> learnedStreamEnds.store(earlier));
+                await().atMost(Duration.ofSeconds(10)).until(() -> hasBackendWaitingBehind(holder));
+                return pending;
+              });
+
+      assertThat(storingEarlier.get(10, TimeUnit.SECONDS)).isFalse();
+    }
+
+    assertThat(learnedStreamEnds.findFor(mediaFileId, CHANGED_SNAPSHOT)).containsExactly(changed);
+  }
+
+  private boolean hasBackendWaitingBehind(int holder) {
+    return Boolean.TRUE.equals(
+        jdbc.queryForObject(
+            """
+            SELECT EXISTS (
+              SELECT 1 FROM pg_locks WHERE NOT granted AND ? = ANY(pg_blocking_pids(pid))
+            )
+            """,
+            Boolean.class,
+            holder));
   }
 
   @Test
