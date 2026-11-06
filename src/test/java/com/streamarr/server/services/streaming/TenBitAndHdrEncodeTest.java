@@ -136,6 +136,7 @@ class TenBitAndHdrEncodeTest {
         ExecutionTargetId.LOCAL, List.of(svtAv1(EVERY_ENCODE_FEATURE), libx264(Set.of())));
     playback =
         PlaybackSessionService.builder()
+            .eventPublisher(_ -> {})
             .streamingService(streaming())
             .authorityGate(new FakePlaybackAuthorityGate())
             .executor(Runnable::run)
