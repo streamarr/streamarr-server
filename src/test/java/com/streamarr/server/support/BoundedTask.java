@@ -73,6 +73,16 @@ public final class BoundedTask<T> implements AutoCloseable {
         && frames.stream().anyMatch(frame -> isFrameOf(frame, CountDownLatch.class, "await"));
   }
 
+  /**
+   * Returns whether the task's thread waits for a {@link CountDownLatch} with a deadline, from one
+   * snapshot of the thread's stack.
+   */
+  public boolean isAwaitingALatchWithDeadline() {
+    var frames = List.of(thread.getStackTrace());
+    return frames.stream().anyMatch(frame -> isFrameOf(frame, LockSupport.class, "parkNanos"))
+        && frames.stream().anyMatch(frame -> isFrameOf(frame, CountDownLatch.class, "await"));
+  }
+
   private static boolean isFrameOf(StackTraceElement frame, Class<?> type, String methodName) {
     return frame.getClassName().equals(type.getName()) && frame.getMethodName().equals(methodName);
   }

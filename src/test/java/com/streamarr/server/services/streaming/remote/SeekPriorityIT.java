@@ -38,6 +38,7 @@ import com.streamarr.server.services.streaming.SegmentDelivery;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
+import com.streamarr.server.support.BoundedTask;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.YieldToSeekCommand;
@@ -46,11 +47,12 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.OptionalDouble;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.LongStream;
 import org.junit.jupiter.api.AfterEach;
@@ -77,6 +79,7 @@ class SeekPriorityIT {
   private static final Duration POSITION_MARGIN = Duration.ofSeconds(9);
   private static final Duration HOLD_LIMIT = Duration.ofSeconds(3);
   private static final int SEEK_SEGMENT = 100;
+  private static final Duration REQUEST_LIMIT = Duration.ofSeconds(5);
 
   private final FakeSegmentStore segmentStore = new FakeSegmentStore();
   private final FakeRuntimeStreamSessionRegistry registry = new FakeRuntimeStreamSessionRegistry();
@@ -84,7 +87,11 @@ class SeekPriorityIT {
       new FakeMediaFileContainerInfoRepository();
   private final List<ManagedChannel> channels = new ArrayList<>();
   private final List<LoopbackWorker> workers = new ArrayList<>();
+  private final List<BoundedTask<SegmentDelivery>> requests = new ArrayList<>();
   private final AdvanceableSystemClock clock = new AdvanceableSystemClock();
+  // Yields that arrived while the test read up to a seek's start, which the worker session can
+  // carry before or after the start.
+  private final Deque<YieldToSeekCommand> unreadYields = new ArrayDeque<>();
   private WorkerSessionServer server;
   private HlsStreamingService streamingService;
   private SegmentDeliveryCoordinator coordinator;
@@ -151,6 +158,10 @@ class SeekPriorityIT {
 
   @AfterEach
   void tearDown() throws Exception {
+    for (var request : requests) {
+      request.close();
+    }
+
     for (var worker : workers) {
       worker.close();
     }
@@ -389,18 +400,25 @@ class SeekPriorityIT {
     registry.updatePlaybackState(steady.sessionId(), 0, PlaybackState.PLAYING);
     var seeking = startPlaying(worker);
     var earlierSeek = seek(worker, seeking);
-    // Stored without a wake, so the earlier request reads it at its next pass, which the backward
-    // relocation's stop or the wake below starts.
+    assertThat(nextYield(worker).getJobAttemptIdsList())
+        .containsExactly(steady.job().getJobAttemptId());
+    // Once the earlier request waits for its next wake, it reads its segment, stored without a
+    // wake, only at the pass that the backward relocation's stop starts.
+    await().atMost(REQUEST_LIMIT).until(earlierSeek.delivery()::isAwaitingALatchWithDeadline);
     segmentStore.addSegment(seeking.sessionId(), segmentName(SEEK_SEGMENT), SEGMENT_BYTES);
-    request(seeking.sessionId(), segmentName(50));
-    assertThat(worker.nextJobs(1).getFirst().getExecution().getStartSequenceNumber()).isEqualTo(50);
 
-    server.heldSegmentRequests().wakeVariant(seeking.sessionId(), "480p");
-    assertThat(earlierSeek.delivery().get(5, TimeUnit.SECONDS))
+    seek(worker, seeking, 50);
+
+    assertThat(nextYield(worker).getJobAttemptIdsList())
+        .containsExactly(steady.job().getJobAttemptId());
+    assertThat(earlierSeek.delivery().await(REQUEST_LIMIT))
         .isInstanceOf(SegmentDelivery.Ready.class);
 
-    assertThat(yieldsUntilTheSteadyAttemptStops(worker, steady).getLast().getJobAttemptIdsList())
-        .containsExactly(steady.job().getJobAttemptId());
+    assertThat(yieldsUntilTheSteadyAttemptStops(worker, steady))
+        .allSatisfy(
+            yieldCommand ->
+                assertThat(yieldCommand.getJobAttemptIdsList())
+                    .containsExactly(steady.job().getJobAttemptId()));
   }
 
   @Test
@@ -571,9 +589,23 @@ class SeekPriorityIT {
   // Requests the seek's first segment and waits until the relocation has started the seek's job
   // attempt, so that the test stores that segment only after the seek began.
   private PendingRequest seek(LoopbackWorker worker, Playing seeking) throws InterruptedException {
-    var seek = request(seeking.sessionId(), segmentName(SEEK_SEGMENT));
-    assertThat(worker.nextJobs(1).getFirst().getExecution().getStartSequenceNumber())
-        .isEqualTo(SEEK_SEGMENT);
+    return seek(worker, seeking, SEEK_SEGMENT);
+  }
+
+  private PendingRequest seek(LoopbackWorker worker, Playing seeking, int segmentIndex)
+      throws InterruptedException {
+    var seek = request(seeking.sessionId(), segmentName(segmentIndex));
+    var response = worker.nextResponse();
+    while (!response.hasStartVariant()) {
+      if (response.hasYieldToSeek()) {
+        unreadYields.add(response.getYieldToSeek());
+      }
+
+      response = worker.nextResponse();
+    }
+
+    assertThat(response.getStartVariant().getJob().getExecution().getStartSequenceNumber())
+        .isEqualTo(segmentIndex);
     return seek;
   }
 
@@ -589,7 +621,9 @@ class SeekPriorityIT {
   private List<YieldToSeekCommand> yieldsUntilTheSteadyAttemptStops(
       LoopbackWorker worker, Playing steady) throws InterruptedException {
     server.stopVariant(steady.sessionId(), steady.job().getVariant().getVariantLabel());
-    return worker
+    var yields = new ArrayList<>(unreadYields);
+    unreadYields.clear();
+    worker
         .responsesThrough(
             response ->
                 response.hasStopVariant()
@@ -600,14 +634,26 @@ class SeekPriorityIT {
         .stream()
         .filter(EstablishWorkerSessionResponse::hasYieldToSeek)
         .map(EstablishWorkerSessionResponse::getYieldToSeek)
-        .toList();
+        .forEach(yields::add);
+    return yields;
   }
 
-  private static YieldToSeekCommand nextYield(LoopbackWorker worker) throws InterruptedException {
+  private YieldToSeekCommand nextYield(LoopbackWorker worker) throws InterruptedException {
+    if (!unreadYields.isEmpty()) {
+      return unreadYields.poll();
+    }
+
     return worker
         .responsesThrough(EstablishWorkerSessionResponse::hasYieldToSeek)
         .getLast()
         .getYieldToSeek();
+  }
+
+  private static List<YieldToSeekCommand> yieldsIn(List<EstablishWorkerSessionResponse> responses) {
+    return responses.stream()
+        .filter(EstablishWorkerSessionResponse::hasYieldToSeek)
+        .map(EstablishWorkerSessionResponse::getYieldToSeek)
+        .toList();
   }
 
   private static List<VariantJob> startedJobs(List<EstablishWorkerSessionResponse> responses) {
@@ -630,12 +676,10 @@ class SeekPriorityIT {
   }
 
   private PendingRequest request(UUID sessionId, String variantLabel, String segmentName) {
-    return new PendingRequest(
-        sessionId,
-        variantLabel,
-        segmentName,
-        CompletableFuture.supplyAsync(
-            () -> coordinator.deliver(sessionId, variantLabel, segmentName)));
+    var delivery =
+        BoundedTask.start(() -> coordinator.deliver(sessionId, variantLabel, segmentName));
+    requests.add(delivery);
+    return new PendingRequest(sessionId, variantLabel, segmentName, delivery);
   }
 
   // The loopback worker uploads nothing, so the test stores each segment and wakes the requests
@@ -643,7 +687,7 @@ class SeekPriorityIT {
   private SegmentDelivery storeAndAwait(PendingRequest pending) throws Exception {
     segmentStore.addSegment(pending.sessionId(), pending.segmentName(), SEGMENT_BYTES);
     server.heldSegmentRequests().wakeVariant(pending.sessionId(), pending.variantLabel());
-    return pending.delivery().get(5, TimeUnit.SECONDS);
+    return pending.delivery().await(REQUEST_LIMIT);
   }
 
   private record Playing(UUID sessionId, VariantJob job) {}
@@ -652,5 +696,5 @@ class SeekPriorityIT {
       UUID sessionId,
       String variantLabel,
       String segmentName,
-      CompletableFuture<SegmentDelivery> delivery) {}
+      BoundedTask<SegmentDelivery> delivery) {}
 }
