@@ -81,6 +81,43 @@ class VideoEncodeDecisionTest {
     assertThat(decision.codecString()).isEqualTo(levelCase.codecString());
   }
 
+  // H.265 Main 10 shares Main's level limits (Table A.8) and CpbVclFactor (Table A.10). Its codec
+  // string names general_profile_idc 2 and only the Main 10 compatibility flag.
+  @ParameterizedTest(name = "{0} at {1}x{2} and {3} fps")
+  @CsvSource({
+    "SDR, 1920, 1080, 30, 5000000, 40, hvc1.2.4.L120.90",
+    "PQ, 1920, 1080, 30, 5000000, 40, hvc1.2.4.L120.90",
+    "HLG, 1280, 720, 60, 3000000, 40, hvc1.2.4.L120.90",
+    "PQ, 3840, 2160, 24, 11600000, 50, hvc1.2.4.L150.90",
+    "PQ, 3840, 2160, 60, 16800000, 51, hvc1.2.4.L153.90"
+  })
+  @DisplayName(
+      "Should force H.265 Main 10 in the Main tier at the smallest Annex A level when the encode"
+          + " writes 10 bits")
+  void shouldForceH265Main10InTheMainTierAtTheSmallestAnnexALevelWhenTheEncodeWrites10Bits(
+      VideoRange range,
+      int width,
+      int height,
+      int frameRate,
+      long bitrate,
+      int level,
+      String codecString) {
+    var decision =
+        VideoEncodeDecision.of(
+            output("hevc")
+                .width(width)
+                .height(height)
+                .frameRate(new Fraction(frameRate, 1))
+                .bitrate(bitrate)
+                .format(new EncodeFormat(range, 10))
+                .build());
+
+    assertThat(decision.codecProfile()).isEqualTo(EncodeCodecProfile.HEVC_MAIN_10);
+    assertThat(decision.tier()).isEqualTo(Optional.of(VideoCodecTier.MAIN));
+    assertThat(decision.level()).isEqualTo(level);
+    assertThat(decision.codecString()).isEqualTo(codecString);
+  }
+
   @ParameterizedTest
   @CsvSource({"h264", "av1", "hevc"})
   @DisplayName("Should refuse the encode when no level allows the output")

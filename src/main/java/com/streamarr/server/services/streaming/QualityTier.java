@@ -60,7 +60,7 @@ enum QualityTier {
   /** The tier's nominal video bitrate for the codec family that the encode forces. */
   long videoBitrate(@NonNull EncodeCodecProfile codecProfile) {
     return switch (codecProfile) {
-      case AV1_MAIN, HEVC_MAIN -> av1VideoBitrate;
+      case AV1_MAIN, HEVC_MAIN, HEVC_MAIN_10 -> av1VideoBitrate;
       case H264_HIGH -> h264VideoBitrate;
     };
   }

@@ -75,6 +75,12 @@ enum H265Level {
     return String.format(Locale.ROOT, "hvc1.1.6.L%d.90", level * GENERAL_LEVEL_IDC_PER_LEVEL);
   }
 
+  // Main 10 in the Main tier, compatible with Main 10 alone, with the same level and constraint
+  // flags as Main. Main 10 shares Main's limits and CpbVclFactor.
+  String main10ProfileCodecString() {
+    return String.format(Locale.ROOT, "hvc1.2.4.L%d.90", level * GENERAL_LEVEL_IDC_PER_LEVEL);
+  }
+
   private long highestBitrate() {
     return Math.min(
         maxBitrateUnits * MAIN_PROFILE_BITS_PER_UNIT,

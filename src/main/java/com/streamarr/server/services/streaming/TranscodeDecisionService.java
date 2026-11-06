@@ -63,7 +63,10 @@ public class TranscodeDecisionService {
   // An encode forces one codec profile for each codec family (ADR 0013). These codec families
   // compress better than H.264, best first (ADR 0009).
   private static final List<EncodeCodecProfile> COMPRESSING_BETTER_THAN_H264 =
-      List.of(EncodeCodecProfile.AV1_MAIN, EncodeCodecProfile.HEVC_MAIN);
+      List.of(
+          EncodeCodecProfile.AV1_MAIN,
+          EncodeCodecProfile.HEVC_MAIN_10,
+          EncodeCodecProfile.HEVC_MAIN);
   private static final List<BitstreamRewrite> STRIP_HDR10_PLUS =
       List.of(BitstreamRewrite.STRIP_HDR10_PLUS);
   private static final List<BitstreamRewrite> NORMALIZE_DOLBY_VISION_RECORD =
@@ -676,14 +679,11 @@ public class TranscodeDecisionService {
   // The formats that an encode of the source may write in the codec profile, best first: the
   // source's PQ or HLG range, then 10-bit SDR for a 10-bit SDR source, then 8-bit SDR. PQ also
   // stands for Dolby Vision without a compatible base, which the worker reshapes with its RPUs.
-  // H.264 output stays 8-bit SDR, because almost no device decodes 10-bit H.264 (#397). The
-  // viewer's SDR choice keeps no HDR range (ADR 0013).
+  // Each format has a bit depth that the profile holds, so H.264 High and H.265 Main stay 8-bit
+  // SDR and H.265 Main 10 never writes 8 bits (#397, #58). The viewer's SDR choice keeps no HDR
+  // range (ADR 0013).
   private static List<EncodeFormat> permittedEncodeFormats(
       EncodeFitting fitting, EncodeCodecProfile profile) {
-    if (profile == EncodeCodecProfile.H264_HIGH || profile == EncodeCodecProfile.HEVC_MAIN) {
-      return List.of(EncodeFormat.SDR_8_BIT);
-    }
-
     var source = fitting.source();
     var hdr =
         switch (sourceBase(source)) {
@@ -699,6 +699,7 @@ public class TranscodeDecisionService {
         isTenBitSdr(source) ? Optional.of(EncodeFormat.SDR_10_BIT) : Optional.<EncodeFormat>empty();
     return Stream.of(hdr, tenBitSdr, Optional.of(EncodeFormat.SDR_8_BIT))
         .flatMap(Optional::stream)
+        .filter(format -> profile.holdsBitDepth(format.bitDepth()))
         .toList();
   }
 
