@@ -14,6 +14,10 @@ import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import lombok.NonNull;
 import org.springframework.context.event.EventListener;
 import org.springframework.dao.DataAccessException;
@@ -23,7 +27,7 @@ import org.springframework.transaction.TransactionException;
  * Learns the end time of each stream whose container header states none from the first job attempt
  * that reads the stream's last sample, and stores it beside the probe facts (ADR 0037, early ends).
  */
-public class LearnedStreamEndListener {
+public class LearnedStreamEndListener implements AutoCloseable {
 
   private static final String STORE_FAILURES_METRIC =
       "streamarr.streaming.learned_stream_end_store_failures";
@@ -31,6 +35,9 @@ public class LearnedStreamEndListener {
   private final RuntimeStreamSessionRegistry runtimeRegistry;
   private final LearnedStreamEndRepository learnedStreamEnds;
   private final Counter storeFailures;
+  // The listener runs inside the worker's completion report. A store can wait on the media file's
+  // row lock, and waiting there would hold back every later report from that worker.
+  private final ExecutorService learning = Executors.newVirtualThreadPerTaskExecutor();
 
   public LearnedStreamEndListener(
       @NonNull RuntimeStreamSessionRegistry runtimeRegistry,
@@ -63,25 +70,45 @@ public class LearnedStreamEndListener {
     var unstated =
         streamEnds.stream().filter(end -> probe.statesNoEndTimeFor(end.streamIndex())).toList();
     var snapshot = probe.sourceSnapshot();
-    if (unstated.isEmpty()
-        || snapshot.isEmpty()
-        || !currentSnapshot(session.getSourcePath()).equals(snapshot)) {
+    if (unstated.isEmpty() || snapshot.isEmpty()) {
       return;
     }
 
-    unstated.forEach(
-        end ->
-            store(
-                LearnedStreamEnd.builder()
-                    .mediaFileId(session.getMediaFileId())
-                    .snapshot(snapshot.get())
-                    .streamIndex(end.streamIndex())
-                    .endTime(end.endTime())
-                    .build()));
+    var mediaFileId = session.getMediaFileId();
+    var source = session.getSourcePath();
+    try {
+      learning.execute(
+          () ->
+              storeIfUnchanged(
+                  source, snapshot.get(), toLearned(mediaFileId, snapshot.get(), unstated)));
+    } catch (RejectedExecutionException _) {
+      // The server is shutting down; the next attempt that reads past the end learns it.
+    }
   }
 
-  // This listener runs inside the worker's completion report, so a failed write that escaped it
-  // would abort the report and close the worker's control stream.
+  private static List<LearnedStreamEnd> toLearned(
+      UUID mediaFileId, SourceFileSnapshot snapshot, List<SourceStreamEnd> ends) {
+    return ends.stream()
+        .map(
+            end ->
+                LearnedStreamEnd.builder()
+                    .mediaFileId(mediaFileId)
+                    .snapshot(snapshot)
+                    .streamIndex(end.streamIndex())
+                    .endTime(end.endTime())
+                    .build())
+        .toList();
+  }
+
+  private void storeIfUnchanged(
+      Path source, SourceFileSnapshot snapshot, List<LearnedStreamEnd> learned) {
+    if (!currentSnapshot(source).equals(Optional.of(snapshot))) {
+      return;
+    }
+
+    learned.forEach(this::store);
+  }
+
   private void store(LearnedStreamEnd learned) {
     try {
       learnedStreamEnds.store(learned);
@@ -100,5 +127,11 @@ public class LearnedStreamEndListener {
     } catch (IOException _) {
       return Optional.empty();
     }
+  }
+
+  /** Waits for every end already handed to the store; later completions learn nothing. */
+  @Override
+  public void close() {
+    learning.close();
   }
 }

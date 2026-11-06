@@ -451,6 +451,7 @@ class WorkerPlaybackRecoveryIT {
     private final SegmentDeliveryCoordinator delivery;
     private final HlsPlaylistService playlists;
     private final PlaybackProbeService probeService;
+    private final LearnedStreamEndListener learning;
     private final UUID mediaFileId;
 
     private PlaybackRig(PlayedSource played) {
@@ -519,7 +520,7 @@ class WorkerPlaybackRecoveryIT {
       var shortCopies = new ShortCopyListener(lifecycle.lifecycle(), events);
       events.listen(JobAttemptCompletedEvent.class, shortCopies::onJobAttemptCompleted);
       events.listen(CopiedVariantRanShortEvent.class, sessions::onCopiedVariantRanShort);
-      var learning = new LearnedStreamEndListener(registry, learnedEnds, new SimpleMeterRegistry());
+      learning = new LearnedStreamEndListener(registry, learnedEnds, new SimpleMeterRegistry());
       events.listen(JobAttemptCompletedEvent.class, learning::onJobAttemptCompleted);
       playlists = new HlsPlaylistService(properties);
       command =
@@ -575,6 +576,7 @@ class WorkerPlaybackRecoveryIT {
     @Override
     public void close() {
       sessions.close();
+      learning.close();
     }
   }
 }
