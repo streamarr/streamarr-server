@@ -1236,7 +1236,6 @@ class ProducerLifecycleServiceTest {
                 .build());
 
     assertThat(first.mediaSegmentCount()).isEqualTo(10);
-    assertThat(first.segmentStartSlots()).containsExactly(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
     assertThat(first.exactSegmentStarts())
         .hasValue(
             new ExactSegmentStarts(
@@ -2266,9 +2265,9 @@ class ProducerLifecycleServiceTest {
 
   @Test
   @DisplayName(
-      "Should start a relocated copy attempt at its merged segment's listed slot with the session's"
+      "Should start a relocated copy attempt at its merged segment's keyframe with the session's"
           + " segment list")
-  void shouldStartARelocatedCopyAttemptAtItsMergedSegmentsListedSlotWithTheSessionsSegmentList() {
+  void shouldStartARelocatedCopyAttemptAtItsMergedSegmentsKeyframeWithTheSessionsSegmentList() {
     var session = startedMergedCopySession();
 
     lifecycle.ensurePositioned(
@@ -2276,11 +2275,11 @@ class ProducerLifecycleServiceTest {
 
     var first = transcodeExecutor.getStartedRequests().getFirst();
     var relocated = transcodeExecutor.getStartedRequests().getLast();
-    assertThat(first.segmentStartSlots()).startsWith(0, 1, 3, 5).hasSize(720);
+    assertThat(first.exactSegmentStarts().orElseThrow().ticks()).hasSize(720);
     assertThat(relocated.startSequenceNumber()).isEqualTo(3);
     assertThat(relocated.seekPosition()).isEqualTo(30);
     assertThat(relocated.keyframeSeekPosition()).hasValue(Duration.ofSeconds(30));
-    assertThat(relocated.segmentStartSlots()).isEqualTo(first.segmentStartSlots());
+    assertThat(relocated.exactSegmentStarts()).isEqualTo(first.exactSegmentStarts());
   }
 
   // Keyframes 30 s apart over 2 h open segments in the 6 s slots 0, 5, 10 and so on. Segment 0

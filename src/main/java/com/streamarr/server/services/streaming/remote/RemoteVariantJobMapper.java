@@ -358,8 +358,7 @@ final class RemoteVariantJobMapper {
             .setSeekPositionSeconds(request.seekPosition())
             .setTargetSegmentDurationSeconds(request.targetSegmentDuration())
             .setStartSequenceNumber(request.startSequenceNumber())
-            .setMediaSegmentCount(request.mediaSegmentCount())
-            .addAllSegmentStartSlots(request.segmentStartSlots());
+            .setMediaSegmentCount(request.mediaSegmentCount());
     request.framerate().ifPresent(execution::setFramerate);
     outputFrameRate(request).ifPresent(execution::setOutputFrameRate);
     request
