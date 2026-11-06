@@ -35,6 +35,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.context.event.EventListener;
 import org.springframework.dao.DataAccessResourceFailureException;
 
 @Tag("UnitTest")
@@ -199,6 +201,34 @@ class LearnedStreamEndListenerTest {
     assertThatCode(() -> listener.onJobAttemptCompleted(completion(session, AUDIO_END)))
         .doesNotThrowAnyException();
     assertThat(learnedStreamEnds.findFor(session.getMediaFileId(), probedSnapshot)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should store the reported ends when another listener of the completion ends the stream"
+          + " session first")
+  void shouldStoreTheReportedEndsWhenAnotherListenerOfTheCompletionEndsTheStreamSessionFirst() {
+    var session = savedSession(probeOf(Optional.of(probedSnapshot)));
+    try (var context = new AnnotationConfigApplicationContext()) {
+      context.registerBean(
+          SessionEndingListener.class, () -> new SessionEndingListener(runtimeRegistry));
+      context.registerBean(LearnedStreamEndListener.class, () -> listener);
+      context.refresh();
+
+      context.publishEvent(completion(session, AUDIO_END));
+    }
+
+    assertThat(runtimeRegistry.findById(session.getSessionId())).isEmpty();
+    assertThat(learnedStreamEnds.findFor(session.getMediaFileId(), probedSnapshot)).hasSize(1);
+  }
+
+  // Ends the stream session on the same completion, as short-copy recovery may.
+  private record SessionEndingListener(FakeRuntimeStreamSessionRegistry runtimeRegistry) {
+
+    @EventListener
+    public void onJobAttemptCompleted(JobAttemptCompletedEvent event) {
+      runtimeRegistry.removeById(event.streamSessionId());
+    }
   }
 
   private void learnFromCompletion(JobAttemptCompletedEvent completion) {

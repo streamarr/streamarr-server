@@ -20,6 +20,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import lombok.NonNull;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.dao.DataAccessException;
 import org.springframework.transaction.TransactionException;
 
@@ -58,7 +60,10 @@ public class LearnedStreamEndListener implements AutoCloseable {
    * while the file at the session's source path still holds that outcome's snapshot. A session that
    * has ended, or whose probe names no source file, learns nothing.
    */
+  // Runs before the other listeners of the completion: short-copy recovery may end the stream
+  // session, and the ends are read from it.
   @EventListener
+  @Order(Ordered.HIGHEST_PRECEDENCE)
   public void onJobAttemptCompleted(@NonNull JobAttemptCompletedEvent event) {
     runtimeRegistry
         .findById(event.streamSessionId())
