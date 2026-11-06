@@ -116,4 +116,9 @@ public final class FakeCreatingStreamingService implements StreamingService {
   public int getActiveSessionCount() {
     return streams.getActiveSessionCount();
   }
+
+  @Override
+  public Optional<String> playedVariantOf(UUID sessionId) {
+    return streams.playedVariantOf(sessionId);
+  }
 }

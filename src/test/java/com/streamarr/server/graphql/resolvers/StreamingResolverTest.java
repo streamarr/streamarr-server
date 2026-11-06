@@ -2723,6 +2723,11 @@ class StreamingResolverTest {
     public int getActiveSessionCount() {
       return sessions.size();
     }
+
+    @Override
+    public Optional<String> playedVariantOf(UUID sessionId) {
+      return Optional.empty();
+    }
   }
 
   private static class NoopSessionProgressService extends SessionProgressService {
