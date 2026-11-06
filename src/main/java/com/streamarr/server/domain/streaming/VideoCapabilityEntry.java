@@ -244,6 +244,13 @@ public record VideoCapabilityEntry(
   // passes its own check and leaves the decision to those maximums.
   private List<DecisionReason> refusedProperties(
       VideoStreamCopy copy, VideoStreamProperties properties) {
+    var refusals = codingAndPictureRefusals(copy, properties);
+    refusals.addAll(dynamicRangeRefusals(copy));
+    return List.copyOf(refusals);
+  }
+
+  private List<DecisionReason> codingAndPictureRefusals(
+      VideoStreamCopy copy, VideoStreamProperties properties) {
     var refusals = new ArrayList<DecisionReason>();
     codecProfileRefusal(properties).ifPresent(refusals::add);
     bitDepthRefusal(copy.bitDepth()).ifPresent(refusals::add);
@@ -256,8 +263,7 @@ public record VideoCapabilityEntry(
       refusals.add(DecisionReason.VIDEO_FRAME_RATE_NOT_DECLARED);
     }
 
-    refusals.addAll(dynamicRangeRefusals(copy));
-    return List.copyOf(refusals);
+    return refusals;
   }
 
   private Optional<DecisionReason> codecProfileRefusal(VideoStreamProperties properties) {
