@@ -7,6 +7,7 @@ import com.streamarr.server.domain.media.LearnedStreamEnd;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -68,16 +69,23 @@ class LearnedStreamEndRepositoryIT extends AbstractIntegrationTest
     return file.getId();
   }
 
+  @Override
+  public void storeProbeOutcome(UUID mediaFileId, SourceFileSnapshot snapshot) {
+    assertThat(probeOutcomes.publish(publication(mediaFileId, snapshot, ProbeVersion.CURRENT)))
+        .isTrue();
+  }
+
   @Test
   @DisplayName(
       "Should keep a learned end time when a new probe of the same file stores its outcome")
   void shouldKeepALearnedEndTimeWhenANewProbeOfTheSameFileStoresItsOutcome() {
     var mediaFileId = createMediaFile();
-    probeOutcomes.publish(publication(mediaFileId, ProbeVersion.CURRENT - 1));
+    probeOutcomes.publish(publication(mediaFileId, SNAPSHOT, ProbeVersion.CURRENT - 1));
     var learned = learnedAudioEnd(mediaFileId);
     learnedStreamEnds.store(learned);
 
-    var republished = probeOutcomes.publish(publication(mediaFileId, ProbeVersion.CURRENT));
+    var republished =
+        probeOutcomes.publish(publication(mediaFileId, SNAPSHOT, ProbeVersion.CURRENT));
 
     assertThat(republished).isTrue();
     assertThat(learnedStreamEnds.findFor(mediaFileId, SNAPSHOT)).containsExactly(learned);
@@ -87,7 +95,7 @@ class LearnedStreamEndRepositoryIT extends AbstractIntegrationTest
   @DisplayName(
       "Should keep exactly one learned end time when two attempts complete at the same moment")
   void shouldKeepExactlyOneLearnedEndTimeWhenTwoAttemptsCompleteAtTheSameMoment() throws Exception {
-    var mediaFileId = createMediaFile();
+    var mediaFileId = createProbedMediaFile();
     var first = learnedAudioEnd(mediaFileId);
     var second = first.toBuilder().endTime(Duration.ofSeconds(85)).build();
     var start = new CountDownLatch(1);
@@ -113,7 +121,7 @@ class LearnedStreamEndRepositoryIT extends AbstractIntegrationTest
   @Test
   @DisplayName("Should delete a file's learned end times when the media file is deleted")
   void shouldDeleteAFilesLearnedEndTimesWhenTheMediaFileIsDeleted() {
-    var mediaFileId = createMediaFile();
+    var mediaFileId = createProbedMediaFile();
     learnedStreamEnds.store(learnedAudioEnd(mediaFileId));
 
     mediaFileRepository.deleteAllById(List.of(mediaFileId));
@@ -131,10 +139,11 @@ class LearnedStreamEndRepositoryIT extends AbstractIntegrationTest
   }
 
   // A Matroska outcome whose audio header states no end time.
-  private static ProbePublication publication(UUID mediaFileId, int probeVersion) {
+  private static ProbePublication publication(
+      UUID mediaFileId, SourceFileSnapshot snapshot, int probeVersion) {
     return ProbePublication.builder()
         .mediaFileId(mediaFileId)
-        .snapshot(SNAPSHOT)
+        .snapshot(snapshot)
         .probeVersion(probeVersion)
         .outcome(
             new ProbeOutcome.Success(

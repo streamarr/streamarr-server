@@ -15,6 +15,7 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -22,6 +23,7 @@ import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.fakes.FakeLearnedStreamEndRepository;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
@@ -51,9 +53,12 @@ import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegist
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -284,6 +289,14 @@ class WorkerPlaybackRecoveryIT {
     }
   }
 
+  private static SourceFileSnapshot snapshotOf(Path file) {
+    try {
+      return SourceFileSnapshot.of(Files.readAttributes(file, BasicFileAttributes.class));
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
   private static List<Duration> learnedEndsOf(MediaProbe probe) {
     return probe.streams().stream().flatMap(stream -> stream.endTime().stream()).toList();
   }
@@ -444,7 +457,6 @@ class WorkerPlaybackRecoveryIT {
       var source = played.file();
       var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE, source.getParent());
       var probes = new FakeMediaFileContainerInfoRepository();
-      probes.setDefaultOutcome(played.storedProbe());
       var files = new FakeMediaFileRepository();
       var file =
           files.save(
@@ -453,13 +465,21 @@ class WorkerPlaybackRecoveryIT {
                   .filename(source.getFileName().toString())
                   .status(MediaFileStatus.MATCHED)
                   .build());
+      // The stored outcome holds the snapshot of the file as it lies on disk now.
+      probes.publish(
+          ProbePublication.builder()
+              .mediaFileId(file.getId())
+              .snapshot(snapshotOf(source))
+              .probeVersion(ProbeVersion.CURRENT)
+              .outcome(played.storedProbe())
+              .build());
       var properties =
           StreamingProperties.builder()
               .maxConcurrentTranscodes(2)
               .targetSegmentDuration(Duration.ofSeconds(6))
               .build();
       var registry = new InMemoryStreamSessionRegistry();
-      var learnedEnds = new FakeLearnedStreamEndRepository();
+      var learnedEnds = new FakeLearnedStreamEndRepository(probes);
       probeService = playbackProbeServiceBuilder(probes).learnedStreamEnds(learnedEnds).build();
       mediaFileId = file.getId();
       var lifecycle =

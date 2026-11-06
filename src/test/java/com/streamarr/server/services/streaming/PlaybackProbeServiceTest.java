@@ -78,7 +78,7 @@ class PlaybackProbeServiceTest {
       };
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
   private final FakeLearnedStreamEndRepository learnedStreamEnds =
-      new FakeLearnedStreamEndRepository();
+      new FakeLearnedStreamEndRepository(outcomes);
   private final ProbeAttemptEnds attemptEnds = new ProbeAttemptEnds(meterRegistry);
   private final PlaybackProbeClaims claims = new PlaybackProbeClaims(nanoClock, meterRegistry);
   private final CapturingEventPublisher events = new CapturingEventPublisher();
@@ -125,7 +125,7 @@ class PlaybackProbeServiceTest {
         "Should read a learned end time into a stream whose header states none when the end was"
             + " learned for the stored outcome's snapshot")
     void shouldReadALearnedEndTimeIntoAStreamWhoseHeaderStatesNoneWhenLearnedForTheSnapshot() {
-      outcomes.store(audioAndVideo(Optional.empty()));
+      outcomes.store(audioAndVideo(REQUESTED_INPUTS.snapshot(), Optional.empty()));
       learnedStreamEnds.store(learnedEnd(REQUESTED_INPUTS.snapshot(), 1, Duration.ofSeconds(20)));
 
       var probe = probeOf(service().read(mediaFileId));
@@ -141,9 +141,10 @@ class PlaybackProbeServiceTest {
     @DisplayName(
         "Should keep a stream without an end time when its end was learned for another snapshot")
     void shouldKeepAStreamWithoutAnEndTimeWhenItsEndWasLearnedForAnotherSnapshot() {
-      outcomes.store(audioAndVideo(Optional.empty()));
       var earlierFile = new SourceFileSnapshot(999, Instant.EPOCH);
+      outcomes.store(audioAndVideo(earlierFile, Optional.empty()));
       learnedStreamEnds.store(learnedEnd(earlierFile, 1, Duration.ofSeconds(20)));
+      outcomes.store(audioAndVideo(REQUESTED_INPUTS.snapshot(), Optional.empty()));
 
       var probe = probeOf(service().read(mediaFileId));
 
@@ -156,7 +157,8 @@ class PlaybackProbeServiceTest {
     @Test
     @DisplayName("Should keep the header's end time when an end was also learned for the stream")
     void shouldKeepTheHeadersEndTimeWhenAnEndWasAlsoLearnedForTheStream() {
-      outcomes.store(audioAndVideo(Optional.of(Duration.ofSeconds(30))));
+      outcomes.store(
+          audioAndVideo(REQUESTED_INPUTS.snapshot(), Optional.of(Duration.ofSeconds(30))));
       learnedStreamEnds.store(learnedEnd(REQUESTED_INPUTS.snapshot(), 1, Duration.ofSeconds(20)));
 
       var probe = probeOf(service().read(mediaFileId));
@@ -644,11 +646,13 @@ class PlaybackProbeServiceTest {
         .build();
   }
 
-  // A video stream, and an audio stream at index 1 whose header states the given end time.
-  private MediaFileContainerInfo audioAndVideo(Optional<Duration> audioEnd) {
+  // An outcome of the snapshot: a video stream, and an audio stream at index 1 whose header states
+  // the given end time.
+  private MediaFileContainerInfo audioAndVideo(
+      SourceFileSnapshot snapshot, Optional<Duration> audioEnd) {
     return MediaFileContainerInfo.builder()
         .mediaFileId(mediaFileId)
-        .snapshot(REQUESTED_INPUTS.snapshot())
+        .snapshot(snapshot)
         .probeVersion(ProbeVersion.CURRENT)
         .container(
             ProbeContainer.builder()

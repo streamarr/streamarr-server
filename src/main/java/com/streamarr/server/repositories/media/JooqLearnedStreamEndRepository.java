@@ -1,6 +1,8 @@
 package com.streamarr.server.repositories.media;
 
+import static com.streamarr.server.jooq.generated.tables.MediaFileContainerInfo.MEDIA_FILE_CONTAINER_INFO;
 import static com.streamarr.server.jooq.generated.tables.MediaFileLearnedStreamEnd.MEDIA_FILE_LEARNED_STREAM_END;
+import static com.streamarr.server.repositories.media.StoredOutcomeConditions.snapshotMatches;
 
 import com.streamarr.server.domain.media.LearnedStreamEnd;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
@@ -23,21 +25,36 @@ public class JooqLearnedStreamEndRepository implements LearnedStreamEndRepositor
 
   private final DSLContext dsl;
 
-  // One statement keeps the first end learned for a snapshot against a concurrent attempt's
-  // completion, and replaces an end learned for an earlier version of the file.
+  // One statement stores the end only while the file's stored probe outcome holds its snapshot, so
+  // a late completion of an attempt that read an earlier version of the file stores nothing. It
+  // keeps the first end learned for a snapshot against a concurrent completion, and replaces an end
+  // learned for an earlier version of the file.
   @Override
   @Transactional
   public boolean store(LearnedStreamEnd learned) {
     var snapshot = learned.snapshot();
     var end = learned.endTime();
-    return dsl.insertInto(LEARNED)
-            .set(LEARNED.MEDIA_FILE_ID, learned.mediaFileId())
-            .set(LEARNED.STREAM_INDEX, learned.streamIndex())
-            .set(LEARNED.SOURCE_SIZE, snapshot.size())
-            .set(LEARNED.SOURCE_MODIFIED_EPOCH_SECOND, snapshot.modifiedAt().getEpochSecond())
-            .set(LEARNED.SOURCE_MODIFIED_NANOS, snapshot.modifiedAt().getNano())
-            .set(LEARNED.END_SECONDS, end.getSeconds())
-            .set(LEARNED.END_NANOS, end.getNano())
+    return dsl.insertInto(
+                LEARNED,
+                LEARNED.MEDIA_FILE_ID,
+                LEARNED.STREAM_INDEX,
+                LEARNED.SOURCE_SIZE,
+                LEARNED.SOURCE_MODIFIED_EPOCH_SECOND,
+                LEARNED.SOURCE_MODIFIED_NANOS,
+                LEARNED.END_SECONDS,
+                LEARNED.END_NANOS)
+            .select(
+                DSL.select(
+                        MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID,
+                        DSL.val(learned.streamIndex()),
+                        MEDIA_FILE_CONTAINER_INFO.SOURCE_SIZE,
+                        MEDIA_FILE_CONTAINER_INFO.SOURCE_MODIFIED_EPOCH_SECOND,
+                        MEDIA_FILE_CONTAINER_INFO.SOURCE_MODIFIED_NANOS,
+                        DSL.val(end.getSeconds()),
+                        DSL.val(end.getNano()))
+                    .from(MEDIA_FILE_CONTAINER_INFO)
+                    .where(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(learned.mediaFileId()))
+                    .and(snapshotMatches(snapshot)))
             .onConflict(LEARNED.MEDIA_FILE_ID, LEARNED.STREAM_INDEX)
             .doUpdate()
             .set(LEARNED.SOURCE_SIZE, DSL.excluded(LEARNED.SOURCE_SIZE))

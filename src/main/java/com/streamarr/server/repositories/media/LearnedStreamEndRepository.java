@@ -12,9 +12,10 @@ import java.util.UUID;
 public interface LearnedStreamEndRepository {
 
   /**
-   * Stores the learned end time unless one is already stored for the same stream of the same
-   * snapshot: the first learned end time stays. One learned for another snapshot of the file is
-   * replaced. Returns whether the end time was stored.
+   * Stores the learned end time while the file's stored probe outcome holds its snapshot, unless
+   * one is already stored for the same stream of that snapshot: the first learned end time stays.
+   * One learned for another snapshot of the file is replaced. Returns whether the end time was
+   * stored.
    */
   boolean store(LearnedStreamEnd learned);
 

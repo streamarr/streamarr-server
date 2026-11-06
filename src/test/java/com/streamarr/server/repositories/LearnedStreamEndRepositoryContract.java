@@ -27,10 +27,21 @@ public interface LearnedStreamEndRepositoryContract {
   /** Creates a media file the repository can hold learned end times for. */
   UUID createMediaFile();
 
-  @Test
-  @DisplayName("Should read a learned end time when it was learned for the snapshot")
-  default void shouldReadALearnedEndTimeWhenItWasLearnedForTheSnapshot() {
+  /** Stores a probe outcome of the file for the snapshot, in place of any stored before. */
+  void storeProbeOutcome(UUID mediaFileId, SourceFileSnapshot snapshot);
+
+  /** Creates a media file whose stored probe outcome holds {@link #SNAPSHOT}. */
+  default UUID createProbedMediaFile() {
     var mediaFileId = createMediaFile();
+    storeProbeOutcome(mediaFileId, SNAPSHOT);
+    return mediaFileId;
+  }
+
+  @Test
+  @DisplayName(
+      "Should read a learned end time when it was learned for the stored probe outcome's snapshot")
+  default void shouldReadALearnedEndTimeWhenItWasLearnedForTheSnapshot() {
+    var mediaFileId = createProbedMediaFile();
     var learned = learned(mediaFileId, SNAPSHOT, Duration.ofSeconds(84, 21_333_333));
 
     var stored = repository().store(learned);
@@ -42,7 +53,7 @@ public interface LearnedStreamEndRepositoryContract {
   @Test
   @DisplayName("Should keep the first learned end time when a later attempt learns another one")
   default void shouldKeepTheFirstLearnedEndTimeWhenALaterAttemptLearnsAnotherOne() {
-    var mediaFileId = createMediaFile();
+    var mediaFileId = createProbedMediaFile();
     var first = learned(mediaFileId, SNAPSHOT, Duration.ofSeconds(84));
     repository().store(first);
 
@@ -55,8 +66,9 @@ public interface LearnedStreamEndRepositoryContract {
   @Test
   @DisplayName("Should replace a learned end time when the file changed since it was learned")
   default void shouldReplaceALearnedEndTimeWhenTheFileChangedSinceItWasLearned() {
-    var mediaFileId = createMediaFile();
+    var mediaFileId = createProbedMediaFile();
     repository().store(learned(mediaFileId, SNAPSHOT, Duration.ofSeconds(84)));
+    storeProbeOutcome(mediaFileId, CHANGED_SNAPSHOT);
     var relearned = learned(mediaFileId, CHANGED_SNAPSHOT, Duration.ofSeconds(90));
 
     var stored = repository().store(relearned);
@@ -67,10 +79,40 @@ public interface LearnedStreamEndRepositoryContract {
   }
 
   @Test
+  @DisplayName(
+      "Should store nothing when the file's stored probe outcome holds another snapshot than the"
+          + " learned end time's")
+  default void shouldStoreNothingWhenTheStoredProbeOutcomeHoldsAnotherSnapshot() {
+    var mediaFileId = createMediaFile();
+    storeProbeOutcome(mediaFileId, CHANGED_SNAPSHOT);
+
+    var stored = repository().store(learned(mediaFileId, SNAPSHOT, Duration.ofSeconds(84)));
+
+    assertThat(stored).isFalse();
+    assertThat(repository().findFor(mediaFileId, SNAPSHOT)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the changed file's learned end time when an attempt that read the earlier file"
+          + " completes late")
+  default void shouldKeepTheChangedFilesLearnedEndTimeWhenAnAttemptOfTheEarlierFileCompletesLate() {
+    var mediaFileId = createProbedMediaFile();
+    storeProbeOutcome(mediaFileId, CHANGED_SNAPSHOT);
+    var changedFileEnd = learned(mediaFileId, CHANGED_SNAPSHOT, Duration.ofSeconds(90));
+    repository().store(changedFileEnd);
+
+    var stored = repository().store(learned(mediaFileId, SNAPSHOT, Duration.ofSeconds(84)));
+
+    assertThat(stored).isFalse();
+    assertThat(repository().findFor(mediaFileId, CHANGED_SNAPSHOT)).containsExactly(changedFileEnd);
+  }
+
+  @Test
   @DisplayName("Should read only the file's own learned end times")
   default void shouldReadOnlyTheFilesOwnLearnedEndTimes() {
-    var mediaFileId = createMediaFile();
-    var otherFileId = createMediaFile();
+    var mediaFileId = createProbedMediaFile();
+    var otherFileId = createProbedMediaFile();
     var learned = learned(mediaFileId, SNAPSHOT, Duration.ofSeconds(84));
     var otherStream =
         learned(mediaFileId, SNAPSHOT, Duration.ofSeconds(64)).toBuilder().streamIndex(0).build();

@@ -31,7 +31,7 @@ public final class PlaybackProbeServiceFixture {
         .nanoClock(System::nanoTime)
         .meterRegistry(new SimpleMeterRegistry())
         .playbackProbeClaims(new PlaybackProbeClaims(System::nanoTime, new SimpleMeterRegistry()))
-        .learnedStreamEnds(new FakeLearnedStreamEndRepository())
+        .learnedStreamEnds(new FakeLearnedStreamEndRepository(outcomes))
         .properties(StreamingProperties.builder().build());
   }
 }
