@@ -4,8 +4,10 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
+import com.streamarr.server.domain.streaming.VideoEncodeFeature;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -124,4 +126,11 @@ public interface TranscodeExecutor {
    * through runs only on a worker that delivers it.
    */
   List<WorkerVideoCopySupport> videoCopySupportByWorker();
+
+  /**
+   * The outputs beyond 8-bit 4:2:0 SDR that the worker-verified encoders of connected,
+   * source-accessible workers write, busy workers included, by video codec family (#397). An encode
+   * that needs one runs only on a worker whose encoder of its codec family lists it.
+   */
+  Map<String, Set<VideoEncodeFeature>> encodeFeaturesByCodecFamily();
 }

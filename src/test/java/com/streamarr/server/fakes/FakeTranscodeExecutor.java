@@ -6,6 +6,7 @@ import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.domain.streaming.VideoEncodeFeature;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
@@ -78,6 +79,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       new AtomicReference<>();
   private volatile List<WorkerVerifiedCodecFamilies> listedWorkers;
   private volatile List<WorkerVideoCopySupport> videoCopySupport = List.of();
+  private volatile Map<String, Set<VideoEncodeFeature>> encodeFeatures = Map.of();
   private volatile boolean failUntargetedStarts;
 
   @Override
@@ -568,6 +570,15 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   @Override
   public List<WorkerVideoCopySupport> videoCopySupportByWorker() {
     return videoCopySupport;
+  }
+
+  public void setEncodeFeaturesByCodecFamily(Map<String, Set<VideoEncodeFeature>> features) {
+    encodeFeatures = Map.copyOf(features);
+  }
+
+  @Override
+  public Map<String, Set<VideoEncodeFeature>> encodeFeaturesByCodecFamily() {
+    return encodeFeatures;
   }
 
   /** Changes the connected workers just before and just after the next verified families read. */

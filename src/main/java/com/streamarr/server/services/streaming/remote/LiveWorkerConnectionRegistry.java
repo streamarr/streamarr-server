@@ -7,6 +7,7 @@ import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
+import com.streamarr.server.domain.streaming.VideoEncodeFeature;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
@@ -546,6 +547,21 @@ final class LiveWorkerConnectionRegistry {
     return connectionsFor(sourceNamespaceId).map(WorkerConnection::videoCopySupport).toList();
   }
 
+  /**
+   * The encode features that the encoders of connected, source-accessible workers list, busy
+   * workers included, by codec family. A codec family that some worker encodes without a feature
+   * maps to an empty set.
+   */
+  Map<String, Set<VideoEncodeFeature>> encodeFeaturesByCodecFamily(UUID sourceNamespaceId) {
+    return connectionsFor(sourceNamespaceId)
+        .flatMap(WorkerConnection::countedEncoders)
+        .collect(
+            Collectors.groupingBy(
+                encoder -> encoder.backend().codecFamily(),
+                Collectors.flatMapping(
+                    encoder -> encoder.encodeFeatures().stream(), Collectors.toUnmodifiableSet())));
+  }
+
   boolean hasProbeWorker(UUID sourceNamespaceId, int probeVersion) {
     return connectionsFor(sourceNamespaceId)
         .anyMatch(connection -> connection.probeVersions.contains(probeVersion));
@@ -998,7 +1014,8 @@ final class LiveWorkerConnectionRegistry {
       return dispatch;
     }
 
-    // Empty when the job encodes video on an encoder that this worker does not run.
+    // Empty when the job encodes video on an encoder that this worker does not run, or on one that
+    // does not list every feature that the planned output needs.
     private Optional<VariantDispatch> dispatchFor(
         TranscodeDecision decision, Optional<WorkerVerifiedEncoder> pinnedEncoder) {
       if (!encodesVideo(decision)) {
@@ -1009,7 +1026,9 @@ final class LiveWorkerConnectionRegistry {
           pinnedEncoder.isPresent()
               ? pinnedEncoder.filter(this::runsEncoder)
               : encoderFor(decision);
-      return encoder.map(chosen -> new VariantDispatch(Optional.of(chosen)));
+      return encoder
+          .filter(chosen -> writesThePlannedOutput(chosen, decision))
+          .map(chosen -> new VariantDispatch(Optional.of(chosen)));
     }
 
     // A job on a software encoder asks for it even where the worker counts it: the worker may offer
@@ -1270,9 +1289,26 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private boolean canEncode(TranscodeDecision decision) {
-      return (!encodesVideo(decision) || encoderFor(decision).isPresent())
+      return (!encodesVideo(decision) || encoderWritesThePlannedOutput(decision))
           && canEncodeAudioLayout(decision)
           && canDeliverVideoAsPlanned(decision.getVideo());
+    }
+
+    private boolean encoderWritesThePlannedOutput(TranscodeDecision decision) {
+      return encoderFor(decision)
+          .filter(encoder -> writesThePlannedOutput(encoder, decision))
+          .isPresent();
+    }
+
+    private static boolean writesThePlannedOutput(
+        WorkerVerifiedEncoder encoder, TranscodeDecision decision) {
+      return encoder
+          .encodeFeatures()
+          .containsAll(RemoteVideoEncodeRequirements.features(decision.getVideo()));
+    }
+
+    private Stream<WorkerVerifiedEncoder> countedEncoders() {
+      return countedEncoders.values().stream();
     }
 
     // A rewrite or copy feature that the server's domain does not name yet, such as the profile 7
