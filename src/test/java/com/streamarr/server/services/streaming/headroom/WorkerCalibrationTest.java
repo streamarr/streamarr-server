@@ -399,6 +399,23 @@ class WorkerCalibrationTest {
 
     @Test
     @DisplayName(
+        "Should keep fitting the known constants when a new constant has learned a cost close to zero")
+    void shouldKeepFittingTheKnownConstantsWhenANewConstantHasLearnedACostCloseToZero() {
+      var calibration = tenCoreCalibration().build();
+      // PQ adds 2e-9 CPU s per media s, so its constant comes out near 4e-11.
+      calibration.fit(
+          measuredAtCost(libx264FasterLoad().toneMapping(ToneMapping.PQ).build(), 1.5 + 2e-9, 1));
+
+      for (var i = 0; i < 300; i++) {
+        calibration.fit(rungMeasurement(i, 2, 2));
+      }
+
+      assertThat(predictedAloneSpeed(calibration, libx264FasterLoad().build()))
+          .isCloseTo(6 / 3.0, within(0.1));
+    }
+
+    @Test
+    @DisplayName(
         "Should keep fitting the known constants when two new constants have only appeared together")
     void shouldKeepFittingTheKnownConstantsWhenTwoNewConstantsHaveOnlyAppearedTogether() {
       var calibration = tenCoreCalibration().build();

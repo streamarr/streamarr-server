@@ -12,10 +12,47 @@ final class LinearSystem {
   private LinearSystem() {}
 
   /**
+   * The solution of the augmented system of symmetric normal equations, or empty when the system is
+   * singular. Each unknown is first scaled so that its diagonal entry is one, so a constant close
+   * to zero, whose anchor makes its diagonal entry huge, cannot make the other unknowns look
+   * singular.
+   */
+  static Optional<double[]> solve(double[][] matrix) {
+    var size = matrix.length;
+    var scales = new double[size];
+    for (var index = 0; index < size; index++) {
+      scales[index] = 1;
+      var diagonal = Math.abs(matrix[index][index]);
+      if (diagonal > 0) {
+        scales[index] = 1 / Math.sqrt(diagonal);
+      }
+    }
+
+    var scaled = new double[size][size + 1];
+    for (var row = 0; row < size; row++) {
+      for (var column = 0; column < size; column++) {
+        scaled[row][column] = scales[row] * matrix[row][column] * scales[column];
+      }
+
+      scaled[row][size] = scales[row] * matrix[row][size];
+    }
+
+    return eliminate(scaled)
+        .map(
+            values -> {
+              for (var index = 0; index < size; index++) {
+                values[index] *= scales[index];
+              }
+
+              return values;
+            });
+  }
+
+  /**
    * The solution of the augmented system, by Gauss-Jordan elimination with partial pivoting, or
    * empty when the system is singular.
    */
-  static Optional<double[]> solve(double[][] matrix) {
+  private static Optional<double[]> eliminate(double[][] matrix) {
     var size = matrix.length;
     var scale = largestEntry(matrix);
     for (var pivot = 0; pivot < size; pivot++) {
