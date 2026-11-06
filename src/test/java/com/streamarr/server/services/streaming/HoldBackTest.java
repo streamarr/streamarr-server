@@ -93,7 +93,40 @@ class HoldBackTest {
     assertThat(executor.holdBacks())
         .containsExactly(
             new HeldBack(WORKER, Map.of(attemptId, Duration.ofSeconds(36))),
+            new HeldBack(WORKER, Map.of()),
             new HeldBack(WORKER, Map.of(attemptId, Duration.ofSeconds(31))));
+  }
+
+  @Test
+  @DisplayName(
+      "Should release a job attempt explicitly when its player waits after the release time that the"
+          + " server counted, since the worker may have received the hold late")
+  void
+      shouldReleaseAJobAttemptExplicitlyWhenItsPlayerWaitsAfterTheReleaseTimeThatTheServerCounted() {
+    holdBack.reconsider(sessionId, List.of(lead(WORKER, attemptId, 66)));
+    clock.advance(Duration.ofSeconds(40));
+
+    holdBack.reconsider(sessionId, List.of());
+
+    assertThat(executor.holdBacks().getLast()).isEqualTo(new HeldBack(WORKER, Map.of()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should raise both marks by what a long next media segment needs beyond the low-water mark, so"
+          + " a resume leaves the viewer time to produce it")
+  void shouldRaiseBothMarksByWhatALongNextMediaSegmentNeedsBeyondTheLowWaterMark() {
+    // A 45 s merged segment, a 3 s seek pause and the 3 s position margin need 51 s, 21 s beyond
+    // the low-water mark: the job attempt is held above 81 s and released at 51 s.
+    holdBack.reconsider(
+        sessionId,
+        List.of(leadBuilder(WORKER, attemptId, 80).nextSegment(Duration.ofSeconds(45)).build()));
+    holdBack.reconsider(
+        sessionId,
+        List.of(leadBuilder(WORKER, attemptId, 90).nextSegment(Duration.ofSeconds(45)).build()));
+
+    assertThat(executor.holdBacks())
+        .containsExactly(new HeldBack(WORKER, Map.of(attemptId, Duration.ofSeconds(39))));
   }
 
   @Test
@@ -136,7 +169,17 @@ class HoldBackTest {
             new HeldBack(OTHER_WORKER, Map.of()));
   }
 
+  // A lead whose next media segment lasts the plain 6 s.
   private static HoldBack.AttemptLead lead(ExecutionTargetId target, UUID attemptId, long seconds) {
-    return new HoldBack.AttemptLead(attemptId, target, Duration.ofSeconds(seconds));
+    return leadBuilder(target, attemptId, seconds).build();
+  }
+
+  private static HoldBack.AttemptLead.AttemptLeadBuilder leadBuilder(
+      ExecutionTargetId target, UUID attemptId, long seconds) {
+    return HoldBack.AttemptLead.builder()
+        .attemptId(attemptId)
+        .target(target)
+        .lead(Duration.ofSeconds(seconds))
+        .nextSegment(Duration.ofSeconds(6));
   }
 }

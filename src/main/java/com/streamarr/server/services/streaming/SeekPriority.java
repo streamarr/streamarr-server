@@ -347,7 +347,14 @@ public class SeekPriority {
     }
 
     return ownLead(session, variantLabel, handle, viewerSegment)
-        .map(lead -> new HoldBack.AttemptLead(handle.attemptId(), target.get(), lead.stored()));
+        .map(
+            lead ->
+                HoldBack.AttemptLead.builder()
+                    .attemptId(handle.attemptId())
+                    .target(target.get())
+                    .lead(lead.stored())
+                    .nextSegment(lead.nextSegment())
+                    .build());
   }
 
   private OwnOutput ownOutputAtStart(

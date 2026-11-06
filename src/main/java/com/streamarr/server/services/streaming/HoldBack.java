@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import lombok.Builder;
 import lombok.NonNull;
 
 /**
@@ -41,8 +42,16 @@ final class HoldBack {
     this.clock = clock;
   }
 
-  /** The own media that a running job attempt has stored ahead of its viewer. */
-  record AttemptLead(UUID attemptId, ExecutionTargetId target, Duration lead) {}
+  /**
+   * The own media that a running job attempt has stored ahead of its viewer, and the duration of
+   * the media segment that it produces next.
+   */
+  @Builder
+  record AttemptLead(
+      @NonNull UUID attemptId,
+      @NonNull ExecutionTargetId target,
+      @NonNull Duration lead,
+      @NonNull Duration nextSegment) {}
 
   private record Hold(UUID sessionId, Instant releaseAt) {}
 
@@ -73,6 +82,9 @@ final class HoldBack {
 
   private void reconsider(
       ExecutionTargetId target, UUID sessionId, List<AttemptLead> leads, Instant now) {
+    // A worker that received the command late still holds a job attempt past the release time the
+    // server counts, so a change from the last command sent is sent, even one that only releases.
+    var lastSent = holds.getOrDefault(target, Map.of());
     var sent = liveHolds(target, now);
     var next = new HashMap<UUID, Hold>();
     sent.forEach(
@@ -87,7 +99,7 @@ final class HoldBack {
             lead ->
                 releaseAt(lead, Optional.ofNullable(sent.get(lead.attemptId())), now)
                     .ifPresent(at -> next.put(lead.attemptId(), new Hold(sessionId, at))));
-    var changed = !next.equals(sent);
+    var changed = !next.equals(lastSent);
     keep(target, next);
     if (changed) {
       send(target, next, now);
@@ -104,12 +116,17 @@ final class HoldBack {
   // A held job attempt stays held above the low-water mark, and another is held above the
   // high-water mark, until a viewer playing at real time reaches the low-water mark.
   private Optional<Instant> releaseAt(AttemptLead lead, Optional<Hold> sent, Instant now) {
-    var mark = sent.isPresent() ? properties.holdBackLowWater() : properties.holdBackHighWater();
+    var lowWater = lowWater(lead);
+    var mark = lowWater;
+    if (sent.isEmpty()) {
+      mark = lowWater.plus(properties.holdBackHighWater().minus(properties.holdBackLowWater()));
+    }
+
     if (lead.lead().compareTo(mark) <= 0) {
       return Optional.empty();
     }
 
-    var releaseAt = now.plus(lead.lead().minus(properties.holdBackLowWater()));
+    var releaseAt = now.plus(lead.lead().minus(lowWater));
     var keptRelease =
         sent.map(Hold::releaseAt).filter(kept -> releaseAt.plus(RELEASE_TOLERANCE).isAfter(kept));
     if (keptRelease.isPresent()) {
@@ -117,6 +134,20 @@ final class HoldBack {
     }
 
     return Optional.of(releaseAt);
+  }
+
+  // A resume must leave the viewer the time to produce the next segment at real time, a seek's
+  // pause and the position margin; a long merged segment raises both marks by what it needs more.
+  private Duration lowWater(AttemptLead lead) {
+    var resumeNeeds =
+        lead.nextSegment()
+            .plus(properties.seekPriorityHoldLimit())
+            .plus(properties.seekPriorityPositionMargin());
+    if (resumeNeeds.compareTo(properties.holdBackLowWater()) > 0) {
+      return resumeNeeds;
+    }
+
+    return properties.holdBackLowWater();
   }
 
   private void keep(ExecutionTargetId target, Map<UUID, Hold> next) {
