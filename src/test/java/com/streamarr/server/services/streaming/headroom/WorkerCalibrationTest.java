@@ -1422,6 +1422,29 @@ class WorkerCalibrationTest {
     }
 
     @Test
+    @DisplayName(
+        "Should leave another preset unvalidated, also after a restart, when repeated measurements of one 360p rung from a 2160p source cannot separate it from a new decode constant")
+    void
+        shouldLeaveAnotherPresetUnvalidatedAlsoAfterARestartWhenRepeatedMeasurementsOfOne360pRungFromA2160pSourceCannotSeparateItFromANewDecodeConstant() {
+      var calibration = validatedAtFasterWithMediumCoresAlone();
+
+      // Medium at 0.08 and HEVC decode at 0.002: 0.442 + 0.398 CPU s per media s, as does any
+      // other split along the one ratio.
+      var mediumRung =
+          libx264FasterLoad()
+              .encoderAndPreset(LIBX264_MEDIUM)
+              .outputPixelRate(PixelRate.of(640, 360, 24))
+              .sourceDecoder(new SourceDecoder("hevc", DecodeBackend.SOFTWARE))
+              .sourcePixelRate(PixelRate.of(3840, 2160, 24))
+              .build();
+      for (var i = 0; i < 20; i++) {
+        calibration.fit(measuredAtCost(mediumRung, 0.8404992, 2));
+      }
+
+      assertMediumUnvalidatedAlsoAfterARestart(calibration);
+    }
+
+    @Test
     @DisplayName("Should let another preset's own predictions decide once it has twenty of them")
     void shouldLetAnotherPresetsOwnPredictionsDecideOnceItHasTwentyOfThem() {
       var calibration = benchmarkedAtFasterAndVeryfast();

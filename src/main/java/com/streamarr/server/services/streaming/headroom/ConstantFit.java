@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.IntToDoubleFunction;
 import org.ojalgo.matrix.decomposition.Cholesky;
 import org.ojalgo.matrix.store.R064Store;
 import org.ojalgo.optimisation.convex.ConvexSolver;
@@ -32,11 +33,14 @@ final class ConstantFit {
   // measurement's own cost, not this guess, gives it its value.
   private static final double NEW_CONSTANT = 0.01;
   private static final double NEW_CONSTANT_WEIGHT = 1e-6;
-  // The measurements settle a new constant when, with every constant that has a value held, its
-  // nominal prior keeps at most this share of its variance. A direction of the new constants that
-  // the measurements do not see, or barely see, keeps nearly all of it, so the nominal prior can
-  // move a settled constant by only a few percent of that direction.
+  // The measurements settle a new constant when, with every constant that has a value held, a
+  // prior keeps at most this share of its variance, for both of two priors: a vanishing probe on
+  // each new constant scaled to its own pixel rates, which keeps nearly all of its variance along
+  // any direction of the new constants that the measurements do not see, however unequal the pixel
+  // rates; and the nominal prior that the solve uses, which keeps much of it along a direction
+  // that the measurements barely see.
   private static final double PRIOR_SHARE = 1e-3;
+  private static final double PROBE_PRECISION = 1e-9;
   // A measurement whose weight has faded below this no longer counts.
   private static final double FADED = 1e-6;
 
@@ -143,36 +147,55 @@ final class ConstantFit {
   }
 
   /**
-   * The new constants that the measurements determine, with every other constant held, so firmly
-   * that their nominal prior barely moves them.
+   * The new constants that the measurements determine, with every other constant held, apart from
+   * one another and so firmly that their nominal prior barely moves them.
    */
   private static Set<CostConstant> settledAmong(
       List<CostConstant> newConstants, Map<CostConstant, Integer> index, double[][] normal) {
     var size = newConstants.size();
-    var priorPrecision = NEW_CONSTANT_WEIGHT / (NEW_CONSTANT * NEW_CONSTANT);
-    var posterior = R064Store.FACTORY.make(size, size);
+    var diagonal = new double[size];
+    var scaled = R064Store.FACTORY.make(size, size);
     for (var row = 0; row < size; row++) {
-      for (var column = 0; column < size; column++) {
-        posterior.set(
-            row,
-            column,
-            normal[index.get(newConstants.get(row))][index.get(newConstants.get(column))]);
-      }
-
-      posterior.add(row, row, priorPrecision);
+      diagonal[row] = normal[index.get(newConstants.get(row))][index.get(newConstants.get(row))];
     }
 
-    var cholesky = Cholesky.R064.make();
-    cholesky.decompose(posterior);
-    var inverse = cholesky.getInverse();
+    for (var row = 0; row < size; row++) {
+      for (var column = 0; column < size; column++) {
+        var entry = normal[index.get(newConstants.get(row))][index.get(newConstants.get(column))];
+        scaled.set(row, column, entry / Math.sqrt(diagonal[row] * diagonal[column]));
+      }
+    }
+
+    var nominalPrecision = NEW_CONSTANT_WEIGHT / (NEW_CONSTANT * NEW_CONSTANT);
+    var probeShares = priorShares(scaled, _ -> PROBE_PRECISION);
+    var nominalShares = priorShares(scaled, row -> nominalPrecision / diagonal[row]);
     var settled = new HashSet<CostConstant>();
     for (var row = 0; row < size; row++) {
-      if (priorPrecision * inverse.doubleValue(row, row) <= PRIOR_SHARE) {
+      if (probeShares[row] <= PRIOR_SHARE && nominalShares[row] <= PRIOR_SHARE) {
         settled.add(newConstants.get(row));
       }
     }
 
     return settled;
+  }
+
+  /** Each unknown's share of its posterior variance that comes from its prior precision. */
+  private static double[] priorShares(R064Store measured, IntToDoubleFunction priorPrecision) {
+    var size = (int) measured.countRows();
+    var posterior = measured.copy();
+    for (var row = 0; row < size; row++) {
+      posterior.add(row, row, priorPrecision.applyAsDouble(row));
+    }
+
+    var cholesky = Cholesky.R064.make();
+    cholesky.decompose(posterior);
+    var inverse = cholesky.getInverse();
+    var shares = new double[size];
+    for (var row = 0; row < size; row++) {
+      shares[row] = priorPrecision.applyAsDouble(row) * inverse.doubleValue(row, row);
+    }
+
+    return shares;
   }
 
   /**
