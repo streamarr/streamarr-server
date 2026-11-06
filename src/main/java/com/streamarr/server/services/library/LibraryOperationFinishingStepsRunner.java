@@ -1,8 +1,12 @@
 package com.streamarr.server.services.library;
 
+import com.streamarr.server.domain.Library;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.repositories.LibraryOperationRepository;
 import com.streamarr.server.repositories.LibraryRepository;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
@@ -14,13 +18,13 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * Runs the finishing steps of a library operation, in order, before the transaction that ends the
  * operation. The operation's kind and conclusion select the steps. A finished scan checks the
- * library folder and then removes the media files that no longer exist on disk. A failed or stopped
- * scan and every refresh run no step here. The transaction that ends the operation recalculates the
- * letter index, the last step of every operation.
+ * library folder, finds the media files that no longer exist on disk, and removes them. A failed or
+ * stopped scan and every refresh run no step here. The transaction that ends the operation
+ * recalculates the letter index, the last step of every operation.
  *
- * <p>Each step runs in its own transaction, which first shares the operation's row. A step for an
- * operation that has ended does nothing. A step that a restart interrupted has the same effect when
- * it runs again.
+ * <p>A step reads the disk outside any transaction. It then writes in its own transaction, which
+ * first shares the operation's row. A step for an operation that has ended does nothing. A step
+ * that a restart interrupted has the same effect when it runs again.
  */
 @Slf4j
 @Service
@@ -39,7 +43,8 @@ public class LibraryOperationFinishingStepsRunner {
    * library as it was before the step, and the operation still ends.
    *
    * @return the conclusion that the operation ends with: {@link LibraryOperationConclusion#FAILED}
-   *     when the step of a finished scan fails before the library folder is found scannable, and
+   *     when a finished scan's library folder is not found scannable, before the disk sweep or in
+   *     the step's transaction, or when that transaction fails before its folder check passes;
    *     otherwise the given conclusion
    */
   public LibraryOperationConclusion runFinishingSteps(
@@ -48,31 +53,27 @@ public class LibraryOperationFinishingStepsRunner {
       return conclusion;
     }
 
-    var libraryFolderScannable = new AtomicBoolean();
+    Optional<Library> library;
     try {
-      new TransactionTemplate(transactionManager)
-          .executeWithoutResult(_ -> removeMissingMediaFiles(operation, libraryFolderScannable));
+      library = findScannableLibraryOfUnendedOperation(operation);
     } catch (RuntimeException e) {
-      // Only a removal that fails after the library folder was found scannable keeps the scan's
-      // conclusion. Any earlier failure, including a check that cannot finish or a rollback that
-      // replaces the check's exception, leaves the folder unchecked and fails the scan.
-      if (libraryFolderScannable.get()) {
-        log.error(
-            "Failed to remove missing media files at the end of the scan of library {}.",
-            operation.libraryId(),
-            e);
-        return conclusion;
-      }
-
-      log.error(
-          "Removed no missing media files at the end of the scan of library {}, because its"
-              + " library folder was not found scannable.",
-          operation.libraryId(),
-          e);
+      logLibraryFolderNotFoundScannable(operation, e);
       return LibraryOperationConclusion.FAILED;
     }
 
-    return conclusion;
+    if (library.isEmpty()) {
+      return conclusion;
+    }
+
+    List<UUID> missingMediaFileIds;
+    try {
+      missingMediaFileIds = orphanedMediaFileCleanupService.findMissingMediaFileIds(library.get());
+    } catch (RuntimeException e) {
+      logRemovalFailed(operation, e);
+      return conclusion;
+    }
+
+    return removeMissingMediaFiles(operation, conclusion, missingMediaFileIds);
   }
 
   private static boolean removesMissingMediaFiles(
@@ -83,8 +84,49 @@ public class LibraryOperationFinishingStepsRunner {
     };
   }
 
-  private void removeMissingMediaFiles(
-      LibraryOperation operation, AtomicBoolean libraryFolderScannable) {
+  // Empty when the operation has ended or a stop is stored, so the step does nothing.
+  private Optional<Library> findScannableLibraryOfUnendedOperation(LibraryOperation operation) {
+    if (libraryOperations.findLibraryOperation(operation.id()).isEmpty()
+        || libraryOperations.hasStoredStop(operation.id())) {
+      return Optional.empty();
+    }
+
+    var library = findLibrary(operation);
+    libraryFolderCheck.requireScannableFolder(library);
+    return Optional.of(library);
+  }
+
+  private LibraryOperationConclusion removeMissingMediaFiles(
+      LibraryOperation operation,
+      LibraryOperationConclusion conclusion,
+      List<UUID> missingMediaFileIds) {
+    var libraryFolderScannable = new AtomicBoolean();
+    try {
+      new TransactionTemplate(transactionManager)
+          .executeWithoutResult(
+              _ ->
+                  removeMissingMediaFilesOfScannableLibrary(
+                      operation, missingMediaFileIds, libraryFolderScannable));
+    } catch (RuntimeException e) {
+      // Only a removal that fails after the library folder was found scannable keeps the scan's
+      // conclusion. Any earlier failure, including a check that cannot finish or a rollback that
+      // replaces the check's exception, leaves the folder unchecked and fails the scan.
+      if (libraryFolderScannable.get()) {
+        logRemovalFailed(operation, e);
+        return conclusion;
+      }
+
+      logLibraryFolderNotFoundScannable(operation, e);
+      return LibraryOperationConclusion.FAILED;
+    }
+
+    return conclusion;
+  }
+
+  private void removeMissingMediaFilesOfScannableLibrary(
+      LibraryOperation operation,
+      List<UUID> missingMediaFileIds,
+      AtomicBoolean libraryFolderScannable) {
     // A stop stored after the execution last read it skips this step, which has not started. A
     // stop stored once the step started lets the step finish.
     if (!libraryOperations.tryLockLibraryOperation(operation.id())
@@ -93,15 +135,34 @@ public class LibraryOperationFinishingStepsRunner {
     }
 
     // The shared row of the operation keeps its library from being deleted.
-    var library =
-        libraryRepository
-            .findById(operation.libraryId())
-            .orElseThrow(() -> new LibraryNotFoundException(operation.libraryId()));
-    // A share can unmount while the scan waits for artwork or this step waits for the operation's
-    // row, and an unmounted share looks like a library whose every media file is missing.
+    var library = findLibrary(operation);
+    // A share can unmount while the scan waits for artwork, the disk sweep runs, or this step
+    // waits for the operation's row, and an unmounted share looks like a library whose every
+    // media file is missing.
     libraryFolderCheck.requireScannableFolder(library);
     libraryFolderScannable.set(true);
-    orphanedMediaFileCleanupService.removeMissingMediaFiles(
-        library, orphanedMediaFileCleanupService.findMissingMediaFileIds(library));
+    orphanedMediaFileCleanupService.removeMissingMediaFiles(library, missingMediaFileIds);
+  }
+
+  private Library findLibrary(LibraryOperation operation) {
+    return libraryRepository
+        .findById(operation.libraryId())
+        .orElseThrow(() -> new LibraryNotFoundException(operation.libraryId()));
+  }
+
+  private static void logRemovalFailed(LibraryOperation operation, RuntimeException e) {
+    log.error(
+        "Failed to remove missing media files at the end of the scan of library {}.",
+        operation.libraryId(),
+        e);
+  }
+
+  private static void logLibraryFolderNotFoundScannable(
+      LibraryOperation operation, RuntimeException e) {
+    log.error(
+        "Removed no missing media files at the end of the scan of library {}, because its"
+            + " library folder was not found scannable.",
+        operation.libraryId(),
+        e);
   }
 }
