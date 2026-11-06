@@ -2310,6 +2310,74 @@ class PlaybackSessionServiceTest {
     assertThat(streams.getAllSessions()).isEmpty();
   }
 
+  // ADR 0052: a client changes its playback choice by creating a playback session. After Original
+  // changed to Auto with the whole budget spent, the viewer's pick of Original starts afresh like
+  // a reopened media title: it spends no format attempt and keeps none of the failures.
+  @Test
+  @DisplayName(
+      "Should start Original afresh with the full budget when the viewer picks Original again after"
+          + " the change to Auto")
+  void
+      shouldStartOriginalAfreshWithTheFullBudgetWhenTheViewerPicksOriginalAgainAfterTheChangeToAuto() {
+    var steps = failDirectPlayThenTheDolbyVisionCopy(4);
+    var encode =
+        steps
+            .playback()
+            .reportFormatFailure(report(steps.stripped(), steps.command()).build())
+            .orElseThrow();
+    assertThat(encode.playbackChoice()).isEqualTo(VideoQuality.AUTO);
+    assertThat(encode.formatAttemptCount()).isEqualTo(4);
+
+    var picked = startDirectPlay(steps.playback(), steps.command());
+    steps.playback().close(request(encode, steps.command()));
+
+    assertThat(picked.playbackSessionId()).isNotEqualTo(encode.playbackSessionId());
+    assertThat(picked.formatAttemptCount()).isEqualTo(1);
+    assertThat(picked.maximumFormatAttempts()).isEqualTo(4);
+    assertThat(picked.formatChange()).isEmpty();
+    assertThat(picked.decisions()).extracting(PlaybackDecision::formatAttempt).containsExactly(1);
+    assertThat(streams.getAllSessions()).containsExactly(readySession(picked));
+  }
+
+  // ADR 0052: the earlier playback session's failures do not follow the pick, so every step that
+  // failed before is tried again, in order, before the encode.
+  @Test
+  @DisplayName(
+      "Should try the Dolby Vision copy, the stripped copy and the encode again when Original"
+          + " picked again after the change to Auto fails")
+  void shouldTryTheDolbyVisionCopyTheStrippedCopyAndTheEncodeAgainWhenOriginalPickedAgainFails() {
+    var steps = failDirectPlayThenTheDolbyVisionCopy(4);
+    var encode =
+        steps
+            .playback()
+            .reportFormatFailure(report(steps.stripped(), steps.command()).build())
+            .orElseThrow();
+    var picked = startDirectPlay(steps.playback(), steps.command());
+    steps.playback().close(request(encode, steps.command()));
+
+    var dolbyVisionCopy =
+        steps.playback().reportFormatFailure(report(picked, steps.command()).build()).orElseThrow();
+    var stripped =
+        steps
+            .playback()
+            .reportFormatFailure(report(dolbyVisionCopy, steps.command()).build())
+            .orElseThrow();
+    var encodeAgain =
+        steps.playback().reportFormatFailure(report(stripped, steps.command()).build());
+
+    assertThat(readySession(dolbyVisionCopy).getTranscodeDecision().videoDolbyVisionOutput())
+        .isPresent();
+    assertThat(dolbyVisionCopy.playbackChoice()).isEqualTo(VideoQuality.ORIGINAL);
+    assertThatTheCopyWithDolbyVisionStrippedPlays(stripped);
+    assertThat(stripped.playbackChoice()).isEqualTo(VideoQuality.ORIGINAL);
+    assertThat(encodeAgain)
+        .hasValueSatisfying(
+            snapshot -> {
+              assertThatAnEncodeIsTheFormatAttempt(snapshot, 4);
+              assertThat(snapshot.playbackChoice()).isEqualTo(VideoQuality.AUTO);
+            });
+  }
+
   private record DolbyVisionSteps(
       PlaybackSessionService playback,
       StartPlaybackSessionCommand command,
