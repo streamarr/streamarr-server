@@ -130,20 +130,20 @@ class HoldBackTest {
 
   @Test
   @DisplayName(
-      "Should raise both marks by what a long next media segment needs beyond the low-water mark, so"
-          + " a resume leaves the viewer time to produce it")
-  void shouldRaiseBothMarksByWhatALongNextMediaSegmentNeedsBeyondTheLowWaterMark() {
-    // A 45 s merged segment, a 3 s seek pause and the 3 s position margin need 51 s, 21 s beyond
-    // the low-water mark: the job attempt is held above 81 s and released at 51 s.
+      "Should raise both marks by how much a long next media segment outlasts the target segment"
+          + " duration, so a resume leaves the viewer time to produce it")
+  void shouldRaiseBothMarksByHowMuchALongNextMediaSegmentOutlastsTheTargetSegmentDuration() {
+    // A 45 s merged segment outlasts the 6 s target by 39 s: the job attempt is held above 99 s
+    // and released at 69 s.
     holdBack.reconsider(
         sessionId,
-        List.of(leadBuilder(WORKER, attemptId, 80).nextSegment(Duration.ofSeconds(45)).build()));
+        List.of(leadBuilder(WORKER, attemptId, 99).nextSegment(Duration.ofSeconds(45)).build()));
     holdBack.reconsider(
         sessionId,
-        List.of(leadBuilder(WORKER, attemptId, 90).nextSegment(Duration.ofSeconds(45)).build()));
+        List.of(leadBuilder(WORKER, attemptId, 100).nextSegment(Duration.ofSeconds(45)).build()));
 
     assertThat(executor.holdBacks())
-        .containsExactly(new HeldBack(WORKER, Map.of(attemptId, Duration.ofSeconds(39))));
+        .containsExactly(new HeldBack(WORKER, Map.of(attemptId, Duration.ofSeconds(31))));
   }
 
   @Test

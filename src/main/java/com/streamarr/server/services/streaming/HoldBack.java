@@ -157,15 +157,13 @@ final class HoldBack {
     return Optional.of(releaseAt);
   }
 
-  // A resume must leave the viewer the time to produce the next segment at real time, a seek's
-  // pause and the position margin; a long merged segment raises both marks by what it needs more.
+  // A next segment longer than the target takes longer to produce at real time, so both marks rise
+  // by the difference. That keeps the slack beyond what a resume needs, which absorbs a command's
+  // delivery delay while a worker still holds the job attempt, the same for every segment length.
   private Duration lowWater(AttemptLead lead) {
-    var resumeNeeds =
-        lead.nextSegment()
-            .plus(properties.seekPriorityHoldLimit())
-            .plus(properties.seekPriorityPositionMargin());
-    if (resumeNeeds.compareTo(properties.holdBackLowWater()) > 0) {
-      return resumeNeeds;
+    var longerThanTarget = lead.nextSegment().minus(properties.targetSegmentDuration());
+    if (longerThanTarget.isPositive()) {
+      return properties.holdBackLowWater().plus(longerThanTarget);
     }
 
     return properties.holdBackLowWater();
