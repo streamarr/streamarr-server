@@ -671,6 +671,42 @@ class WorkerCalibrationTest {
 
     @Test
     @DisplayName(
+        "Should keep a preset's constant that waiting measurements determined when a kept calibration restarts and the Automatic preset's constant changes")
+    void
+        shouldKeepAPresetsConstantThatWaitingMeasurementsDeterminedWhenAKeptCalibrationRestartsAndTheAutomaticPresetsConstantChanges() {
+      var libx264Veryfast = new EncoderAndPreset(LIBX264, EncoderPreset.VERYFAST);
+      var calibration =
+          tenCoreCalibration()
+              .startingConstants(
+                  HeadroomConstants.builder()
+                      .cpuSecondsPerMegapixel(Map.of(LIBX264_FASTER, 0.04, SOFTWARE_H264, 0.01))
+                      .coresAlone(Map.of(LIBX264_FASTER, 6.0, libx264Veryfast, 6.0))
+                      .build())
+              .build();
+      var veryfastHdr =
+          libx264FasterLoad()
+              .encoderAndPreset(libx264Veryfast)
+              .sourceDecoder(softwareHevc)
+              .toneMapping(ToneMapping.PQ);
+      // veryfast costs 0.02 CPU s per megapixel; HEVC decode and PQ together 0.02.
+      calibration.fit(measuredAtCost(veryfastHdr.outputPixelRate(SMALL_OUTPUT).build(), 1.5, 1));
+      calibration.fit(measuredAtCost(veryfastHdr.outputPixelRate(LARGE_OUTPUT).build(), 2.0, 1));
+
+      var restarted =
+          tenCoreCalibration()
+              .startingConstants(calibration.constants())
+              .measuredConstants(calibration.measuredConstants())
+              .build();
+      for (var i = 0; i < 300; i++) {
+        restarted.fit(rungMeasurement(i, 0.5, 2));
+      }
+
+      assertThat(restarted.constants().cpuSecondsPerMegapixel().get(libx264Veryfast))
+          .isCloseTo(0.02, withinPercentage(5));
+    }
+
+    @Test
+    @DisplayName(
         "Should give a new constant its value when other waiting measurements cannot separate two other new constants")
     void
         shouldGiveANewConstantItsValueWhenOtherWaitingMeasurementsCannotSeparateTwoOtherNewConstants() {

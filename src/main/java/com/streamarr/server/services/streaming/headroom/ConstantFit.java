@@ -67,7 +67,10 @@ final class ConstantFit {
     pending.add(terms, measuredCost);
   }
 
-  /** The constants that a measurement in the fit has priced; a waiting measurement prices none. */
+  /**
+   * The constants that a measurement in the fit has priced, or that waiting measurements have
+   * determined. A waiting measurement does not count for a constant that already had a value.
+   */
   Set<CostConstant> measuredConstants() {
     return Set.copyOf(measured);
   }
@@ -112,7 +115,9 @@ final class ConstantFit {
     }
 
     var solved = new HashMap<>(follow.apply(known.get()));
-    solved.putAll(pending.solve(solved));
+    var determined = pending.solve(solved);
+    measured.addAll(determined.keySet());
+    solved.putAll(determined);
     pending.release(
         solved.keySet(),
         waiting -> accumulate(waiting.terms(), waiting.measuredCost(), waiting.fade()));
