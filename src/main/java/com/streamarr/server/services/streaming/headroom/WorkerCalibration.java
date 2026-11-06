@@ -38,9 +38,9 @@ public final class WorkerCalibration {
   private static final double REQUIRED_RATIO_SPREAD = 2;
   // A measurement's weight halves after about 70 later measurements.
   private static final double FORGETTING = 0.99;
-  // A constant's relative change from its starting value costs the fit as much as a tenth of a
-  // measurement's relative miss, so the starting constants settle only what the measurements
-  // cannot separate.
+  // A constant's relative change from its starting value first costs the fit as much as a tenth of
+  // a measurement's relative miss, so the starting constants settle only what the measurements
+  // cannot separate. That pull fades as the measurements do.
   private static final double STARTING_WEIGHT = 0.1;
   // A constant that no measurement supports any longer keeps its fitted value.
   private static final double CURRENT_WEIGHT = 0.01;

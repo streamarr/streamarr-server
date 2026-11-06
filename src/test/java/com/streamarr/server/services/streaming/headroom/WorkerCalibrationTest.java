@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.headroom;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
+import static org.assertj.core.api.Assertions.withinPercentage;
 
 import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.EncoderPreset;
@@ -336,6 +337,82 @@ class WorkerCalibrationTest {
 
       assertThat(predictedAloneSpeed(calibration, faster)).isCloseTo(6 / 3.0, within(0.1));
     }
+
+    @Test
+    @DisplayName(
+        "Should keep a starting constant's learned value when only another preset's measurements follow for a long time")
+    void
+        shouldKeepAStartingConstantsLearnedValueWhenOnlyAnotherPresetsMeasurementsFollowForALongTime() {
+      var libx264Veryfast = new EncoderAndPreset(LIBX264, EncoderPreset.VERYFAST);
+      var calibration =
+          tenCoreCalibration()
+              .startingConstants(
+                  HeadroomConstants.builder()
+                      .cpuSecondsPerMegapixel(
+                          Map.of(LIBX264_FASTER, 0.04, libx264Veryfast, 0.02, SOFTWARE_H264, 0.01))
+                      .coresAlone(Map.of(LIBX264_FASTER, 6.0, libx264Veryfast, 6.0))
+                      .build())
+              .build();
+      var veryfast = libx264FasterLoad().encoderAndPreset(libx264Veryfast);
+      // veryfast truly costs 0.06 CPU s per megapixel, three times what the benchmark measured.
+      for (var i = 0; i < 200; i++) {
+        calibration.fit(measuredAtCost(veryfast.outputPixelRate(SMALL_OUTPUT).build(), 2.0, 2));
+        calibration.fit(measuredAtCost(veryfast.outputPixelRate(LARGE_OUTPUT).build(), 3.5, 2));
+      }
+
+      for (var i = 0; i < 2000; i++) {
+        calibration.fit(rungMeasurement(i, 1, 2));
+      }
+
+      assertThat(calibration.constants().cpuSecondsPerMegapixel().get(libx264Veryfast))
+          .isCloseTo(0.06, withinPercentage(5));
+    }
+  }
+
+  @Nested
+  @DisplayName("New Constant Tests")
+  class NewConstantTests {
+
+    @Test
+    @DisplayName(
+        "Should keep fitting the known constants when a new constant's first measurement implies a negative cost")
+    void shouldKeepFittingTheKnownConstantsWhenANewConstantsFirstMeasurementImpliesANegativeCost() {
+      var calibration = tenCoreCalibration().build();
+      // The known constants already price this load at 1.5, so PQ would cost less than nothing.
+      calibration.fit(
+          measuredAtCost(libx264FasterLoad().toneMapping(ToneMapping.PQ).build(), 1.4, 1));
+
+      for (var i = 0; i < 300; i++) {
+        calibration.fit(rungMeasurement(i, 2, 2));
+      }
+
+      assertThat(predictedAloneSpeed(calibration, libx264FasterLoad().build()))
+          .isCloseTo(6 / 3.0, within(0.1));
+      assertThat(calibration.constants().cpuSecondsPerMegapixel())
+          .doesNotContainKey(ToneMapping.PQ);
+    }
+
+    @Test
+    @DisplayName(
+        "Should keep fitting the known constants when two new constants have only appeared together")
+    void shouldKeepFittingTheKnownConstantsWhenTwoNewConstantsHaveOnlyAppearedTogether() {
+      var calibration = tenCoreCalibration().build();
+      var softwareHevc = new SourceDecoder("hevc", DecodeBackend.SOFTWARE);
+      calibration.fit(
+          measuredAtCost(
+              libx264FasterLoad().sourceDecoder(softwareHevc).toneMapping(ToneMapping.PQ).build(),
+              3.0,
+              1));
+
+      for (var i = 0; i < 300; i++) {
+        calibration.fit(rungMeasurement(i, 2, 2));
+      }
+
+      assertThat(predictedAloneSpeed(calibration, libx264FasterLoad().build()))
+          .isCloseTo(6 / 3.0, within(0.1));
+      assertThat(calibration.constants().cpuSecondsPerMegapixel())
+          .doesNotContainKeys(softwareHevc, ToneMapping.PQ);
+    }
   }
 
   @Nested
@@ -367,8 +444,9 @@ class WorkerCalibrationTest {
     }
 
     @Test
-    @DisplayName("Should keep no constants when the measurements imply a negative decode constant")
-    void shouldKeepNoConstantsWhenTheMeasurementsImplyANegativeDecodeConstant() {
+    @DisplayName(
+        "Should leave the decode constant unknown when the measurements imply a negative decode constant")
+    void shouldLeaveTheDecodeConstantUnknownWhenTheMeasurementsImplyANegativeDecodeConstant() {
       var calibration = calibrationWithoutBenchmark();
       var small = libx264FasterLoad().build();
       var large = libx264FasterLoad().outputPixelRate(LARGE_OUTPUT).build();
@@ -379,7 +457,8 @@ class WorkerCalibrationTest {
         calibration.fit(measuredAtCost(large, 3.0, 2));
       }
 
-      assertThat(calibration.constants().cpuSecondsPerMegapixel()).isEmpty();
+      assertThat(calibration.constants().cpuSecondsPerMegapixel()).doesNotContainKey(SOFTWARE_H264);
+      assertThat(calibration.predictProductionSpeeds(Map.of(UUID.randomUUID(), small))).isEmpty();
     }
   }
 
