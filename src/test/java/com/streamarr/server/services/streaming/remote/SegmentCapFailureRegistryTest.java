@@ -35,7 +35,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
-// ADR 0037: every replacement attempt of a copy on its keyframe-merged segment list cuts the same
+// ADR 0037: every replacement attempt on a copy's keyframe-merged segment list cuts the same
 // segments, so a segment over the cap ends the stream session's recovery. An encode on the plain
 // grid keeps ordinary recovery, even when the grid's final slot merges into its last segment.
 @Tag("UnitTest")
@@ -97,6 +97,25 @@ class SegmentCapFailureRegistryTest {
     failOverTheCap(job);
 
     assertThat(registry.terminalFailure(fromProto(job.getStreamSessionId()))).isEmpty();
+  }
+
+  // In Auto, an encoded lower variant beside a copy carries the copy's keyframe-merged starts
+  // (ADR 0050), so every replacement attempt cuts the same oversized segment.
+  @ParameterizedTest
+  @EnumSource(
+      value = TranscodeMode.class,
+      names = {"TRANSCODE_MODE_VIDEO_TRANSCODE", "TRANSCODE_MODE_FULL_TRANSCODE"})
+  @DisplayName(
+      "Should end the stream session's recovery when a lower variant's encode on the copy's"
+          + " segment list passes the segment cap")
+  void shouldEndTheStreamSessionsRecoveryWhenALowerVariantOnTheCopysListPassesTheSegmentCap(
+      TranscodeMode mode) {
+    var job = jobRunning(mode, VideoMode.VIDEO_MODE_ENCODE, EXACT_STARTS);
+
+    failOverTheCap(job);
+
+    assertThat(registry.terminalFailure(fromProto(job.getStreamSessionId())))
+        .contains(TranscodeFailure.SEGMENT_CAP_EXCEEDED);
   }
 
   private VariantJob jobRunning(
