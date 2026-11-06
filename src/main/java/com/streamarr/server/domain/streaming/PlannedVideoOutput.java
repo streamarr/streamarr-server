@@ -190,8 +190,9 @@ public sealed interface PlannedVideoOutput {
 
     /**
      * The 4:2:0 encode in the format. A PQ encode takes each static HDR value that the probe stored
-     * for the source, and otherwise the fallback display and an unknown content light level, so
-     * every job attempt of a variant writes the same metadata (#397).
+     * for the source, then the content light level of the RPUs' level 6, and otherwise the fallback
+     * display and an unknown content light level, so every job attempt of a variant writes the same
+     * metadata (#397).
      */
     public static Encode of(
         @NonNull Optional<EncodeCodecProfile> codecProfile,
@@ -214,10 +215,19 @@ public sealed interface PlannedVideoOutput {
                 Optional.of(
                     source
                         .flatMap(VideoPlaybackFacts::contentLightLevel)
+                        .or(() -> source.flatMap(Encode::rpuContentLightLevel))
                         .orElse(UNKNOWN_LIGHT_LEVEL)));
       }
 
       return encode.build();
+    }
+
+    private static Optional<ContentLightLevel> rpuContentLightLevel(VideoPlaybackFacts source) {
+      if (source.dynamicRange().dolbyVision() instanceof DolbyVision.Present present) {
+        return present.rpuContentLightLevel();
+      }
+
+      return Optional.empty();
     }
 
     // Lombok builder defaults — its generated setters assign them

@@ -117,6 +117,8 @@ class TenBitAndHdrEncodeTest {
           .minLuminance(1)
           .build();
   private static final ContentLightLevel UNKNOWN_LIGHT_LEVEL = new ContentLightLevel(0, 0);
+  // Level 6 light levels unlike the source's own SEI values.
+  private static final ContentLightLevel LEVEL_6 = new ContentLightLevel(1_000, 400);
 
   private final FakeMediaFileRepository mediaFiles = new FakeMediaFileRepository();
   private final FakeTranscodeExecutor workers = new FakeTranscodeExecutor();
@@ -282,6 +284,51 @@ class TenBitAndHdrEncodeTest {
         .contains(",VIDEO-RANGE=PQ")
         .doesNotContain("dvh1")
         .doesNotContain("dav1");
+  }
+
+  // Decision 173: an RPU's level 6 MaxCLL and MaxFALL, which probe version 8 stores, stand in when
+  // the source carries no content light level of its own.
+  @Test
+  @DisplayName(
+      "Should take an HDR10 encode's content light level from the RPUs' level 6 when the probe"
+          + " stored none for a profile 5 source")
+  void shouldTakeAnHdr10EncodesContentLightLevelFromTheRpusLevel6WhenTheProbeStoredNone() {
+    probes.setDefaultProbe(baselessSource(DolbyVisionProfile.PROFILE_5, Optional.of(LEVEL_6)));
+
+    accepted(playback.start(start(options(VideoQuality.AUTO, null), hdrAv1Client())));
+
+    assertThat(plannedEncode())
+        .satisfies(
+            planned -> {
+              assertThat(planned.masteringDisplay()).contains(FALLBACK_DISPLAY);
+              assertThat(planned.contentLightLevel()).contains(LEVEL_6);
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the source's own content light level over the RPUs' level 6 when an HDR10 encode"
+          + " plays a profile 8.1 source")
+  void shouldKeepTheSourcesOwnContentLightLevelOverTheRpusLevel6WhenAnHdr10EncodePlaysIt() {
+    var range =
+        new VideoDynamicRange(
+            CompatibleBase.PQ,
+            Presence.ABSENT,
+            DolbyVision.Present.builder()
+                .observedRpu(Presence.PRESENT)
+                .rpuContentLightLevel(Optional.of(LEVEL_6))
+                .build());
+    probes.setDefaultProbe(
+        hdrSource(range, Optional.of(SOURCE_DISPLAY), Optional.of(SOURCE_LIGHT_LEVEL)));
+
+    accepted(playback.start(start(options(VideoQuality.AUTO, null), hdrAv1Client())));
+
+    assertThat(plannedEncode())
+        .satisfies(
+            planned -> {
+              assertThat(planned.masteringDisplay()).contains(SOURCE_DISPLAY);
+              assertThat(planned.contentLightLevel()).contains(SOURCE_LIGHT_LEVEL);
+            });
   }
 
   static Stream<Arguments> dolbyVisionWithoutACompatibleBase() {
@@ -795,20 +842,28 @@ class TenBitAndHdrEncodeTest {
 
   // Profile 5 in HEVC or profile 10.0 in AV1, with its record at level 6 and no compatible base.
   private static MediaProbe baselessSource(DolbyVisionProfile profile) {
+    return baselessSource(profile, Optional.empty());
+  }
+
+  private static MediaProbe baselessSource(
+      DolbyVisionProfile profile, Optional<ContentLightLevel> level6) {
     var range =
         new VideoDynamicRange(
             CompatibleBase.NONE,
             Presence.ABSENT,
-            new DolbyVision.Present(
-                Optional.of(
-                    DolbyVisionConfiguration.builder()
-                        .profile(OptionalInt.of(profile.profileNumber()))
-                        .level(OptionalInt.of(6))
-                        .baseLayerCompatibilityId(OptionalInt.of(0))
-                        .baseLayer(true)
-                        .rpu(true)
-                        .build()),
-                Presence.PRESENT));
+            DolbyVision.Present.builder()
+                .declared(
+                    Optional.of(
+                        DolbyVisionConfiguration.builder()
+                            .profile(OptionalInt.of(profile.profileNumber()))
+                            .level(OptionalInt.of(6))
+                            .baseLayerCompatibilityId(OptionalInt.of(0))
+                            .baseLayer(true)
+                            .rpu(true)
+                            .build()))
+                .observedRpu(Presence.PRESENT)
+                .rpuContentLightLevel(level6)
+                .build());
     if (profile.codecFamily() == ProbedCodecFamily.AV1) {
       return source(
           hevcFacts()
