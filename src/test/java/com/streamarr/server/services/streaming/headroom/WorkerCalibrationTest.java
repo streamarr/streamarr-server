@@ -509,24 +509,29 @@ class WorkerCalibrationTest {
   class NewConstantTests {
 
     private final SourceDecoder softwareHevc = new SourceDecoder("hevc", DecodeBackend.SOFTWARE);
+    private static final EncoderAndPreset LIBX264_MEDIUM =
+        new EncoderAndPreset(LIBX264, EncoderPreset.MEDIUM);
+
+    /** Accurate starting constants, with medium's cores alone but no constant for medium. */
+    private WorkerCalibration accurateWithMediumCoresAlone() {
+      return tenCoreCalibration()
+          .startingConstants(
+              HeadroomConstants.builder()
+                  .cpuSecondsPerMegapixel(ACCURATE.cpuSecondsPerMegapixel())
+                  .coresAlone(Map.of(LIBX264_FASTER, 6.0, LIBX264_MEDIUM, 6.0))
+                  .build())
+          .build();
+    }
 
     @Test
     @DisplayName(
         "Should leave a new tone-mapping constant unknown when a new decode constant held at the positive floor lets another new constant's nominal value move it")
     void
         shouldLeaveANewToneMappingConstantUnknownWhenANewDecodeConstantHeldAtThePositiveFloorLetsAnotherNewConstantsNominalValueMoveIt() {
-      var medium = new EncoderAndPreset(LIBX264, EncoderPreset.MEDIUM);
-      var calibration =
-          tenCoreCalibration()
-              .startingConstants(
-                  HeadroomConstants.builder()
-                      .cpuSecondsPerMegapixel(ACCURATE.cpuSecondsPerMegapixel())
-                      .coresAlone(Map.of(LIBX264_FASTER, 6.0, medium, 6.0))
-                      .build())
-              .build();
+      var calibration = accurateWithMediumCoresAlone();
       var mediumFrom2160pHevc =
           libx264FasterLoad()
-              .encoderAndPreset(medium)
+              .encoderAndPreset(LIBX264_MEDIUM)
               .sourceDecoder(softwareHevc)
               .sourcePixelRate(PixelRate.of(3840, 2160, 24));
 
