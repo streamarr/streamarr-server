@@ -760,7 +760,7 @@ class TenBitAndHdrEncodeTest {
       @NonNull EncodeCodecProfile expectedProfile) {
 
     // Lombok builder defaults — its generated setters assign them
-    @SuppressWarnings("java:S9438")
+    @SuppressWarnings({"java:S1068", "java:S9438"})
     private static class TenBitSdrBesideH264CaseBuilder {
       private VideoQuality quality = VideoQuality.AUTO;
       private int clientAv1BitDepth = 10;
