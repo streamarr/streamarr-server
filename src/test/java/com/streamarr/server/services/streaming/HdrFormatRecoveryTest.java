@@ -402,6 +402,7 @@ class HdrFormatRecoveryTest {
     var snapshot = accepted(playback.start(command));
     while (snapshot.currentFormatAttempt() instanceof PlaybackFormatAttempt.Ready) {
       assertThat(snapshot.requestedChoice()).isEqualTo(scenario.quality());
+      assertThatTheDecisionKeepsTheHdrChoice(snapshot, scenario.rangeChoice());
       delivered.add(deliveredAttempt(snapshot));
       snapshot = rejectCurrentFormatAttempt(snapshot, command);
     }
@@ -665,6 +666,20 @@ class HdrFormatRecoveryTest {
           default -> throw new IllegalArgumentException("No fixture picture for " + quality);
         };
     return delivered(Output.ENCODE, VideoRange.SDR).choice(quality).picture(picture);
+  }
+
+  // ADR 0013: the answer keeps the viewer's HDR choice beside the range that plays, so a client
+  // that asked for HDR and receives SDR shows SDR in its HDR toggle with a notice.
+  private static void assertThatTheDecisionKeepsTheHdrChoice(
+      PlaybackSessionSnapshot snapshot, DynamicRangeChoice rangeChoice) {
+    var session = sessionOf(snapshot);
+    if (session.getDelivery() == StreamDelivery.DIRECT_PLAY) {
+      return;
+    }
+
+    assertThat(session.getTranscodeDecision().dynamicRangeChoice())
+        .as("the HDR choice on the decision")
+        .isEqualTo(Optional.ofNullable(rangeChoice));
   }
 
   private static DeliveredAttempt deliveredAttempt(PlaybackSessionSnapshot snapshot) {
