@@ -57,7 +57,11 @@ class PlannedVideoOutputTest {
     var codecProfile = Optional.of(EncodeCodecProfile.H264_HIGH);
 
     assertThatThrownBy(
-            () -> new PlannedVideoOutput.Encode(codecProfile, VideoDynamicRange.UNSPECIFIED))
+            () ->
+                encodeBuilder()
+                    .codecProfile(codecProfile)
+                    .dynamicRange(VideoDynamicRange.UNSPECIFIED)
+                    .build())
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("UNSPECIFIED");
   }
@@ -186,11 +190,23 @@ class PlannedVideoOutputTest {
         planWithoutValue(
             "an encode without a codec profile",
             "codecProfile",
-            () -> new PlannedVideoOutput.Encode(null, range)),
+            () -> encodeBuilder().codecProfile(null).dynamicRange(range).build()),
         planWithoutValue(
             "an encode without a dynamic range",
             "dynamicRange",
-            () -> new PlannedVideoOutput.Encode(encodeProfile, null)),
+            () -> encodeBuilder().codecProfile(encodeProfile).dynamicRange(null).build()),
+        planWithoutValue(
+            "an encode without a chroma subsampling",
+            "chromaSubsampling",
+            () -> encodeBuilder().chromaSubsampling(null).build()),
+        planWithoutValue(
+            "a stream copy without a bit depth",
+            "bitDepth",
+            () -> copyBuilder().bitDepth(null).build()),
+        planWithoutValue(
+            "a stream copy without a chroma subsampling",
+            "chromaSubsampling",
+            () -> copyBuilder().chromaSubsampling(null).build()),
         planWithoutValue(
             "an SDR encode without a codec profile",
             "codecProfile",
@@ -200,6 +216,48 @@ class PlannedVideoOutputTest {
   private static Arguments planWithoutValue(
       String plan, String missingValue, ThrowingCallable build) {
     return Arguments.of(Named.of(plan, missingValue), build);
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {0, 9, 12})
+  @DisplayName("Should refuse a planned encode when its bit depth is neither 8 nor 10")
+  void shouldRefuseAPlannedEncodeWhenItsBitDepthIsNeither8Nor10(int bitDepth) {
+    var encode = encodeBuilder().bitDepth(bitDepth);
+
+    assertThatThrownBy(encode::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("8 or 10");
+  }
+
+  // H.264 output stays 8-bit SDR in every case (#397): almost no device decodes 10-bit H.264.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("h264EncodesBeyond8BitSdr")
+  @DisplayName("Should refuse a planned H.264 encode when it is not 8-bit SDR")
+  void shouldRefuseAPlannedH264EncodeWhenItIsNot8BitSdr(
+      String scenario, PlannedVideoOutput.Encode.EncodeBuilder encode) {
+    assertThatThrownBy(encode::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("H.264");
+  }
+
+  static Stream<Arguments> h264EncodesBeyond8BitSdr() {
+    return Stream.of(
+        Arguments.of("a 10-bit SDR H.264 encode", encodeBuilder().bitDepth(10)),
+        Arguments.of(
+            "a 10-bit PQ H.264 encode",
+            encodeBuilder()
+                .bitDepth(10)
+                .dynamicRange(
+                    new VideoDynamicRange(
+                        CompatibleBase.PQ, Presence.ABSENT, new DolbyVision.Absent()))));
+  }
+
+  private static PlannedVideoOutput.Encode.EncodeBuilder encodeBuilder() {
+    return PlannedVideoOutput.Encode.builder()
+        .codecProfile(Optional.of(EncodeCodecProfile.H264_HIGH))
+        .dynamicRange(VideoDynamicRange.SDR)
+        .bitDepth(8)
+        .chromaSubsampling(ChromaSubsampling.CHROMA_420);
   }
 
   private static PlannedVideoOutput.StreamCopy.StreamCopyBuilder copyBuilder() {

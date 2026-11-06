@@ -37,6 +37,7 @@ import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionOutput;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
+import com.streamarr.server.domain.streaming.DynamicRangeChoice;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
@@ -108,6 +109,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -822,6 +824,43 @@ class StreamingResolverTest {
                 CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.videoRange", String.class))
         .isEqualTo(expected);
     assertThat(created.read(CREATED_PLAYBACK + ".formatChange", Object.class)).isNull();
+  }
+
+  // ADR 0013: a stream session request carries an optional HDR choice, HDR or SDR.
+  @ParameterizedTest
+  @EnumSource(DynamicRangeChoice.class)
+  @DisplayName(
+      "Should pass the viewer's HDR choice to the playback service when the options name one")
+  void shouldPassTheViewersHdrChoiceToThePlaybackServiceWhenTheOptionsNameOne(
+      DynamicRangeChoice choice) {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+
+    dgsQueryExecutor.executeAndGetDocumentContext(
+        """
+        mutation {
+          createPlaybackSession(
+            input: {
+              mediaFileId: "%s", options: {quality: HIGH_720P, dynamicRange: %s}, capabilities: %s
+            }
+          ) {
+            playbackSession { id }
+            userErrors { __typename }
+          }
+        }
+        """
+            .formatted(UUID.randomUUID(), choice, CAPABILITIES));
+
+    assertThat(STUB_SERVICE.getLastReceivedOptions().dynamicRange()).isEqualTo(choice);
+  }
+
+  @Test
+  @DisplayName("Should pass no HDR choice to the playback service when the options name none")
+  void shouldPassNoHdrChoiceToThePlaybackServiceWhenTheOptionsNameNone() {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+
+    startPlaybackReadingChoices(VideoQuality.HIGH_720P);
+
+    assertThat(STUB_SERVICE.getLastReceivedOptions().dynamicRange()).isNull();
   }
 
   private DocumentContext startPlaybackReadingChoices(VideoQuality quality) {

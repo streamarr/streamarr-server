@@ -21,6 +21,7 @@ import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.transcode.v1.AudioChannelLayout;
+import com.streamarr.transcode.v1.ChromaSubsampling;
 import com.streamarr.transcode.v1.ContainerFormat;
 import com.streamarr.transcode.v1.Deinterlace;
 import com.streamarr.transcode.v1.DeinterlaceOutput;
@@ -92,7 +93,9 @@ final class RemoteVariantJobMapper {
                         .map(VideoPlaybackFacts::dynamicRange)
                         .orElse(
                             com.streamarr.server.domain.streaming.VideoDynamicRange.UNSPECIFIED)))
-            .setOutputDynamicRange(RemoteDynamicRangeMapper.toProto(planned.dynamicRange()));
+            .setOutputDynamicRange(RemoteDynamicRangeMapper.toProto(planned.dynamicRange()))
+            .setOutputBitDepth(planned.bitDepth())
+            .setOutputChromaSubsampling(chromaSubsampling(planned.chromaSubsampling()));
     source.ifPresent(
         facts ->
             video
@@ -107,6 +110,17 @@ final class RemoteVariantJobMapper {
         .map(RemoteVariantJobMapper::deinterlace)
         .ifPresent(video::setDeinterlace);
     return video.build();
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static ChromaSubsampling chromaSubsampling(
+      com.streamarr.server.domain.streaming.ChromaSubsampling chroma) {
+    return switch (chroma) {
+      case CHROMA_420 -> ChromaSubsampling.CHROMA_SUBSAMPLING_420;
+      case CHROMA_422 -> ChromaSubsampling.CHROMA_SUBSAMPLING_422;
+      case CHROMA_444 -> ChromaSubsampling.CHROMA_SUBSAMPLING_444;
+      case MONOCHROME -> ChromaSubsampling.CHROMA_SUBSAMPLING_MONOCHROME;
+    };
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")

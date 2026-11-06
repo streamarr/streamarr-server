@@ -2,10 +2,12 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioSteps;
+import com.streamarr.server.domain.streaming.DynamicRangeChoice;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.streaming.VideoRange;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
@@ -15,14 +17,16 @@ import lombok.NonNull;
 /**
  * The limits that bound a stream session's output apart from the client capability declaration: the
  * picture box of the fixed quality that the viewer picked, and the maximum width, height and
- * bitrate that the client sends (ADR 0050).
+ * bitrate that the client sends (ADR 0050). {@code dynamicRangeChoice} is the viewer's HDR choice,
+ * which only a fixed quality takes (ADR 0013).
  */
 @Builder
 public record ViewerLimits(
     @NonNull VideoQuality quality,
     @NonNull OptionalInt maxWidth,
     @NonNull OptionalInt maxHeight,
-    @NonNull OptionalLong maxBitrate) {
+    @NonNull OptionalLong maxBitrate,
+    @NonNull Optional<DynamicRangeChoice> dynamicRangeChoice) {
 
   // Lombok builder defaults — its generated setters assign them
   @SuppressWarnings({"java:S1068", "java:S9438"})
@@ -31,6 +35,7 @@ public record ViewerLimits(
     private OptionalInt maxWidth = OptionalInt.empty();
     private OptionalInt maxHeight = OptionalInt.empty();
     private OptionalLong maxBitrate = OptionalLong.empty();
+    private Optional<DynamicRangeChoice> dynamicRangeChoice = Optional.empty();
   }
 
   public static ViewerLimits none() {
@@ -39,14 +44,20 @@ public record ViewerLimits(
 
   /**
    * The viewer's limits in the options. A missing quality is Auto, and a maximum at or below zero
-   * is no maximum.
+   * is no maximum. Only a fixed quality keeps the HDR choice: Auto hides the HDR toggle and
+   * Original always plays the source's range (ADR 0013).
    */
   public static ViewerLimits of(@NonNull StreamingOptions options) {
+    var quality = Optional.ofNullable(options.quality()).orElse(VideoQuality.AUTO);
     var builder =
         ViewerLimits.builder()
-            .quality(Optional.ofNullable(options.quality()).orElse(VideoQuality.AUTO))
+            .quality(quality)
             .maxWidth(positive(options.maxWidth()))
             .maxHeight(positive(options.maxHeight()));
+    if (QualityTier.ofFixedQuality(quality).isPresent()) {
+      builder.dynamicRangeChoice(Optional.ofNullable(options.dynamicRange()));
+    }
+
     positive(options.maxBitrate())
         .ifPresent(bitrate -> builder.maxBitrate(OptionalLong.of(bitrate)));
     return builder.build();
@@ -72,6 +83,23 @@ public record ViewerLimits(
   /** The tier of the fixed quality that the viewer picked, or empty for Auto and Original. */
   Optional<QualityTier> fixedTier() {
     return QualityTier.ofFixedQuality(quality);
+  }
+
+  /**
+   * Whether a copy keeps a range that the HDR choice allows: SDR refuses a copy of a source whose
+   * compatible base is PQ or HLG, or that has none (ADR 0013). A copy of an untagged source plays
+   * as SDR.
+   */
+  boolean allowsCopyRangeOf(@NonNull MediaProbe source) {
+    if (dynamicRangeChoice.filter(DynamicRangeChoice.SDR::equals).isEmpty()) {
+      return true;
+    }
+
+    return source
+        .videoPlaybackFacts()
+        .map(facts -> VideoRange.ofCompatibleBase(facts.dynamicRange().compatibleBase()))
+        .filter(range -> range != VideoRange.SDR)
+        .isEmpty();
   }
 
   /** The largest picture that the maximum width and height allow, as the client gives them. */

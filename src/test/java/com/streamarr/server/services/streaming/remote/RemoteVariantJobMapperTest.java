@@ -26,6 +26,7 @@ import com.streamarr.server.exceptions.UnsupportedVideoEncodeException;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.transcode.v1.AudioChannelLayout;
 import com.streamarr.transcode.v1.BitstreamRewrite;
+import com.streamarr.transcode.v1.ChromaSubsampling;
 import com.streamarr.transcode.v1.ChromaticityCoordinates;
 import com.streamarr.transcode.v1.CompatibleBase;
 import com.streamarr.transcode.v1.ContainerFormat;
@@ -314,6 +315,38 @@ class RemoteVariantJobMapperTest {
     assertThat(video.getTier()).isEqualTo(VideoCodecTier.VIDEO_CODEC_TIER_MAIN);
     assertThat(video.getLevel()).isEqualTo(41);
     assertThat(video.getCodecString()).isEqualTo("hvc1.1.6.L123.90");
+  }
+
+  // #397: every encode names its output bit depth and chroma subsampling, and stays 8-bit 4:2:0
+  // until the server chooses 10-bit and HDR encodes.
+  @ParameterizedTest
+  @ValueSource(strings = {"h264", "av1"})
+  @DisplayName("Should send 8 bits and 4:2:0 when the job encodes the video")
+  void shouldSend8BitsAnd420WhenTheJobEncodesTheVideo(String codecFamily) {
+    var video = mapper.map(encodeAttempt(codecFamily).build()).getDecision().getVideo();
+
+    assertThat(video.hasOutputBitDepth()).isTrue();
+    assertThat(video.getOutputBitDepth()).isEqualTo(8);
+    assertThat(video.getOutputChromaSubsampling())
+        .isEqualTo(ChromaSubsampling.CHROMA_SUBSAMPLING_420);
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @Test
+  @DisplayName("Should send no bit depth or chroma subsampling when the job copies the video")
+  void shouldSendNoBitDepthOrChromaSubsamplingWhenTheJobCopiesTheVideo() {
+    var video =
+        mapper
+            .map(
+                copyOf(
+                    VideoPlaybackFactsFixture.rangeWithoutEnhancement(
+                        com.streamarr.server.domain.streaming.CompatibleBase.PQ)))
+            .getDecision()
+            .getVideo();
+
+    assertThat(video.hasOutputBitDepth()).isFalse();
+    assertThat(video.getOutputChromaSubsampling())
+        .isEqualTo(ChromaSubsampling.CHROMA_SUBSAMPLING_UNSPECIFIED);
   }
 
   @ParameterizedTest

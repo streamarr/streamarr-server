@@ -104,7 +104,8 @@ class TranscodeDecisionTest {
                 Optional.empty(),
                 List.of(),
                 null,
-                OptionalInt.empty());
+                OptionalInt.empty(),
+                Optional.empty());
 
     assertThatThrownBy(construct)
         .isInstanceOf(NullPointerException.class)
@@ -345,8 +346,82 @@ class TranscodeDecisionTest {
                 .dynamicRange(VideoPlaybackFactsFixture.SDR_WITHOUT_DOLBY_VISION)
                 .codecProfile(Optional.of(VideoCodecProfile.H264_HIGH))
                 .codecLevel(OptionalInt.of(40))
+                .bitDepth(OptionalInt.of(8))
+                .chromaSubsampling(Optional.of(ChromaSubsampling.CHROMA_420))
                 .bitstreamRewrites(List.of())
                 .build());
+  }
+
+  @Test
+  @DisplayName(
+      "Should plan the source's bit depth and chroma subsampling when the decision copies a 10-bit"
+          + " 4:2:2 stream")
+  void shouldPlanTheSourcesBitDepthAndChromaSubsamplingWhenTheDecisionCopiesA10Bit422Stream() {
+    var decision =
+        decisionBuilder(TranscodeMode.REMUX)
+            .videoSource(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .bitDepth(OptionalInt.of(10))
+                        .chromaSubsampling(Optional.of(ChromaSubsampling.CHROMA_422))
+                        .build()))
+            .build();
+
+    assertThat(decision.plannedVideoOutput())
+        .isInstanceOfSatisfying(
+            PlannedVideoOutput.StreamCopy.class,
+            copy -> {
+              assertThat(copy.bitDepth()).hasValue(10);
+              assertThat(copy.chromaSubsampling()).contains(ChromaSubsampling.CHROMA_422);
+            });
+  }
+
+  // Every encode is 8-bit 4:2:0 until the server chooses 10-bit and HDR encodes (#397).
+  @Test
+  @DisplayName("Should plan an 8-bit 4:2:0 encode when the decision encodes a 10-bit 4:2:2 source")
+  void shouldPlanAn8Bit420EncodeWhenTheDecisionEncodesA10Bit422Source() {
+    var decision =
+        decisionBuilder(TranscodeMode.VIDEO_TRANSCODE)
+            .encodeCodecProfile(Optional.of(EncodeCodecProfile.H264_HIGH))
+            .videoSource(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .bitDepth(OptionalInt.of(10))
+                        .chromaSubsampling(Optional.of(ChromaSubsampling.CHROMA_422))
+                        .build()))
+            .build();
+
+    assertThat(decision.plannedVideoOutput())
+        .isInstanceOfSatisfying(
+            PlannedVideoOutput.Encode.class,
+            encode -> {
+              assertThat(encode.bitDepth()).isEqualTo(8);
+              assertThat(encode.chromaSubsampling()).isEqualTo(ChromaSubsampling.CHROMA_420);
+            });
+  }
+
+  @ParameterizedTest
+  @EnumSource(DynamicRangeChoice.class)
+  @DisplayName("Should carry the viewer's HDR choice when the decision names one")
+  void shouldCarryTheViewersHdrChoiceWhenTheDecisionNamesOne(DynamicRangeChoice choice) {
+    var decision =
+        decisionBuilder(TranscodeMode.VIDEO_TRANSCODE)
+            .encodeCodecProfile(Optional.of(EncodeCodecProfile.H264_HIGH))
+            .dynamicRangeChoice(Optional.of(choice))
+            .build();
+
+    assertThat(decision.dynamicRangeChoice()).contains(choice);
+  }
+
+  @Test
+  @DisplayName("Should carry no HDR choice when the decision names none")
+  void shouldCarryNoHdrChoiceWhenTheDecisionNamesNone() {
+    var decision =
+        decisionBuilder(TranscodeMode.VIDEO_TRANSCODE)
+            .encodeCodecProfile(Optional.of(EncodeCodecProfile.H264_HIGH))
+            .build();
+
+    assertThat(decision.dynamicRangeChoice()).isEmpty();
   }
 
   @Test
@@ -606,9 +681,12 @@ class TranscodeDecisionTest {
 
     assertThat(decision.plannedVideoOutput())
         .isEqualTo(
-            new PlannedVideoOutput.Encode(
-                Optional.of(EncodeCodecProfile.H264_HIGH),
-                VideoPlaybackFactsFixture.SDR_WITHOUT_DOLBY_VISION));
+            PlannedVideoOutput.Encode.builder()
+                .codecProfile(Optional.of(EncodeCodecProfile.H264_HIGH))
+                .dynamicRange(VideoPlaybackFactsFixture.SDR_WITHOUT_DOLBY_VISION)
+                .bitDepth(8)
+                .chromaSubsampling(ChromaSubsampling.CHROMA_420)
+                .build());
   }
 
   // ADR 0013: every encode plans an SDR base without HDR10+ or Dolby Vision, whatever the source.

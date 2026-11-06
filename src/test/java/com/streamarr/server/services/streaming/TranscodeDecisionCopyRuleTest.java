@@ -11,18 +11,22 @@ import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
+import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
+import com.streamarr.server.domain.streaming.DynamicRangeChoice;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
+import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
+import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.streaming.VideoRange;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.fixtures.ProbeFixture;
@@ -40,10 +44,12 @@ import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.NonNull;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
@@ -512,6 +518,127 @@ class TranscodeDecisionCopyRuleTest {
         .bitDepth(OptionalInt.of(10))
         .videoProperties(Optional.of(MAIN_10_PROPERTIES))
         .build();
+  }
+
+  // ADR 0013's HDR choice: SDR is a choice in a fixed quality only, and a copy keeps the source's
+  // range, so SDR for an HDR source needs an encode.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("hdrSourcesThatACopyKeepsHdr")
+  @DisplayName(
+      "Should encode an HDR source and name the viewer's SDR choice when the viewer chooses SDR in"
+          + " a fixed quality")
+  void shouldEncodeAnHdrSourceAndNameTheViewersSdrChoiceWhenTheViewerChoosesSdrInAFixedQuality(
+      Source source) {
+    var decision =
+        service
+            .decide(
+                hdrRequestBuilder(source)
+                    .capabilityDeclaration(hdrDeclaration())
+                    .viewerLimits(limits(VideoQuality.UHD_4K, DynamicRangeChoice.SDR))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(decision.videoRange()).isEqualTo(VideoRange.SDR);
+    assertThat(decision.dynamicRangeChoice()).contains(DynamicRangeChoice.SDR);
+    assertThat(decision.reasons()).contains(DecisionReason.VIEWER_CHOSE_SDR);
+  }
+
+  // Original always plays the source's range, and Auto hides the HDR toggle (ADR 0013, ADR 0052).
+  @ParameterizedTest
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"AUTO", "ORIGINAL"})
+  @DisplayName(
+      "Should copy an HDR10 source and carry no HDR choice when the viewer chooses SDR in Auto or"
+          + " Original")
+  void shouldCopyAnHdr10SourceAndCarryNoHdrChoiceWhenTheViewerChoosesSdrInAutoOrOriginal(
+      VideoQuality quality) {
+    var decision =
+        service
+            .decide(
+                hdrRequestBuilder(hdrSource(CompatibleBase.PQ, new DolbyVision.Absent()))
+                    .capabilityDeclaration(hdrDeclaration())
+                    .viewerLimits(limits(quality, DynamicRangeChoice.SDR))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.videoRange()).isEqualTo(VideoRange.PQ);
+    assertThat(decision.dynamicRangeChoice()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should copy an HDR10 source and carry the viewer's HDR choice when the viewer chooses HDR in"
+          + " a fixed quality")
+  void shouldCopyAnHdr10SourceAndCarryTheViewersHdrChoiceWhenTheViewerChoosesHdrInAFixedQuality() {
+    var decision =
+        service
+            .decide(
+                hdrRequestBuilder(hdrSource(CompatibleBase.PQ, new DolbyVision.Absent()))
+                    .capabilityDeclaration(hdrDeclaration())
+                    .viewerLimits(limits(VideoQuality.UHD_4K, DynamicRangeChoice.HDR))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.videoRange()).isEqualTo(VideoRange.PQ);
+    assertThat(decision.dynamicRangeChoice()).contains(DynamicRangeChoice.HDR);
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = CompatibleBase.class,
+      names = {"SDR", "UNSPECIFIED"})
+  @DisplayName("Should copy an SDR source when the viewer chooses SDR in a fixed quality")
+  void shouldCopyAnSdrSourceWhenTheViewerChoosesSdrInAFixedQuality(CompatibleBase base) {
+    var decision =
+        service
+            .decide(
+                hdrRequestBuilder(hdrSource(base, new DolbyVision.Absent()))
+                    .capabilityDeclaration(hdrDeclaration())
+                    .viewerLimits(limits(VideoQuality.UHD_4K, DynamicRangeChoice.SDR))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.reasons()).doesNotContain(DecisionReason.VIEWER_CHOSE_SDR);
+  }
+
+  // A copy over the viewer's limits beats refusing playback when no encode can play the source
+  // (ADR 0050), and the SDR choice is one of those limits.
+  @Test
+  @DisplayName(
+      "Should copy an HDR10 source when the viewer chooses SDR in a fixed quality but no encode"
+          + " can play it")
+  void shouldCopyAnHdr10SourceWhenTheViewerChoosesSdrInAFixedQualityButNoEncodeCanPlayIt() {
+    var decision =
+        service
+            .decide(
+                hdrRequestBuilder(hdrSource(CompatibleBase.PQ, new DolbyVision.Absent()))
+                    .encodableVideoCodecFamilies(Set.of())
+                    .capabilityDeclaration(hdrDeclaration())
+                    .viewerLimits(limits(VideoQuality.UHD_4K, DynamicRangeChoice.SDR))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.videoRange()).isEqualTo(VideoRange.PQ);
+  }
+
+  static Stream<Named<Source>> hdrSourcesThatACopyKeepsHdr() {
+    return Stream.of(
+        Named.of("HDR10", hdrSource(CompatibleBase.PQ, new DolbyVision.Absent())),
+        Named.of("HLG", hdrSource(CompatibleBase.HLG, new DolbyVision.Absent())),
+        Named.of(
+            "Dolby Vision profile 8.1",
+            hdrSource(CompatibleBase.PQ, dolbyVisionRecord(OptionalInt.of(1)))));
+  }
+
+  private static ViewerLimits limits(VideoQuality quality, DynamicRangeChoice choice) {
+    return ViewerLimits.of(
+        StreamingOptions.builder().quality(quality).dynamicRange(choice).build());
   }
 
   @Test

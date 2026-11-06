@@ -200,6 +200,7 @@ public class TranscodeDecisionService {
                         audioDecision)))
             .videoCapabilityEntryRefusals(entryRefusals(request))
             .audioStreamIndex(audioStreamIndex(source, audioDecision))
+            .dynamicRangeChoice(request.viewerLimits().dynamicRangeChoice())
             .build());
   }
 
@@ -324,7 +325,11 @@ public class TranscodeDecisionService {
     var steps = AudioSteps.below(sessionAudio, AudioTrackChannels.of(source), declaration);
     var playlist = CopyMediaPlaylist.of(source, properties);
     var stepWithinMaximum = limits.audioStepBesideCopyOf(source, steps, playlist);
-    var limitRefusals = viewerLimitRefusals(limits.allowsCopyPictureOf(source), stepWithinMaximum);
+    var limitRefusals =
+        viewerLimitRefusals(
+            limits.allowsCopyPictureOf(source),
+            stepWithinMaximum,
+            limits.allowsCopyRangeOf(source));
     if (!limitRefusals.isEmpty() && hasVerifiedEncodeThatTheClientPlays(request)) {
       return new VideoCopyChoice.Refused(beforeViewerLimits(request, limitRefusals));
     }
@@ -366,7 +371,9 @@ public class TranscodeDecisionService {
   }
 
   private static List<DecisionReason> viewerLimitRefusals(
-      boolean pictureWithinLimits, Optional<AudioDecision> stepWithinMaximum) {
+      boolean pictureWithinLimits,
+      Optional<AudioDecision> stepWithinMaximum,
+      boolean rangeAllowed) {
     var refusals = new ArrayList<DecisionReason>();
     if (!pictureWithinLimits) {
       refusals.add(DecisionReason.PICTURE_ABOVE_VIEWER_LIMIT);
@@ -374,6 +381,10 @@ public class TranscodeDecisionService {
 
     if (stepWithinMaximum.isEmpty()) {
       refusals.add(DecisionReason.BITRATE_ABOVE_VIEWER_LIMIT);
+    }
+
+    if (!rangeAllowed) {
+      refusals.add(DecisionReason.VIEWER_CHOSE_SDR);
     }
 
     return refusals;

@@ -359,7 +359,8 @@ Dolby Vision without a compatible base still plays as an encode.
 
 The worker contract lets an encode name its output bit depth and chroma subsampling, and lets a PQ encode carry the HDR10 static metadata that the encoder writes (https://github.com/streamarr/streamarr-server/issues/397[#397]).
 Each verified encoder lists the outputs beyond 8-bit 4:2:0 SDR that passed the worker's own test encode: 10-bit, PQ, HLG, and Dolby Vision profile 5 or 10.0 reshaped into PQ.
-No job sets them yet, and every encode stays 8-bit 4:2:0 SDR.
+Every encode sends 8 bits and 4:2:0 until the server chooses 10-bit and HDR encodes.
+A stream session request can carry the viewer's HDR choice, and only a fixed quality takes it: SDR plays an HDR source as an SDR encode, and the decision names the choice (https://github.com/streamarr/streamarr-adr/blob/main/adr/0013-stream-decision-architecture.adoc#hdr-choice[ADR 0013]).
 
 https://github.com/streamarr/streamarr-adr/blob/main/adr/0033-transcode-worker-is-a-separate-service.adoc[ADR 0033] requires workers for probing, transcoding, and remuxing.
 Each worker opens an outbound, long-lived gRPC `WorkerSession` over the server's single plaintext listener.

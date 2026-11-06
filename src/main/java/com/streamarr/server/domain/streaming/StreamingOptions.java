@@ -5,7 +5,8 @@ import lombok.Builder;
 
 /**
  * The viewer's playback choices. What the client can play is its capability declaration. {@code
- * audioLanguage} wins over every stored language preference for this session (ADR 0043).
+ * audioLanguage} wins over every stored language preference for this session (ADR 0043). {@code
+ * dynamicRange} is the viewer's HDR choice, null when the client sends none (ADR 0013).
  */
 @Builder(toBuilder = true)
 public record StreamingOptions(
@@ -14,4 +15,5 @@ public record StreamingOptions(
     Integer maxHeight,
     Integer maxBitrate,
     Language audioLanguage,
-    Language subtitleLanguage) {}
+    Language subtitleLanguage,
+    DynamicRangeChoice dynamicRange) {}
