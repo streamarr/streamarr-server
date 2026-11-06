@@ -38,6 +38,10 @@ See https://github.com/streamarr/streamarr-adr/blob/main/adr/0031-transaction-sc
 
 PostgreSQL with UUID primary keys, custom ENUMs, and audit columns (`created_on`, `modified_on`, `created_by`, `modified_by`) on all entities.
 
+Every pooled connection bounds two waits.
+A statement that waits on a lock for longer than `DATABASE_LOCK_TIMEOUT`, `30s` by default, fails; a transaction that needs a shorter wait sets its own `lock_timeout`.
+PostgreSQL ends a session whose transaction issues no statement for `DATABASE_IDLE_IN_TRANSACTION_TIMEOUT`, `60s` by default, so a transaction left open releases its locks and the pool replaces its connection.
+
 Entity hierarchy uses JPA JOINED inheritance:
 
 ----

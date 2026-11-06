@@ -42,10 +42,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Finishing Steps Disk Sweep Integration Tests")
-@SpringBootTest(
-    properties =
-        "spring.datasource.hikari.data-source-properties.options="
-            + "-c idle_in_transaction_session_timeout=2s")
+@SpringBootTest(properties = "DATABASE_IDLE_IN_TRANSACTION_TIMEOUT=2s")
 class FinishingStepsDiskSweepIT extends AbstractIntegrationTest {
 
   @Autowired private LibraryOperationRepository libraryOperations;
