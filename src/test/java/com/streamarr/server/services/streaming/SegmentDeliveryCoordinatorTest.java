@@ -2428,6 +2428,109 @@ class SegmentDeliveryCoordinatorTest {
     deliverSwitch(switching);
   }
 
+  @Test
+  @DisplayName(
+      "Should stop another stream session's left variant to replace the first-listed variant's dead job attempt when a new viewer's initialization request finds no free worker job slot")
+  void
+      shouldStopAnotherStreamSessionsLeftVariantToReplaceTheFirstListedVariantsDeadJobAttemptWhenANewViewersInitializationRequestFindsNoFreeWorkerJobSlot()
+          throws Exception {
+    rebuildRig(10, new MutexFactory<>());
+    transcodeExecutor.limitJobSlots(3);
+    var switching = switchingLadderSession();
+    var newViewer = sessionStartedForItsPlayerAt("480p");
+    var newViewerId = newViewer.getSessionId();
+    transcodeExecutor.markDead(newViewerId, "480p");
+    startedLadderSession();
+    assertThat(transcodeExecutor.availableSlots()).isZero();
+
+    var recovery = deliverAsync(newViewerId, "480p", "480p/init.mp4");
+    transcodeExecutor.awaitStartedTarget(ExecutionTargetId.LOCAL);
+
+    assertThat(runningVariants(switching.session())).containsExactly("1080p");
+    assertThat(runningVariants(newViewer)).containsExactly("480p");
+    upload(newViewerId, "480p/init.mp4", new byte[] {0x66});
+    assertThat(recovery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    deliverSwitch(switching);
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop another stream session's left variant to replace the dead job attempt of the variant that creation started under the upload budget when a new viewer's initialization request finds no free worker job slot")
+  void
+      shouldStopAnotherStreamSessionsLeftVariantToReplaceTheDeadJobAttemptOfTheVariantThatCreationStartedUnderTheUploadBudgetWhenANewViewersInitializationRequestFindsNoFreeWorkerJobSlot()
+          throws Exception {
+    rebuildRig(10, new MutexFactory<>());
+    transcodeExecutor.limitJobSlots(3);
+    var switching = switchingLadderSession();
+    // The upload budget left the first-listed 480p out, so creation started the top kept 360p.
+    var newViewer = sessionStartedForItsPlayerAt("360p");
+    var newViewerId = newViewer.getSessionId();
+    transcodeExecutor.markDead(newViewerId, "360p");
+    startedLadderSession();
+    assertThat(transcodeExecutor.availableSlots()).isZero();
+
+    var recovery = deliverAsync(newViewerId, "360p", "360p/init.mp4");
+    transcodeExecutor.awaitStartedTarget(ExecutionTargetId.LOCAL);
+
+    assertThat(runningVariants(switching.session())).containsExactly("1080p");
+    assertThat(runningVariants(newViewer)).containsExactly("360p");
+    upload(newViewerId, "360p/init.mp4", new byte[] {0x66});
+    assertThat(recovery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    deliverSwitch(switching);
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop another stream session's left variant to replace the dead job attempt of the variant that a served playlist started when a new viewer's initialization request finds no free worker job slot")
+  void
+      shouldStopAnotherStreamSessionsLeftVariantToReplaceTheDeadJobAttemptOfTheVariantThatAServedPlaylistStartedWhenANewViewersInitializationRequestFindsNoFreeWorkerJobSlot()
+          throws Exception {
+    rebuildRig(10, new MutexFactory<>());
+    transcodeExecutor.limitJobSlots(4);
+    var switching = switchingLadderSession();
+    var newViewer = sessionStartedForItsPlayerAt("480p");
+    var newViewerId = newViewer.getSessionId();
+    // The upload budget turned on after creation, so the served playlist leads with 360p.
+    assertThat(lifecycle.startTopListedVariantUnlessOneRuns(newViewer, List.of("360p"))).isTrue();
+    transcodeExecutor.markDead(newViewerId, "360p");
+    startedLadderSession();
+    assertThat(transcodeExecutor.availableSlots()).isZero();
+
+    var recovery = deliverAsync(newViewerId, "360p", "360p/init.mp4");
+    transcodeExecutor.awaitStartedTarget(ExecutionTargetId.LOCAL);
+
+    assertThat(runningVariants(switching.session())).containsExactly("1080p");
+    assertThat(runningVariants(newViewer)).containsExactlyInAnyOrder("480p", "360p");
+    upload(newViewerId, "360p/init.mp4", new byte[] {0x66});
+    assertThat(recovery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    deliverSwitch(switching);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep another stream session's left variant when an initialization request replaces the started variant after the player's first media-segment request")
+  void
+      shouldKeepAnotherStreamSessionsLeftVariantWhenAnInitializationRequestReplacesTheStartedVariantAfterThePlayersFirstMediaSegmentRequest()
+          throws Exception {
+    rebuildRig(10, new MutexFactory<>());
+    transcodeExecutor.limitJobSlots(3);
+    var switching = switchingLadderSession();
+    var viewer = sessionStartedForItsPlayerAt("480p");
+    var viewerId = viewer.getSessionId();
+    var firstSegment = deliverAsync(viewerId, "480p", "480p/segment0.m4s");
+    upload(viewerId, "480p/segment0.m4s", new byte[] {0});
+    assertThat(firstSegment.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    transcodeExecutor.markDead(viewerId, "480p");
+    startedLadderSession();
+    assertThat(transcodeExecutor.availableSlots()).isZero();
+
+    var recovery = deliverAsync(viewerId, "480p", "480p/init.mp4");
+
+    assertThat(recovery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(runningVariants(switching.session())).containsExactlyInAnyOrder("480p", "1080p");
+    deliverSwitch(switching);
+  }
+
   // A stream session whose every variant copies the video, so the variant that its player leaves
   // is a copy.
   private StreamSession startedCopyLadderSession() {
@@ -2445,6 +2548,15 @@ class SegmentDeliveryCoordinatorTest {
   private Optional<ExecutionTargetId> runningCopyTarget(StreamSession copy) {
     return transcodeExecutor.runningExecutionTarget(
         copy.getSessionId(), StreamSession.defaultVariant());
+  }
+
+  // Starts the variant that a new stream session starts for its player: the first-listed variant,
+  // or the top variant that stays when the upload budget leaves the first-listed variant out.
+  private StreamSession sessionStartedForItsPlayerAt(String variantLabel) {
+    var session = defaultLadderSessionBuilder().build();
+    runtimeRegistry.save(session);
+    lifecycle.startListedVariant(session, variantLabel);
+    return session;
   }
 
   private record SwitchingSession(
