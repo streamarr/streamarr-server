@@ -703,6 +703,120 @@ class HdrFormatRecoveryTest {
             .build());
   }
 
+  // #397: the viewer's switch from Auto to a fixed quality starts a new playback session (ADR
+  // 0052),
+  // whose HDR choice is the range that plays, as the client's HDR toggle shows it. After Auto gave
+  // up HDR, the fixed quality plays SDR where an HDR copy or encode would fit, and after Auto
+  // played HDR, the fixed quality keeps HDR.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("switchesFromAuto")
+  @DisplayName(
+      "Should keep the picture that plays when the viewer switches from Auto to a fixed quality")
+  void shouldKeepThePictureThatPlaysWhenTheViewerSwitchesFromAutoToAFixedQuality(
+      SwitchFromAuto switchFromAuto) {
+    workers.setTargetEncoders(ExecutionTargetId.LOCAL, HDR_ENCODERS);
+    probes.setDefaultProbe(hdr10());
+    var autoCommand =
+        start(
+            StreamingOptions.builder().quality(VideoQuality.AUTO).build(), switchFromAuto.client());
+    var auto = accepted(playback.start(autoCommand));
+    for (var rejection = 0; rejection < switchFromAuto.rejectionsInAuto(); rejection++) {
+      auto = rejectCurrentFormatAttempt(auto, autoCommand);
+    }
+
+    var playing = deliveredAttempt(auto);
+    playback.close(
+        PlaybackSessionRequest.builder()
+            .playbackSessionId(auto.playbackSessionId())
+            .identity(autoCommand.identity())
+            .build());
+
+    var fixed =
+        accepted(
+            playback.start(
+                start(
+                    StreamingOptions.builder()
+                        .quality(switchFromAuto.quality())
+                        .dynamicRange(hdrToggleShowing(playing.range()))
+                        .build(),
+                    switchFromAuto.client())));
+
+    assertThat(playing).isEqualTo(switchFromAuto.playingInAuto());
+    assertThat(deliveredAttempt(fixed)).isEqualTo(switchFromAuto.afterTheSwitch());
+  }
+
+  static Stream<SwitchFromAuto> switchesFromAuto() {
+    var fullHd = VideoQuality.FULL_HD_1080P;
+    var hd = VideoQuality.HIGH_720P;
+    return Stream.of(
+        switchFromAuto("Auto gave up HDR after its HDR encode failed, then 1080p")
+            .rejectionsInAuto(2)
+            .quality(fullHd)
+            .playingInAuto(autoEncode().build())
+            .afterTheSwitch(fixedEncode(fullHd).build())
+            .build(),
+        switchFromAuto("Auto gave up HDR after its HDR encode failed, then 720p")
+            .rejectionsInAuto(2)
+            .quality(hd)
+            .playingInAuto(autoEncode().build())
+            .afterTheSwitch(fixedEncode(hd).build())
+            .build(),
+        switchFromAuto("Auto plays the HDR copy, then 1080p")
+            .quality(fullHd)
+            .playingInAuto(autoCopy(Output.COPY, VideoRange.PQ).build())
+            .afterTheSwitch(delivered(Output.COPY, VideoRange.PQ).choice(fullHd).build())
+            .build(),
+        switchFromAuto("Auto plays the HDR copy, then 720p")
+            .quality(hd)
+            .playingInAuto(autoCopy(Output.COPY, VideoRange.PQ).build())
+            .afterTheSwitch(fixedHdrEncode(hd, VideoRange.PQ).build())
+            .build(),
+        switchFromAuto("Auto plays an HDR encode, then 1080p")
+            .client(sdrHevcClient())
+            .quality(fullHd)
+            .playingInAuto(autoHdrEncode(VideoRange.PQ).build())
+            .afterTheSwitch(fixedHdrEncode(fullHd, VideoRange.PQ).build())
+            .build(),
+        switchFromAuto("Auto gave up HDR after its HDR encode failed, then 1080p without HEVC HDR")
+            .client(sdrHevcClient())
+            .rejectionsInAuto(1)
+            .quality(fullHd)
+            .playingInAuto(autoEncode().build())
+            .afterTheSwitch(fixedEncode(fullHd).build())
+            .build());
+  }
+
+  /**
+   * The client's HDR toggle shows the range that plays, and a fixed quality sends it as the HDR
+   * choice.
+   */
+  private static DynamicRangeChoice hdrToggleShowing(VideoRange playing) {
+    if (playing == VideoRange.SDR) {
+      return DynamicRangeChoice.SDR;
+    }
+
+    return DynamicRangeChoice.HDR;
+  }
+
+  @Builder(builderMethodName = "switchFromAutoBuilder")
+  private record SwitchFromAuto(
+      @NonNull String name,
+      @NonNull ClientCapabilityDeclaration client,
+      int rejectionsInAuto,
+      @NonNull VideoQuality quality,
+      @NonNull DeliveredAttempt playingInAuto,
+      @NonNull DeliveredAttempt afterTheSwitch) {
+
+    @Override
+    public String toString() {
+      return name;
+    }
+  }
+
+  private static SwitchFromAuto.SwitchFromAutoBuilder switchFromAuto(String name) {
+    return SwitchFromAuto.switchFromAutoBuilder().name(name).client(dolbyVisionClient());
+  }
+
   // The viewer rejects every format attempt until playback ends.
   private void assertThatEveryFormatAttemptDeliversTheScenario(FormatAttemptScenario scenario) {
     probes.setDefaultProbe(scenario.source());
