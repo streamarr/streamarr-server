@@ -155,6 +155,16 @@ public final class PostgresLockTestSupport {
         observer, new BlockedBackend(blockerPid, expectedWaitEvent, ANY_QUERY));
   }
 
+  /**
+   * Waits for a backend that {@code blockerPid} blocks and whose current statement matches {@code
+   * queryPattern} (ILIKE), so a table lock that also blocks unrelated readers yields the backend
+   * under test.
+   */
+  public static int awaitBlockedBackendPidRunning(
+      Connection observer, int blockerPid, String queryPattern) {
+    return awaitBlockedBackendPid(observer, new BlockedBackend(blockerPid, null, queryPattern));
+  }
+
   private static int awaitBlockedBackendPid(Connection observer, BlockedBackend wanted) {
     var blockedPid = new AtomicInteger();
     await()

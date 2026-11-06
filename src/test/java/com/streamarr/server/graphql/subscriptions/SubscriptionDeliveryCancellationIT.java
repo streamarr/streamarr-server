@@ -15,8 +15,6 @@ import com.streamarr.server.support.ActiveSubscriptions;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.GraphQlTransportWsTestClient;
 import com.streamarr.server.support.PostgresLockTestSupport;
-import com.streamarr.server.support.PostgresLockTestSupport.HeldRowLock;
-import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -61,6 +59,8 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
       "subscription { libraryStatusChanged { id administration { status } } }";
   private static final String FAIL_CLOSED_METRIC = "streamarr.authorization.fail_closed";
   private static final String ALLOWED = "allowed";
+  // The jOOQ read of the Account's live authority; other backends may also wait on user_account.
+  private static final String AUTHORITY_READ = "%\"user_account\".\"server_admin\"%";
 
   @LocalServerPort private int port;
 
@@ -139,7 +139,7 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
     var decision = new CompletableFuture<String>();
     var failuresBefore = failClosedCount();
     var broadcaster = authorityCheckedBroadcaster();
-    try (var held = lockAdminAccountRow();
+    try (var held = lockUserAccountTable();
         var observer = dataSource.getConnection()) {
       var operation =
           broadcaster
@@ -147,7 +147,7 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
               .doOnNext(_ -> decision.complete(viewLibraryAdministrationDecision(identity)))
               .subscribe();
       broadcaster.broadcast("SCANNING");
-      PostgresLockTestSupport.awaitBlockedBackendPid(observer, held.backendPid(), null);
+      awaitBlockedAuthorityRead(observer, held);
 
       operation.dispose();
     }
@@ -168,7 +168,7 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
     var decision = new CompletableFuture<String>();
     var engineFailuresBefore = engineFailureCount();
     var broadcaster = authorityCheckedBroadcaster();
-    try (var held = lockAdminAccountRow();
+    try (var held = lockUserAccountTable();
         var observer = dataSource.getConnection()) {
       var operation =
           broadcaster
@@ -176,11 +176,11 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
               .doOnNext(_ -> decision.complete(viewLibraryAdministrationDecision(identity)))
               .subscribe();
       broadcaster.broadcast("SCANNING");
-      PostgresLockTestSupport.awaitBlockedBackendPid(observer, held.backendPid(), null);
+      awaitBlockedAuthorityRead(observer, held);
       operation.dispose();
 
       assertThat(decision)
-          .as("the authority read ends at the lock bound while the Account row stays locked")
+          .as("the authority read ends at the lock bound while user_account stays locked")
           .succeedsWithin(LOCK_BOUND.plus(SETTLE_MARGIN))
           .isEqualTo("AuthorizationUnavailableException");
     }
@@ -198,11 +198,10 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
     socket.subscribe("status", STATUS_SUBSCRIPTION);
     activeSubscriptions.awaitCount(STATUS_FIELD, 1);
     var engineFailuresBefore = engineFailureCount();
-    try (var held = lockAdminAccountRow();
+    try (var held = lockUserAccountTable();
         var observer = dataSource.getConnection()) {
       libraryBroadcasters.getStatusChanges().broadcast(library);
-      var readerPid =
-          PostgresLockTestSupport.awaitBlockedBackendPid(observer, held.backendPid(), null);
+      var readerPid = awaitBlockedAuthorityRead(observer, held);
 
       terminateBackend(observer, readerPid);
     }
@@ -248,20 +247,16 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
     }
   }
 
-  private HeldRowLock lockAdminAccountRow() throws SQLException {
-    return PostgresLockTestSupport.lockRow(
-        RowLockTarget.builder()
-            .dataSource(dataSource)
-            .table("user_account")
-            .rowId(admin.account().getId())
-            .build());
+  private HeldTableLock lockUserAccountTable() throws SQLException {
+    return lockTable("user_account");
   }
 
-  // findById reads no row lock, so only a table lock parks it.
   private HeldTableLock lockLibraryTable() throws SQLException {
     return lockTable("library");
   }
 
+  // Neither the library's findById nor a read decision's authority read takes a row lock, so only
+  // a table lock parks them.
   private HeldTableLock lockTable(String table) throws SQLException {
     var connection = dataSource.getConnection();
     connection.setAutoCommit(false);
@@ -273,6 +268,11 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
     }
 
     return new HeldTableLock(connection, PostgresLockTestSupport.backendPid(connection));
+  }
+
+  private static int awaitBlockedAuthorityRead(Connection observer, HeldTableLock held) {
+    return PostgresLockTestSupport.awaitBlockedBackendPidRunning(
+        observer, held.backendPid(), AUTHORITY_READ);
   }
 
   private double engineFailureCount() {
