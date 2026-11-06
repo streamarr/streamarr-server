@@ -323,7 +323,8 @@ public class HlsStreamingService implements StreamingService {
 
     // When no left variant runs on a worker that encodes the preferred family, the next family's
     // workers may still hold one.
-    while (candidate.isPresent() && !stopLeftVariantForTheFamilyOf(sessionId, candidate.get())) {
+    while (candidate.isPresent()
+        && !stopLeftVariantForTheFamilyOf(sessionId, request, candidate.get())) {
       excludedFamilies.add(candidate.get().videoCodecFamily());
       candidate = stoppableEncodeCandidate(request, excludedFamilies);
     }
@@ -337,13 +338,22 @@ public class HlsStreamingService implements StreamingService {
   }
 
   // Only some workers may write the candidate's 10-bit or HDR output, so a left variant on a worker
-  // that writes the codec family in 8-bit SDR also makes room before the family is given up.
-  private boolean stopLeftVariantForTheFamilyOf(UUID sessionId, TranscodeDecision candidate) {
+  // that writes the codec family in 8-bit SDR also makes room before the family is given up, when
+  // the client plays that encode.
+  private boolean stopLeftVariantForTheFamilyOf(
+      UUID sessionId, TranscodeDecisionRequest request, TranscodeDecision candidate) {
     if (producerLifecycle.stopLeftVariantOfAnotherStreamSession(sessionId, candidate)) {
       return true;
     }
 
     return !candidate.videoEncodeFormat().equals(EncodeFormat.SDR_8_BIT)
+        && candidate
+            .encodeCodecProfile()
+            .filter(
+                profile ->
+                    TranscodeDecisionService.acceptsEightBitSdrEncode(
+                        request.capabilityDeclaration(), request.source(), profile))
+            .isPresent()
         && producerLifecycle.stopLeftVariantOfAnotherStreamSession(
             sessionId, candidate.toBuilder().videoEncodeFormat(EncodeFormat.SDR_8_BIT).build());
   }

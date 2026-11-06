@@ -597,15 +597,49 @@ public class TranscodeDecisionService {
   }
 
   /**
-   * The frame rate at which one entry encodes the source-sized variant in the codec profile, or
-   * empty when no entry fits. An encode takes the codec family with the fastest such rate. A source
-   * without an output frame rate or a picture that the worker encodes at any size has no encoded
-   * variant, and the stream session refuses its encode for that reason, so only the codec profile
-   * is checked, at a frame rate of 0 for every family.
+   * The fastest frame rate at which one entry encodes the source-sized variant in the codec profile
+   * and one of the source's encode formats, or empty when no entry fits. An encode takes the codec
+   * family with the fastest such rate. A source without an output frame rate or a picture that the
+   * worker encodes at any size has no encoded variant, and the stream session refuses its encode
+   * for that reason, so only the codec profile is checked, at a frame rate of 0 for every family.
    */
   static OptionalDouble encodedFrameRate(
       ClientCapabilityDeclaration declaration, MediaProbe source, EncodeCodecProfile profile) {
-    return encodedFrameRate(declaration, source, profile, EncodeFormat.SDR_8_BIT);
+    return sourceEncodeFormats(source, profile).stream()
+        .map(format -> encodedFrameRate(declaration, source, profile, format))
+        .flatMapToDouble(OptionalDouble::stream)
+        .max();
+  }
+
+  /** Whether one entry accepts an 8-bit SDR encode of the source in the codec profile. */
+  static boolean acceptsEightBitSdrEncode(
+      ClientCapabilityDeclaration declaration, MediaProbe source, EncodeCodecProfile profile) {
+    return encodedFrameRate(declaration, source, profile, EncodeFormat.SDR_8_BIT).isPresent();
+  }
+
+  /**
+   * The formats that an encode of the source may write in the codec profile, best first: the
+   * source's PQ or HLG range, then 10-bit SDR for a 10-bit SDR source, then 8-bit SDR. PQ also
+   * stands for Dolby Vision without a compatible base, which the worker reshapes with its RPUs.
+   * H.264 output stays 8-bit SDR, because almost no device decodes 10-bit H.264 (#397). Which of
+   * them an encode may plan also depends on the workers' encoders and the viewer's HDR choice.
+   */
+  static List<EncodeFormat> sourceEncodeFormats(MediaProbe source, EncodeCodecProfile profile) {
+    if (profile == EncodeCodecProfile.H264_HIGH) {
+      return List.of(EncodeFormat.SDR_8_BIT);
+    }
+
+    var hdr =
+        switch (sourceBase(source)) {
+          case PQ, NONE -> Optional.of(EncodeFormat.hdr(VideoRange.PQ));
+          case HLG -> Optional.of(EncodeFormat.hdr(VideoRange.HLG));
+          case SDR, UNSPECIFIED -> Optional.<EncodeFormat>empty();
+        };
+    var tenBitSdr =
+        isTenBitSdr(source) ? Optional.of(EncodeFormat.SDR_10_BIT) : Optional.<EncodeFormat>empty();
+    return Stream.of(hdr, tenBitSdr, Optional.of(EncodeFormat.SDR_8_BIT))
+        .flatMap(Optional::stream)
+        .toList();
   }
 
   private static OptionalDouble encodedFrameRate(
@@ -880,17 +914,19 @@ public class TranscodeDecisionService {
 
   // H.264 output stays 8-bit SDR, because almost no device decodes 10-bit H.264 (#397). Any other
   // format needs one encoder of the codec family that lists every feature the format needs.
+  // The viewer's SDR choice keeps no HDR range (ADR 0013).
   private static List<EncodeFormat> encodeFormats(
       TranscodeDecisionRequest request,
       EncodeCodecProfile profile,
       List<WorkerVerifiedEncoder> encoders) {
-    if (profile == EncodeCodecProfile.H264_HIGH) {
-      return List.of(EncodeFormat.SDR_8_BIT);
-    }
-
-    return Stream.of(
-            hdrFormat(request), tenBitSdrFormat(request), Optional.of(EncodeFormat.SDR_8_BIT))
-        .flatMap(Optional::stream)
+    var viewerChoseSdr =
+        request
+            .viewerLimits()
+            .dynamicRangeChoice()
+            .filter(DynamicRangeChoice.SDR::equals)
+            .isPresent();
+    return sourceEncodeFormats(request.source(), profile).stream()
+        .filter(format -> !(viewerChoseSdr && format.isHdr()))
         .filter(
             format ->
                 isWrittenByAnEncoder(
@@ -907,32 +943,6 @@ public class TranscodeDecisionService {
         || encoders.stream()
             .filter(encoder -> encoder.backend().codecFamily().equals(profile.codecFamilyName()))
             .anyMatch(encoder -> encoder.encodeFeatures().containsAll(needed));
-  }
-
-  // The source's PQ or HLG base, or PQ for Dolby Vision without a compatible base, which the worker
-  // reshapes with its RPUs (#397). The viewer's SDR choice keeps no HDR range (ADR 0013).
-  private static Optional<EncodeFormat> hdrFormat(TranscodeDecisionRequest request) {
-    if (request
-        .viewerLimits()
-        .dynamicRangeChoice()
-        .filter(DynamicRangeChoice.SDR::equals)
-        .isPresent()) {
-      return Optional.empty();
-    }
-
-    return switch (sourceBase(request.source())) {
-      case PQ, NONE -> Optional.of(EncodeFormat.hdr(VideoRange.PQ));
-      case HLG -> Optional.of(EncodeFormat.hdr(VideoRange.HLG));
-      case SDR, UNSPECIFIED -> Optional.empty();
-    };
-  }
-
-  private static Optional<EncodeFormat> tenBitSdrFormat(TranscodeDecisionRequest request) {
-    if (!isTenBitSdr(request.source())) {
-      return Optional.empty();
-    }
-
-    return Optional.of(EncodeFormat.SDR_10_BIT);
   }
 
   private static CompatibleBase sourceBase(MediaProbe source) {

@@ -7639,6 +7639,51 @@ class HlsStreamingServiceTest {
           + " only worker that writes PQ is busy")
   void shouldEncode8BitSdrAv1AfterStoppingALeftVariantOnAWorkerWithoutPqWhenThePqWorkerIsBusy()
       throws Exception {
+    var left = keepALeftVariantOnAnSdrAv1WorkerWhileTheOnlyPqWorkerIsBusy();
+    var switching = left.session();
+    var switchingId = switching.getSessionId();
+    probeResults.setDefaultProbe(hdr10HevcProbe());
+
+    var admitted =
+        accepted(
+            service.createSession(
+                createCommandDeclaring(
+                    av1Declaration(List.of(CompatibleBase.SDR, CompatibleBase.PQ)))));
+
+    assertThat(admitted.getTranscodeDecision().videoCodecFamily()).isEqualTo("av1");
+    assertThat(admitted.getTranscodeDecision().videoEncodeFormat())
+        .isEqualTo(EncodeFormat.SDR_8_BIT);
+    assertThat(switching.getVariantHandles()).containsOnlyKeys("1080p");
+    upload(switchingId, "1080p", "1080p/segment1.m4s");
+    assertThat(left.switched().get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  // The client takes AV1 only in PQ, so an 8-bit SDR encode on the freed worker would not play
+  // and stopping the left variant would only cost its player the switch back.
+  @Test
+  @DisplayName(
+      "Should keep a left variant on a worker without PQ when the client accepts AV1 only in PQ"
+          + " and the only worker that writes PQ is busy")
+  void shouldKeepALeftVariantOnAWorkerWithoutPqWhenTheClientAcceptsAv1OnlyInPq() throws Exception {
+    var left = keepALeftVariantOnAnSdrAv1WorkerWhileTheOnlyPqWorkerIsBusy();
+    var switching = left.session();
+    var switchingId = switching.getSessionId();
+    probeResults.setDefaultProbe(hdr10HevcProbe());
+
+    var outcome =
+        service.createSession(createCommandDeclaring(av1Declaration(List.of(CompatibleBase.PQ))));
+
+    assertThat(rejectionOf(outcome))
+        .isInstanceOf(CreateStreamSessionRejection.TranscodeCapacityUnavailable.class);
+    assertThat(transcodeExecutor.isRunning(switchingId, "480p")).isTrue();
+    assertThat(switching.getVariantHandles()).containsOnlyKeys("480p", "1080p");
+    upload(switchingId, "1080p", "1080p/segment1.m4s");
+    assertThat(left.switched().get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  // An SDR AV1 session keeps 480p as its left variant on the AV1 worker without PQ while it
+  // switches to 1080p there, and another session fills the only worker whose AV1 encoder writes PQ.
+  private LeftVariantOnAWorker keepALeftVariantOnAnSdrAv1WorkerWhileTheOnlyPqWorkerIsBusy() {
     var pqWorker = new ExecutionTargetId("pq-worker");
     transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("av1"));
     transcodeExecutor.setExecutionTargets(List.of(AV1_WORKER, pqWorker));
@@ -7660,30 +7705,19 @@ class HlsStreamingServiceTest {
             .bitrate(8_000_000L)
             .build());
     var switching = createSession(seedMediaFile().getId(), declarationBuilderFor(AV1).build());
-    var switchingId = switching.getSessionId();
-    var switched = switchFrom480pTo1080pKeeping480pAsTheLeftVariant(switchingId);
+    var switched = switchFrom480pTo1080pKeeping480pAsTheLeftVariant(switching.getSessionId());
     createSession(seedMediaFile().getId(), declarationBuilderFor(AV1).build());
     assertThat(transcodeExecutor.encodableVideoCodecFamilies()).isEmpty();
-    probeResults.setDefaultProbe(hdr10HevcProbe());
+    return new LeftVariantOnAWorker(switching, switched);
+  }
 
-    var admitted =
-        accepted(
-            service.createSession(
-                createCommandDeclaring(
-                    declarationBuilderFor(AV1)
-                        .video(
-                            List.of(
-                                av1EntryBuilder()
-                                    .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
-                                    .build()))
-                        .build())));
+  private record LeftVariantOnAWorker(
+      StreamSession session, CompletableFuture<SegmentDelivery> switched) {}
 
-    assertThat(admitted.getTranscodeDecision().videoCodecFamily()).isEqualTo("av1");
-    assertThat(admitted.getTranscodeDecision().videoEncodeFormat())
-        .isEqualTo(EncodeFormat.SDR_8_BIT);
-    assertThat(switching.getVariantHandles()).containsOnlyKeys("1080p");
-    upload(switchingId, "1080p", "1080p/segment1.m4s");
-    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  private static ClientCapabilityDeclaration av1Declaration(List<CompatibleBase> compatibleBases) {
+    return declarationBuilderFor(AV1)
+        .video(List.of(av1EntryBuilder().compatibleBases(compatibleBases).build()))
+        .build();
   }
 
   // The H.264 worker keeps a free slot, so H.264 is decided before the stop. The stop frees a

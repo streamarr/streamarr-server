@@ -370,13 +370,14 @@ class TenBitAndHdrEncodeTest {
             List.of(svtAv1(Set.of(VideoEncodeFeature.TEN_BIT)), libx264(Set.of()))));
   }
 
-  // ADR 0050 lets a copy above the viewer's limits play only when no encode plays. An entry that
-  // accepts only PQ takes an HDR10 encode, so that encode plays within the limits instead.
+  // ADR 0050 lets a copy above the viewer's limits play only when no encode plays, and offers a
+  // fixed quality whose box an encode reaches. An entry that accepts only PQ takes an HDR10 encode,
+  // so the smaller fixed qualities are offered and that encode plays within the limits.
   @Test
   @DisplayName(
-      "Should encode an HDR10 source within a fixed quality when only a PQ entry accepts the encode"
-          + " and the copy is above the quality")
-  void shouldEncodeAnHdr10SourceWithinAFixedQualityWhenOnlyAPqEntryAcceptsTheEncode() {
+      "Should offer and encode an HDR10 source in a fixed quality when only a PQ entry accepts the"
+          + " encode and the copy is above the quality")
+  void shouldOfferAndEncodeAnHdr10SourceInAFixedQualityWhenOnlyAPqEntryAcceptsTheEncode() {
     workers.setVideoCopySupportByWorker(
         List.of(
             WorkerVideoCopySupport.builder()
@@ -397,6 +398,15 @@ class TenBitAndHdrEncodeTest {
                             .build(),
                         av1EntryBuilder().compatibleBases(List.of(CompatibleBase.PQ)).build()))));
 
+    assertThat(encode.playbackChoice()).isEqualTo(VideoQuality.HIGH_720P);
+    assertThat(encode.offeredChoices())
+        .containsExactly(
+            VideoQuality.ORIGINAL,
+            VideoQuality.AUTO,
+            VideoQuality.FULL_HD_1080P,
+            VideoQuality.HIGH_720P,
+            VideoQuality.MEDIUM_480P,
+            VideoQuality.LOW_360P);
     assertThat(sessionOf(encode).getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
     assertThat(plannedEncode().dynamicRange()).isEqualTo(rangeOf(CompatibleBase.PQ));
   }

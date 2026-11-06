@@ -94,8 +94,9 @@ enum QualityTier {
   // A copy plays the source's own picture, so it reaches the tier when the source fits the tier's
   // box. The keyframe check is left out: it refuses few sources, and the encode that replaces a
   // refused copy of the source's own tier usually reaches it too. An encode reaches the tier when
-  // one capability entry fits the tier's picture, in the codec family that the encode takes,
-  // without shrinking it into a smaller tier's box. The workers connected now do not count,
+  // one capability entry fits the tier's picture, in the codec family that the encode takes and one
+  // of the source's encode formats, without shrinking it into a smaller tier's box. The workers
+  // connected now do not count,
   // because the offered choices last for the whole playback session.
   private boolean isReachedIn(MediaProbe source, ClientCapabilityDeclaration declaration) {
     var picture = source.displayedSize();
@@ -110,15 +111,19 @@ enum QualityTier {
     }
 
     return fastestEncodeCodecProfiles(source, declaration).stream()
-        .map(
+        .flatMap(
             codecProfile ->
-                EncodedVariantRequest.builder()
-                    .codecProfile(codecProfile)
-                    .source(picture)
-                    .bounds(box.orientedLike(picture))
-                    .frameRate(frameRate.get())
-                    .bitrate(videoBitrate(codecProfile))
-                    .build())
+                TranscodeDecisionService.sourceEncodeFormats(source, codecProfile).stream()
+                    .map(
+                        format ->
+                            EncodedVariantRequest.builder()
+                                .codecProfile(codecProfile)
+                                .format(format)
+                                .source(picture)
+                                .bounds(box.orientedLike(picture))
+                                .frameRate(frameRate.get())
+                                .bitrate(videoBitrate(codecProfile))
+                                .build()))
         .map(declaration::fitHlsEncode)
         .flatMap(Optional::stream)
         .anyMatch(output -> containing(new PictureSize(output.width(), output.height())) == this);
