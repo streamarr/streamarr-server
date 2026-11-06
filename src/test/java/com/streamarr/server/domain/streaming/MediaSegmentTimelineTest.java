@@ -262,6 +262,39 @@ class MediaSegmentTimelineTest {
     assertThat(timeline.mediaSegmentIndexAt(Duration.parse("PT18.005S"))).isEqualTo(2);
   }
 
+  // The plain grid has no stored keyframe time base, so its starts count whole seconds.
+  @Test
+  @DisplayName(
+      "Should start each segment at its slot's whole second in time base 1/1 when the plain grid"
+          + " merges its final slot")
+  void shouldStartEachSegmentAtItsWholeSecondWhenThePlainGridMergesItsFinalSlot() {
+    var timeline = new MediaSegmentTimeline.PlainGrid(Duration.parse("PT18.012S"), SIX_SECONDS);
+
+    assertThat(timeline.exactStarts())
+        .hasValue(new ExactSegmentStarts(List.of(0L, 6L, 12L), new Fraction(1, 1)));
+  }
+
+  // A 6.5 s media ends 0.5 s into slot 1, which merges into segment 0.
+  @Test
+  @DisplayName(
+      "Should list only segment 0's start when the plain grid merges its second slot into the first")
+  void shouldListOnlySegmentZerosStartWhenThePlainGridMergesItsSecondSlotIntoTheFirst() {
+    var timeline = new MediaSegmentTimeline.PlainGrid(Duration.parse("PT6.5S"), SIX_SECONDS);
+
+    assertThat(timeline.exactStarts())
+        .hasValue(new ExactSegmentStarts(List.of(0L), new Fraction(1, 1)));
+  }
+
+  // A 14 s media ends exactly 2 s into its final slot, and a 1.5 s media is shorter than one slot.
+  @ParameterizedTest
+  @CsvSource({"PT60S", "PT14S", "PT1.5S"})
+  @DisplayName("Should list no exact start when the plain grid keeps its final slot as a segment")
+  void shouldListNoExactStartWhenThePlainGridKeepsItsFinalSlotAsASegment(Duration mediaDuration) {
+    var timeline = new MediaSegmentTimeline.PlainGrid(mediaDuration, SIX_SECONDS);
+
+    assertThat(timeline.exactStarts()).isEmpty();
+  }
+
   @Test
   @DisplayName(
       "Should list the merging grid's segment starts when an encode seeks to the source's"
