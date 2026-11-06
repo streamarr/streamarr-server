@@ -41,12 +41,18 @@ import reactor.core.scheduler.Scheduler;
 
 /**
  * Parks a subscription delivery's database read behind a lock held on another connection, so the
- * subscriber's operation can end, or the read can fail, while the read is in flight.
+ * subscriber's operation can end, or the read can fail, while the read is in flight. A short lock
+ * bound lets a test keep the lock until the bound ends the read.
  */
 @Tag("IntegrationTest")
 @DisplayName("Subscription Delivery Cancellation Integration Tests")
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+    properties = "DATABASE_LOCK_TIMEOUT=3s")
 class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
+
+  private static final Duration LOCK_BOUND = Duration.ofSeconds(3);
+  private static final Duration SETTLE_MARGIN = Duration.ofSeconds(10);
 
   private static final String COUNTS_FIELD = "libraryCountsChanged";
   private static final String STATUS_FIELD = "libraryStatusChanged";
@@ -90,8 +96,8 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should keep the database connection of a delivery's read when the subscriber disconnects while the read runs")
-  void shouldKeepDatabaseConnectionOfDeliverysReadWhenSubscriberDisconnectsWhileReadRuns()
+      "Should return the database connection of a cancelled delivery's read to the pool within the lock bound when the lock outlives the disconnect")
+  void shouldReturnConnectionOfCancelledDeliverysReadWithinLockBoundWhenLockOutlivesDisconnect()
       throws SQLException {
     var socket = connect();
     socket.subscribe(
@@ -99,27 +105,29 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
         "subscription { libraryCountsChanged(libraryId: \"%s\") { id } }"
             .formatted(library.getId()));
     awaitFirstCountsDelivery(socket);
-    int readerPid;
     try (var held = lockLibraryTable();
         var observer = dataSource.getConnection()) {
       contentsBroadcasters.getCounts().broadcast(library.getId(), library.getId());
-      readerPid = PostgresLockTestSupport.awaitBlockedBackendPid(observer, held.backendPid(), null);
+      var readerPid =
+          PostgresLockTestSupport.awaitBlockedBackendPid(observer, held.backendPid(), null);
       assertThat(PostgresLockTestSupport.waitersBehind(observer, held.backendPid(), "%"))
           .as("only the delivery's read waits on the library lock")
           .isEqualTo(1);
 
       socket.close();
       activeSubscriptions.awaitCount(COUNTS_FIELD, 0);
+      var settledState = awaitBackendIdleOrGone(readerPid);
+
+      assertThat(settledState)
+          .as("the lock bound ends the cancelled read, and its pooled connection survives, idle")
+          .contains("idle");
+      assertThat(backendState(readerPid))
+          .as("the delivery's pooled connection is still open after it settled")
+          .isPresent();
+      assertThat(PostgresLockTestSupport.waitersBehind(observer, held.backendPid(), "%"))
+          .as("nothing waits on the library lock that is still held")
+          .isZero();
     }
-
-    var settledState = awaitBackendIdleOrGone(readerPid);
-
-    assertThat(settledState)
-        .as("the delivery's pooled connection survives the disconnect, idle")
-        .contains("idle");
-    assertThat(backendState(readerPid))
-        .as("the delivery's pooled connection is still open after it settled")
-        .isPresent();
   }
 
   @Test
@@ -149,6 +157,35 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
         .succeedsWithin(Duration.ofSeconds(10))
         .isEqualTo(ALLOWED);
     assertThat(failClosedCount()).isEqualTo(failuresBefore);
+  }
+
+  @Test
+  @DisplayName(
+      "Should fail closed and count an engine failure when a cancelled delivery's authority read waits past the lock bound")
+  void shouldFailClosedAndCountEngineFailureWhenCancelledDeliverysAuthorityReadWaitsPastLockBound()
+      throws SQLException {
+    var identity = authTestSupport.identityOf(admin);
+    var decision = new CompletableFuture<String>();
+    var engineFailuresBefore = engineFailureCount();
+    var broadcaster = authorityCheckedBroadcaster();
+    try (var held = lockAdminAccountRow();
+        var observer = dataSource.getConnection()) {
+      var operation =
+          broadcaster
+              .register()
+              .doOnNext(_ -> decision.complete(viewLibraryAdministrationDecision(identity)))
+              .subscribe();
+      broadcaster.broadcast("SCANNING");
+      PostgresLockTestSupport.awaitBlockedBackendPid(observer, held.backendPid(), null);
+      operation.dispose();
+
+      assertThat(decision)
+          .as("the authority read ends at the lock bound while the Account row stays locked")
+          .succeedsWithin(LOCK_BOUND.plus(SETTLE_MARGIN))
+          .isEqualTo("AuthorizationUnavailableException");
+    }
+
+    assertThat(engineFailureCount()).isEqualTo(engineFailuresBefore + 1);
   }
 
   @Test
@@ -254,7 +291,7 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
   // wait, because the pool may lend the connection out again before a second read.
   private Optional<String> awaitBackendIdleOrGone(int backendPid) {
     return await()
-        .atMost(Duration.ofSeconds(10))
+        .atMost(LOCK_BOUND.plus(SETTLE_MARGIN))
         .until(
             () -> backendState(backendPid), state -> state.filter(not("idle"::equals)).isEmpty());
   }

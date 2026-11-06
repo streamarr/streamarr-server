@@ -121,6 +121,7 @@ class ArtworkLockTimeoutIT extends AbstractIntegrationTest {
     var lockTimeout =
         transactionTemplate.execute(
             _ -> {
+              dsl.execute("SET LOCAL lock_timeout = '7s'");
               requests.saveRequest(
                   NewArtworkRequest.builder()
                       .artwork(artwork("/poster.jpg"))
@@ -130,7 +131,7 @@ class ArtworkLockTimeoutIT extends AbstractIntegrationTest {
               return dsl.fetchValue("SELECT current_setting('lock_timeout')");
             });
 
-    assertThat(lockTimeout).isEqualTo("0");
+    assertThat(lockTimeout).isEqualTo("7s");
   }
 
   // Another transaction replaces the target's request and keeps it uncommitted while the contender
