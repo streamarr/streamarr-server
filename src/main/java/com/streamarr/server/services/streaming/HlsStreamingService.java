@@ -341,23 +341,27 @@ public class HlsStreamingService implements StreamingService {
 
   // Only some workers may write the candidate's 10-bit or HDR output, so a left variant on a worker
   // that writes the codec family in 8-bit SDR also makes room before the family is given up, when
-  // the client plays that encode.
+  // the client plays that encode. An 8-bit HEVC encode is H.265 Main, not Main 10 (#58).
   private boolean stopLeftVariantForTheFamilyOf(
       UUID sessionId, TranscodeDecisionRequest request, TranscodeDecision candidate) {
     if (producerLifecycle.stopLeftVariantOfAnotherStreamSession(sessionId, candidate)) {
       return true;
     }
 
+    var eightBitProfile = candidate.encodeCodecProfile().map(EncodeCodecProfile::eightBitProfile);
     return !candidate.videoEncodeFormat().equals(EncodeFormat.SDR_8_BIT)
-        && candidate
-            .encodeCodecProfile()
+        && eightBitProfile
             .filter(
                 profile ->
                     TranscodeDecisionService.acceptsEightBitSdrEncode(
                         request.capabilityDeclaration(), request.source(), profile))
             .isPresent()
         && producerLifecycle.stopLeftVariantOfAnotherStreamSession(
-            sessionId, candidate.toBuilder().videoEncodeFormat(EncodeFormat.SDR_8_BIT).build());
+            sessionId,
+            candidate.toBuilder()
+                .encodeCodecProfile(eightBitProfile)
+                .videoEncodeFormat(EncodeFormat.SDR_8_BIT)
+                .build());
   }
 
   // The request as the workers' encoders with a free slot stand now.

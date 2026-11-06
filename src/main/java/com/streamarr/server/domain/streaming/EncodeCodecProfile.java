@@ -46,6 +46,14 @@ public enum EncodeCodecProfile {
     };
   }
 
+  /** The profile of the same codec family that holds 8 bits: H.265 Main for H.265 Main 10. */
+  public EncodeCodecProfile eightBitProfile() {
+    return switch (this) {
+      case HEVC_MAIN_10 -> HEVC_MAIN;
+      case H264_HIGH, HEVC_MAIN, AV1_MAIN -> this;
+    };
+  }
+
   /** The highest bitrate that a codec level at or below {@code maxLevel} allows an encode. */
   OptionalLong highestBitrateAtOrBelow(int maxLevel) {
     return switch (this) {
