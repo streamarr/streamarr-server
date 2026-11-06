@@ -87,8 +87,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 @Tag("IntegrationTest")
 @EnableDgsTest
 @WithProfileContext
-@DisplayName("Probe Version 7 Worker Integration Tests")
-class ProbeVersion7WorkerIT extends AbstractIntegrationTest {
+@DisplayName("Probe Version 8 Worker Integration Tests")
+class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
 
   private static final UUID SOURCE_NAMESPACE_ID =
       UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd");
