@@ -1775,6 +1775,7 @@ public class ProducerLifecycleService {
         .sourcePath(session.getSourcePath())
         .seekPosition(timeline.mediaSegmentStartSeconds(startSequenceNumber))
         .keyframeSeekPosition(timeline.keyframeSeekPosition(startSequenceNumber))
+        .exactSegmentStarts(MediaSegmentTimelines.exactSegmentStartsOf(session, timeline))
         .targetSegmentDuration(timeline.targetSegmentDurationSeconds())
         .framerate(
             frameRate

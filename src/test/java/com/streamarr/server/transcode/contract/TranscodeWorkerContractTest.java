@@ -931,6 +931,50 @@ class TranscodeWorkerContractTest {
     var decoded = TranscodeExecution.parseFrom(plainGrid.toByteArray());
 
     assertThat(decoded.getSegmentStartSlotsList()).isEmpty();
+    assertThat(decoded.getSegmentStartTicksList()).isEmpty();
+    assertThat(decoded.hasSegmentStartTimeBase()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry each segment's exact start in ticks of the source video stream's time base when a stream session copies the video")
+  void
+      shouldCarryEachSegmentsExactStartInTicksOfTheSourceVideoStreamsTimeBaseWhenSessionCopiesVideo()
+          throws Exception {
+    // Keyframes at 0, 3.5, 6.5 and 9.5 s on a 90 kHz time base, and one at about 14 h whose tick
+    // count needs more than 32 bits.
+    var execution =
+        TranscodeExecution.newBuilder()
+            .setTargetSegmentDurationSeconds(3)
+            .setMediaSegmentCount(5)
+            .addAllSegmentStartTicks(List.of(0L, 315_000L, 585_000L, 855_000L, 4_536_000_000L))
+            .setSegmentStartTimeBase(Fraction.newBuilder().setNumerator(1).setDenominator(90_000))
+            .build();
+
+    var decoded = TranscodeExecution.parseFrom(execution.toByteArray());
+
+    assertThat(decoded.getSegmentStartTicksList())
+        .containsExactly(0L, 315_000L, 585_000L, 855_000L, 4_536_000_000L);
+    assertThat(decoded.getSegmentStartTicksCount()).isEqualTo(decoded.getMediaSegmentCount());
+    assertThat(decoded.getSegmentStartTimeBase().getNumerator()).isEqualTo(1);
+    assertThat(decoded.getSegmentStartTimeBase().getDenominator()).isEqualTo(90_000);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the field numbers and types that workers build against when publishing exact segment starts")
+  void shouldKeepTheFieldNumbersAndTypesThatWorkersBuildAgainstWhenPublishingExactSegmentStarts() {
+    var execution = TranscodeExecution.getDescriptor();
+    var startTicks = execution.findFieldByName("segment_start_ticks");
+    var timeBase = execution.findFieldByName("segment_start_time_base");
+
+    assertThat(startTicks.getNumber()).isEqualTo(10);
+    assertThat(startTicks.getType()).isEqualTo(Type.UINT64);
+    assertThat(startTicks.isRepeated()).isTrue();
+    assertThat(startTicks.isPacked()).isTrue();
+    assertThat(timeBase.getNumber()).isEqualTo(11);
+    assertThat(timeBase.getMessageType()).isEqualTo(Fraction.getDescriptor());
+    assertThat(timeBase.hasPresence()).isTrue();
   }
 
   @Test

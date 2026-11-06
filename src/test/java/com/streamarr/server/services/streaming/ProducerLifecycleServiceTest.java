@@ -2107,6 +2107,56 @@ class ProducerLifecycleServiceTest {
     assertThat(request.keyframeSeekPosition()).hasValue(Duration.ofMillis(30_030));
   }
 
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(CopyRestart.class)
+  @DisplayName(
+      "Should carry the first attempt's exact segment starts when a copy session starts another attempt")
+  void shouldCarryTheFirstAttemptsExactSegmentStartsWhenACopySessionStartsAnotherAttempt(
+      CopyRestart restart) {
+    var session = startedIrregularCopySession();
+    var first = transcodeExecutor.getStartedRequests().getFirst();
+
+    var later =
+        switch (restart) {
+          case RELOCATION -> relocatedRequest(session, 100);
+          case REPLACEMENT -> replacementRequest(session, 2);
+          case RESUME -> resumedRequest(session, 5);
+        };
+
+    // Segment 1, [6 s, 12 s), opens at the keyframe that presents at 10.052 s.
+    assertThat(first.exactSegmentStarts())
+        .hasValueSatisfying(
+            starts -> {
+              assertThat(starts.ticks()).hasSize(first.mediaSegmentCount()).startsWith(0L, 10_052L);
+              assertThat(starts.timeBase()).isEqualTo(new Fraction(1, 1_000));
+            });
+    assertThat(later.exactSegmentStarts()).isEqualTo(first.exactSegmentStarts());
+  }
+
+  enum CopyRestart {
+    RELOCATION,
+    REPLACEMENT,
+    RESUME
+  }
+
+  private TranscodeRequest resumedRequest(StreamSession session, int segmentIndex) {
+    suspendHandle(session);
+    return relocatedRequest(session, segmentIndex);
+  }
+
+  @Test
+  @DisplayName(
+      "Should send no exact segment starts when a relocated attempt encodes a source whose keyframes are known")
+  void shouldSendNoExactSegmentStartsWhenARelocatedAttemptEncodesASourceWhoseKeyframesAreKnown() {
+    var session =
+        startedEncodedSession(
+            MPEG_TS, List.of(new KeyframePosition(0, 0), new KeyframePosition(6_000, 6_000)));
+
+    var request = relocatedRequest(session, 100);
+
+    assertThat(request.exactSegmentStarts()).isEmpty();
+  }
+
   @Test
   @DisplayName(
       "Should start a replacement copy attempt at its first keyframe when its segment absorbs the final grid interval")

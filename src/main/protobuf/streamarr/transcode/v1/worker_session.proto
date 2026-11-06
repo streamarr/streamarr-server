@@ -645,13 +645,24 @@ message TranscodeExecution {
   // last frame or pads audio. No padded frame starts at or after it (ADR 0037,
   // early ends).
   google.protobuf.Duration advertised_end = 8;
-  // This field lists where each advertised media segment starts, in slots of
-  // target_segment_duration_seconds. An empty list means segment N starts at
-  // slot N. A non-empty list holds media_segment_count entries, starts with 0
-  // and strictly increases. When advertised_end is set, the last segment's
-  // audio ends there, and advertised_end must come after the last listed start
-  // (ADR 0037, segment list).
+  // Deprecated: segment_start_ticks replaces this list, and a worker that reads
+  // segment_start_ticks ignores it. Segment N's start, in slots of
+  // target_segment_duration_seconds; empty means segment N starts at slot N.
+  // Otherwise it holds media_segment_count strictly increasing entries from 0;
+  // when advertised_end is set, the last segment's audio ends there, after the
+  // last start (ADR 0037, segment list).
   repeated uint32 segment_start_slots = 9;
+  // Segment N's start, in ticks of segment_start_time_base on the zero-based
+  // timeline of ProbeKeyframePositionsPart: 0 for segment 0, otherwise the
+  // stored presentation tick of the source keyframe that opens segment N.
+  // Empty means the plain grid (N x target_segment_duration_seconds). Otherwise
+  // media_segment_count strictly increasing entries from 0; when advertised_end
+  // is set, the last segment's audio ends there, after the last start (ADR 0037).
+  repeated uint64 segment_start_ticks = 10;
+  // This field holds the time base of segment_start_ticks: the time base of
+  // the stored keyframe positions of the source's chosen video stream. The
+  // server sets it exactly when segment_start_ticks is not empty.
+  Fraction segment_start_time_base = 11;
 }
 
 message VariantJob {
