@@ -371,7 +371,9 @@ public class SeekPriority {
       next++;
     }
 
-    if (handle.startSequenceNumber() >= next) {
+    // A stored segment that is not the job attempt's own output lies ahead of where it produces, so
+    // its next work is reproducing that media rather than the segment this lead budgets.
+    if (handle.startSequenceNumber() >= next || isStored(session, variantLabel, next)) {
       return false;
     }
 

@@ -434,6 +434,27 @@ class SeekPriorityIT {
 
   @Test
   @DisplayName(
+      "Should never name a job attempt whose own output has reached media stored before it started")
+  void shouldNeverNameAJobAttemptWhoseOwnOutputHasReachedMediaStoredBeforeItStarted()
+      throws Exception {
+    var worker = registerWorker(WORKER_ID, 8);
+    var steady = startPlaying(worker);
+    deliverAhead(steady, 9);
+    registry.updatePlaybackState(steady.sessionId(), 0, PlaybackState.PLAYING);
+    var reaching = startPlaying(worker);
+    storeSegments(reaching, 31, 35);
+    assertThat(storeAndAwait(seek(worker, reaching, 20))).isInstanceOf(SegmentDelivery.Ready.class);
+    storeSegments(reaching, 21, 30);
+    var seeking = startPlaying(worker);
+
+    seek(worker, seeking);
+
+    assertThat(nextYield(worker).getJobAttemptIdsList())
+        .containsExactly(steady.job().getJobAttemptId());
+  }
+
+  @Test
+  @DisplayName(
       "Should never name an on-demand job attempt that reproduces media stored before it started,"
           + " and name it once it stores media past it")
   void
