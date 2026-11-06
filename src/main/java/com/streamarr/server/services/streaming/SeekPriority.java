@@ -374,11 +374,29 @@ public class SeekPriority {
         .isPresent();
   }
 
-  // The media that the variant has stored without a gap after the viewer's segment outlasts the
-  // hold limit, the time to produce the job attempt's next segment at real time and the position
-  // margin, and the job attempt started within that media, so its viewer plays through the longest
-  // pause and the next segment.
+  // The media that the job attempt has stored itself without a gap after the viewer's segment
+  // outlasts the hold limit, the time to produce the job attempt's next segment at real time and
+  // the position margin, so its viewer plays through the longest pause and the next segment.
   private boolean leadsItsViewer(
+      StreamSession session, String variantLabel, TranscodeHandle handle, int viewerSegment) {
+    return ownLead(session, variantLabel, handle, viewerSegment)
+        .filter(
+            lead ->
+                lead.stored()
+                        .compareTo(
+                            properties
+                                .seekPriorityHoldLimit()
+                                .plus(lead.nextSegment())
+                                .plus(properties.seekPriorityPositionMargin()))
+                    > 0)
+        .isPresent();
+  }
+
+  // The media that the job attempt has stored itself without a gap after the viewer's segment, and
+  // the duration of the segment that it produces next. Empty when it has produced nothing past the
+  // viewer, or when a stored segment that is not its own output follows that media: its next work
+  // is then reproducing that media rather than a segment that a lead budgets.
+  private Optional<OwnLead> ownLead(
       StreamSession session, String variantLabel, TranscodeHandle handle, int viewerSegment) {
     var timeline = MediaSegmentTimelines.of(session, properties);
     var ownOutput = ownOutputOf(session, variantLabel, handle);
@@ -389,21 +407,16 @@ public class SeekPriority {
       next++;
     }
 
-    // A stored segment that is not the job attempt's own output lies ahead of where it produces, so
-    // its next work is reproducing that media rather than the segment this lead budgets.
     if (handle.startSequenceNumber() >= next || isStored(session, variantLabel, next)) {
-      return false;
+      return Optional.empty();
     }
 
     var nextSegment =
         timeline.advertises(next) ? timeline.mediaSegmentDuration(next) : Duration.ZERO;
-    var needed =
-        properties
-            .seekPriorityHoldLimit()
-            .plus(nextSegment)
-            .plus(properties.seekPriorityPositionMargin());
-    return stored.compareTo(needed) > 0;
+    return Optional.of(new OwnLead(stored, nextSegment));
   }
+
+  private record OwnLead(Duration stored, Duration nextSegment) {}
 
   // Stored media that the job attempt's own uploads stored. Media that it found stored, or that
   // another job attempt's upload stored, counts once its own upload stores that segment again.
