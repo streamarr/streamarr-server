@@ -204,19 +204,19 @@ class TranscodeDecisionDirectPlayTest {
 
   // Direct play sends the file's own configuration record, so only a record that names the level
   // vouches for it. A level that the table derives from the maximum frame rate needs the record
-  // that
-  // an HLS copy writes (ADR 0013).
+  // that an HLS copy writes (ADR 0013).
   @ParameterizedTest(name = "{0}")
   @MethodSource("dolbyVisionMp4Files")
   @DisplayName(
       "Should direct-play a Dolby Vision MP4 file only when its configuration record names its"
           + " level")
   void shouldDirectPlayADolbyVisionMp4FileOnlyWhenItsConfigurationRecordNamesItsLevel(
-      String scenario, VideoDynamicRange range, DirectPlayChoice expected) {
+      String scenario,
+      VideoDynamicRange range,
+      Optional<Fraction> maximumFrameRate,
+      DirectPlayChoice expected) {
     var facts =
-        hevcFacts(range)
-            .sampleEntry(Optional.of("dvh1"))
-            .maximumFrameRate(Optional.of(new Fraction(24, 1)));
+        hevcFacts(range).sampleEntry(Optional.of("dvh1")).maximumFrameRate(maximumFrameRate);
     var source =
         isoSource(Optional.of("isom"))
             .videoCodec("hevc")
@@ -229,6 +229,7 @@ class TranscodeDecisionDirectPlayTest {
   }
 
   static Stream<Arguments> dolbyVisionMp4Files() {
+    var film = Optional.of(new Fraction(24, 1));
     return Stream.of(
         Arguments.of(
             "profile 5 with a record at level 6",
@@ -241,14 +242,22 @@ class TranscodeDecisionDirectPlayTest {
                         .baseLayer(true)
                         .rpu(true)
                         .build())),
+            film,
             new DirectPlayChoice.Accepted(SourceContainer.MP4, OptionalInt.of(0))),
         Arguments.of(
             "profile 5 without a record, with a maximum frame rate that gives a level",
             profile5(Optional.empty()),
+            film,
+            refused(DecisionReason.DIRECT_PLAY_VIDEO_NOT_DECLARED)),
+        Arguments.of(
+            "profile 5 without a record or a maximum frame rate, so without a level",
+            profile5(Optional.empty()),
+            Optional.empty(),
             refused(DecisionReason.DIRECT_PLAY_VIDEO_NOT_DECLARED)),
         Arguments.of(
             "profile 8.1 without a record, with a maximum frame rate that gives a level",
             profile81FromItsRpuHeader(),
+            film,
             refused(DecisionReason.DIRECT_PLAY_VIDEO_NOT_DECLARED)));
   }
 
