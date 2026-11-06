@@ -94,8 +94,8 @@ class TranscodingHealthGroupTest {
   private static Stream<ExecutorState> executorStates() {
     return Stream.of(
         ExecutorState.builder()
-            .name("worker encodes H.264 and AV1")
-            .workerCodecFamilies(Set.of("h264", "av1"))
+            .name("worker encodes H.264, HEVC and AV1")
+            .workerCodecFamilies(Set.of("h264", "hevc", "av1"))
             .expectedStatus("UP")
             .expectedHttpStatus(200)
             .build(),

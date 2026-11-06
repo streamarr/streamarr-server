@@ -19,9 +19,9 @@ import lombok.NonNull;
  * orientation, and Auto labels a variant that reaches the box with the tier's name (ADR 0050).
  */
 enum QualityTier {
-  // The AV1 2160p and 1440p bitrates are the lowest 3840x2160 and the 2560x1440 rates of the HEVC
-  // ladder in Apple's HLS Authoring Specification for Apple Devices, item 1.25. Apple's H.264
-  // ladder stops at 1080p.
+  // The AV1 and HEVC 2160p and 1440p bitrates are the lowest 3840x2160 and the 2560x1440 rates of
+  // the HEVC ladder in Apple's HLS Authoring Specification for Apple Devices, item 1.25. Apple's
+  // H.264 ladder stops at 1080p.
   TIER_2160P("2160p", new PictureSize(3840, 2160), 11_600_000L, 20_000_000L),
   TIER_1440P("1440p", new PictureSize(2560, 1440), 8_100_000L, 12_000_000L),
   TIER_1080P("1080p", new PictureSize(1920, 1080), 5_000_000L, 5_000_000L),
@@ -54,7 +54,7 @@ enum QualityTier {
   /** The tier's nominal video bitrate for the codec family that the encode forces. */
   long videoBitrate(@NonNull EncodeCodecProfile codecProfile) {
     return switch (codecProfile) {
-      case AV1_MAIN -> av1VideoBitrate;
+      case AV1_MAIN, HEVC_MAIN -> av1VideoBitrate;
       case H264_HIGH -> h264VideoBitrate;
     };
   }

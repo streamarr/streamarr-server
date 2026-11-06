@@ -303,6 +303,19 @@ class RemoteVariantJobMapperTest {
     assertThat(video.getCodecString()).isEqualTo("av01.0.09M.08");
   }
 
+  @Test
+  @DisplayName("Should send the forced H.265 values in the Main tier when the job encodes HEVC")
+  void shouldSendTheForcedH265ValuesInTheMainTierWhenTheJobEncodesHevc() {
+    var video = mapper.map(encodeAttempt("hevc").build()).getDecision().getVideo();
+
+    assertThat(video.getMode()).isEqualTo(VideoMode.VIDEO_MODE_ENCODE);
+    assertThat(video.getCodecFamily()).isEqualTo(VideoCodecFamily.VIDEO_CODEC_FAMILY_HEVC);
+    assertThat(video.getCodecProfile()).isEqualTo(VideoCodecProfile.VIDEO_CODEC_PROFILE_HEVC_MAIN);
+    assertThat(video.getTier()).isEqualTo(VideoCodecTier.VIDEO_CODEC_TIER_MAIN);
+    assertThat(video.getLevel()).isEqualTo(41);
+    assertThat(video.getCodecString()).isEqualTo("hvc1.1.6.L123.90");
+  }
+
   @ParameterizedTest
   @EnumSource(
       value = TranscodeMode.class,

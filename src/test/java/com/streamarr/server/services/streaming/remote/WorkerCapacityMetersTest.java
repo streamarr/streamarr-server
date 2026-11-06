@@ -83,11 +83,12 @@ class WorkerCapacityMetersTest {
       "Should report each codec family that the server encodes and the worker has no encoder for when the worker connects")
   void
       shouldReportEachCodecFamilyThatTheServerEncodesAndTheWorkerHasNoEncoderForWhenTheWorkerConnects() {
-    meters.connected(WORKER_ID, new FixedSession(1, Set.of("h264", "hevc")));
+    meters.connected(WORKER_ID, new FixedSession(1, Set.of("h264", "vp9")));
 
     assertThat(missingEncoder("av1")).isEqualTo(1);
+    assertThat(missingEncoder("hevc")).isEqualTo(1);
     assertThat(missingEncoder("h264")).isZero();
-    assertThat(meterRegistry.find(MISSING_ENCODER_METRIC).tag("codec_family", "hevc").gauge())
+    assertThat(meterRegistry.find(MISSING_ENCODER_METRIC).tag("codec_family", "vp9").gauge())
         .isNull();
   }
 
@@ -96,11 +97,12 @@ class WorkerCapacityMetersTest {
   void shouldReportNoMissingEncoderWhenTheWorkerReconnectsWithEveryEncoder() {
     meters.connected(WORKER_ID, new FixedSession(1, Set.of("h264")));
 
-    meters.connected(WORKER_ID, new FixedSession(1, Set.of("h264", "av1")));
+    meters.connected(WORKER_ID, new FixedSession(1, Set.of("h264", "hevc", "av1")));
 
     assertThat(missingEncoder("av1")).isZero();
+    assertThat(missingEncoder("hevc")).isZero();
     assertThat(missingEncoder("h264")).isZero();
-    assertThat(meterRegistry.find(MISSING_ENCODER_METRIC).gauges()).hasSize(2);
+    assertThat(meterRegistry.find(MISSING_ENCODER_METRIC).gauges()).hasSize(3);
   }
 
   @Test
@@ -159,7 +161,7 @@ class WorkerCapacityMetersTest {
       implements WorkerCapacityMeters.Session {
 
     private FixedSession(int playbackSlots) {
-      this(playbackSlots, Set.of("h264", "av1"));
+      this(playbackSlots, Set.of("h264", "hevc", "av1"));
     }
 
     @Override
