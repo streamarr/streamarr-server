@@ -1,14 +1,18 @@
 package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.noLanguagePreferences;
+import static com.streamarr.server.fixtures.ProbeFixture.keyframesEvery;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChannelBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
+import static com.streamarr.transcode.v1.TranscodeMode.TRANSCODE_MODE_FULL_TRANSCODE;
 import static com.streamarr.transcode.v1.TranscodeMode.TRANSCODE_MODE_REMUX;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -278,7 +282,6 @@ class RemoteFormatFailureIT {
       names = {
         "JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED",
         "JOB_ATTEMPT_FAILURE_SOURCE_UNAVAILABLE",
-        "JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED",
         "JOB_ATTEMPT_FAILURE_COPY_CAP_REACHED"
       })
   @DisplayName("Should retain ordinary recovery when the worker reports an ordinary job failure")
@@ -370,15 +373,14 @@ class RemoteFormatFailureIT {
     }
   }
 
-  // Every attempt on the same segment list cuts the same segments, so each would exceed the cap
+  // Every attempt of a copy cuts the same keyframe-merged segments, so each would exceed the cap
   // again; a new format attempt on the plain grid avoids it (ADR 0037, ADR 0052).
   @ParameterizedTest
   @EnumSource(
       value = TranscodeMode.class,
       names = {"REMUX", "AUDIO_TRANSCODE"})
-  @DisplayName(
-      "Should treat a segment over the cap as terminal when the job carries a segment list")
-  void shouldTreatASegmentOverTheCapAsTerminalWhenTheJobCarriesASegmentList(TranscodeMode mode)
+  @DisplayName("Should treat a segment over the cap as terminal when the job copies the video")
+  void shouldTreatASegmentOverTheCapAsTerminalWhenTheJobCopiesTheVideo(TranscodeMode mode)
       throws Exception {
     var events = new CapturingEventPublisher();
     try (var rig = new FailureRig(events);
@@ -400,6 +402,37 @@ class RemoteFormatFailureIT {
           .containsExactly(terminalEventFor(job, TranscodeFailure.SEGMENT_CAP_EXCEEDED));
       assertThat(rig.deliver()).isInstanceOf(SegmentDelivery.Unrecoverable.class);
       assertThat(worker.jobs).hasSize(1);
+    }
+  }
+
+  // A plain grid whose final slot merges into its last segment lists every segment's start, yet an
+  // encode on it keeps the plain grid's ordinary recovery for a segment over the cap (ADR 0037).
+  @Test
+  @DisplayName(
+      "Should start a replacement attempt when an encode on a plain grid with a merged last"
+          + " segment passes the segment cap")
+  void shouldStartAReplacementAttemptWhenAnEncodeOnAMergedPlainGridPassesTheSegmentCap()
+      throws Exception {
+    var events = new CapturingEventPublisher();
+    try (var rig = new FailureRig(events, mergedPlainGridEncodeSession());
+        var worker = new TestWorker(rig.server);
+        var tasks = Executors.newVirtualThreadPerTaskExecutor()) {
+      rig.streaming.lifecycle().startFirstListedVariant(rig.session);
+      var failed = worker.nextJob();
+      worker.fail(failed, JobAttemptFailure.JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED);
+      rig.awaitStopped();
+      var delivery = tasks.submit(rig::deliver);
+      var recovered = worker.nextJob();
+      rig.segments.storeSegment(rig.session.getSessionId(), "init.mp4", new byte[] {1});
+      rig.server.heldSegmentRequests().wakeSession(rig.session.getSessionId());
+
+      assertThat(delivery.get(5, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+      assertThat(List.of(failed, recovered))
+          .extracting(job -> job.getExecution().getMediaSegmentCount())
+          .containsExactly(2, 2);
+      assertThat(recovered.getDecision().getMode()).isEqualTo(TRANSCODE_MODE_FULL_TRANSCODE);
+      assertThat(rig.executor.terminalFailure(rig.session.getSessionId())).isEmpty();
+      assertThat(events.getEventsOfType(TerminalTranscodeFailureEvent.class)).isEmpty();
     }
   }
 
@@ -483,6 +516,19 @@ class RemoteFormatFailureIT {
     }
   }
 
+  // 13.5 s on the 6 s grid reaches 1.5 s into a third slot, which merges into the second segment.
+  private static StreamSession mergedPlainGridEncodeSession() {
+    var duration = Duration.ofMillis(13_500);
+    return defaultSessionBuilder()
+        .transcodeDecision(fullTranscodeDecision("h264"))
+        .mediaProbe(
+            defaultProbeBuilder()
+                .duration(duration)
+                .keyframes(keyframesEvery(Duration.ofSeconds(2), duration))
+                .build())
+        .build();
+  }
+
   private static TerminalTranscodeFailureEvent terminalEventFor(
       VariantJob job, TranscodeFailure failure) {
     return TerminalTranscodeFailureEvent.builder()
@@ -511,12 +557,17 @@ class RemoteFormatFailureIT {
     private final FakeSegmentStore segments = new FakeSegmentStore();
     private final FakeRuntimeStreamSessionRegistry registry =
         new FakeRuntimeStreamSessionRegistry();
-    private final StreamSession session = defaultSessionBuilder().build();
+    private final StreamSession session;
     private final WorkerSessionServer server;
     private final RemoteTranscodeExecutor executor;
     private final StreamingRigFixture.StreamingRig streaming;
 
     private FailureRig(ApplicationEventPublisher events) throws Exception {
+      this(events, defaultSessionBuilder().build());
+    }
+
+    private FailureRig(ApplicationEventPublisher events, StreamSession session) throws Exception {
+      this.session = session;
       server =
           WorkerSessionServer.builder()
               .configuration(serverConfigurationBuilder().build())
