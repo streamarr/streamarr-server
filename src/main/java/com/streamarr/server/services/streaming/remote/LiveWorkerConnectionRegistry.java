@@ -976,6 +976,10 @@ final class LiveWorkerConnectionRegistry {
     // its session.
     private final AtomicReference<GrantedProbeCapacities> grantedProbeCapacities;
     private final StreamObserver<EstablishWorkerSessionResponse> responseObserver;
+    // Guards the response observer, which gRPC does not make thread safe. A command that reads no
+    // connection state takes only this lock, so it never waits for a publication that holds the
+    // connection's monitor through its file I/O. Taken after the monitor, never before it.
+    private final Object outbound = new Object();
 
     private final Map<UUID, VariantJob> activeVariants = new ConcurrentHashMap<>();
     // Each active encode, keyed by job attempt id, with the encoder it was dispatched for. Its
@@ -1049,8 +1053,10 @@ final class LiveWorkerConnectionRegistry {
           WorkerSessionAccepted.newBuilder()
               .setWorkerSessionId(toProto(workerSessionId))
               .setSegmentUploadLimit(SegmentUploadLimits.MAXIMUM_SEGMENT_UPLOADS_PER_WORKER);
-      responseObserver.onNext(
-          EstablishWorkerSessionResponse.newBuilder().setSessionAccepted(accepted).build());
+      synchronized (outbound) {
+        responseObserver.onNext(
+            EstablishWorkerSessionResponse.newBuilder().setSessionAccepted(accepted).build());
+      }
     }
 
     // The encoder is chosen under this monitor, so an encoder change cannot come between the
@@ -1229,7 +1235,7 @@ final class LiveWorkerConnectionRegistry {
       log.warn("Worker session {} ignored cancellation of probe {}", workerSessionId, attemptId);
       abandonAllJobsWithoutWaiting()
           .forEach(job -> logAbandonedJob(job, "probe cancellation timed out"));
-      synchronized (this) {
+      synchronized (outbound) {
         try {
           responseObserver.onError(
               Status.DEADLINE_EXCEEDED
@@ -1511,12 +1517,14 @@ final class LiveWorkerConnectionRegistry {
 
     /** A send can fail when the worker call died but its disconnect has not been reaped yet. */
     private boolean trySend(EstablishWorkerSessionResponse response) {
-      try {
-        responseObserver.onNext(response);
-        return true;
-      } catch (RuntimeException e) {
-        log.warn("Failed to send command over worker session {}", workerSessionId, e);
-        return false;
+      synchronized (outbound) {
+        try {
+          responseObserver.onNext(response);
+          return true;
+        } catch (RuntimeException e) {
+          log.warn("Failed to send command over worker session {}", workerSessionId, e);
+          return false;
+        }
       }
     }
 
@@ -1694,7 +1702,7 @@ final class LiveWorkerConnectionRegistry {
       return grantedProbeCapacities.get().capacity(runningProbeKinds());
     }
 
-    private synchronized void yieldToSeek(Set<UUID> jobAttemptIds, Duration holdLimit) {
+    private void yieldToSeek(Set<UUID> jobAttemptIds, Duration holdLimit) {
       var command =
           YieldToSeekCommand.newBuilder()
               .setTarget(worker)
@@ -1706,7 +1714,7 @@ final class LiveWorkerConnectionRegistry {
       trySend(EstablishWorkerSessionResponse.newBuilder().setYieldToSeek(command).build());
     }
 
-    private synchronized void holdBack(Map<UUID, Duration> releaseAfterByJobAttempt) {
+    private void holdBack(Map<UUID, Duration> releaseAfterByJobAttempt) {
       var command = HoldBackCommand.newBuilder().setTarget(worker);
       releaseAfterByJobAttempt.forEach(
           (jobAttemptId, releaseAfter) ->
@@ -1891,7 +1899,7 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private void closeAsReplaced() {
-      synchronized (this) {
+      synchronized (outbound) {
         try {
           responseObserver.onError(
               Status.ABORTED.withDescription("Worker connection replaced").asRuntimeException());

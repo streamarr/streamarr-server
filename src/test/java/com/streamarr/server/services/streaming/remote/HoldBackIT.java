@@ -39,6 +39,7 @@ import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;
+import com.streamarr.server.services.streaming.remote.PausingSegmentStore.PublicationPause;
 import com.streamarr.server.services.streaming.remote.protocol.ProtoUuid;
 import com.streamarr.server.support.BoundedTask;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
@@ -75,6 +76,8 @@ class HoldBackIT {
   private static final Duration REQUEST_LIMIT = Duration.ofSeconds(5);
 
   private final FakeSegmentStore segmentStore = new FakeSegmentStore();
+  // The worker session server publishes through it; playback reads the same store directly.
+  private final PausingSegmentStore publications = new PausingSegmentStore(segmentStore);
   private final FakeRuntimeStreamSessionRegistry registry = new FakeRuntimeStreamSessionRegistry();
   private final FakeMediaFileContainerInfoRepository probeResults =
       new FakeMediaFileContainerInfoRepository();
@@ -83,7 +86,7 @@ class HoldBackIT {
   private final List<BoundedTask<SegmentDelivery>> requests = new ArrayList<>();
   private final AdvanceableSystemClock clock = new AdvanceableSystemClock();
   private WorkerSessionServer server;
-  private volatile MediaSegmentPublicationListener publications;
+  private volatile MediaSegmentPublicationListener publicationListener;
   private ProducerLifecycleService lifecycle;
   private HlsStreamingService streamingService;
   private SegmentDeliveryCoordinator coordinator;
@@ -95,7 +98,7 @@ class HoldBackIT {
         WorkerSessionServer.builder()
             .eventPublisher(this::forwardPublication)
             .configuration(serverConfigurationBuilder().build())
-            .segmentStore(segmentStore)
+            .segmentStore(publications)
             .meterRegistry(new SimpleMeterRegistry())
             .build();
     server.start();
@@ -118,7 +121,7 @@ class HoldBackIT {
             .build();
     lifecycle = rig.lifecycle();
     coordinator = rig.coordinator();
-    publications = new MediaSegmentPublicationListener(lifecycle);
+    publicationListener = new MediaSegmentPublicationListener(lifecycle);
 
     var mediaFiles = new FakeMediaFileRepository();
     mediaFile =
@@ -151,6 +154,7 @@ class HoldBackIT {
 
   @AfterEach
   void tearDown() throws Exception {
+    publications.releasePublication();
     for (var request : requests) {
       request.close();
     }
@@ -235,6 +239,32 @@ class HoldBackIT {
     assertThat(released).noneMatch(EstablishWorkerSessionResponse::hasStartVariant);
     upload(playing, 12, 12);
     assertThat(waiting.await(REQUEST_LIMIT)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver a stored media segment whose request releases a hold while another upload of"
+          + " the same worker is being published")
+  void shouldDeliverAStoredMediaSegmentWhoseRequestReleasesAHoldWhileAnotherUploadIsBeingPublished()
+      throws Exception {
+    var worker = registerWorker();
+    var playing = startPlaying(worker);
+    registry.updatePlaybackState(playing.sessionId(), 0, PlaybackState.PAUSED);
+    upload(playing, 1, 11);
+    worker.responsesThrough(EstablishWorkerSessionResponse::hasHoldBack);
+    publications.pauseNextPublication(PublicationPause.BEFORE_THE_SEGMENT_IS_READABLE);
+    var publishing = worker.uploadMediaSegment(playing.job(), 12);
+    publications.awaitPausedPublication();
+
+    // Segment 6 places the viewer 30 s behind the job attempt's own media, so its request releases
+    // the hold.
+    var delivery = request(playing.sessionId(), segmentName(6)).await(REQUEST_LIMIT);
+
+    assertThat(delivery).isInstanceOf(SegmentDelivery.Ready.class);
+    var released = worker.responsesThrough(EstablishWorkerSessionResponse::hasHoldBack);
+    assertThat(released.getLast().getHoldBack().getJobAttemptsList()).isEmpty();
+    publications.releasePublication();
+    publishing.get(REQUEST_LIMIT.toSeconds(), TimeUnit.SECONDS);
   }
 
   @Test
@@ -450,7 +480,7 @@ class HoldBackIT {
   // A publication reaches seek priority as the application's event does.
   private void forwardPublication(Object event) {
     if (event instanceof MediaSegmentPublishedEvent published) {
-      publications.onMediaSegmentPublished(published);
+      publicationListener.onMediaSegmentPublished(published);
     }
   }
 
