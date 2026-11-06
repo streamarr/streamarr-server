@@ -45,6 +45,7 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
+import com.streamarr.server.services.streaming.events.DolbyVisionConversionFailedEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.List;
@@ -165,6 +166,50 @@ class HdrFormatRecoveryTest {
             DolbyVisionProfile.PROFILE_10_4, VideoQuality.ORIGINAL, VideoRange.HLG, stripped),
         Arguments.of(
             DolbyVisionProfile.PROFILE_10_4, VideoQuality.AUTO, VideoRange.HLG, Optional.empty()));
+  }
+
+  // streamarr/streamarr-server#651 and ADR 0052: the worker's typed conversion failure repeats in
+  // every attempt of the same Dolby Vision copy, so the copy moves to the copy with Dolby Vision
+  // stripped, as the client's rejection does, and Original and a fixed quality stay selected.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("qualitiesAfterAStrippedCopy")
+  @DisplayName(
+      "Should play the copy with Dolby Vision stripped when the worker fails the Dolby Vision"
+          + " copy's conversion")
+  void shouldPlayTheCopyWithDolbyVisionStrippedWhenTheWorkerFailsTheDolbyVisionCopysConversion(
+      VideoQuality quality, Optional<PlaybackFormatChange> expectedChange) {
+    probes.setDefaultProbe(dolbyVisionSource(DolbyVisionProfile.PROFILE_8_1).build());
+    var command = start(quality);
+    var dolbyVisionCopy = accepted(playback.start(command));
+
+    playback.onDolbyVisionConversionFailed(
+        new DolbyVisionConversionFailedEvent(
+            dolbyVisionCopy.currentFormatAttempt().streamSessionId(),
+            UUID.randomUUID(),
+            "default"));
+
+    var stripped =
+        playback
+            .access(
+                PlaybackSessionRequest.builder()
+                    .playbackSessionId(dolbyVisionCopy.playbackSessionId())
+                    .identity(command.identity())
+                    .build())
+            .orElseThrow();
+    assertThat(stripped.formatAttemptCount()).isEqualTo(2);
+    assertThat(stripped.playbackChoice()).isEqualTo(quality);
+    assertThat(stripped.formatChange()).isEqualTo(expectedChange);
+    assertThat(decisionOf(stripped).videoBitstreamRewrites())
+        .containsExactly(BitstreamRewrite.STRIP_DOLBY_VISION);
+    assertThat(decisionOf(stripped).videoDolbyVisionOutput()).isEmpty();
+  }
+
+  static Stream<Arguments> qualitiesAfterAStrippedCopy() {
+    var stripped = Optional.of(PlaybackFormatChange.DOLBY_VISION_STRIPPED);
+    return Stream.of(
+        Arguments.of(VideoQuality.AUTO, Optional.empty()),
+        Arguments.of(VideoQuality.ORIGINAL, stripped),
+        Arguments.of(VideoQuality.FULL_HD_1080P, stripped));
   }
 
   // ADR 0036: a worker that cannot strip Dolby Vision cannot deliver the stripped copy, so the

@@ -17,6 +17,7 @@ import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
+import com.streamarr.server.services.streaming.events.DolbyVisionConversionFailedEvent;
 import com.streamarr.server.services.streaming.events.HardwareEncoderFailedEvent;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
@@ -701,6 +702,12 @@ final class LiveWorkerConnectionRegistry {
     if (WorkerConnection.isCopyOutputMismatch(job, failed)) {
       eventPublisher.publishEvent(
           new VideoCopyOutputMismatchEvent(streamSessionId, jobAttemptId, variantLabel));
+      return;
+    }
+
+    if (WorkerConnection.isCopyDolbyVisionConversionFailure(job, failed)) {
+      eventPublisher.publishEvent(
+          new DolbyVisionConversionFailedEvent(streamSessionId, jobAttemptId, variantLabel));
       return;
     }
 
@@ -1415,15 +1422,17 @@ final class LiveWorkerConnectionRegistry {
     }
 
     // The worker contract says that a replacement attempt with the same decision repeats an output
-    // mismatch on the same encoder backend, and an invalid specification on every worker. Every
-    // attempt on the same segment list cuts the same segments, so it repeats a segment over the cap
-    // too (ADR 0037).
+    // mismatch on the same encoder backend, an invalid specification on every worker, and a Dolby
+    // Vision conversion failure on the same picture. Every attempt on the same segment list cuts
+    // the same segments, so it repeats a segment over the cap too (ADR 0037).
     private static Optional<TranscodeFailure> terminalFailure(
         VariantJob job, JobAttemptFailed failed) {
       return switch (failed.getFailure()) {
         case JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH -> Optional.of(TranscodeFailure.OUTPUT_MISMATCH);
         case JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION ->
             Optional.of(TranscodeFailure.INVALID_SPECIFICATION);
+        case JOB_ATTEMPT_FAILURE_DOLBY_VISION_CONVERSION_FAILED ->
+            Optional.of(TranscodeFailure.DOLBY_VISION_CONVERSION_FAILED);
         case JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED -> segmentCapFailure(job);
         case JOB_ATTEMPT_FAILURE_UNSPECIFIED,
             JOB_ATTEMPT_FAILURE_SOURCE_UNAVAILABLE,
@@ -1447,10 +1456,18 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private static boolean isCopyOutputMismatch(VariantJob job, JobAttemptFailed failed) {
-      if (failed.getFailure() != JobAttemptFailure.JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH) {
-        return false;
-      }
+      return failed.getFailure() == JobAttemptFailure.JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH
+          && copiesVideo(job);
+    }
 
+    private static boolean isCopyDolbyVisionConversionFailure(
+        VariantJob job, JobAttemptFailed failed) {
+      return failed.getFailure()
+              == JobAttemptFailure.JOB_ATTEMPT_FAILURE_DOLBY_VISION_CONVERSION_FAILED
+          && copiesVideo(job);
+    }
+
+    private static boolean copiesVideo(VariantJob job) {
       return switch (job.getDecision().getMode()) {
         case TRANSCODE_MODE_REMUX, TRANSCODE_MODE_AUDIO_TRANSCODE -> true;
         default -> false;

@@ -12,5 +12,11 @@ public enum TranscodeFailure {
    * same list cuts the same segment, so only a new format attempt on the plain grid avoids it (ADR
    * 0037).
    */
-  SEGMENT_CAP_EXCEEDED
+  SEGMENT_CAP_EXCEEDED,
+  /**
+   * A copy that converts single-track Dolby Vision profile 7 to profile 8.1 met a picture whose RPU
+   * it cannot convert. Every attempt with the same decision meets the same picture, so only the
+   * copy with Dolby Vision stripped, or an encode, avoids it (streamarr/streamarr-server#651).
+   */
+  DOLBY_VISION_CONVERSION_FAILED
 }

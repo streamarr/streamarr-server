@@ -14,6 +14,7 @@ import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.events.watchprogress.StreamSessionTimelineReportedEvent;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.events.CopiedVariantRanShortEvent;
+import com.streamarr.server.services.streaming.events.DolbyVisionConversionFailedEvent;
 import com.streamarr.server.services.streaming.events.MediaSegmentStoredEvent;
 import com.streamarr.server.services.streaming.events.PlaybackSessionChangedEvent;
 import com.streamarr.server.services.streaming.events.ProducedRangeMayHaveMovedEvent;
@@ -600,22 +601,30 @@ public class PlaybackSessionService implements AutoCloseable {
 
   @EventListener
   public void onVideoCopyOutputMismatch(@NonNull VideoCopyOutputMismatchEvent event) {
-    recoverFromFailedCopy(event.streamSessionId());
+    recoverFromFailedCopy(event.streamSessionId(), new PlaybackSessionFailure.OutputMismatch());
   }
 
   /** A copy that ran short while a source stream still has media fails as a copy does. */
   @EventListener
   public void onCopiedVariantRanShort(@NonNull CopiedVariantRanShortEvent event) {
-    recoverFromFailedCopy(event.streamSessionId());
+    recoverFromFailedCopy(event.streamSessionId(), new PlaybackSessionFailure.OutputMismatch());
   }
 
-  // Every playback choice falls back from a failed copy to an encode, so the failure that this
-  // names ends playback only when no encode follows.
-  private void recoverFromFailedCopy(UUID failedId) {
-    handleJobFailure(
-        failedId,
-        playback ->
-            reserveFormatAttempt(playback, failedId, new PlaybackSessionFailure.OutputMismatch()));
+  /**
+   * A Dolby Vision copy whose conversion the worker cannot finish falls back to the copy with Dolby
+   * Vision stripped, as one that the client rejects does (streamarr/streamarr-server#651, ADR
+   * 0052).
+   */
+  @EventListener
+  public void onDolbyVisionConversionFailed(@NonNull DolbyVisionConversionFailedEvent event) {
+    recoverFromFailedCopy(
+        event.streamSessionId(), new PlaybackSessionFailure.DolbyVisionConversionFailed());
+  }
+
+  // Every playback choice falls back from a failed copy to another format attempt, so the failure
+  // that this names ends playback only when none follows.
+  private void recoverFromFailedCopy(UUID failedId, PlaybackSessionFailure reason) {
+    handleJobFailure(failedId, playback -> reserveFormatAttempt(playback, failedId, reason));
   }
 
   /**
@@ -631,7 +640,11 @@ public class PlaybackSessionService implements AutoCloseable {
           failWithoutFormatAttempt(failedId, new PlaybackSessionFailure.OutputMismatch());
       case INVALID_SPECIFICATION ->
           failWithoutFormatAttempt(failedId, new PlaybackSessionFailure.InvalidSpecification());
-      case SEGMENT_CAP_EXCEEDED -> recoverFromFailedCopy(failedId);
+      case DOLBY_VISION_CONVERSION_FAILED ->
+          failWithoutFormatAttempt(
+              failedId, new PlaybackSessionFailure.DolbyVisionConversionFailed());
+      case SEGMENT_CAP_EXCEEDED ->
+          recoverFromFailedCopy(failedId, new PlaybackSessionFailure.OutputMismatch());
     }
   }
 
@@ -800,15 +813,25 @@ public class PlaybackSessionService implements AutoCloseable {
     }
   }
 
-  // A format attempt fails before it is ready only through the worker's copy output mismatch,
-  // which the worker reports only for a copy.
+  // A format attempt fails before it is ready only through a worker's report about a copy. The
+  // worker reports a Dolby Vision conversion failure only from a copy that converts profile 7 on a
+  // PQ base (streamarr/streamarr-server#651), so that report names a Dolby Vision copy on an HDR
+  // base; its output mismatch names a copy.
   private static FailedFormatAttempt failedAttempt(
       PlaybackSession playback, PlaybackSessionFailure reason) {
-    if (!(playback.current instanceof PlaybackFormatAttempt.Ready(var session))) {
-      return new FailedFormatAttempt(reason, new FailedFormatAttempt.Copy());
+    if (playback.current instanceof PlaybackFormatAttempt.Ready(var session)) {
+      return new FailedFormatAttempt(reason, outputOf(session));
     }
 
-    return new FailedFormatAttempt(reason, outputOf(session));
+    return new FailedFormatAttempt(reason, outputOfAPendingCopy(reason));
+  }
+
+  private static FailedFormatAttempt.Output outputOfAPendingCopy(PlaybackSessionFailure reason) {
+    if (reason instanceof PlaybackSessionFailure.DolbyVisionConversionFailed) {
+      return new FailedFormatAttempt.DolbyVisionCopyOnAnHdrBase();
+    }
+
+    return new FailedFormatAttempt.Copy();
   }
 
   private static FailedFormatAttempt.Output outputOf(StreamSession session) {

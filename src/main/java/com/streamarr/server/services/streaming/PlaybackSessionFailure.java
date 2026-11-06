@@ -8,6 +8,12 @@ public sealed interface PlaybackSessionFailure {
   /** The worker rejected the job's specification, so every replacement attempt would fail too. */
   record InvalidSpecification() implements PlaybackSessionFailure {}
 
+  /**
+   * The worker could not convert a Dolby Vision profile 7 picture's RPU to profile 8.1, which every
+   * replacement attempt of the same copy would repeat (streamarr/streamarr-server#651).
+   */
+  record DolbyVisionConversionFailed() implements PlaybackSessionFailure {}
+
   record FixedFormatFailed(@NonNull PlaybackFormatFailure reason)
       implements PlaybackSessionFailure {}
 
