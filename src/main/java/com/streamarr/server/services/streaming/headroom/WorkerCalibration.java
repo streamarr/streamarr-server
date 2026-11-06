@@ -4,6 +4,7 @@ import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.headroom.CostConstant;
 import com.streamarr.server.domain.streaming.headroom.CpuLimit;
+import com.streamarr.server.domain.streaming.headroom.DecodeBackend;
 import com.streamarr.server.domain.streaming.headroom.EncodeConfiguration;
 import com.streamarr.server.domain.streaming.headroom.EncoderAndPreset;
 import com.streamarr.server.domain.streaming.headroom.HeadroomConstants;
@@ -76,14 +77,14 @@ public final class WorkerCalibration {
 
   /**
    * Checks the current constants against the measurement, then fits the measurement. A measurement
-   * whose job attempts include a hardware encode, or one whose cores alone are unknown, cannot give
-   * a share of the cores, so the fit skips it.
+   * whose job attempts include a hardware encode or decode, or one whose cores alone are unknown,
+   * cannot give a share of the cores, so the fit skips it.
    */
   public synchronized void fit(@NonNull ProductionMeasurement measurement) {
     var running = new ArrayList<JobAttemptLoad>();
     running.add(measurement.load());
     running.addAll(measurement.otherEncodes());
-    if (running.stream().anyMatch(WorkerCalibration::isHardwareEncode)) {
+    if (running.stream().anyMatch(WorkerCalibration::usesGpuEngines)) {
       return;
     }
 
@@ -183,14 +184,14 @@ public final class WorkerCalibration {
 
   /**
    * The production speed of each job attempt when exactly these job attempts encode on the worker,
-   * or empty while a constant that one of them needs is unknown or one of them is a hardware
-   * encode.
+   * or empty while a constant that one of them needs is unknown or one of them encodes or decodes
+   * in hardware.
    */
   public synchronized Optional<Map<UUID, Double>> predictProductionSpeeds(
       @NonNull Map<UUID, JobAttemptLoad> running) {
     var attempts = List.copyOf(running.keySet());
     var loads = attempts.stream().map(running::get).toList();
-    if (loads.stream().anyMatch(WorkerCalibration::isHardwareEncode)) {
+    if (loads.stream().anyMatch(WorkerCalibration::usesGpuEngines)) {
       return Optional.empty();
     }
 
@@ -325,12 +326,12 @@ public final class WorkerCalibration {
   }
 
   /**
-   * A hardware encode's encode term runs on the GPU's encode engines, whose cost the fit takes from
-   * their busy time rather than from a share of the cores (ADR 0044); this model does not price it
-   * yet.
+   * A hardware encode or decode runs on a GPU's engines, whose costs the fit takes from their busy
+   * times rather than from a share of the cores (ADR 0044); this model does not price them yet.
    */
-  private static boolean isHardwareEncode(JobAttemptLoad load) {
-    return load.encoderAndPreset().backend().kind() == EncoderBackend.Kind.HARDWARE;
+  private static boolean usesGpuEngines(JobAttemptLoad load) {
+    return load.encoderAndPreset().backend().kind() == EncoderBackend.Kind.HARDWARE
+        || load.sourceDecoder().backend() == DecodeBackend.HARDWARE;
   }
 
   private static Optional<EncoderAndPreset> automaticPresetOf(EncoderAndPreset encoderAndPreset) {

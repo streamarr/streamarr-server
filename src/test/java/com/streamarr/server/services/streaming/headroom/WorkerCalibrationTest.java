@@ -305,6 +305,31 @@ class WorkerCalibrationTest {
     }
 
     @Test
+    @DisplayName(
+        "Should leave the constants unchanged when the production time of an attempt that decodes in hardware arrives")
+    void
+        shouldLeaveTheConstantsUnchangedWhenTheProductionTimeOfAnAttemptThatDecodesInHardwareArrives() {
+      var hardwareH264 = new SourceDecoder("h264", DecodeBackend.HARDWARE);
+      var calibration =
+          tenCoreCalibration()
+              .startingConstants(
+                  HeadroomConstants.builder()
+                      .cpuSecondsPerMegapixel(
+                          Map.of(LIBX264_FASTER, 0.04, SOFTWARE_H264, 0.01, hardwareH264, 0.002))
+                      .coresAlone(Map.of(LIBX264_FASTER, 6.0))
+                      .build())
+              .build();
+      var before = calibration.constants();
+      var decodedOnGpu = libx264FasterLoad().sourceDecoder(hardwareH264).build();
+
+      calibration.fit(measuredAtCost(decodedOnGpu, 3.0, 1));
+
+      assertThat(calibration.constants()).isEqualTo(before);
+      assertThat(calibration.predictProductionSpeeds(Map.of(UUID.randomUUID(), decodedOnGpu)))
+          .isEmpty();
+    }
+
+    @Test
     @DisplayName("Should predict no speeds when a hardware encode runs on the worker")
     void shouldPredictNoSpeedsWhenAHardwareEncodeRunsOnTheWorker() {
       var calibration = calibrationWithNvenc();
