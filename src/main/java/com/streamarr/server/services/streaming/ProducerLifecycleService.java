@@ -1093,6 +1093,7 @@ public class ProducerLifecycleService {
     }
 
     session.removeVariantHandle(variantLabel);
+    seekPriority.variantChanged(session, variantLabel);
   }
 
   private OnDemandStart tryStartVariantOnDemand(SegmentRequest request) {
@@ -1342,6 +1343,10 @@ public class ProducerLifecycleService {
     }
 
     runtimeRegistry.save(session);
+    session
+        .getVariantHandles()
+        .keySet()
+        .forEach(label -> seekPriority.variantChanged(session, label));
   }
 
   /**
@@ -1418,6 +1423,7 @@ public class ProducerLifecycleService {
 
     installHandle(session, command.variantLabel(), replacement);
     runtimeRegistry.save(session);
+    seekPriority.variantChanged(session, command.variantLabel());
     return new ReplaceResult.Replaced(replacement.attemptId());
   }
 
@@ -1474,6 +1480,7 @@ public class ProducerLifecycleService {
 
     session.setVariantHandle(variantLabel, handle.withStatus(TranscodeStatus.FAILED));
     runtimeRegistry.save(session);
+    seekPriority.variantChanged(session, variantLabel);
     return true;
   }
 

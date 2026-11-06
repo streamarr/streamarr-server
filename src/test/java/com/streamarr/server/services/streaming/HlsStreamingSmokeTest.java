@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.noLanguagePreferences;
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
+import static com.streamarr.server.fixtures.SeekPriorityFixture.seekPriorityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommandBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest;
@@ -125,7 +126,7 @@ class HlsStreamingSmokeTest {
             .sessionMutex(new MutexFactory<>())
             .serverSettings(ServerSettingsFixture.defaultServerSettings())
             .seekPriority(
-                SeekPriority.builder()
+                seekPriorityBuilder()
                     .transcodeExecutor(transcodeExecutor)
                     .segmentStore(segmentStore)
                     .runtimeRegistry(sessionRegistry)

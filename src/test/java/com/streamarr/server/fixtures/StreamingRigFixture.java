@@ -28,10 +28,13 @@ public final class StreamingRigFixture {
       StreamingProperties properties,
       RuntimeStreamSessionRegistry runtimeRegistry,
       Clock clock,
+      Clock seekPriorityClock,
       HeldSegmentRequests heldRequests,
       ServerSettingsService serverSettings,
       MutexFactory<UUID> sessionMutex,
       ApplicationEventPublisher eventPublisher) {
+    var held =
+        heldRequests == null ? new HeldSegmentRequests(new SimpleMeterRegistry()) : heldRequests;
     var lifecycle =
         ProducerLifecycleService.builder()
             .transcodeExecutor(transcodeExecutor)
@@ -51,16 +54,15 @@ public final class StreamingRigFixture {
                     .segmentStore(segmentStore)
                     .runtimeRegistry(runtimeRegistry)
                     .properties(properties)
+                    .heldRequests(held)
+                    .clock(seekPriorityClock == null ? Clock.systemUTC() : seekPriorityClock)
                     .build())
             .build();
     var coordinator =
         SegmentDeliveryCoordinator.builder()
             .segmentStore(segmentStore)
             .producerLifecycle(lifecycle)
-            .heldRequests(
-                heldRequests == null
-                    ? new HeldSegmentRequests(new SimpleMeterRegistry())
-                    : heldRequests)
+            .heldRequests(held)
             .eventPublisher(eventPublisher == null ? new CapturingEventPublisher() : eventPublisher)
             .build();
     return new StreamingRig(lifecycle, coordinator);

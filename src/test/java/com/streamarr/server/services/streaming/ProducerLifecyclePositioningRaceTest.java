@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.SeekPriorityFixture.seekPriorityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -55,7 +56,7 @@ class ProducerLifecyclePositioningRaceTest {
             .sessionMutex(raceGate.mutexFactory())
             .serverSettings(ServerSettingsFixture.defaultServerSettings())
             .seekPriority(
-                SeekPriority.builder()
+                seekPriorityBuilder()
                     .transcodeExecutor(transcodeExecutor)
                     .segmentStore(segmentStore)
                     .runtimeRegistry(runtimeRegistry)

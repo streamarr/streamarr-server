@@ -74,12 +74,14 @@ public class StreamingConfig {
       TranscodeExecutor transcodeExecutor,
       SegmentStore segmentStore,
       StreamingProperties properties,
-      RuntimeStreamSessionRegistry runtimeRegistry) {
+      RuntimeStreamSessionRegistry runtimeRegistry,
+      HeldSegmentRequests heldSegmentRequests) {
     return SeekPriority.builder()
         .transcodeExecutor(transcodeExecutor)
         .segmentStore(segmentStore)
         .properties(properties)
         .runtimeRegistry(runtimeRegistry)
+        .heldRequests(heldSegmentRequests)
         .build();
   }
 

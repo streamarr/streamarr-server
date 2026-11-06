@@ -74,6 +74,11 @@ public class StreamSession {
   private final AtomicReference<PlaybackSnapshot> playbackSnapshot =
       new AtomicReference<>(new PlaybackSnapshot(0, PlaybackState.STOPPED, Instant.now()));
 
+  // Unlike the playback snapshot, which every request touches, it changes only with a report.
+  @Getter(lombok.AccessLevel.NONE)
+  @Builder.Default
+  private final AtomicReference<TimelineReport> latestTimelineReport = new AtomicReference<>();
+
   @Getter(lombok.AccessLevel.NONE)
   @Builder.Default
   private final AtomicReference<ShortCopy> shortCopy = new AtomicReference<>();
@@ -111,8 +116,10 @@ public class StreamSession {
   }
 
   public void updatePlaybackState(int positionSeconds, PlaybackState state) {
+    var reportedAt = Instant.now();
     playbackSnapshot.updateAndGet(
-        current -> new PlaybackSnapshot(positionSeconds, state, Instant.now()));
+        current -> new PlaybackSnapshot(positionSeconds, state, reportedAt));
+    latestTimelineReport.set(new TimelineReport(positionSeconds, state, reportedAt));
     var startSecond = getStartPosition().map(Duration::toSeconds).orElse(0L);
     if (positionSeconds != startSecond) {
       playbackMovedFromTheStartPosition.set(true);
@@ -126,6 +133,11 @@ public class StreamSession {
    */
   public boolean hasPlaybackMovedFromTheStartPosition() {
     return playbackMovedFromTheStartPosition.get();
+  }
+
+  /** Empty until the player reports its timeline. */
+  public Optional<TimelineReport> getLatestTimelineReport() {
+    return Optional.ofNullable(latestTimelineReport.get());
   }
 
   public PlaybackSnapshot getPlaybackSnapshot() {

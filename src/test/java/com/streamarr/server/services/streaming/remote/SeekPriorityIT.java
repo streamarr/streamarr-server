@@ -8,8 +8,10 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChanne
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.directPlaySessionBuilder;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
@@ -17,6 +19,7 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.fakes.AdvanceableSystemClock;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
@@ -36,6 +39,7 @@ import io.grpc.ManagedChannel;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.OptionalDouble;
@@ -72,6 +76,7 @@ class SeekPriorityIT {
       new FakeMediaFileContainerInfoRepository();
   private final List<ManagedChannel> channels = new ArrayList<>();
   private final List<LoopbackWorker> workers = new ArrayList<>();
+  private final AdvanceableSystemClock clock = new AdvanceableSystemClock();
   private WorkerSessionServer server;
   private HlsStreamingService streamingService;
   private SegmentDeliveryCoordinator coordinator;
@@ -103,6 +108,7 @@ class SeekPriorityIT {
             .properties(properties)
             .runtimeRegistry(registry)
             .heldRequests(server.heldSegmentRequests())
+            .seekPriorityClock(clock)
             .build();
     coordinator = rig.coordinator();
 
@@ -193,7 +199,7 @@ class SeekPriorityIT {
     registry.updatePlaybackState(steady.sessionId(), 36, PlaybackState.PLAYING);
     var seeking = startPlaying(worker);
 
-    var seek = request(seeking.sessionId(), segmentName(SEEK_SEGMENT));
+    var seek = seek(worker, seeking);
     assertThat(storeAndAwait(seek)).isInstanceOf(SegmentDelivery.Ready.class);
 
     assertThat(yieldsUntilTheSteadyAttemptStops(worker, steady)).isEmpty();
@@ -212,7 +218,7 @@ class SeekPriorityIT {
         .isInstanceOf(SegmentDelivery.Ready.class);
     var seeking = startPlaying(worker);
 
-    request(seeking.sessionId(), segmentName(SEEK_SEGMENT));
+    seek(worker, seeking);
 
     assertThat(nextYield(worker).getJobAttemptIdsList())
         .containsExactly(steady.job().getJobAttemptId());
@@ -232,7 +238,7 @@ class SeekPriorityIT {
         .isInstanceOf(SegmentDelivery.Ready.class);
     var seeking = startPlaying(worker);
 
-    var seek = request(seeking.sessionId(), segmentName(SEEK_SEGMENT));
+    var seek = seek(worker, seeking);
     assertThat(storeAndAwait(seek)).isInstanceOf(SegmentDelivery.Ready.class);
 
     assertThat(yieldsUntilTheSteadyAttemptStops(worker, steady)).isEmpty();
@@ -261,6 +267,171 @@ class SeekPriorityIT {
         .isEmpty();
   }
 
+  @Test
+  @DisplayName(
+      "Should name the steady stream session's job attempt when a direct-play stream session has"
+          + " reported its position")
+  void
+      shouldNameTheSteadyStreamSessionsJobAttemptWhenADirectPlayStreamSessionHasReportedItsPosition()
+          throws Exception {
+    var worker = registerWorker(WORKER_ID, 8);
+    var steady = startPlaying(worker);
+    deliverAhead(steady, 9);
+    registry.updatePlaybackState(steady.sessionId(), 0, PlaybackState.PLAYING);
+    // As the streaming service builds it: no job attempt, so no transcode decision.
+    var directPlay = directPlaySessionBuilder().transcodeDecision(null).build();
+    registry.save(directPlay);
+    registry.updatePlaybackState(directPlay.getSessionId(), 30, PlaybackState.PLAYING);
+    var seeking = startPlaying(worker);
+
+    seek(worker, seeking);
+
+    assertThat(nextYield(worker).getJobAttemptIdsList())
+        .containsExactly(steady.job().getJobAttemptId());
+  }
+
+  @Test
+  @DisplayName(
+      "Should ignore a timeline report from before the stream session's own seek when a later"
+          + " request touches the stream session")
+  void shouldIgnoreATimelineReportFromBeforeTheStreamSessionsOwnSeekWhenALaterRequestTouchesIt()
+      throws Exception {
+    var worker = registerWorker(WORKER_ID, 8);
+    var steady = startPlaying(worker);
+    registry.updatePlaybackState(steady.sessionId(), 0, PlaybackState.PLAYING);
+    var steadySeek = request(steady.sessionId(), segmentName(50));
+    var relocated = new Playing(steady.sessionId(), worker.nextJobs(1).getFirst());
+    assertThat(storeAndAwait(steadySeek)).isInstanceOf(SegmentDelivery.Ready.class);
+    segmentStore.addSegment(steady.sessionId(), segmentName(51), SEGMENT_BYTES);
+    segmentStore.addSegment(steady.sessionId(), segmentName(52), SEGMENT_BYTES);
+    registry.touch(steady.sessionId(), Instant.now());
+    var seeking = startPlaying(worker);
+
+    var seek = seek(worker, seeking);
+    assertThat(storeAndAwait(seek)).isInstanceOf(SegmentDelivery.Ready.class);
+
+    assertThat(relocated.job().getExecution().getStartSequenceNumber()).isEqualTo(50);
+    assertThat(yieldsUntilTheSteadyAttemptStops(worker, relocated)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should never name a job attempt that a player's request started past its reported position"
+          + " before that job attempt has delivered its first segment")
+  void shouldNeverNameAJobAttemptThatAPlayersRequestStartedBeforeItHasDeliveredItsFirstSegment()
+      throws Exception {
+    var worker = registerWorker(WORKER_ID, 8);
+    var steady = startPlaying(worker);
+    deliverAhead(steady, 9);
+    registry.updatePlaybackState(steady.sessionId(), 0, PlaybackState.PLAYING);
+    request(steady.sessionId(), "720p", "720p/segment100.m4s");
+    var onDemand = new Playing(steady.sessionId(), worker.nextJobs(1).getFirst());
+    var seeking = startPlaying(worker);
+
+    var seek = seek(worker, seeking);
+    assertThat(storeAndAwait(seek)).isInstanceOf(SegmentDelivery.Ready.class);
+
+    assertThat(onDemand.job().getVariant().getVariantLabel()).isEqualTo("720p");
+    assertThat(yieldsUntilTheSteadyAttemptStops(worker, onDemand)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should never name a job attempt whose player waits on its next segment")
+  void shouldNeverNameAJobAttemptWhosePlayerWaitsOnItsNextSegment() throws Exception {
+    var worker = registerWorker(WORKER_ID, 8);
+    var steady = startPlaying(worker);
+    deliverAhead(steady, 9);
+    registry.updatePlaybackState(steady.sessionId(), 0, PlaybackState.PLAYING);
+    request(steady.sessionId(), segmentName(10));
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .until(() -> server.heldSegmentRequests().holdsRequestsOn(steady.sessionId(), "480p"));
+    var seeking = startPlaying(worker);
+
+    var seek = seek(worker, seeking);
+    assertThat(storeAndAwait(seek)).isInstanceOf(SegmentDelivery.Ready.class);
+
+    assertThat(yieldsUntilTheSteadyAttemptStops(worker, steady)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should end the yield when the seeking stream session switches to another variant before"
+          + " the seek's first segment arrives")
+  void
+      shouldEndTheYieldWhenTheSeekingStreamSessionSwitchesToAnotherVariantBeforeTheSeeksFirstSegmentArrives()
+          throws Exception {
+    var worker = registerWorker(WORKER_ID, 8);
+    var steady = startPlaying(worker);
+    deliverAhead(steady, 9);
+    registry.updatePlaybackState(steady.sessionId(), 0, PlaybackState.PLAYING);
+    var seeking = startPlaying(worker);
+    seek(worker, seeking);
+    assertThat(nextYield(worker).getJobAttemptIdsList())
+        .containsExactly(steady.job().getJobAttemptId());
+    var switched = request(seeking.sessionId(), "720p", "720p/segment" + SEEK_SEGMENT + ".m4s");
+    assertThat(worker.nextJobs(1).getFirst().getVariant().getVariantLabel()).isEqualTo("720p");
+
+    // The delivered 720p segment completes the switch, which stops the seek's 480p variant.
+    assertThat(storeAndAwait(switched)).isInstanceOf(SegmentDelivery.Ready.class);
+
+    assertThat(nextYield(worker).getJobAttemptIdsList()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should advance a playing viewer's reported position with the clock")
+  void shouldAdvanceAPlayingViewersReportedPositionWithTheClock() throws Exception {
+    var worker = registerWorker(WORKER_ID, 8);
+    var steady = startPlaying(worker);
+    deliverAhead(steady, 7);
+    registry.updatePlaybackState(steady.sessionId(), 0, PlaybackState.PLAYING);
+    // 24 s later the viewer plays segment 4, three segments behind the last delivered one.
+    clock.advance(Duration.ofSeconds(24));
+    var seeking = startPlaying(worker);
+
+    var seek = seek(worker, seeking);
+    assertThat(storeAndAwait(seek)).isInstanceOf(SegmentDelivery.Ready.class);
+
+    assertThat(yieldsUntilTheSteadyAttemptStops(worker, steady)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should keep a paused viewer at its reported position as the clock advances")
+  void shouldKeepAPausedViewerAtItsReportedPositionAsTheClockAdvances() throws Exception {
+    var worker = registerWorker(WORKER_ID, 8);
+    var steady = startPlaying(worker);
+    deliverAhead(steady, 7);
+    registry.updatePlaybackState(steady.sessionId(), 0, PlaybackState.PAUSED);
+    clock.advance(Duration.ofSeconds(24));
+    var seeking = startPlaying(worker);
+
+    seek(worker, seeking);
+
+    assertThat(nextYield(worker).getJobAttemptIdsList())
+        .containsExactly(steady.job().getJobAttemptId());
+  }
+
+  @Test
+  @DisplayName(
+      "Should measure the lead from the highest requested media segment when the timeline report"
+          + " is older than 30 seconds")
+  void
+      shouldMeasureTheLeadFromTheHighestRequestedMediaSegmentWhenTheTimelineReportIsOlderThan30Seconds()
+          throws Exception {
+    var worker = registerWorker(WORKER_ID, 8);
+    var steady = startPlaying(worker);
+    deliverAhead(steady, 8);
+    // Extrapolated, the report would place the viewer in segment 5, within the lead limit.
+    registry.updatePlaybackState(steady.sessionId(), 0, PlaybackState.PLAYING);
+    clock.advance(Duration.ofSeconds(31));
+    var seeking = startPlaying(worker);
+
+    seek(worker, seeking);
+
+    assertThat(nextYield(worker).getJobAttemptIdsList())
+        .containsExactly(steady.job().getJobAttemptId());
+  }
+
   private LoopbackWorker registerWorker(UUID workerId, int availableSlots)
       throws InterruptedException {
     var channel = plaintextChannelBuilder(server.port(), workerId).build();
@@ -285,6 +456,15 @@ class SeekPriorityIT {
     return playing;
   }
 
+  // Requests the seek's first segment and waits until the relocation has started the seek's job
+  // attempt, so that the test stores that segment only after the seek began.
+  private PendingRequest seek(LoopbackWorker worker, Playing seeking) throws InterruptedException {
+    var seek = request(seeking.sessionId(), segmentName(SEEK_SEGMENT));
+    assertThat(worker.nextJobs(1).getFirst().getExecution().getStartSequenceNumber())
+        .isEqualTo(SEEK_SEGMENT);
+    return seek;
+  }
+
   private void deliverAhead(Playing playing, int lastSegment) {
     for (var index = 0; index <= lastSegment; index++) {
       segmentStore.addSegment(playing.sessionId(), segmentName(index), SEGMENT_BYTES);
@@ -295,7 +475,7 @@ class SeekPriorityIT {
   // the worker session carries after any yield that the seek sent.
   private List<YieldToSeekCommand> yieldsUntilTheSteadyAttemptStops(
       LoopbackWorker worker, Playing steady) throws InterruptedException {
-    server.stopVariant(steady.sessionId(), "480p");
+    server.stopVariant(steady.sessionId(), steady.job().getVariant().getVariantLabel());
     return worker
         .responsesThrough(
             response ->
@@ -329,22 +509,31 @@ class SeekPriorityIT {
   }
 
   private PendingRequest request(UUID sessionId, String segmentName) {
+    return request(sessionId, "480p", segmentName);
+  }
+
+  private PendingRequest request(UUID sessionId, String variantLabel, String segmentName) {
     return new PendingRequest(
         sessionId,
+        variantLabel,
         segmentName,
-        CompletableFuture.supplyAsync(() -> coordinator.deliver(sessionId, "480p", segmentName)));
+        CompletableFuture.supplyAsync(
+            () -> coordinator.deliver(sessionId, variantLabel, segmentName)));
   }
 
   // The loopback worker uploads nothing, so the test stores each segment and wakes the requests
   // held on its variant, as a stored upload does.
   private SegmentDelivery storeAndAwait(PendingRequest pending) throws Exception {
     segmentStore.addSegment(pending.sessionId(), pending.segmentName(), SEGMENT_BYTES);
-    server.heldSegmentRequests().wakeVariant(pending.sessionId(), "480p");
+    server.heldSegmentRequests().wakeVariant(pending.sessionId(), pending.variantLabel());
     return pending.delivery().get(5, TimeUnit.SECONDS);
   }
 
   private record Playing(UUID sessionId, VariantJob job) {}
 
   private record PendingRequest(
-      UUID sessionId, String segmentName, CompletableFuture<SegmentDelivery> delivery) {}
+      UUID sessionId,
+      String variantLabel,
+      String segmentName,
+      CompletableFuture<SegmentDelivery> delivery) {}
 }

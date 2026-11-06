@@ -1,10 +1,12 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
-import com.streamarr.server.domain.streaming.PlaybackSnapshot;
 import com.streamarr.server.domain.streaming.PlaybackState;
+import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.domain.streaming.TimelineReport;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
+import com.streamarr.server.domain.streaming.TranscodeStatus;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -24,13 +26,12 @@ import lombok.NonNull;
  * Names the job attempts that give up CPU to a seek (ADR 0044, seek priority). A seek's first
  * segment is pending from the relocation that starts the seek's job attempt until the server
  * delivers that segment. Meanwhile the worker that runs the seek's job attempt pauses every other
- * job attempt on it, of any stream session, that runs more than {@code
- * streaming.seek-priority-lead-segments} media segments ahead of its viewer. A job attempt's lead
- * is the last media segment that it has delivered without a gap, minus the media segment at its
- * viewer's position. The position comes from the viewer's latest timeline report while that report
- * is fresh and follows the stream session's latest seek, and otherwise from the highest media
- * segment that the player has requested since that seek. No job attempt that a player waits on
- * yields.
+ * job attempt on it, of any stream session, whose viewer has more than {@code
+ * streaming.seek-priority-lead-segments} media segments stored past the media segment at its
+ * position, and that started within those segments. The position comes from the viewer's latest
+ * timeline report while that report is fresh and follows the stream session's latest seek, and
+ * otherwise from the highest media segment that the player has requested since that seek. No job
+ * attempt that a player's segment request waits on yields.
  */
 @Builder
 public class SeekPriority {
@@ -42,6 +43,7 @@ public class SeekPriority {
   @NonNull private final TranscodeExecutor transcodeExecutor;
   @NonNull private final SegmentStore segmentStore;
   @NonNull private final RuntimeStreamSessionRegistry runtimeRegistry;
+  @NonNull private final HeldSegmentRequests heldRequests;
   @NonNull private final StreamingProperties properties;
   @Builder.Default private final Clock clock = Clock.systemUTC();
 
@@ -53,7 +55,7 @@ public class SeekPriority {
 
   private record VariantKey(UUID sessionId, String variantLabel) {}
 
-  private record PendingSeek(UUID attemptId, int segmentIndex, ExecutionTargetId target) {}
+  private record PendingSeek(int segmentIndex, ExecutionTargetId target) {}
 
   /** A relocation started the variant's job attempt at the seek's first segment. */
   public synchronized void seekStarted(
@@ -61,15 +63,13 @@ public class SeekPriority {
     var sessionId = session.getSessionId();
     highestRequestedSegments.remove(sessionId);
     latestSeeks.put(sessionId, clock.instant());
-    var handle = session.getVariantHandle(variantLabel);
-    var target = transcodeExecutor.runningExecutionTarget(sessionId, variantLabel);
-    if (handle.isEmpty() || target.isEmpty()) {
+    var target = runningTarget(session, variantLabel);
+    if (target.isEmpty()) {
       return;
     }
 
     pendingSeeks.put(
-        new VariantKey(sessionId, variantLabel),
-        new PendingSeek(handle.get().attemptId(), segmentIndex, target.get()));
+        new VariantKey(sessionId, variantLabel), new PendingSeek(segmentIndex, target.get()));
     var named = yieldingAttempts(target.get());
     if (!named.isEmpty() || yielding.containsKey(target.get())) {
       send(target.get(), named);
@@ -93,6 +93,37 @@ public class SeekPriority {
 
     pendingSeeks.remove(key);
     sendYields(pending.target());
+  }
+
+  /**
+   * The variant's job attempt was replaced, stopped or exhausted. A seek that waited on it waits on
+   * the replacement, on whichever worker that runs, and ends when no job attempt runs.
+   */
+  public synchronized void variantChanged(
+      @NonNull StreamSession session, @NonNull String variantLabel) {
+    var key = new VariantKey(session.getSessionId(), variantLabel);
+    var pending = pendingSeeks.remove(key);
+    if (pending == null) {
+      return;
+    }
+
+    var target = runningTarget(session, variantLabel);
+    target.ifPresent(
+        running -> pendingSeeks.put(key, new PendingSeek(pending.segmentIndex(), running)));
+    sendYields(pending.target());
+    target.filter(running -> !running.equals(pending.target())).ifPresent(this::sendYields);
+  }
+
+  private Optional<ExecutionTargetId> runningTarget(StreamSession session, String variantLabel) {
+    var active =
+        session
+            .getVariantHandle(variantLabel)
+            .filter(handle -> handle.status() == TranscodeStatus.ACTIVE);
+    if (active.isEmpty()) {
+      return Optional.empty();
+    }
+
+    return transcodeExecutor.runningExecutionTarget(session.getSessionId(), variantLabel);
   }
 
   /** The stream session ended, so its seeks wait for nothing. */
@@ -148,18 +179,23 @@ public class SeekPriority {
 
   private Stream<UUID> attemptsAhead(
       StreamSession session, ExecutionTargetId target, Set<VariantKey> waitedOn) {
+    if (session.getDelivery() != StreamDelivery.HLS) {
+      return Stream.empty();
+    }
+
     var viewerSegment = viewerSegment(session);
     if (viewerSegment.isEmpty()) {
       return Stream.empty();
     }
 
+    var sessionId = session.getSessionId();
     return session.getVariantHandles().entrySet().stream()
-        .filter(entry -> !waitedOn.contains(new VariantKey(session.getSessionId(), entry.getKey())))
+        .filter(entry -> !waitedOn.contains(new VariantKey(sessionId, entry.getKey())))
+        .filter(entry -> !heldRequests.holdsRequestsOn(sessionId, entry.getKey()))
         .filter(entry -> runsOn(session, entry.getKey(), target))
         .filter(
             entry ->
-                lead(session, entry.getKey(), entry.getValue(), viewerSegment.getAsInt())
-                    > properties.seekPriorityLeadSegments())
+                leadsItsViewer(session, entry.getKey(), entry.getValue(), viewerSegment.getAsInt()))
         .map(entry -> entry.getValue().attemptId());
   }
 
@@ -170,20 +206,27 @@ public class SeekPriority {
         .isPresent();
   }
 
-  // The last media segment that the job attempt delivered without a gap from its first one,
-  // counted from the viewer's segment; negative before its first segment.
-  private int lead(
+  // The variant has stored every media segment from the one after the viewer's through the lead
+  // limit and one more, and the job attempt started within them, so the viewer plays more than the
+  // lead limit without the job attempt's next segment.
+  private boolean leadsItsViewer(
       StreamSession session, String variantLabel, TranscodeHandle handle, int viewerSegment) {
-    var timeline = MediaSegmentTimelines.of(session, properties);
-    var next = handle.startSequenceNumber();
-    while (timeline.advertises(next)
-        && segmentStore.segmentExists(
-            session.getSessionId(),
-            SegmentNames.storedSegmentName(variantLabel, SegmentNames.mediaSegmentName(next)))) {
-      next++;
+    var lastNeeded = viewerSegment + properties.seekPriorityLeadSegments() + 1;
+    if (handle.startSequenceNumber() > lastNeeded) {
+      return false;
     }
 
-    return next - 1 - viewerSegment;
+    var timeline = MediaSegmentTimelines.of(session, properties);
+    for (var index = viewerSegment + 1; index <= lastNeeded; index++) {
+      if (!timeline.advertises(index)
+          || !segmentStore.segmentExists(
+              session.getSessionId(),
+              SegmentNames.storedSegmentName(variantLabel, SegmentNames.mediaSegmentName(index)))) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   private OptionalInt viewerSegment(StreamSession session) {
@@ -199,30 +242,30 @@ public class SeekPriority {
 
   // A playing viewer's position advances with the clock from its report.
   private Optional<Duration> reportedPosition(StreamSession session) {
-    var snapshot = session.getPlaybackSnapshot();
-    if (!isFreshReportAfterTheLatestSeek(session, snapshot)) {
+    var report = session.getLatestTimelineReport();
+    if (report.isEmpty() || !isFreshReportAfterTheLatestSeek(session, report.get())) {
       return Optional.empty();
     }
 
-    var position = Duration.ofSeconds(snapshot.positionSeconds());
-    if (snapshot.state() == PlaybackState.PLAYING) {
-      return Optional.of(position.plus(Duration.between(snapshot.accessedAt(), clock.instant())));
+    var position = Duration.ofSeconds(report.get().positionSeconds());
+    if (report.get().state() == PlaybackState.PLAYING) {
+      return Optional.of(
+          position.plus(Duration.between(report.get().reportedAt(), clock.instant())));
     }
 
     return Optional.of(position);
   }
 
-  private boolean isFreshReportAfterTheLatestSeek(
-      StreamSession session, PlaybackSnapshot snapshot) {
-    if (snapshot.state() == PlaybackState.STOPPED) {
+  private boolean isFreshReportAfterTheLatestSeek(StreamSession session, TimelineReport report) {
+    if (report.state() == PlaybackState.STOPPED) {
       return false;
     }
 
     var latestSeek = latestSeeks.get(session.getSessionId());
-    if (latestSeek != null && !snapshot.accessedAt().isAfter(latestSeek)) {
+    if (latestSeek != null && !report.reportedAt().isAfter(latestSeek)) {
       return false;
     }
 
-    return !snapshot.accessedAt().plus(FRESH_REPORT).isBefore(clock.instant());
+    return !report.reportedAt().plus(FRESH_REPORT).isBefore(clock.instant());
   }
 }

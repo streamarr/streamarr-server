@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.noLanguagePreferences;
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
+import static com.streamarr.server.fixtures.SeekPriorityFixture.seekPriorityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
@@ -203,7 +204,7 @@ class HlsCopySeekSmokeTest {
             .sessionMutex(new MutexFactory<>())
             .serverSettings(ServerSettingsFixture.defaultServerSettings())
             .seekPriority(
-                SeekPriority.builder()
+                seekPriorityBuilder()
                     .transcodeExecutor(transcodeExecutor)
                     .segmentStore(segmentStore)
                     .runtimeRegistry(sessionRegistry)

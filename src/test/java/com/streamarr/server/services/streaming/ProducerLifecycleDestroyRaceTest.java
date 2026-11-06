@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.SeekPriorityFixture.seekPriorityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultVariantBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -92,7 +93,7 @@ class ProducerLifecycleDestroyRaceTest {
         .sessionMutex(sessionMutex)
         .serverSettings(ServerSettingsFixture.defaultServerSettings())
         .seekPriority(
-            SeekPriority.builder()
+            seekPriorityBuilder()
                 .transcodeExecutor(transcodeExecutor)
                 .segmentStore(new FakeSegmentStore())
                 .runtimeRegistry(runtimeRegistry)
