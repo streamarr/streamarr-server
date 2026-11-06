@@ -327,13 +327,13 @@ class TranscodeDecisionDolbyVisionCopyTest {
       "Should copy AV1 profile 10.1 with its Dolby Vision when the probe observes RPUs ahead of"
           + " their frames")
   void shouldCopyAv1Profile101WithItsDolbyVisionWhenTheProbeObservesRpusAheadOfTheirFrames() {
-    var record = (DolbyVision.Present) profile10(CompatibleBase.PQ, 1).dolbyVision();
+    var profile101 = (DolbyVision.Present) profile10(CompatibleBase.PQ, 1).dolbyVision();
     var observedAheadOfTheirFrames =
         new VideoDynamicRange(
             CompatibleBase.PQ,
             Presence.ABSENT,
             new DolbyVision.Present(
-                record.declared(),
+                profile101.declared(),
                 Presence.PRESENT,
                 Optional.empty(),
                 DolbyVisionRpuPlacement.UNSPECIFIED));
