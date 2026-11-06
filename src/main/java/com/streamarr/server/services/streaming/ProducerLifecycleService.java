@@ -1006,12 +1006,16 @@ public class ProducerLifecycleService {
    * that the stream session started for its playlist. Empty when none is known.
    */
   public Optional<String> playedVariantOf(UUID sessionId) {
+    // Read without the session mutex, in the reverse of the order that
+    // rememberNewestMediaSegmentRequest writes: a first media-segment request is published before
+    // it clears the playlist's variant, so a read that races it still sees one of the two.
+    var startedForPlaylist = Optional.ofNullable(variantsStartedForTheirPlaylist.get(sessionId));
+    var requested =
+        Optional.ofNullable(newestMediaSegmentRequests.get(sessionId))
+            .map(SegmentRequest::variantLabel);
     return Optional.ofNullable(playingVariants.get(sessionId))
-        .or(
-            () ->
-                Optional.ofNullable(newestMediaSegmentRequests.get(sessionId))
-                    .map(SegmentRequest::variantLabel))
-        .or(() -> Optional.ofNullable(variantsStartedForTheirPlaylist.get(sessionId)));
+        .or(() -> requested)
+        .or(() -> startedForPlaylist);
   }
 
   // The played variant while the newest media-segment request asks for another variant.
@@ -1035,16 +1039,17 @@ public class ProducerLifecycleService {
       return;
     }
 
-    // A request for the variant that the player plays can be one sent before the player read the
-    // playlist that started another variant, so it keeps that variant.
-    if (!request.variantLabel().equals(playingVariants.get(request.sessionId()))) {
-      variantsStartedForTheirPlaylist.remove(request.sessionId());
-    }
-
     var previous = newestMediaSegmentRequests.put(request.sessionId(), request);
     if (previous == null || !previous.variantLabel().equals(request.variantLabel())) {
       newestVariantArrivals.put(request.sessionId(), request.arrival());
       eventPublisher.publishEvent(new RequestedVariantChangedEvent(request.sessionId()));
+    }
+
+    // A request for the variant that the player plays can be one sent before the player read the
+    // playlist that started another variant, so it keeps that variant. The playlist's variant is
+    // cleared only after the request is published, for playedVariantOf's unlocked read.
+    if (!request.variantLabel().equals(playingVariants.get(request.sessionId()))) {
+      variantsStartedForTheirPlaylist.remove(request.sessionId());
     }
   }
 
