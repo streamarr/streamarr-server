@@ -2188,11 +2188,7 @@ public class ProducerLifecycleService {
         .pinnedEncoder(session.getPinnedEncoder(variantLabel))
         .sourcePath(session.getSourcePath())
         .seekPosition(timeline.mediaSegmentStartSeconds(startSequenceNumber))
-        .keyframeSeekPosition(
-            seekPosition(
-                session,
-                MediaSegmentTimelines.seekingOf(session, variantLabel, properties),
-                startSequenceNumber))
+        .keyframeSeekPosition(seekPosition(session, variantLabel, timeline, startSequenceNumber))
         .exactSegmentStarts(MediaSegmentTimelines.exactSegmentStartsOf(session, timeline))
         .targetSegmentDuration(timeline.targetSegmentDurationSeconds())
         .framerate(
@@ -2210,8 +2206,13 @@ public class ProducerLifecycleService {
   // at or after the chosen video's probed end reads from one period before that end instead (ADR
   // 0037, early ends).
   private static Optional<Duration> seekPosition(
-      StreamSession session, MediaSegmentTimeline timeline, int startSequenceNumber) {
-    var keyframeSeek = timeline.keyframeSeekPosition(startSequenceNumber);
+      StreamSession session,
+      String variantLabel,
+      MediaSegmentTimeline timeline,
+      int startSequenceNumber) {
+    var keyframeSeek =
+        MediaSegmentTimelines.keyframeSeekPositionOf(
+            session, variantLabel, timeline, startSequenceNumber);
     if (keyframeSeek.isPresent()) {
       return keyframeSeek;
     }
