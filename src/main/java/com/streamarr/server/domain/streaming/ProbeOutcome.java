@@ -95,6 +95,7 @@ public sealed interface ProbeOutcome {
                           .masteringDisplay(video.masteringDisplay())
                           .contentLightLevel(video.contentLightLevel())
                           .sampleEntry(video.sampleEntry())
+                          .maximumFrameRate(video.maximumFrameRate())
                           .build()))
           .build();
     }

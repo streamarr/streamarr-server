@@ -64,6 +64,33 @@ class ProbeOutcomePlaybackFactsTest {
   }
 
   @Test
+  @DisplayName(
+      "Should report the chosen video stream's maximum frame rate when another stream comes first")
+  void shouldReportTheChosenVideoStreamsMaximumFrameRateWhenAnotherStreamComesFirst() {
+    var outcome =
+        ProbeOutcome.Success.builder()
+            .container(ProbeContainer.builder().build())
+            .streams(
+                List.of(
+                    recording().build(),
+                    recording()
+                        .index(1)
+                        .maximumFrameRate(Optional.of(new Fraction(60, 1)))
+                        .build()))
+            .keyframes(new KeyframeKnowledge.NotReported())
+            .chosenVideoStream(
+                Optional.of(
+                    new ChosenVideoStream(
+                        1, VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))))
+            .build();
+
+    var probe = outcome.mediaProbe();
+
+    assertThat(probe.videoPlaybackFacts().flatMap(VideoPlaybackFacts::maximumFrameRate))
+        .contains(new Fraction(60, 1));
+  }
+
+  @Test
   @DisplayName("Should carry the chosen stream's static HDR metadata when the probe stored it")
   void shouldCarryTheChosenStreamsStaticHdrMetadataWhenTheProbeStoredIt() {
     var display = VideoPlaybackFactsFixture.MASTERING_DISPLAY;

@@ -573,8 +573,8 @@ class VideoCapabilityEntryDynamicRangeTest {
             false));
   }
 
-  // Until streamarr/streamarr-server#652, no probe outcome stores a maximum frame rate, and the
-  // copy's own frame rate is no maximum.
+  // A probe outcome before version 8 stores no maximum frame rate, and the copy's own frame rate is
+  // no maximum.
   @Test
   @DisplayName(
       "Should refuse a Dolby Vision copy without a record level when its probe outcome stores no"

@@ -43,8 +43,8 @@ sealed interface CopiedDolbyVision {
   /**
    * Dolby Vision that no entry accepts because the probe's facts leave it unknown: neither the
    * record nor the first RPU header names a profile, or neither the record nor the level table
-   * gives a level. Until streamarr/streamarr-server#652 stores a maximum frame rate, the table
-   * gives no level. A copy on a PQ or HLG base can still play with the Dolby Vision stripped (ADR
+   * gives a level. The table gives none when the probe stored no maximum frame rate, as before
+   * probe version 8. A copy on a PQ or HLG base can still play with the Dolby Vision stripped (ADR
    * 0013).
    */
   record Unknown() implements CopiedDolbyVision {}
