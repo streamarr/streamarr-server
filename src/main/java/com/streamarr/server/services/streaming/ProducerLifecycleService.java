@@ -937,6 +937,13 @@ public class ProducerLifecycleService {
     return next;
   }
 
+  /** The request waits for its segment, so no seek pauses the job attempt that produces it. */
+  public void segmentRequestWaits(SegmentRequest waiting) {
+    runtimeRegistry
+        .findById(waiting.sessionId())
+        .ifPresent(session -> seekPriority.segmentRequestWaits(session, waiting.variantLabel()));
+  }
+
   /** The player received the request's segment, which ends a seek that waited for it. */
   public void segmentDelivered(SegmentRequest delivered) {
     seekPriority.segmentDelivered(

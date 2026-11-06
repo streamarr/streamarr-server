@@ -359,6 +359,26 @@ class SeekPriorityIT {
 
   @Test
   @DisplayName(
+      "Should resume a named job attempt as soon as its player's request waits on its next"
+          + " segment")
+  void shouldResumeANamedJobAttemptAsSoonAsItsPlayersRequestWaitsOnItsNextSegment()
+      throws Exception {
+    var worker = registerWorker(WORKER_ID, 8);
+    var steady = startPlaying(worker);
+    deliverAhead(steady, 9);
+    registry.updatePlaybackState(steady.sessionId(), 0, PlaybackState.PLAYING);
+    var seeking = startPlaying(worker);
+    seek(worker, seeking);
+    assertThat(nextYield(worker).getJobAttemptIdsList())
+        .containsExactly(steady.job().getJobAttemptId());
+
+    request(steady.sessionId(), segmentName(10));
+
+    assertThat(nextYield(worker).getJobAttemptIdsList()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
       "Should end the yield when the seeking stream session switches to another variant before"
           + " the seek's first segment arrives")
   void

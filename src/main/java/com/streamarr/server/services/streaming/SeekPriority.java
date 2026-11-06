@@ -57,23 +57,45 @@ public class SeekPriority {
 
   private record PendingSeek(int segmentIndex, ExecutionTargetId target) {}
 
-  /** A relocation started the variant's job attempt at the seek's first segment. */
+  /**
+   * A relocation started the variant's job attempt at the seek's first segment. A seek that the
+   * variant still waited on ends, and its worker resumes what only that seek needed.
+   */
   public synchronized void seekStarted(
       @NonNull StreamSession session, @NonNull String variantLabel, int segmentIndex) {
     var sessionId = session.getSessionId();
     highestRequestedSegments.remove(sessionId);
     latestSeeks.put(sessionId, clock.instant());
+    var key = new VariantKey(sessionId, variantLabel);
+    var previous = Optional.ofNullable(pendingSeeks.remove(key)).map(PendingSeek::target);
     var target = runningTarget(session, variantLabel);
+    target.ifPresent(running -> pendingSeeks.put(key, new PendingSeek(segmentIndex, running)));
+    previous.filter(earlier -> !target.equals(Optional.of(earlier))).ifPresent(this::sendYields);
     if (target.isEmpty()) {
       return;
     }
 
-    pendingSeeks.put(
-        new VariantKey(sessionId, variantLabel), new PendingSeek(segmentIndex, target.get()));
     var named = yieldingAttempts(target.get());
     if (!named.isEmpty() || yielding.containsKey(target.get())) {
       send(target.get(), named);
     }
+  }
+
+  /**
+   * A segment request of the variant waits for its segment, so the variant's job attempt stops
+   * yielding at once.
+   */
+  public synchronized void segmentRequestWaits(
+      @NonNull StreamSession session, @NonNull String variantLabel) {
+    var attempt = session.getVariantHandle(variantLabel).map(TranscodeHandle::attemptId);
+    var target = transcodeExecutor.runningExecutionTarget(session.getSessionId(), variantLabel);
+    if (attempt.isEmpty()
+        || target.isEmpty()
+        || !yielding.getOrDefault(target.get(), Set.of()).contains(attempt.get())) {
+      return;
+    }
+
+    sendYields(target.get());
   }
 
   /** The player requested the media segment, which counts toward its position. */

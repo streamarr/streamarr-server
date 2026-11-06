@@ -45,6 +45,7 @@ public class SegmentDeliveryCoordinator {
           return completed(request, outcome);
         }
 
+        producerLifecycle.segmentRequestWaits(request);
         if (!tryAwait(wake, request)) {
           return new SegmentDelivery.Cancelled();
         }
