@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
-import com.streamarr.server.services.streaming.SegmentStore.PreparedSegment;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;

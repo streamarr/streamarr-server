@@ -849,13 +849,6 @@ class SeekPriorityIT {
         .getYieldToSeek();
   }
 
-  private static List<YieldToSeekCommand> yieldsIn(List<EstablishWorkerSessionResponse> responses) {
-    return responses.stream()
-        .filter(EstablishWorkerSessionResponse::hasYieldToSeek)
-        .map(EstablishWorkerSessionResponse::getYieldToSeek)
-        .toList();
-  }
-
   private static List<VariantJob> startedJobs(List<EstablishWorkerSessionResponse> responses) {
     return responses.stream()
         .filter(EstablishWorkerSessionResponse::hasStartVariant)
