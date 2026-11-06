@@ -389,10 +389,15 @@ class SeekPriorityIT {
     registry.updatePlaybackState(steady.sessionId(), 0, PlaybackState.PLAYING);
     var seeking = startPlaying(worker);
     var earlierSeek = seek(worker, seeking);
+    // Stored without a wake, so the earlier request reads it at its next pass, which the backward
+    // relocation's stop or the wake below starts.
+    segmentStore.addSegment(seeking.sessionId(), segmentName(SEEK_SEGMENT), SEGMENT_BYTES);
     request(seeking.sessionId(), segmentName(50));
     assertThat(worker.nextJobs(1).getFirst().getExecution().getStartSequenceNumber()).isEqualTo(50);
 
-    assertThat(storeAndAwait(earlierSeek)).isInstanceOf(SegmentDelivery.Ready.class);
+    server.heldSegmentRequests().wakeVariant(seeking.sessionId(), "480p");
+    assertThat(earlierSeek.delivery().get(5, TimeUnit.SECONDS))
+        .isInstanceOf(SegmentDelivery.Ready.class);
 
     assertThat(yieldsUntilTheSteadyAttemptStops(worker, steady).getLast().getJobAttemptIdsList())
         .containsExactly(steady.job().getJobAttemptId());
