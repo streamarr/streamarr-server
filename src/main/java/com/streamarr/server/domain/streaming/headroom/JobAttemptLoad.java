@@ -17,6 +17,10 @@ public record JobAttemptLoad(
     @NonNull PixelRate sourcePixelRate,
     @NonNull ToneMapping toneMapping) {
 
+  public EncodeConfiguration configuration() {
+    return new EncodeConfiguration(encoderAndPreset, sourceDecoder, toneMapping);
+  }
+
   public List<CostTerm> costTerms() {
     var terms = new ArrayList<CostTerm>(3);
     terms.add(new CostTerm(encoderAndPreset, outputPixelRate.megapixelsPerSecond()));

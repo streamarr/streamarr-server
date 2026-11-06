@@ -2,15 +2,15 @@ package com.streamarr.server.services.streaming.headroom;
 
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.headroom.CostConstant;
-import com.streamarr.server.domain.streaming.headroom.CostTerm;
 import com.streamarr.server.domain.streaming.headroom.CpuLimit;
+import com.streamarr.server.domain.streaming.headroom.EncodeConfiguration;
 import com.streamarr.server.domain.streaming.headroom.EncoderAndPreset;
 import com.streamarr.server.domain.streaming.headroom.HeadroomConstants;
 import com.streamarr.server.domain.streaming.headroom.JobAttemptLoad;
 import com.streamarr.server.domain.streaming.headroom.PredictionCheck;
-import java.util.ArrayDeque;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -25,17 +25,12 @@ import lombok.Singular;
 
 /**
  * One worker's calibration (ADR 0044): constants that the server fits continuously from the
- * production times the worker reports, and each constant's latest predictions, which tell whether
- * that constant is validated. The server predicts each measured speed before it fits that
- * measurement.
+ * production times the worker reports, and each encode configuration's latest predictions, which
+ * tell whether that configuration is validated. The server predicts each measured speed before it
+ * fits that measurement.
  */
 public final class WorkerCalibration {
 
-  static final int VALIDATION_PREDICTIONS = 20;
-  private static final int CONCURRENT_PREDICTIONS_REQUIRED = 5;
-  private static final double VALIDATED_MEDIAN_ERROR = 0.10;
-  // Two rungs this far apart separate the encode term from the decode term.
-  private static final double REQUIRED_RATIO_SPREAD = 2;
   // A measurement's weight halves after about 70 later measurements.
   private static final double FORGETTING = 0.99;
   // A constant's relative change from its starting value first costs the fit as much as a tenth of
@@ -48,23 +43,26 @@ public final class WorkerCalibration {
   private final CpuLimit cpuLimit;
   private final HeadroomConstants startingConstants;
   private final ConstantFit fit = new ConstantFit(FORGETTING);
-  private final Map<CostConstant, ArrayDeque<PredictionCheck>> latestPredictions = new HashMap<>();
+  private final Clock clock;
+  private final Map<EncodeConfiguration, PredictionWindow> windows = new HashMap<>();
   private HeadroomConstants constants;
 
   /**
    * Starts from a benchmark's constants with no predictions, or from a kept calibration's constants
-   * with each constant's latest predictions.
+   * with each encode configuration's latest predictions.
    */
   @Builder
   private WorkerCalibration(
       @NonNull CpuLimit cpuLimit,
       @NonNull HeadroomConstants startingConstants,
-      @Singular Map<CostConstant, List<PredictionCheck>> latestPredictions) {
+      @NonNull Clock clock,
+      @Singular Map<EncodeConfiguration, List<PredictionCheck>> latestPredictions) {
     this.cpuLimit = cpuLimit;
     this.startingConstants = startingConstants;
     this.constants = startingConstants;
+    this.clock = clock;
     latestPredictions.forEach(
-        (constant, checks) -> checks.forEach(check -> keepPrediction(constant, check)));
+        (configuration, checks) -> checks.forEach(check -> windowOf(configuration).keep(check)));
   }
 
   /**
@@ -89,15 +87,16 @@ public final class WorkerCalibration {
         .ifPresent(
             cost -> {
               var load = measurement.load();
-              var check =
-                  PredictionCheck.builder()
-                      .relativeError(share / cost / measuredSpeed - 1)
-                      .besideOtherEncodes(!measurement.otherEncodes().isEmpty())
-                      .outputToSourceRatio(
-                          load.outputPixelRate().pixelsPerSecond()
-                              / load.sourcePixelRate().pixelsPerSecond())
-                      .build();
-              terms.forEach(term -> keepPrediction(term.constant(), check));
+              windowOf(load.configuration())
+                  .keep(
+                      PredictionCheck.builder()
+                          .relativeError(share / cost / measuredSpeed - 1)
+                          .besideOtherEncodes(!measurement.otherEncodes().isEmpty())
+                          .outputToSourceRatio(
+                              load.outputPixelRate().pixelsPerSecond()
+                                  / load.sourcePixelRate().pixelsPerSecond())
+                          .measuredAt(clock.instant())
+                          .build());
             });
     fit.add(terms, share / measuredSpeed);
     fit.solve(
@@ -118,23 +117,23 @@ public final class WorkerCalibration {
     return constants;
   }
 
-  /** Each constant's latest predictions, oldest first, as a kept calibration stores them. */
-  public synchronized Map<CostConstant, List<PredictionCheck>> latestPredictions() {
-    var copy = new HashMap<CostConstant, List<PredictionCheck>>();
-    latestPredictions.forEach((constant, checks) -> copy.put(constant, List.copyOf(checks)));
+  /**
+   * Each encode configuration's latest predictions that have not yet left its window, oldest first,
+   * as a kept calibration stores them.
+   */
+  public synchronized Map<EncodeConfiguration, List<PredictionCheck>> latestPredictions() {
+    var now = clock.instant();
+    var copy = new HashMap<EncodeConfiguration, List<PredictionCheck>>();
+    windows.forEach((configuration, window) -> copy.put(configuration, window.live(now)));
     return Map.copyOf(copy);
   }
 
-  /**
-   * True when every constant in these job attempts' costs is validated. A constant is validated
-   * while the median error of its latest 20 predictions is at most 10 %, and at least 5 of those
-   * predictions were of job attempts that ran beside other encodes.
-   */
+  /** True when the encode configuration of every one of these job attempts is validated. */
   public synchronized boolean isValidatedFor(@NonNull Collection<JobAttemptLoad> loads) {
+    var now = clock.instant();
     return loads.stream()
-        .flatMap(load -> load.costTerms().stream())
-        .map(CostTerm::constant)
-        .allMatch(this::isValidated);
+        .map(JobAttemptLoad::configuration)
+        .allMatch(configuration -> isValidated(configuration, now));
   }
 
   /**
@@ -164,42 +163,33 @@ public final class WorkerCalibration {
   }
 
   /**
-   * A constant of a preset that has fewer than 20 predictions of its own shares the validation of
-   * its encoder's Automatic preset (ADR 0044).
+   * An encode configuration whose own predictions are too little evidence either way shares the
+   * validation that the configuration with its encoder's Automatic preset has from its own
+   * predictions (ADR 0044).
    */
-  private boolean isValidated(CostConstant constant) {
-    if (latestPredictionCount(constant) >= VALIDATION_PREDICTIONS) {
-      return arePredictionsValidating(latestPredictions.get(constant));
-    }
-
-    return automaticPresetOf(constant)
-        .filter(automatic -> latestPredictionCount(automatic) >= VALIDATION_PREDICTIONS)
-        .map(automatic -> arePredictionsValidating(latestPredictions.get(automatic)))
-        .orElse(false);
+  private boolean isValidated(EncodeConfiguration configuration, Instant now) {
+    return switch (verdictOf(configuration, now)) {
+      case VALIDATED -> true;
+      case FAILED -> false;
+      case TOO_LITTLE_EVIDENCE ->
+          automaticPresetOf(configuration.encoderAndPreset())
+              .map(configuration::withEncoderAndPreset)
+              .map(automatic -> verdictOf(automatic, now) == PredictionWindow.Verdict.VALIDATED)
+              .orElse(false);
+    };
   }
 
-  private int latestPredictionCount(CostConstant constant) {
-    var checks = latestPredictions.get(constant);
-    return checks == null ? 0 : checks.size();
+  private PredictionWindow.Verdict verdictOf(EncodeConfiguration configuration, Instant now) {
+    var window = windows.get(configuration);
+    if (window == null) {
+      return PredictionWindow.Verdict.TOO_LITTLE_EVIDENCE;
+    }
+
+    return window.verdict(now);
   }
 
-  private static boolean arePredictionsValidating(Collection<PredictionCheck> checks) {
-    var concurrent = checks.stream().filter(PredictionCheck::besideOtherEncodes).count();
-    if (concurrent < CONCURRENT_PREDICTIONS_REQUIRED) {
-      return false;
-    }
-
-    var ratios = checks.stream().mapToDouble(PredictionCheck::outputToSourceRatio).toArray();
-    var spread =
-        Arrays.stream(ratios).max().orElseThrow() / Arrays.stream(ratios).min().orElseThrow();
-    if (spread < REQUIRED_RATIO_SPREAD) {
-      return false;
-    }
-
-    var errors =
-        checks.stream().mapToDouble(check -> Math.abs(check.relativeError())).sorted().toArray();
-    var median = (errors[errors.length / 2 - 1] + errors[errors.length / 2]) / 2;
-    return median <= VALIDATED_MEDIAN_ERROR;
+  private PredictionWindow windowOf(EncodeConfiguration configuration) {
+    return windows.computeIfAbsent(configuration, _ -> new PredictionWindow());
   }
 
   /**
@@ -215,7 +205,11 @@ public final class WorkerCalibration {
         continue;
       }
 
-      automaticPresetOf(constant)
+      if (!(constant instanceof EncoderAndPreset encoderAndPreset)) {
+        continue;
+      }
+
+      automaticPresetOf(encoderAndPreset)
           .filter(automatic -> starting.containsKey(automatic) && solved.containsKey(automatic))
           .ifPresent(
               automatic ->
@@ -227,16 +221,16 @@ public final class WorkerCalibration {
     return adjusted;
   }
 
-  private static Optional<CostConstant> automaticPresetOf(CostConstant constant) {
-    if (!(constant instanceof EncoderAndPreset encoderAndPreset)) {
-      return Optional.empty();
-    }
-
+  private static Optional<EncoderAndPreset> automaticPresetOf(EncoderAndPreset encoderAndPreset) {
     var automatic =
         new EncoderAndPreset(
             encoderAndPreset.backend(),
             EncoderPreset.automaticFor(encoderAndPreset.backend().codecFamily()));
-    return automatic.equals(constant) ? Optional.empty() : Optional.of(automatic);
+    if (automatic.equals(encoderAndPreset)) {
+      return Optional.empty();
+    }
+
+    return Optional.of(automatic);
   }
 
   /**
@@ -270,13 +264,5 @@ public final class WorkerCalibration {
     }
 
     return Optional.of(shares);
-  }
-
-  private void keepPrediction(CostConstant constant, PredictionCheck check) {
-    var checks = latestPredictions.computeIfAbsent(constant, _ -> new ArrayDeque<>());
-    checks.addLast(check);
-    if (checks.size() > VALIDATION_PREDICTIONS) {
-      checks.removeFirst();
-    }
   }
 }

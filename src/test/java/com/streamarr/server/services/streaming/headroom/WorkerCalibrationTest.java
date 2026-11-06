@@ -15,6 +15,7 @@ import com.streamarr.server.domain.streaming.headroom.PixelRate;
 import com.streamarr.server.domain.streaming.headroom.PredictionCheck;
 import com.streamarr.server.domain.streaming.headroom.SourceDecoder;
 import com.streamarr.server.domain.streaming.headroom.ToneMapping;
+import com.streamarr.server.fakes.MutableClock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -66,7 +67,10 @@ class WorkerCalibrationTest {
   }
 
   private static WorkerCalibration.WorkerCalibrationBuilder tenCoreCalibration() {
-    return WorkerCalibration.builder().cpuLimit(new CpuLimit(10)).startingConstants(ACCURATE);
+    return WorkerCalibration.builder()
+        .cpuLimit(new CpuLimit(10))
+        .startingConstants(ACCURATE)
+        .clock(new MutableClock());
   }
 
   private static Duration productionTimeAtSpeed(double productionSpeed) {
@@ -164,6 +168,7 @@ class WorkerCalibrationTest {
                       .cpuSecondsPerMegapixel(Map.of())
                       .coresAlone(RecordedCapacityRuns.CORES_ALONE)
                       .build())
+              .clock(new MutableClock())
               .build();
       for (var run : runs) {
         for (var variant : run.variants()) {
@@ -604,7 +609,7 @@ class WorkerCalibrationTest {
       calibration.fit(measuredAtCost(load, 3.0, 1));
 
       // The benchmark predicted 6 / 1.5 = 4.0, and the worker measured 6 / 3.0 = 2.0.
-      assertThat(calibration.latestPredictions().get(LIBX264_FASTER))
+      assertThat(calibration.latestPredictions().get(load.configuration()))
           .singleElement()
           .satisfies(
               check -> {
@@ -616,8 +621,9 @@ class WorkerCalibrationTest {
 
     @Test
     @DisplayName(
-        "Should keep only a constant's latest 20 predictions when a kept calibration brings more")
-    void shouldKeepOnlyAConstantsLatest20PredictionsWhenAKeptCalibrationBringsMore() {
+        "Should keep only an encode configuration's latest 20 predictions when a kept calibration brings more")
+    void shouldKeepOnlyAnEncodeConfigurationsLatest20PredictionsWhenAKeptCalibrationBringsMore() {
+      var clock = new MutableClock();
       var kept = new ArrayList<PredictionCheck>();
       for (var i = 0; i < 25; i++) {
         kept.add(
@@ -625,15 +631,17 @@ class WorkerCalibrationTest {
                 .relativeError(i / 100.0)
                 .besideOtherEncodes(true)
                 .outputToSourceRatio(0.5)
+                .measuredAt(clock.instant())
                 .build());
       }
 
       var predictions =
           tenCoreCalibration()
-              .latestPrediction(LIBX264_FASTER, kept)
+              .clock(clock)
+              .latestPrediction(load.configuration(), kept)
               .build()
               .latestPredictions()
-              .get(LIBX264_FASTER);
+              .get(load.configuration());
 
       assertThat(predictions).hasSize(20);
       assertThat(predictions.getFirst().relativeError()).isCloseTo(0.05, within(1e-12));
@@ -674,6 +682,76 @@ class WorkerCalibrationTest {
     }
 
     @Test
+    @DisplayName(
+        "Should leave an encode configuration unvalidated when only other configurations priced its constants at a second ratio")
+    void
+        shouldLeaveAnEncodeConfigurationUnvalidatedWhenOnlyOtherConfigurationsPricedItsConstantsAtASecondRatio() {
+      var libx265Veryfast =
+          new EncoderAndPreset(
+              EncoderBackend.builder()
+                  .codecFamily("hevc")
+                  .encoder("libx265")
+                  .kind(EncoderBackend.Kind.SOFTWARE)
+                  .build(),
+              EncoderPreset.VERYFAST);
+      var softwareHevc = new SourceDecoder("hevc", DecodeBackend.SOFTWARE);
+      var calibration =
+          tenCoreCalibration()
+              .startingConstants(
+                  HeadroomConstants.builder()
+                      .cpuSecondsPerMegapixel(
+                          Map.of(
+                              LIBX264_FASTER, 0.04,
+                              libx265Veryfast, 0.12,
+                              SOFTWARE_H264, 0.01,
+                              softwareHevc, 0.01))
+                      .coresAlone(Map.of(LIBX264_FASTER, 6.0, libx265Veryfast, 6.0))
+                      .build())
+              .build();
+      var x264FromH264 = libx264FasterLoad().outputPixelRate(SMALL_OUTPUT).build();
+      var x264FromHevc =
+          libx264FasterLoad().outputPixelRate(LARGE_OUTPUT).sourceDecoder(softwareHevc).build();
+      var x265FromH264 =
+          libx264FasterLoad()
+              .encoderAndPreset(libx265Veryfast)
+              .outputPixelRate(LARGE_OUTPUT)
+              .build();
+      var x265FromHevc =
+          libx264FasterLoad()
+              .encoderAndPreset(libx265Veryfast)
+              .outputPixelRate(SMALL_OUTPUT)
+              .sourceDecoder(softwareHevc)
+              .build();
+
+      // Each constant sees output-to-source ratios of 0.5 and 1, but each configuration only one.
+      for (var i = 0; i < 10; i++) {
+        calibration.fit(measuredAtCost(x264FromH264, 1.5, 2));
+        calibration.fit(measuredAtCost(x264FromHevc, 2.5, 2));
+        calibration.fit(measuredAtCost(x265FromH264, 6.5, 2));
+        calibration.fit(measuredAtCost(x265FromHevc, 3.5, 2));
+      }
+
+      assertThat(calibration.isValidatedFor(List.of(x264FromH264))).isFalse();
+    }
+
+    @Test
+    @DisplayName("Should lose the validation when its predictions are seven days old")
+    void shouldLoseTheValidationWhenItsPredictionsAreSevenDaysOld() {
+      var clock = new MutableClock();
+      var calibration = tenCoreCalibration().clock(clock).build();
+      for (var i = 0; i < 20; i++) {
+        calibration.fit(rungMeasurement(i, 1, 2));
+      }
+
+      assertThat(calibration.isValidatedFor(List.of(load))).as("on the day").isTrue();
+
+      clock.advance(Duration.ofDays(7));
+
+      assertThat(calibration.isValidatedFor(List.of(load))).as("seven days later").isFalse();
+      assertThat(calibration.latestPredictions().get(load.configuration())).isEmpty();
+    }
+
+    @Test
     @DisplayName("Should start without validation when the calibration starts from a benchmark")
     void shouldStartWithoutValidationWhenTheCalibrationStartsFromABenchmark() {
       assertThat(tenCoreCalibration().build().isValidatedFor(List.of(load))).isFalse();
@@ -691,14 +769,17 @@ class WorkerCalibrationTest {
         libx264FasterLoad().encoderAndPreset(LIBX264_VERYFAST).build();
 
     private WorkerCalibration benchmarkedAtFasterAndVeryfast() {
+      return benchmarkedAtFasterAndVeryfastBuilder().build();
+    }
+
+    private WorkerCalibration.WorkerCalibrationBuilder benchmarkedAtFasterAndVeryfastBuilder() {
       return tenCoreCalibration()
           .startingConstants(
               HeadroomConstants.builder()
                   .cpuSecondsPerMegapixel(
                       Map.of(LIBX264_FASTER, 0.04, LIBX264_VERYFAST, 0.02, SOFTWARE_H264, 0.01))
                   .coresAlone(Map.of(LIBX264_FASTER, 6.0, LIBX264_VERYFAST, 6.0))
-                  .build())
-          .build();
+                  .build());
     }
 
     @Test
@@ -729,6 +810,65 @@ class WorkerCalibrationTest {
       var constants = calibration.constants().cpuSecondsPerMegapixel();
       assertThat(constants.get(LIBX264_VERYFAST) / constants.get(LIBX264_FASTER))
           .isCloseTo(0.02 / 0.04, within(1e-9));
+    }
+
+    @Test
+    @DisplayName(
+        "Should keep the Automatic preset's validation for another preset when that preset's own accurate predictions cover one ratio")
+    void
+        shouldKeepTheAutomaticPresetsValidationForAnotherPresetWhenThatPresetsOwnAccuratePredictionsCoverOneRatio() {
+      var calibration = benchmarkedAtFasterAndVeryfast();
+      for (var i = 0; i < 20; i++) {
+        calibration.fit(rungMeasurement(i, 1, 2));
+      }
+
+      // One running variant keeps one ratio: 0.02 x 25 + 0.01 x 50 = 1.0 CPU s per media s.
+      for (var i = 0; i < 20; i++) {
+        calibration.fit(measuredAtCost(veryfast, 1.0, 2));
+      }
+
+      assertThat(calibration.isValidatedFor(List.of(veryfast))).isTrue();
+    }
+
+    @Test
+    @DisplayName(
+        "Should leave another preset unvalidated when five or more of its own predictions miss")
+    void shouldLeaveAnotherPresetUnvalidatedWhenFiveOrMoreOfItsOwnPredictionsMiss() {
+      var calibration = benchmarkedAtFasterAndVeryfast();
+      for (var i = 0; i < 20; i++) {
+        calibration.fit(rungMeasurement(i, 1, 2));
+      }
+
+      for (var i = 0; i < 6; i++) {
+        calibration.fit(measuredAtCost(veryfast, i % 2 == 0 ? 1.0 : 3.0, 2));
+      }
+
+      assertThat(calibration.isValidatedFor(List.of(veryfast))).isFalse();
+    }
+
+    @Test
+    @DisplayName(
+        "Should share the Automatic preset's validation with a failed preset again when its failed predictions are seven days old")
+    void
+        shouldShareTheAutomaticPresetsValidationWithAFailedPresetAgainWhenItsFailedPredictionsAreSevenDaysOld() {
+      var clock = new MutableClock();
+      var calibration = benchmarkedAtFasterAndVeryfastBuilder().clock(clock).build();
+      for (var i = 0; i < 20; i++) {
+        calibration.fit(rungMeasurement(i, 1, 2));
+      }
+
+      for (var i = 0; i < 6; i++) {
+        calibration.fit(measuredAtCost(veryfast, i % 2 == 0 ? 1.0 : 3.0, 2));
+      }
+
+      assertThat(calibration.isValidatedFor(List.of(veryfast))).as("after the misses").isFalse();
+
+      clock.advance(Duration.ofDays(7));
+      for (var i = 0; i < 20; i++) {
+        calibration.fit(rungMeasurement(i, 1, 2));
+      }
+
+      assertThat(calibration.isValidatedFor(List.of(veryfast))).as("seven days later").isTrue();
     }
 
     @Test

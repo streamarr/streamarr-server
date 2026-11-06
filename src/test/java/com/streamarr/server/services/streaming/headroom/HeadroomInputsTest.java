@@ -14,6 +14,7 @@ import com.streamarr.server.domain.streaming.headroom.PredictionCheck;
 import com.streamarr.server.domain.streaming.headroom.SourceDecoder;
 import com.streamarr.server.domain.streaming.headroom.ToneMapping;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -106,7 +107,8 @@ class HeadroomInputsTest {
         PredictionCheck.builder()
             .relativeError(Double.NaN)
             .besideOtherEncodes(false)
-            .outputToSourceRatio(0.5);
+            .outputToSourceRatio(0.5)
+            .measuredAt(Instant.EPOCH);
 
     assertThatThrownBy(check::build).isInstanceOf(IllegalArgumentException.class);
   }
@@ -118,7 +120,8 @@ class HeadroomInputsTest {
         PredictionCheck.builder()
             .relativeError(0.1)
             .besideOtherEncodes(true)
-            .outputToSourceRatio(0);
+            .outputToSourceRatio(0)
+            .measuredAt(Instant.EPOCH);
 
     assertThatThrownBy(check::build).isInstanceOf(IllegalArgumentException.class);
   }
