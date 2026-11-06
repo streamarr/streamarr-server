@@ -336,6 +336,9 @@ For an MP4 or MOV file, version 7 also adds the sample entry that the file store
 Direct play reads both facts: QuickTime's major brand makes the source container MOV, and every other major brand, or none, makes it MP4.
 The worker contract lets a job that encodes audio name its output channel layout, so the worker encodes with that layout instead of only a channel count; such a job can also name its output sample rate and bit depth, which otherwise follow ADR 0043's rules for the codec and the source.
 The server names the output layout of every audio encode, and sets no sample rate or bit depth yet.
+Version 8 adds the maximum frame rate of the chosen video stream: the highest rate at which it presents pictures anywhere in the file, or none when the worker cannot measure it or the stream is interlaced.
+For a Dolby Vision stream, version 8 also adds the enhancement layer that the RPUs' NLQ parameters describe, none, MEL or FEL, and MaxCLL and MaxFALL from the first RPU's level 6 block.
+The server reads none of the version 8 facts yet.
 Version 2 is unused.
 The server requests version 7.
 After the version rises, the server scans each library that holds a result of an earlier version at startup.

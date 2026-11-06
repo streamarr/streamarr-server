@@ -361,6 +361,26 @@ message DolbyVisionPresent {
   DolbyVisionRpuHeader first_rpu_header = 3;
   // The worker reports this field from probe version 5 on.
   DolbyVisionRpuPlacement rpu_placement = 4;
+  // From probe version 8, this field classifies the enhancement layer by the
+  // NLQ parameters of the RPUs that the probe parsed (ADR 0036). It stays
+  // UNSPECIFIED when the worker parsed no RPU.
+  DolbyVisionEnhancementLayer enhancement_layer = 5;
+  // From probe version 8, this field holds MaxCLL and MaxFALL from the level 6
+  // block of the first parsed RPU that carries one. The worker leaves it out
+  // when no parsed RPU carries a level 6 block (ADR 0036).
+  ContentLightLevel rpu_content_light_level = 6;
+}
+
+// This value names the enhancement layer that a stream's RPUs describe.
+enum DolbyVisionEnhancementLayer {
+  // The worker parsed no RPU, or no parsed RPU states its own NLQ parameters.
+  DOLBY_VISION_ENHANCEMENT_LAYER_UNSPECIFIED = 0;
+  // Every parsed RPU disables the residual, so no NLQ parameters apply.
+  DOLBY_VISION_ENHANCEMENT_LAYER_NONE = 1;
+  // Every parsed RPU's NLQ is the identity: a minimal enhancement layer.
+  DOLBY_VISION_ENHANCEMENT_LAYER_MEL = 2;
+  // A parsed RPU's NLQ is not the identity: a full enhancement layer.
+  DOLBY_VISION_ENHANCEMENT_LAYER_FEL = 3;
 }
 
 // This value states where RPUs appear in the inspected H.264 or HEVC samples
@@ -1111,6 +1131,12 @@ message ProbeStreamInfo {
   // is absent in other source containers, which store no sample entry, for a
   // stream without one, such as cover art, and on other streams (ADR 0032).
   optional string sample_entry = 48;
+  // From probe version 8, the chosen video stream reports the highest rate at
+  // which it presents pictures anywhere in the file, in frames per second. A
+  // constant-rate stream reports its base rate. The field is absent when the
+  // worker cannot measure the maximum, on an interlaced stream and on every
+  // other stream. It is never zero or a guess (ADR 0032).
+  Fraction maximum_frame_rate = 49;
 }
 
 // These fields count the pixels that the container crop removes from each
