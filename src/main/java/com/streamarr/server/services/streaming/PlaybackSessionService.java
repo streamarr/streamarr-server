@@ -813,15 +813,25 @@ public class PlaybackSessionService implements AutoCloseable {
     }
   }
 
-  // A format attempt fails before it is ready only through the worker's copy output mismatch,
-  // which the worker reports only for a copy.
+  // A format attempt fails before it is ready only through a worker's report about a copy. The
+  // worker reports a Dolby Vision conversion failure only from a copy that converts profile 7 on a
+  // PQ base (streamarr/streamarr-server#651), so that report names a Dolby Vision copy on an HDR
+  // base; its output mismatch names a copy.
   private static FailedFormatAttempt failedAttempt(
       PlaybackSession playback, PlaybackSessionFailure reason) {
-    if (!(playback.current instanceof PlaybackFormatAttempt.Ready(var session))) {
-      return new FailedFormatAttempt(reason, new FailedFormatAttempt.Copy());
+    if (playback.current instanceof PlaybackFormatAttempt.Ready(var session)) {
+      return new FailedFormatAttempt(reason, outputOf(session));
     }
 
-    return new FailedFormatAttempt(reason, outputOf(session));
+    return new FailedFormatAttempt(reason, outputOfAPendingCopy(reason));
+  }
+
+  private static FailedFormatAttempt.Output outputOfAPendingCopy(PlaybackSessionFailure reason) {
+    if (reason instanceof PlaybackSessionFailure.DolbyVisionConversionFailed) {
+      return new FailedFormatAttempt.DolbyVisionCopyOnAnHdrBase();
+    }
+
+    return new FailedFormatAttempt.Copy();
   }
 
   private static FailedFormatAttempt.Output outputOf(StreamSession session) {

@@ -56,6 +56,7 @@ import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.services.events.watchprogress.StreamSessionTimelineReportedEvent;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.events.CopiedVariantRanShortEvent;
+import com.streamarr.server.services.streaming.events.DolbyVisionConversionFailedEvent;
 import com.streamarr.server.services.streaming.events.MediaSegmentStoredEvent;
 import com.streamarr.server.services.streaming.events.PlaybackSessionChangedEvent;
 import com.streamarr.server.services.streaming.events.ProducedRangeMayHaveMovedEvent;
@@ -2178,6 +2179,41 @@ class PlaybackSessionServiceTest {
         .singleElement()
         .extracting(StreamSession::getSessionId)
         .isEqualTo(stripped.currentFormatAttempt().streamSessionId());
+    assertThat(streams.createdCommands.getLast())
+        .satisfies(
+            next -> {
+              assertThat(next.videoFormatConstraint())
+                  .isEqualTo(VideoFormatConstraint.COPY_WITH_DOLBY_VISION_STRIPPED_OR_ENCODE);
+              assertThat(next.options().quality()).isEqualTo(quality);
+            });
+  }
+
+  // The worker reports a conversion failure only from a copy that converts Dolby Vision profile 7
+  // on a PQ base (streamarr/streamarr-server#651), so the failure names a Dolby Vision copy on an
+  // HDR base even before the format attempt that it fails is ready, and the copy with Dolby Vision
+  // stripped follows in every playback choice (ADR 0052).
+  @ParameterizedTest
+  @CsvSource({"AUTO,", "ORIGINAL, DOLBY_VISION_STRIPPED", "HIGH_720P, DOLBY_VISION_STRIPPED"})
+  @DisplayName(
+      "Should play the copy with Dolby Vision stripped when the conversion failure arrives before"
+          + " creation returns")
+  void shouldPlayTheCopyWithDolbyVisionStrippedWhenTheConversionFailureArrivesBeforeCreationReturns(
+      VideoQuality quality, PlaybackFormatChange expectedChange) {
+    streams.copiedDolbyVision = Optional.of(DolbyVisionProfile.PROFILE_8_1);
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(4).build();
+    streams.duringNextCreation =
+        child ->
+            playback.onDolbyVisionConversionFailed(
+                new DolbyVisionConversionFailedEvent(
+                    child.streamSessionId(), UUID.randomUUID(), "default"));
+    var command = startCommand().options(qualityOptions(quality)).build();
+
+    var stripped = accepted(playback.start(command));
+
+    assertThat(stripped.formatAttemptCount()).isEqualTo(2);
+    assertThat(stripped.playbackChoice()).isEqualTo(quality);
+    assertThat(stripped.formatChange()).isEqualTo(Optional.ofNullable(expectedChange));
+    assertThatTheCopyWithDolbyVisionStrippedPlays(stripped);
     assertThat(streams.createdCommands.getLast())
         .satisfies(
             next -> {
