@@ -114,6 +114,11 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
       }
       """
           .formatted(SELECTED_PROFILE_STATE);
+  private static final String SELECTED_PROFILE_STATE_SUBSCRIPTION =
+      """
+      subscription { activeStreamsChanged { playbackSessionId activeStream { %s } } }
+      """
+          .formatted(SELECTED_PROFILE_STATE_MEDIA);
   private static final String MEDIA_SUBSCRIPTION =
       """
       subscription { activeStreamsChanged { playbackSessionId activeStream { %s } } }
@@ -421,6 +426,74 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
         .allSatisfy(title -> assertThat(title.path("selectedProfileState").isNull()).isTrue());
   }
 
+  @Test
+  @DisplayName(
+      "Should describe the caller's selected Profile, not the viewer's, under a stream's episode,"
+          + " season and series when a ServerAdmin of another Household subscribes and queries")
+  void
+      shouldDescribeTheCallersSelectedProfileUnderAStreamsMediaWhenAServerAdminSubscribesAndQueries() {
+    var adminIdentity = authTestSupport.createAdminIdentity();
+    identities.add(adminIdentity);
+    var admin = authTestSupport.profileBearer(adminIdentity);
+    var socket = connect(admin);
+    socket.subscribe("streams", SELECTED_PROFILE_STATE_SUBSCRIPTION);
+    activeSubscriptions.awaitCount(FIELD, 1);
+    var series =
+        savedSeries(libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary()));
+    var episodeFile = savedEpisodeFile(series);
+    changeWatchState(admin, "markWatched", series.getId());
+
+    var playback = startPlayback(episodeFile);
+    var delivered = nextChange(socket, playback).path("activeStream").path("media");
+    var listed =
+        http.execute(
+            admin,
+            "query { activeStreams { playbackSessionId %s } }"
+                .formatted(SELECTED_PROFILE_STATE_MEDIA));
+
+    assertThat(listed.path("errors").isMissingNode()).as("errors in %s", listed).isTrue();
+    var adminProfileId = adminIdentity.profile().getId().toString();
+    assertThat(episodeTitles(delivered))
+        .as("delivered titles")
+        .allSatisfy(title -> assertSelectedProfileState(title, adminProfileId, "WATCHED"));
+    assertThat(episodeTitles(listedMedia(listed.path("data").path("activeStreams"), playback)))
+        .as("listed titles")
+        .allSatisfy(title -> assertSelectedProfileState(title, adminProfileId, "WATCHED"));
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the caller's current watch state under a stream's movie when it changed"
+          + " since the stream's previous delivery")
+  void
+      shouldDeliverTheCallersCurrentWatchStateUnderAStreamsMovieWhenItChangedSinceTheLastDelivery() {
+    var adminIdentity = authTestSupport.createAdminIdentity();
+    identities.add(adminIdentity);
+    var admin = authTestSupport.profileBearer(adminIdentity);
+    var socket = connect(admin);
+    socket.subscribe("streams", SELECTED_PROFILE_STATE_SUBSCRIPTION);
+    activeSubscriptions.awaitCount(FIELD, 1);
+    var viewerBearer = authTestSupport.profileBearer(viewer);
+    var movie =
+        savedMovie(libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary()));
+    changeWatchState(admin, "markWatched", movie.getId());
+
+    var created = http.execute(viewerBearer, createMutation(fileOf(movie)));
+    var playback = created.path("data").path("createPlaybackSession").path("playbackSession");
+    var playbackId = playback.path("id").asString();
+    openPlaybacks.add(playbackId);
+    var started = nextChange(socket, playbackId).path("activeStream").path("media");
+    changeWatchState(admin, "markUnwatched", movie.getId());
+    var streamId =
+        playback.path("currentFormatAttempt").path("streamSession").path("id").asString();
+    http.execute(viewerBearer, timelineMutation(streamId, 30, "PAUSED"));
+    var paused = nextChange(socket, playbackId).path("activeStream").path("media");
+
+    var adminProfileId = adminIdentity.profile().getId().toString();
+    assertSelectedProfileState(started, adminProfileId, "WATCHED");
+    assertSelectedProfileState(paused, adminProfileId, "UNWATCHED");
+  }
+
   private static List<JsonNode> episodeTitles(JsonNode episode) {
     var season = episode.path("season");
     return List.of(episode, season, season.path("series"));
@@ -433,6 +506,28 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
     assertThat(season.path("series").path("title").asString())
         .as("series title")
         .isEqualTo("A Series");
+  }
+
+  private static void assertSelectedProfileState(
+      JsonNode title, String profileId, String watchStatus) {
+    var state = title.path("selectedProfileState");
+    assertThat(state.path("profile").path("id").asString())
+        .as("selected Profile in %s", title)
+        .isEqualTo(profileId);
+    assertThat(state.path("watchState").path("watchStatus").asString())
+        .as("watch status in %s", title)
+        .isEqualTo(watchStatus);
+  }
+
+  private void changeWatchState(String bearer, String mutation, UUID itemId) {
+    var response =
+        http.execute(
+            bearer,
+            "mutation { %s(input: {itemId: \"%s\"}) { userErrors { __typename } } }"
+                .formatted(mutation, itemId));
+    var userErrors = response.path("data").path(mutation).path("userErrors");
+    assertThat(userErrors.isArray()).as("userErrors in %s", response).isTrue();
+    assertThat(userErrors.isEmpty()).as("userErrors in %s", response).isTrue();
   }
 
   private static void assertMovie(String source, JsonNode media) {
