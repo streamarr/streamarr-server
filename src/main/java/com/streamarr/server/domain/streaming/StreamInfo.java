@@ -16,9 +16,9 @@ import lombok.NonNull;
  * streams only. {@code audioProperties} comes from probe version 7 and later, for audio streams
  * only. An empty {@code comment} counts as false, and so does each disposition of an empty {@code
  * audioProperties}. {@code sampleEntry} comes from probe version 7 and later, for video streams
- * whose MP4 or MOV file stores one. {@code maximumFrameRate}, the highest rate at which the stream
- * presents pictures anywhere in the file, comes from probe version 8 and later, for the chosen
- * progressive video stream when the probe measured it; empty means unknown.
+ * whose MP4 or MOV file stores one. {@code maximumFrameRate}, the highest rate that the stream's
+ * presentation times prove over 1 to 24 consecutive frame intervals, comes from probe version 8 and
+ * later, for the chosen progressive video stream when the probe measured it; empty means unknown.
  */
 @Builder
 public record StreamInfo(
