@@ -492,6 +492,41 @@ class TenBitAndHdrEncodeTest {
     assertThat(plannedEncode().dynamicRange()).isEqualTo(VideoDynamicRange.SDR);
   }
 
+  // The offered choices last for the whole playback session, so a fixed quality that only the
+  // viewer's SDR choice reaches stays offered beside the ones that HDR reaches (ADR 0050).
+  @Test
+  @DisplayName(
+      "Should offer and play a fixed quality that only an SDR encode reaches when the viewer"
+          + " chooses SDR and a faster HDR encode wins without the choice")
+  void shouldOfferAndPlayAFixedQualityThatOnlyAnSdrEncodeReachesWhenTheViewerChoosesSdr() {
+    probes.setDefaultProbe(sixtyFpsSource(CompatibleBase.PQ));
+
+    var encode =
+        accepted(
+            playback.start(
+                start(
+                    options(VideoQuality.FULL_HD_1080P, DynamicRangeChoice.SDR),
+                    clientWith(
+                        av1EntryBuilder()
+                            .compatibleBases(List.of(CompatibleBase.PQ))
+                            .maxWidth(1280)
+                            .maxHeight(720)
+                            .build(),
+                        av1EntryBuilder().maxBitDepth(8).maxFrameRate(30).build()))));
+
+    assertThat(encode.playbackChoice()).isEqualTo(VideoQuality.FULL_HD_1080P);
+    assertThat(encode.offeredChoices())
+        .containsExactly(
+            VideoQuality.ORIGINAL,
+            VideoQuality.AUTO,
+            VideoQuality.FULL_HD_1080P,
+            VideoQuality.HIGH_720P,
+            VideoQuality.MEDIUM_480P,
+            VideoQuality.LOW_360P);
+    assertThat(plannedEncode().dynamicRange()).isEqualTo(VideoDynamicRange.SDR);
+    assertThat(multivariantPlaylist(encode)).contains("RESOLUTION=1920x1080");
+  }
+
   static Stream<Arguments> sourcesWhoseRangeOrBitDepthPlaysOnlyAtHalfTheirFrameRate() {
     return Stream.of(
         Arguments.of(
