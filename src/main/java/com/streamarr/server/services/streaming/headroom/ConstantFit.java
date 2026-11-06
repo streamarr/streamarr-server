@@ -10,7 +10,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import org.ojalgo.matrix.decomposition.Cholesky;
+import org.ojalgo.matrix.store.R064Store;
 import org.ojalgo.optimisation.convex.ConvexSolver;
+import org.ojalgo.structure.Access2D;
 
 /**
  * A weighted least-squares fit of the headroom model's constants to measured costs, with a prior on
@@ -30,6 +33,10 @@ final class ConstantFit {
   // measurement's own cost, not this guess, gives it its value.
   private static final double NEW_CONSTANT = 0.01;
   private static final double NEW_CONSTANT_WEIGHT = 1e-4;
+  // A new constant gets a value once the measurements, not its nominal prior, give at least 90 %
+  // of its precision: its posterior variance is at most a tenth of its prior variance.
+  private static final double SETTLED_BY_PRIOR = 0.1;
+  private static final double NEW_CONSTANT_PRECISION = precision(NEW_CONSTANT, NEW_CONSTANT_WEIGHT);
   // A measurement whose weight has faded below this no longer counts.
   private static final double FADED = 1e-6;
 
@@ -68,9 +75,11 @@ final class ConstantFit {
    * with a starting value pays for its relative change from that value, with a weight that fades as
    * the measurements do. A constant with a current value also pays, lightly and without fading, for
    * its relative change from that value, so a constant that the measurements no longer support
-   * keeps it. A constant with neither pays very lightly for its change from a nominal value. Every
-   * constant therefore has a prior, so the solution is unique, and none comes out below the
-   * smallest constant. Empty only when the solver fails.
+   * keeps it. A new constant, with neither, pays very lightly for its change from a nominal value.
+   * Every constant therefore has a prior, so the solution is unique, and none comes out below the
+   * smallest constant. A new constant joins the solution only once the measurements settle it, so a
+   * split of one cost that only the nominal priors decide never becomes a constant. Empty only when
+   * the solver fails.
    */
   Optional<Map<CostConstant, Double>> solve(
       Map<CostConstant, Double> starting,
@@ -98,6 +107,7 @@ final class ConstantFit {
       }
     }
 
+    var newConstants = new HashSet<CostConstant>();
     index.forEach(
         (constant, row) -> {
           var start = starting.get(constant);
@@ -113,16 +123,37 @@ final class ConstantFit {
 
           if (start == null) {
             anchor(normal, moments, row, NEW_CONSTANT, NEW_CONSTANT_WEIGHT);
+            newConstants.add(constant);
           }
         });
 
+    var variances = posteriorVariances(normal);
     return smallestPositiveSolution(normal, moments)
         .map(
             values -> {
               var solved = new HashMap<CostConstant, Double>();
-              index.forEach((constant, row) -> solved.put(constant, values[row]));
+              index.forEach(
+                  (constant, row) -> {
+                    if (!newConstants.contains(constant)
+                        || variances[row] * NEW_CONSTANT_PRECISION <= SETTLED_BY_PRIOR) {
+                      solved.put(constant, values[row]);
+                    }
+                  });
               return solved;
             });
+  }
+
+  /** The diagonal of the inverse of the positive-definite normal matrix. */
+  private static double[] posteriorVariances(double[][] normal) {
+    var cholesky = Cholesky.R064.make();
+    cholesky.decompose(R064Store.FACTORY.copy(Access2D.wrap(normal)));
+    var inverse = cholesky.getInverse();
+    var variances = new double[normal.length];
+    for (var row = 0; row < normal.length; row++) {
+      variances[row] = inverse.doubleValue(row, row);
+    }
+
+    return variances;
   }
 
   /**
@@ -131,9 +162,14 @@ final class ConstantFit {
    */
   private static void anchor(
       double[][] normal, double[] moments, int row, double value, double weight) {
+    var precision = precision(value, weight);
+    normal[row][row] += precision;
+    moments[row] += precision * value;
+  }
+
+  private static double precision(double value, double weight) {
     var scale = Math.max(value, ANCHOR_FLOOR);
-    normal[row][row] += weight / (scale * scale);
-    moments[row] += weight * value / (scale * scale);
+    return weight / (scale * scale);
   }
 
   /**
