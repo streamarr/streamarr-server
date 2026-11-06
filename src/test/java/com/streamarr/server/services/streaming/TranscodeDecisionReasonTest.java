@@ -31,6 +31,7 @@ import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
+import com.streamarr.server.domain.streaming.VideoCapabilityEntryRefusal;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
@@ -216,6 +217,117 @@ class TranscodeDecisionReasonTest {
                 h264EntryBuilder().maxWidth(1280).maxHeight(720).maxFrameRate(15).build(),
                 h264EntryBuilder().maxFrameRate(15).build()),
             List.of(DecisionReason.VIDEO_FRAME_RATE_NOT_DECLARED)));
+  }
+
+  // #396: media info shows why the server encoded the stream, entry by entry, because ADR 0049
+  // accepts an output only when one entry accepts all of it.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("refusalsOfEachEntry")
+  @DisplayName(
+      "Should list what each HLS entry of the source's codec family refuses when the video is"
+          + " encoded")
+  void shouldListWhatEachHlsEntryOfTheSourcesCodecFamilyRefusesWhenTheVideoIsEncoded(
+      MediaProbe source,
+      ClientCapabilityDeclaration client,
+      List<DecisionReason> reasons,
+      List<VideoCapabilityEntryRefusal> expected) {
+    var decision = decide(source, client);
+
+    assertThat(decision.transcodeMode().copiesVideo()).isFalse();
+    assertThat(decision.reasons()).containsExactlyElementsOf(reasons);
+    assertThat(decision.videoCapabilityEntryRefusals()).containsExactlyElementsOf(expected);
+  }
+
+  static Stream<Arguments> refusalsOfEachEntry() {
+    var level31 = List.of(h264(VideoCodecProfile.H264_HIGH, 31));
+    return Stream.of(
+        Arguments.of(
+            Named.of(
+                "an H.264 source at level 4.0 to two entries below it, one also below its picture",
+                Source.builder().build().probe()),
+            client(
+                h264EntryBuilder().codecProfiles(level31).maxWidth(1280).maxHeight(720).build(),
+                h264EntryBuilder().codecProfiles(level31).build()),
+            List.of(DecisionReason.VIDEO_CODEC_LEVEL_NOT_DECLARED),
+            List.of(
+                refusal(
+                    0,
+                    DecisionReason.VIDEO_CODEC_LEVEL_NOT_DECLARED,
+                    DecisionReason.VIDEO_PICTURE_SIZE_NOT_DECLARED),
+                refusal(1, DecisionReason.VIDEO_CODEC_LEVEL_NOT_DECLARED))),
+        Arguments.of(
+            Named.of(
+                "an HEVC source whose codec profile the probe could not name",
+                hevcMain10()
+                    .videoProperties(
+                        Optional.of(
+                            VideoStreamProperties.builder()
+                                .codecProfile(Optional.empty())
+                                .firstFramesRead(true)
+                                .build()))
+                    .build()
+                    .probe()),
+            client(
+                hevcEntryBuilder()
+                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .build()),
+            List.of(DecisionReason.VIDEO_CODEC_PROFILE_UNKNOWN),
+            List.of(refusal(0, DecisionReason.VIDEO_CODEC_PROFILE_UNKNOWN))),
+        Arguments.of(
+            Named.of(
+                "an HEVC source to a client whose entries name only H.264 and AV1",
+                hevcMain10().build().probe()),
+            client(h264EntryBuilder().build()),
+            List.of(DecisionReason.VIDEO_CODEC_NOT_DECLARED),
+            List.of()),
+        Arguments.of(
+            Named.of(
+                "Dolby Vision whose RPUs start their samples, which the entry accepts",
+                hevcMain10().dynamicRange(rpusStartingTheirSamples()).build().probe()),
+            everyRangeClient(),
+            List.of(DecisionReason.DOLBY_VISION_RPU_STARTS_SAMPLE),
+            List.of(refusal(0))),
+        Arguments.of(
+            Named.of(
+                "a 10-bit HEVC source beside an entry for direct play only",
+                hevcMain10().build().probe()),
+            client(
+                hevcEntryBuilder()
+                    .hls(false)
+                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .build(),
+                hevcEntryBuilder()
+                    .maxBitDepth(8)
+                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .build()),
+            List.of(DecisionReason.VIDEO_BIT_DEPTH_NOT_DECLARED),
+            List.of(refusal(1, DecisionReason.VIDEO_BIT_DEPTH_NOT_DECLARED))));
+  }
+
+  // The best copy keeps Dolby Vision, so each entry's list says why the copy that plays strips it.
+  @Test
+  @DisplayName(
+      "Should list what each HLS entry refuses of the Dolby Vision copy when the decision strips"
+          + " the Dolby Vision")
+  void shouldListWhatEachHlsEntryRefusesOfTheDolbyVisionCopyWhenTheDecisionStripsTheDolbyVision() {
+    var source = hevcMain10().dynamicRange(profile81()).build().probe();
+    var pqClient =
+        client(
+            hevcEntryBuilder()
+                .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
+                .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                .build());
+
+    var decision = decide(source, pqClient);
+
+    assertThat(decision.videoBitstreamRewrites())
+        .containsExactly(BitstreamRewrite.STRIP_DOLBY_VISION);
+    assertThat(decision.videoCapabilityEntryRefusals())
+        .containsExactly(refusal(0, DecisionReason.DOLBY_VISION_NOT_DECLARED));
+  }
+
+  private static VideoCapabilityEntryRefusal refusal(int entryPosition, DecisionReason... reasons) {
+    return new VideoCapabilityEntryRefusal(entryPosition, List.of(reasons));
   }
 
   @ParameterizedTest(name = "{0}")

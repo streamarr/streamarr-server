@@ -16,9 +16,12 @@ public record PlaybackDecisionDto(
     String streamSessionId,
     TrackDeliveryDto<VideoFormatDto> video,
     TrackDeliveryDto<AudioFormatDto> audio,
-    List<String> reasons) {
+    List<String> reasons,
+    List<VideoCapabilityEntryRefusalDto> videoCapabilityEntryRefusals) {
 
   public record TrackDeliveryDto<F>(String delivery, F source, F output) {}
+
+  public record VideoCapabilityEntryRefusalDto(int entryPosition, List<String> reasons) {}
 
   /** {@code frameRate} and {@code bitrate} are null when the probe found none. */
   @Builder
@@ -51,6 +54,14 @@ public record PlaybackDecisionDto(
                 video.delivery().name(), video(video.source()), video(video.output())))
         .audio(audio.orElse(null))
         .reasons(decision.reasons().stream().map(Enum::name).toList())
+        .videoCapabilityEntryRefusals(
+            decision.videoCapabilityEntryRefusals().stream()
+                .map(
+                    refusal ->
+                        new VideoCapabilityEntryRefusalDto(
+                            refusal.entryPosition(),
+                            refusal.reasons().stream().map(Enum::name).toList()))
+                .toList())
         .build();
   }
 

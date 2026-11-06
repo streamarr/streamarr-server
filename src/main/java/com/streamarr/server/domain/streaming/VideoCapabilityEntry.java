@@ -262,7 +262,7 @@ public record VideoCapabilityEntry(
 
   private Optional<DecisionReason> codecProfileRefusal(VideoStreamProperties properties) {
     if (properties.codecProfile().isEmpty()) {
-      return Optional.of(DecisionReason.VIDEO_CODEC_PROFILE_NOT_DECLARED);
+      return Optional.of(DecisionReason.VIDEO_CODEC_PROFILE_UNKNOWN);
     }
 
     var profile = properties.codecProfile().get();

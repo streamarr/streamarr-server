@@ -3,6 +3,7 @@ package com.streamarr.server.domain.streaming;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.NonNull;
@@ -55,6 +56,21 @@ public record ClientCapabilityDeclaration(
         .map(entry -> entry.hlsCopyRefusals(copy))
         .min(Comparator.comparingInt(List::size))
         .orElse(List.of(DecisionReason.VIDEO_CODEC_NOT_DECLARED));
+  }
+
+  /**
+   * What each video capability entry for HLS of the copy's codec family refuses of the stream copy
+   * (#396), each named by its position among the declaration's video capability entries. Empty when
+   * no HLS entry names the codec family.
+   */
+  public List<VideoCapabilityEntryRefusal> hlsCopyRefusalsByEntry(@NonNull VideoStreamCopy copy) {
+    return IntStream.range(0, video.size())
+        .filter(position -> video.get(position).appliesToHlsCopyOf(copy))
+        .mapToObj(
+            position ->
+                new VideoCapabilityEntryRefusal(
+                    position, video.get(position).hlsCopyRefusals(copy)))
+        .toList();
   }
 
   /**

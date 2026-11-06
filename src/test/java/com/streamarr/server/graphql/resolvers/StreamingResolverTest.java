@@ -52,6 +52,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
+import com.streamarr.server.domain.streaming.VideoCapabilityEntryRefusal;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
@@ -1122,6 +1123,49 @@ class StreamingResolverTest {
         .containsEntry("codec", "aac")
         .containsEntry("channels", 2)
         .containsEntry("bitrate", 128_000);
+  }
+
+  @Test
+  @DisplayName(
+      "Should expose what each video capability entry refused when a format attempt's decision"
+          + " lists it")
+  void shouldExposeWhatEachVideoCapabilityEntryRefusedWhenAFormatAttemptsDecisionListsIt() {
+    STUB_SERVICE.setNextResult(
+        buildSessionDeciding(
+            UUID.randomUUID(),
+            remuxDecisionBuilder()
+                .videoCapabilityEntryRefusals(
+                    List.of(
+                        new VideoCapabilityEntryRefusal(
+                            0,
+                            List.of(
+                                DecisionReason.VIDEO_CODEC_LEVEL_NOT_DECLARED,
+                                DecisionReason.VIDEO_PICTURE_SIZE_NOT_DECLARED)),
+                        new VideoCapabilityEntryRefusal(2, List.of())))
+                .build()));
+    var playbackId = startPlayback(VideoQuality.AUTO).read(CREATED_PLAYBACK + ".id", String.class);
+
+    var result =
+        dgsQueryExecutor.executeAndGetDocumentContext(
+            """
+            query {
+              playbackSession(id: "%s") {
+                decisions { videoCapabilityEntryRefusals { entryPosition reasons } }
+              }
+            }
+            """
+                .formatted(playbackId));
+
+    assertThat(
+            result.read(
+                "data.playbackSession.decisions[0].videoCapabilityEntryRefusals", List.class))
+        .containsExactly(
+            Map.of(
+                "entryPosition",
+                0,
+                "reasons",
+                List.of("VIDEO_CODEC_LEVEL_NOT_DECLARED", "VIDEO_PICTURE_SIZE_NOT_DECLARED")),
+            Map.of("entryPosition", 2, "reasons", List.of()));
   }
 
   @Test

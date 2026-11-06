@@ -11,6 +11,7 @@ import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
+import com.streamarr.server.domain.streaming.VideoCapabilityEntryRefusal;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoRange;
@@ -29,7 +30,8 @@ import lombok.NonNull;
 /**
  * How one format attempt of a playback session delivers the media title: its video and audio source
  * and output, and the reasons that the output differs from the source (#751). {@code formatAttempt}
- * counts from 1 for the initial format. {@code audio} is empty for a source without audio.
+ * counts from 1 for the initial format. {@code audio} is empty for a source without audio. {@code
+ * videoCapabilityEntryRefusals} is empty for direct play, which checks no entry for HLS (#396).
  */
 @Builder
 public record PlaybackDecision(
@@ -37,10 +39,12 @@ public record PlaybackDecision(
     @NonNull UUID streamSessionId,
     @NonNull TrackDelivery<VideoFormat> video,
     @NonNull Optional<TrackDelivery<AudioFormat>> audio,
-    @NonNull List<DecisionReason> reasons) {
+    @NonNull List<DecisionReason> reasons,
+    @NonNull List<VideoCapabilityEntryRefusal> videoCapabilityEntryRefusals) {
 
   public PlaybackDecision {
     reasons = List.copyOf(reasons);
+    videoCapabilityEntryRefusals = List.copyOf(videoCapabilityEntryRefusals);
   }
 
   /** How one track is delivered, and its source and output formats. */
@@ -67,6 +71,7 @@ public record PlaybackDecision(
         .video(video(source, decision, session.getVariants()))
         .audio(audio(source, decision.audioDecision()))
         .reasons(Stream.concat(cause.stream(), decision.reasons().stream()).toList())
+        .videoCapabilityEntryRefusals(decision.videoCapabilityEntryRefusals())
         .build();
   }
 
@@ -82,6 +87,7 @@ public record PlaybackDecision(
         .video(asItIs(video))
         .audio(audio)
         .reasons(cause.stream().toList())
+        .videoCapabilityEntryRefusals(List.of())
         .build();
   }
 

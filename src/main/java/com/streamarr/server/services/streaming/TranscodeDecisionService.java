@@ -29,6 +29,7 @@ import com.streamarr.server.domain.streaming.SubtitleMode;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
+import com.streamarr.server.domain.streaming.VideoCapabilityEntryRefusal;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoQuality;
@@ -192,8 +193,24 @@ public class TranscodeDecisionService {
             .videoDolbyVisionOutput(copyPlan.flatMap(CopyPlan::dolbyVisionOutput))
             .reasons(
                 afterDirectPlayRefusals(request, reasons(videoCopy, sessionAudio, audioDecision)))
+            .videoCapabilityEntryRefusals(entryRefusals(request))
             .audioStreamIndex(audioStreamIndex(source, audioDecision))
             .build());
+  }
+
+  // What each HLS entry of the source's codec family refuses of the best copy that the format
+  // attempt permits, whatever the copy rules decide, so media info can show why the server encoded
+  // the stream or left part of it out (#396).
+  private static List<VideoCapabilityEntryRefusal> entryRefusals(TranscodeDecisionRequest request) {
+    return VideoStreamCopy.of(request.source())
+        .flatMap(
+            copy ->
+                copyPlans(copy).stream()
+                    .filter(plan -> isPermittedBy(request.videoFormatConstraint(), plan))
+                    .findFirst()
+                    .map(plan -> copy.afterRewrites(plan.bitstreamRewrites())))
+        .map(request.capabilityDeclaration()::hlsCopyRefusalsByEntry)
+        .orElseGet(List::of);
   }
 
   // Every decision about the audio reads the source's first audio stream, the session's.
