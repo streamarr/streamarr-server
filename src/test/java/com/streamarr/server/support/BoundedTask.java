@@ -62,6 +62,11 @@ public final class BoundedTask<T> implements AutoCloseable {
     return state == Thread.State.WAITING || state == Thread.State.TIMED_WAITING;
   }
 
+  /** Returns whether the task's thread waits to enter a monitor that another thread holds. */
+  public boolean isBlockedOnAMonitor() {
+    return thread.getState() == Thread.State.BLOCKED;
+  }
+
   /**
    * Returns whether the task's thread waits for a {@link CountDownLatch} without a deadline. One
    * snapshot of the thread's stack answers, so a lock wait or a wait with a deadline never counts,

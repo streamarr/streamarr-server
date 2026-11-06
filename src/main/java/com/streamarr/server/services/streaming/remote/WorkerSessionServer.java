@@ -42,7 +42,9 @@ public final class WorkerSessionServer
   private final HeldSegmentRequests heldSegmentRequests;
   private final LiveWorkerConnectionRegistry workerConnections;
   private final WorkerSessionServerRuntime runtime = new WorkerSessionServerRuntime(log);
-  private boolean started;
+  // Read without this monitor by the commands that must not wait for a dispatch that waits on a
+  // worker connection.
+  private volatile boolean started;
 
   @Builder
   public WorkerSessionServer(
@@ -182,14 +184,16 @@ public final class WorkerSessionServer
     return workerConnections.stopVariant(streamSessionId, variantLabel);
   }
 
-  public synchronized void yieldToSeek(
-      ExecutionTargetId target, Set<UUID> jobAttemptIds, Duration holdLimit) {
+  // Not under this monitor: a dispatch can hold it while it waits for a worker connection whose
+  // publication holds that connection's monitor through file I/O, and a pause command must not
+  // wait for either. The connection serializes its own sends.
+  public void yieldToSeek(ExecutionTargetId target, Set<UUID> jobAttemptIds, Duration holdLimit) {
     requireStarted();
     workerConnections.yieldToSeek(target, jobAttemptIds, holdLimit);
   }
 
-  public synchronized void holdBack(
-      ExecutionTargetId target, Map<UUID, Duration> releaseAfterByJobAttempt) {
+  // Not under this monitor, for the same reason as yieldToSeek.
+  public void holdBack(ExecutionTargetId target, Map<UUID, Duration> releaseAfterByJobAttempt) {
     requireStarted();
     workerConnections.holdBack(target, releaseAfterByJobAttempt);
   }
