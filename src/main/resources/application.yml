@@ -26,6 +26,11 @@ spring:
     password: pass
     hikari:
       maximum-pool-size: ${HIKARI_MAXIMUM_POOL_SIZE:30}
+      data-source-properties:
+        # Bounds every lock wait on every connection. A statement still waiting at the bound fails
+        # and its connection returns to the pool, so a lock held without end cannot keep the pool's
+        # connections. A transaction that needs a shorter wait sets its own lock_timeout.
+        options: -c lock_timeout=${DATABASE_LOCK_TIMEOUT:30s}
 
   threads:
     virtual:
