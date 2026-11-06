@@ -34,8 +34,9 @@ public interface StreamingService {
   int getActiveSessionCount();
 
   /**
-   * The variant of the stream session whose segment the player received last, or empty before the
-   * player received one or once the stream session is gone.
+   * The variant of the stream session that the player plays: the one whose segment it received
+   * last, or before it received one, the variant that the stream session started for its playlist.
+   * Empty when neither is known or once the stream session is gone.
    */
   Optional<String> playedVariantOf(UUID sessionId);
 }
