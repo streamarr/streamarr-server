@@ -84,6 +84,11 @@ class TranscodeDecisionServiceTest {
   private static final KeyframeKnowledge KEYFRAMES_LEAVING_A_SLOT_EMPTY =
       ProbeFixture.keyframesEvery(Duration.ofMillis(10_010), Duration.ofMinutes(120));
 
+  // At the 6 s period, the keyframes open segments at 0, 11, 17 and 24 s; the one at 12.5 s
+  // presents less than 2 s after 11 s.
+  private static final List<Long> KEYFRAMES_SKIPPING_ONE_TOO_SOON_AFTER_A_START =
+      List.of(0L, 11_000L, 12_500L, 17_000L, 24_000L);
+
   private static final Set<String> EVERY_VIDEO_CODEC_FAMILY = Set.of("h264", "hevc", "av1");
   // A worker encodes AV1 in hardware, so AV1 comes before H.264 when both keep the frame rate.
   private static final Set<String> HARDWARE_AV1 = Set.of("av1");
@@ -510,6 +515,72 @@ class TranscodeDecisionServiceTest {
             .duration(Duration.ofSeconds(12))
             .keyframeMillis(List.of(0L, 6_000L))
             .videoBytes(List.of(134_164_176L, 1_000L))
+            .build()
+            .probeFrom(probeBuilder("h264", "flac"));
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaring(H264))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.FULL_TRANSCODE);
+    assertThat(meterRegistry.counter(STREAM_COPY_REFUSALS, "reason", "exceeds_segment_cap").count())
+        .isEqualTo(1.0);
+  }
+
+  // The keyframe at 12.5 s presents less than 2 s after segment 1's start at 11 s, so it opens no
+  // segment, and segment 1 runs from 11 s to 17 s across the slots that start at 6 s and at 12 s.
+  // The worker takes each segment's audio from its exact start to the next one's: segment 1 also
+  // holds the copied AC-3 interval from 12.5 s to 17 s, whose 1,000,000 bytes in 200 frames join a
+  // video segment that fits alone.
+  @Test
+  @DisplayName(
+      "Should count the copied audio up to the next segment's exact start when a keyframe that"
+          + " opens no segment lies past the next segment's slot start")
+  void shouldCountTheCopiedAudioUpToTheNextSegmentsExactStartWhenAKeyframeOpensNoSegment() {
+    var source =
+        StreamMeasurementFixture.CopySource.builder()
+            .duration(Duration.ofSeconds(30))
+            .keyframeMillis(KEYFRAMES_SKIPPING_ONE_TOO_SOON_AFTER_A_START)
+            .videoBytes(List.of(1_000L, 1_000L, 133_500_000L, 1_000L, 1_000L))
+            .audioBytes(List.of(1_000L, 1_000L, 1_000_000L, 1_000L, 1_000L))
+            .audioPackets(List.of(10L, 10L, 200L, 10L, 10L))
+            .build()
+            .probeFrom(probeBuilder("h264", "ac3"));
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaringAudio(audio(AAC, 6), audio(AC3, 6)))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(decision.reasons()).containsExactly(DecisionReason.SEGMENT_EXCEEDS_CAP);
+  }
+
+  // Segment 0 runs from zero to the keyframe at 11 s, so the FLAC track encoded to AAC fills 11 s
+  // of its interval, not the 6 s of its first slot. Its video, with framing and heap cost, leaves
+  // 200,000 bytes of the cap: more than 6 s of the encoded frames at 1.2 times their bitrate take,
+  // and less than 11 s take (ADR 0054).
+  @Test
+  @DisplayName(
+      "Should count the encoded audio up to the next segment's exact start when that start lies"
+          + " past the next slot")
+  void shouldCountTheEncodedAudioUpToTheNextSegmentsExactStartWhenThatStartLiesPastTheNextSlot() {
+    var source =
+        StreamMeasurementFixture.CopySource.builder()
+            .duration(Duration.ofSeconds(30))
+            .keyframeMillis(KEYFRAMES_SKIPPING_ONE_TOO_SOON_AFTER_A_START)
+            .videoBytes(List.of(134_014_176L, 1_000L, 1_000L, 1_000L, 1_000L))
             .build()
             .probeFrom(probeBuilder("h264", "flac"));
 

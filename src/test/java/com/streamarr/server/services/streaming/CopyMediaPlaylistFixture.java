@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.domain.streaming.Fraction;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -12,6 +13,9 @@ import lombok.experimental.UtilityClass;
  */
 @UtilityClass
 class CopyMediaPlaylistFixture {
+
+  // The segments start on the plain grid, in whole seconds.
+  private static final Fraction WHOLE_SECONDS = new Fraction(1, 1);
 
   /** Segments that last these EXTINF durations, under this EXT-X-TARGETDURATION. */
   static CopyMediaPlaylist listing(int targetDurationSeconds, String... extinfSeconds) {
@@ -30,11 +34,11 @@ class CopyMediaPlaylistFixture {
       segments.add(
           CopyMediaPlaylist.Segment.builder()
               .openingKeyframeIndex(index)
-              .slotStartSeconds(index * targetDurationSeconds)
+              .startTicks((long) index * targetDurationSeconds)
               .extinfSeconds(new BigDecimal(extinfSeconds.get(index)))
               .build());
     }
 
-    return new CopyMediaPlaylist(segments, targetDurationSeconds);
+    return new CopyMediaPlaylist(segments, targetDurationSeconds, WHOLE_SECONDS);
   }
 }
