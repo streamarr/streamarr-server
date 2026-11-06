@@ -449,6 +449,98 @@ class WorkerCalibrationTest {
   }
 
   @Nested
+  @DisplayName("Waiting Measurement Tests")
+  class WaitingMeasurementTests {
+
+    private final SourceDecoder softwareHevc = new SourceDecoder("hevc", DecodeBackend.SOFTWARE);
+
+    @Test
+    @DisplayName(
+        "Should keep another preset following the Automatic preset when its only measurement also prices constants without values")
+    void
+        shouldKeepAnotherPresetFollowingTheAutomaticPresetWhenItsOnlyMeasurementAlsoPricesConstantsWithoutValues() {
+      var libx264Veryfast = new EncoderAndPreset(LIBX264, EncoderPreset.VERYFAST);
+      var calibration =
+          tenCoreCalibration()
+              .startingConstants(
+                  HeadroomConstants.builder()
+                      .cpuSecondsPerMegapixel(
+                          Map.of(LIBX264_FASTER, 0.04, libx264Veryfast, 0.02, SOFTWARE_H264, 0.01))
+                      .coresAlone(Map.of(LIBX264_FASTER, 6.0, libx264Veryfast, 6.0))
+                      .build())
+              .build();
+      for (var i = 0; i < 200; i++) {
+        calibration.fit(rungMeasurement(i, 2, 2));
+      }
+
+      calibration.fit(
+          measuredAtCost(
+              libx264FasterLoad()
+                  .encoderAndPreset(libx264Veryfast)
+                  .sourceDecoder(softwareHevc)
+                  .toneMapping(ToneMapping.PQ)
+                  .build(),
+              3.0,
+              2));
+      for (var i = 0; i < 50; i++) {
+        calibration.fit(rungMeasurement(i, 2, 2));
+      }
+
+      var constants = calibration.constants().cpuSecondsPerMegapixel();
+      assertThat(constants.get(libx264Veryfast) / constants.get(LIBX264_FASTER))
+          .isCloseTo(0.5, within(1e-6));
+    }
+
+    @Test
+    @DisplayName(
+        "Should leave a new constant unknown when every measurement that prices it also prices a new constant that comes out negative")
+    void
+        shouldLeaveANewConstantUnknownWhenEveryMeasurementThatPricesItAlsoPricesANewConstantThatComesOutNegative() {
+      var libx264Medium = new EncoderAndPreset(LIBX264, EncoderPreset.MEDIUM);
+      var calibration =
+          tenCoreCalibration()
+              .startingConstants(
+                  HeadroomConstants.builder()
+                      .cpuSecondsPerMegapixel(Map.of(LIBX264_FASTER, 0.04, SOFTWARE_H264, 0.01))
+                      .coresAlone(Map.of(LIBX264_FASTER, 6.0, libx264Medium, 6.0))
+                      .build())
+              .build();
+      var medium = libx264FasterLoad().encoderAndPreset(libx264Medium).sourceDecoder(softwareHevc);
+
+      // Doubling the output pixel rate triples the cost, so the HEVC decode constant would be
+      // negative.
+      calibration.fit(measuredAtCost(medium.outputPixelRate(SMALL_OUTPUT).build(), 1.0, 1));
+      calibration.fit(measuredAtCost(medium.outputPixelRate(LARGE_OUTPUT).build(), 3.0, 1));
+
+      assertThat(calibration.constants().cpuSecondsPerMegapixel())
+          .doesNotContainKeys(libx264Medium, softwareHevc);
+    }
+
+    @Test
+    @DisplayName(
+        "Should give a new constant its value when other waiting measurements cannot separate two other new constants")
+    void
+        shouldGiveANewConstantItsValueWhenOtherWaitingMeasurementsCannotSeparateTwoOtherNewConstants() {
+      var calibration = tenCoreCalibration().build();
+      var softwareVp9 = new SourceDecoder("vp9", DecodeBackend.SOFTWARE);
+      calibration.fit(
+          measuredAtCost(
+              libx264FasterLoad().sourceDecoder(softwareHevc).toneMapping(ToneMapping.PQ).build(),
+              3.0,
+              1));
+
+      // 0.04 x 25 + 0.02 x 50 = 2.0 CPU s per media s.
+      calibration.fit(
+          measuredAtCost(libx264FasterLoad().sourceDecoder(softwareVp9).build(), 2.0, 1));
+
+      assertThat(calibration.constants().cpuSecondsPerMegapixel())
+          .doesNotContainKeys(softwareHevc, ToneMapping.PQ)
+          .hasEntrySatisfying(
+              softwareVp9, constant -> assertThat(constant).isCloseTo(0.02, within(1e-3)));
+    }
+  }
+
+  @Nested
   @DisplayName("Unseparated Constant Tests")
   class UnseparatedConstantTests {
 

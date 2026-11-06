@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 /**
  * A weighted least-squares fit of the headroom model's constants to measured costs. Each residual
@@ -49,7 +50,6 @@ final class ConstantFit {
     }
 
     pending.fade();
-    terms.forEach(term -> measured.add(term.constant()));
     if (terms.stream().allMatch(term -> valued.contains(term.constant()))) {
       accumulate(terms, measuredCost, 1);
       return;
@@ -58,13 +58,17 @@ final class ConstantFit {
     pending.add(terms, measuredCost);
   }
 
-  /** The constants that a measurement has priced. */
+  /** The constants that a measurement in the fit has priced; a waiting measurement prices none. */
   Set<CostConstant> measuredConstants() {
     return Set.copyOf(measured);
   }
 
   private void accumulate(List<CostTerm> terms, double measuredCost, double fade) {
-    terms.forEach(term -> indexOf(term.constant()));
+    terms.forEach(
+        term -> {
+          indexOf(term.constant());
+          measured.add(term.constant());
+        });
     var weight = fade / (measuredCost * measuredCost);
     for (var term : terms) {
       var row = indexes.get(term.constant());
@@ -112,8 +116,9 @@ final class ConstantFit {
       Map<CostConstant, Double> current,
       double currentWeight) {
     var unknowns = new ArrayList<CostConstant>(fitted);
-    starting.keySet().stream()
+    Stream.concat(starting.keySet().stream(), current.keySet().stream())
         .filter(constant -> !indexes.containsKey(constant))
+        .distinct()
         .forEach(unknowns::add);
     var size = unknowns.size();
     var matrix = new double[size][size + 1];

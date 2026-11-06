@@ -3,7 +3,9 @@ package com.streamarr.server.services.streaming.headroom;
 import com.streamarr.server.domain.streaming.headroom.CostConstant;
 import com.streamarr.server.domain.streaming.headroom.CostTerm;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -48,32 +50,92 @@ final class PendingMeasurements {
 
   /**
    * The value of each waiting constant that the waiting measurements determine once the known
-   * constants are held at these values. A constant that comes out not positive stays without a
-   * value while the others are solved again. Empty when the measurements cannot separate the
-   * waiting constants.
+   * constants are held at these values. Waiting measurements that share no waiting constant are
+   * solved apart, so measurements that cannot separate two constants leave the others free. A
+   * measurement that prices a constant which comes out not positive is set aside while the rest are
+   * solved again, so its cost never moves another constant.
    */
   Map<CostConstant, Double> solve(Map<CostConstant, Double> known) {
-    var unknowns = new ArrayList<>(waitingConstants(known));
-    while (!unknowns.isEmpty()) {
-      var values = LinearSystem.solve(normalEquations(unknowns, known));
-      if (values.isEmpty()) {
-        return Map.of();
-      }
+    return solveSeparately(waiting, known);
+  }
 
-      var solved = new HashMap<CostConstant, Double>();
-      for (var index = 0; index < unknowns.size(); index++) {
-        solved.put(unknowns.get(index), values.get()[index]);
-      }
+  private static Map<CostConstant, Double> solveSeparately(
+      List<Measured> measurements, Map<CostConstant, Double> known) {
+    var solved = new HashMap<CostConstant, Double>();
+    groupsSharingConstants(measurements, known)
+        .forEach(group -> solved.putAll(solveGroup(group, known)));
+    return solved;
+  }
 
-      if (solved.values().stream().allMatch(value -> value > 0 && Double.isFinite(value))) {
-        return solved;
-      }
-
-      unknowns.removeIf(
-          constant -> solved.get(constant) <= 0 || !Double.isFinite(solved.get(constant)));
+  private static Map<CostConstant, Double> solveGroup(
+      List<Measured> group, Map<CostConstant, Double> known) {
+    var unknowns = List.copyOf(unknownsOf(group, known));
+    var values = LinearSystem.solve(normalEquations(group, unknowns, known));
+    if (values.isEmpty()) {
+      return Map.of();
     }
 
-    return Map.of();
+    var notPositive = new HashSet<CostConstant>();
+    var solved = new HashMap<CostConstant, Double>();
+    for (var index = 0; index < unknowns.size(); index++) {
+      var value = values.get()[index];
+      if (value <= 0 || !Double.isFinite(value)) {
+        notPositive.add(unknowns.get(index));
+      }
+
+      solved.put(unknowns.get(index), value);
+    }
+
+    if (notPositive.isEmpty()) {
+      return solved;
+    }
+
+    var usable =
+        group.stream()
+            .filter(
+                measured ->
+                    measured.terms().stream().noneMatch(t -> notPositive.contains(t.constant())))
+            .toList();
+    return solveSeparately(usable, known);
+  }
+
+  /** The measurements that price at least one waiting constant, grouped by shared constants. */
+  private static List<List<Measured>> groupsSharingConstants(
+      List<Measured> measurements, Map<CostConstant, Double> known) {
+    var groups = new ArrayList<List<Measured>>();
+    var groupConstants = new ArrayList<Set<CostConstant>>();
+    for (var measured : measurements) {
+      var constants = unknownsOf(List.of(measured), known);
+      if (constants.isEmpty()) {
+        continue;
+      }
+
+      var merged = new ArrayList<Measured>(List.of(measured));
+      var mergedConstants = new HashSet<>(constants);
+      for (var index = groups.size() - 1; index >= 0; index--) {
+        if (!Collections.disjoint(groupConstants.get(index), mergedConstants)) {
+          merged.addAll(groups.remove(index));
+          mergedConstants.addAll(groupConstants.remove(index));
+        }
+      }
+
+      groups.add(merged);
+      groupConstants.add(mergedConstants);
+    }
+
+    return groups;
+  }
+
+  private static Set<CostConstant> unknownsOf(
+      List<Measured> measurements, Map<CostConstant, Double> known) {
+    var constants = new LinkedHashSet<CostConstant>();
+    measurements.forEach(
+        measured ->
+            measured.terms().stream()
+                .map(CostTerm::constant)
+                .filter(constant -> !known.containsKey(constant))
+                .forEach(constants::add));
+    return constants;
   }
 
   /** Hands every waiting measurement whose constants all have values to the fit. */
@@ -87,26 +149,15 @@ final class PendingMeasurements {
     ready.forEach(fit);
   }
 
-  private Set<CostConstant> waitingConstants(Map<CostConstant, Double> known) {
-    var constants = new LinkedHashSet<CostConstant>();
-    waiting.forEach(
-        measured ->
-            measured.terms().stream()
-                .map(CostTerm::constant)
-                .filter(constant -> !known.containsKey(constant))
-                .forEach(constants::add));
-    return constants;
-  }
-
   /**
-   * The weighted normal equations for the waiting constants, with each known constant's cost taken
-   * off the measured cost. A constant that a measurement prices but that is neither known nor among
-   * the unknowns adds nothing.
+   * The weighted normal equations for the unknowns, with each known constant's cost taken off the
+   * measured cost.
    */
-  private double[][] normalEquations(List<CostConstant> unknowns, Map<CostConstant, Double> known) {
+  private static double[][] normalEquations(
+      List<Measured> measurements, List<CostConstant> unknowns, Map<CostConstant, Double> known) {
     var size = unknowns.size();
     var matrix = new double[size][size + 1];
-    for (var measured : waiting) {
+    for (var measured : measurements) {
       var remaining = measured.measuredCost();
       for (var term : measured.terms()) {
         remaining -= known.getOrDefault(term.constant(), 0.0) * term.megapixelsPerSecond();
