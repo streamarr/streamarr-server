@@ -41,9 +41,8 @@ type ActiveStream {
     mediaFileId: ID!
     """
     The movie or episode that the stream plays. Null for a media file without a matched movie or episode.
-    Every watchStatus, watchProgress, lastWatchedAt and languagePreference under it, on its season and series
-    too, describes the caller's selected Profile, not the viewer's, and fails with PROFILE_REQUIRED when the
-    caller has no selected Profile.
+    Its selectedProfileState, and that of its season and series, describes the caller's selected Profile, not
+    the viewer's, and is null without an error when the caller has no selected Profile.
     """
     media: ActiveStreamMedia
     "Seconds into the media title, as the client last reported. Null while the format attempt prepares."

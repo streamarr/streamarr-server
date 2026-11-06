@@ -100,6 +100,19 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
         }
       }
       """;
+  private static final String SELECTED_PROFILE_STATE =
+      "selectedProfileState { profile { id } watchState { watchStatus } }";
+  private static final String SELECTED_PROFILE_STATE_MEDIA =
+      """
+      media {
+        ... on Movie { title %1$s }
+        ... on Episode {
+          title %1$s
+          season { seasonNumber %1$s series { title %1$s } }
+        }
+      }
+      """
+          .formatted(SELECTED_PROFILE_STATE);
   private static final String MEDIA_SUBSCRIPTION =
       """
       subscription { activeStreamsChanged { playbackSessionId activeStream { %s } } }
@@ -381,22 +394,34 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should refuse a stream's media watch status with PROFILE_REQUIRED when a ServerAdmin queries"
-          + " without a selected Profile")
-  void shouldRefuseAStreamsMediaWatchStatusWithProfileRequiredWhenAServerAdminHasNoProfile() {
+      "Should return a stream's media with a null selectedProfileState and no error when a"
+          + " ServerAdmin queries without a selected Profile")
+  void shouldReturnAStreamsMediaWithNullSelectedProfileStateWhenAServerAdminHasNoProfile() {
     var identity = authTestSupport.createAdminIdentity();
     identities.add(identity);
-    var playback = startPlayback(savedMovieFile());
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var moviePlayback = startPlayback(fileOf(savedMovie(library)));
+    var episodePlayback = startPlayback(savedEpisodeFile(savedSeries(library)));
 
     var listed =
         http.execute(
             authTestSupport.accountBearer(identity),
-            "query { activeStreams { playbackSessionId media { ... on Movie { watchStatus } } } }");
+            "query { activeStreams { playbackSessionId %s } }"
+                .formatted(SELECTED_PROFILE_STATE_MEDIA));
 
-    assertThat(listedMedia(listed.path("data").path("activeStreams"), playback).isNull())
-        .as("media in %s", listed)
-        .isTrue();
-    assertThat(firstErrorCode(listed)).isEqualTo("PROFILE_REQUIRED");
+    assertThat(listed.path("errors").isMissingNode()).as("errors in %s", listed).isTrue();
+    var listedStreams = listed.path("data").path("activeStreams");
+    var movie = listedMedia(listedStreams, moviePlayback);
+    var episode = listedMedia(listedStreams, episodePlayback);
+    var season = episode.path("season");
+    var series = season.path("series");
+    assertThat(movie.path("title").asString()).as("movie title").isEqualTo("Streamed Movie");
+    assertThat(episode.path("title").asString()).as("episode title").isEqualTo("Pilot");
+    assertThat(season.path("seasonNumber").asInt()).as("season number").isEqualTo(2);
+    assertThat(series.path("title").asString()).as("series title").isEqualTo("A Series");
+    assertThat(List.of(movie, episode, season, series))
+        .as("selectedProfileState in %s", listed)
+        .allSatisfy(title -> assertThat(title.path("selectedProfileState").isNull()).isTrue());
   }
 
   private static void assertMovie(String source, JsonNode media) {
