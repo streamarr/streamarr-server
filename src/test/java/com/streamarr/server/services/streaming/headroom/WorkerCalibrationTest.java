@@ -525,6 +525,30 @@ class WorkerCalibrationTest {
 
     @Test
     @DisplayName(
+        "Should leave a new tone-mapping constant unknown when another new constant's nominal value could drive a new decode constant to the positive floor")
+    void
+        shouldLeaveANewToneMappingConstantUnknownWhenAnotherNewConstantsNominalValueCouldDriveANewDecodeConstantToThePositiveFloor() {
+      var calibration = accurateWithMediumCoresAlone();
+      var mediumFrom8kHevc =
+          libx264FasterLoad()
+              .encoderAndPreset(LIBX264_MEDIUM)
+              .outputPixelRate(PixelRate.of(640, 360, 24))
+              .sourceDecoder(softwareHevc)
+              .sourcePixelRate(PixelRate.of(7680, 4320, 24));
+
+      calibration.fit(measuredAtCost(mediumFrom8kHevc.build(), 0.2, 2));
+      for (var i = 0; i < 1100; i++) {
+        calibration.fit(rungMeasurement(i, 1, 2));
+      }
+
+      calibration.fit(measuredAtCost(mediumFrom8kHevc.toneMapping(ToneMapping.PQ).build(), 0.5, 2));
+
+      assertThat(calibration.constants().cpuSecondsPerMegapixel())
+          .doesNotContainKey(ToneMapping.PQ);
+    }
+
+    @Test
+    @DisplayName(
         "Should leave a new tone-mapping constant unknown when a new decode constant held at the positive floor lets another new constant's nominal value move it")
     void
         shouldLeaveANewToneMappingConstantUnknownWhenANewDecodeConstantHeldAtThePositiveFloorLetsAnotherNewConstantsNominalValueMoveIt() {

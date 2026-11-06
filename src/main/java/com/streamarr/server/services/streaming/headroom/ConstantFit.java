@@ -13,6 +13,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.ojalgo.matrix.decomposition.Cholesky;
+import org.ojalgo.matrix.store.MatrixStore;
 import org.ojalgo.matrix.store.R064Store;
 import org.ojalgo.optimisation.convex.ConvexSolver;
 
@@ -40,6 +41,10 @@ final class ConstantFit {
   // either direction.
   private static final double SETTLED_SHARE = 1e-3;
   private static final double NOMINAL_ERROR = 0.1;
+  private static final double NOMINAL_PRECISION =
+      NEW_CONSTANT_WEIGHT / (NEW_CONSTANT * NEW_CONSTANT);
+  // Each set of these constants held at the floor costs one more inversion of the normal matrix.
+  private static final int MOST_CONSTANTS_NEAR_FLOOR = 6;
   // A measurement whose weight has faded below this no longer counts.
   private static final double FADED = 1e-6;
 
@@ -149,54 +154,97 @@ final class ConstantFit {
   }
 
   /**
-   * For each constant, the most that the nominal values of the new constants can move it through
-   * the whole fit, when each nominal value is off by up to the nominal error. The nominal values
-   * move the solution by N^-1 p times their errors, where N is the fit's normal matrix and p the
-   * nominal precision. Along a direction of the new constants that the measurements do not see,
-   * this move is at least the nominal error times the constant's part of that direction, however
-   * small that part is. A constant at the positive floor stays there for a small move, so the pull
-   * is also taken with those constants held, and the larger of the two counts.
+   * For each constant, the most that the nominal values of the new constants can move it when each
+   * nominal value is off by up to the nominal error. The fit's solution moves piecewise linearly
+   * with the nominal values: while a set of constants sits at the floor, the others move by
+   * (N_FF)^-1 p times the nominal values' errors, where N_FF is the fit's normal matrix over the
+   * other constants and p the nominal precision. The pull is the largest such move over every set
+   * of constants that can reach the floor or leave it. When too many constants can, the pull is the
+   * coarser bound of every set at once.
    */
   private static double[] nominalPull(double[][] normal, double[] values, Set<Integer> newRows) {
+    var moveBound = moveBound(normal, newRows);
+    var nearFloor =
+        IntStream.range(0, values.length)
+            .filter(row -> values[row] - moveBound[row] < 2 * SMALLEST_CONSTANT)
+            .boxed()
+            .toList();
+    if (nearFloor.size() > MOST_CONSTANTS_NEAR_FLOOR) {
+      return moveBound;
+    }
+
     var pull = new double[values.length];
-    var everyRow = IntStream.range(0, values.length).boxed().toList();
-    raiseToNominalPull(pull, normal, everyRow, newRows);
-    raiseToNominalPull(
-        pull,
-        normal,
-        everyRow.stream().filter(row -> values[row] >= 2 * SMALLEST_CONSTANT).toList(),
-        newRows);
+    for (var held = 0; held < 1 << nearFloor.size(); held++) {
+      var heldRows = new HashSet<Integer>();
+      for (var bit = 0; bit < nearFloor.size(); bit++) {
+        if ((held >> bit & 1) == 1) {
+          heldRows.add(nearFloor.get(bit));
+        }
+      }
+
+      var moving = IntStream.range(0, values.length).filter(row -> !heldRows.contains(row));
+      raiseToNominalPull(pull, normal, moving.boxed().toList(), newRows);
+    }
+
     return pull;
+  }
+
+  /**
+   * For each constant, a bound on how far the nominal values of the new constants can move it,
+   * whichever constants reach the floor. The fit's solution is the projection, in the norm of N, of
+   * the unbounded solution onto the constants at or above the floor, and that projection never
+   * lengthens a move in that norm. A change d of the nominal values moves the unbounded solution by
+   * N^-1 p d, and a move of length L in that norm moves a constant by at most L times the root of
+   * its diagonal entry of N^-1.
+   */
+  private static double[] moveBound(double[][] normal, Set<Integer> newRows) {
+    var inverse = inverseOver(normal, IntStream.range(0, normal.length).boxed().toList());
+    var spread = 0.0;
+    for (var row : newRows) {
+      for (var column : newRows) {
+        spread += Math.abs(inverse.doubleValue(row, column));
+      }
+    }
+
+    var longestMove = NOMINAL_ERROR * NOMINAL_PRECISION * Math.sqrt(spread);
+    var bound = new double[normal.length];
+    for (var row = 0; row < normal.length; row++) {
+      bound[row] = Math.sqrt(inverse.doubleValue(row, row)) * longestMove;
+    }
+
+    return bound;
   }
 
   private static void raiseToNominalPull(
       double[] pull, double[][] normal, List<Integer> moving, Set<Integer> newRows) {
-    var size = moving.size();
-    if (size == 0) {
+    if (moving.isEmpty()) {
       return;
     }
 
-    var matrix = R064Store.FACTORY.make(size, size);
-    for (var row = 0; row < size; row++) {
-      for (var column = 0; column < size; column++) {
-        matrix.set(row, column, normal[moving.get(row)][moving.get(column)]);
-      }
-    }
-
-    var cholesky = Cholesky.R064.make();
-    cholesky.decompose(matrix);
-    var inverse = cholesky.getInverse();
-    var nominalPrecision = NEW_CONSTANT_WEIGHT / (NEW_CONSTANT * NEW_CONSTANT);
-    for (var row = 0; row < size; row++) {
+    var inverse = inverseOver(normal, moving);
+    for (var row = 0; row < moving.size(); row++) {
       var move = 0.0;
-      for (var column = 0; column < size; column++) {
+      for (var column = 0; column < moving.size(); column++) {
         if (newRows.contains(moving.get(column))) {
-          move += NOMINAL_ERROR * nominalPrecision * Math.abs(inverse.doubleValue(row, column));
+          move += NOMINAL_ERROR * NOMINAL_PRECISION * Math.abs(inverse.doubleValue(row, column));
         }
       }
 
       pull[moving.get(row)] = Math.max(pull[moving.get(row)], move);
     }
+  }
+
+  private static MatrixStore<Double> inverseOver(double[][] normal, List<Integer> rows) {
+    var matrix = R064Store.FACTORY.make(rows.size(), rows.size());
+    for (var row = 0; row < rows.size(); row++) {
+      for (var column = 0; column < rows.size(); column++) {
+        matrix.set(row, column, normal[rows.get(row)][rows.get(column)]);
+      }
+    }
+
+    var cholesky = Cholesky.R064.make();
+    cholesky.decompose(matrix);
+    return cholesky.getInverse();
   }
 
   /**
