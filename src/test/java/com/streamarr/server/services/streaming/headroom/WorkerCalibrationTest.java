@@ -1401,6 +1401,45 @@ class WorkerCalibrationTest {
     }
 
     @Test
+    @DisplayName(
+        "Should leave another preset unknown and unvalidated when measurements at nearly equal ratios barely separate it from a new decode constant")
+    void
+        shouldLeaveAnotherPresetUnknownAndUnvalidatedWhenMeasurementsAtNearlyEqualRatiosBarelySeparateItFromANewDecodeConstant() {
+      var libx264Medium = new EncoderAndPreset(LIBX264, EncoderPreset.MEDIUM);
+      var calibration =
+          tenCoreCalibration()
+              .startingConstants(
+                  HeadroomConstants.builder()
+                      .cpuSecondsPerMegapixel(Map.of(LIBX264_FASTER, 0.04, SOFTWARE_H264, 0.01))
+                      .coresAlone(Map.of(LIBX264_FASTER, 6.0, libx264Medium, 6.0))
+                      .build())
+              .build();
+      for (var i = 0; i < 20; i++) {
+        calibration.fit(rungMeasurement(i, 1, 2));
+      }
+
+      // Medium costs 0.02 and HEVC decode 0.002: 1.0 + 0.1 at 50 output megapixels per second and
+      // 0.992 + 0.1 at 49.6.
+      var mediumFromHevc =
+          libx264FasterLoad()
+              .encoderAndPreset(libx264Medium)
+              .sourceDecoder(new SourceDecoder("hevc", DecodeBackend.SOFTWARE));
+      for (var i = 0; i < 20; i++) {
+        calibration.fit(
+            measuredAtCost(mediumFromHevc.outputPixelRate(LARGE_OUTPUT).build(), 1.1, 2));
+        calibration.fit(
+            measuredAtCost(
+                mediumFromHevc.outputPixelRate(PixelRate.of(1984, 1000, 25)).build(), 1.092, 2));
+      }
+
+      assertThat(calibration.constants().cpuSecondsPerMegapixel()).doesNotContainKey(libx264Medium);
+      assertThat(
+              calibration.isValidatedFor(
+                  List.of(libx264FasterLoad().encoderAndPreset(libx264Medium).build())))
+          .isFalse();
+    }
+
+    @Test
     @DisplayName("Should let another preset's own predictions decide once it has twenty of them")
     void shouldLetAnotherPresetsOwnPredictionsDecideOnceItHasTwentyOfThem() {
       var calibration = benchmarkedAtFasterAndVeryfast();

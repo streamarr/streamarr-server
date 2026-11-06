@@ -31,12 +31,12 @@ final class ConstantFit {
   // starts in the middle of the measured range on a log scale, with a pull so light that the
   // measurement's own cost, not this guess, gives it its value.
   private static final double NEW_CONSTANT = 0.01;
-  private static final double NEW_CONSTANT_WEIGHT = 1e-4;
-  // The measurements settle a new constant when, with every constant that has a value held, a
-  // vanishing probe prior keeps at most this share of its variance: the measurements leave no
-  // direction of the new constants unseen that moves it by more than about 3 %.
-  private static final double PROBE_PRECISION = 1e-9;
-  private static final double UNSEEN_SHARE = 1e-3;
+  private static final double NEW_CONSTANT_WEIGHT = 1e-6;
+  // The measurements settle a new constant when, with every constant that has a value held, its
+  // nominal prior keeps at most this share of its variance. A direction of the new constants that
+  // the measurements do not see, or barely see, keeps nearly all of it, so the nominal prior can
+  // move a settled constant by only a few percent of that direction.
+  private static final double PRIOR_SHARE = 1e-3;
   // A measurement whose weight has faded below this no longer counts.
   private static final double FADED = 1e-6;
 
@@ -143,35 +143,31 @@ final class ConstantFit {
   }
 
   /**
-   * The new constants that the measurements alone determine once every other constant is held.
-   * Scaling the measurements' normal matrix to a unit diagonal makes the test independent of pixel
-   * rates and weights; a direction that the measurements do not see then keeps nearly all of a
-   * vanishing probe prior's variance.
+   * The new constants that the measurements determine, with every other constant held, so firmly
+   * that their nominal prior barely moves them.
    */
   private static Set<CostConstant> settledAmong(
       List<CostConstant> newConstants, Map<CostConstant, Integer> index, double[][] normal) {
     var size = newConstants.size();
-    var scaled = R064Store.FACTORY.make(size, size);
+    var priorPrecision = NEW_CONSTANT_WEIGHT / (NEW_CONSTANT * NEW_CONSTANT);
+    var posterior = R064Store.FACTORY.make(size, size);
     for (var row = 0; row < size; row++) {
-      var rowIndex = index.get(newConstants.get(row));
       for (var column = 0; column < size; column++) {
-        var columnIndex = index.get(newConstants.get(column));
-        scaled.set(
+        posterior.set(
             row,
             column,
-            normal[rowIndex][columnIndex]
-                / Math.sqrt(normal[rowIndex][rowIndex] * normal[columnIndex][columnIndex]));
+            normal[index.get(newConstants.get(row))][index.get(newConstants.get(column))]);
       }
 
-      scaled.add(row, row, PROBE_PRECISION);
+      posterior.add(row, row, priorPrecision);
     }
 
     var cholesky = Cholesky.R064.make();
-    cholesky.decompose(scaled);
+    cholesky.decompose(posterior);
     var inverse = cholesky.getInverse();
     var settled = new HashSet<CostConstant>();
     for (var row = 0; row < size; row++) {
-      if (PROBE_PRECISION * inverse.doubleValue(row, row) <= UNSEEN_SHARE) {
+      if (priorPrecision * inverse.doubleValue(row, row) <= PRIOR_SHARE) {
         settled.add(newConstants.get(row));
       }
     }
