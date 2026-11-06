@@ -23,6 +23,8 @@ import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.DolbyVisionOutput;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
+import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
+import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlannedVideoOutput;
@@ -166,6 +168,52 @@ class HdrFormatRecoveryTest {
             DolbyVisionProfile.PROFILE_10_4, VideoQuality.ORIGINAL, VideoRange.HLG, stripped),
         Arguments.of(
             DolbyVisionProfile.PROFILE_10_4, VideoQuality.AUTO, VideoRange.HLG, Optional.empty()));
+  }
+
+  // streamarr/streamarr-server#651: a single-track profile 7 source copies as profile 8.1 for a
+  // client that declares profile 8.1, with the conversion and the normalized record in its decision
+  // and profile 8.1 in its playlist entry. When the worker cannot convert a picture, the copy with
+  // Dolby Vision stripped follows and the playback choice stays (#401, ADR 0052).
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("qualitiesAfterAStrippedCopy")
+  @DisplayName(
+      "Should convert single-track profile 7 to profile 8.1 and play the copy with Dolby Vision"
+          + " stripped when the worker fails the conversion")
+  void
+      shouldConvertSingleTrackProfile7ToProfile81AndPlayTheCopyWithDolbyVisionStrippedWhenTheWorkerFailsTheConversion(
+          VideoQuality quality, Optional<PlaybackFormatChange> expectedChange) {
+    probes.setDefaultProbe(singleTrackProfile7Source().build());
+    var command = start(quality);
+    var converted = accepted(playback.start(command));
+
+    playback.onDolbyVisionConversionFailed(
+        new DolbyVisionConversionFailedEvent(
+            converted.currentFormatAttempt().streamSessionId(), UUID.randomUUID(), "default"));
+
+    var stripped =
+        playback
+            .access(
+                PlaybackSessionRequest.builder()
+                    .playbackSessionId(converted.playbackSessionId())
+                    .identity(command.identity())
+                    .build())
+            .orElseThrow();
+    assertThat(decisionOf(converted).videoBitstreamRewrites())
+        .containsExactly(
+            BitstreamRewrite.CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1,
+            BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD);
+    assertThat(decisionOf(converted).videoDolbyVisionOutput())
+        .contains(new DolbyVisionOutput(DolbyVisionProfile.PROFILE_8_1, SOURCE_LEVEL));
+    assertThat(multivariantPlaylist(converted))
+        .contains(",VIDEO-RANGE=PQ")
+        .contains("SUPPLEMENTAL-CODECS=\"dvh1.08.06/db1p\"");
+    assertThat(stripped.formatAttemptCount()).isEqualTo(2);
+    assertThat(stripped.playbackChoice()).isEqualTo(quality);
+    assertThat(stripped.formatChange()).isEqualTo(expectedChange);
+    assertThat(decisionOf(stripped).videoBitstreamRewrites())
+        .containsExactly(BitstreamRewrite.STRIP_DOLBY_VISION);
+    assertThat(decisionOf(stripped).videoDolbyVisionOutput()).isEmpty();
+    assertThat(multivariantPlaylist(stripped)).doesNotContain("SUPPLEMENTAL-CODECS");
   }
 
   // streamarr/streamarr-server#651 and ADR 0052: the worker's typed conversion failure repeats in
@@ -453,6 +501,34 @@ class HdrFormatRecoveryTest {
           default -> Codec.HEVC_MAIN_10;
         };
     return sourceBuilder().codec(codec).dynamicRange(range);
+  }
+
+  // A single-track profile 7 source: its record names profile 7 with an enhancement layer at level
+  // 6, and its RPUs ride in the one video stream, each at the end of its own picture's sample.
+  private static SourceBuilder singleTrackProfile7Source() {
+    var range =
+        new VideoDynamicRange(
+            CompatibleBase.PQ,
+            Presence.ABSENT,
+            new DolbyVision.Present(
+                Optional.of(
+                    DolbyVisionConfiguration.builder()
+                        .profile(OptionalInt.of(7))
+                        .level(OptionalInt.of(SOURCE_LEVEL))
+                        .baseLayerCompatibilityId(OptionalInt.of(6))
+                        .baseLayer(true)
+                        .enhancementLayer(true)
+                        .rpu(true)
+                        .build()),
+                Presence.PRESENT,
+                Optional.of(
+                    DolbyVisionRpuHeader.builder()
+                        .vdrRpuProfile(1)
+                        .enhancementLayerSpatialResamplingFilter(true)
+                        .vdrBitDepth(12)
+                        .build()),
+                DolbyVisionRpuPlacement.AFTER_OWN_PICTURE));
+    return sourceBuilder().dynamicRange(range);
   }
 
   private static int compatibilityIdOf(DolbyVisionProfile profile) {

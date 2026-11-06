@@ -19,6 +19,9 @@ final class RemoteBitstreamRewriteMapper {
       case NORMALIZE_DOLBY_VISION_RECORD ->
           com.streamarr.transcode.v1.BitstreamRewrite
               .BITSTREAM_REWRITE_NORMALIZE_DOLBY_VISION_RECORD;
+      case CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1 ->
+          com.streamarr.transcode.v1.BitstreamRewrite
+              .BITSTREAM_REWRITE_CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1;
     };
   }
 
@@ -30,10 +33,9 @@ final class RemoteBitstreamRewriteMapper {
       case BITSTREAM_REWRITE_STRIP_HDR10_PLUS -> Optional.of(BitstreamRewrite.STRIP_HDR10_PLUS);
       case BITSTREAM_REWRITE_NORMALIZE_DOLBY_VISION_RECORD ->
           Optional.of(BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD);
-      case BITSTREAM_REWRITE_CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1,
-          BITSTREAM_REWRITE_UNSPECIFIED,
-          UNRECOGNIZED ->
-          Optional.empty();
+      case BITSTREAM_REWRITE_CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1 ->
+          Optional.of(BitstreamRewrite.CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1);
+      case BITSTREAM_REWRITE_UNSPECIFIED, UNRECOGNIZED -> Optional.empty();
       case null -> Optional.empty();
     };
   }

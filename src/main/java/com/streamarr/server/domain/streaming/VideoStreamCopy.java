@@ -80,6 +80,7 @@ public record VideoStreamCopy(
       case CopiedDolbyVision.None _,
           CopiedDolbyVision.KeptUnderSdrBase _,
           CopiedDolbyVision.Undeclarable _,
+          CopiedDolbyVision.ConvertibleToProfile81 _,
           CopiedDolbyVision.Unknown _ ->
           Optional.empty();
     };
@@ -92,6 +93,19 @@ public record VideoStreamCopy(
     }
 
     return Optional.of(new DolbyVisionOutput(profile, level.getAsInt()));
+  }
+
+  /**
+   * The profile 8.1 that the playlist describes when a copy converts this single-track profile 7
+   * stream (ADR 0036, streamarr/streamarr-server#651), at the level that the record names or the
+   * level table gives. Empty for every other stream.
+   */
+  public Optional<DolbyVisionOutput> dolbyVisionOutputAfterConversionToProfile81() {
+    if (CopiedDolbyVision.of(this) instanceof CopiedDolbyVision.ConvertibleToProfile81(var level)) {
+      return Optional.of(new DolbyVisionOutput(DolbyVisionProfile.PROFILE_8_1, level));
+    }
+
+    return Optional.empty();
   }
 
   /**
@@ -112,6 +126,7 @@ public record VideoStreamCopy(
     return switch (CopiedDolbyVision.of(this)) {
       case CopiedDolbyVision.Declarable _,
           CopiedDolbyVision.Undeclarable _,
+          CopiedDolbyVision.ConvertibleToProfile81 _,
           CopiedDolbyVision.Unknown _ ->
           true;
       case CopiedDolbyVision.None _,

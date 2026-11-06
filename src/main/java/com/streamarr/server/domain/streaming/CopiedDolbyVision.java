@@ -26,10 +26,19 @@ sealed interface CopiedDolbyVision {
   record Declarable(@NonNull DolbyVisionProfile profile, int level) implements CopiedDolbyVision {}
 
   /**
-   * Dolby Vision that no entry accepts: profile 6 or 7, or a profile that the contract does not
-   * name. A copy on a PQ or HLG base can still play with the Dolby Vision stripped (ADR 0013).
+   * Dolby Vision that no entry accepts: profile 6, profile 7 that no copy converts, or a profile
+   * that the contract does not name. A copy on a PQ or HLG base can still play with the Dolby
+   * Vision stripped (ADR 0013).
    */
   record Undeclarable() implements CopiedDolbyVision {}
+
+  /**
+   * Single-track profile 7 on a PQ base, whose RPUs ride in the video stream itself, at the level
+   * that the record names or the level table gives: a copy converts it to profile 8.1 (ADR 0036,
+   * streamarr/streamarr-server#651). No entry accepts the stream as it is, and a copy can still
+   * play its PQ base with the Dolby Vision stripped.
+   */
+  record ConvertibleToProfile81(int level) implements CopiedDolbyVision {}
 
   /**
    * Dolby Vision that no entry accepts because the probe's facts leave it unknown: neither the
@@ -81,6 +90,10 @@ sealed interface CopiedDolbyVision {
     }
 
     var profile = namedProfile(codecFamily, profileNumber.getAsInt(), base);
+    if (profile.isEmpty() && isSingleTrackProfile7(copy, present, profileNumber.getAsInt())) {
+      return convertibleAt(levelFromRecordOrTable(copy, present));
+    }
+
     if (profile.isEmpty()) {
       return new Undeclarable();
     }
@@ -95,6 +108,27 @@ sealed interface CopiedDolbyVision {
     }
 
     return new Declarable(profile.get(), level.getAsInt());
+  }
+
+  // A profile 7 record that names a base layer, beside RPUs in the stream itself. A dual-track
+  // source's base layer track carries no RPU, and its enhancement layer track carries RPUs beside a
+  // PQ transfer but no base layer to convert (ADR 0036).
+  private static boolean isSingleTrackProfile7(
+      VideoStreamCopy copy, DolbyVision.Present present, int profileNumber) {
+    return copy.codecFamily() == ProbedCodecFamily.HEVC
+        && profileNumber == 7
+        && copy.dynamicRange().compatibleBase() == CompatibleBase.PQ
+        && present.declared().map(DolbyVisionConfiguration::baseLayer).orElse(false)
+        && present.observedRpu() == Presence.PRESENT;
+  }
+
+  // Without a level, the converted copy's output cannot name one, so no entry accepts it.
+  private static CopiedDolbyVision convertibleAt(OptionalInt level) {
+    if (level.isEmpty()) {
+      return new Undeclarable();
+    }
+
+    return new ConvertibleToProfile81(level.getAsInt());
   }
 
   // The level never comes from the RPU's vdr_rpu_level. A record level outside the table names no

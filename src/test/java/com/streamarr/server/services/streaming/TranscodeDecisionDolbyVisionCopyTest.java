@@ -204,8 +204,54 @@ class TranscodeDecisionDolbyVisionCopyTest {
             Clients.dolbyVision(13),
             strippingDolbyVision(VideoRange.PQ)),
         Arguments.of(
+            "Single-track profile 7 to a client that declares profile 8.1",
+            hevc(singleTrackProfile7()),
+            Clients.dolbyVision(13),
+            convertingProfile7()),
+        Arguments.of(
+            "Single-track profile 7 at the client's maximum level",
+            hevc(singleTrackProfile7()),
+            Clients.dolbyVision(SOURCE_LEVEL),
+            convertingProfile7()),
+        Arguments.of(
+            "Single-track profile 7 with HDR10+ to a client that declares profile 8.1 and HDR10+",
+            hevc(withHdr10Plus(singleTrackProfile7())),
+            Clients.dolbyVision(13),
+            convertingProfile7AndStrippingHdr10Plus()),
+        Arguments.of(
+            "Single-track profile 7 above the client's maximum level",
+            hevc(singleTrackProfile7()),
+            Clients.dolbyVision(SOURCE_LEVEL - 1),
+            strippingDolbyVision(VideoRange.PQ)),
+        Arguments.of(
+            "Single-track profile 7 to a client that declares only PQ",
+            hevc(singleTrackProfile7()),
+            Clients.baseOnly(false),
+            strippingDolbyVision(VideoRange.PQ)),
+        Arguments.of(
+            "Single-track profile 7 whose record names no level, until the maximum frame rate is"
+                + " stored",
+            hevc(singleTrackProfile7WithoutRecordLevel()),
+            Clients.dolbyVision(13),
+            strippingDolbyVision(VideoRange.PQ)),
+        Arguments.of(
+            "Single-track profile 7 to a client that declares only SDR",
+            hevc(singleTrackProfile7()),
+            Clients.sdrOnly(),
+            ENCODE),
+        Arguments.of(
+            "Single-track profile 7 whose RPUs start their samples",
+            hevc(withRpusStartingTheirSamples(singleTrackProfile7())),
+            Clients.dolbyVision(13),
+            ENCODE),
+        Arguments.of(
             "The base layer track of a dual-track profile 7 source",
             hevc(dualTrackBaseLayer(7, 6)),
+            Clients.dolbyVision(13),
+            strippingDolbyVision(VideoRange.PQ)),
+        Arguments.of(
+            "The enhancement layer track of a dual-track profile 7 source",
+            hevc(dualTrackEnhancementLayer()),
             Clients.dolbyVision(13),
             strippingDolbyVision(VideoRange.PQ)),
         Arguments.of(
@@ -402,6 +448,10 @@ class TranscodeDecisionDolbyVisionCopyTest {
             hevc(withHdr10Plus(profile8(CompatibleBase.PQ, 1))),
             strippingDolbyVision(VideoRange.PQ)),
         Arguments.of(
+            "Single-track profile 7, whose conversion the worker failed",
+            hevc(singleTrackProfile7()),
+            strippingDolbyVision(VideoRange.PQ)),
+        Arguments.of(
             "Profile 5 with its record",
             hevc(VideoPlaybackFactsFixture.dolbyVisionProfile5()),
             ENCODE),
@@ -574,6 +624,34 @@ class TranscodeDecisionDolbyVisionCopyTest {
     assertThat(decision.map(Outcome::of)).contains(ENCODE);
   }
 
+  // ADR 0036: the server sends the conversion only to a worker that declares it, and a copy whose
+  // rewrites no connected worker applies becomes an encode.
+  @Test
+  @DisplayName(
+      "Should encode a single-track profile 7 source when no connected worker converts profile 7")
+  void shouldEncodeASingleTrackProfile7SourceWhenNoConnectedWorkerConvertsProfile7() {
+    var strippingAndNormalizingWorker =
+        WorkerVideoCopySupport.builder()
+            .plannedOutput(true)
+            .bitstreamRewrites(
+                Set.of(
+                    BitstreamRewrite.STRIP_DOLBY_VISION,
+                    BitstreamRewrite.STRIP_HDR10_PLUS,
+                    BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD))
+            .build();
+
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(hevc(singleTrackProfile7()))
+                .capabilityDeclaration(Clients.dolbyVision(13))
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .videoCopySupport(List.of(strippingAndNormalizingWorker))
+                .build());
+
+    assertThat(decision.map(Outcome::of)).contains(ENCODE);
+  }
+
   static Stream<Arguments> workersWithoutTheStripRewrite() {
     var normalizingWorker =
         WorkerVideoCopySupport.builder()
@@ -634,6 +712,33 @@ class TranscodeDecisionDolbyVisionCopyTest {
         .build();
   }
 
+  // ADR 0036 and streamarr/streamarr-server#651: the copy converts each picture's RPU to profile
+  // 8.1 and writes the profile 8.1 record that its playlist entry describes, at the source's level.
+  private static Outcome convertingProfile7() {
+    return convertingProfile7(
+        List.of(
+            BitstreamRewrite.CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1,
+            BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD));
+  }
+
+  private static Outcome convertingProfile7AndStrippingHdr10Plus() {
+    return convertingProfile7(
+        List.of(
+            BitstreamRewrite.STRIP_HDR10_PLUS,
+            BitstreamRewrite.CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1,
+            BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD));
+  }
+
+  private static Outcome convertingProfile7(List<BitstreamRewrite> rewrites) {
+    return Outcome.builder()
+        .mode(TranscodeMode.REMUX)
+        .rewrites(rewrites)
+        .dolbyVisionOutput(
+            Optional.of(new DolbyVisionOutput(DolbyVisionProfile.PROFILE_8_1, SOURCE_LEVEL)))
+        .range(VideoRange.PQ)
+        .build();
+  }
+
   private static VideoDynamicRange profile8(CompatibleBase base, int compatibilityId) {
     return dolbyVisionRecord(base, 8, compatibilityId);
   }
@@ -672,6 +777,54 @@ class TranscodeDecisionDolbyVisionCopyTest {
                     .rpu(true)
                     .build()),
             Presence.PRESENT));
+  }
+
+  // A single-track profile 7 source: its record names profile 7 with an enhancement layer, and its
+  // RPUs ride in the one video stream, each at the end of its own picture's sample.
+  private static VideoDynamicRange singleTrackProfile7() {
+    return singleTrackProfile7(OptionalInt.of(SOURCE_LEVEL));
+  }
+
+  private static VideoDynamicRange singleTrackProfile7WithoutRecordLevel() {
+    return singleTrackProfile7(OptionalInt.empty());
+  }
+
+  private static VideoDynamicRange singleTrackProfile7(OptionalInt recordLevel) {
+    return profile7WithRpusInTheStream(profile7RecordBuilder().level(recordLevel).build());
+  }
+
+  // The enhancement layer track of a dual-track source carries the RPUs beside a PQ transfer, and
+  // its record names no base layer.
+  private static VideoDynamicRange dualTrackEnhancementLayer() {
+    return profile7WithRpusInTheStream(profile7RecordBuilder().baseLayer(false).build());
+  }
+
+  // A profile 7 record at the source level with every layer, which a caller narrows.
+  private static DolbyVisionConfiguration.DolbyVisionConfigurationBuilder profile7RecordBuilder() {
+    return DolbyVisionConfiguration.builder()
+        .profile(OptionalInt.of(7))
+        .level(OptionalInt.of(SOURCE_LEVEL))
+        .baseLayerCompatibilityId(OptionalInt.of(6))
+        .baseLayer(true)
+        .enhancementLayer(true)
+        .rpu(true);
+  }
+
+  private static VideoDynamicRange profile7WithRpusInTheStream(
+      DolbyVisionConfiguration configuration) {
+    return new VideoDynamicRange(
+        CompatibleBase.PQ,
+        Presence.ABSENT,
+        new DolbyVision.Present(
+            Optional.of(configuration),
+            Presence.PRESENT,
+            Optional.of(
+                DolbyVisionRpuHeader.builder()
+                    .vdrRpuProfile(1)
+                    .enhancementLayerSpatialResamplingFilter(true)
+                    .vdrBitDepth(12)
+                    .build()),
+            DolbyVisionRpuPlacement.AFTER_OWN_PICTURE));
   }
 
   // The record of a base layer track names a base layer, and its RPUs sit in the other track.
