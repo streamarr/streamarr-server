@@ -1131,12 +1131,12 @@ message ProbeStreamInfo {
   // is absent in other source containers, which store no sample entry, for a
   // stream without one, such as cover art, and on other streams (ADR 0032).
   optional string sample_entry = 48;
-  // From probe version 8, the chosen video stream reports the highest frame
-  // rate, in frames per second, that its presentation times show over 1 to
-  // 24 consecutive frame intervals, as a listed rate when one lies within the
-  // times' precision. A constant-rate stream reports its base rate. The field
-  // is absent when the worker cannot measure it, on an interlaced stream and
-  // on every other stream. It is never zero (ADR 0032).
+  // From probe version 8, the chosen video stream reports, in frames per
+  // second, the highest rate its presentation times show over 1 to 24
+  // consecutive frame intervals, a listed rate when one fits their precision,
+  // or the base rate its declared rates agree on when no time proves a faster
+  // one. It is absent when the worker cannot measure it, on an interlaced
+  // stream and on every other stream. It is never zero (ADR 0032).
   Fraction maximum_frame_rate = 49;
 }
 
