@@ -200,6 +200,7 @@ public class TranscodeDecisionService {
                         audioDecision)))
             .videoCapabilityEntryRefusals(entryRefusals(request))
             .audioStreamIndex(audioStreamIndex(source, audioDecision))
+            .dynamicRangeChoice(request.viewerLimits().dynamicRangeChoice())
             .build());
   }
 
@@ -321,6 +322,12 @@ public class TranscodeDecisionService {
     var source = request.source();
     var declaration = request.capabilityDeclaration();
     var limits = request.viewerLimits();
+    // A copy keeps the source's range, so SDR for an HDR source needs an encode, and without one
+    // the session finds no video format rather than playing HDR (ADR 0013).
+    if (!limits.allowsCopyRangeOf(source)) {
+      return new VideoCopyChoice.Refused(List.of(DecisionReason.VIEWER_CHOSE_SDR));
+    }
+
     var steps = AudioSteps.below(sessionAudio, AudioTrackChannels.of(source), declaration);
     var playlist = CopyMediaPlaylist.of(source, properties);
     var stepWithinMaximum = limits.audioStepBesideCopyOf(source, steps, playlist);

@@ -107,6 +107,21 @@ input StreamingOptionsInput {
     audioLanguage: Language
     "The subtitle language of this session. Stored now; subtitles apply when they ship."
     subtitleLanguage: Language
+    """
+    The viewer's HDR choice (ADR 0013). Only a fixed quality takes it: SDR plays an HDR source as an SDR encode,
+    and HDR keeps the source's HDR range when the client declares it. Auto and Original ignore it. Null for no
+    choice, which keeps the source's HDR range when the client declares it. The stream session's videoRange
+    names the range that plays.
+    """
+    dynamicRange: DynamicRangeChoice
+}
+
+"The viewer's HDR choice in a fixed quality."
+enum DynamicRangeChoice {
+    "Keep the source's HDR range when the client declares it."
+    HDR
+    "Play an HDR source as an SDR encode."
+    SDR
 }
 
 enum VideoQuality {

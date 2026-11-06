@@ -21,6 +21,7 @@ import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.transcode.v1.AudioChannelLayout;
+import com.streamarr.transcode.v1.ChromaSubsampling;
 import com.streamarr.transcode.v1.ContainerFormat;
 import com.streamarr.transcode.v1.Deinterlace;
 import com.streamarr.transcode.v1.DeinterlaceOutput;
@@ -92,7 +93,10 @@ final class RemoteVariantJobMapper {
                         .map(VideoPlaybackFacts::dynamicRange)
                         .orElse(
                             com.streamarr.server.domain.streaming.VideoDynamicRange.UNSPECIFIED)))
-            .setOutputDynamicRange(RemoteDynamicRangeMapper.toProto(planned.dynamicRange()));
+            .setOutputDynamicRange(RemoteDynamicRangeMapper.toProto(planned.dynamicRange()))
+            .setOutputBitDepth(planned.bitDepth())
+            // A planned encode refuses every chroma subsampling but 4:2:0 (#397).
+            .setOutputChromaSubsampling(ChromaSubsampling.CHROMA_SUBSAMPLING_420);
     source.ifPresent(
         facts ->
             video

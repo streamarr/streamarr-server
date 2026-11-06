@@ -9,6 +9,7 @@ import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.streaming.DynamicRangeChoice;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.ProbeError;
@@ -453,6 +454,8 @@ public class StreamingResolver {
         .maxBitrate(input.maxBitrate())
         .audioLanguage(input.audioLanguage())
         .subtitleLanguage(input.subtitleLanguage())
+        .dynamicRange(
+            Optional.ofNullable(input.dynamicRange()).map(DynamicRangeChoice::valueOf).orElse(null))
         .build();
   }
 
