@@ -292,25 +292,23 @@ public final class WorkerCalibration {
   private Map<CostConstant, Double> withUnmeasuredPresetsFollowingAutomatic(
       Map<CostConstant, Double> solved) {
     var starting = startingConstants.cpuSecondsPerMegapixel();
+    var measured = measuredConstants();
     var adjusted = new HashMap<>(solved);
-    for (var constant : starting.keySet()) {
-      if (restoredMeasuredConstants.contains(constant)
-          || fit.measuredConstants().contains(constant)) {
-        continue;
-      }
+    starting.forEach(
+        (constant, startingValue) -> {
+          if (measured.contains(constant)
+              || !(constant instanceof EncoderAndPreset encoderAndPreset)) {
+            return;
+          }
 
-      if (!(constant instanceof EncoderAndPreset encoderAndPreset)) {
-        continue;
-      }
-
-      automaticPresetOf(encoderAndPreset)
-          .filter(automatic -> starting.containsKey(automatic) && solved.containsKey(automatic))
-          .ifPresent(
-              automatic ->
-                  adjusted.put(
-                      constant,
-                      starting.get(constant) * solved.get(automatic) / starting.get(automatic)));
-    }
+          automaticPresetOf(encoderAndPreset)
+              .filter(automatic -> starting.containsKey(automatic) && solved.containsKey(automatic))
+              .ifPresent(
+                  automatic ->
+                      adjusted.put(
+                          constant,
+                          startingValue * solved.get(automatic) / starting.get(automatic)));
+        });
 
     return adjusted;
   }
