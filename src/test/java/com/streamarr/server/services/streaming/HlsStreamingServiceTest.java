@@ -3039,6 +3039,60 @@ class HlsStreamingServiceTest {
         .allSatisfy(request -> assertThat(request.exactSegmentStarts()).isEmpty());
   }
 
+  // At the 6 s period, the keyframe at 12 s opens slot 2 only 14 ms after the segment that the
+  // keyframe at 11.986 s opens, so it stays in that segment. A 24 fps encode would have no frame
+  // between the two starts (ADR 0037, segment list).
+  @Test
+  @DisplayName(
+      "Should keep a keyframe that presents less than 2 s after a segment's start inside that"
+          + " segment when the video is copied")
+  void shouldKeepAKeyframeLessThanTwoSecondsAfterASegmentsStartInsideThatSegmentWhenCopied() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .duration(Duration.ofSeconds(30))
+            .keyframes(keyframesAtMillis(0, 11_986, 12_000, 18_000))
+            .build());
+    var file = seedMediaFile();
+
+    createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(TranscodeRequest::exactSegmentStarts)
+        .isEqualTo(
+            Optional.of(
+                new ExactSegmentStarts(List.of(0L, 11_986L, 18_000L), new Fraction(1, 1_000))));
+  }
+
+  // The keyframe at 19 s opens slot 3 only when it presents at least 2 s before the media's end, so
+  // that the last segment lasts at least 2 s too.
+  @ParameterizedTest(name = "media ends at {0} ms")
+  @CsvSource({"20000, 3", "21000, 4"})
+  @DisplayName(
+      "Should open a segment at a keyframe only when it presents at least 2 s before the media's"
+          + " end when the video is copied")
+  void shouldOpenASegmentAtAKeyframeOnlyWhenItPresentsTwoSecondsBeforeTheMediasEnd(
+      long durationMillis, int segmentCount) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .duration(Duration.ofMillis(durationMillis))
+            .keyframes(keyframesAtMillis(0, 6_000, 12_000, 19_000))
+            .build());
+    var file = seedMediaFile();
+
+    createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.mediaSegmentCount()).isEqualTo(segmentCount);
+              assertThat(request.exactSegmentStarts().orElseThrow().ticks())
+                  .containsExactlyElementsOf(
+                      List.of(0L, 6_000L, 12_000L, 19_000L).subList(0, segmentCount));
+            });
+  }
+
   private static KeyframeKnowledge keyframesAtMillis(long... presentationTimes) {
     return new KeyframeKnowledge.Known(
         KeyframePositions.builder()

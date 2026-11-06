@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.KeyframePositions;
+import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.StreamCopySegments;
 import java.util.ArrayList;
 import lombok.NonNull;
@@ -9,8 +10,10 @@ import lombok.NonNull;
  * Applies ADR 0037's boundary rule to a source's keyframe positions, as the worker's producer
  * applies it to a stream copy on the stream session's segment list. Slot {@code k} covers {@code [k
  * × period, (k + 1) × period)} of media time. The first keyframe that presents at or after zero
- * opens segment 0, and each later slot's first keyframe opens the next segment. A slot without a
- * keyframe merges into the segment before it.
+ * opens segment 0, which starts at zero. Each later slot's first keyframe that presents at least
+ * {@link MediaSegmentTimeline.StreamCopy#MINIMUM_SEGMENT_DURATION} after the start of the segment
+ * before it opens the next segment. A slot without such a keyframe merges into the segment before
+ * it.
  */
 final class KeyframeSegmentBoundaries {
 
@@ -24,6 +27,7 @@ final class KeyframeSegmentBoundaries {
     var keyframes = positions.keyframes();
     var openingKeyframes = new ArrayList<Integer>();
     var openSlot = -1L;
+    var openStart = 0L;
     for (var index = 0; index < keyframes.size(); index++) {
       var presentationTime = keyframes.get(index).presentationTime();
       if (index > 0 && presentationTime < keyframes.get(index - 1).presentationTime()) {
@@ -40,15 +44,34 @@ final class KeyframeSegmentBoundaries {
         continue;
       }
 
+      var opensALaterSegment = !openingKeyframes.isEmpty();
+      if (opensALaterSegment && isTooSoonAfter(openStart, presentationTime, positions)) {
+        continue;
+      }
+
       if (isOutOfRange(keyframes.get(index).decodeTime(), positions.timeBaseNumerator())) {
         return new StreamCopySegments.DecodeTimeOutOfRange(index);
       }
 
       openingKeyframes.add(index);
       openSlot = slot;
+      if (opensALaterSegment) {
+        openStart = presentationTime;
+      }
     }
 
     return new StreamCopySegments.Starts(openingKeyframes);
+  }
+
+  // Both times lie in range and the later one presents at or after the earlier one, so neither
+  // product overflows.
+  private static boolean isTooSoonAfter(
+      long segmentStart, long presentationTime, KeyframePositions positions) {
+    var elapsed = (presentationTime - segmentStart) * positions.timeBaseNumerator();
+    var minimum =
+        MediaSegmentTimeline.StreamCopy.MINIMUM_SEGMENT_DURATION.toSeconds()
+            * positions.timeBaseDenominator();
+    return elapsed < minimum;
   }
 
   private static boolean isOutOfRange(long ticks, int timeBaseNumerator) {
