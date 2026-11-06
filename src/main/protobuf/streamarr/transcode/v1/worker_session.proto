@@ -1506,7 +1506,8 @@ message YieldToSeekCommand {
   WorkerIdentity target = 1;
   // This field lists the job attempts to pause. The worker ignores a job
   // attempt that it does not run. A job attempt that resumed keeps running,
-  // even when listed, until it has run for as long as it was paused.
+  // even when listed, until it has run for as long as it was paused and has
+  // delivered another media segment.
   repeated Uuid job_attempt_ids = 2;
   // This field holds the longest time that the worker keeps a listed job
   // attempt paused, counted from the command that paused it. The worker then
