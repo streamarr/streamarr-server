@@ -16,8 +16,10 @@ import lombok.NonNull;
  * none (ADR 0036). {@code videoDolbyVisionOutput} is the Dolby Vision of a copy that the playlist
  * describes as Dolby Vision, and a decision that encodes the video holds none (ADR 0013). {@code
  * reasons} names why the output differs from the source, video reasons before audio reasons. {@code
- * audioStreamIndex} is the index of the source audio stream that the session plays, and is empty
- * when the decision carries no audio.
+ * videoCapabilityEntryRefusals} lists, for each video capability entry for HLS of the source's
+ * codec family, what that entry refused of the best copy that the decision could plan (#396).
+ * {@code audioStreamIndex} is the index of the source audio stream that the session plays, and is
+ * empty when the decision carries no audio.
  */
 @Builder(toBuilder = true)
 public record TranscodeDecision(
@@ -30,6 +32,7 @@ public record TranscodeDecision(
     @NonNull List<BitstreamRewrite> videoBitstreamRewrites,
     @NonNull Optional<DolbyVisionOutput> videoDolbyVisionOutput,
     @NonNull List<DecisionReason> reasons,
+    @NonNull List<VideoCapabilityEntryRefusal> videoCapabilityEntryRefusals,
     @NonNull OptionalInt audioStreamIndex) {
 
   public TranscodeDecision {
@@ -56,6 +59,7 @@ public record TranscodeDecision(
 
     videoBitstreamRewrites = List.copyOf(videoBitstreamRewrites);
     reasons = List.copyOf(reasons);
+    videoCapabilityEntryRefusals = List.copyOf(videoCapabilityEntryRefusals);
 
     if (encodeCodecProfile
         .filter(profile -> !profile.codecFamilyName().equals(videoCodecFamily))
@@ -152,6 +156,7 @@ public record TranscodeDecision(
     private List<BitstreamRewrite> videoBitstreamRewrites = List.of();
     private Optional<DolbyVisionOutput> videoDolbyVisionOutput = Optional.empty();
     private List<DecisionReason> reasons = List.of();
+    private List<VideoCapabilityEntryRefusal> videoCapabilityEntryRefusals = List.of();
     private OptionalInt audioStreamIndex = OptionalInt.empty();
   }
 }

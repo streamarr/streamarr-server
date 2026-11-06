@@ -72,6 +72,73 @@ class VideoCapabilityEntryDirectPlayTest {
         Arguments.of("a lower frame rate", directPlayEntry().maxFrameRate(25).build()));
   }
 
+  // #396: the decision shows each entry's refused checks, so each refusal names its check.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("refusedDirectPlayChecks")
+  @DisplayName("Should name each check of direct play that the entry refuses when it refuses one")
+  void shouldNameEachCheckOfDirectPlayThatTheEntryRefusesWhenItRefusesOne(
+      String scenario,
+      VideoCapabilityEntry entry,
+      VideoStreamCopy stream,
+      SourceContainer container,
+      List<DecisionReason> expected) {
+    assertThat(entry.directPlayRefusals(stream, container)).containsExactlyElementsOf(expected);
+  }
+
+  static Stream<Arguments> refusedDirectPlayChecks() {
+    var pq = directPlayEntry().compatibleBases(List.of(CompatibleBase.PQ)).build();
+    return Stream.of(
+        Arguments.of(
+            "another container, and a smaller picture that is not checked",
+            directPlayEntry()
+                .directPlayContainers(List.of(SourceContainer.MPEG_TS))
+                .maxWidth(1280)
+                .maxHeight(720)
+                .build(),
+            hevcStream().build(),
+            CONTAINER,
+            List.of(DecisionReason.DIRECT_PLAY_CONTAINER_NOT_DECLARED)),
+        Arguments.of(
+            "an MP4 stream under a sample entry that the entry does not list",
+            entryListing(SourceContainer.MP4, VideoSampleEntry.HEV1),
+            hevcStream().sampleEntry(Optional.of("hvc1")).build(),
+            SourceContainer.MP4,
+            List.of(DecisionReason.DIRECT_PLAY_SAMPLE_ENTRY_NOT_DECLARED)),
+        Arguments.of(
+            "a probe version 4 stream",
+            directPlayEntry().build(),
+            hevcStream().videoProperties(Optional.empty()).build(),
+            CONTAINER,
+            List.of(DecisionReason.VIDEO_PROPERTIES_NOT_PROBED)),
+        Arguments.of(
+            "a lower bit depth and a smaller picture",
+            directPlayEntry().maxBitDepth(8).maxWidth(1280).maxHeight(720).build(),
+            hevcStream().build(),
+            CONTAINER,
+            List.of(
+                DecisionReason.VIDEO_BIT_DEPTH_NOT_DECLARED,
+                DecisionReason.VIDEO_PICTURE_SIZE_NOT_DECLARED)),
+        Arguments.of(
+            "a PQ base and HDR10+ to an SDR entry",
+            directPlayEntry().build(),
+            hevcStream().dynamicRange(hdr10Plus()).build(),
+            CONTAINER,
+            List.of(
+                DecisionReason.DYNAMIC_RANGE_NOT_DECLARED, DecisionReason.HDR10_PLUS_NOT_DECLARED)),
+        Arguments.of(
+            "profile 8.1 to a PQ entry listing no Dolby Vision profile",
+            pq,
+            hevcStream().dynamicRange(profile81()).build(),
+            CONTAINER,
+            List.of(DecisionReason.DOLBY_VISION_NOT_DECLARED)),
+        Arguments.of(
+            "Dolby Vision of an unknown profile",
+            pq,
+            hevcStream().dynamicRange(unknownProfile()).build(),
+            CONTAINER,
+            List.of(DecisionReason.DOLBY_VISION_PROFILE_OR_LEVEL_UNKNOWN)));
+  }
+
   @Test
   @DisplayName("Should refuse the stream when the probe reports no codec profile facts")
   void shouldRefuseTheStreamWhenTheProbeReportsNoCodecProfileFacts() {
