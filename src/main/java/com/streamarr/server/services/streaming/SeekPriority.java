@@ -98,11 +98,15 @@ public class SeekPriority {
   public synchronized void seekStarted(
       @NonNull StreamSession session, @NonNull String variantLabel, int segmentIndex) {
     var sessionId = session.getSessionId();
-    // The seek's own request, noted before the relocation, places the viewer until the next one. An
-    // older request can relocate after a newer one, whose position stays.
-    highestRequestedSegments.put(
-        sessionId,
-        Math.max(segmentIndex, newestRequestedSegments.getOrDefault(sessionId, segmentIndex)));
+    // The seek's own request, noted before the relocation, places the viewer until the next one.
+    // When a newer request was noted first, an older request relocates, so every position since
+    // stays.
+    var position = segmentIndex;
+    if (newestRequestedSegments.getOrDefault(sessionId, segmentIndex) != segmentIndex) {
+      position = Math.max(position, highestRequestedSegments.getOrDefault(sessionId, position));
+    }
+
+    highestRequestedSegments.put(sessionId, position);
     latestSeeks.put(sessionId, clock.instant());
     var key = new VariantKey(sessionId, variantLabel);
     var earlierWorker = Optional.ofNullable(pendingSeeks.get(key)).flatMap(PendingSeek::target);

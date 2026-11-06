@@ -826,6 +826,36 @@ class ProducerLifecycleServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should keep the farthest of the newer requests' positions when an older request relocates"
+          + " the variant")
+  void shouldKeepTheFarthestOfTheNewerRequestsPositionsWhenAnOlderRequestRelocatesTheVariant() {
+    var steady = startedSession();
+    storeDefaultSegments(steady, 1, 9);
+    lifecycle.prepareRequestedVariant(
+        steady.getSessionId(), StreamSession.defaultVariant(), "segment0.m4s");
+    var relocated = startedSession();
+    var sessionId = relocated.getSessionId();
+    storeDefaultSegments(relocated, 21, 31);
+    var older =
+        lifecycle.prepareRequestedVariant(
+            sessionId, StreamSession.defaultVariant(), "segment20.m4s");
+    lifecycle.prepareRequestedVariant(sessionId, StreamSession.defaultVariant(), "segment31.m4s");
+    lifecycle.prepareRequestedVariant(sessionId, StreamSession.defaultVariant(), "segment25.m4s");
+    lifecycle.ensurePositioned(sessionId, StreamSession.defaultVariant(), "segment20.m4s");
+    storeDefaultSegments(relocated, 20, 20);
+    lifecycle.segmentDelivered(older);
+    storeDefaultSegments(relocated, 32, 32);
+    var seeking = startedSession();
+
+    lifecycle.ensurePositioned(
+        seeking.getSessionId(), StreamSession.defaultVariant(), "segment100.m4s");
+
+    assertThat(transcodeExecutor.yields().getLast().jobAttemptIds())
+        .containsExactly(steady.getHandle().orElseThrow().attemptId());
+  }
+
+  @Test
   @DisplayName("Should wait when the requested segment is near the encoder start")
   void shouldWaitWhenTheRequestedSegmentIsNearTheEncoderStart() {
     var session = startedSession();
