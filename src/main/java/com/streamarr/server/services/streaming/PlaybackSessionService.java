@@ -780,7 +780,8 @@ public class PlaybackSessionService implements AutoCloseable {
     if (!isCurrentAttempt(playback, failedId)
         || endedNormally(playback)
         || !(playback.current instanceof PlaybackFormatAttempt.Ready(var session))
-        || !(outputOf(session) instanceof FailedFormatAttempt.Encode(var codecFamily, var _))) {
+        || !(outputOf(session.getTranscodeDecision())
+            instanceof FailedFormatAttempt.Encode(var codecFamily, var _))) {
       return Optional.empty();
     }
 
@@ -831,7 +832,7 @@ public class PlaybackSessionService implements AutoCloseable {
   // worker reports a Dolby Vision conversion failure only from a copy that converts profile 7 on a
   // PQ base (streamarr/streamarr-server#651), so that report names a Dolby Vision copy on an HDR
   // base; its output mismatch names a copy.
-  private static FailedFormatAttempt failedAttempt(
+  private FailedFormatAttempt failedAttempt(
       PlaybackSession playback, PlaybackSessionFailure reason) {
     if (playback.current instanceof PlaybackFormatAttempt.Ready(var session)) {
       return new FailedFormatAttempt(reason, outputOf(session));
@@ -848,12 +849,22 @@ public class PlaybackSessionService implements AutoCloseable {
     return new FailedFormatAttempt.Copy();
   }
 
-  private static FailedFormatAttempt.Output outputOf(StreamSession session) {
+  // The player fails on the variant that it plays, whose decision can differ from the stream
+  // session's: a copy's lower variants encode (ADR 0050). Before the player received a segment,
+  // the stream session's own decision stands for it.
+  private FailedFormatAttempt.Output outputOf(StreamSession session) {
     if (session.getDelivery() == StreamDelivery.DIRECT_PLAY) {
       return new FailedFormatAttempt.DirectPlay();
     }
 
-    var decision = session.getTranscodeDecision();
+    return outputOf(
+        streamingService
+            .playedVariantOf(session.getSessionId())
+            .map(session::decisionOf)
+            .orElseGet(session::getTranscodeDecision));
+  }
+
+  private static FailedFormatAttempt.Output outputOf(TranscodeDecision decision) {
     if (!decision.transcodeMode().copiesVideo()) {
       return new FailedFormatAttempt.Encode(
           decision.videoCodecFamily(), decision.videoEncodeFormat());

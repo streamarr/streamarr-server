@@ -32,4 +32,10 @@ public interface StreamingService {
   Collection<StreamSession> getAllSessions();
 
   int getActiveSessionCount();
+
+  /**
+   * The variant of the stream session whose segment the player received last, or empty before the
+   * player received one or once the stream session is gone.
+   */
+  Optional<String> playedVariantOf(UUID sessionId);
 }

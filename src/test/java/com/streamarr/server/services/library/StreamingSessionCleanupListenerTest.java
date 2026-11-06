@@ -179,5 +179,10 @@ class StreamingSessionCleanupListenerTest {
     public int getActiveSessionCount() {
       return sessions.size();
     }
+
+    @Override
+    public Optional<String> playedVariantOf(UUID sessionId) {
+      return Optional.empty();
+    }
   }
 }

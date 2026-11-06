@@ -28,6 +28,7 @@ import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionOutput;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
+import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.MediaProbe;
@@ -70,6 +71,7 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
@@ -542,6 +544,24 @@ class PlaybackSessionServiceTest {
               assertThat(replacement.options().quality()).isEqualTo(VideoQuality.AUTO);
               assertThat(replacement.excludedEncodeCodecFamilies()).containsExactly("h264");
             });
+  }
+
+  // Auto can play an AV1 lower variant beside an H.264 copy. When the player cannot decode the
+  // lower variant it plays, the replacement must not encode AV1 again.
+  @Test
+  @DisplayName(
+      "Should keep the lower variant's codec out of the replacement when the player fails on the"
+          + " lower variant it plays beside a copy")
+  void shouldKeepTheLowerVariantsCodecOutOfTheReplacementWhenThePlayerFailsOnTheLowerVariant() {
+    streams.lowerVariantCodecProfile = Optional.of(EncodeCodecProfile.AV1_MAIN);
+    var command = startCommand().options(qualityOptions(VideoQuality.AUTO)).build();
+    var initial = accepted(service.start(command));
+    streams.playedVariants.put(initial.currentFormatAttempt().streamSessionId(), "720p");
+
+    service.reportFormatFailure(report(initial, command).build()).orElseThrow();
+
+    assertThat(streams.createdCommands.getLast().excludedEncodeCodecFamilies())
+        .containsExactly("av1");
   }
 
   @Test
@@ -3544,6 +3564,10 @@ class PlaybackSessionServiceTest {
     // The Dolby Vision that a copy keeps when the format attempt may keep it, as the transcode
     // decision finds for a client that declares the profile.
     private Optional<DolbyVisionProfile> copiedDolbyVision = Optional.empty();
+    // The codec profile of the encoded lower variants that a copy lists beside it.
+    private Optional<EncodeCodecProfile> lowerVariantCodecProfile = Optional.empty();
+    // The variant whose segments the player last played, by stream session.
+    private final Map<UUID, String> playedVariants = new ConcurrentHashMap<>();
 
     @Override
     public Outcome<StreamSession, CreateStreamSessionRejection> createSession(
@@ -3610,7 +3634,8 @@ class PlaybackSessionServiceTest {
               .map(ChildStreams::keepingDolbyVision)
               .orElseGet(StreamSessionFixture::remuxDecisionBuilder);
       return defaultSessionBuilder()
-          .transcodeDecision(copy.reasons(copyReasons).build())
+          .transcodeDecision(
+              copy.reasons(copyReasons).lowerVariantCodecProfile(lowerVariantCodecProfile).build())
           .variants(List.of());
     }
 
@@ -3674,6 +3699,11 @@ class PlaybackSessionServiceTest {
     @Override
     public int getActiveSessionCount() {
       return sessions.size();
+    }
+
+    @Override
+    public Optional<String> playedVariantOf(UUID sessionId) {
+      return Optional.ofNullable(playedVariants.get(sessionId));
     }
   }
 }

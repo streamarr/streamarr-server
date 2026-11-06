@@ -577,6 +577,11 @@ public class HlsStreamingService implements StreamingService {
     return runtimeRegistry.count();
   }
 
+  @Override
+  public Optional<String> playedVariantOf(UUID sessionId) {
+    return producerLifecycle.playedVariantOf(sessionId);
+  }
+
   // Every encode runs as a variant of the ladder. A copy keeps the source and the session's audio,
   // and in Auto lists the encoded variants of Auto's ladder below it (ADR 0050).
   private QualityLadder resolveLadder(

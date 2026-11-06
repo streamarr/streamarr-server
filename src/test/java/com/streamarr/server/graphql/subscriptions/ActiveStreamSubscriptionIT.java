@@ -195,6 +195,11 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
     }
 
     @Override
+    public Optional<String> playedVariantOf(UUID sessionId) {
+      return Optional.empty();
+    }
+
+    @Override
     public void destroySession(UUID sessionId) {
       registry.removeById(sessionId);
     }
