@@ -94,8 +94,8 @@ enum QualityTier {
   // A copy plays the source's own picture, so it reaches the tier when the source fits the tier's
   // box. The keyframe check is left out: it refuses few sources, and the encode that replaces a
   // refused copy of the source's own tier usually reaches it too. An encode reaches the tier when
-  // one capability entry fits the tier's picture, in the codec family that the encode takes and one
-  // of the source's encode formats, without shrinking it into a smaller tier's box. The workers
+  // one capability entry fits the tier's picture, in the codec family and a format that the encode
+  // can take at its fastest frame rate, without shrinking it into a smaller tier's box. The workers
   // connected now do not count,
   // because the offered choices last for the whole playback session.
   private boolean isReachedIn(MediaProbe source, ClientCapabilityDeclaration declaration) {
@@ -113,7 +113,8 @@ enum QualityTier {
     return fastestEncodeCodecProfiles(source, declaration).stream()
         .flatMap(
             codecProfile ->
-                TranscodeDecisionService.sourceEncodeFormats(source, codecProfile).stream()
+                TranscodeDecisionService.fastestEncodeFormats(declaration, source, codecProfile)
+                    .stream()
                     .map(
                         format ->
                             EncodedVariantRequest.builder()

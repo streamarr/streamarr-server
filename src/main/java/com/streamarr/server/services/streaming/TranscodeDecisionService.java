@@ -611,6 +611,21 @@ public class TranscodeDecisionService {
         .max();
   }
 
+  /**
+   * The source's encode formats at the codec profile's fastest encoded frame rate, best first. The
+   * encode takes the fastest rate first, so only these formats can win the codec profile.
+   */
+  static List<EncodeFormat> fastestEncodeFormats(
+      ClientCapabilityDeclaration declaration, MediaProbe source, EncodeCodecProfile profile) {
+    var fastest = encodedFrameRate(declaration, source, profile);
+    return sourceEncodeFormats(source, profile).stream()
+        .filter(
+            format ->
+                fastest.isPresent()
+                    && encodedFrameRate(declaration, source, profile, format).equals(fastest))
+        .toList();
+  }
+
   /** Whether one entry accepts an 8-bit SDR encode of the source in the codec profile. */
   static boolean acceptsEightBitSdrEncode(
       ClientCapabilityDeclaration declaration, MediaProbe source, EncodeCodecProfile profile) {

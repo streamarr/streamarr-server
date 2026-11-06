@@ -443,18 +443,7 @@ class TenBitAndHdrEncodeTest {
           + " depth only at 30 fps")
   void shouldEncodeA60FpsSourceTo8BitSdrAt60FpsWhenTheClientPlaysItsRangeOrBitDepthOnlyAt30Fps(
       CompatibleBase sourceBase, VideoCapabilityEntry halfRateEntry) {
-    probes.setDefaultProbe(
-        defaultProbeBuilder()
-            .videoCodec("hevc")
-            .framerate(OptionalDouble.of(60))
-            .videoPlaybackFacts(
-                Optional.of(
-                    hevcFacts()
-                        .dynamicRange(rangeOf(sourceBase))
-                        .frameRateRule(
-                            VideoPlaybackFactsFixture.declaredRateRule(new Fraction(60, 1)))
-                        .build()))
-            .build());
+    probes.setDefaultProbe(sixtyFpsSource(sourceBase));
 
     var encode =
         accepted(
@@ -468,6 +457,39 @@ class TenBitAndHdrEncodeTest {
     assertThat(multivariantPlaylist(encode))
         .contains(",FRAME-RATE=60.000")
         .doesNotContain("30.000");
+  }
+
+  // The encode takes the fastest frame rate first, so a fixed quality that only the slower PQ entry
+  // reaches would play the faster SDR entry's smaller picture, and is not offered (ADR 0050).
+  @Test
+  @DisplayName(
+      "Should not offer a fixed quality that only a slower HDR encode reaches when a faster SDR"
+          + " encode wins the codec family")
+  void shouldNotOfferAFixedQualityThatOnlyASlowerHdrEncodeReaches() {
+    probes.setDefaultProbe(sixtyFpsSource(CompatibleBase.PQ));
+
+    var encode =
+        accepted(
+            playback.start(
+                start(
+                    options(VideoQuality.AUTO, null),
+                    clientWith(
+                        av1EntryBuilder()
+                            .compatibleBases(List.of(CompatibleBase.PQ))
+                            .maxWidth(1920)
+                            .maxHeight(1080)
+                            .maxFrameRate(30)
+                            .build(),
+                        av1EntryBuilder().maxBitDepth(8).maxWidth(1280).maxHeight(720).build()))));
+
+    assertThat(encode.offeredChoices())
+        .containsExactly(
+            VideoQuality.ORIGINAL,
+            VideoQuality.AUTO,
+            VideoQuality.HIGH_720P,
+            VideoQuality.MEDIUM_480P,
+            VideoQuality.LOW_360P);
+    assertThat(plannedEncode().dynamicRange()).isEqualTo(VideoDynamicRange.SDR);
   }
 
   static Stream<Arguments> sourcesWhoseRangeOrBitDepthPlaysOnlyAtHalfTheirFrameRate() {
@@ -700,6 +722,20 @@ class TenBitAndHdrEncodeTest {
     }
 
     return source(hevcFacts().dynamicRange(range).build(), "hevc");
+  }
+
+  // The default HEVC Main 10 source at 60 fps in the compatible base.
+  private static MediaProbe sixtyFpsSource(CompatibleBase base) {
+    return defaultProbeBuilder()
+        .videoCodec("hevc")
+        .framerate(OptionalDouble.of(60))
+        .videoPlaybackFacts(
+            Optional.of(
+                hevcFacts()
+                    .dynamicRange(rangeOf(base))
+                    .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(60, 1)))
+                    .build()))
+        .build();
   }
 
   private static VideoPlaybackFacts.VideoPlaybackFactsBuilder hevcFacts() {
