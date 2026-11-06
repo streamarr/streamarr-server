@@ -797,7 +797,7 @@ public class ProducerLifecycleService {
                   .orElseThrow(() -> new SessionNotFoundException(sessionId));
           try (var _ =
               transcodeLimit
-                  .tryReserve(current, current.firstListedVariant())
+                  .tryReserve(current, variantLabel)
                   .orElseThrow(() -> new TranscodeLimitReachedException(sessionId))) {
             startVariant(current, variantLabel, current.getCurrentSegment());
             if (runtimeRegistry.findById(sessionId).isEmpty()) {

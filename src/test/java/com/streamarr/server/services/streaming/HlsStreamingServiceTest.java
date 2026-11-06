@@ -103,6 +103,7 @@ import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.exceptions.TranscodeLimitReachedException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
@@ -8424,6 +8425,30 @@ class HlsStreamingServiceTest {
     assertThat(freeWithTheCopy).isEqualTo(3);
     assertThat(transcodeExecutor.isRunning(sessionId, "720p")).isTrue();
     assertThat(producerLifecycle.freeConfiguredTranscodeSlots()).isEqualTo(2);
+  }
+
+  // The upload budget can start a lower variant beside a copy that it leaves out. That start must
+  // take its own place under the transcode limit, not the copy's, which needs none.
+  @Test
+  @DisplayName(
+      "Should start no lower variant beside a copy when the transcode limit leaves no place for"
+          + " its encode")
+  void shouldStartNoLowerVariantBesideACopyWhenTheTranscodeLimitLeavesNoPlaceForItsEncode() {
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    for (int i = 0; i < streamingProperties().maxConcurrentTranscodes(); i++) {
+      var encode =
+          createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+              .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+              .build();
+      assertThat(service.createSession(encode)).isInstanceOf(Outcome.Accepted.class);
+    }
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    assertThatThrownBy(() -> producerLifecycle.startListedVariant(session, "720p"))
+        .isInstanceOf(TranscodeLimitReachedException.class);
+
+    assertThat(transcodeExecutor.isRunning(session.getSessionId(), "720p")).isFalse();
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
   }
 
   @Test
