@@ -280,9 +280,38 @@ public record MediaProbe(
 
   /** The chosen video stream's probed end time, or empty when the probe states none. */
   public Optional<Duration> videoEndTime() {
-    return videoPlaybackFacts
-        .flatMap(
-            facts -> streams.stream().filter(s -> s.index() == facts.streamIndex()).findFirst())
-        .flatMap(StreamInfo::endTime);
+    return chosenVideoStream().flatMap(StreamInfo::endTime);
+  }
+
+  /**
+   * Whether the chosen video stream ends at least {@code margin} before another audio or video
+   * stream of the source ends, by their probed end times (ADR 0037, early ends). A stream whose end
+   * time the probe does not state never ends early, and never makes another stream end early.
+   */
+  public boolean videoEndsEarly(@NonNull Duration margin) {
+    return endsEarly(chosenVideoStream(), margin);
+  }
+
+  /** Whether the session's audio stream ends early, by the rule of {@link #videoEndsEarly}. */
+  public boolean sessionAudioEndsEarly(@NonNull Duration margin) {
+    return endsEarly(audioStreams().stream().findFirst(), margin);
+  }
+
+  private Optional<StreamInfo> chosenVideoStream() {
+    return videoPlaybackFacts.flatMap(
+        facts -> streams.stream().filter(s -> s.index() == facts.streamIndex()).findFirst());
+  }
+
+  private boolean endsEarly(Optional<StreamInfo> stream, Duration margin) {
+    if (stream.isEmpty() || stream.get().endTime().isEmpty()) {
+      return false;
+    }
+
+    var earliestLaterEnd = stream.get().endTime().get().plus(margin);
+    return streams.stream()
+        .filter(other -> other.index() != stream.get().index())
+        .filter(other -> "audio".equals(other.codecType()) || "video".equals(other.codecType()))
+        .flatMap(other -> other.endTime().stream())
+        .anyMatch(end -> end.compareTo(earliestLaterEnd) >= 0);
   }
 }

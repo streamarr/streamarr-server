@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.SeekPriorityFixture.seekPriorityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.remuxDecisionBuilder;
@@ -24,6 +25,7 @@ import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -31,6 +33,7 @@ import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -64,6 +67,7 @@ class HlsEncodedEndSmokeTest {
   private ProducerLifecycleService lifecycle;
   private SegmentDeliveryCoordinator coordinator;
   private HlsPlaylistService playlistService;
+  private TranscodeDecisionService decisionService;
 
   @BeforeEach
   void setUp() throws Exception {
@@ -110,6 +114,7 @@ class HlsEncodedEndSmokeTest {
             .eventPublisher(new CapturingEventPublisher())
             .build();
     playlistService = new HlsPlaylistService(properties);
+    decisionService = new TranscodeDecisionService(properties, new SimpleMeterRegistry());
   }
 
   @AfterEach
@@ -195,6 +200,57 @@ class HlsEncodedEndSmokeTest {
     assertThat(decodedVideoFrames(session, "segment4.m4s")).isPositive();
   }
 
+  // The client declares the source's H.264 and AAC, so it could copy either stream.
+  @Test
+  @DisplayName(
+      "Should carry audio in every segment after the audio's end when a client that copies both"
+          + " codecs plays a source whose audio ends two segments before its video")
+  void
+      shouldCarryAudioInEverySegmentAfterTheAudiosEndWhenACopyCapableClientPlaysAudioThatEndsFirst()
+          throws Exception {
+    var source = generateSource("audio-ends-at-12-of-24.mp4", "24", 24, 12);
+    var probe = probe(source);
+    var session = startedEncode(source, probe, decidedForACopyCapableClient(probe));
+    awaitFirstAttemptEnd(session);
+
+    assertEveryAdvertisedSegmentIsServed(session);
+    assertThat(advertisedSegmentNames(session)).hasSize(4);
+    assertThat(audioPacketCount(session, "segment3.m4s"))
+        .as("the silence that pads the audio fills the last segment")
+        .isPositive();
+  }
+
+  @Test
+  @DisplayName(
+      "Should hold the last frame in every segment after the video's end when a client that copies"
+          + " both codecs plays a source whose video ends two segments before its audio")
+  void shouldHoldTheLastFrameAfterTheVideosEndWhenACopyCapableClientPlaysVideoThatEndsFirst()
+      throws Exception {
+    var source = generateSource("copyable-video-ends-at-12-of-24.mp4", "24", 12, 24);
+    var probe = probe(source);
+    var session = startedEncode(source, probe, decidedForACopyCapableClient(probe));
+    awaitFirstAttemptEnd(session);
+
+    assertEveryAdvertisedSegmentIsServed(session);
+    assertThat(advertisedSegmentNames(session)).hasSize(4);
+    assertThat(decodedVideoFrames(session, "segment3.m4s"))
+        .as("the held last frame fills the last segment")
+        .isEqualTo(FRAMES_IN_A_SEGMENT_AT_24_FPS);
+  }
+
+  private TranscodeDecision.TranscodeDecisionBuilder decidedForACopyCapableClient(
+      MediaProbe probe) {
+    return decisionService
+        .decide(
+            TranscodeDecisionRequest.builder()
+                .source(probe)
+                .capabilityDeclaration(defaultDeclarationBuilder().build())
+                .encodableVideoCodecFamilies(Set.of("h264"))
+                .build())
+        .orElseThrow()
+        .toBuilder();
+  }
+
   private void awaitFirstAttemptEnd(StreamSession session) {
     var firstAttempt = session.getHandle().orElseThrow().attemptId();
     await()
@@ -219,6 +275,15 @@ class HlsEncodedEndSmokeTest {
             Fmp4Fixture.withInitializationSegment(
                 segmentStore, session.getSessionId(), segmentName));
     return workerFixture.worker().decodedVideoFrameCount(media);
+  }
+
+  private int audioPacketCount(StreamSession session, String segmentName) throws Exception {
+    var media =
+        Files.write(
+            temporaryDirectory.resolve("audible-" + segmentName + ".mp4"),
+            Fmp4Fixture.withInitializationSegment(
+                segmentStore, session.getSessionId(), segmentName));
+    return workerFixture.worker().audioPacketHashes(media).size();
   }
 
   private Path generateSource(
