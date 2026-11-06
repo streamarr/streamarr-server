@@ -455,7 +455,7 @@ public class SeekPriority {
     }
 
     transcodeExecutor.yieldToSeek(target, named, properties.seekPriorityHoldLimit());
-    yieldedAttempts.increment(newlyNamed);
+    yieldedAttempts.increment((double) newlyNamed);
     log.debug(
         "Sent a yield to seek to {} naming {} job attempts, {} newly",
         target,
