@@ -356,7 +356,10 @@ class VideoCapabilityEntryHlsEncodeTest {
 
     var output =
         entry.fitHlsEncode(
-            fullHdRequest().codecProfile(EncodeCodecProfile.HEVC_MAIN).bitrate(20_000_000L).build());
+            fullHdRequest()
+                .codecProfile(EncodeCodecProfile.HEVC_MAIN)
+                .bitrate(20_000_000L)
+                .build());
 
     // H.265 Tables A.8 and A.9 give level 4 a 12,000,000-bit buffer and 12 Mb/s in the Main tier.
     // The worker's buffer is twice the bitrate, so the buffer allows only 6 Mb/s.
