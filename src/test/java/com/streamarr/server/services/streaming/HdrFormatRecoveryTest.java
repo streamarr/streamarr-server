@@ -25,6 +25,7 @@ import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
+import com.streamarr.server.domain.streaming.DynamicRangeChoice;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlannedVideoOutput;
@@ -50,7 +51,10 @@ import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.services.streaming.events.DolbyVisionConversionFailedEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
@@ -85,6 +89,9 @@ class HdrFormatRecoveryTest {
           .build();
   private static final int SOURCE_LEVEL = 6;
   private static final Set<String> ENCODED_CODEC_FAMILIES = Set.of("h264", "av1");
+  // The picture box of each fixed quality that these tests select (ADR 0050).
+  private static final Map<VideoQuality, Integer> FIXED_QUALITY_HEIGHTS =
+      Map.of(VideoQuality.FULL_HD_1080P, 1080, VideoQuality.HIGH_720P, 720);
 
   private final FakeMediaFileRepository mediaFiles = new FakeMediaFileRepository();
   private final FakeTranscodeExecutor workers = new FakeTranscodeExecutor();
@@ -368,6 +375,129 @@ class HdrFormatRecoveryTest {
         Arguments.of(VideoRange.HLG, VideoQuality.FULL_HD_1080P, copyFailed));
   }
 
+  // ADR 0013 and ADR 0052: the server never silently replaces a manual choice. The viewer rejects
+  // every format attempt until playback ends, and each one either delivers what Original, the fixed
+  // quality and the HDR choice promise, or the server's answer names the change. The range that the
+  // answer reports for the client's HDR toggle always matches the playlist.
+  @ParameterizedTest(name = "{0} in {1}, HDR choice {2}")
+  @MethodSource("manualChoices")
+  @DisplayName(
+      "Should keep each manual choice or name its change in every format attempt until playback"
+          + " ends")
+  void shouldKeepEachManualChoiceOrNameItsChangeInEveryFormatAttemptUntilPlaybackEnds(
+      String source, VideoQuality quality, DynamicRangeChoice rangeChoice) {
+    probes.setDefaultProbe(manualChoiceSources().get(source));
+    var command = start(quality, rangeChoice);
+    var attempts = new ArrayList<PlaybackSessionSnapshot>();
+    var snapshot = accepted(playback.start(command));
+    while (snapshot.currentFormatAttempt() instanceof PlaybackFormatAttempt.Ready) {
+      attempts.add(snapshot);
+      snapshot = rejectCurrentFormatAttempt(snapshot, command);
+    }
+
+    assertThat(snapshot.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Failed.class);
+    assertThat(attempts)
+        .isNotEmpty()
+        .allSatisfy(attempt -> assertThatTheChoiceHoldsOrItsChangeIsNamed(attempt, rangeChoice));
+  }
+
+  static Stream<Arguments> manualChoices() {
+    var fixedQualities = List.of(VideoQuality.FULL_HD_1080P, VideoQuality.HIGH_720P);
+    var arguments = new ArrayList<Arguments>();
+    for (var source : manualChoiceSources().keySet()) {
+      arguments.add(Arguments.of(source, VideoQuality.ORIGINAL, null));
+      for (var quality : fixedQualities) {
+        for (var rangeChoice : DynamicRangeChoice.values()) {
+          arguments.add(Arguments.of(source, quality, rangeChoice));
+        }
+      }
+    }
+
+    return arguments.stream();
+  }
+
+  private static Map<String, MediaProbe> manualChoiceSources() {
+    var sources = new LinkedHashMap<String, MediaProbe>();
+    sources.put(
+        "10-bit SDR HEVC",
+        sourceBuilder()
+            .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.SDR))
+            .build());
+    sources.put(
+        "HDR10",
+        sourceBuilder()
+            .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ))
+            .build());
+    sources.put(
+        "HLG",
+        sourceBuilder()
+            .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.HLG))
+            .build());
+    sources.put("Dolby Vision 8.1", dolbyVisionSource(DolbyVisionProfile.PROFILE_8_1).build());
+    sources.put("Dolby Vision 10.4", dolbyVisionSource(DolbyVisionProfile.PROFILE_10_4).build());
+    return sources;
+  }
+
+  private void assertThatTheChoiceHoldsOrItsChangeIsNamed(
+      PlaybackSessionSnapshot attempt, DynamicRangeChoice rangeChoice) {
+    var requested = attempt.requestedChoice();
+    var decision = decisionOf(attempt);
+    if (attempt.playbackChoice() != requested) {
+      assertThat(requested)
+          .as("only Original changes its playback choice")
+          .isEqualTo(VideoQuality.ORIGINAL);
+      assertThat(attempt.playbackChoice()).isEqualTo(VideoQuality.AUTO);
+      assertThat(attempt.formatChange())
+          .as("the change from Original to Auto is named")
+          .isPresent();
+    }
+
+    if (attempt.playbackChoice() == VideoQuality.ORIGINAL) {
+      assertThat(decision.transcodeMode().copiesVideo())
+          .as("Original plays the source's own video")
+          .isTrue();
+    }
+
+    if (attempt.playbackChoice() != requested || requested == VideoQuality.ORIGINAL) {
+      assertThatTheRangeIsReportedAsPlayed(attempt);
+      return;
+    }
+
+    assertThat(deliveredHeight(attempt))
+        .as("a fixed quality's one variant fits its picture box")
+        .isLessThanOrEqualTo(FIXED_QUALITY_HEIGHTS.get(requested));
+    if (rangeChoice == DynamicRangeChoice.SDR) {
+      assertThat(decision.videoRange()).as("the viewer chose SDR").isEqualTo(VideoRange.SDR);
+    }
+
+    assertThatTheRangeIsReportedAsPlayed(attempt);
+  }
+
+  // The client's HDR toggle shows the range that the answer reports, which must be the range the
+  // playlist announces and the decision plans (ADR 0052).
+  private static void assertThatTheRangeIsReportedAsPlayed(PlaybackSessionSnapshot attempt) {
+    var planned = decisionOf(attempt).videoRange();
+    assertThat(sessionOf(attempt).getVideoRange()).isEqualTo(planned);
+    var playlist = multivariantPlaylist(attempt);
+    if (planned == VideoRange.SDR) {
+      assertThat(playlist).doesNotContain("VIDEO-RANGE=PQ").doesNotContain("VIDEO-RANGE=HLG");
+      return;
+    }
+
+    assertThat(playlist).contains(",VIDEO-RANGE=" + planned.name());
+  }
+
+  // A copy delivers the source's 1080p picture; a fixed quality's encode delivers one variant.
+  private static int deliveredHeight(PlaybackSessionSnapshot attempt) {
+    var session = sessionOf(attempt);
+    if (session.getTranscodeDecision().transcodeMode().copiesVideo()) {
+      return session.getMediaProbe().height();
+    }
+
+    assertThat(session.getVariants()).as("a fixed quality encodes one variant").hasSize(1);
+    return session.getVariants().getFirst().height();
+  }
+
   private PlaybackSessionSnapshot rejectCurrentFormatAttempt(
       PlaybackSessionSnapshot snapshot, StartPlaybackSessionCommand command) {
     return playback
@@ -399,6 +529,10 @@ class HdrFormatRecoveryTest {
   }
 
   private StartPlaybackSessionCommand start(VideoQuality quality) {
+    return start(quality, null);
+  }
+
+  private StartPlaybackSessionCommand start(VideoQuality quality, DynamicRangeChoice rangeChoice) {
     var file =
         mediaFiles.save(
             MediaFile.builder()
@@ -410,7 +544,7 @@ class HdrFormatRecoveryTest {
     return StartPlaybackSessionCommand.builder()
         .mediaFileId(file.getId())
         .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
-        .options(StreamingOptions.builder().quality(quality).build())
+        .options(StreamingOptions.builder().quality(quality).dynamicRange(rangeChoice).build())
         .capabilityDeclaration(dolbyVisionClient())
         .build();
   }
