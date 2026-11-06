@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.UnaryOperator;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
@@ -33,11 +34,17 @@ final class ConstantFit {
   private double[][] normal = new double[0][0];
   private double[] moments = new double[0];
   private final PendingMeasurements pending;
+  private final UnaryOperator<Map<CostConstant, Double>> follow;
   private final Set<CostConstant> measured = new HashSet<>();
   private double startingFade = 1;
 
-  ConstantFit(double forgetting) {
+  /**
+   * Follow adjusts the known constants before the waiting measurements are solved against them, so
+   * a constant that follows another keeps its followed value there.
+   */
+  ConstantFit(double forgetting, UnaryOperator<Map<CostConstant, Double>> follow) {
     this.forgetting = forgetting;
+    this.follow = follow;
     this.pending = new PendingMeasurements(forgetting);
   }
 
@@ -104,7 +111,7 @@ final class ConstantFit {
       return Optional.empty();
     }
 
-    var solved = new HashMap<>(known.get());
+    var solved = new HashMap<>(follow.apply(known.get()));
     solved.putAll(pending.solve(solved));
     pending.release(
         solved.keySet(),

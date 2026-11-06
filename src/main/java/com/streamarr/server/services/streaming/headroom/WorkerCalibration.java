@@ -46,7 +46,8 @@ public final class WorkerCalibration {
 
   private final CpuLimit cpuLimit;
   private final HeadroomConstants startingConstants;
-  private final ConstantFit fit = new ConstantFit(FORGETTING);
+  private final ConstantFit fit =
+      new ConstantFit(FORGETTING, this::withUnmeasuredPresetsFollowingAutomatic);
   private final Clock clock;
   private final Map<EncodeConfiguration, PredictionWindow> windows = new HashMap<>();
   private final Set<CostConstant> restoredMeasuredConstants;

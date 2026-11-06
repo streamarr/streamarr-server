@@ -533,6 +533,41 @@ class WorkerCalibrationTest {
 
     @Test
     @DisplayName(
+        "Should price a new constant against another preset's followed constant when one measurement prices both")
+    void
+        shouldPriceANewConstantAgainstAnotherPresetsFollowedConstantWhenOneMeasurementPricesBoth() {
+      var libx264Veryfast = new EncoderAndPreset(LIBX264, EncoderPreset.VERYFAST);
+      var calibration =
+          tenCoreCalibration()
+              .startingConstants(
+                  HeadroomConstants.builder()
+                      .cpuSecondsPerMegapixel(
+                          Map.of(LIBX264_FASTER, 0.04, libx264Veryfast, 0.02, SOFTWARE_H264, 0.01))
+                      .coresAlone(Map.of(LIBX264_FASTER, 6.0, libx264Veryfast, 6.0))
+                      .build())
+              .build();
+      for (var i = 0; i < 300; i++) {
+        calibration.fit(rungMeasurement(i, 2, 2));
+      }
+
+      // veryfast follows faster to 0.04, so this PQ attempt costs 0.04 x 25 + 0.02 x 50 + 0.02 x
+      // 50.
+      calibration.fit(
+          measuredAtCost(
+              libx264FasterLoad()
+                  .encoderAndPreset(libx264Veryfast)
+                  .toneMapping(ToneMapping.PQ)
+                  .build(),
+              3.0,
+              2));
+
+      var constants = calibration.constants().cpuSecondsPerMegapixel();
+      assertThat(constants.get(libx264Veryfast)).isCloseTo(0.04, withinPercentage(2));
+      assertThat(constants.get(ToneMapping.PQ)).isCloseTo(0.02, withinPercentage(5));
+    }
+
+    @Test
+    @DisplayName(
         "Should leave a new constant unknown when every measurement that prices it also prices a new constant that comes out negative")
     void
         shouldLeaveANewConstantUnknownWhenEveryMeasurementThatPricesItAlsoPricesANewConstantThatComesOutNegative() {
