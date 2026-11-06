@@ -171,18 +171,19 @@ class LibraryOperationFinishingStepsRunnerTest {
   @Test
   @DisplayName(
       "Should conclude the scan failed when the rollback after a failed library folder check fails")
-  void shouldConcludeTheScanFailedWhenTheRollbackAfterAFailedFolderCheckFails() {
-    saveMediaFile("Gone (2020).mkv");
+  void shouldConcludeTheScanFailedWhenTheRollbackAfterAFailedFolderCheckFails() throws IOException {
+    var scan = storeKeptAndGoneScan();
+    var keptPath = FilepathCodec.decode(fileSystem, library.getFilepathUri()).resolve(KEPT);
     var rollbackFailingRunner =
-        runnerBuilder(mediaFiles)
+        sweepingRunnerBuilder(() -> deleteFile(keptPath))
             .transactionManager(new RollbackFailingTransactionManager())
             .build();
 
     var conclusion =
-        rollbackFailingRunner.runFinishingSteps(storeScan(), LibraryOperationConclusion.FINISHED);
+        rollbackFailingRunner.runFinishingSteps(scan, LibraryOperationConclusion.FINISHED);
 
     assertThat(conclusion).isEqualTo(LibraryOperationConclusion.FAILED);
-    assertThat(mediaFiles.findByLibraryId(library.getId())).hasSize(1);
+    assertThat(mediaFiles.findByLibraryId(library.getId())).hasSize(2);
   }
 
   @Test
@@ -385,8 +386,13 @@ class LibraryOperationFinishingStepsRunnerTest {
     return storeScan();
   }
 
-  // The change runs once, as the disk sweep checks its first media file.
   private LibraryOperationFinishingStepsRunner runnerSweepingWith(Runnable change) {
+    return sweepingRunnerBuilder(change).build();
+  }
+
+  // The change runs once, as the disk sweep checks its first media file.
+  private LibraryOperationFinishingStepsRunner.LibraryOperationFinishingStepsRunnerBuilder
+      sweepingRunnerBuilder(Runnable change) {
     var changed = new AtomicBoolean();
     var sweepFileSystem =
         ThrowingFileSystemWrapper.runningBeforeEachAccessCheck(
@@ -398,8 +404,8 @@ class LibraryOperationFinishingStepsRunnerTest {
             });
     return runnerBuilder(mediaFiles)
         .orphanedMediaFileCleanupService(
-            new OrphanedMediaFileCleanupService(mediaFiles, movieService, sweepFileSystem, _ -> {}))
-        .build();
+            new OrphanedMediaFileCleanupService(
+                mediaFiles, movieService, sweepFileSystem, _ -> {}));
   }
 
   private static void deleteFile(Path path) {
