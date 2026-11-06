@@ -231,6 +231,22 @@ public final class WorkerContainerFixture implements AutoCloseable {
     return packetHashes(media, "a");
   }
 
+  /**
+   * What ffprobe prints for each decoded frame of the media's first video stream, as {@code
+   * key=value} lines: the pixel format, the colour signaling, and the type of each side data that
+   * the decoder attaches. Holds no {@code pix_fmt} line when no frame decodes.
+   */
+  public List<String> decodedVideoFrames(Path media) throws Exception {
+    return probe(
+        media,
+        "v:0",
+        List.of(
+            "-show_entries",
+            "frame=pix_fmt,color_space,color_transfer,color_primaries"
+                + ":frame_side_data=side_data_type"),
+        "default=nw=1");
+  }
+
   private List<String> packetHashes(Path media, String streamSelector) throws Exception {
     return probePackets(
         media,
@@ -240,6 +256,12 @@ public final class WorkerContainerFixture implements AutoCloseable {
 
   private List<String> probePackets(
       Path media, String streamSelector, List<String> inspectionArguments) throws Exception {
+    return probe(media, streamSelector, inspectionArguments, "csv=p=0");
+  }
+
+  private List<String> probe(
+      Path media, String streamSelector, List<String> inspectionArguments, String outputFormat)
+      throws Exception {
     var input = "/tmp/inspect-" + UUID.randomUUID() + ".mp4";
     container.copyFileToContainer(Transferable.of(Files.readAllBytes(media), 0644), input);
     // A native output file excludes launcher diagnostics and avoids truncated Docker exec stdout.
@@ -253,7 +275,7 @@ public final class WorkerContainerFixture implements AutoCloseable {
                 "-select_streams",
                 streamSelector));
     command.addAll(inspectionArguments);
-    command.addAll(List.of("-of", "csv=p=0", "-o", input + ".pts", input));
+    command.addAll(List.of("-of", outputFormat, "-o", input + ".pts", input));
     var probe = container.execInContainer(command.toArray(String[]::new));
     assertThat(probe.getExitCode()).as(probe.getStderr()).isZero();
     var result = container.execInContainer("cat", input + ".pts");
