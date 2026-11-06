@@ -70,6 +70,10 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
       "{ continueWatching(first: 12) { edges { node { ... on Episode { id season"
           + " { seasonNumber series { title } } } } } } }";
 
+  private static final String SERIES_LIBRARIES_QUERY =
+      "{ continueWatching(first: 12) { edges { node { ... on Episode { id season"
+          + " { series { library { name } } } } } } } }";
+
   private static final SortValue WATCHED_AT =
       new SortValue.OfInstant(Instant.parse("2026-10-19T15:07:00Z"));
 
@@ -209,6 +213,24 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
             statistics -> statistics.getEntityStatistics(Library.class.getName()).getLoadCount());
 
     assertThat(librariesLoaded).as("libraries loaded while Continue Watching resolves").isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should read series libraries in the same number of statements when the list spans more"
+          + " libraries")
+  void shouldReadSeriesLibrariesInTheSameNumberOfStatementsWhenTheListSpansMoreLibraries()
+      throws Exception {
+    identity = authTestSupport.createIdentity();
+    createEpisodeWithProgress();
+    // The first request fills caches that later requests skip.
+    execute(SERIES_LIBRARIES_QUERY);
+    var forOneLibrary = statementsPreparedBy(SERIES_LIBRARIES_QUERY);
+
+    createEpisodeWithProgress();
+    createEpisodeWithProgress();
+
+    assertThat(statementsPreparedBy(SERIES_LIBRARIES_QUERY)).isEqualTo(forOneLibrary);
   }
 
   @Test
