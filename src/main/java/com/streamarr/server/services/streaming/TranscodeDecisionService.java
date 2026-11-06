@@ -971,12 +971,13 @@ public class TranscodeDecisionService {
   }
 
   // Any format beyond 8-bit SDR needs one encoder of the codec family that lists every feature the
-  // format needs.
+  // format needs. A format that failed earlier in the playback session stays out.
   private static List<EncodeFormat> encodeFormats(
       TranscodeDecisionRequest request,
       EncodeCodecProfile profile,
       List<WorkerVerifiedEncoder> encoders) {
     return permittedEncodeFormats(encodeFitting(request), profile).stream()
+        .filter(format -> !request.excludedEncodeFormats().contains(format))
         .filter(
             format ->
                 isWrittenByAnEncoder(

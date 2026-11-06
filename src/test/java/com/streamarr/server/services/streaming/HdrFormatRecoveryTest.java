@@ -27,6 +27,7 @@ import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
 import com.streamarr.server.domain.streaming.DynamicRangeChoice;
+import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlannedVideoOutput;
@@ -41,9 +42,11 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
+import com.streamarr.server.domain.streaming.VideoEncodeFeature;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.streaming.VideoRange;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
@@ -79,9 +82,10 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
- * Format recovery from a rejected HDR copy through the real transcode decision and playlist (ADR
+ * Format recovery from a rejected HDR output through the real transcode decision and playlist (ADR
  * 0052): a Dolby Vision copy on a PQ or HLG base falls back to the copy with Dolby Vision stripped,
- * and an HDR copy falls back to an SDR encode until the server encodes HDR (#397).
+ * an HDR copy falls back to an encode that keeps HDR only when a worker encodes it (#397), and Auto
+ * gives HDR up for SDR after an HDR encode fails.
  */
 @Tag("UnitTest")
 @DisplayName("HDR Format Recovery Tests")
@@ -96,6 +100,11 @@ class HdrFormatRecoveryTest {
   private static final int SOURCE_LEVEL = 6;
   private static final Set<String> ENCODED_CODEC_FAMILIES = Set.of("h264", "av1");
   private static final Pattern VIDEO_RANGE_ATTRIBUTE = Pattern.compile("VIDEO-RANGE=(\\w+)");
+  // SVT-AV1 writes 10-bit, PQ, HLG and Dolby Vision reshaped into PQ, and libx264 writes 8-bit SDR.
+  private static final List<WorkerVerifiedEncoder> HDR_ENCODERS =
+      List.of(
+          encoder("av1", "libsvtav1", Set.of(VideoEncodeFeature.values())),
+          encoder("h264", "libx264", Set.of()));
   private static final Pattern AV1_CODEC_BIT_DEPTH =
       Pattern.compile("av01\\.\\d\\.\\d\\d[MH]\\.(\\d\\d)");
 
@@ -331,8 +340,8 @@ class HdrFormatRecoveryTest {
                             new CreateStreamSessionRejection.FrameRateUnknown())));
   }
 
-  // ADR 0052 and #401: every encode is SDR until #397, so the encode that replaces a rejected HDR
-  // copy says SDR in its decision, its playlist entry and the stream session's range, which the
+  // ADR 0052 and #401: no worker here encodes HDR (#397), so the encode that replaces a rejected
+  // HDR copy says SDR in its decision, its playlist entry and the stream session's range, which the
   // server's answer carries for the client's HDR toggle.
   @ParameterizedTest(name = "{0} copy in {1}")
   @MethodSource("hdrCopies")
@@ -579,6 +588,121 @@ class HdrFormatRecoveryTest {
             .build());
   }
 
+  // #397 and #401: Auto may give up HDR for SDR as part of its bounded recovery, and only after an
+  // HDR encode fails. A rejected HDR or 10-bit encode keeps its format out of every later format
+  // attempt, and a rejected 8-bit SDR encode keeps its codec family out. A rejected copy falls back
+  // to the best encode, HDR included. A manual choice never gives HDR up (ADR 0052). Each format
+  // attempt's answer, decision and playlist describe the output that it plans.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("scenariosWithHdrEncodes")
+  @DisplayName(
+      "Should give up HDR for SDR only in Auto and only after an HDR encode fails when a worker"
+          + " encodes HDR")
+  void shouldGiveUpHdrForSdrOnlyInAutoAndOnlyAfterAnHdrEncodeFailsWhenAWorkerEncodesHdr(
+      FormatAttemptScenario scenario) {
+    workers.setTargetEncoders(ExecutionTargetId.LOCAL, HDR_ENCODERS);
+
+    assertThatEveryFormatAttemptDeliversTheScenario(scenario);
+  }
+
+  static Stream<FormatAttemptScenario> scenariosWithHdrEncodes() {
+    var auto = VideoQuality.AUTO;
+    var original = VideoQuality.ORIGINAL;
+    var fullHd = VideoQuality.FULL_HD_1080P;
+    var hd = VideoQuality.HIGH_720P;
+    var copyFailed = PlaybackFormatChange.COPY_FAILED;
+    var exhausted = new PlaybackSessionFailure.AttemptsExhausted();
+    var noEligibleFormat =
+        new PlaybackSessionFailure.CreationRejected(
+            new CreateStreamSessionRejection.NoEligibleVideoFormat());
+    var fixedFailed =
+        new PlaybackSessionFailure.FixedFormatFailed(PlaybackFormatFailure.DECODE_ERROR);
+    return Stream.of(
+        scenario("HDR10 in Auto")
+            .source(hdr10())
+            .quality(auto)
+            .attempt(autoCopy(Output.COPY, VideoRange.PQ).build())
+            .attempt(autoHdrEncode(VideoRange.PQ).build())
+            .attempt(autoEncode().build())
+            .attempt(autoEncode().codec("av1").build())
+            .end(exhausted)
+            .build(),
+        scenario("HLG in Auto")
+            .source(hlg())
+            .quality(auto)
+            .attempt(autoCopy(Output.COPY, VideoRange.HLG).build())
+            .attempt(autoHdrEncode(VideoRange.HLG).build())
+            .attempt(autoEncode().build())
+            .attempt(autoEncode().codec("av1").build())
+            .end(exhausted)
+            .build(),
+        scenario("10-bit SDR in Auto")
+            .source(tenBitSdr())
+            .quality(auto)
+            .attempt(autoCopy(Output.COPY, VideoRange.SDR).build())
+            .attempt(autoEncode().build())
+            .attempt(autoEncode().video("av1", 10).build())
+            .attempt(autoEncode().codec("av1").build())
+            .end(exhausted)
+            .build(),
+        scenario("HDR10 in Auto on a client whose HEVC entry declares SDR alone")
+            .source(hdr10())
+            .quality(auto)
+            .client(sdrHevcClient())
+            .attempt(autoHdrEncode(VideoRange.PQ).build())
+            .attempt(autoEncode().build())
+            .attempt(autoEncode().codec("av1").build())
+            .end(noEligibleFormat)
+            .build(),
+        scenario("Dolby Vision 5 in Auto on a client that declares PQ but not profile 5")
+            .source(dolbyVisionSource(DolbyVisionProfile.PROFILE_5).build())
+            .quality(auto)
+            .attempt(autoHdrEncode(VideoRange.PQ).build())
+            .attempt(autoEncode().build())
+            .attempt(autoEncode().codec("av1").build())
+            .end(noEligibleFormat)
+            .build(),
+        scenario("Dolby Vision 8.1 in Auto")
+            .source(dolbyVisionSource(DolbyVisionProfile.PROFILE_8_1).build())
+            .quality(auto)
+            .attempt(autoCopy(Output.DOLBY_VISION_COPY, VideoRange.PQ).build())
+            .attempt(autoCopy(Output.STRIPPED_COPY, VideoRange.PQ).build())
+            .attempt(autoHdrEncode(VideoRange.PQ).build())
+            .attempt(autoEncode().build())
+            .end(exhausted)
+            .build(),
+        scenario("HDR10 in Original")
+            .source(hdr10())
+            .quality(original)
+            .attempt(delivered(Output.COPY, VideoRange.PQ).choice(original).build())
+            .attempt(autoHdrEncode(VideoRange.PQ).changed(copyFailed).build())
+            .attempt(autoEncode().changed(copyFailed).build())
+            .attempt(autoEncode().changed(copyFailed).codec("av1").build())
+            .end(exhausted)
+            .build(),
+        scenario("HDR10 in 1080p, HDR chosen")
+            .source(hdr10())
+            .quality(fullHd)
+            .rangeChoice(DynamicRangeChoice.HDR)
+            .attempt(delivered(Output.COPY, VideoRange.PQ).choice(fullHd).build())
+            .attempt(fixedHdrEncode(fullHd, VideoRange.PQ).changed(copyFailed).build())
+            .end(fixedFailed)
+            .build(),
+        scenario("HDR10 in 720p, no HDR choice")
+            .source(hdr10())
+            .quality(hd)
+            .attempt(fixedHdrEncode(hd, VideoRange.PQ).build())
+            .end(fixedFailed)
+            .build(),
+        scenario("HLG in 720p, SDR chosen")
+            .source(hlg())
+            .quality(hd)
+            .rangeChoice(DynamicRangeChoice.SDR)
+            .attempt(fixedEncode(hd).build())
+            .end(fixedFailed)
+            .build());
+  }
+
   // The viewer rejects every format attempt until playback ends.
   private void assertThatEveryFormatAttemptDeliversTheScenario(FormatAttemptScenario scenario) {
     probes.setDefaultProbe(scenario.source());
@@ -678,6 +802,23 @@ class HdrFormatRecoveryTest {
         .choice(VideoQuality.AUTO)
         .variants(4)
         .video("h264", 8);
+  }
+
+  // Auto copies the source's own video in one variant.
+  private static DeliveredAttempt.DeliveredAttemptBuilder autoCopy(
+      Output output, VideoRange range) {
+    return delivered(output, range).choice(VideoQuality.AUTO);
+  }
+
+  // Auto's 10-bit AV1 ladder in the source's PQ or HLG range for the 1080p source (#397).
+  private static DeliveredAttempt.DeliveredAttemptBuilder autoHdrEncode(VideoRange range) {
+    return autoEncode().range(range).video("av1", 10);
+  }
+
+  // A fixed quality's one 10-bit AV1 variant in the source's PQ or HLG range (#397).
+  private static DeliveredAttempt.DeliveredAttemptBuilder fixedHdrEncode(
+      VideoQuality quality, VideoRange range) {
+    return fixedEncode(quality).range(range).video("av1", 10);
   }
 
   // A fixed quality's one SDR variant, which fills the quality's picture box (ADR 0050).
@@ -948,6 +1089,33 @@ class HdrFormatRecoveryTest {
         .build();
   }
 
+  // The Dolby Vision client, whose HEVC entry declares SDR alone, so an HDR HEVC source is encoded.
+  private static ClientCapabilityDeclaration sdrHevcClient() {
+    var dolbyVisionClient = dolbyVisionClient();
+    return defaultDeclarationBuilder()
+        .audio(dolbyVisionClient.audio())
+        .video(
+            Stream.concat(
+                    Stream.of(hevcEntryBuilder().build()),
+                    dolbyVisionClient.video().stream().skip(1))
+                .toList())
+        .build();
+  }
+
+  private static WorkerVerifiedEncoder encoder(
+      String codecFamily, String encoder, Set<VideoEncodeFeature> features) {
+    return WorkerVerifiedEncoder.builder()
+        .backend(
+            EncoderBackend.builder()
+                .codecFamily(codecFamily)
+                .encoder(encoder)
+                .kind(EncoderBackend.Kind.SOFTWARE)
+                .build())
+        .keyframeVerified(true)
+        .encodeFeatures(features)
+        .build();
+  }
+
   private static List<DolbyVisionProfileCapability> profiles(DolbyVisionProfile... profiles) {
     return Stream.of(profiles)
         .map(
@@ -1008,7 +1176,11 @@ class HdrFormatRecoveryTest {
   }
 
   private static int compatibilityIdOf(DolbyVisionProfile profile) {
-    return profile.compatibleBase() == CompatibleBase.HLG ? 4 : 1;
+    return switch (profile.compatibleBase()) {
+      case HLG -> 4;
+      case NONE -> 0;
+      default -> 1;
+    };
   }
 
   /** A 10-bit video codec that a source can carry, with its codec string. */

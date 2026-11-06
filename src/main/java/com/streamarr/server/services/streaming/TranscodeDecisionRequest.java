@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.DecisionReason;
+import com.streamarr.server.domain.streaming.EncodeFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import java.util.List;
@@ -17,10 +18,10 @@ import lombok.NonNull;
  * deliver beyond passing a copied video stream through, including busy workers. {@code
  * videoEncoders} are the worker-verified encoders whose encode features name the outputs beyond
  * 8-bit SDR that an encode may plan (#397), and {@code verifiedVideoEncoders} adds busy workers'
- * encoders. {@code directPlayRefusals} names why the format attempt does not direct-play the source
- * file, and the decision names them before its own reasons. {@code softwareEncodeCodecFamily} names
- * the only codec family that the decision may encode, with the software encoder, after a hardware
- * encoder failed (ADR 0044).
+ * encoders. An encode plans no format in {@code excludedEncodeFormats}. {@code directPlayRefusals}
+ * names why the format attempt does not direct-play the source file, and the decision names them
+ * before its own reasons. {@code softwareEncodeCodecFamily} names the only codec family that the
+ * decision may encode, with the software encoder, after a hardware encoder failed (ADR 0044).
  */
 @Builder(toBuilder = true)
 public record TranscodeDecisionRequest(
@@ -31,6 +32,7 @@ public record TranscodeDecisionRequest(
     @NonNull Set<String> verifiedVideoCodecFamilies,
     @NonNull VideoFormatConstraint videoFormatConstraint,
     @NonNull Set<String> excludedEncodeCodecFamilies,
+    @NonNull Set<EncodeFormat> excludedEncodeFormats,
     @NonNull ViewerLimits viewerLimits,
     @NonNull List<WorkerVideoCopySupport> videoCopySupport,
     @NonNull List<WorkerVerifiedEncoder> videoEncoders,
@@ -45,6 +47,7 @@ public record TranscodeDecisionRequest(
             .collect(Collectors.toUnmodifiableSet());
     hardwareEncodableVideoCodecFamilies = Set.copyOf(hardwareEncodableVideoCodecFamilies);
     excludedEncodeCodecFamilies = Set.copyOf(excludedEncodeCodecFamilies);
+    excludedEncodeFormats = Set.copyOf(excludedEncodeFormats);
     videoCopySupport = List.copyOf(videoCopySupport);
     videoEncoders = List.copyOf(videoEncoders);
     // An encoder of a worker with a free slot is a verified encoder.
@@ -60,6 +63,7 @@ public record TranscodeDecisionRequest(
     private Set<String> verifiedVideoCodecFamilies = Set.of();
     private VideoFormatConstraint videoFormatConstraint = VideoFormatConstraint.COPY_OR_ENCODE;
     private Set<String> excludedEncodeCodecFamilies = Set.of();
+    private Set<EncodeFormat> excludedEncodeFormats = Set.of();
     private ViewerLimits viewerLimits = ViewerLimits.none();
     private List<WorkerVideoCopySupport> videoCopySupport = List.of();
     private List<WorkerVerifiedEncoder> videoEncoders = List.of();
@@ -76,6 +80,7 @@ public record TranscodeDecisionRequest(
           verifiedVideoCodecFamilies,
           videoFormatConstraint,
           excludedEncodeCodecFamilies,
+          excludedEncodeFormats,
           viewerLimits,
           videoCopySupport,
           videoEncoders,
