@@ -7628,6 +7628,22 @@ class HlsStreamingServiceTest {
     assertThat(service.playedVariantOf(session.getSessionId())).contains("720p");
   }
 
+  // The player's first media request of that variant arrives before its segment does, and a
+  // failure that it reports in between is still that variant's.
+  @Test
+  @DisplayName(
+      "Should answer the requested variant as the played one when the player has requested a media"
+          + " segment and received none")
+  void shouldAnswerTheRequestedVariantAsPlayedWhenThePlayerHasRequestedASegmentAndReceivedNone() {
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(11);
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    producerLifecycle.prepareRequestedVariant(session.getSessionId(), "720p", "720p/segment0.m4s");
+
+    assertThat(service.playedVariantOf(session.getSessionId())).contains("720p");
+  }
+
   @Test
   @DisplayName(
       "Should count the variant that another stream session's player requests against the upload"
