@@ -481,8 +481,9 @@ public class SeekPriority {
   }
 
   // The media that the job attempt has stored itself without a gap after the viewer's segment
-  // outlasts the hold limit, the time to produce the job attempt's next segment at real time and
-  // the position margin, so its viewer plays through the longest pause and the next segment.
+  // outlasts the hold limit, the time to produce the longest segment ahead at real time and the
+  // position margin, so its viewer plays through the longest pause and every segment after it, even
+  // after many pauses.
   private boolean leadsItsViewer(
       StreamSession session, String variantLabel, TranscodeHandle handle, int viewerSegment) {
     return ownLead(session, variantLabel, handle, viewerSegment)
@@ -492,14 +493,14 @@ public class SeekPriority {
                         .compareTo(
                             properties
                                 .seekPriorityHoldLimit()
-                                .plus(lead.nextSegment())
+                                .plus(longestSegmentFrom(session, lead.nextIndex()))
                                 .plus(properties.seekPriorityPositionMargin()))
                     > 0)
         .isPresent();
   }
 
   // The media that the job attempt has stored itself without a gap after the viewer's segment, and
-  // the duration of the segment that it produces next. Empty when it has produced nothing past the
+  // the index of the segment that it produces next. Empty when it has produced nothing past the
   // viewer, or when a stored segment that is not its own output follows that media: its next work
   // is then reproducing that media rather than a segment that a lead budgets.
   private Optional<OwnLead> ownLead(
@@ -517,12 +518,10 @@ public class SeekPriority {
       return Optional.empty();
     }
 
-    var nextSegment =
-        timeline.advertises(next) ? timeline.mediaSegmentDuration(next) : Duration.ZERO;
-    return Optional.of(new OwnLead(stored, next, nextSegment));
+    return Optional.of(new OwnLead(stored, next));
   }
 
-  private record OwnLead(Duration stored, int nextIndex, Duration nextSegment) {}
+  private record OwnLead(Duration stored, int nextIndex) {}
 
   // Stored media that the job attempt's own uploads stored. Media that it found stored, or that
   // another job attempt's upload stored, counts once its own upload stores that segment again.

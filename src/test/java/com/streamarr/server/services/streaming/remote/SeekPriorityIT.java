@@ -701,6 +701,29 @@ class SeekPriorityIT {
     assertThat(yieldsUntilTheSteadyAttemptStops(worker, steady)).isEmpty();
   }
 
+  @Test
+  @DisplayName(
+      "Should never name a job attempt whose lead covers its next segment but not a long merged"
+          + " segment after it")
+  void shouldNeverNameAJobAttemptWhoseLeadCoversItsNextSegmentButNotALongMergedSegmentAfterIt()
+      throws Exception {
+    var worker = registerWorker(WORKER_ID, 8);
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().keyframes(keyframesWithAMergedSegmentFrom(42, 132)).build());
+    var steady = startPlayingTheFirstVariant(worker);
+    // Segments 1 to 5 hold 30 s, enough for the next 6 s segment; segment 7 runs from 42 s to the
+    // keyframe at 132 s, so a run of seeks could pause the job attempt until it comes too late.
+    deliverAhead(steady, 5);
+    registry.updatePlaybackState(steady.sessionId(), 0, PlaybackState.PLAYING);
+    probeResults.setDefaultProbe(encodedProbe());
+    var seeking = startPlaying(worker);
+
+    var seek = seek(worker, seeking);
+    assertThat(storeAndAwait(seek)).isInstanceOf(SegmentDelivery.Ready.class);
+
+    assertThat(yieldsUntilTheSteadyAttemptStops(worker, steady)).isEmpty();
+  }
+
   private LoopbackWorker registerWorker(UUID workerId, int availableSlots)
       throws InterruptedException {
     var channel = plaintextChannelBuilder(server.port(), workerId).build();
@@ -723,10 +746,15 @@ class SeekPriorityIT {
   // Keyframes every 6 s up to 30 s, then none until 120 s and every 6 s after it, so that a stream
   // copy's segment from 30 s merges the slots up to 120 s.
   private static KeyframeKnowledge keyframesWithAMergedSegment() {
+    return keyframesWithAMergedSegmentFrom(30, 120);
+  }
+
+  // Keyframes every 6 s up to the merge's start, then none until its end and every 6 s after it.
+  private static KeyframeKnowledge keyframesWithAMergedSegmentFrom(long start, long end) {
     var seconds =
         LongStream.concat(
-            LongStream.rangeClosed(0, 5).map(slot -> slot * 6),
-            LongStream.iterate(120, second -> second <= 7200, second -> second + 6));
+            LongStream.iterate(0, second -> second <= start, second -> second + 6),
+            LongStream.iterate(end, second -> second <= 7200, second -> second + 6));
     return new KeyframeKnowledge.Known(
         KeyframePositions.builder()
             .streamIndex(0)
