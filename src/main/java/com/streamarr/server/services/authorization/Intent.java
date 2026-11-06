@@ -232,4 +232,10 @@ public sealed interface Intent {
 
   /** See every active stream on the server and why it plays as it does; a whole-surface gate. */
   record ViewActiveStreams() implements UnitIntent {}
+
+  /** Read the server's total upload budget; a whole-surface gate. */
+  record ViewUploadBudget() implements UnitIntent {}
+
+  /** Change the server's total upload budget; a whole-surface gate. */
+  record ChangeUploadBudget() implements UnitIntent {}
 }

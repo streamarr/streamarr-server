@@ -135,6 +135,22 @@ public class ServerSettingsRecord extends UpdatableRecordImpl<ServerSettingsReco
         return (Integer) get(7);
     }
 
+    /**
+     * Setter for
+     * <code>public.server_settings.internet_upload_megabits_per_second</code>.
+     */
+    public void setInternetUploadMegabitsPerSecond(Integer value) {
+        set(8, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.server_settings.internet_upload_megabits_per_second</code>.
+     */
+    public Integer getInternetUploadMegabitsPerSecond() {
+        return (Integer) get(8);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -158,7 +174,7 @@ public class ServerSettingsRecord extends UpdatableRecordImpl<ServerSettingsReco
     /**
      * Create a detached, initialised ServerSettingsRecord
      */
-    public ServerSettingsRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, Boolean singleton, String encoderPreset, Integer idleSegmentRetentionMinutes) {
+    public ServerSettingsRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, Boolean singleton, String encoderPreset, Integer idleSegmentRetentionMinutes, Integer internetUploadMegabitsPerSecond) {
         super(ServerSettings.SERVER_SETTINGS);
 
         setId(id);
@@ -169,6 +185,7 @@ public class ServerSettingsRecord extends UpdatableRecordImpl<ServerSettingsReco
         setSingleton(singleton);
         setEncoderPreset(encoderPreset);
         setIdleSegmentRetentionMinutes(idleSegmentRetentionMinutes);
+        setInternetUploadMegabitsPerSecond(internetUploadMegabitsPerSecond);
         resetTouchedOnNotNull();
     }
 }

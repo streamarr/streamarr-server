@@ -814,7 +814,9 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
   private static String createMutation(UUID mediaFileId) {
     return """
         mutation {
-          createPlaybackSession(input: {mediaFileId: "%s", capabilities: %s}) {
+          createPlaybackSession(
+            input: {mediaFileId: "%s", networkRoute: INTERNET, capabilities: %s}
+          ) {
             playbackSession {
               id
               currentFormatAttempt { ... on ReadyPlaybackFormatAttempt { streamSession { id } } }

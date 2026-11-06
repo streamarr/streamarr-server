@@ -3,6 +3,7 @@ package com.streamarr.server.fixtures;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
 
+import com.streamarr.server.domain.streaming.NetworkRoute;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
@@ -35,7 +36,8 @@ public class PlaybackSessionFixture {
         .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
         .options(StreamingOptions.builder().quality(VideoQuality.AUTO).build())
         .capabilityDeclaration(
-            ClientCapabilityDeclarationFixture.defaultDeclarationBuilder().build());
+            ClientCapabilityDeclarationFixture.defaultDeclarationBuilder().build())
+        .networkRoute(NetworkRoute.INTERNET);
   }
 
   public static PlaybackSessionRequest playbackRequest(

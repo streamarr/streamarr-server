@@ -86,6 +86,7 @@ type Mutation {
     deleteLastAccountAndHouseholdPreservingPersonalProfile(input: DeleteLastAccountAndHouseholdPreservingPersonalProfileInput!): DeleteLastAccountAndHouseholdPreservingPersonalProfilePayload
     changeEncoderPreset(input: ChangeEncoderPresetInput!): ChangeEncoderPresetPayload
     changeIdleSegmentRetention(input: ChangeIdleSegmentRetentionInput!): ChangeIdleSegmentRetentionPayload
+    changeUploadBudget(input: ChangeUploadBudgetInput!): ChangeUploadBudgetPayload
 }
 
 enum ImageRefreshMode {

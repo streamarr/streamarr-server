@@ -27,6 +27,7 @@ import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.NetworkRoute;
 import com.streamarr.server.domain.streaming.PlannedVideoOutput;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
@@ -46,6 +47,7 @@ import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
@@ -306,7 +308,7 @@ class DolbyVisionWithoutACompatibleBaseTest {
   }
 
   private static String multivariantPlaylist(PlaybackSessionSnapshot snapshot) {
-    return new HlsPlaylistService(PROPERTIES)
+    return new HlsPlaylistService(PROPERTIES, UploadBudgetFixture.OFF)
         .generateMultivariantPlaylist(sessionOf(snapshot), "t");
   }
 
@@ -325,6 +327,7 @@ class DolbyVisionWithoutACompatibleBaseTest {
         .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
         .options(StreamingOptions.builder().quality(quality).build())
         .capabilityDeclaration(client)
+        .networkRoute(NetworkRoute.INTERNET)
         .build();
   }
 
@@ -342,6 +345,7 @@ class DolbyVisionWithoutACompatibleBaseTest {
             .build();
     return HlsStreamingService.builder()
         .languagePreferences(noLanguagePreferences())
+        .uploadBudget(UploadBudgetFixture.OFF)
         .mediaFileRepository(mediaFiles)
         .transcodeExecutor(workers)
         .segmentStore(segments)

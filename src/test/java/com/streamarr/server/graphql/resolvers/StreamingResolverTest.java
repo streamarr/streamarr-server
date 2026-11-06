@@ -40,6 +40,7 @@ import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
 import com.streamarr.server.domain.streaming.DynamicRangeChoice;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.NetworkRoute;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbeError;
@@ -79,6 +80,8 @@ import com.streamarr.server.services.streaming.PlaybackSessionRequest;
 import com.streamarr.server.services.streaming.PlaybackSessionService;
 import com.streamarr.server.services.streaming.StartPlaybackSessionCommand;
 import com.streamarr.server.services.streaming.StreamingService;
+import com.streamarr.server.services.streaming.UploadBudget;
+import com.streamarr.server.services.streaming.UploadBudgetUse;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.server.services.watchprogress.MarkUnwatchedRejection;
@@ -92,6 +95,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -99,6 +103,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
@@ -161,6 +166,7 @@ class StreamingResolverTest {
                     .identity(otherIdentity)
                     .options(StreamingOptions.builder().build())
                     .capabilityDeclaration(defaultDeclarationBuilder().build())
+                    .networkRoute(NetworkRoute.INTERNET)
                     .build())
             .fold(
                 snapshot -> snapshot,
@@ -446,7 +452,7 @@ class StreamingResolverTest {
             """
             mutation {
               createPlaybackSession(
-                input: {mediaFileId: "%s", options: {quality: ORIGINAL}, capabilities: %s}
+                input: {mediaFileId: "%s", networkRoute: INTERNET, options: {quality: ORIGINAL}, capabilities: %s}
               ) {
                 playbackSession {
                   currentFormatAttempt {
@@ -497,7 +503,7 @@ class StreamingResolverTest {
             """
             mutation {
               createPlaybackSession(
-                input: {mediaFileId: "%s", options: {quality: ORIGINAL}, capabilities: %s}
+                input: {mediaFileId: "%s", networkRoute: INTERNET, options: {quality: ORIGINAL}, capabilities: %s}
               ) {
                 playbackSession {
                   currentFormatAttempt {
@@ -553,7 +559,7 @@ class StreamingResolverTest {
             """
             mutation {
               createPlaybackSession(
-                input: {mediaFileId: "%s", options: {quality: ORIGINAL}, capabilities: %s}
+                input: {mediaFileId: "%s", networkRoute: INTERNET, options: {quality: ORIGINAL}, capabilities: %s}
               ) {
                 playbackSession {
                   currentFormatAttempt {
@@ -840,7 +846,8 @@ class StreamingResolverTest {
         mutation {
           createPlaybackSession(
             input: {
-              mediaFileId: "%s", options: {quality: HIGH_720P, dynamicRange: %s}, capabilities: %s
+              mediaFileId: "%s", networkRoute: INTERNET, options: {quality: HIGH_720P, dynamicRange: %s},
+              capabilities: %s
             }
           ) {
             playbackSession { id }
@@ -868,7 +875,7 @@ class StreamingResolverTest {
         """
         mutation {
           createPlaybackSession(
-            input: {mediaFileId: "%s", options: {quality: %s}, capabilities: %s}
+            input: {mediaFileId: "%s", networkRoute: INTERNET, options: {quality: %s}, capabilities: %s}
           ) {
             playbackSession {
               id requestedChoice playbackChoice formatChange offeredChoices
@@ -1239,7 +1246,7 @@ class StreamingResolverTest {
         """
         mutation {
           createPlaybackSession(
-            input: {mediaFileId: "%s", options: {quality: %s}, capabilities: %s}
+            input: {mediaFileId: "%s", networkRoute: INTERNET, options: {quality: %s}, capabilities: %s}
           ) {
             playbackSession {
               id
@@ -1307,7 +1314,7 @@ class StreamingResolverTest {
         dgsQueryExecutor.execute(
             """
         mutation {
-          createPlaybackSession(input: {mediaFileId: "%s", capabilities: %s}) {
+          createPlaybackSession(input: {mediaFileId: "%s", networkRoute: INTERNET, capabilities: %s}) {
             playbackSession {
               id formatAttemptCount maximumFormatAttempts
               currentFormatAttempt {
@@ -1433,7 +1440,7 @@ class StreamingResolverTest {
         """
         mutation {
           createPlaybackSession(input: {
-            mediaFileId: "%s", startPositionSeconds: %s, capabilities: %s
+            mediaFileId: "%s", networkRoute: INTERNET, startPositionSeconds: %s, capabilities: %s
           }) {
             playbackSession {
               currentFormatAttempt {
@@ -1587,7 +1594,7 @@ class StreamingResolverTest {
             """
         mutation {
           createPlaybackSession(input: {
-            mediaFileId: "%s"
+            mediaFileId: "%s", networkRoute: INTERNET
             options: {quality: HIGH_720P}
             capabilities: {
               video: [{
@@ -1707,7 +1714,7 @@ class StreamingResolverTest {
         dgsQueryExecutor.execute(
             """
         mutation {
-          createPlaybackSession(input: {mediaFileId: "%s", capabilities: %s}) {
+          createPlaybackSession(input: {mediaFileId: "%s", networkRoute: INTERNET, capabilities: %s}) {
             playbackSession { id currentFormatAttempt { ... on ReadyPlaybackFormatAttempt { streamSession { id streamUrl } } } }
             userErrors { __typename }
           }
@@ -1893,7 +1900,7 @@ class StreamingResolverTest {
     return dgsQueryExecutor.executeAndGetDocumentContext(
         """
         mutation {
-          createPlaybackSession(input: {mediaFileId: "%s", capabilities: %s}) {
+          createPlaybackSession(input: {mediaFileId: "%s", networkRoute: INTERNET, capabilities: %s}) {
             playbackSession { id }
             userErrors {
               __typename
@@ -1907,6 +1914,7 @@ class StreamingResolverTest {
   }
 
   private static final StubStreamingService STUB_SERVICE = new StubStreamingService();
+  private static final StubUploadBudget STUB_BUDGET = new StubUploadBudget();
   private static final StubWatchStatusService STUB_WATCH_STATUS = new StubWatchStatusService();
   private static final ArrayDeque<Runnable> REPLACEMENT_TASKS = new ArrayDeque<>();
   private static Consumer<JwtEncoderParameters> beforeTokenEncoding = _ -> {};
@@ -1918,6 +1926,11 @@ class StreamingResolverTest {
     @Bean
     StreamingService streamingService() {
       return STUB_SERVICE;
+    }
+
+    @Bean
+    UploadBudget uploadBudget() {
+      return STUB_BUDGET;
     }
 
     @Bean
@@ -2058,7 +2071,7 @@ class StreamingResolverTest {
         String.format(
             """
             mutation {
-              createPlaybackSession(input: {mediaFileId: "%s", capabilities: %s}) {
+              createPlaybackSession(input: {mediaFileId: "%s", networkRoute: INTERNET, capabilities: %s}) {
                 playbackSession { currentFormatAttempt { ... on ReadyPlaybackFormatAttempt { streamSession { streamUrl } } } }
               }
             }
@@ -2091,7 +2104,7 @@ class StreamingResolverTest {
         String.format(
             """
             mutation {
-              createPlaybackSession(input: {mediaFileId: "%s", capabilities: %s}) {
+              createPlaybackSession(input: {mediaFileId: "%s", networkRoute: INTERNET, capabilities: %s}) {
                 playbackSession { id }
               }
             }
@@ -2132,7 +2145,7 @@ class StreamingResolverTest {
             """
             mutation {
               createPlaybackSession(input: {
-                mediaFileId: "%s"
+                mediaFileId: "%s", networkRoute: INTERNET
                 capabilities: {
                   video: [{
                     codecFamily: H264, codecProfiles: [{profile: H264_HIGH, maxLevel: 41}]
@@ -2174,7 +2187,7 @@ class StreamingResolverTest {
             """
             mutation {
               createPlaybackSession(input: {
-                mediaFileId: "%s"
+                mediaFileId: "%s", networkRoute: INTERNET
                 capabilities: {
                   video: [{
                     codecFamily: H264, codecProfiles: [{profile: H264_HIGH, maxLevel: 41}]
@@ -2217,7 +2230,7 @@ class StreamingResolverTest {
             """
             mutation {
               createPlaybackSession(input: {
-                mediaFileId: "%s"
+                mediaFileId: "%s", networkRoute: INTERNET
                 capabilities: {
                   video: [{
                     codecFamily: AV1
@@ -2276,7 +2289,7 @@ class StreamingResolverTest {
             """
             mutation {
               createPlaybackSession(input: {
-                mediaFileId: "%s"
+                mediaFileId: "%s", networkRoute: INTERNET
                 capabilities: {
                   video: [{
                     codecFamily: H264
@@ -2321,7 +2334,7 @@ class StreamingResolverTest {
         dgsQueryExecutor.execute(
             """
             mutation {
-              createPlaybackSession(input: {mediaFileId: "%s", capabilities: %s}) {
+              createPlaybackSession(input: {mediaFileId: "%s", networkRoute: INTERNET, capabilities: %s}) {
                 playbackSession { id }
               }
             }
@@ -2377,7 +2390,7 @@ class StreamingResolverTest {
         dgsQueryExecutor.execute(
             """
             mutation {
-              createPlaybackSession(input: {mediaFileId: "%s", capabilities: %s}) {
+              createPlaybackSession(input: {mediaFileId: "%s", networkRoute: INTERNET, capabilities: %s}) {
                 playbackSession { id }
               }
             }
@@ -2400,7 +2413,7 @@ class StreamingResolverTest {
         dgsQueryExecutor.execute(
             """
             mutation {
-              createPlaybackSession(input: {mediaFileId: "%s"}) {
+              createPlaybackSession(input: {mediaFileId: "%s", networkRoute: INTERNET}) {
                 playbackSession { id }
               }
             }
@@ -2415,6 +2428,122 @@ class StreamingResolverTest {
               assertThat(error.getMessage()).contains("capabilities");
             });
     assertThat(STUB_SERVICE.getAllSessions()).isEmpty();
+  }
+
+  @ParameterizedTest
+  @EnumSource(UploadBudgetUse.class)
+  @DisplayName("Should expose whether and why the stream session counts against the upload budget")
+  void shouldExposeWhetherAndWhyTheStreamSessionCountsAgainstTheUploadBudget(UploadBudgetUse use) {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+    STUB_BUDGET.answer(use);
+
+    var result =
+        dgsQueryExecutor.executeAndGetDocumentContext(
+            """
+            mutation {
+              createPlaybackSession(input: {mediaFileId: "%s", networkRoute: INTERNET, capabilities: %s}) {
+                playbackSession {
+                  currentFormatAttempt {
+                    ... on ReadyPlaybackFormatAttempt { streamSession { uploadBudgetUse } }
+                  }
+                }
+              }
+            }
+            """
+                .formatted(UUID.randomUUID(), CAPABILITIES));
+
+    assertThat(
+            result.read(
+                CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.uploadBudgetUse",
+                String.class))
+        .isEqualTo(use.name());
+  }
+
+  @Test
+  @DisplayName(
+      "Should expose whether a direct-play stream session counts against the upload budget")
+  void shouldExposeWhetherADirectPlayStreamSessionCountsAgainstTheUploadBudget() {
+    STUB_SERVICE.setNextResult(buildDirectPlaySession(UUID.randomUUID()));
+    STUB_BUDGET.answer(UploadBudgetUse.COUNTED);
+
+    var result =
+        dgsQueryExecutor.executeAndGetDocumentContext(
+            """
+            mutation {
+              createPlaybackSession(input: {mediaFileId: "%s", networkRoute: INTERNET, capabilities: %s}) {
+                playbackSession {
+                  currentFormatAttempt {
+                    ... on ReadyPlaybackFormatAttempt {
+                      streamSession { __typename uploadBudgetUse }
+                    }
+                  }
+                }
+              }
+            }
+            """
+                .formatted(UUID.randomUUID(), CAPABILITIES));
+
+    assertThat(
+            result.read(
+                CREATED_PLAYBACK + ".currentFormatAttempt.streamSession['__typename']",
+                String.class))
+        .isEqualTo("DirectPlayStreamSession");
+    assertThat(
+            result.read(
+                CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.uploadBudgetUse",
+                String.class))
+        .isEqualTo("COUNTED");
+  }
+
+  @Test
+  @DisplayName("Should refuse the request when it carries no network route")
+  void shouldRefuseTheRequestWhenItCarriesNoNetworkRoute() {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+
+    var result =
+        dgsQueryExecutor.execute(
+            """
+            mutation {
+              createPlaybackSession(input: {mediaFileId: "%s", capabilities: %s}) {
+                playbackSession { id }
+              }
+            }
+            """
+                .formatted(UUID.randomUUID(), CAPABILITIES));
+
+    assertThat(result.getErrors())
+        .singleElement()
+        .satisfies(
+            error -> {
+              assertThat(error.getErrorType()).hasToString("INVALID_ARGUMENT");
+              assertThat(error.getMessage()).contains("networkRoute");
+            });
+    assertThat(STUB_SERVICE.getAllSessions()).isEmpty();
+  }
+
+  @ParameterizedTest
+  @EnumSource(NetworkRoute.class)
+  @DisplayName("Should start the stream session with the network route that the client attests")
+  void shouldStartTheStreamSessionWithTheNetworkRouteThatTheClientAttests(NetworkRoute route) {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+    var attested = new ArrayList<NetworkRoute>();
+    STUB_SERVICE.duringNextCreate(command -> attested.add(command.networkRoute()));
+
+    var result =
+        dgsQueryExecutor.execute(
+            """
+            mutation {
+              createPlaybackSession(
+                input: {mediaFileId: "%s", networkRoute: %s, capabilities: %s}
+              ) {
+                playbackSession { id }
+              }
+            }
+            """
+                .formatted(UUID.randomUUID(), route, CAPABILITIES));
+
+    assertThat(result.getErrors()).isEmpty();
+    assertThat(attested).containsExactly(route);
   }
 
   @Test
@@ -2659,6 +2788,30 @@ class StreamingResolverTest {
       lastMarkedProfileId = profileId;
       lastMarkedItemId = itemId;
       return markUnwatchedOutcome;
+    }
+  }
+
+  /** Answers one use for every stream session; the service tests cover how the budget decides. */
+  private static final class StubUploadBudget implements UploadBudget {
+    private volatile UploadBudgetUse use = UploadBudgetUse.BUDGET_OFF;
+
+    void answer(UploadBudgetUse answer) {
+      use = answer;
+    }
+
+    @Override
+    public Set<String> withholdFromPlaylist(StreamSession session) {
+      return Set.of();
+    }
+
+    @Override
+    public String topKeptVariant(StreamSession session) {
+      return session.firstListedVariant();
+    }
+
+    @Override
+    public UploadBudgetUse useOf(StreamSession session) {
+      return use;
     }
   }
 }

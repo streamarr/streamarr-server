@@ -321,7 +321,7 @@ class HeldSegmentRequestConcurrencyIT {
           defaultLadderSessionBuilder().sourcePath(SOURCE_ROOT.resolve("movie.mkv")).build();
       registry.save(session);
       startedSessionIds.add(session.getSessionId());
-      rig.lifecycle().startFirstListedVariant(session);
+      rig.lifecycle().startListedVariant(session, session.firstListedVariant());
       var job = encodingWorker.nextJob();
       var delivery =
           requests.submit(
@@ -351,7 +351,7 @@ class HeldSegmentRequestConcurrencyIT {
     var session = defaultSessionBuilder().sourcePath(SOURCE_ROOT.resolve("movie.mkv")).build();
     registry.save(session);
     startedSessionIds.add(session.getSessionId());
-    rig.lifecycle().startFirstListedVariant(session);
+    rig.lifecycle().startListedVariant(session, session.firstListedVariant());
     return session;
   }
 

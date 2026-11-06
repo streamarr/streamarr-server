@@ -13,9 +13,12 @@ post {
 body:graphql {
   mutation CreatePlaybackSession(
     $mediaFileId: ID!
+    $networkRoute: NetworkRoute!
     $capabilities: ClientCapabilityDeclarationInput!
   ) {
-    createPlaybackSession(input: { mediaFileId: $mediaFileId, capabilities: $capabilities }) {
+    createPlaybackSession(
+      input: { mediaFileId: $mediaFileId, networkRoute: $networkRoute, capabilities: $capabilities }
+    ) {
       playbackSession {
         id
         formatAttemptCount
@@ -68,6 +71,7 @@ body:graphql {
 body:graphql:vars {
   {
     "mediaFileId": "{{MEDIA_FILE_ID}}",
+    "networkRoute": "LOCAL_NETWORK",
     "capabilities": {
       "video": [
         {

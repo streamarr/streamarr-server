@@ -29,6 +29,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -69,6 +70,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final Set<ProcessKey> endingAfterNextLivenessCheck = ConcurrentHashMap.newKeySet();
   private final HeldSegmentRequests heldRequests =
       new HeldSegmentRequests(new SimpleMeterRegistry());
+  private volatile Consumer<TranscodeRequest> afterEachStart = _ -> {};
   private final Object observationMonitor = new Object();
   private int availableSlots = TranscodeExecutor.UNBOUNDED_SLOTS;
   private volatile int jobSlots = TranscodeExecutor.UNBOUNDED_SLOTS;
@@ -168,6 +170,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
     started.add(key);
     startedRequests.add(request);
+    afterEachStart.accept(request);
     var handle =
         new TranscodeHandle(
             1L, request.attemptId(), TranscodeStatus.ACTIVE, request.startSequenceNumber());
@@ -218,6 +221,11 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
    */
   public HeldSegmentRequests heldSegmentRequests() {
     return heldRequests;
+  }
+
+  /** Runs after each job attempt starts, as a worker's first output follows its start. */
+  public void afterEachStart(Consumer<TranscodeRequest> action) {
+    afterEachStart = action;
   }
 
   private void endAll(UUID sessionId) {

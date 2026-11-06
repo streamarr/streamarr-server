@@ -59,6 +59,7 @@ import com.streamarr.server.services.streaming.ReportPlaybackFormatFailureComman
 import com.streamarr.server.services.streaming.StartPlaybackSessionCommand;
 import com.streamarr.server.services.streaming.StartPlaybackSessionRejection;
 import com.streamarr.server.services.streaming.SwitchPlaybackAudioTrackCommand;
+import com.streamarr.server.services.streaming.UploadBudget;
 import com.streamarr.server.services.watchprogress.MarkUnwatchedRejection;
 import com.streamarr.server.services.watchprogress.MarkWatchedRejection;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
@@ -87,6 +88,7 @@ public class StreamingResolver {
   private final ServerSettingsService serverSettingsService;
   private final SessionProgressService sessionProgressService;
   private final WatchStatusService watchStatusService;
+  private final UploadBudget uploadBudget;
 
   private PlaybackSessionDto toCreatedSessionDto(PlaybackSessionSnapshot session) {
     try {
@@ -123,6 +125,7 @@ public class StreamingResolver {
                   .capabilityDeclaration(input.capabilities().toDeclaration())
                   .startPosition(
                       Optional.ofNullable(input.startPositionSeconds()).map(this::toPosition))
+                  .networkRoute(input.networkRoute())
                   .build());
       return MutationPayloads.payload(
           outcome.map(this::toCreatedSessionDto),
@@ -473,6 +476,7 @@ public class StreamingResolver {
               .mediaEndSeconds(
                   session.getNormalEnd().map(end -> end.toMillis() / 1000.0).orElse(null))
               .startPositionSeconds(startPositionSeconds(session))
+              .uploadBudgetUse(uploadBudget.useOf(session).name())
               .build();
       case DIRECT_PLAY -> directPlayDto(session, session.getSourceContainer().orElseThrow());
     };
@@ -487,6 +491,7 @@ public class StreamingResolver {
         .startPositionSeconds(startPositionSeconds(session))
         .audioTrackPosition(audioTrackPosition(session))
         .audioTracks(audioTracks(session.getMediaProbe()))
+        .uploadBudgetUse(uploadBudget.useOf(session).name())
         .build();
   }
 

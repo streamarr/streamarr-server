@@ -56,7 +56,9 @@ class ProducerLifecycleDestroyRaceTest {
     runtimeRegistry.save(session);
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var start = executor.submit(() -> lifecycle.startFirstListedVariant(session));
+      var start =
+          executor.submit(
+              () -> lifecycle.startListedVariant(session, session.firstListedVariant()));
       transcodeExecutor.awaitStart();
 
       var destroy =

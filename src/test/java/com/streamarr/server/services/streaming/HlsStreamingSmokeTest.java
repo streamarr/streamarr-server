@@ -27,6 +27,7 @@ import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.ServerSettingsFixture;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
@@ -128,6 +129,7 @@ class HlsStreamingSmokeTest {
     streamingService =
         HlsStreamingService.builder()
             .languagePreferences(noLanguagePreferences())
+            .uploadBudget(UploadBudgetFixture.OFF)
             .meterRegistry(new SimpleMeterRegistry())
             .mediaFileRepository(mediaFileRepository)
             .transcodeExecutor(transcodeExecutor)
@@ -148,7 +150,7 @@ class HlsStreamingSmokeTest {
                     .build())
             .build();
 
-    playlistService = new HlsPlaylistService(properties);
+    playlistService = new HlsPlaylistService(properties, UploadBudgetFixture.OFF);
   }
 
   @AfterEach
