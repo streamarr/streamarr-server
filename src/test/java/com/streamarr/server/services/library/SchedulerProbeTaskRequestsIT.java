@@ -5,8 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.kagkarlsson.scheduler.Scheduler;
 import com.github.kagkarlsson.scheduler.SchedulerClient;
-import com.github.kagkarlsson.scheduler.SchedulerName;
-import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.serializer.Serializer;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
@@ -52,7 +50,6 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
@@ -84,7 +81,6 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private DSLContext dsl;
   @Autowired private ProbeTaskCompletion completion;
-  @Autowired private DbSchedulerCustomizer schedulerCustomizer;
   @Autowired private LibraryWatcherProperties watcherProperties;
   @Autowired private PlaybackProbeService playbackProbeService;
   @Autowired private PlatformTransactionManager transactionManager;
@@ -341,23 +337,14 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
     // request is stored. With a free thread left after the earlier probe, it polls no further,
     // so only a trigger from the request runs the requested probe within the bound.
     scheduler =
-        Scheduler.create(schedulerCustomizer.dataSource().orElse(dataSource), task)
-            .threads(2)
-            .pollUsingLockAndFetch(0.5, 1.0)
-            .pollingInterval(Duration.ofHours(1))
-            .enablePriority()
-            .executorService(Executors.newVirtualThreadPerTaskExecutor())
-            .serializer(probeTaskSerializer)
-            .addSchedulerListener(
-                new AbstractSchedulerListener() {
-                  @Override
-                  public void onExecutionComplete(ExecutionComplete executionComplete) {
-                    completed.add(executionComplete.getExecution().taskInstance.getId());
-                  }
-                })
-            .schedulerName(new SchedulerName.Fixed("media-probe-dispatch-it"))
-            .build();
-    scheduler.start();
+        startScheduler(
+            2,
+            new AbstractSchedulerListener() {
+              @Override
+              public void onExecutionComplete(ExecutionComplete executionComplete) {
+                completed.add(executionComplete.getExecution().taskInstance.getId());
+              }
+            });
     assertThat(completed.poll(15, TimeUnit.SECONDS)).isEqualTo(earlier.mediaFileId().toString());
     var playbackRequests =
         new SchedulerProbeTaskRequests(scheduler, task, outcomes, priorities, Clock.systemUTC());
@@ -466,25 +453,31 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
     assertThat(reader.find(file.getId())).isEmpty();
   }
 
-  // The application's claim takes no more executions than the scheduler's one thread. db-scheduler's
-  // single-statement lock-and-fetch can take every due execution under some query plans, and the
-  // executor runs whatever it takes.
   private void startScheduler() {
     scheduler =
-        ProbeSchedulerStarter.fromContext(applicationContext).toBuilder()
-            .threads(1)
-            .build()
-            .start(
-                execution,
-                new AbstractSchedulerListener() {
-                  @Override
-                  public void onExecutionComplete(ExecutionComplete executionComplete) {
-                    completedInstances.add(executionComplete.getExecution().taskInstance.getId());
-                    firstExecutionFinished.countDown();
-                  }
-                },
-                Clock.systemUTC())
-            .scheduler();
+        startScheduler(
+            1,
+            new AbstractSchedulerListener() {
+              @Override
+              public void onExecutionComplete(ExecutionComplete executionComplete) {
+                completedInstances.add(executionComplete.getExecution().taskInstance.getId());
+                firstExecutionFinished.countDown();
+              }
+            });
+  }
+
+  // The application's claim takes no more executions than the scheduler's threads, which
+  // db-scheduler's single-statement lock-and-fetch exceeds under some query plans. The scheduler
+  // polls when it starts, after an execution that filled its threads ends, and on a trigger, but
+  // never on its timer during a test: a timed poll reads the time before it counts the executions
+  // in progress, so it can claim after a retry was rescheduled with a time that excludes the retry.
+  private Scheduler startScheduler(int threads, AbstractSchedulerListener listener) {
+    return ProbeSchedulerStarter.fromContext(applicationContext).toBuilder()
+        .threads(threads)
+        .pollingInterval(Duration.ofHours(1))
+        .build()
+        .start(execution, listener, Clock.systemUTC())
+        .scheduler();
   }
 
   private MediaFile createMediaFile() throws IOException {
