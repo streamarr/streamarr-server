@@ -773,12 +773,12 @@ class TranscodeDecisionDirectPlayTest {
 
   // Profile 5, which the record names or, without a record, the first RPU's header names. It has no
   // compatible base.
-  private static VideoDynamicRange profile5(Optional<DolbyVisionConfiguration> record) {
+  private static VideoDynamicRange profile5(Optional<DolbyVisionConfiguration> configuration) {
     return new VideoDynamicRange(
         CompatibleBase.NONE,
         Presence.ABSENT,
         new DolbyVision.Present(
-            record,
+            configuration,
             Presence.PRESENT,
             Optional.of(
                 DolbyVisionRpuHeader.builder()
