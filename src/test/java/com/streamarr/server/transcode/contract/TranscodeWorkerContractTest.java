@@ -3,12 +3,15 @@ package com.streamarr.server.transcode.contract;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
+import com.google.protobuf.Any;
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.EnumValueDescriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor.Type;
 import com.google.protobuf.Duration;
 import com.google.protobuf.Timestamp;
+import com.google.rpc.Code;
+import com.google.rpc.Status;
 import com.streamarr.transcode.v1.AudioChannelLayout;
 import com.streamarr.transcode.v1.AudioDecision;
 import com.streamarr.transcode.v1.AudioMode;
@@ -38,6 +41,7 @@ import com.streamarr.transcode.v1.ProbePriority;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
 import com.streamarr.transcode.v1.SegmentContentType;
+import com.streamarr.transcode.v1.SegmentUploadLimitReached;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.SourceEndedEarly;
 import com.streamarr.transcode.v1.SourceSnapshot;
@@ -58,6 +62,7 @@ import com.streamarr.transcode.v1.VideoMode;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
+import com.streamarr.transcode.v1.WorkerSessionAccepted;
 import com.streamarr.transcode.v1.WorkerVerifiedVideoEncoder;
 import com.streamarr.transcode.v1.YieldToSeekCommand;
 import io.grpc.MethodDescriptor.MethodType;
@@ -958,6 +963,81 @@ class TranscodeWorkerContractTest {
         .isEqualTo(JobAttemptFailure.JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED)
         .isNotEqualTo(JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
     assertThat(JobAttemptFailure.JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED.getNumber()).isEqualTo(6);
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell a copy refused at the copy cap apart from a startup failure when a worker refuses a copy")
+  void shouldTellACopyRefusedAtTheCopyCapApartFromAStartupFailureWhenWorkerRefusesACopy()
+      throws Exception {
+    var refusedCopy =
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptFailed(
+                JobAttemptFailed.newBuilder()
+                    .setJobAttemptId(uuid(UUID.randomUUID()))
+                    .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_COPY_CAP_REACHED))
+            .build();
+
+    var parsed = EstablishWorkerSessionRequest.parseFrom(refusedCopy.toByteArray());
+
+    assertThat(parsed.getJobAttemptFailed().getFailure())
+        .isEqualTo(JobAttemptFailure.JOB_ATTEMPT_FAILURE_COPY_CAP_REACHED)
+        .isNotEqualTo(JobAttemptFailure.JOB_ATTEMPT_FAILURE_STARTUP_FAILED);
+    assertThat(JobAttemptFailure.JOB_ATTEMPT_FAILURE_COPY_CAP_REACHED.getNumber()).isEqualTo(8);
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry the worker's segment upload limit when the server accepts a worker session")
+  void shouldCarryTheWorkersSegmentUploadLimitWhenServerAcceptsAWorkerSession() throws Exception {
+    var accepted =
+        EstablishWorkerSessionResponse.newBuilder()
+            .setSessionAccepted(
+                WorkerSessionAccepted.newBuilder()
+                    .setWorkerSessionId(uuid(UUID.randomUUID()))
+                    .setSegmentUploadLimit(8))
+            .build();
+
+    var parsed =
+        EstablishWorkerSessionResponse.parseFrom(accepted.toByteArray()).getSessionAccepted();
+
+    assertThat(parsed.getSegmentUploadLimit()).isEqualTo(8);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the field number and type that workers build against when publishing the segment upload limit")
+  void shouldKeepTheFieldNumberAndTypeThatWorkersBuildAgainstWhenPublishingTheSegmentUploadLimit() {
+    var uploadLimit = WorkerSessionAccepted.getDescriptor().findFieldByName("segment_upload_limit");
+
+    assertThat(uploadLimit.getNumber()).isEqualTo(2);
+    assertThat(uploadLimit.getType()).isEqualTo(Type.UINT32);
+    assertThat(uploadLimit.isRepeated()).isFalse();
+    assertThat(uploadLimit.hasPresence()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should let a worker find the segment upload limit marker under its published type when the server refuses an upload")
+  void
+      shouldLetAWorkerFindTheSegmentUploadLimitMarkerUnderItsPublishedTypeWhenServerRefusesAnUpload()
+          throws Exception {
+    var refusal =
+        Status.newBuilder()
+            .setCode(Code.RESOURCE_EXHAUSTED_VALUE)
+            .addDetails(Any.pack(SegmentUploadLimitReached.getDefaultInstance()))
+            .build();
+
+    var parsed = Status.parseFrom(refusal.toByteArray());
+
+    assertThat(parsed.getDetailsList())
+        .singleElement()
+        .matches(detail -> detail.is(SegmentUploadLimitReached.class));
+    // A worker matches the detail by its full name, so the package and the name are the contract.
+    assertThat(SegmentUploadLimitReached.getDescriptor().getFile().getPackage())
+        .isEqualTo("streamarr.transcode.v1");
+    assertThat(SegmentUploadLimitReached.getDescriptor().getName())
+        .isEqualTo("SegmentUploadLimitReached");
   }
 
   @Test

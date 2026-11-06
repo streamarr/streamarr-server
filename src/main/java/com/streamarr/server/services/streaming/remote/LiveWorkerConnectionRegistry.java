@@ -867,7 +867,9 @@ final class LiveWorkerConnectionRegistry {
 
     private synchronized void accept() {
       var accepted =
-          WorkerSessionAccepted.newBuilder().setWorkerSessionId(toProto(workerSessionId));
+          WorkerSessionAccepted.newBuilder()
+              .setWorkerSessionId(toProto(workerSessionId))
+              .setSegmentUploadLimit(SegmentUploadLimits.MAXIMUM_SEGMENT_UPLOADS_PER_WORKER);
       responseObserver.onNext(
           EstablishWorkerSessionResponse.newBuilder().setSessionAccepted(accepted).build());
     }
@@ -1275,6 +1277,7 @@ final class LiveWorkerConnectionRegistry {
             JOB_ATTEMPT_FAILURE_STARTUP_FAILED,
             JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED,
             JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES,
+            JOB_ATTEMPT_FAILURE_COPY_CAP_REACHED,
             UNRECOGNIZED ->
             Optional.empty();
       };

@@ -135,6 +135,13 @@ Workers on different nodes need storage that supports those simultaneous mounts.
 Workers need no writable output directory: FFmpeg writes fragmented MP4 to the worker over standard output (https://github.com/streamarr/streamarr-adr/blob/main/adr/0037-worker-delivers-fmp4-segments-from-ffmpeg-stdout.adoc[ADR 0037]).
 
 Each segment is capped at 128 MiB. The server reserves at most 512 MiB of declared payload across active uploads; buffer growth, publication copies, and other server memory require additional heap headroom.
+The server accepts at most 32 uploads at once across all workers, and at most 8 from one worker.
+When the server accepts a worker session, it states the per-worker limit in `segment_upload_limit`, so a worker that reads the field keeps no more uploads open and queues its other segments.
+The server refuses an upload beyond either limit, or beyond the 512 MiB of declared payload, with `RESOURCE_EXHAUSTED`.
+A refusal at the per-worker limit carries a `SegmentUploadLimitReached` detail in its `google.rpc.Status`, and the worker queues that segment again.
+The server frees a worker's place only after it stores the segment, so a worker that frees its own place when it cancels an upload can still meet that refusal.
+Any other refusal fails the job attempt, and the server's recovery handles that failure.
+A worker that reads neither the limit nor the detail fails the job attempt on every refusal.
 Workers budget 256 MiB of buffered output per execution slot, plus a 64 KiB read buffer per FFmpeg process. FFmpeg, pipe buffers, and gRPC use additional memory.
 Deploy the server with the larger cap before deploying workers that produce larger segments.
 

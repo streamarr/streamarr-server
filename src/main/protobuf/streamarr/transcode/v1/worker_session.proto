@@ -695,6 +695,11 @@ enum JobAttemptFailure {
   // the worker fill that stream with a held picture or silence (ADR 0037, early
   // ends).
   JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES = 7;
+  // The worker refused a job that copies the video, with or without an audio
+  // encode, because its copy cap was full. A worker whose heap holds no copy
+  // refuses every copy this way. The worker refuses before FFmpeg starts, and
+  // another worker may start the job (ADR 0037, memory).
+  JOB_ATTEMPT_FAILURE_COPY_CAP_REACHED = 8;
 }
 
 message JobAttemptFailed {
@@ -800,6 +805,12 @@ message WorkerSessionAccepted {
   // This field identifies the live connection. The server refuses uploads
   // from earlier connections.
   Uuid worker_session_id = 1;
+  // This field counts the UploadSegment calls that the server accepts from the
+  // worker at once. The worker keeps no more calls open at once and queues its
+  // other segments (ADR 0037). The server can still refuse a call when its
+  // fleet-wide limits are reached. A value of 0 states no limit, and the worker
+  // then opens each call without waiting.
+  uint32 segment_upload_limit = 2;
 }
 
 message StartVariantCommand {
@@ -1635,6 +1646,13 @@ message UploadSegmentResponse {
   string segment_name = 2;
   uint64 accepted_length_bytes = 3;
 }
+
+// The server attaches this message, packed in a google.rpc.Status detail, when
+// it refuses an UploadSegment call with RESOURCE_EXHAUSTED because the worker
+// already holds segment_upload_limit calls. A refusal without it comes from the
+// server's fleet-wide limits. On this refusal the worker queues the segment
+// again; on any other refusal it fails the job attempt (ADR 0037).
+message SegmentUploadLimitReached {}
 
 service TranscodeWorkerService {
   rpc EstablishWorkerSession(stream EstablishWorkerSessionRequest) returns (stream EstablishWorkerSessionResponse) {}

@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.server.services.streaming.remote.SegmentUploadTickets.admitted;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
@@ -25,20 +26,22 @@ class SegmentUploadObserverTest {
         SegmentUploadObserver.builder()
             .authenticatedWorkerId(UUID.randomUUID())
             .responseObserver(noOpResponseObserver())
-            .uploadTicket(admission.tryAdmit(UUID.randomUUID()).orElseThrow())
+            .uploadTicket(admitted(admission.tryAdmit(UUID.randomUUID())))
             .build();
-    assertThat(admission.tryAdmit(UUID.randomUUID())).isEmpty();
+    assertThat(admission.tryAdmit(UUID.randomUUID()))
+        .isInstanceOf(SegmentUploadAdmission.FleetLimitReached.class);
 
     observer.onError(new RuntimeException("worker connection reset mid-upload"));
 
-    assertThat(admission.tryAdmit(UUID.randomUUID())).isPresent();
+    assertThat(admission.tryAdmit(UUID.randomUUID()))
+        .isInstanceOf(SegmentUploadAdmission.Admitted.class);
   }
 
   @Test
   @DisplayName("Should terminate the stream when its admission ticket was reclaimed")
   void shouldTerminateStreamWhenItsAdmissionTicketWasReclaimed() {
     var error = new AtomicReference<Throwable>();
-    var ticket = new SegmentUploadAdmission(1, 1024, 8).tryAdmit(UUID.randomUUID()).orElseThrow();
+    var ticket = admitted(new SegmentUploadAdmission(1, 1024, 8).tryAdmit(UUID.randomUUID()));
     var observer =
         SegmentUploadObserver.builder()
             .authenticatedWorkerId(UUID.randomUUID())
