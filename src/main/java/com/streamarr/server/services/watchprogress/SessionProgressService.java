@@ -8,6 +8,7 @@ import com.streamarr.server.repositories.streaming.SaveWatchProgress;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.repositories.streaming.StreamSessionCompletion;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
+import com.streamarr.server.services.events.watchprogress.StreamSessionTimelineReportedEvent;
 import com.streamarr.server.services.events.watchprogress.WatchStateChangedEvent;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import java.util.Optional;
@@ -53,6 +54,7 @@ public class SessionProgressService {
     }
 
     runtimeRegistry.updatePlaybackState(sessionId, positionSeconds, state);
+    eventPublisher.publishEvent(new StreamSessionTimelineReportedEvent(sessionId));
 
     var durationSeconds = (int) session.getMediaProbe().duration().toSeconds();
     if (durationSeconds <= 0) {

@@ -8,6 +8,13 @@ type MediaFile {
     chapterStatus: ChapterStatus!
 }
 
+"A stretch of the media timeline, in seconds on the timeline that ActiveStream.positionSeconds uses."
+type MediaTimeRange {
+    startSeconds: Float!
+    "The stretch holds media time up to, but not including, endSeconds."
+    endSeconds: Float!
+}
+
 "One chapter of a media file's container."
 type Chapter {
     "Seconds on the media timeline that the segment grid uses, so a client can seek to this time directly. Negative when the chapter starts before the container's start time. Null when the probe reported no start time."

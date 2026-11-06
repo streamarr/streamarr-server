@@ -4,6 +4,7 @@ import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
@@ -25,6 +26,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -83,8 +86,7 @@ class OrphanedMediaFileCleanupServiceIT extends AbstractIntegrationTest {
                 .mediaId(retainedMovie.getId())
                 .build());
 
-    transactionTemplate.executeWithoutResult(
-        _ -> orphanedMediaFileCleanupService.cleanupOrphanedFiles(library));
+    removeMissingMediaFiles(library);
 
     assertThat(movieRepository.findById(deletedMovie.getId())).isEmpty();
     assertThat(movieRepository.findById(retainedMovie.getId())).isPresent();
@@ -118,8 +120,7 @@ class OrphanedMediaFileCleanupServiceIT extends AbstractIntegrationTest {
     imageService.saveImages(poster.images(), requestedAttempt(poster.images()));
     assertThat(itemResults.findByItem(movie.getId(), ImageEntityType.MOVIE)).isNotEmpty();
 
-    transactionTemplate.executeWithoutResult(
-        _ -> orphanedMediaFileCleanupService.cleanupOrphanedFiles(library));
+    removeMissingMediaFiles(library);
 
     assertThat(movieRepository.findById(movie.getId())).isEmpty();
     assertThat(itemResults.findByItem(movie.getId(), ImageEntityType.MOVIE)).isEmpty();
@@ -128,6 +129,37 @@ class OrphanedMediaFileCleanupServiceIT extends AbstractIntegrationTest {
     assertThat(poster.writtenFiles())
         .isNotEmpty()
         .allSatisfy(path -> assertThat(path).doesNotExist());
+  }
+
+  @Test
+  @DisplayName(
+      "Should remove the missing media files when there are more of them than one query can bind")
+  void shouldRemoveTheMissingMediaFilesWhenThereAreMoreOfThemThanOneQueryCanBind() {
+    var library =
+        libraryRepository.saveAndFlush(
+            LibraryFixtureCreator.buildFakeLibrary().toBuilder()
+                .filepathUri(FilepathCodec.encode(libraryPath))
+                .build());
+    var missing =
+        mediaFileRepository.saveAndFlush(
+            mediaFileBuilder(libraryPath.resolve("missing.mkv"))
+                .libraryId(library.getId())
+                .build());
+    // PostgreSQL's protocol binds at most 65,535 parameters to one query.
+    var missingMediaFileIds =
+        Stream.concat(Stream.generate(UUID::randomUUID).limit(65_535), Stream.of(missing.getId()))
+            .toList();
+
+    transactionTemplate.executeWithoutResult(
+        _ -> orphanedMediaFileCleanupService.removeMissingMediaFiles(library, missingMediaFileIds));
+
+    assertThat(mediaFileRepository.findById(missing.getId())).isEmpty();
+  }
+
+  private void removeMissingMediaFiles(Library library) {
+    var missingMediaFileIds = orphanedMediaFileCleanupService.findMissingMediaFileIds(library);
+    transactionTemplate.executeWithoutResult(
+        _ -> orphanedMediaFileCleanupService.removeMissingMediaFiles(library, missingMediaFileIds));
   }
 
   private static MediaFile.MediaFileBuilder<?, ?> mediaFileBuilder(Path path) {

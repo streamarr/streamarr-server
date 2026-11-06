@@ -65,6 +65,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -88,11 +89,13 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   @Autowired private PlaybackProbeService playbackProbeService;
   @Autowired private PlatformTransactionManager transactionManager;
   @Autowired private ProbeTaskPriorityRepository priorities;
+  @Autowired private ApplicationContext applicationContext;
 
   private final FakeFfprobeService producer = new FakeFfprobeService();
   private final List<MediaFile> createdFiles = new ArrayList<>();
   private final CountDownLatch firstExecutionFinished = new CountDownLatch(1);
   private final LinkedBlockingQueue<String> completedInstances = new LinkedBlockingQueue<>();
+  private ProbeExecution probeExecution;
   private Task<ProbeTaskRequest> task;
   private SchedulerClient client;
   private Scheduler scheduler;
@@ -102,7 +105,7 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
     // The completion latch counts any execution, so a due execution left by an earlier class
     // would release it before the test's own probe runs.
     dsl.deleteFrom(DSL.table("scheduled_tasks")).execute();
-    var execution =
+    probeExecution =
         ProbeExecution.builder()
             .mediaFiles(mediaFileRepository)
             .reader(reader)
@@ -115,7 +118,7 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
             .playbackProbeClaims(
                 new PlaybackProbeClaims(System::nanoTime, new SimpleMeterRegistry()))
             .build();
-    task = MediaProbeTask.create(execution, completion);
+    task = MediaProbeTask.create(probeExecution, completion);
     client =
         SchedulerClient.Builder.create(dataSource, task).serializer(probeTaskSerializer).build();
   }
@@ -463,26 +466,28 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
     assertThat(reader.find(file.getId())).isEmpty();
   }
 
+  // The application's claim takes no more executions than the scheduler's one thread, which
+  // db-scheduler's single-statement lock-and-fetch exceeds under some query plans. The scheduler
+  // polls when it starts, when an execution is scheduled or ends, and never on its timer during a
+  // test: a timed poll reads the time before it counts the executions in progress, so it can claim
+  // after a retry was rescheduled with a time that excludes the retry.
   private void startScheduler() {
     scheduler =
-        Scheduler.create(schedulerCustomizer.dataSource().orElse(dataSource), task)
+        ProbeSchedulerStarter.fromContext(applicationContext).toBuilder()
             .threads(1)
-            .pollUsingLockAndFetch(0.5, 1.0)
-            .pollingInterval(Duration.ofMillis(200))
-            .enablePriority()
-            .executorService(Executors.newVirtualThreadPerTaskExecutor())
-            .serializer(probeTaskSerializer)
-            .addSchedulerListener(
+            .pollingInterval(Duration.ofHours(1))
+            .build()
+            .start(
+                probeExecution,
                 new AbstractSchedulerListener() {
                   @Override
                   public void onExecutionComplete(ExecutionComplete executionComplete) {
                     completedInstances.add(executionComplete.getExecution().taskInstance.getId());
                     firstExecutionFinished.countDown();
                   }
-                })
-            .schedulerName(new SchedulerName.Fixed("media-probe-it"))
-            .build();
-    scheduler.start();
+                },
+                Clock.systemUTC())
+            .scheduler();
   }
 
   private MediaFile createMediaFile() throws IOException {

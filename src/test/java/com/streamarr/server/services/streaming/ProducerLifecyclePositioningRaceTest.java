@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
@@ -42,6 +43,7 @@ class ProducerLifecyclePositioningRaceTest {
     lifecycle =
         ProducerLifecycleService.builder()
             .transcodeExecutor(transcodeExecutor)
+            .eventPublisher(new CapturingEventPublisher())
             .segmentStore(segmentStore)
             .properties(
                 StreamingProperties.builder()

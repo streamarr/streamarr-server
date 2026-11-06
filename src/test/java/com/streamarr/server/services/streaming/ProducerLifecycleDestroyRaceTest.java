@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
@@ -79,6 +80,7 @@ class ProducerLifecycleDestroyRaceTest {
       FakeRuntimeStreamSessionRegistry runtimeRegistry) {
     return ProducerLifecycleService.builder()
         .transcodeExecutor(transcodeExecutor)
+        .eventPublisher(new CapturingEventPublisher())
         .segmentStore(new FakeSegmentStore())
         .properties(
             StreamingProperties.builder()

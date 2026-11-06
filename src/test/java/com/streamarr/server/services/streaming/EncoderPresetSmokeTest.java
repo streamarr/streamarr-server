@@ -14,6 +14,7 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeServerSettingsRepository;
@@ -99,6 +100,7 @@ class EncoderPresetSmokeTest {
     lifecycle =
         ProducerLifecycleService.builder()
             .transcodeExecutor(transcodeExecutor)
+            .eventPublisher(new CapturingEventPublisher())
             .segmentStore(segmentStore)
             .properties(
                 StreamingProperties.builder()
