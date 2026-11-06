@@ -15,6 +15,7 @@ import com.streamarr.server.services.streaming.ProbeCapacity;
 import com.streamarr.server.services.streaming.ProbeCapacitySource;
 import com.streamarr.server.support.UnstartedSchedulerConfiguration;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import javax.sql.DataSource;
@@ -37,7 +38,8 @@ record ProbeSchedulerStarter(
     DataSource dataSource,
     Environment environment,
     List<SchedulerListener> applicationListeners,
-    int threads) {
+    int threads,
+    Duration pollingInterval) {
 
   static final ProbeCapacitySource FAKE_WORKERS =
       () ->
@@ -62,6 +64,9 @@ record ProbeSchedulerStarter(
         .environment(context.getEnvironment())
         .applicationListeners(List.copyOf(context.getBeansOfType(SchedulerListener.class).values()))
         .threads(THREADS)
+        .pollingInterval(
+            UnstartedSchedulerConfiguration.schedulerProperties(context.getEnvironment())
+                .getPollingInterval())
         .build();
   }
 
@@ -70,6 +75,7 @@ record ProbeSchedulerStarter(
     var task = MediaProbeTask.create(execution, completion, clock);
     var properties = UnstartedSchedulerConfiguration.schedulerProperties(environment);
     properties.setThreads(threads);
+    properties.setPollingInterval(pollingInterval);
     var listeners = new ArrayList<SchedulerListener>(applicationListeners);
     listeners.add(listener);
     var serializer = customizer.serializer().orElseThrow();

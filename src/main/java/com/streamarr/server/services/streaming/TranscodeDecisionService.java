@@ -29,6 +29,7 @@ import com.streamarr.server.domain.streaming.SubtitleMode;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
+import com.streamarr.server.domain.streaming.VideoCapabilityEntryRefusal;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoQuality;
@@ -191,9 +192,55 @@ public class TranscodeDecisionService {
             .videoBitstreamRewrites(copyPlan.map(CopyPlan::bitstreamRewrites).orElseGet(List::of))
             .videoDolbyVisionOutput(copyPlan.flatMap(CopyPlan::dolbyVisionOutput))
             .reasons(
-                afterDirectPlayRefusals(request, reasons(videoCopy, sessionAudio, audioDecision)))
+                afterDirectPlayRefusals(
+                    request,
+                    reasons(
+                        withUndeclaredCodecFamily(request, videoCopy.reasons()),
+                        sessionAudio,
+                        audioDecision)))
+            .videoCapabilityEntryRefusals(entryRefusals(request))
             .audioStreamIndex(audioStreamIndex(source, audioDecision))
             .build());
+  }
+
+  // What each entry of the source's codec family refuses, so media info can show why the server
+  // encoded the stream or left part of it out (#396): direct play first when the file plays over
+  // HLS because direct play was refused, then the best copy that the format attempt permits over
+  // HLS, whatever the copy rules decide.
+  private static List<VideoCapabilityEntryRefusal> entryRefusals(TranscodeDecisionRequest request) {
+    var source = request.source();
+    var stream = VideoStreamCopy.of(source);
+    if (stream.isEmpty()) {
+      return List.of();
+    }
+
+    var declaration = request.capabilityDeclaration();
+    var directPlay =
+        source
+            .sourceContainer()
+            .filter(_ -> !request.directPlayRefusals().isEmpty())
+            .map(container -> declaration.directPlayRefusalsByEntry(stream.get(), container))
+            .orElseGet(List::of);
+    var hls =
+        copyPlans(stream.get()).stream()
+            .filter(plan -> isPermittedBy(request.videoFormatConstraint(), plan))
+            .findFirst()
+            .map(plan -> stream.get().afterRewrites(plan.bitstreamRewrites()))
+            .map(declaration::hlsCopyRefusalsByEntry)
+            .orElseGet(List::of);
+    return Stream.concat(directPlay.stream(), hls.stream()).toList();
+  }
+
+  // The decision names a codec family that no video capability entry for HLS names, even when a
+  // copy rule refused the copy first (#396).
+  private static List<DecisionReason> withUndeclaredCodecFamily(
+      TranscodeDecisionRequest request, List<DecisionReason> videoReasons) {
+    var undeclared =
+        VideoStreamCopy.of(request.source())
+            .filter(copy -> !request.capabilityDeclaration().namesHlsCodecFamilyOf(copy))
+            .map(_ -> DecisionReason.VIDEO_CODEC_NOT_DECLARED)
+            .stream();
+    return Stream.concat(videoReasons.stream(), undeclared).distinct().toList();
   }
 
   // Every decision about the audio reads the source's first audio stream, the session's.
@@ -208,8 +255,8 @@ public class TranscodeDecisionService {
   // Video reasons come first. Audio that a copy lowers below the session's audio for the viewer's
   // bitrate limit names that limit beside any reason that the session's audio is encoded.
   private static List<DecisionReason> reasons(
-      VideoCopyChoice videoCopy, SessionAudio sessionAudio, AudioDecision audio) {
-    var reasons = new ArrayList<>(videoCopy.reasons());
+      List<DecisionReason> videoReasons, SessionAudio sessionAudio, AudioDecision audio) {
+    var reasons = new ArrayList<>(videoReasons);
     sessionAudio.encodeReason().ifPresent(reasons::add);
     if (!audio.equals(sessionAudio.decision())) {
       reasons.add(DecisionReason.AUDIO_LOWERED_FOR_BITRATE_LIMIT);

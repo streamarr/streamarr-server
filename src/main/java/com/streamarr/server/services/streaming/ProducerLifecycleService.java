@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
+import com.streamarr.server.domain.streaming.MediaTimeRange;
 import com.streamarr.server.domain.streaming.ShortCopy;
 import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -16,6 +17,7 @@ import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.exceptions.TranscodeLimitReachedException;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
+import com.streamarr.server.services.streaming.events.RequestedVariantChangedEvent;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -27,10 +29,13 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.IntPredicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import lombok.Builder;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 
 /**
  * Owns every producer (transcode process) mutation for a stream session: initial start, resume of a
@@ -56,6 +61,7 @@ public class ProducerLifecycleService {
   private final RuntimeStreamSessionRegistry runtimeRegistry;
   private final MutexFactory<UUID> sessionMutex;
   private final ServerSettingsService serverSettings;
+  @NonNull private final ApplicationEventPublisher eventPublisher;
   @Builder.Default private final Clock clock = Clock.systemUTC();
   private final ConcurrentHashMap<VariantKey, VariantDeliveryState> recoveryStates =
       new ConcurrentHashMap<>();
@@ -893,6 +899,7 @@ public class ProducerLifecycleService {
     var previous = newestMediaSegmentRequests.put(request.sessionId(), request);
     if (previous == null || !previous.variantLabel().equals(request.variantLabel())) {
       newestVariantArrivals.put(request.sessionId(), request.arrival());
+      eventPublisher.publishEvent(new RequestedVariantChangedEvent(request.sessionId()));
     }
   }
 
@@ -1631,6 +1638,59 @@ public class ProducerLifecycleService {
     }
 
     return RecoveryResult.PAST_A_FAILED_COPY;
+  }
+
+  /**
+   * The media time that the requested variant's stored media segments cover without a gap around
+   * the position: from the start of the first segment of that run to the end of its last. The
+   * requested variant is the variant of the stream session's newest media-segment request, and the
+   * variant that the multivariant playlist lists first before the player requests a media segment.
+   * Empty for a direct-play stream session and when the media segment that holds the position is
+   * not stored.
+   */
+  public Optional<MediaTimeRange> producedRangeAround(
+      @NonNull StreamSession session, @NonNull Duration position) {
+    if (session.getDelivery() != StreamDelivery.HLS) {
+      return Optional.empty();
+    }
+
+    var timeline = timelineOf(session);
+    var variantLabel = requestedVariant(session);
+    // Media that runs past its probed duration stores media segments that the playlist never
+    // advertises, and the run ends at the last advertised one.
+    IntPredicate stored =
+        index ->
+            timeline.advertises(index)
+                && segmentStore.segmentExists(
+                    session.getSessionId(),
+                    SegmentNames.storedSegmentName(
+                        variantLabel, SegmentNames.mediaSegmentName(index)));
+    var holding = timeline.mediaSegmentIndexAt(position);
+    if (!stored.test(holding)) {
+      return Optional.empty();
+    }
+
+    var first = holding;
+    while (stored.test(first - 1)) {
+      first--;
+    }
+
+    var last = holding;
+    while (stored.test(last + 1)) {
+      last++;
+    }
+
+    var start = timeline.mediaSegmentEnd(first).minus(timeline.mediaSegmentDuration(first));
+    return Optional.of(new MediaTimeRange(start, timeline.mediaSegmentEnd(last)));
+  }
+
+  private String requestedVariant(StreamSession session) {
+    var newest = newestMediaSegmentRequests.get(session.getSessionId());
+    if (newest == null) {
+      return firstListedVariant(session);
+    }
+
+    return newest.variantLabel();
   }
 
   /** A session that no longer exists advertises nothing to refuse, so this answers false. */

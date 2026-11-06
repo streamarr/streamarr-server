@@ -21,6 +21,7 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fixtures.Fmp4Fixture;
@@ -195,6 +196,7 @@ class HlsCopySeekSmokeTest {
     var producerLifecycle =
         ProducerLifecycleService.builder()
             .transcodeExecutor(transcodeExecutor)
+            .eventPublisher(new CapturingEventPublisher())
             .segmentStore(segmentStore)
             .properties(properties)
             .runtimeRegistry(sessionRegistry)
@@ -460,19 +462,18 @@ class HlsCopySeekSmokeTest {
     return List.copyOf(arguments);
   }
 
-  // An MPEG-TS source has no index, so the probe asks for a packet scan.
+  // An MPEG-TS source has no index, so the probe asks for a packet scan. The scan is a new attempt,
+  // so it carries a new attempt ID, as the worker contract requires.
   private KeyframePositions storeProbeWithKeyframes(Path source) {
-    var request =
+    var requestBuilder =
         ProbeExecutionRequest.builder()
             .sourcePath(source)
-            .attemptId(UUID.randomUUID())
             .probeVersion(ProbeVersion.CURRENT)
-            .priority(ProbePriority.BACKGROUND)
-            .build();
-    var outcome = probes.probe(request);
+            .priority(ProbePriority.BACKGROUND);
+    var outcome = probes.probe(requestBuilder.attemptId(UUID.randomUUID()).build());
     if (outcome instanceof ProbeOutcome.Success success
         && success.keyframes() instanceof KeyframeKnowledge.PacketScanRequired) {
-      outcome = probes.scanKeyframePackets(request);
+      outcome = probes.scanKeyframePackets(requestBuilder.attemptId(UUID.randomUUID()).build());
     }
 
     assertThat(outcome).isInstanceOf(ProbeOutcome.Success.class);

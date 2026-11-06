@@ -250,6 +250,7 @@ class AdversarialPlaybackTest {
     @Bean
     PlaybackSessionService playbackSessions(HlsStreamingService streaming) {
       return PlaybackSessionService.builder()
+          .eventPublisher(_ -> {})
           .streamingService(streaming)
           .authorityGate(new FakePlaybackAuthorityGate())
           .executor(Runnable::run)

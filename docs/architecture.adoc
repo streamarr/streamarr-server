@@ -38,6 +38,10 @@ See https://github.com/streamarr/streamarr-adr/blob/main/adr/0031-transaction-sc
 
 PostgreSQL with UUID primary keys, custom ENUMs, and audit columns (`created_on`, `modified_on`, `created_by`, `modified_by`) on all entities.
 
+Every pooled connection bounds two waits.
+A statement that waits on a lock for longer than `DATABASE_LOCK_TIMEOUT`, `30s` by default, fails; a transaction that needs a shorter wait sets its own `lock_timeout`.
+PostgreSQL ends a session whose transaction issues no statement for `DATABASE_IDLE_IN_TRANSACTION_TIMEOUT`, `60s` by default, so a transaction left open releases its locks and the pool replaces its connection.
+
 Entity hierarchy uses JPA JOINED inheritance:
 
 ----
@@ -352,6 +356,10 @@ A profile 8 stream with compatibility identifier 6 counts as profile 8.1.
 A client that declares the base but not the Dolby Vision receives the copy with Dolby Vision stripped, and so does every client that declares the base of an unknown profile, of a stream without a known level, or of profile 6 or dual-track profile 7.
 When no connected worker lists every rewrite that the copy needs, the client receives an encode.
 Dolby Vision without a compatible base still plays as an encode.
+
+The worker contract lets an encode name its output bit depth and chroma subsampling, and lets a PQ encode carry the HDR10 static metadata that the encoder writes (https://github.com/streamarr/streamarr-server/issues/397[#397]).
+Each verified encoder lists the outputs beyond 8-bit 4:2:0 SDR that passed the worker's own test encode: 10-bit, PQ, HLG, and Dolby Vision profile 5 or 10.0 reshaped into PQ.
+No job sets them yet, and every encode stays 8-bit 4:2:0 SDR.
 
 https://github.com/streamarr/streamarr-adr/blob/main/adr/0033-transcode-worker-is-a-separate-service.adoc[ADR 0033] requires workers for probing, transcoding, and remuxing.
 Each worker opens an outbound, long-lived gRPC `WorkerSession` over the server's single plaintext listener.

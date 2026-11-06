@@ -37,9 +37,11 @@ public class StreamingConfig {
   public PlaybackSessionService playbackSessionService(
       StreamingService streamingService,
       PlaybackAuthorityGate authorityGate,
-      StreamingProperties properties) {
+      StreamingProperties properties,
+      ApplicationEventPublisher eventPublisher) {
     return PlaybackSessionService.builder()
         .streamingService(streamingService)
+        .eventPublisher(eventPublisher)
         .authorityGate(authorityGate)
         .maximumFormatAttempts(properties.maxFormatAttempts())
         .build();
@@ -72,7 +74,8 @@ public class StreamingConfig {
       StreamingProperties properties,
       RuntimeStreamSessionRegistry runtimeRegistry,
       MutexFactoryProvider mutexFactoryProvider,
-      ServerSettingsService serverSettingsService) {
+      ServerSettingsService serverSettingsService,
+      ApplicationEventPublisher eventPublisher) {
     return ProducerLifecycleService.builder()
         .transcodeExecutor(transcodeExecutor)
         .segmentStore(segmentStore)
@@ -80,6 +83,7 @@ public class StreamingConfig {
         .runtimeRegistry(runtimeRegistry)
         .sessionMutex(mutexFactoryProvider.getMutexFactory())
         .serverSettings(serverSettingsService)
+        .eventPublisher(eventPublisher)
         .build();
   }
 

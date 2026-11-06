@@ -11,8 +11,13 @@ import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.PlaybackSessionClosedException;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.services.events.watchprogress.StreamSessionTimelineReportedEvent;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.events.CopiedVariantRanShortEvent;
+import com.streamarr.server.services.streaming.events.MediaSegmentStoredEvent;
+import com.streamarr.server.services.streaming.events.PlaybackSessionChangedEvent;
+import com.streamarr.server.services.streaming.events.ProducedRangeMayHaveMovedEvent;
+import com.streamarr.server.services.streaming.events.RequestedVariantChangedEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import java.time.Clock;
@@ -36,6 +41,7 @@ import java.util.function.Supplier;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 
 @Slf4j
@@ -49,6 +55,7 @@ public class PlaybackSessionService implements AutoCloseable {
   private final Optional<ExecutorService> ownedExecutor;
   private final FormatRecoveryPolicy recoveryPolicy;
   private final Clock clock;
+  private final ApplicationEventPublisher eventPublisher;
   private final ConcurrentHashMap<UUID, PlaybackSession> sessions = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<UUID, PlaybackSession> streamOwners = new ConcurrentHashMap<>();
   private final MutexFactory<UUID> mutexes = new MutexFactory<>();
@@ -61,7 +68,9 @@ public class PlaybackSessionService implements AutoCloseable {
       @NonNull PlaybackAuthorityGate authorityGate,
       Executor executor,
       int maximumFormatAttempts,
-      Clock clock) {
+      Clock clock,
+      @NonNull ApplicationEventPublisher eventPublisher) {
+    this.eventPublisher = eventPublisher;
     this.recoveryPolicy = new FormatRecoveryPolicy(maximumFormatAttempts);
     this.streamingService = streamingService;
     this.authorityGate = authorityGate;
@@ -370,6 +379,7 @@ public class PlaybackSessionService implements AutoCloseable {
     }
 
     streamingService.destroySession(ended.get().directPlayId());
+    changed(playback);
     return currentSnapshot(playback);
   }
 
@@ -628,7 +638,7 @@ public class PlaybackSessionService implements AutoCloseable {
     try {
       if (allowsRecovery(playback)) {
         locked(playback, () -> reserveAfterJobFailure(playback, failedId, reserve))
-            .ifPresent(this::schedule);
+            .ifPresent(this::scheduleAfterChange);
       }
     } catch (RuntimeException failure) {
       discardAfterFailure(playback, failure);
@@ -650,7 +660,7 @@ public class PlaybackSessionService implements AutoCloseable {
   private void recover(
       PlaybackSession playback, UUID failedId, PlaybackSessionFailure fixedFailure) {
     var reservation = locked(playback, () -> reserveRecovery(playback, failedId, fixedFailure));
-    reservation.ifPresent(this::schedule);
+    reservation.ifPresent(this::scheduleAfterChange);
   }
 
   private Optional<FormatAttemptReservation> reserveRecovery(
@@ -829,6 +839,13 @@ public class PlaybackSessionService implements AutoCloseable {
         .build();
   }
 
+  // The reservation changed the current format attempt, so listeners hear of it before the next
+  // format attempt starts.
+  private void scheduleAfterChange(FormatAttemptReservation work) {
+    changed(work.playback());
+    schedule(work);
+  }
+
   private void schedule(FormatAttemptReservation work) {
     try {
       executor.execute(() -> startFormatAttempt(work));
@@ -894,16 +911,21 @@ public class PlaybackSessionService implements AutoCloseable {
   }
 
   private void failCurrent(PlaybackSession playback, UUID childId, PlaybackSessionFailure reason) {
-    locked(
-        playback,
-        () -> {
-          if (pending(playback, childId)) {
-            playback.current = new PlaybackFormatAttempt.Failed(childId, reason);
-            streamOwners.remove(childId, playback);
-          }
+    boolean failed =
+        locked(
+            playback,
+            () -> {
+              if (!pending(playback, childId)) {
+                return false;
+              }
 
-          return true;
-        });
+              playback.current = new PlaybackFormatAttempt.Failed(childId, reason);
+              streamOwners.remove(childId, playback);
+              return true;
+            });
+    if (failed) {
+      changed(playback);
+    }
   }
 
   private CreateStreamSessionCommand.CreateStreamSessionCommandBuilder childCommand(
@@ -978,6 +1000,15 @@ public class PlaybackSessionService implements AutoCloseable {
   }
 
   private Set<UUID> removeIf(PlaybackSession playback, Predicate<PlaybackSession> condition) {
+    var removed = removeLockedIf(playback, condition);
+    if (!removed.isEmpty()) {
+      changed(playback);
+    }
+
+    return removed;
+  }
+
+  private Set<UUID> removeLockedIf(PlaybackSession playback, Predicate<PlaybackSession> condition) {
     return locked(
         playback,
         () -> {
@@ -1032,6 +1063,83 @@ public class PlaybackSessionService implements AutoCloseable {
             });
     if (!accepted) {
       streamingService.destroySession(session.getSessionId());
+      return;
+    }
+
+    changed(playback);
+  }
+
+  private void changed(PlaybackSession playback) {
+    eventPublisher.publishEvent(new PlaybackSessionChangedEvent(playback.id));
+  }
+
+  /** The activity of every open playback session. Reading it keeps no playback session open. */
+  public List<PlaybackSessionActivity> activity() {
+    return sessions.values().stream().map(this::activityOf).flatMap(Optional::stream).toList();
+  }
+
+  /** The activity of the playback session, or empty once it ended. */
+  public Optional<PlaybackSessionActivity> activity(@NonNull UUID playbackSessionId) {
+    return Optional.ofNullable(sessions.get(playbackSessionId)).flatMap(this::activityOf);
+  }
+
+  private Optional<PlaybackSessionActivity> activityOf(PlaybackSession playback) {
+    return locked(
+        playback,
+        () -> {
+          if (!owns(playback)) {
+            return Optional.empty();
+          }
+
+          return Optional.of(
+              PlaybackSessionActivity.builder()
+                  .playbackSessionId(playback.id)
+                  .authority(playback.command.identity().playbackAuthority())
+                  .mediaFileId(playback.command.mediaFileId())
+                  .currentFormatAttempt(playback.current)
+                  .decision(lastDecisionOf(playback))
+                  .build());
+        });
+  }
+
+  // A decision belongs to the current format attempt only while that attempt is ready.
+  private static Optional<PlaybackDecision> lastDecisionOf(PlaybackSession playback) {
+    if (!(playback.current instanceof PlaybackFormatAttempt.Ready)
+        || playback.decisions.isEmpty()) {
+      return Optional.empty();
+    }
+
+    return Optional.of(playback.decisions.getLast());
+  }
+
+  /** A client's timeline report changed what its playback session plays. */
+  @EventListener
+  public void onStreamSessionTimelineReported(@NonNull StreamSessionTimelineReportedEvent event) {
+    var playback = streamOwners.get(event.streamSessionId());
+    if (playback != null) {
+      changed(playback);
+    }
+  }
+
+  /**
+   * A job attempt stored a media segment of a playback session's stream session: the stream session
+   * of its current format attempt or of a pending audio track switch.
+   */
+  @EventListener
+  public void onMediaSegmentStored(@NonNull MediaSegmentStoredEvent event) {
+    announceProducedRangeMayHaveMoved(event.streamSessionId());
+  }
+
+  /** The requested variant of a playback session's stream session changed. */
+  @EventListener
+  public void onRequestedVariantChanged(@NonNull RequestedVariantChangedEvent event) {
+    announceProducedRangeMayHaveMoved(event.streamSessionId());
+  }
+
+  private void announceProducedRangeMayHaveMoved(UUID streamSessionId) {
+    var playback = streamOwners.get(streamSessionId);
+    if (playback != null) {
+      eventPublisher.publishEvent(new ProducedRangeMayHaveMovedEvent(playback.id));
     }
   }
 

@@ -54,6 +54,32 @@ message WorkerVerifiedVideoEncoder {
   // the worker's settings, as keyframe-verified. The worker never derives the
   // value from its own output.
   bool keyframe_verified = 2;
+  // This field lists each output beyond 8-bit 4:2:0 SDR that passed the
+  // worker's own test encode with this encoder. The server sends an encode
+  // that needs a feature only to a worker that lists the feature for the
+  // encode's codec family. An older worker lists none.
+  repeated VideoEncodeFeature encode_features = 3;
+}
+
+// This value names an output beyond 8-bit 4:2:0 SDR that a verified encoder
+// writes (ADR 0013).
+enum VideoEncodeFeature {
+  VIDEO_ENCODE_FEATURE_UNSPECIFIED = 0;
+  // The encoder writes 10-bit 4:2:0 video, with the profile that
+  // VideoDecision.codec_profile names.
+  VIDEO_ENCODE_FEATURE_TEN_BIT = 1;
+  // The encoder writes 10-bit video with the PQ transfer, BT.2020 primaries
+  // and the BT.2020 non-constant luminance matrix, and writes the
+  // VideoDecision's mastering_display and content_light_level into the
+  // bitstream as HDR10 static metadata.
+  VIDEO_ENCODE_FEATURE_PQ = 2;
+  // The encoder writes 10-bit video with the HLG transfer, BT.2020 primaries
+  // and the BT.2020 non-constant luminance matrix.
+  VIDEO_ENCODE_FEATURE_HLG = 3;
+  // The worker reshapes Dolby Vision without a compatible base, profiles 5 and
+  // 10.0, with each frame's RPU into PQ before this encoder writes the PQ
+  // output.
+  VIDEO_ENCODE_FEATURE_DOLBY_VISION_TO_PQ = 4;
 }
 
 message WorkerCapabilities {
@@ -488,7 +514,20 @@ message VideoDecision {
   // and only with output_dynamic_range. The worker writes each one into an
   // HEVC copy's hvcC as its own SEI message (ADR 0036).
   MasteringDisplayColorVolume mastering_display = 17;
+  // An encode with a PQ output sets this field and mastering_display, which
+  // the encoder writes as HDR10 static metadata: each value the probe holds,
+  // else a P3 D65 display of 1000 and 0.0001 cd/m^2 and a content light level
+  // of 0, which means unknown. Other encodes set neither.
   ContentLightLevel content_light_level = 18;
+  // An encode sets this field to 8 or 10, and the encoder writes that bit
+  // depth. An H.264 encode sets 8, and a PQ or HLG encode sets 10. A copy
+  // leaves it out. An older server leaves it out of an SDR encode, and the
+  // worker then writes 8 bits.
+  optional uint32 output_bit_depth = 20;
+  // An encode sets this field to CHROMA_SUBSAMPLING_420. A copy leaves it
+  // UNSPECIFIED. An older server leaves it UNSPECIFIED on an SDR encode, and
+  // the worker then writes 4:2:0. A PQ or HLG encode always sets it.
+  ChromaSubsampling output_chroma_subsampling = 21;
 }
 
 message Deinterlace {

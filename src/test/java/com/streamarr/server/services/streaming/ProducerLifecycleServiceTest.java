@@ -38,6 +38,7 @@ import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.exceptions.TranscodeLimitReachedException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
@@ -50,6 +51,7 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
+import com.streamarr.server.services.streaming.events.RequestedVariantChangedEvent;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -90,6 +92,7 @@ class ProducerLifecycleServiceTest {
   private FakeRuntimeStreamSessionRegistry runtimeRegistry;
   private ProducerLifecycleService lifecycle;
   private MutableClock clock;
+  private final CapturingEventPublisher events = new CapturingEventPublisher();
   private final AuthenticatedIdentity serverAdmin = accountScopedBuilder().build();
   private ServerSettingsService serverSettings;
 
@@ -115,6 +118,7 @@ class ProducerLifecycleServiceTest {
             .clock(clock)
             .runtimeRegistry(runtimeRegistry)
             .serverSettings(serverSettings)
+            .eventPublisher(events)
             .build()
             .lifecycle();
   }
@@ -433,6 +437,38 @@ class ProducerLifecycleServiceTest {
     lifecycle.completeVariantSwitch(played);
 
     assertThat(session.getVariantHandles()).containsOnlyKeys("480p", "1080p");
+  }
+
+  // The produced range describes the requested variant, so subscribers learn of a switch even when
+  // the new variant's media segments are already stored and no producer starts.
+  @Test
+  @DisplayName(
+      "Should announce a change of the requested variant when a media-segment request names another"
+          + " variant than the newest request")
+  void shouldAnnounceAChangeOfTheRequestedVariantWhenAMediaSegmentRequestNamesAnotherVariant() {
+    var sessionId = startedLadderSession().getSessionId();
+
+    lifecycle.prepareRequestedVariant(sessionId, "480p", "480p/segment0.m4s");
+    lifecycle.prepareRequestedVariant(sessionId, "1080p", "1080p/segment1.m4s");
+
+    var changed = new RequestedVariantChangedEvent(sessionId);
+    assertThat(events.getEventsOfType(RequestedVariantChangedEvent.class))
+        .containsExactly(changed, changed);
+  }
+
+  @Test
+  @DisplayName(
+      "Should announce no change of the requested variant when a request keeps the variant or asks"
+          + " for another variant's initialization segment")
+  void shouldAnnounceNoChangeOfTheRequestedVariantWhenARequestKeepsItOrAsksForAnInitSegment() {
+    var sessionId = startedLadderSession().getSessionId();
+    lifecycle.prepareRequestedVariant(sessionId, "480p", "480p/segment0.m4s");
+    events.clear();
+
+    lifecycle.prepareRequestedVariant(sessionId, "480p", "480p/segment1.m4s");
+    lifecycle.prepareRequestedVariant(sessionId, "1080p", "1080p/init.mp4");
+
+    assertThat(events.getEventsOfType(RequestedVariantChangedEvent.class)).isEmpty();
   }
 
   @Test
