@@ -29,6 +29,7 @@ import com.streamarr.server.domain.streaming.SubtitleMode;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
+import com.streamarr.server.domain.streaming.VideoCapabilityEntryRefusal;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoQuality;
@@ -55,7 +56,7 @@ public class TranscodeDecisionService {
   // An encode forces one codec profile for each codec family (ADR 0013). These codec families
   // compress better than H.264, best first (ADR 0009).
   private static final List<EncodeCodecProfile> COMPRESSING_BETTER_THAN_H264 =
-      List.of(EncodeCodecProfile.AV1_MAIN);
+      List.of(EncodeCodecProfile.AV1_MAIN, EncodeCodecProfile.HEVC_MAIN);
   private static final List<BitstreamRewrite> STRIP_HDR10_PLUS =
       List.of(BitstreamRewrite.STRIP_HDR10_PLUS);
   private static final List<BitstreamRewrite> NORMALIZE_DOLBY_VISION_RECORD =
@@ -191,9 +192,56 @@ public class TranscodeDecisionService {
             .videoBitstreamRewrites(copyPlan.map(CopyPlan::bitstreamRewrites).orElseGet(List::of))
             .videoDolbyVisionOutput(copyPlan.flatMap(CopyPlan::dolbyVisionOutput))
             .reasons(
-                afterDirectPlayRefusals(request, reasons(videoCopy, sessionAudio, audioDecision)))
+                afterDirectPlayRefusals(
+                    request,
+                    reasons(
+                        withUndeclaredCodecFamily(request, videoCopy.reasons()),
+                        sessionAudio,
+                        audioDecision)))
+            .videoCapabilityEntryRefusals(entryRefusals(request))
             .audioStreamIndex(audioStreamIndex(source, audioDecision))
+            .dynamicRangeChoice(request.viewerLimits().dynamicRangeChoice())
             .build());
+  }
+
+  // What each entry of the source's codec family refuses, so media info can show why the server
+  // encoded the stream or left part of it out (#396): direct play first when the file plays over
+  // HLS because direct play was refused, then the best copy that the format attempt permits over
+  // HLS, whatever the copy rules decide.
+  private static List<VideoCapabilityEntryRefusal> entryRefusals(TranscodeDecisionRequest request) {
+    var source = request.source();
+    var stream = VideoStreamCopy.of(source);
+    if (stream.isEmpty()) {
+      return List.of();
+    }
+
+    var declaration = request.capabilityDeclaration();
+    var directPlay =
+        source
+            .sourceContainer()
+            .filter(_ -> !request.directPlayRefusals().isEmpty())
+            .map(container -> declaration.directPlayRefusalsByEntry(stream.get(), container))
+            .orElseGet(List::of);
+    var hls =
+        copyPlans(stream.get()).stream()
+            .filter(plan -> isPermittedBy(request.videoFormatConstraint(), plan))
+            .findFirst()
+            .map(plan -> stream.get().afterRewrites(plan.bitstreamRewrites()))
+            .map(declaration::hlsCopyRefusalsByEntry)
+            .orElseGet(List::of);
+    return Stream.concat(directPlay.stream(), hls.stream()).toList();
+  }
+
+  // The decision names a codec family that no video capability entry for HLS names, even when a
+  // copy rule refused the copy first (#396).
+  private static List<DecisionReason> withUndeclaredCodecFamily(
+      TranscodeDecisionRequest request, List<DecisionReason> videoReasons) {
+    var undeclared =
+        VideoStreamCopy.of(request.source())
+            .filter(copy -> !request.capabilityDeclaration().namesHlsCodecFamilyOf(copy))
+            .map(_ -> DecisionReason.VIDEO_CODEC_NOT_DECLARED)
+            .stream();
+    return Stream.concat(videoReasons.stream(), undeclared).distinct().toList();
   }
 
   // Every decision about the audio reads the source's first audio stream, the session's.
@@ -208,8 +256,8 @@ public class TranscodeDecisionService {
   // Video reasons come first. Audio that a copy lowers below the session's audio for the viewer's
   // bitrate limit names that limit beside any reason that the session's audio is encoded.
   private static List<DecisionReason> reasons(
-      VideoCopyChoice videoCopy, SessionAudio sessionAudio, AudioDecision audio) {
-    var reasons = new ArrayList<>(videoCopy.reasons());
+      List<DecisionReason> videoReasons, SessionAudio sessionAudio, AudioDecision audio) {
+    var reasons = new ArrayList<>(videoReasons);
     sessionAudio.encodeReason().ifPresent(reasons::add);
     if (!audio.equals(sessionAudio.decision())) {
       reasons.add(DecisionReason.AUDIO_LOWERED_FOR_BITRATE_LIMIT);
@@ -274,6 +322,12 @@ public class TranscodeDecisionService {
     var source = request.source();
     var declaration = request.capabilityDeclaration();
     var limits = request.viewerLimits();
+    // A copy keeps the source's range, so SDR for an HDR source needs an encode, and without one
+    // the session finds no video format rather than playing HDR (ADR 0013).
+    if (!limits.allowsCopyRangeOf(source)) {
+      return new VideoCopyChoice.Refused(List.of(DecisionReason.VIEWER_CHOSE_SDR));
+    }
+
     var steps = AudioSteps.below(sessionAudio, AudioTrackChannels.of(source), declaration);
     var playlist = CopyMediaPlaylist.of(source, properties);
     var stepWithinMaximum = limits.audioStepBesideCopyOf(source, steps, playlist);

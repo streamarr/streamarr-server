@@ -38,6 +38,7 @@ import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.exceptions.TranscodeLimitReachedException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
@@ -50,6 +51,7 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
+import com.streamarr.server.services.streaming.events.RequestedVariantChangedEvent;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -90,6 +92,7 @@ class ProducerLifecycleServiceTest {
   private FakeRuntimeStreamSessionRegistry runtimeRegistry;
   private ProducerLifecycleService lifecycle;
   private MutableClock clock;
+  private final CapturingEventPublisher events = new CapturingEventPublisher();
   private final AuthenticatedIdentity serverAdmin = accountScopedBuilder().build();
   private ServerSettingsService serverSettings;
 
@@ -115,6 +118,7 @@ class ProducerLifecycleServiceTest {
             .clock(clock)
             .runtimeRegistry(runtimeRegistry)
             .serverSettings(serverSettings)
+            .eventPublisher(events)
             .build()
             .lifecycle();
   }
@@ -433,6 +437,38 @@ class ProducerLifecycleServiceTest {
     lifecycle.completeVariantSwitch(played);
 
     assertThat(session.getVariantHandles()).containsOnlyKeys("480p", "1080p");
+  }
+
+  // The produced range describes the requested variant, so subscribers learn of a switch even when
+  // the new variant's media segments are already stored and no producer starts.
+  @Test
+  @DisplayName(
+      "Should announce a change of the requested variant when a media-segment request names another"
+          + " variant than the newest request")
+  void shouldAnnounceAChangeOfTheRequestedVariantWhenAMediaSegmentRequestNamesAnotherVariant() {
+    var sessionId = startedLadderSession().getSessionId();
+
+    lifecycle.prepareRequestedVariant(sessionId, "480p", "480p/segment0.m4s");
+    lifecycle.prepareRequestedVariant(sessionId, "1080p", "1080p/segment1.m4s");
+
+    var changed = new RequestedVariantChangedEvent(sessionId);
+    assertThat(events.getEventsOfType(RequestedVariantChangedEvent.class))
+        .containsExactly(changed, changed);
+  }
+
+  @Test
+  @DisplayName(
+      "Should announce no change of the requested variant when a request keeps the variant or asks"
+          + " for another variant's initialization segment")
+  void shouldAnnounceNoChangeOfTheRequestedVariantWhenARequestKeepsItOrAsksForAnInitSegment() {
+    var sessionId = startedLadderSession().getSessionId();
+    lifecycle.prepareRequestedVariant(sessionId, "480p", "480p/segment0.m4s");
+    events.clear();
+
+    lifecycle.prepareRequestedVariant(sessionId, "480p", "480p/segment1.m4s");
+    lifecycle.prepareRequestedVariant(sessionId, "1080p", "1080p/init.mp4");
+
+    assertThat(events.getEventsOfType(RequestedVariantChangedEvent.class)).isEmpty();
   }
 
   @Test
@@ -1016,6 +1052,34 @@ class ProducerLifecycleServiceTest {
     var request = transcodeExecutor.getStartedRequests().getLast();
     assertThat(request.startSequenceNumber()).isEqualTo(2);
     assertThat(request.mediaSegmentCount()).isEqualTo(10);
+  }
+
+  // 1,439 frames at 23.976 fps end the video at 60.018 s, so no frame starts after 60 s.
+  @Test
+  @DisplayName(
+      "Should start no job attempt in the final slot when an encode's media ends less than 2 s into"
+          + " it, and list each segment's start in the job instead")
+  void shouldStartNoJobAttemptInTheFinalSlotWhenAnEncodesMediaEndsLessThan2sIntoIt() {
+    var session =
+        defaultSessionBuilder()
+            .mediaProbe(defaultProbeBuilder().duration(Duration.ofMillis(60_018)).build())
+            .transcodeDecision(fullTranscodeDecision("h264"))
+            .build();
+    runtimeRegistry.save(session);
+    lifecycle.startFirstListedVariant(session);
+    var first = transcodeExecutor.getStartedRequests().getFirst();
+
+    var result =
+        lifecycle.recover(
+            earliestArrivingSegmentRequestBuilder()
+                .sessionId(session.getSessionId())
+                .segmentName("segment10.m4s")
+                .build());
+
+    assertThat(first.mediaSegmentCount()).isEqualTo(10);
+    assertThat(first.segmentStartSlots()).containsExactly(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+    assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.SEGMENT_NOT_ADVERTISED);
+    assertThat(transcodeExecutor.getStartedRequests()).containsExactly(first);
   }
 
   @Test

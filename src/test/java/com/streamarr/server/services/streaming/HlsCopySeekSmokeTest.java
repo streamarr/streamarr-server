@@ -14,7 +14,6 @@ import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
-import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
@@ -22,6 +21,7 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fixtures.Fmp4Fixture;
@@ -196,6 +196,7 @@ class HlsCopySeekSmokeTest {
     var producerLifecycle =
         ProducerLifecycleService.builder()
             .transcodeExecutor(transcodeExecutor)
+            .eventPublisher(new CapturingEventPublisher())
             .segmentStore(segmentStore)
             .properties(properties)
             .runtimeRegistry(sessionRegistry)
@@ -278,8 +279,8 @@ class HlsCopySeekSmokeTest {
     var sessionId = session.getSessionId();
 
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
-    assertThat(gridIntervalCount(session))
-        .as("the AAC tail forms a grid interval past the last keyframe")
+    assertThat(gridSlotCount(session))
+        .as("the AAC tail reaches a grid slot past the last keyframe")
         .isEqualTo(copySegmentSeconds.size() + 1);
     assertThat(
             extinfSeconds(
@@ -461,19 +462,18 @@ class HlsCopySeekSmokeTest {
     return List.copyOf(arguments);
   }
 
-  // An MPEG-TS source has no index, so the probe asks for a packet scan.
+  // An MPEG-TS source has no index, so the probe asks for a packet scan. The scan is a new attempt,
+  // so it carries a new attempt ID, as the worker contract requires.
   private KeyframePositions storeProbeWithKeyframes(Path source) {
-    var request =
+    var requestBuilder =
         ProbeExecutionRequest.builder()
             .sourcePath(source)
-            .attemptId(UUID.randomUUID())
             .probeVersion(ProbeVersion.CURRENT)
-            .priority(ProbePriority.BACKGROUND)
-            .build();
-    var outcome = probes.probe(request);
+            .priority(ProbePriority.BACKGROUND);
+    var outcome = probes.probe(requestBuilder.attemptId(UUID.randomUUID()).build());
     if (outcome instanceof ProbeOutcome.Success success
         && success.keyframes() instanceof KeyframeKnowledge.PacketScanRequired) {
-      outcome = probes.scanKeyframePackets(request);
+      outcome = probes.scanKeyframePackets(requestBuilder.attemptId(UUID.randomUUID()).build());
     }
 
     assertThat(outcome).isInstanceOf(ProbeOutcome.Success.class);
@@ -525,10 +525,9 @@ class HlsCopySeekSmokeTest {
     return workerFixture.worker().packetTimestamps(media);
   }
 
-  private static int gridIntervalCount(StreamSession session) {
-    return new MediaSegmentTimeline.PlainGrid(
-            session.getMediaProbe().duration(), Duration.ofSeconds(SEGMENT_SECONDS))
-        .mediaSegmentCount();
+  // The slots that the media reaches into, counted in whole milliseconds as the plain grid counts.
+  private static long gridSlotCount(StreamSession session) {
+    return Math.ceilDiv(session.getMediaProbe().duration().toMillis(), SEGMENT_SECONDS * 1000L);
   }
 
   private static List<Double> extinfSeconds(String playlist) {

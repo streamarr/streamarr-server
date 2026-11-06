@@ -141,8 +141,10 @@ class MeshMediaHandlerIT {
       var execution = rig.worker.started.get(5, TimeUnit.SECONDS).getExecution();
       assertThat(execution.getTargetSegmentDurationSeconds()).isEqualTo(2);
       assertThat(execution.getMediaSegmentCount())
-          .as("the 10.005 s fixture clip spans six 2 s media segments")
-          .isEqualTo(6);
+          .as(
+              "the 10.005 s fixture clip spans five 2 s media segments, the last taking in its 5 ms")
+          .isEqualTo(5);
+      assertThat(execution.getSegmentStartSlotsList()).containsExactly(0, 1, 2, 3, 4);
     }
   }
 

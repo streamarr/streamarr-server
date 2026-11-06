@@ -8,4 +8,5 @@ public record StreamingOptionsInput(
     Integer maxHeight,
     Integer maxBitrate,
     Language audioLanguage,
-    Language subtitleLanguage) {}
+    Language subtitleLanguage,
+    String dynamicRange) {}

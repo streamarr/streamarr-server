@@ -108,7 +108,7 @@ class TranscodeExecutorHealthIndicatorTest {
     var executor = new FakeTranscodeExecutor();
     executor.setAvailableSlots(1);
     executor.setVerifiedVideoCodecFamiliesByWorker(
-        List.of(worker(Set.of("h264", "av1")), worker(Set.of("h264", "hevc", "av1"))));
+        List.of(worker(Set.of("h264", "hevc", "av1")), worker(Set.of("h264", "hevc", "av1"))));
     var indicator = new TranscodeExecutorHealthIndicator(executor);
 
     var health = indicator.health();

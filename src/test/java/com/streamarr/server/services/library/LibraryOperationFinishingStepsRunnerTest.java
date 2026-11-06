@@ -14,6 +14,7 @@ import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
+import com.streamarr.server.fakes.ThrowingFileSystemWrapper;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryOperationRepository.StoreOutcome;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -23,11 +24,16 @@ import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -44,6 +50,8 @@ import org.springframework.transaction.support.SimpleTransactionStatus;
 @Tag("UnitTest")
 @DisplayName("Library Operation Finishing Steps Runner Tests")
 class LibraryOperationFinishingStepsRunnerTest {
+
+  private static final String KEPT = "Kept (2020).mkv";
 
   private final FakeLibraryRepository libraries = new FakeLibraryRepository();
   private final FakeLibraryOperationRepository libraryOperations =
@@ -140,17 +148,19 @@ class LibraryOperationFinishingStepsRunnerTest {
       "Should conclude the scan failed when the operation's row cannot be shared before the library"
           + " folder check")
   void shouldConcludeTheScanFailedWhenTheOperationsRowCannotBeSharedBeforeTheFolderCheck() {
-    var scan = storeScan();
+    var lockTimingOutOperations =
+        new FakeLibraryOperationRepository(libraries) {
+          @Override
+          public boolean tryLockLibraryOperation(UUID libraryOperationId) {
+            throw new PessimisticLockingFailureException("simulated lock timeout");
+          }
+        };
+    var scan =
+        storedOperation(
+            lockTimingOutOperations.storeLibraryOperation(
+                NewLibraryOperation.scan(library.getId())));
     var lockTimingOutRunner =
-        runnerBuilder(mediaFiles)
-            .libraryOperations(
-                new FakeLibraryOperationRepository(libraries) {
-                  @Override
-                  public boolean tryLockLibraryOperation(UUID libraryOperationId) {
-                    throw new PessimisticLockingFailureException("simulated lock timeout");
-                  }
-                })
-            .build();
+        runnerBuilder(mediaFiles).libraryOperations(lockTimingOutOperations).build();
 
     var conclusion =
         lockTimingOutRunner.runFinishingSteps(scan, LibraryOperationConclusion.FINISHED);
@@ -161,18 +171,19 @@ class LibraryOperationFinishingStepsRunnerTest {
   @Test
   @DisplayName(
       "Should conclude the scan failed when the rollback after a failed library folder check fails")
-  void shouldConcludeTheScanFailedWhenTheRollbackAfterAFailedFolderCheckFails() {
-    saveMediaFile("Gone (2020).mkv");
+  void shouldConcludeTheScanFailedWhenTheRollbackAfterAFailedFolderCheckFails() throws IOException {
+    var scan = storeKeptAndGoneScan();
+    var keptPath = FilepathCodec.decode(fileSystem, library.getFilepathUri()).resolve(KEPT);
     var rollbackFailingRunner =
-        runnerBuilder(mediaFiles)
+        sweepingRunnerBuilder(() -> deleteFile(keptPath))
             .transactionManager(new RollbackFailingTransactionManager())
             .build();
 
     var conclusion =
-        rollbackFailingRunner.runFinishingSteps(storeScan(), LibraryOperationConclusion.FINISHED);
+        rollbackFailingRunner.runFinishingSteps(scan, LibraryOperationConclusion.FINISHED);
 
     assertThat(conclusion).isEqualTo(LibraryOperationConclusion.FAILED);
-    assertThat(mediaFiles.findByLibraryId(library.getId())).hasSize(1);
+    assertThat(mediaFiles.findByLibraryId(library.getId())).hasSize(2);
   }
 
   @Test
@@ -262,8 +273,8 @@ class LibraryOperationFinishingStepsRunnerTest {
   }
 
   @Test
-  @DisplayName("Should keep the scan finished when the removal of missing media files fails")
-  void shouldKeepTheScanFinishedWhenTheRemovalOfMissingMediaFilesFails() throws IOException {
+  @DisplayName("Should keep the scan finished when the disk sweep cannot read the media files")
+  void shouldKeepTheScanFinishedWhenTheDiskSweepCannotReadTheMediaFiles() throws IOException {
     var kept = saveMediaFile("Kept (2020).mkv");
     Files.createFile(FilepathCodec.decode(fileSystem, kept.getFilepathUri()));
     saveMediaFile("Gone (2020).mkv");
@@ -281,6 +292,136 @@ class LibraryOperationFinishingStepsRunnerTest {
 
     assertThat(conclusion).isEqualTo(LibraryOperationConclusion.FINISHED);
     assertThat(mediaFiles.findByLibraryId(library.getId())).hasSize(2);
+  }
+
+  @Test
+  @DisplayName("Should keep the scan finished when the removal of missing media files fails")
+  void shouldKeepTheScanFinishedWhenTheRemovalOfMissingMediaFilesFails() throws IOException {
+    var kept = saveMediaFile("Kept (2020).mkv");
+    Files.createFile(FilepathCodec.decode(fileSystem, kept.getFilepathUri()));
+    saveMediaFile("Gone (2020).mkv");
+    var failingRunner =
+        runnerWith(
+            new FakeMediaFileRepository() {
+              @Override
+              public List<MediaFile> findByLibraryId(UUID libraryId) {
+                return mediaFiles.findByLibraryId(libraryId);
+              }
+
+              @Override
+              public List<MediaFile> findAllById(Iterable<UUID> ids) {
+                throw new DataAccessResourceFailureException("simulated connection loss");
+              }
+            });
+    var scan = storeScan();
+
+    var conclusion = failingRunner.runFinishingSteps(scan, LibraryOperationConclusion.FINISHED);
+
+    assertThat(conclusion).isEqualTo(LibraryOperationConclusion.FINISHED);
+    assertThat(mediaFiles.findByLibraryId(library.getId())).hasSize(2);
+  }
+
+  @Test
+  @DisplayName("Should keep the conclusion when the scan has ended and its library folder is empty")
+  void shouldKeepTheConclusionWhenTheScanHasEndedAndItsLibraryFolderIsEmpty() {
+    saveMediaFile("Gone (2020).mkv");
+    var scan = storeScan();
+    libraryOperations.tryEndLibraryOperation(endOf(scan));
+
+    var conclusion = runner.runFinishingSteps(scan, LibraryOperationConclusion.FINISHED);
+
+    assertThat(conclusion).isEqualTo(LibraryOperationConclusion.FINISHED);
+    assertThat(mediaFiles.findByLibraryId(library.getId())).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("Should remove no media file when a stop is stored while the disk sweep runs")
+  void shouldRemoveNoMediaFileWhenAStopIsStoredWhileTheDiskSweepRuns() throws IOException {
+    var scan = storeKeptAndGoneScan();
+    var sweepingRunner =
+        runnerSweepingWith(
+            () ->
+                libraryOperations.stopLibraryOperation(
+                    new LibraryOperationStop(library.getId(), LibraryOperationKind.SCAN)));
+
+    var conclusion = sweepingRunner.runFinishingSteps(scan, LibraryOperationConclusion.FINISHED);
+
+    assertThat(conclusion).isEqualTo(LibraryOperationConclusion.FINISHED);
+    assertThat(mediaFiles.findByLibraryId(library.getId())).hasSize(2);
+  }
+
+  @Test
+  @DisplayName("Should remove no media file when the scan ends while the disk sweep runs")
+  void shouldRemoveNoMediaFileWhenTheScanEndsWhileTheDiskSweepRuns() throws IOException {
+    var scan = storeKeptAndGoneScan();
+    var sweepingRunner =
+        runnerSweepingWith(() -> libraryOperations.tryEndLibraryOperation(endOf(scan)));
+
+    var conclusion = sweepingRunner.runFinishingSteps(scan, LibraryOperationConclusion.FINISHED);
+
+    assertThat(conclusion).isEqualTo(LibraryOperationConclusion.FINISHED);
+    assertThat(mediaFiles.findByLibraryId(library.getId())).hasSize(2);
+  }
+
+  @Test
+  @DisplayName(
+      "Should remove no media file and conclude the scan failed when the library folder empties"
+          + " while the disk sweep runs")
+  void shouldRemoveNoMediaFileAndConcludeTheScanFailedWhenTheLibraryFolderEmptiesWhileTheSweepRuns()
+      throws IOException {
+    var scan = storeKeptAndGoneScan();
+    var keptPath = FilepathCodec.decode(fileSystem, library.getFilepathUri()).resolve(KEPT);
+    var sweepingRunner = runnerSweepingWith(() -> deleteFile(keptPath));
+
+    var conclusion = sweepingRunner.runFinishingSteps(scan, LibraryOperationConclusion.FINISHED);
+
+    assertThat(conclusion).isEqualTo(LibraryOperationConclusion.FAILED);
+    assertThat(mediaFiles.findByLibraryId(library.getId())).hasSize(2);
+  }
+
+  private LibraryOperation storeKeptAndGoneScan() throws IOException {
+    var kept = saveMediaFile(KEPT);
+    Files.createFile(FilepathCodec.decode(fileSystem, kept.getFilepathUri()));
+    saveMediaFile("Gone (2020).mkv");
+    return storeScan();
+  }
+
+  private LibraryOperationFinishingStepsRunner runnerSweepingWith(Runnable change) {
+    return sweepingRunnerBuilder(change).build();
+  }
+
+  // The change runs once, as the disk sweep checks its first media file.
+  private LibraryOperationFinishingStepsRunner.LibraryOperationFinishingStepsRunnerBuilder
+      sweepingRunnerBuilder(Runnable change) {
+    var changed = new AtomicBoolean();
+    var sweepFileSystem =
+        ThrowingFileSystemWrapper.runningBeforeEachAccessCheck(
+            fileSystem,
+            _ -> {
+              if (changed.compareAndSet(false, true)) {
+                change.run();
+              }
+            });
+    return runnerBuilder(mediaFiles)
+        .orphanedMediaFileCleanupService(
+            new OrphanedMediaFileCleanupService(
+                mediaFiles, movieService, sweepFileSystem, _ -> {}));
+  }
+
+  private static void deleteFile(Path path) {
+    try {
+      Files.delete(path);
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
+  private static LibraryOperationEnd endOf(LibraryOperation operation) {
+    return LibraryOperationEnd.builder()
+        .libraryOperationId(operation.id())
+        .conclusion(LibraryOperationConclusion.FINISHED)
+        .endedAt(Instant.now())
+        .build();
   }
 
   private LibraryOperationFinishingStepsRunner runnerWith(MediaFileRepository mediaFileRepository) {
@@ -336,14 +477,24 @@ class LibraryOperationFinishingStepsRunnerTest {
     return ((StoreOutcome.Stored) outcome).libraryOperation();
   }
 
+  // A file URI, as production stores, rather than the in-memory file system's own URI: the disk
+  // sweep's file system wrapper sees only the paths it builds itself.
   private MediaFile saveMediaFile(String filename) {
     var path = FilepathCodec.decode(fileSystem, library.getFilepathUri()).resolve(filename);
     return mediaFiles.save(
         MediaFile.builder()
             .libraryId(library.getId())
-            .filepathUri(FilepathCodec.encode(path))
+            .filepathUri(fileUri(path))
             .filename(filename)
             .status(MediaFileStatus.MATCHED)
             .build());
+  }
+
+  private static String fileUri(Path path) {
+    try {
+      return new URI("file", "", path.toString(), null, null).toString();
+    } catch (URISyntaxException e) {
+      throw new IllegalArgumentException(e);
+    }
   }
 }

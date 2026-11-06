@@ -64,6 +64,7 @@ import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerSessionAccepted;
 import com.streamarr.transcode.v1.WorkerVerifiedVideoEncoder;
+import com.streamarr.transcode.v1.YieldToSeekCommand;
 import io.grpc.MethodDescriptor.MethodType;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -1461,6 +1462,69 @@ class TranscodeWorkerContractTest {
         .containsExactly(
             tuple("output_sample_rate_hz", 8, Type.UINT32, true),
             tuple("output_bit_depth", 9, Type.UINT32, true));
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry every job attempt to pause and the hold limit when the server sends a seek's yield command")
+  void shouldCarryEveryJobAttemptToPauseAndTheHoldLimitWhenTheServerSendsSeeksYieldCommand()
+      throws Exception {
+    var steady = uuid(UUID.randomUUID());
+    var otherSteady = uuid(UUID.randomUUID());
+    var holdLimit = Duration.newBuilder().setSeconds(6).build();
+    var command =
+        EstablishWorkerSessionResponse.newBuilder()
+            .setYieldToSeek(
+                YieldToSeekCommand.newBuilder()
+                    .setTarget(workerIdentity())
+                    .addJobAttemptIds(steady)
+                    .addJobAttemptIds(otherSteady)
+                    .setHoldLimit(holdLimit))
+            .build();
+
+    var parsed = EstablishWorkerSessionResponse.parseFrom(command.toByteArray());
+
+    assertThat(parsed.getCommandCase())
+        .isEqualTo(EstablishWorkerSessionResponse.CommandCase.YIELD_TO_SEEK);
+    assertThat(parsed.getYieldToSeek().getTarget()).isEqualTo(workerIdentity());
+    assertThat(parsed.getYieldToSeek().getJobAttemptIdsList()).containsExactly(steady, otherSteady);
+    assertThat(parsed.getYieldToSeek().getHoldLimit()).isEqualTo(holdLimit);
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry an empty list that resumes every paused job attempt when the seek's first segment is delivered")
+  void shouldCarryAnEmptyListThatResumesEveryPausedJobAttemptWhenTheSeeksFirstSegmentIsDelivered()
+      throws Exception {
+    var ending = YieldToSeekCommand.newBuilder().setTarget(workerIdentity()).build();
+
+    var parsed = YieldToSeekCommand.parseFrom(ending.toByteArray());
+
+    assertThat(parsed.getJobAttemptIdsList()).isEmpty();
+    assertThat(parsed.hasHoldLimit()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the field numbers and types that workers build against when publishing the yield command")
+  void shouldKeepTheFieldNumbersAndTypesThatWorkersBuildAgainstWhenPublishingTheYieldCommand() {
+    var command = EstablishWorkerSessionResponse.getDescriptor().findFieldByName("yield_to_seek");
+    var yieldToSeek = YieldToSeekCommand.getDescriptor();
+
+    assertThat(command.getNumber()).isEqualTo(6);
+    assertThat(command.getContainingOneof().getName()).isEqualTo("command");
+    assertThat(command.getMessageType()).isEqualTo(yieldToSeek);
+    assertThat(
+            Stream.of("target", "job_attempt_ids", "hold_limit").map(yieldToSeek::findFieldByName))
+        .extracting(
+            FieldDescriptor::getName,
+            FieldDescriptor::getNumber,
+            FieldDescriptor::isRepeated,
+            field -> field.getMessageType().getFullName())
+        .containsExactly(
+            tuple("target", 1, false, WorkerIdentity.getDescriptor().getFullName()),
+            tuple("job_attempt_ids", 2, true, Uuid.getDescriptor().getFullName()),
+            tuple("hold_limit", 3, false, Duration.getDescriptor().getFullName()));
   }
 
   private AudioDecision.Builder audioEncode() {

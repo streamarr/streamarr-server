@@ -29,6 +29,7 @@ import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.BitstreamRewrite;
+import com.streamarr.server.domain.streaming.CapabilityEntryDelivery;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecisionReason;
@@ -36,6 +37,7 @@ import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionOutput;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
+import com.streamarr.server.domain.streaming.DynamicRangeChoice;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
@@ -52,6 +54,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
+import com.streamarr.server.domain.streaming.VideoCapabilityEntryRefusal;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
@@ -106,6 +109,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -822,6 +826,43 @@ class StreamingResolverTest {
     assertThat(created.read(CREATED_PLAYBACK + ".formatChange", Object.class)).isNull();
   }
 
+  // ADR 0013: a stream session request carries an optional HDR choice, HDR or SDR.
+  @ParameterizedTest
+  @EnumSource(DynamicRangeChoice.class)
+  @DisplayName(
+      "Should pass the viewer's HDR choice to the playback service when the options name one")
+  void shouldPassTheViewersHdrChoiceToThePlaybackServiceWhenTheOptionsNameOne(
+      DynamicRangeChoice choice) {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+
+    dgsQueryExecutor.executeAndGetDocumentContext(
+        """
+        mutation {
+          createPlaybackSession(
+            input: {
+              mediaFileId: "%s", options: {quality: HIGH_720P, dynamicRange: %s}, capabilities: %s
+            }
+          ) {
+            playbackSession { id }
+            userErrors { __typename }
+          }
+        }
+        """
+            .formatted(UUID.randomUUID(), choice, CAPABILITIES));
+
+    assertThat(STUB_SERVICE.getLastReceivedOptions().dynamicRange()).isEqualTo(choice);
+  }
+
+  @Test
+  @DisplayName("Should pass no HDR choice to the playback service when the options name none")
+  void shouldPassNoHdrChoiceToThePlaybackServiceWhenTheOptionsNameNone() {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+
+    startPlaybackReadingChoices(VideoQuality.HIGH_720P);
+
+    assertThat(STUB_SERVICE.getLastReceivedOptions().dynamicRange()).isNull();
+  }
+
   private DocumentContext startPlaybackReadingChoices(VideoQuality quality) {
     return dgsQueryExecutor.executeAndGetDocumentContext(
         """
@@ -1122,6 +1163,52 @@ class StreamingResolverTest {
         .containsEntry("codec", "aac")
         .containsEntry("channels", 2)
         .containsEntry("bitrate", 128_000);
+  }
+
+  @Test
+  @DisplayName(
+      "Should expose what each video capability entry refused when a format attempt's decision"
+          + " lists it")
+  void shouldExposeWhatEachVideoCapabilityEntryRefusedWhenAFormatAttemptsDecisionListsIt() {
+    STUB_SERVICE.setNextResult(
+        buildSessionDeciding(
+            UUID.randomUUID(),
+            remuxDecisionBuilder()
+                .videoCapabilityEntryRefusals(
+                    List.of(
+                        new VideoCapabilityEntryRefusal(
+                            CapabilityEntryDelivery.DIRECT_PLAY,
+                            0,
+                            List.of(
+                                DecisionReason.VIDEO_CODEC_LEVEL_NOT_DECLARED,
+                                DecisionReason.VIDEO_PICTURE_SIZE_NOT_DECLARED)),
+                        new VideoCapabilityEntryRefusal(CapabilityEntryDelivery.HLS, 2, List.of())))
+                .build()));
+    var playbackId = startPlayback(VideoQuality.AUTO).read(CREATED_PLAYBACK + ".id", String.class);
+
+    var result =
+        dgsQueryExecutor.executeAndGetDocumentContext(
+            """
+            query {
+              playbackSession(id: "%s") {
+                decisions { videoCapabilityEntryRefusals { delivery entryPosition reasons } }
+              }
+            }
+            """
+                .formatted(playbackId));
+
+    assertThat(
+            result.read(
+                "data.playbackSession.decisions[0].videoCapabilityEntryRefusals", List.class))
+        .containsExactly(
+            Map.of(
+                "delivery",
+                "DIRECT_PLAY",
+                "entryPosition",
+                0,
+                "reasons",
+                List.of("VIDEO_CODEC_LEVEL_NOT_DECLARED", "VIDEO_PICTURE_SIZE_NOT_DECLARED")),
+            Map.of("delivery", "HLS", "entryPosition", 2, "reasons", List.of()));
   }
 
   @Test
@@ -1833,6 +1920,7 @@ class StreamingResolverTest {
     @Bean
     PlaybackSessionService playbackSessionService() {
       return PlaybackSessionService.builder()
+          .eventPublisher(_ -> {})
           .streamingService(STUB_SERVICE)
           .authorityGate(new FakePlaybackAuthorityGate())
           .executor(REPLACEMENT_TASKS::add)

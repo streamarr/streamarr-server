@@ -13,11 +13,13 @@ import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.ProbeCapacity;
+import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
+import com.streamarr.server.services.streaming.events.MediaSegmentStoredEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.transcode.v1.BackgroundProbeCapacityControl;
@@ -792,6 +794,13 @@ final class LiveWorkerConnectionRegistry {
         .filter(SegmentPublication.PUBLISHED::equals)
         .ifPresent(
             _ -> capacityMeters.segmentPublished(authenticatedWorkerId, connection, metadata));
+    outcome
+        .filter(SegmentPublication.PUBLISHED::equals)
+        .filter(_ -> SegmentNames.indexOf(metadata.getSegmentName()).isPresent())
+        .ifPresent(
+            _ ->
+                eventPublisher.publishEvent(
+                    new MediaSegmentStoredEvent(fromProto(metadata.getStreamSessionId()))));
     return outcome;
   }
 

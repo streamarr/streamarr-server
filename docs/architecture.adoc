@@ -38,6 +38,10 @@ See https://github.com/streamarr/streamarr-adr/blob/main/adr/0031-transaction-sc
 
 PostgreSQL with UUID primary keys, custom ENUMs, and audit columns (`created_on`, `modified_on`, `created_by`, `modified_by`) on all entities.
 
+Every pooled connection bounds two waits.
+A statement that waits on a lock for longer than `DATABASE_LOCK_TIMEOUT`, `30s` by default, fails; a transaction that needs a shorter wait sets its own `lock_timeout`.
+PostgreSQL ends a session whose transaction issues no statement for `DATABASE_IDLE_IN_TRANSACTION_TIMEOUT`, `60s` by default, so a transaction left open releases its locks and the pool replaces its connection.
+
 Entity hierarchy uses JPA JOINED inheritance:
 
 ----
@@ -336,6 +340,9 @@ For an MP4 or MOV file, version 7 also adds the sample entry that the file store
 Direct play reads both facts: QuickTime's major brand makes the source container MOV, and every other major brand, or none, makes it MP4.
 The worker contract lets a job that encodes audio name its output channel layout, so the worker encodes with that layout instead of only a channel count; such a job can also name its output sample rate and bit depth, which otherwise follow ADR 0043's rules for the codec and the source.
 The server names the output layout of every audio encode, and sets no sample rate or bit depth yet.
+Version 8 adds the maximum frame rate of the chosen video stream: the highest rate that its presentation times show over 1 to 24 consecutive frame intervals, or the base rate its declared rates agree on when no time proves a faster one, or none when the worker cannot measure it or the stream is interlaced.
+For a Dolby Vision stream, version 8 also adds the enhancement layer that the RPUs' NLQ parameters describe, none, MEL or FEL, and MaxCLL and MaxFALL from the first RPU's level 6 block.
+The server reads none of the version 8 facts yet.
 Version 2 is unused.
 The server requests version 7.
 After the version rises, the server scans each library that holds a result of an earlier version at startup.
@@ -352,6 +359,11 @@ A profile 8 stream with compatibility identifier 6 counts as profile 8.1.
 A client that declares the base but not the Dolby Vision receives the copy with Dolby Vision stripped, and so does every client that declares the base of an unknown profile, of a stream without a known level, or of profile 6 or dual-track profile 7.
 When no connected worker lists every rewrite that the copy needs, the client receives an encode.
 Dolby Vision without a compatible base still plays as an encode.
+
+The worker contract lets an encode name its output bit depth and chroma subsampling, and lets a PQ encode carry the HDR10 static metadata that the encoder writes (https://github.com/streamarr/streamarr-server/issues/397[#397]).
+Each verified encoder lists the outputs beyond 8-bit 4:2:0 SDR that passed the worker's own test encode: 10-bit, PQ, HLG, and Dolby Vision profile 5 or 10.0 reshaped into PQ.
+Every encode sends 8 bits and 4:2:0 until the server chooses 10-bit and HDR encodes.
+A stream session request can carry the viewer's HDR choice, and only a fixed quality takes it: SDR plays an HDR source as an SDR encode, and the decision names the choice (https://github.com/streamarr/streamarr-adr/blob/main/adr/0013-stream-decision-architecture.adoc#hdr-choice[ADR 0013]).
 
 https://github.com/streamarr/streamarr-adr/blob/main/adr/0033-transcode-worker-is-a-separate-service.adoc[ADR 0033] requires workers for probing, transcoding, and remuxing.
 Each worker opens an outbound, long-lived gRPC `WorkerSession` over the server's single plaintext listener.

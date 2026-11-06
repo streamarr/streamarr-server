@@ -29,6 +29,13 @@ public class FakeTaskScheduler implements TaskScheduler {
     return tasks.stream().filter(ScheduledTask::isPending).count();
   }
 
+  /**
+   * When each task that has neither run nor been cancelled is due, in the order it was scheduled.
+   */
+  public List<Instant> pendingStartTimes() {
+    return tasks.stream().filter(ScheduledTask::isPending).map(task -> task.startTime).toList();
+  }
+
   @Override
   public ScheduledFuture<?> schedule(Runnable task, Instant startTime) {
     var scheduled = new ScheduledTask(task, startTime);

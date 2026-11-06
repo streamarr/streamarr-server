@@ -31,6 +31,11 @@ public final class Fmp4Fixture {
     return new String(media, 4, 4, StandardCharsets.US_ASCII);
   }
 
+  /** The type of the video track's sample entry, such as {@code avc1} or {@code hvc1}. */
+  public static String videoSampleEntryType(byte[] initialization) {
+    return videoSampleEntry(initialization).type();
+  }
+
   /** The AVC codec parameter carried by the video track's initialization sample entry. */
   public static String avcCodecString(byte[] initialization) {
     var track =

@@ -25,8 +25,12 @@ public final class WorkerVerifiedEncoderFixture {
     return encoder("av1", "av1_nvenc", EncoderBackend.Kind.HARDWARE).build();
   }
 
+  public static WorkerVerifiedEncoder hevcNvenc() {
+    return encoder("hevc", "hevc_nvenc", EncoderBackend.Kind.HARDWARE).build();
+  }
+
   public static WorkerVerifiedEncoder libx265() {
-    return encoder("hevc", "libx265", EncoderBackend.Kind.SOFTWARE).build();
+    return encoder("hevc", "libx265", EncoderBackend.Kind.SOFTWARE).keyframeVerified(true).build();
   }
 
   public static WorkerVerifiedEncoder libsvtav1() {

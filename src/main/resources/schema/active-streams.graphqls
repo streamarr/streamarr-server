@@ -1,0 +1,80 @@
+extend type Query {
+    """
+    Every stream that plays or prepares on this server instance now, one per playback session, in no fixed
+    order. Ended and failed playback sessions are not listed; the server keeps no history of them. Requires a
+    ServerAdmin. Every other caller gets FORBIDDEN, and so does a ServerAdmin's device-bound session.
+    """
+    activeStreams: [ActiveStream!]!
+}
+
+extend type Subscription {
+    """
+    An active stream started, changed its format attempt, playing state, position or produced range, or ended.
+    Delivers the stream as the server reads it after the change, with activeStream null once it ended or failed.
+    Requires a ServerAdmin. Every other caller gets FORBIDDEN, and so does a ServerAdmin's device-bound session.
+
+    To build current state, subscribe first, then query activeStreams, and apply each change by
+    playbackSessionId. One stream's changes arrive in the order they happened. A client may miss an
+    intermediate state, but the last change it receives for a stream carries that stream's latest state.
+
+    A change in a stream's producedRange alone fires a change for that stream at most once every 5 seconds, and
+    only when the range differs by at least one media segment from the range that the stream's last change
+    carried. Every other change carries the stream's current producedRange.
+    """
+    activeStreamsChanged: ActiveStreamChange
+}
+
+"One change to the active streams."
+type ActiveStreamChange {
+    playbackSessionId: ID!
+    "The stream after the change, or null once it ended or failed."
+    activeStream: ActiveStream
+}
+
+"One playback session that plays or prepares a stream now."
+type ActiveStream {
+    playbackSessionId: ID!
+    "The viewer's Profile."
+    profile: ActiveStreamProfile!
+    "The device name that the viewer's sign-in gave, such as the app and device. Null when it gave none."
+    deviceName: String
+    mediaFileId: ID!
+    """
+    The movie or episode that the stream plays. Null for a media file without a matched movie or episode.
+    Every watchStatus, watchProgress, lastWatchedAt and languagePreference under it, on its season and series
+    too, describes the caller's selected Profile, not the viewer's, and fails with PROFILE_REQUIRED when the
+    caller has no selected Profile.
+    """
+    media: ActiveStreamMedia
+    "Seconds into the media title, as the client last reported. Null while the format attempt prepares."
+    positionSeconds: Int
+    "Whether the client last reported playing or paused. Null while the format attempt prepares."
+    state: PlaybackState
+    """
+    How the current format attempt delivers the media title, including its output bitrates and its reasons.
+    Null while the format attempt prepares.
+    """
+    decision: PlaybackDecision
+    """
+    The stretch of the media title that the current format attempt has produced as media segments, around the
+    stream's current position. Null for direct play, while the format attempt prepares, and before any segment
+    around the position exists.
+
+    The range runs from the start of the first to the end of the last media segment of the unbroken run of
+    produced segments that holds positionSeconds. After a seek it shows the run at the new position, not the
+    furthest segment ever produced. When the stream has several variants, the range describes the variant whose
+    media segment the player requested last. Before the player requests one, it describes the variant that the
+    multivariant playlist lists first.
+    """
+    producedRange: MediaTimeRange
+    "The worker connection that runs each running job of the stream, by its worker session id."
+    workers: [String!]!
+}
+
+union ActiveStreamMedia = Movie | Episode
+
+type ActiveStreamProfile {
+    id: ID!
+    "Null when the Profile was deleted while it played."
+    name: String
+}

@@ -28,6 +28,11 @@ public enum DecisionReason {
   VIDEO_FRAME_RATE_NOT_DECLARED,
   /** The closest entry does not declare the source's compatible base: SDR, PQ or HLG. */
   DYNAMIC_RANGE_NOT_DECLARED,
+  /**
+   * The viewer chose SDR in a fixed quality, and a copy would keep the source's HDR range, so the
+   * server encodes SDR (ADR 0013).
+   */
+  VIEWER_CHOSE_SDR,
   /** The closest entry does not declare the source's Dolby Vision profile and level. */
   DOLBY_VISION_NOT_DECLARED,
   /**

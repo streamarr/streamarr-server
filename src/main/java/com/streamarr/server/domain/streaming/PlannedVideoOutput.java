@@ -33,13 +33,16 @@ public sealed interface PlannedVideoOutput {
    * masteringDisplay} and {@code contentLightLevel} are the static HDR metadata that the worker
    * writes into the copy's hvcC record. Only a copy with a PQ output holds them, and only the
    * values that the probe stored (ADR 0036). {@code dolbyVisionOutput} is present only on a copy
-   * that keeps Dolby Vision and that the playlist describes as Dolby Vision (ADR 0013).
+   * that keeps Dolby Vision and that the playlist describes as Dolby Vision (ADR 0013). {@code
+   * bitDepth} and {@code chromaSubsampling} are the source's, as the probe stored them.
    */
   @Builder(toBuilder = true)
   record StreamCopy(
       @NonNull VideoDynamicRange dynamicRange,
       @NonNull Optional<VideoCodecProfile> codecProfile,
       @NonNull OptionalInt codecLevel,
+      @NonNull OptionalInt bitDepth,
+      @NonNull Optional<ChromaSubsampling> chromaSubsampling,
       @NonNull List<BitstreamRewrite> bitstreamRewrites,
       @NonNull Optional<MasteringDisplayColorVolume> masteringDisplay,
       @NonNull Optional<ContentLightLevel> contentLightLevel,
@@ -72,6 +75,8 @@ public sealed interface PlannedVideoOutput {
               .codecProfile(properties.flatMap(VideoStreamProperties::codecProfile))
               .codecLevel(
                   properties.map(VideoStreamProperties::codecLevel).orElseGet(OptionalInt::empty))
+              .bitDepth(source.bitDepth())
+              .chromaSubsampling(source.chromaSubsampling())
               .bitstreamRewrites(bitstreamRewrites);
       if (range.compatibleBase() == CompatibleBase.PQ) {
         copy.masteringDisplay(source.masteringDisplay())
@@ -114,24 +119,51 @@ public sealed interface PlannedVideoOutput {
     // Lombok builder defaults — its generated setters assign them
     @SuppressWarnings({"java:S1068", "java:S9438"})
     public static class StreamCopyBuilder {
+      private OptionalInt bitDepth = OptionalInt.empty();
+      private Optional<ChromaSubsampling> chromaSubsampling = Optional.empty();
       private Optional<MasteringDisplayColorVolume> masteringDisplay = Optional.empty();
       private Optional<ContentLightLevel> contentLightLevel = Optional.empty();
       private Optional<DolbyVisionOutput> dolbyVisionOutput = Optional.empty();
     }
   }
 
-  /** An encode, in the codec profile that it forces. */
+  /**
+   * An encode, in the codec profile that it forces, with the bit depth, 8 or 10, and the chroma
+   * subsampling that it writes. Every encode writes 4:2:0, and an H.264 encode is always 8-bit SDR,
+   * because almost no device decodes 10-bit H.264 (#397).
+   */
+  @Builder
   record Encode(
-      @NonNull Optional<EncodeCodecProfile> codecProfile, @NonNull VideoDynamicRange dynamicRange)
+      @NonNull Optional<EncodeCodecProfile> codecProfile,
+      @NonNull VideoDynamicRange dynamicRange,
+      int bitDepth,
+      @NonNull ChromaSubsampling chromaSubsampling)
       implements PlannedVideoOutput {
 
     public Encode {
       requireSpecified(dynamicRange);
+      if (bitDepth != 8 && bitDepth != 10) {
+        throw new IllegalArgumentException("A planned encode's bit depth must be 8 or 10");
+      }
+
+      if (chromaSubsampling != ChromaSubsampling.CHROMA_420) {
+        throw new IllegalArgumentException("A planned encode must write 4:2:0");
+      }
+
+      if (codecProfile.filter(EncodeCodecProfile.H264_HIGH::equals).isPresent()
+          && (bitDepth != 8 || dynamicRange.compatibleBase() != CompatibleBase.SDR)) {
+        throw new IllegalArgumentException("A planned H.264 encode must be 8-bit SDR");
+      }
     }
 
-    /** Every encode is SDR until the server encodes HDR (#397). */
+    /** Every encode is 8-bit 4:2:0 SDR until the server encodes 10-bit and HDR (#397). */
     public static Encode sdr(@NonNull Optional<EncodeCodecProfile> codecProfile) {
-      return new Encode(codecProfile, VideoDynamicRange.SDR);
+      return Encode.builder()
+          .codecProfile(codecProfile)
+          .dynamicRange(VideoDynamicRange.SDR)
+          .bitDepth(8)
+          .chromaSubsampling(ChromaSubsampling.CHROMA_420)
+          .build();
     }
   }
 }

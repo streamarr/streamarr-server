@@ -21,6 +21,7 @@ import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.transcode.v1.AudioChannelLayout;
+import com.streamarr.transcode.v1.ChromaSubsampling;
 import com.streamarr.transcode.v1.ContainerFormat;
 import com.streamarr.transcode.v1.Deinterlace;
 import com.streamarr.transcode.v1.DeinterlaceOutput;
@@ -92,7 +93,10 @@ final class RemoteVariantJobMapper {
                         .map(VideoPlaybackFacts::dynamicRange)
                         .orElse(
                             com.streamarr.server.domain.streaming.VideoDynamicRange.UNSPECIFIED)))
-            .setOutputDynamicRange(RemoteDynamicRangeMapper.toProto(planned.dynamicRange()));
+            .setOutputDynamicRange(RemoteDynamicRangeMapper.toProto(planned.dynamicRange()))
+            .setOutputBitDepth(planned.bitDepth())
+            // A planned encode refuses every chroma subsampling but 4:2:0 (#397).
+            .setOutputChromaSubsampling(ChromaSubsampling.CHROMA_SUBSAMPLING_420);
     source.ifPresent(
         facts ->
             video
@@ -407,6 +411,7 @@ final class RemoteVariantJobMapper {
   private static VideoCodecFamily codecFamily(EncodeCodecProfile profile) {
     return switch (profile) {
       case H264_HIGH -> VideoCodecFamily.VIDEO_CODEC_FAMILY_H264;
+      case HEVC_MAIN -> VideoCodecFamily.VIDEO_CODEC_FAMILY_HEVC;
       case AV1_MAIN -> VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1;
     };
   }
@@ -414,6 +419,7 @@ final class RemoteVariantJobMapper {
   private static VideoCodecProfile codecProfile(EncodeCodecProfile profile) {
     return switch (profile) {
       case H264_HIGH -> VideoCodecProfile.VIDEO_CODEC_PROFILE_H264_HIGH;
+      case HEVC_MAIN -> VideoCodecProfile.VIDEO_CODEC_PROFILE_HEVC_MAIN;
       case AV1_MAIN -> VideoCodecProfile.VIDEO_CODEC_PROFILE_AV1_MAIN;
     };
   }

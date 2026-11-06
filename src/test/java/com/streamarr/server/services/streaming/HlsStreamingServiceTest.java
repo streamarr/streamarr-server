@@ -20,8 +20,10 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest;
 import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.av1Nvenc;
+import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.hevcNvenc;
 import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libsvtav1;
 import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libx264;
+import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libx265;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static com.streamarr.server.support.OutcomeTestSupport.rejectionOf;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,6 +59,7 @@ import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.DolbyVisionOutput;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
+import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
@@ -276,7 +279,7 @@ class HlsStreamingServiceTest {
     var file = seedMediaFile();
     var command =
         createStreamSessionCommandBuilder(file.getId(), UUID.randomUUID())
-            .capabilityDeclaration(declarationBuilderFor(HEVC).build())
+            .capabilityDeclaration(directPlayOnlyHevcDeclaration())
             .build();
 
     var outcome = service.createSession(command);
@@ -424,8 +427,7 @@ class HlsStreamingServiceTest {
   void shouldNotCountAMissingEncoderWhenTheDeclarationAcceptsNoCodecFamilyThatTheServerEncodes() {
     connectWorkerEncoding(Set.of());
 
-    var outcome =
-        service.createSession(createCommandDeclaring(declarationBuilderFor(HEVC).build()));
+    var outcome = service.createSession(createCommandDeclaring(directPlayOnlyHevcDeclaration()));
 
     assertThat(outcome)
         .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
@@ -609,7 +611,7 @@ class HlsStreamingServiceTest {
     probeResults.setDefaultProbe(defaultProbeBuilder().width(1).height(3).build());
 
     var outcome =
-        service.createSession(createCommandDeclaring(declarationBuilderFor(HEVC).build()));
+        service.createSession(createCommandDeclaring(hevcMain10OnlyDeclarationBuilder().build()));
 
     assertThat(outcome)
         .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
@@ -3913,8 +3915,8 @@ class HlsStreamingServiceTest {
   }
 
   // The 49 Mb/s copy exceeds the maximum bitrate beside every audio step, and its 3840x1920
-  // picture exceeds the 720p tier and each maximum. The declaration takes the HEVC copy but no
-  // H.264 or AV1 encode, so the server has nothing to encode to.
+  // picture exceeds the 720p tier and each maximum. The declaration takes the HEVC copy but lists
+  // only HEVC Main 10, which no encode forces, so the server has nothing to encode to.
   @ParameterizedTest(name = "{0}")
   @MethodSource("viewerLimitsThatTheWideUhdCopyExceeds")
   @DisplayName(
@@ -3924,7 +3926,8 @@ class HlsStreamingServiceTest {
       StreamingOptions options) {
     probeResults.setDefaultProbe(wideUhdHevcProbe().build());
 
-    var session = accepted(createSessionDeclaring(declarationBuilderFor(HEVC).build(), options));
+    var session =
+        accepted(createSessionDeclaring(hevcMain10OnlyDeclarationBuilder().build(), options));
 
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(session.getTranscodeDecision().audioDecision())
@@ -4148,7 +4151,7 @@ class HlsStreamingServiceTest {
     return Stream.of(
         NothingToEncodeTo.builder()
             .declaredVideo(List.of(HEVC))
-            .verifiedFamilies(Set.of("h264", "hevc", "av1"))
+            .verifiedFamilies(Set.of("h264", "av1"))
             .build(),
         NothingToEncodeTo.builder()
             .declaredVideo(List.of(HEVC, AV1))
@@ -4243,8 +4246,8 @@ class HlsStreamingServiceTest {
   }
 
   // A 3840x1920 HEVC source with 4.5 Mb/s of video beside a 384 kb/s AAC 5.1 track, for a client
-  // that accepts the HEVC copy and AAC up to 5.1 but no encode of the video, under Auto's 1080-line
-  // maximum and the given maximum bitrate.
+  // that accepts the HEVC copy and AAC up to 5.1 but no encode of the video, because it lists only
+  // HEVC Main 10, under Auto's 1080-line maximum and the given maximum bitrate.
   private StreamSession createCopyOverThePictureLimitsWithAac51(int maxBitrate) {
     var probe = wideUhdHevcProbe().bitrate(5_000_000L);
     var streams =
@@ -4259,7 +4262,7 @@ class HlsStreamingServiceTest {
                 .build());
     probeResults.setDefaultOutcome(ProbeFixture.completeProbe(probe.streams(streams).build()));
     var declaration =
-        declarationBuilderFor(HEVC)
+        hevcMain10OnlyDeclarationBuilder()
             .audio(List.of(aacEntryBuilder().maxChannels(6).build()))
             .build();
     var options =
@@ -4476,6 +4479,32 @@ class HlsStreamingServiceTest {
 
   // A 3840x1920 HEVC source at 49 Mb/s whose keyframes open every segment interval, beside a
   // copyable stereo AAC track.
+  // An HEVC entry that lists only HEVC Main 10. No encode forces Main 10, so the entry takes an
+  // HEVC
+  // copy whose probe names no codec profile but no encode.
+  private static ClientCapabilityDeclaration.ClientCapabilityDeclarationBuilder
+      hevcMain10OnlyDeclarationBuilder() {
+    return defaultDeclarationBuilder()
+        .video(
+            List.of(
+                hevcEntryBuilder()
+                    .codecProfiles(
+                        List.of(
+                            VideoCodecProfileCapability.builder()
+                                .profile(VideoCodecProfile.HEVC_MAIN_10)
+                                .maxLevel(51)
+                                .maxTier(Optional.of(VideoCodecTier.MAIN))
+                                .build()))
+                    .build()));
+  }
+
+  // An HEVC entry that applies only to direct play, so no HLS copy or encode fits it.
+  private static ClientCapabilityDeclaration directPlayOnlyHevcDeclaration() {
+    return defaultDeclarationBuilder()
+        .video(List.of(hevcEntryBuilder().hls(false).build()))
+        .build();
+  }
+
   private static MediaProbe.MediaProbeBuilder wideUhdHevcProbe() {
     return defaultProbeBuilder()
         .videoCodec("hevc")
@@ -5012,6 +5041,7 @@ class HlsStreamingServiceTest {
 
   private PlaybackSessionService logicalPlayback() {
     return PlaybackSessionService.builder()
+        .eventPublisher(_ -> {})
         .streamingService(service)
         .authorityGate(authorityGate)
         .executor(Runnable::run)
@@ -5280,6 +5310,56 @@ class HlsStreamingServiceTest {
         .singleElement()
         .extracting(request -> request.transcodeDecision().videoCodecFamily())
         .isEqualTo(expectedCodecFamily);
+  }
+
+  // libx265 costs more CPU than libx264, so only a hardware HEVC encoder moves a client that
+  // declares HEVC and H.264 off H.264 (ADR 0009). The worker advertises its encoders.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("hevcWorkerEncodersAndExpectedEncode")
+  @DisplayName(
+      "Should encode HEVC for a client that declares HEVC and H.264 only when a worker advertises a"
+          + " hardware HEVC encoder")
+  void
+      shouldEncodeHevcForAClientThatDeclaresHevcAndH264OnlyWhenAWorkerAdvertisesAHardwareHevcEncoder(
+          String scenario, List<WorkerVerifiedEncoder> encoders, String expectedCodecString) {
+    transcodeExecutor.setTargetEncoders(ExecutionTargetId.LOCAL, encoders);
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("mpeg2video").build());
+
+    createSession(seedMediaFile().getId(), declarationBuilderFor(HEVC, H264).build());
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(
+            TranscodeRequest::variantLabel,
+            request -> request.videoEncodeDecision().orElseThrow().codecString())
+        .containsExactly("480p", expectedCodecString);
+  }
+
+  // The first variant, 854x480 at 23.976 fps, needs H.265 level 3 and H.264 level 3.
+  static Stream<Arguments> hevcWorkerEncodersAndExpectedEncode() {
+    return Stream.of(
+        Arguments.of("hevc_nvenc and libx264", List.of(hevcNvenc(), libx264()), "hvc1.1.6.L90.90"),
+        Arguments.of("libx265 and libx264", List.of(libx265(), libx264()), "avc1.64001E"));
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode HEVC with libx265 when the client declares only HEVC and cannot play the"
+          + " source")
+  void shouldEncodeHevcWithLibx265WhenTheClientDeclaresOnlyHevcAndCannotPlayTheSource() {
+    transcodeExecutor.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(libx264(), libx265()));
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("h264").build());
+
+    var session = createSession(seedMediaFile().getId(), declarationBuilderFor(HEVC).build());
+
+    assertThat(session.getTranscodeDecision().encodeCodecProfile())
+        .contains(EncodeCodecProfile.HEVC_MAIN);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(
+            TranscodeRequest::variantLabel,
+            request -> request.videoEncodeDecision().orElseThrow().codecString())
+        .containsExactly("480p", "hvc1.1.6.L90.90");
   }
 
   @Test

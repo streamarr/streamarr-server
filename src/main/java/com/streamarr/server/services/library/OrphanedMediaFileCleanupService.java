@@ -10,10 +10,12 @@ import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Gatherers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -24,20 +26,35 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class OrphanedMediaFileCleanupService {
 
+  // PostgreSQL's protocol binds at most 65,535 parameters to one query.
+  private static final int MEDIA_FILE_IDS_PER_QUERY = 10_000;
+
   private final MediaFileRepository mediaFileRepository;
   private final MovieService movieService;
   private final FileSystem fileSystem;
   private final ApplicationEventPublisher events;
 
   /**
-   * Removes the library's media files that no longer exist on disk, in the caller's transaction,
-   * and deletes each movie that has no media file left. A media file whose path cannot be decoded
-   * counts as missing.
+   * Returns the ids of the library's media files that no longer exist on disk. A media file whose
+   * path cannot be decoded counts as missing.
    */
-  public void cleanupOrphanedFiles(Library library) {
-    var mediaFiles = mediaFileRepository.findByLibraryId(library.getId());
+  public List<UUID> findMissingMediaFileIds(Library library) {
+    return mediaFileRepository.findByLibraryId(library.getId()).stream()
+        .filter(file -> !isFileStillOnDisk(file))
+        .map(MediaFile::getId)
+        .toList();
+  }
 
-    var orphanedFiles = mediaFiles.stream().filter(file -> !isFileStillOnDisk(file)).toList();
+  /**
+   * Removes the given missing media files of the library, in the caller's transaction, and deletes
+   * each movie that has no media file left. A media file that is already gone is skipped.
+   */
+  public void removeMissingMediaFiles(Library library, List<UUID> missingMediaFileIds) {
+    var orphanedFiles =
+        missingMediaFileIds.stream()
+            .gather(Gatherers.windowFixed(MEDIA_FILE_IDS_PER_QUERY))
+            .flatMap(batch -> mediaFileRepository.findAllById(batch).stream())
+            .toList();
 
     if (orphanedFiles.isEmpty()) {
       return;

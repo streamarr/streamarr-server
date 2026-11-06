@@ -27,12 +27,14 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
  * A FileSystem wrapper that throws a configurable RuntimeException during Files.walk() iteration.
- * Used to test error handling when file system traversal fails mid-stream.
+ * Used to test error handling when file system traversal fails mid-stream, and to run a hook before
+ * each access check.
  *
  * <p>Jimfs cannot simulate permission errors, so this wrapper intercepts directory stream iteration
  * and throws the configured exception after each directory stream returns a set number of entries.
@@ -46,6 +48,7 @@ public class ThrowingFileSystemWrapper extends FileSystem {
   private final int entriesBeforeFailure;
   private final Function<Path, Optional<IOException>> laterAttributeReadFailure;
   private final Set<Path> pathsWithReadAttributes = ConcurrentHashMap.newKeySet();
+  private final Consumer<Path> beforeAccessCheck;
 
   public ThrowingFileSystemWrapper(FileSystem delegate) {
     this(
@@ -84,6 +87,20 @@ public class ThrowingFileSystemWrapper extends FileSystem {
                 .map(_ -> failure.get()));
   }
 
+  /**
+   * Returns a wrapper that never fails and runs {@code beforeAccessCheck} with each path before it
+   * checks the path's access, as {@link java.nio.file.Files#exists} does.
+   */
+  public static ThrowingFileSystemWrapper runningBeforeEachAccessCheck(
+      FileSystem delegate, Consumer<Path> beforeAccessCheck) {
+    return new ThrowingFileSystemWrapper(
+        delegate,
+        () -> new IllegalStateException("The directory streams of this wrapper never fail"),
+        Integer.MAX_VALUE,
+        _ -> Optional.empty(),
+        beforeAccessCheck);
+  }
+
   private ThrowingFileSystemWrapper(
       FileSystem delegate, Supplier<RuntimeException> exceptionSupplier, int entriesBeforeFailure) {
     this(delegate, exceptionSupplier, entriesBeforeFailure, _ -> Optional.empty());
@@ -94,10 +111,20 @@ public class ThrowingFileSystemWrapper extends FileSystem {
       Supplier<RuntimeException> exceptionSupplier,
       int entriesBeforeFailure,
       Function<Path, Optional<IOException>> laterAttributeReadFailure) {
+    this(delegate, exceptionSupplier, entriesBeforeFailure, laterAttributeReadFailure, _ -> {});
+  }
+
+  private ThrowingFileSystemWrapper(
+      FileSystem delegate,
+      Supplier<RuntimeException> exceptionSupplier,
+      int entriesBeforeFailure,
+      Function<Path, Optional<IOException>> laterAttributeReadFailure,
+      Consumer<Path> beforeAccessCheck) {
     this.delegate = delegate;
     this.exceptionSupplier = exceptionSupplier;
     this.entriesBeforeFailure = entriesBeforeFailure;
     this.laterAttributeReadFailure = laterAttributeReadFailure;
+    this.beforeAccessCheck = beforeAccessCheck;
     this.throwingProvider = new ThrowingFileSystemProvider(delegate.provider(), this);
   }
 
@@ -394,6 +421,7 @@ public class ThrowingFileSystemWrapper extends FileSystem {
 
     @Override
     public void checkAccess(Path path, AccessMode... modes) throws IOException {
+      fileSystem.beforeAccessCheck.accept(unwrap(path));
       delegate.checkAccess(unwrap(path), modes);
     }
 
