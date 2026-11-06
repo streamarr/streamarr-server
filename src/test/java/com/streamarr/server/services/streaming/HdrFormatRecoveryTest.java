@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.aacEntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.av1EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
@@ -31,6 +32,9 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlannedVideoOutput;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
+import com.streamarr.server.domain.streaming.QualityVariant;
+import com.streamarr.server.domain.streaming.SourceContainer;
+import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
@@ -52,17 +56,19 @@ import com.streamarr.server.services.streaming.events.DolbyVisionConversionFaile
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.NonNull;
+import lombok.Singular;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -89,9 +95,7 @@ class HdrFormatRecoveryTest {
           .build();
   private static final int SOURCE_LEVEL = 6;
   private static final Set<String> ENCODED_CODEC_FAMILIES = Set.of("h264", "av1");
-  // The picture box of each fixed quality that these tests select (ADR 0050).
-  private static final Map<VideoQuality, Integer> FIXED_QUALITY_HEIGHTS =
-      Map.of(VideoQuality.FULL_HD_1080P, 1080, VideoQuality.HIGH_720P, 720);
+  private static final Pattern VIDEO_RANGE_ATTRIBUTE = Pattern.compile("VIDEO-RANGE=(\\w+)");
 
   private final FakeMediaFileRepository mediaFiles = new FakeMediaFileRepository();
   private final FakeTranscodeExecutor workers = new FakeTranscodeExecutor();
@@ -376,126 +380,381 @@ class HdrFormatRecoveryTest {
   }
 
   // ADR 0013 and ADR 0052: the server never silently replaces a manual choice. The viewer rejects
-  // every format attempt until playback ends, and each one either delivers what Original, the fixed
-  // quality and the HDR choice promise, or the server's answer names the change. The range that the
-  // answer reports for the client's HDR toggle always matches the playlist.
-  @ParameterizedTest(name = "{0} in {1}, HDR choice {2}")
+  // every format attempt until playback ends. Each scenario lists every format attempt that the
+  // server delivers: the playback choice, what plays, the range that the answer, the decision and
+  // the playlist report, the change that the answer names, and the picture.
+  @ParameterizedTest(name = "{0}")
   @MethodSource("manualChoices")
   @DisplayName(
-      "Should keep each manual choice or name its change in every format attempt until playback"
-          + " ends")
-  void shouldKeepEachManualChoiceOrNameItsChangeInEveryFormatAttemptUntilPlaybackEnds(
-      String source, VideoQuality quality, DynamicRangeChoice rangeChoice) {
-    probes.setDefaultProbe(manualChoiceSources().get(source));
-    var command = start(quality, rangeChoice);
-    var attempts = new ArrayList<PlaybackSessionSnapshot>();
+      "Should deliver what the manual choice promises or name the change in every format attempt"
+          + " until playback ends")
+  void shouldDeliverWhatTheManualChoicePromisesOrNameTheChangeInEveryFormatAttemptUntilPlaybackEnds(
+      ManualChoiceScenario scenario) {
+    probes.setDefaultProbe(scenario.source());
+    var command =
+        start(
+            StreamingOptions.builder()
+                .quality(scenario.quality())
+                .dynamicRange(scenario.rangeChoice())
+                .build(),
+            scenario.client());
+    var delivered = new ArrayList<DeliveredAttempt>();
     var snapshot = accepted(playback.start(command));
     while (snapshot.currentFormatAttempt() instanceof PlaybackFormatAttempt.Ready) {
-      attempts.add(snapshot);
+      assertThat(snapshot.requestedChoice()).isEqualTo(scenario.quality());
+      delivered.add(deliveredAttempt(snapshot));
       snapshot = rejectCurrentFormatAttempt(snapshot, command);
     }
 
-    assertThat(snapshot.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Failed.class);
-    assertThat(attempts)
-        .isNotEmpty()
-        .allSatisfy(attempt -> assertThatTheChoiceHoldsOrItsChangeIsNamed(attempt, rangeChoice));
+    assertThat(delivered).containsExactlyElementsOf(scenario.attempts());
+    assertThat(snapshot.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Failed.class,
+            failed -> assertThat(failed.reason()).isEqualTo(scenario.end()));
   }
 
-  static Stream<Arguments> manualChoices() {
-    var fixedQualities = List.of(VideoQuality.FULL_HD_1080P, VideoQuality.HIGH_720P);
-    var arguments = new ArrayList<Arguments>();
-    for (var source : manualChoiceSources().keySet()) {
-      arguments.add(Arguments.of(source, VideoQuality.ORIGINAL, null));
-      for (var quality : fixedQualities) {
-        for (var rangeChoice : DynamicRangeChoice.values()) {
-          arguments.add(Arguments.of(source, quality, rangeChoice));
-        }
+  // In Auto, a failed encode falls back to the encode in another codec that the client and a worker
+  // share, and playback ends with the typed error when none is left or the budget of four is spent
+  // (#401). A fixed quality changes format once (ADR 0052).
+  static Stream<ManualChoiceScenario> manualChoices() {
+    var original = VideoQuality.ORIGINAL;
+    var fullHd = VideoQuality.FULL_HD_1080P;
+    var hd = VideoQuality.HIGH_720P;
+    var copyFailed = PlaybackFormatChange.COPY_FAILED;
+    var stripped = PlaybackFormatChange.DOLBY_VISION_STRIPPED;
+    var exhausted = new PlaybackSessionFailure.AttemptsExhausted();
+    var noEligibleFormat =
+        new PlaybackSessionFailure.CreationRejected(
+            new CreateStreamSessionRejection.NoEligibleVideoFormat());
+    var fixedFailed =
+        new PlaybackSessionFailure.FixedFormatFailed(PlaybackFormatFailure.DECODE_ERROR);
+    return Stream.of(
+        scenario("HDR10 in Original")
+            .source(hdr10())
+            .quality(original)
+            .attempt(delivered(Output.COPY, VideoRange.PQ).choice(original).build())
+            .attempt(autoEncode().changed(copyFailed).build())
+            .attempt(autoEncode().changed(copyFailed).build())
+            .end(noEligibleFormat)
+            .build(),
+        scenario("HLG in Original")
+            .source(hlg())
+            .quality(original)
+            .attempt(delivered(Output.COPY, VideoRange.HLG).choice(original).build())
+            .attempt(autoEncode().changed(copyFailed).build())
+            .attempt(autoEncode().changed(copyFailed).build())
+            .end(noEligibleFormat)
+            .build(),
+        scenario("10-bit SDR in Original")
+            .source(tenBitSdr())
+            .quality(original)
+            .attempt(delivered(Output.COPY, VideoRange.SDR).choice(original).build())
+            .attempt(autoEncode().changed(copyFailed).build())
+            .attempt(autoEncode().changed(copyFailed).build())
+            .end(noEligibleFormat)
+            .build(),
+        scenario("Dolby Vision 8.1 in Original")
+            .source(dolbyVisionSource(DolbyVisionProfile.PROFILE_8_1).build())
+            .quality(original)
+            .attempt(delivered(Output.DOLBY_VISION_COPY, VideoRange.PQ).choice(original).build())
+            .attempt(
+                delivered(Output.STRIPPED_COPY, VideoRange.PQ)
+                    .choice(original)
+                    .changed(stripped)
+                    .build())
+            .attempt(autoEncode().changed(copyFailed).build())
+            .attempt(autoEncode().changed(copyFailed).build())
+            .end(exhausted)
+            .build(),
+        scenario("Dolby Vision 10.4 in Original")
+            .source(dolbyVisionSource(DolbyVisionProfile.PROFILE_10_4).build())
+            .quality(original)
+            .attempt(delivered(Output.DOLBY_VISION_COPY, VideoRange.HLG).choice(original).build())
+            .attempt(
+                delivered(Output.STRIPPED_COPY, VideoRange.HLG)
+                    .choice(original)
+                    .changed(stripped)
+                    .build())
+            .attempt(autoEncode().changed(copyFailed).build())
+            .attempt(autoEncode().changed(copyFailed).build())
+            .end(exhausted)
+            .build(),
+        scenario("HDR10 in Original, direct play first")
+            .source(hdr10())
+            .quality(original)
+            .client(dolbyVisionClient(List.of(SourceContainer.MATROSKA)))
+            .attempt(delivered(Output.DIRECT_PLAY, VideoRange.PQ).choice(original).build())
+            .attempt(delivered(Output.COPY, VideoRange.PQ).choice(original).build())
+            .attempt(autoEncode().changed(copyFailed).build())
+            .attempt(autoEncode().changed(copyFailed).build())
+            .end(exhausted)
+            .build(),
+        scenario("Dolby Vision 8.1 in Original, direct play first")
+            .source(dolbyVisionSource(DolbyVisionProfile.PROFILE_8_1).build())
+            .quality(original)
+            .client(dolbyVisionClient(List.of(SourceContainer.MATROSKA)))
+            .attempt(delivered(Output.DIRECT_PLAY, VideoRange.PQ).choice(original).build())
+            .attempt(delivered(Output.DOLBY_VISION_COPY, VideoRange.PQ).choice(original).build())
+            .attempt(
+                delivered(Output.STRIPPED_COPY, VideoRange.PQ)
+                    .choice(original)
+                    .changed(stripped)
+                    .build())
+            .attempt(autoEncode().changed(copyFailed).build())
+            .end(exhausted)
+            .build(),
+        scenario("HDR10 in Original on a client without HDR")
+            .source(hdr10())
+            .quality(original)
+            .client(sdrClient())
+            .attempt(autoEncode().changed(PlaybackFormatChange.STARTED_WITH_ENCODE).build())
+            .end(noEligibleFormat)
+            .build(),
+        scenario("HDR10 in 1080p, HDR chosen")
+            .source(hdr10())
+            .quality(fullHd)
+            .rangeChoice(DynamicRangeChoice.HDR)
+            .attempt(delivered(Output.COPY, VideoRange.PQ).choice(fullHd).build())
+            .attempt(fixedEncode(fullHd).changed(copyFailed).build())
+            .end(fixedFailed)
+            .build(),
+        scenario("HLG in 1080p, HDR chosen")
+            .source(hlg())
+            .quality(fullHd)
+            .rangeChoice(DynamicRangeChoice.HDR)
+            .attempt(delivered(Output.COPY, VideoRange.HLG).choice(fullHd).build())
+            .attempt(fixedEncode(fullHd).changed(copyFailed).build())
+            .end(fixedFailed)
+            .build(),
+        scenario("10-bit SDR in 1080p, HDR chosen")
+            .source(tenBitSdr())
+            .quality(fullHd)
+            .rangeChoice(DynamicRangeChoice.HDR)
+            .attempt(delivered(Output.COPY, VideoRange.SDR).choice(fullHd).build())
+            .attempt(fixedEncode(fullHd).changed(copyFailed).build())
+            .end(fixedFailed)
+            .build(),
+        scenario("Dolby Vision 8.1 in 1080p, HDR chosen")
+            .source(dolbyVisionSource(DolbyVisionProfile.PROFILE_8_1).build())
+            .quality(fullHd)
+            .rangeChoice(DynamicRangeChoice.HDR)
+            .attempt(delivered(Output.DOLBY_VISION_COPY, VideoRange.PQ).choice(fullHd).build())
+            .attempt(
+                delivered(Output.STRIPPED_COPY, VideoRange.PQ)
+                    .choice(fullHd)
+                    .changed(stripped)
+                    .build())
+            .attempt(fixedEncode(fullHd).changed(copyFailed).build())
+            .end(fixedFailed)
+            .build(),
+        scenario("HDR10 in 720p, HDR chosen")
+            .source(hdr10())
+            .quality(hd)
+            .rangeChoice(DynamicRangeChoice.HDR)
+            .attempt(fixedEncode(hd).build())
+            .end(fixedFailed)
+            .build(),
+        scenario("Dolby Vision 10.4 in 720p, HDR chosen")
+            .source(dolbyVisionSource(DolbyVisionProfile.PROFILE_10_4).build())
+            .quality(hd)
+            .rangeChoice(DynamicRangeChoice.HDR)
+            .attempt(fixedEncode(hd).build())
+            .end(fixedFailed)
+            .build(),
+        scenario("HDR10 in 1080p, SDR chosen")
+            .source(hdr10())
+            .quality(fullHd)
+            .rangeChoice(DynamicRangeChoice.SDR)
+            .attempt(fixedEncode(fullHd).build())
+            .end(fixedFailed)
+            .build(),
+        scenario("Dolby Vision 8.1 in 1080p, SDR chosen")
+            .source(dolbyVisionSource(DolbyVisionProfile.PROFILE_8_1).build())
+            .quality(fullHd)
+            .rangeChoice(DynamicRangeChoice.SDR)
+            .attempt(fixedEncode(fullHd).build())
+            .end(fixedFailed)
+            .build(),
+        scenario("10-bit SDR in 1080p, SDR chosen")
+            .source(tenBitSdr())
+            .quality(fullHd)
+            .rangeChoice(DynamicRangeChoice.SDR)
+            .attempt(delivered(Output.COPY, VideoRange.SDR).choice(fullHd).build())
+            .attempt(fixedEncode(fullHd).changed(copyFailed).build())
+            .end(fixedFailed)
+            .build(),
+        scenario("HLG in 720p, SDR chosen")
+            .source(hlg())
+            .quality(hd)
+            .rangeChoice(DynamicRangeChoice.SDR)
+            .attempt(fixedEncode(hd).build())
+            .end(fixedFailed)
+            .build());
+  }
+
+  /** What one format attempt delivers, as the server's answer, decision and playlist report it. */
+  private enum Output {
+    DIRECT_PLAY,
+    DOLBY_VISION_COPY,
+    STRIPPED_COPY,
+    COPY,
+    ENCODE
+  }
+
+  @Builder
+  private record DeliveredAttempt(
+      @NonNull VideoQuality choice,
+      @NonNull Output output,
+      @NonNull VideoRange range,
+      @NonNull Optional<PlaybackFormatChange> change,
+      @NonNull String picture,
+      int variants) {
+
+    private static class DeliveredAttemptBuilder {
+      DeliveredAttemptBuilder changed(PlaybackFormatChange formatChange) {
+        return change(Optional.of(formatChange));
       }
     }
-
-    return arguments.stream();
   }
 
-  private static Map<String, MediaProbe> manualChoiceSources() {
-    var sources = new LinkedHashMap<String, MediaProbe>();
-    sources.put(
-        "10-bit SDR HEVC",
-        sourceBuilder()
-            .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.SDR))
-            .build());
-    sources.put(
-        "HDR10",
-        sourceBuilder()
-            .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ))
-            .build());
-    sources.put(
-        "HLG",
-        sourceBuilder()
-            .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.HLG))
-            .build());
-    sources.put("Dolby Vision 8.1", dolbyVisionSource(DolbyVisionProfile.PROFILE_8_1).build());
-    sources.put("Dolby Vision 10.4", dolbyVisionSource(DolbyVisionProfile.PROFILE_10_4).build());
-    return sources;
+  @Builder(builderMethodName = "manualChoiceScenarioBuilder")
+  private record ManualChoiceScenario(
+      @NonNull String name,
+      @NonNull MediaProbe source,
+      @NonNull VideoQuality quality,
+      DynamicRangeChoice rangeChoice,
+      @NonNull ClientCapabilityDeclaration client,
+      @Singular List<DeliveredAttempt> attempts,
+      @NonNull PlaybackSessionFailure end) {
+
+    @Override
+    public String toString() {
+      return name;
+    }
   }
 
-  private void assertThatTheChoiceHoldsOrItsChangeIsNamed(
-      PlaybackSessionSnapshot attempt, DynamicRangeChoice rangeChoice) {
-    var requested = attempt.requestedChoice();
-    var decision = decisionOf(attempt);
-    if (attempt.playbackChoice() != requested) {
-      assertThat(requested)
-          .as("only Original changes its playback choice")
-          .isEqualTo(VideoQuality.ORIGINAL);
-      assertThat(attempt.playbackChoice()).isEqualTo(VideoQuality.AUTO);
-      assertThat(attempt.formatChange())
-          .as("the change from Original to Auto is named")
-          .isPresent();
-    }
-
-    if (attempt.playbackChoice() == VideoQuality.ORIGINAL) {
-      assertThat(decision.transcodeMode().copiesVideo())
-          .as("Original plays the source's own video")
-          .isTrue();
-    }
-
-    if (attempt.playbackChoice() != requested || requested == VideoQuality.ORIGINAL) {
-      assertThatTheRangeIsReportedAsPlayed(attempt);
-      return;
-    }
-
-    assertThat(deliveredHeight(attempt))
-        .as("a fixed quality's one variant fits its picture box")
-        .isLessThanOrEqualTo(FIXED_QUALITY_HEIGHTS.get(requested));
-    if (rangeChoice == DynamicRangeChoice.SDR) {
-      assertThat(decision.videoRange()).as("the viewer chose SDR").isEqualTo(VideoRange.SDR);
-    }
-
-    assertThatTheRangeIsReportedAsPlayed(attempt);
+  private static ManualChoiceScenario.ManualChoiceScenarioBuilder scenario(String name) {
+    return ManualChoiceScenario.manualChoiceScenarioBuilder()
+        .name(name)
+        .client(dolbyVisionClient());
   }
 
-  // The client's HDR toggle shows the range that the answer reports, which must be the range the
-  // playlist announces and the decision plans (ADR 0052).
-  private static void assertThatTheRangeIsReportedAsPlayed(PlaybackSessionSnapshot attempt) {
-    var planned = decisionOf(attempt).videoRange();
-    assertThat(sessionOf(attempt).getVideoRange()).isEqualTo(planned);
-    var playlist = multivariantPlaylist(attempt);
-    if (planned == VideoRange.SDR) {
-      assertThat(playlist).doesNotContain("VIDEO-RANGE=PQ").doesNotContain("VIDEO-RANGE=HLG");
-      return;
-    }
-
-    assertThat(playlist).contains(",VIDEO-RANGE=" + planned.name());
+  // The source's own 1080p picture in one variant, with no change named. An encode's picture is its
+  // top variant.
+  private static DeliveredAttempt.DeliveredAttemptBuilder delivered(
+      Output output, VideoRange range) {
+    return DeliveredAttempt.builder()
+        .output(output)
+        .range(range)
+        .change(Optional.empty())
+        .picture("1920x1080")
+        .variants(1);
   }
 
-  // A copy delivers the source's 1080p picture; a fixed quality's encode delivers one variant.
-  private static int deliveredHeight(PlaybackSessionSnapshot attempt) {
-    var session = sessionOf(attempt);
-    if (session.getTranscodeDecision().transcodeMode().copiesVideo()) {
-      return session.getMediaProbe().height();
+  // Auto's SDR ladder for the 1080p source, topped by its 1080p variant (ADR 0050 and ADR 0052).
+  private static DeliveredAttempt.DeliveredAttemptBuilder autoEncode() {
+    return delivered(Output.ENCODE, VideoRange.SDR).choice(VideoQuality.AUTO).variants(4);
+  }
+
+  // A fixed quality's one SDR variant, which fills the quality's picture box (ADR 0050).
+  private static DeliveredAttempt.DeliveredAttemptBuilder fixedEncode(VideoQuality quality) {
+    var picture =
+        switch (quality) {
+          case FULL_HD_1080P -> "1920x1080";
+          case HIGH_720P -> "1280x720";
+          default -> throw new IllegalArgumentException("No fixture picture for " + quality);
+        };
+    return delivered(Output.ENCODE, VideoRange.SDR).choice(quality).picture(picture);
+  }
+
+  private static DeliveredAttempt deliveredAttempt(PlaybackSessionSnapshot snapshot) {
+    var session = sessionOf(snapshot);
+    if (session.getDelivery() == StreamDelivery.DIRECT_PLAY) {
+      return DeliveredAttempt.builder()
+          .choice(snapshot.playbackChoice())
+          .output(Output.DIRECT_PLAY)
+          .range(session.getVideoRange())
+          .change(snapshot.formatChange())
+          .picture(sourcePicture(session))
+          .variants(1)
+          .build();
     }
 
-    assertThat(session.getVariants()).as("a fixed quality encodes one variant").hasSize(1);
-    return session.getVariants().getFirst().height();
+    var playlist = multivariantPlaylist(snapshot);
+    var output = hlsOutputOf(session.getTranscodeDecision());
+    var picture = sourcePicture(session);
+    if (output == Output.ENCODE) {
+      var top =
+          session.getVariants().stream()
+              .max(Comparator.comparingInt(QualityVariant::height))
+              .orElseThrow();
+      picture = top.width() + "x" + top.height();
+    }
+
+    return DeliveredAttempt.builder()
+        .choice(snapshot.playbackChoice())
+        .output(output)
+        .range(announcedRange(session, playlist))
+        .change(snapshot.formatChange())
+        .picture(picture)
+        .variants(playlist.split("#EXT-X-STREAM-INF:", -1).length - 1)
+        .build();
+  }
+
+  private static Output hlsOutputOf(TranscodeDecision decision) {
+    if (!decision.transcodeMode().copiesVideo()) {
+      return Output.ENCODE;
+    }
+
+    if (decision.videoDolbyVisionOutput().isPresent()) {
+      return Output.DOLBY_VISION_COPY;
+    }
+
+    if (decision.videoBitstreamRewrites().contains(BitstreamRewrite.STRIP_DOLBY_VISION)) {
+      return Output.STRIPPED_COPY;
+    }
+
+    return Output.COPY;
+  }
+
+  private static String sourcePicture(StreamSession session) {
+    return session.getMediaProbe().width() + "x" + session.getMediaProbe().height();
+  }
+
+  // The client's HDR toggle shows the range that the answer reports, which must be the range that
+  // the decision plans and the playlist announces (ADR 0052). A playlist without VIDEO-RANGE
+  // announces SDR (RFC 8216).
+  private static VideoRange announcedRange(StreamSession session, String playlist) {
+    var planned = session.getTranscodeDecision().videoRange();
+    var announced =
+        VIDEO_RANGE_ATTRIBUTE
+            .matcher(playlist)
+            .results()
+            .map(match -> VideoRange.valueOf(match.group(1)))
+            .collect(Collectors.toSet());
+    assertThat(session.getVideoRange()).as("the answer's range").isEqualTo(planned);
+    assertThat(announced)
+        .as("the playlist's range")
+        .isEqualTo(planned == VideoRange.SDR ? Set.of() : Set.of(planned));
+    return planned;
+  }
+
+  private static MediaProbe hdr10() {
+    return sourceBuilder()
+        .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ))
+        .build();
+  }
+
+  private static MediaProbe hlg() {
+    return sourceBuilder()
+        .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.HLG))
+        .build();
+  }
+
+  private static MediaProbe tenBitSdr() {
+    return sourceBuilder()
+        .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.SDR))
+        .build();
   }
 
   private PlaybackSessionSnapshot rejectCurrentFormatAttempt(
@@ -529,10 +788,11 @@ class HdrFormatRecoveryTest {
   }
 
   private StartPlaybackSessionCommand start(VideoQuality quality) {
-    return start(quality, null);
+    return start(StreamingOptions.builder().quality(quality).build(), dolbyVisionClient());
   }
 
-  private StartPlaybackSessionCommand start(VideoQuality quality, DynamicRangeChoice rangeChoice) {
+  private StartPlaybackSessionCommand start(
+      StreamingOptions options, ClientCapabilityDeclaration client) {
     var file =
         mediaFiles.save(
             MediaFile.builder()
@@ -544,8 +804,8 @@ class HdrFormatRecoveryTest {
     return StartPlaybackSessionCommand.builder()
         .mediaFileId(file.getId())
         .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
-        .options(StreamingOptions.builder().quality(quality).dynamicRange(rangeChoice).build())
-        .capabilityDeclaration(dolbyVisionClient())
+        .options(options)
+        .capabilityDeclaration(client)
         .build();
   }
 
@@ -588,6 +848,12 @@ class HdrFormatRecoveryTest {
   // HEVC and AV1 entries that declare every base and profiles 8.1, 8.4, 10.1 and 10.4 up to level
   // 13, beside H.264 SDR and stereo AAC.
   private static ClientCapabilityDeclaration dolbyVisionClient() {
+    return dolbyVisionClient(List.of());
+  }
+
+  // The same client, whose HEVC, AV1 and AAC entries also direct-play these containers.
+  private static ClientCapabilityDeclaration dolbyVisionClient(
+      List<SourceContainer> directPlayContainers) {
     var bases = List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG);
     return defaultDeclarationBuilder()
         .video(
@@ -596,13 +862,23 @@ class HdrFormatRecoveryTest {
                     .compatibleBases(bases)
                     .dolbyVisionProfiles(
                         profiles(DolbyVisionProfile.PROFILE_8_1, DolbyVisionProfile.PROFILE_8_4))
+                    .directPlayContainers(directPlayContainers)
                     .build(),
                 av1EntryBuilder()
                     .compatibleBases(bases)
                     .dolbyVisionProfiles(
                         profiles(DolbyVisionProfile.PROFILE_10_1, DolbyVisionProfile.PROFILE_10_4))
+                    .directPlayContainers(directPlayContainers)
                     .build(),
                 h264EntryBuilder().build()))
+        .audio(List.of(aacEntryBuilder().directPlayContainers(directPlayContainers).build()))
+        .build();
+  }
+
+  // HEVC and H.264 entries that declare SDR alone, beside stereo AAC.
+  private static ClientCapabilityDeclaration sdrClient() {
+    return defaultDeclarationBuilder()
+        .video(List.of(hevcEntryBuilder().build(), h264EntryBuilder().build()))
         .build();
   }
 
@@ -702,6 +978,8 @@ class HdrFormatRecoveryTest {
     }
 
     return defaultProbeBuilder()
+        .audioChannels(OptionalInt.of(2))
+        .containerFormat(Optional.of("matroska,webm"))
         .framerate(framerate)
         .videoCodec(video.probedName)
         .videoPlaybackFacts(
