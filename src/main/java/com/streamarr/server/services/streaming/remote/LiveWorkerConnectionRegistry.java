@@ -943,7 +943,8 @@ final class LiveWorkerConnectionRegistry {
 
     private synchronized boolean replaceVideoEncoders(List<WorkerVerifiedVideoEncoder> encoders) {
       var replacement = byCodecFamily(encoders, LiveWorkerConnectionRegistry::isCountedForEncodes);
-      countedEncoders.clear();
+      // Readers outside this lock see each family's entry replaced in place, never an empty map.
+      countedEncoders.keySet().retainAll(replacement.keySet());
       countedEncoders.putAll(replacement);
       hardwareFailedFamilies.removeIf(
           family ->

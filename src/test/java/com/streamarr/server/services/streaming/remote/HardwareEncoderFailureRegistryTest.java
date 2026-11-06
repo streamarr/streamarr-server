@@ -35,6 +35,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -54,6 +57,8 @@ class HardwareEncoderFailureRegistryTest {
       softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264").toBuilder()
           .setKeyframeVerified(true)
           .build();
+  private static final WorkerVerifiedVideoEncoder LIBSVTAV1 =
+      softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "libsvtav1");
   private static final WorkerVerifiedEncoder PINNED_LIBX264 =
       WorkerVerifiedEncoder.builder()
           .backend(
@@ -217,6 +222,56 @@ class HardwareEncoderFailureRegistryTest {
 
     assertThat(registry.hardwareEncodableVideoCodecFamilies(SOURCE_NAMESPACE_ID))
         .containsExactly("h264");
+  }
+
+  // No code runs between the replacement's removal and its additions, so no test can park a reader
+  // there; the readers race many replacements instead, and every one must see the kept encoder.
+  @Test
+  @DisplayName(
+      "Should keep offering an encoder that every replacement keeps while another family's encoder"
+          + " changes")
+  void shouldKeepOfferingAnEncoderThatEveryReplacementKeepsWhileAnotherFamilysEncoderChanges()
+      throws Exception {
+    var workerId = UUID.randomUUID();
+    var workerSessionId =
+        registry.register(
+            workerId, nvencWorker(workerId, 1), collecting(new CopyOnWriteArrayList<>()));
+    var changes =
+        List.of(
+            VideoEncodersChanged.newBuilder()
+                .addVideoEncoders(H264_NVENC)
+                .addVideoEncoders(LIBSVTAV1)
+                .build(),
+            VideoEncodersChanged.newBuilder().addVideoEncoders(H264_NVENC).build());
+    var reading = new CountDownLatch(1);
+    var reads = 0;
+    var readsWithoutH264 = 0;
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var replacements =
+          executor.submit(
+              () -> {
+                assertThat(reading.await(10, TimeUnit.SECONDS)).isTrue();
+                for (var i = 0; i < 20_000; i++) {
+                  registry.changeVideoEncoders(workerId, workerSessionId, changes.get(i % 2));
+                }
+
+                return null;
+              });
+      while (!replacements.isDone()) {
+        if (!registry.verifiedHardwareVideoCodecFamilies(SOURCE_NAMESPACE_ID).contains("h264")) {
+          readsWithoutH264++;
+        }
+
+        reads++;
+        reading.countDown();
+      }
+
+      replacements.get(30, TimeUnit.SECONDS);
+    }
+
+    assertThat(reads).isPositive();
+    assertThat(readsWithoutH264).isZero();
   }
 
   @Test
