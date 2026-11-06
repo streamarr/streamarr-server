@@ -289,7 +289,7 @@ public record VideoCapabilityEntry(
       refusals.add(DecisionReason.VIDEO_PICTURE_SIZE_NOT_DECLARED);
     }
 
-    if (!acceptsFrameRate(copy.frameRate())) {
+    if (!acceptsFrameRate(copy.highestFrameRate())) {
       refusals.add(DecisionReason.VIDEO_FRAME_RATE_NOT_DECLARED);
     }
 

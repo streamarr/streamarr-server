@@ -1480,6 +1480,33 @@ class HlsPlaylistServiceTest {
               "37.500"));
     }
 
+    // RFC 8216 section 4.3.4.2: FRAME-RATE is the variant's maximum frame rate.
+    @Test
+    @DisplayName(
+        "Should advertise the maximum frame rate when the session copies a variable-rate stream"
+            + " whose maximum the probe stored")
+    void shouldAdvertiseTheMaximumFrameRateWhenTheSessionCopiesAVariableRateStreamWithAMaximum() {
+      var facts =
+          VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+              .streamIndex(0)
+              .frameRateRule(VideoPlaybackFactsFixture.packetScanRule(24, new Fraction(24, 1)))
+              .maximumFrameRate(Optional.of(new Fraction(60_000, 1_001)));
+      var session = StreamSessionFixture.copySessionBuilder(probeWithFacts(facts)).build();
+
+      assertThat(streamInf(session)).singleElement().asString().contains(",FRAME-RATE=59.940");
+    }
+
+    @Test
+    @DisplayName(
+        "Should advertise the copied frame rate when the session copies a variable-rate stream"
+            + " whose maximum is unknown")
+    void shouldAdvertiseTheCopiedFrameRateWhenTheSessionCopiesAVariableRateStreamWithoutAMaximum() {
+      var session =
+          copySessionWithRule(VideoPlaybackFactsFixture.packetScanRule(24, new Fraction(24, 1)));
+
+      assertThat(streamInf(session)).singleElement().asString().contains(",FRAME-RATE=24.000");
+    }
+
     @Test
     @DisplayName(
         "Should advertise no frame rate when the session copies a stream whose frame rate the rule"

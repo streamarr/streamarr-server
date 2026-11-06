@@ -66,6 +66,19 @@ public record VideoStreamCopy(
   }
 
   /**
+   * The maximum frame rate when the probe stores one, else the frame rate: the rate that a
+   * capability entry's maximum frame rate accepts and that the playlist's FRAME-RATE carries. Empty
+   * when both are unknown.
+   */
+  public OptionalDouble highestFrameRate() {
+    if (maximumFrameRate.isPresent()) {
+      return OptionalDouble.of(maximumFrameRate.get().toDouble());
+    }
+
+    return frameRate;
+  }
+
+  /**
    * The Dolby Vision that the playlist describes when this copy keeps it: a profile that a
    * capability entry can name, at the level that the record names or the level table gives (ADR
    * 0013). Empty for a copy without such Dolby Vision.
