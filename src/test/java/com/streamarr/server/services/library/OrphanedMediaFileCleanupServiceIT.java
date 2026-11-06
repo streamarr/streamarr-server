@@ -26,6 +26,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -127,6 +129,31 @@ class OrphanedMediaFileCleanupServiceIT extends AbstractIntegrationTest {
     assertThat(poster.writtenFiles())
         .isNotEmpty()
         .allSatisfy(path -> assertThat(path).doesNotExist());
+  }
+
+  @Test
+  @DisplayName(
+      "Should remove the missing media files when there are more of them than one query can bind")
+  void shouldRemoveTheMissingMediaFilesWhenThereAreMoreOfThemThanOneQueryCanBind() {
+    var library =
+        libraryRepository.saveAndFlush(
+            LibraryFixtureCreator.buildFakeLibrary().toBuilder()
+                .filepathUri(FilepathCodec.encode(libraryPath))
+                .build());
+    var missing =
+        mediaFileRepository.saveAndFlush(
+            mediaFileBuilder(libraryPath.resolve("missing.mkv"))
+                .libraryId(library.getId())
+                .build());
+    // PostgreSQL's protocol binds at most 65,535 parameters to one query.
+    var missingMediaFileIds =
+        Stream.concat(Stream.generate(UUID::randomUUID).limit(65_535), Stream.of(missing.getId()))
+            .toList();
+
+    transactionTemplate.executeWithoutResult(
+        _ -> orphanedMediaFileCleanupService.removeMissingMediaFiles(library, missingMediaFileIds));
+
+    assertThat(mediaFileRepository.findById(missing.getId())).isEmpty();
   }
 
   private void removeMissingMediaFiles(Library library) {

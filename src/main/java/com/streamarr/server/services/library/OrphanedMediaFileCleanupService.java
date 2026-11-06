@@ -15,6 +15,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Gatherers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -24,6 +25,9 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class OrphanedMediaFileCleanupService {
+
+  // PostgreSQL's protocol binds at most 65,535 parameters to one query.
+  private static final int MEDIA_FILE_IDS_PER_QUERY = 10_000;
 
   private final MediaFileRepository mediaFileRepository;
   private final MovieService movieService;
@@ -46,7 +50,11 @@ public class OrphanedMediaFileCleanupService {
    * each movie that has no media file left. A media file that is already gone is skipped.
    */
   public void removeMissingMediaFiles(Library library, List<UUID> missingMediaFileIds) {
-    var orphanedFiles = mediaFileRepository.findAllById(missingMediaFileIds);
+    var orphanedFiles =
+        missingMediaFileIds.stream()
+            .gather(Gatherers.windowFixed(MEDIA_FILE_IDS_PER_QUERY))
+            .flatMap(batch -> mediaFileRepository.findAllById(batch).stream())
+            .toList();
 
     if (orphanedFiles.isEmpty()) {
       return;
