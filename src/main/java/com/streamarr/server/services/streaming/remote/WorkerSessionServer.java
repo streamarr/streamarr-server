@@ -1,7 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
 import com.streamarr.server.domain.streaming.TranscodeFailure;
-import com.streamarr.server.domain.streaming.VideoEncodeFeature;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
@@ -17,7 +16,6 @@ import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -230,10 +228,14 @@ public final class WorkerSessionServer
     return workerConnections.videoCopySupportByWorker(sourceNamespaceId);
   }
 
-  public synchronized Map<String, Set<VideoEncodeFeature>> encodeFeaturesByCodecFamily(
-      UUID sourceNamespaceId) {
+  public synchronized List<WorkerVerifiedEncoder> encodableVideoEncoders(UUID sourceNamespaceId) {
     requireStarted();
-    return workerConnections.encodeFeaturesByCodecFamily(sourceNamespaceId);
+    return workerConnections.encodableVideoEncoders(sourceNamespaceId);
+  }
+
+  public synchronized List<WorkerVerifiedEncoder> verifiedVideoEncoders(UUID sourceNamespaceId) {
+    requireStarted();
+    return workerConnections.verifiedVideoEncoders(sourceNamespaceId);
   }
 
   /** Whether a connected worker can read the source namespace and probe at the version. */

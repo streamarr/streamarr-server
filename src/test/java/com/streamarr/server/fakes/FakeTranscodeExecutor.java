@@ -1,12 +1,12 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
-import com.streamarr.server.domain.streaming.VideoEncodeFeature;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
@@ -79,7 +79,6 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       new AtomicReference<>();
   private volatile List<WorkerVerifiedCodecFamilies> listedWorkers;
   private volatile List<WorkerVideoCopySupport> videoCopySupport = List.of();
-  private volatile Map<String, Set<VideoEncodeFeature>> encodeFeatures = Map.of();
   private volatile boolean failUntargetedStarts;
 
   @Override
@@ -480,9 +479,16 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
         .collect(Collectors.toCollection(LinkedHashSet::new));
   }
 
+  // As a worker does, the target runs the pinned backend with the same keyframe verification,
+  // whatever encode features its encoder lists.
   private boolean advertises(ExecutionTargetId target, WorkerVerifiedEncoder pinnedEncoder) {
-    return pinnedEncoder.equals(
-        encodersByTarget.getOrDefault(target, Map.of()).get(pinnedEncoder.backend().codecFamily()));
+    return Optional.ofNullable(
+            encodersByTarget
+                .getOrDefault(target, Map.of())
+                .get(pinnedEncoder.backend().codecFamily()))
+        .filter(encoder -> encoder.backend().equals(pinnedEncoder.backend()))
+        .filter(encoder -> encoder.keyframeVerified() == pinnedEncoder.keyframeVerified())
+        .isPresent();
   }
 
   /**
@@ -515,8 +521,21 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private boolean canRun(ExecutionTargetId target, TranscodeDecision decision) {
     var families = encodableVideoCodecFamiliesByTarget.get(target);
     return !encodesVideo(decision)
-        || families == null
-        || families.contains(decision.videoCodecFamily());
+        || (families == null || families.contains(decision.videoCodecFamily()))
+            && writesThePlannedOutput(target, decision);
+  }
+
+  // A target's advertised encoder must list every encode feature that the planned output needs.
+  private boolean writesThePlannedOutput(ExecutionTargetId target, TranscodeDecision decision) {
+    var sourceBase =
+        decision
+            .videoSource()
+            .map(facts -> facts.dynamicRange().compatibleBase())
+            .orElse(CompatibleBase.UNSPECIFIED);
+    var needed = decision.videoEncodeFormat().encodeFeaturesFrom(sourceBase);
+    return advertisedEncoder(target, decision)
+        .map(encoder -> encoder.encodeFeatures().containsAll(needed))
+        .orElse(needed.isEmpty());
   }
 
   @Override
@@ -572,13 +591,23 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     return videoCopySupport;
   }
 
-  public void setEncodeFeaturesByCodecFamily(Map<String, Set<VideoEncodeFeature>> features) {
-    encodeFeatures = Map.copyOf(features);
+  /** The encoders that targets with a free job slot advertise. */
+  @Override
+  public List<WorkerVerifiedEncoder> encodableVideoEncoders() {
+    return advertisedEncoders(target -> freeJobSlotsOn(target) > 0);
   }
 
+  /** Busy targets' encoders count too. */
   @Override
-  public Map<String, Set<VideoEncodeFeature>> encodeFeaturesByCodecFamily() {
-    return encodeFeatures;
+  public List<WorkerVerifiedEncoder> verifiedVideoEncoders() {
+    return advertisedEncoders(_ -> true);
+  }
+
+  private List<WorkerVerifiedEncoder> advertisedEncoders(Predicate<ExecutionTargetId> targets) {
+    return executionTargets.stream()
+        .filter(targets)
+        .flatMap(target -> encodersByTarget.getOrDefault(target, Map.of()).values().stream())
+        .toList();
   }
 
   /** Changes the connected workers just before and just after the next verified families read. */

@@ -161,7 +161,7 @@ public class HlsStreamingService implements StreamingService {
             .verifiedVideoCodecFamilies(codecFamiliesOf(verifiedWorkers))
             .viewerLimits(ViewerLimits.of(options))
             .videoCopySupport(transcodeExecutor.videoCopySupportByWorker())
-            .encodeFeatures(transcodeExecutor.encodeFeaturesByCodecFamily())
+            .videoEncoders(transcodeExecutor.encodableVideoEncoders())
             .directPlayRefusals(directPlay.refusals())
             .softwareEncodeCodecFamily(command.softwareEncodeCodecFamily())
             .build();
@@ -341,6 +341,7 @@ public class HlsStreamingService implements StreamingService {
         .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())
         .hardwareEncodableVideoCodecFamilies(
             transcodeExecutor.hardwareEncodableVideoCodecFamilies())
+        .videoEncoders(transcodeExecutor.encodableVideoEncoders())
         .build();
   }
 
@@ -390,13 +391,14 @@ public class HlsStreamingService implements StreamingService {
   }
 
   // The encode that a connected worker's verified encoder could run once it had a free slot. Busy
-  // workers' hardware encoders count too, so the encode is the one that the server would decide
-  // once those workers had a free slot.
+  // workers' hardware encoders and encode features count too, so the encode is the one that the
+  // server would decide once those workers had a free slot.
   private Optional<TranscodeDecision> verifiedEncodeCandidate(TranscodeDecisionRequest request) {
     return encodeCandidate(
         request.toBuilder()
             .hardwareEncodableVideoCodecFamilies(
                 transcodeExecutor.verifiedHardwareVideoCodecFamilies())
+            .videoEncoders(transcodeExecutor.verifiedVideoEncoders())
             .build(),
         request.verifiedVideoCodecFamilies());
   }

@@ -5,7 +5,6 @@ import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
-import com.streamarr.server.domain.streaming.VideoEncodeFeature;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
@@ -14,7 +13,6 @@ import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -167,7 +165,12 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
-  public Map<String, Set<VideoEncodeFeature>> encodeFeaturesByCodecFamily() {
-    return workerServer.encodeFeaturesByCodecFamily(sourceNamespaceId);
+  public List<WorkerVerifiedEncoder> encodableVideoEncoders() {
+    return workerServer.encodableVideoEncoders(sourceNamespaceId);
+  }
+
+  @Override
+  public List<WorkerVerifiedEncoder> verifiedVideoEncoders() {
+    return workerServer.verifiedVideoEncoders(sourceNamespaceId);
   }
 }

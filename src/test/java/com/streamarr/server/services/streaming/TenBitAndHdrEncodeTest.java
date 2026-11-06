@@ -24,6 +24,7 @@ import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DynamicRangeChoice;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
+import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.MasteringDisplayColorVolume;
 import com.streamarr.server.domain.streaming.MediaProbe;
@@ -41,6 +42,7 @@ import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.streaming.VideoRange;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
@@ -52,8 +54,8 @@ import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
@@ -129,7 +131,8 @@ class TenBitAndHdrEncodeTest {
                 .workerId(UUID.randomUUID())
                 .codecFamilies(ENCODED_CODEC_FAMILIES)
                 .build()));
-    workers.setEncodeFeaturesByCodecFamily(Map.of("av1", EVERY_ENCODE_FEATURE, "h264", Set.of()));
+    workers.setTargetEncoders(
+        ExecutionTargetId.LOCAL, List.of(svtAv1(EVERY_ENCODE_FEATURE), libx264(Set.of())));
     playback =
         PlaybackSessionService.builder()
             .streamingService(streaming())
@@ -292,8 +295,10 @@ class TenBitAndHdrEncodeTest {
   @DisplayName(
       "Should encode Dolby Vision profile 5 to SDR when no worker reshapes Dolby Vision into PQ")
   void shouldEncodeDolbyVisionProfile5ToSdrWhenNoWorkerReshapesDolbyVisionIntoPq() {
-    workers.setEncodeFeaturesByCodecFamily(
-        Map.of("av1", Set.of(VideoEncodeFeature.TEN_BIT, VideoEncodeFeature.PQ)));
+    workers.setTargetEncoders(
+        ExecutionTargetId.LOCAL,
+        List.of(
+            svtAv1(Set.of(VideoEncodeFeature.TEN_BIT, VideoEncodeFeature.PQ)), libx264(Set.of())));
     probes.setDefaultProbe(baselessSource(DolbyVisionProfile.PROFILE_5));
 
     var encode = accepted(playback.start(start(options(VideoQuality.AUTO, null), hdrAv1Client())));
@@ -324,8 +329,8 @@ class TenBitAndHdrEncodeTest {
       "Should encode an HDR10 source to 8-bit SDR when the client or the workers cannot play or"
           + " write an HDR encode")
   void shouldEncodeAnHdr10SourceTo8BitSdrWhenTheClientOrTheWorkersCannotPlayOrWriteAnHdrEncode(
-      ClientCapabilityDeclaration client, Map<String, Set<VideoEncodeFeature>> features) {
-    workers.setEncodeFeaturesByCodecFamily(features);
+      ClientCapabilityDeclaration client, List<WorkerVerifiedEncoder> encoders) {
+    workers.setTargetEncoders(ExecutionTargetId.LOCAL, encoders);
     probes.setDefaultProbe(
         hdr10Source(Optional.of(SOURCE_DISPLAY), Optional.of(SOURCE_LIGHT_LEVEL)));
 
@@ -335,7 +340,7 @@ class TenBitAndHdrEncodeTest {
   }
 
   static Stream<Arguments> setupsThatCannotPlayAnHdrEncode() {
-    var everyFeature = Map.of("av1", EVERY_ENCODE_FEATURE);
+    var everyFeature = List.of(svtAv1(EVERY_ENCODE_FEATURE), libx264(Set.of()));
     return Stream.of(
         Arguments.of(
             Named.of(
@@ -358,10 +363,82 @@ class TenBitAndHdrEncodeTest {
                         .maxBitDepth(10)
                         .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
                         .build())),
-            Map.of("h264", EVERY_ENCODE_FEATURE)),
+            List.of(svtAv1(Set.of()), libx264(EVERY_ENCODE_FEATURE))),
         Arguments.of(
             Named.of("workers whose AV1 encoder writes only 10-bit SDR", hdrAv1Client()),
-            Map.of("av1", Set.of(VideoEncodeFeature.TEN_BIT))));
+            List.of(svtAv1(Set.of(VideoEncodeFeature.TEN_BIT)), libx264(Set.of()))));
+  }
+
+  // A busy worker's encoder cannot take the encode, so its encode features must not plan an HDR
+  // encode that only it writes while an idle worker could play the source in SDR.
+  @Test
+  @DisplayName(
+      "Should encode an HDR10 source to 8-bit SDR on an idle worker when only a busy worker's"
+          + " encoder writes PQ")
+  void shouldEncodeAnHdr10SourceTo8BitSdrOnAnIdleWorkerWhenOnlyABusyWorkersEncoderWritesPq() {
+    var busy = new ExecutionTargetId("busy");
+    var idle = new ExecutionTargetId("idle");
+    workers.setExecutionTargets(List.of(busy, idle));
+    workers.setTargetEncoders(busy, List.of(svtAv1(EVERY_ENCODE_FEATURE), libx264(Set.of())));
+    workers.setTargetEncoders(idle, List.of(svtAv1(Set.of()), libx264(Set.of())));
+    workers.limitJobSlots(busy, 0);
+    probes.setDefaultProbe(
+        hdr10Source(Optional.of(SOURCE_DISPLAY), Optional.of(SOURCE_LIGHT_LEVEL)));
+
+    var encode =
+        accepted(
+            playback.start(start(options(VideoQuality.AUTO, null), clientWith(hdrAv1Entry()))));
+
+    assertThatAn8BitSdrEncodePlays(encode);
+  }
+
+  // Frame rate comes first (ADR 0009), so a client entry that plays the source's range or bit depth
+  // only at half the source's frame rate loses to one that plays every frame in 8-bit SDR.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("sourcesWhoseRangeOrBitDepthPlaysOnlyAtHalfTheirFrameRate")
+  @DisplayName(
+      "Should encode a 60 fps source to 8-bit SDR at 60 fps when the client plays its range or bit"
+          + " depth only at 30 fps")
+  void shouldEncodeA60FpsSourceTo8BitSdrAt60FpsWhenTheClientPlaysItsRangeOrBitDepthOnlyAt30Fps(
+      CompatibleBase sourceBase, VideoCapabilityEntry halfRateEntry) {
+    probes.setDefaultProbe(
+        defaultProbeBuilder()
+            .videoCodec("hevc")
+            .framerate(OptionalDouble.of(60))
+            .videoPlaybackFacts(
+                Optional.of(
+                    hevcFacts()
+                        .dynamicRange(rangeOf(sourceBase))
+                        .frameRateRule(
+                            VideoPlaybackFactsFixture.declaredRateRule(new Fraction(60, 1)))
+                        .build()))
+            .build());
+
+    var encode =
+        accepted(
+            playback.start(
+                start(
+                    options(VideoQuality.AUTO, null),
+                    clientWith(halfRateEntry, av1EntryBuilder().maxBitDepth(8).build()))));
+
+    assertThat(plannedEncode().bitDepth()).isEqualTo(8);
+    assertThat(plannedEncode().dynamicRange()).isEqualTo(VideoDynamicRange.SDR);
+    assertThat(multivariantPlaylist(encode))
+        .contains(",FRAME-RATE=60.000")
+        .doesNotContain("30.000");
+  }
+
+  static Stream<Arguments> sourcesWhoseRangeOrBitDepthPlaysOnlyAtHalfTheirFrameRate() {
+    return Stream.of(
+        Arguments.of(
+            Named.of("an HDR10 source", CompatibleBase.PQ),
+            av1EntryBuilder()
+                .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
+                .maxFrameRate(30)
+                .build()),
+        Arguments.of(
+            Named.of("a 10-bit SDR source", CompatibleBase.SDR),
+            av1EntryBuilder().maxBitDepth(10).maxFrameRate(30).build()));
   }
 
   // An SDR encode keeps the codec preference of ADR 0009, so the client here declares AV1 alone.
@@ -373,7 +450,8 @@ class TenBitAndHdrEncodeTest {
           + " encoder accept 10 bits")
   void shouldEncodeA10BitSdrSourceTo10BitAv1OnlyWhenTheClientAndTheEncoderAccept10Bits(
       TenBitSdrCase tenBitCase) {
-    workers.setEncodeFeaturesByCodecFamily(Map.of("av1", tenBitCase.features));
+    workers.setTargetEncoders(
+        ExecutionTargetId.LOCAL, List.of(svtAv1(tenBitCase.features), libx264(Set.of())));
     probes.setDefaultProbe(
         hdrSource(rangeOf(CompatibleBase.SDR), Optional.empty(), Optional.empty()));
 
@@ -489,10 +567,35 @@ class TenBitAndHdrEncodeTest {
   // An AV1 entry that declares SDR, PQ and HLG at 10 bits beside H.264 SDR and stereo AAC. It
   // declares no HEVC, so an HEVC source cannot be copied.
   private static ClientCapabilityDeclaration hdrAv1Client() {
-    return client(
-        av1EntryBuilder()
-            .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG))
-            .build());
+    return client(hdrAv1Entry());
+  }
+
+  private static VideoCapabilityEntry hdrAv1Entry() {
+    return av1EntryBuilder()
+        .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG))
+        .build();
+  }
+
+  private static WorkerVerifiedEncoder svtAv1(Set<VideoEncodeFeature> features) {
+    return encoder("av1", "libsvtav1", features);
+  }
+
+  private static WorkerVerifiedEncoder libx264(Set<VideoEncodeFeature> features) {
+    return encoder("h264", "libx264", features);
+  }
+
+  private static WorkerVerifiedEncoder encoder(
+      String codecFamily, String encoder, Set<VideoEncodeFeature> features) {
+    return WorkerVerifiedEncoder.builder()
+        .backend(
+            EncoderBackend.builder()
+                .codecFamily(codecFamily)
+                .encoder(encoder)
+                .kind(EncoderBackend.Kind.SOFTWARE)
+                .build())
+        .keyframeVerified(true)
+        .encodeFeatures(features)
+        .build();
   }
 
   private static ClientCapabilityDeclaration client(VideoCapabilityEntry entry) {

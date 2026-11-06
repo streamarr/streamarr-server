@@ -16,7 +16,6 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
-import com.streamarr.server.domain.streaming.VideoEncodeFeature;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
@@ -53,7 +52,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -561,8 +559,13 @@ class HeldSegmentRequestConcurrencyIT {
     }
 
     @Override
-    public Map<String, Set<VideoEncodeFeature>> encodeFeaturesByCodecFamily() {
-      return delegate.encodeFeaturesByCodecFamily();
+    public List<WorkerVerifiedEncoder> encodableVideoEncoders() {
+      return delegate.encodableVideoEncoders();
+    }
+
+    @Override
+    public List<WorkerVerifiedEncoder> verifiedVideoEncoders() {
+      return delegate.verifiedVideoEncoders();
     }
   }
 
