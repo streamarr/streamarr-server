@@ -60,6 +60,7 @@ import com.streamarr.server.domain.streaming.DolbyVisionOutput;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
+import com.streamarr.server.domain.streaming.EncodeFormat;
 import com.streamarr.server.domain.streaming.ExactSegmentStarts;
 import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.Fraction;
@@ -93,6 +94,7 @@ import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
+import com.streamarr.server.domain.streaming.VideoEncodeFeature;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.streaming.VideoSampleEntry;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
@@ -7623,6 +7625,62 @@ class HlsStreamingServiceTest {
     var admitted = accepted(service.createSession(createCommandDeclaring(av1AndH264Declaration())));
 
     assertThat(admitted.getTranscodeDecision().videoCodecFamily()).isEqualTo("av1");
+    assertThat(switching.getVariantHandles()).containsOnlyKeys("1080p");
+    upload(switchingId, "1080p", "1080p/segment1.m4s");
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  // Only the busy worker's AV1 encoder writes PQ, and only the other AV1 worker keeps a left
+  // variant. Stopping it frees a worker that encodes AV1 in 8-bit SDR, so the stop tries that
+  // format before it gives up on AV1 (#397).
+  @Test
+  @DisplayName(
+      "Should encode 8-bit SDR AV1 after stopping a left variant on a worker without PQ when the"
+          + " only worker that writes PQ is busy")
+  void shouldEncode8BitSdrAv1AfterStoppingALeftVariantOnAWorkerWithoutPqWhenThePqWorkerIsBusy()
+      throws Exception {
+    var pqWorker = new ExecutionTargetId("pq-worker");
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("av1"));
+    transcodeExecutor.setExecutionTargets(List.of(AV1_WORKER, pqWorker));
+    transcodeExecutor.setTargetEncoders(AV1_WORKER, List.of(libsvtav1()));
+    transcodeExecutor.setTargetEncoders(
+        pqWorker,
+        List.of(
+            WorkerVerifiedEncoder.builder()
+                .backend(libsvtav1().backend())
+                .keyframeVerified(true)
+                .encodeFeatures(Set.of(VideoEncodeFeature.TEN_BIT, VideoEncodeFeature.PQ))
+                .build()));
+    transcodeExecutor.limitJobSlots(AV1_WORKER, 2);
+    transcodeExecutor.limitJobSlots(pqWorker, 1);
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .framerate(OptionalDouble.of(23.976))
+            .videoCodec("hevc")
+            .bitrate(8_000_000L)
+            .build());
+    var switching = createSession(seedMediaFile().getId(), declarationBuilderFor(AV1).build());
+    var switchingId = switching.getSessionId();
+    var switched = switchFrom480pTo1080pKeeping480pAsTheLeftVariant(switchingId);
+    createSession(seedMediaFile().getId(), declarationBuilderFor(AV1).build());
+    assertThat(transcodeExecutor.encodableVideoCodecFamilies()).isEmpty();
+    probeResults.setDefaultProbe(hdr10HevcProbe());
+
+    var admitted =
+        accepted(
+            service.createSession(
+                createCommandDeclaring(
+                    declarationBuilderFor(AV1)
+                        .video(
+                            List.of(
+                                av1EntryBuilder()
+                                    .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
+                                    .build()))
+                        .build())));
+
+    assertThat(admitted.getTranscodeDecision().videoCodecFamily()).isEqualTo("av1");
+    assertThat(admitted.getTranscodeDecision().videoEncodeFormat())
+        .isEqualTo(EncodeFormat.SDR_8_BIT);
     assertThat(switching.getVariantHandles()).containsOnlyKeys("1080p");
     upload(switchingId, "1080p", "1080p/segment1.m4s");
     assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);

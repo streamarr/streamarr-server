@@ -34,10 +34,12 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntryRefusal;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
+import com.streamarr.server.domain.streaming.VideoEncodeFeature;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.streaming.VideoRange;
 import com.streamarr.server.domain.streaming.VideoStreamCopy;
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.ArrayList;
@@ -47,6 +49,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.NonNull;
@@ -418,9 +421,16 @@ public class TranscodeDecisionService {
     var declaration = request.capabilityDeclaration();
     return Arrays.stream(EncodeCodecProfile.values())
         .filter(profile -> request.verifiedVideoCodecFamilies().contains(profile.codecFamilyName()))
-        .map(profile -> encodedVariantRequest(source, profile))
-        .flatMap(Optional::stream)
-        .anyMatch(variantRequest -> declaration.fitHlsEncode(variantRequest).isPresent());
+        .anyMatch(
+            profile ->
+                encodedVariantRequest(source, profile).stream()
+                    .flatMap(
+                        variantRequest ->
+                            encodeFormats(request, profile, request.verifiedVideoEncoders())
+                                .stream()
+                                .map(format -> variantRequest.toBuilder().format(format).build()))
+                    .anyMatch(
+                        variantRequest -> declaration.fitHlsEncode(variantRequest).isPresent()));
   }
 
   private PlanChoice acceptedVideoCopyPlan(
@@ -861,7 +871,7 @@ public class TranscodeDecisionService {
       TranscodeDecisionRequest request, EncodeCodecProfile profile) {
     var declaration = request.capabilityDeclaration();
     var source = request.source();
-    return encodeFormats(request, profile).stream()
+    return encodeFormats(request, profile, request.videoEncoders()).stream()
         .flatMap(
             format ->
                 encodedFrameRate(declaration, source, profile, format).stream()
@@ -871,7 +881,9 @@ public class TranscodeDecisionService {
   // H.264 output stays 8-bit SDR, because almost no device decodes 10-bit H.264 (#397). Any other
   // format needs one encoder of the codec family that lists every feature the format needs.
   private static List<EncodeFormat> encodeFormats(
-      TranscodeDecisionRequest request, EncodeCodecProfile profile) {
+      TranscodeDecisionRequest request,
+      EncodeCodecProfile profile,
+      List<WorkerVerifiedEncoder> encoders) {
     if (profile == EncodeCodecProfile.H264_HIGH) {
       return List.of(EncodeFormat.SDR_8_BIT);
     }
@@ -879,16 +891,20 @@ public class TranscodeDecisionService {
     return Stream.of(
             hdrFormat(request), tenBitSdrFormat(request), Optional.of(EncodeFormat.SDR_8_BIT))
         .flatMap(Optional::stream)
-        .filter(format -> isWrittenByAnEncoder(request, profile, format))
+        .filter(
+            format ->
+                isWrittenByAnEncoder(
+                    format.encodeFeaturesFrom(sourceBase(request.source())), profile, encoders))
         .toList();
   }
 
   // 8-bit SDR needs no feature, so the encodable codec families alone decide it.
   private static boolean isWrittenByAnEncoder(
-      TranscodeDecisionRequest request, EncodeCodecProfile profile, EncodeFormat format) {
-    var needed = format.encodeFeaturesFrom(sourceBase(request.source()));
+      Set<VideoEncodeFeature> needed,
+      EncodeCodecProfile profile,
+      List<WorkerVerifiedEncoder> encoders) {
     return needed.isEmpty()
-        || request.videoEncoders().stream()
+        || encoders.stream()
             .filter(encoder -> encoder.backend().codecFamily().equals(profile.codecFamilyName()))
             .anyMatch(encoder -> encoder.encodeFeatures().containsAll(needed));
   }

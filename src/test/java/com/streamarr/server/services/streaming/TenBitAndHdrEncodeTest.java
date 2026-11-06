@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.av1EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
 import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.noLanguagePreferences;
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
@@ -367,6 +368,37 @@ class TenBitAndHdrEncodeTest {
         Arguments.of(
             Named.of("workers whose AV1 encoder writes only 10-bit SDR", hdrAv1Client()),
             List.of(svtAv1(Set.of(VideoEncodeFeature.TEN_BIT)), libx264(Set.of()))));
+  }
+
+  // ADR 0050 lets a copy above the viewer's limits play only when no encode plays. An entry that
+  // accepts only PQ takes an HDR10 encode, so that encode plays within the limits instead.
+  @Test
+  @DisplayName(
+      "Should encode an HDR10 source within a fixed quality when only a PQ entry accepts the encode"
+          + " and the copy is above the quality")
+  void shouldEncodeAnHdr10SourceWithinAFixedQualityWhenOnlyAPqEntryAcceptsTheEncode() {
+    workers.setVideoCopySupportByWorker(
+        List.of(
+            WorkerVideoCopySupport.builder()
+                .plannedOutput(true)
+                .bitstreamRewrites(Set.of())
+                .build()));
+    probes.setDefaultProbe(
+        hdr10Source(Optional.of(SOURCE_DISPLAY), Optional.of(SOURCE_LIGHT_LEVEL)));
+
+    var encode =
+        accepted(
+            playback.start(
+                start(
+                    options(VideoQuality.HIGH_720P, null),
+                    clientWith(
+                        hevcEntryBuilder()
+                            .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
+                            .build(),
+                        av1EntryBuilder().compatibleBases(List.of(CompatibleBase.PQ)).build()))));
+
+    assertThat(sessionOf(encode).getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
+    assertThat(plannedEncode().dynamicRange()).isEqualTo(rangeOf(CompatibleBase.PQ));
   }
 
   // A busy worker's encoder cannot take the encode, so its encode features must not plan an HDR

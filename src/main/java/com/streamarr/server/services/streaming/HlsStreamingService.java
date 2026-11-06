@@ -6,6 +6,7 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.streaming.AudioSteps;
 import com.streamarr.server.domain.streaming.AudioTrackChannels;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
+import com.streamarr.server.domain.streaming.EncodeFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamDelivery;
@@ -162,6 +163,7 @@ public class HlsStreamingService implements StreamingService {
             .viewerLimits(ViewerLimits.of(options))
             .videoCopySupport(transcodeExecutor.videoCopySupportByWorker())
             .videoEncoders(transcodeExecutor.encodableVideoEncoders())
+            .verifiedVideoEncoders(transcodeExecutor.verifiedVideoEncoders())
             .directPlayRefusals(directPlay.refusals())
             .softwareEncodeCodecFamily(command.softwareEncodeCodecFamily())
             .build();
@@ -321,8 +323,7 @@ public class HlsStreamingService implements StreamingService {
 
     // When no left variant runs on a worker that encodes the preferred family, the next family's
     // workers may still hold one.
-    while (candidate.isPresent()
-        && !producerLifecycle.stopLeftVariantOfAnotherStreamSession(sessionId, candidate.get())) {
+    while (candidate.isPresent() && !stopLeftVariantForTheFamilyOf(sessionId, candidate.get())) {
       excludedFamilies.add(candidate.get().videoCodecFamily());
       candidate = stoppableEncodeCandidate(request, excludedFamilies);
     }
@@ -333,6 +334,18 @@ public class HlsStreamingService implements StreamingService {
         withEncodersFreeNow(request).toBuilder()
             .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
             .build());
+  }
+
+  // Only some workers may write the candidate's 10-bit or HDR output, so a left variant on a worker
+  // that writes the codec family in 8-bit SDR also makes room before the family is given up.
+  private boolean stopLeftVariantForTheFamilyOf(UUID sessionId, TranscodeDecision candidate) {
+    if (producerLifecycle.stopLeftVariantOfAnotherStreamSession(sessionId, candidate)) {
+      return true;
+    }
+
+    return !candidate.videoEncodeFormat().equals(EncodeFormat.SDR_8_BIT)
+        && producerLifecycle.stopLeftVariantOfAnotherStreamSession(
+            sessionId, candidate.toBuilder().videoEncodeFormat(EncodeFormat.SDR_8_BIT).build());
   }
 
   // The request as the workers' encoders with a free slot stand now.
@@ -398,7 +411,7 @@ public class HlsStreamingService implements StreamingService {
         request.toBuilder()
             .hardwareEncodableVideoCodecFamilies(
                 transcodeExecutor.verifiedHardwareVideoCodecFamilies())
-            .videoEncoders(transcodeExecutor.verifiedVideoEncoders())
+            .videoEncoders(request.verifiedVideoEncoders())
             .build(),
         request.verifiedVideoCodecFamilies());
   }
