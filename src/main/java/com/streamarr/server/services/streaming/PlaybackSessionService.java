@@ -820,11 +820,15 @@ public class PlaybackSessionService implements AutoCloseable {
   // base; its output mismatch names a copy.
   private FailedFormatAttempt failedAttempt(
       PlaybackSession playback, PlaybackSessionFailure reason) {
-    if (playback.current instanceof PlaybackFormatAttempt.Ready(var session)) {
-      return new FailedFormatAttempt(reason, outputOf(session));
+    if (!(playback.current instanceof PlaybackFormatAttempt.Ready(var session))) {
+      return new FailedFormatAttempt(reason, outputOfAPendingCopy(reason));
     }
 
-    return new FailedFormatAttempt(reason, outputOfAPendingCopy(reason));
+    if (session.getDelivery() == StreamDelivery.DIRECT_PLAY) {
+      return new FailedFormatAttempt(reason, new FailedFormatAttempt.DirectPlay());
+    }
+
+    return new FailedFormatAttempt(reason, outputOf(decisionThatFailed(session, reason)));
   }
 
   private static FailedFormatAttempt.Output outputOfAPendingCopy(PlaybackSessionFailure reason) {
@@ -835,19 +839,20 @@ public class PlaybackSessionService implements AutoCloseable {
     return new FailedFormatAttempt.Copy();
   }
 
-  // The player fails on the variant that it plays, whose decision can differ from the stream
-  // session's: a copy's lower variants encode (ADR 0050). Before the player received a segment,
-  // the stream session's own decision stands for it.
-  private FailedFormatAttempt.Output outputOf(StreamSession session) {
-    if (session.getDelivery() == StreamDelivery.DIRECT_PLAY) {
-      return new FailedFormatAttempt.DirectPlay();
+  // The player reports a failure of the variant that it plays, whose decision can differ from the
+  // stream session's: a copy's lower variants encode (ADR 0050). A job failure fails as a copy
+  // does, whichever variant's job it was: a segment over the cap fails the segment list, not the
+  // codec (ADR 0037).
+  private TranscodeDecision decisionThatFailed(
+      StreamSession session, PlaybackSessionFailure reason) {
+    if (!(reason instanceof PlaybackSessionFailure.FixedFormatFailed)) {
+      return session.getTranscodeDecision();
     }
 
-    return outputOf(
-        streamingService
-            .playedVariantOf(session.getSessionId())
-            .map(session::decisionOf)
-            .orElseGet(session::getTranscodeDecision));
+    return streamingService
+        .playedVariantOf(session.getSessionId())
+        .map(session::decisionOf)
+        .orElseGet(session::getTranscodeDecision);
   }
 
   private static FailedFormatAttempt.Output outputOf(TranscodeDecision decision) {

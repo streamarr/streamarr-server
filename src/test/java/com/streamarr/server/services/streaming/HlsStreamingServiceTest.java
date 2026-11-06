@@ -7583,6 +7583,21 @@ class HlsStreamingServiceTest {
         .containsExactly("720p/stream.m3u8?t=t", "480p/stream.m3u8?t=t", "360p/stream.m3u8?t=t");
   }
 
+  // The player plays the variant that the stream session started for its playlist until it
+  // receives a segment, so a failure that it reports before then is that variant's.
+  @Test
+  @DisplayName(
+      "Should answer the variant started for the playlist as the played one when the upload budget"
+          + " leaves out the copy and the player has received no segment")
+  void shouldAnswerTheVariantStartedForThePlaylistAsPlayedWhenTheBudgetLeavesOutTheCopy() {
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(11);
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(service.playedVariantOf(session.getSessionId())).contains("720p");
+  }
+
   @Test
   @DisplayName(
       "Should count the variant that another stream session's player requests against the upload"

@@ -561,6 +561,26 @@ class PlaybackSessionServiceTest {
         .containsExactly("av1");
   }
 
+  // A segment over the cap fails the segment list, not the codec: the replacement encodes on the
+  // plain grid and may use the same codec (ADR 0037).
+  @Test
+  @DisplayName(
+      "Should keep every codec for the replacement when the lower variant that the player plays"
+          + " exceeds the segment cap")
+  void shouldKeepEveryCodecForTheReplacementWhenThePlayedLowerVariantExceedsTheSegmentCap() {
+    streams.lowerVariantCodecProfile = Optional.of(EncodeCodecProfile.H264_HIGH);
+    var command = startCommand().options(qualityOptions(VideoQuality.AUTO)).build();
+    var initial = accepted(service.start(command));
+    var streamSessionId = initial.currentFormatAttempt().streamSessionId();
+    streams.playedVariants.put(streamSessionId, "720p");
+
+    service.onTerminalTranscodeFailure(
+        terminalFailure(streamSessionId, TranscodeFailure.SEGMENT_CAP_EXCEEDED));
+
+    assertThat(streams.createdCommands).hasSize(2);
+    assertThat(streams.createdCommands.getLast().excludedEncodeCodecFamilies()).isEmpty();
+  }
+
   @Test
   @DisplayName("Should start the first format attempt at the start position when playback starts")
   void shouldStartTheFirstFormatAttemptAtTheStartPositionWhenPlaybackStarts() {

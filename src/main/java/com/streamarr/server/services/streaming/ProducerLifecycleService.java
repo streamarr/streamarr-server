@@ -1000,9 +1000,14 @@ public class ProducerLifecycleService {
         && request.variantLabel().equals(variantsStartedForTheirPlayer.get(request.sessionId()));
   }
 
-  /** The variant whose segment the player received last, or empty before it received one. */
+  /**
+   * The variant that the player plays: the one whose segment it received last, or before it
+   * received one, the variant that the stream session started for its playlist. Empty when neither
+   * is known.
+   */
   public Optional<String> playedVariantOf(UUID sessionId) {
-    return Optional.ofNullable(playingVariants.get(sessionId));
+    return Optional.ofNullable(playingVariants.get(sessionId))
+        .or(() -> Optional.ofNullable(variantsStartedForTheirPlaylist.get(sessionId)));
   }
 
   // The played variant while the newest media-segment request asks for another variant.
