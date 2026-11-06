@@ -61,7 +61,9 @@ import org.junit.jupiter.params.provider.MethodSource;
 class HevcEncodeSmokeTest {
 
   private static final int SEGMENT_SECONDS = 6;
-  private static final int SOURCE_SECONDS = 6;
+  // One short media segment per variant keeps the six 2160p60 libx265 encodes within the default
+  // test timeout on a CI runner; libx265 fixes its level and tier before the first frame.
+  private static final int SOURCE_SECONDS = 2;
   private static final Duration DELIVERY_LIMIT = Duration.ofMinutes(3);
   // libx265 decides its level and tier when it opens, so a few frames show its own choice.
   private static final String REFERENCE_FRAMES = "8";
@@ -176,7 +178,7 @@ class HevcEncodeSmokeTest {
     }
   }
 
-  // Every source keeps a keyframe every 2 seconds, so each segment interval starts on one.
+  // Each source opens on a keyframe, so its one segment interval starts on one.
   static List<LadderSource> ladderSources() {
     return List.of(
         LadderSource.builder()
